@@ -211,9 +211,10 @@ Rules that must hold:
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
 - Secrets are per project. The same name in two projects is two secrets.
-  Each ciphertext is bound to its project id and its name (AES-GCM
-  additional data, DECISIONS I-433), so a row moved to another project or
-  renamed does not decrypt. `repose fork` copies the source's values into
+  Each ciphertext is bound to its name (AES-GCM additional data), and to
+  its project id as well once the second step of DECISIONS I-433 ships;
+  until then the api reads that form and still writes the name-only one.
+  `repose fork` copies the source's values into
   each copy in the same transaction that creates it, opened and sealed
   again for the copy under the same user key and wrapped key, which is the
   same home (DECISIONS I-254); a later change in one project does not

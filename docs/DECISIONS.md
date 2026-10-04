@@ -11088,29 +11088,47 @@ and `hosts rotate-cert` recovers it. *Rejected:* a CRL for the host CA
 (every verifier would need it fetched and fresh, where the api already
 holds the row it needs).
 
-**I-433. A named secret's ciphertext is bound to its project as well as its name.** (security release, 2026-10-03)
+**I-433. A named secret's ciphertext is being bound to its project as well as its name, over two releases.** (security release, 2026-10-03)
 AES-GCM's additional data was the name alone, and every row carries its
 own wrapped data key, so a row copied by a database write into another
 project under the same name decrypted there and reached that project's
 guest; that included the platform's CA keys under the platform
-pseudo-project. The additional data is now `repose-secret-v2`, a zero
-byte, the project id, a zero byte and the name (`secrets.Seal`,
-`secrets.Open` take the project id). Rows sealed before this still open
-under the name alone, for this release only: the api's start runs
-`Store.Reseal`, which seals each such row again for the project it sits
-in (retrying every minute while Key Vault is unreachable; idempotent, the
-`UPDATE` matches the old ciphertext). A legacy row outside the platform
-pseudo-project whose data key is one of the platform's is refused on read
-and left alone by `Reseal`, so platform material copied into a project
-before the deploy is not sealed into it. `repose fork` no longer copies
-ciphertext in SQL: `Store.CopyNamed` opens each named secret and seals it
-for the new project in the fork's transaction, under the same wrapped
-key, which makes a fork depend on Key Vault (as `secrets set` always did).
-The release after this one removes the name-only read path; by then every
-api start has resealed what was there. Tests: `internal/api/secrets`
-`TestCiphertextIsBoundToItsProject`, `TestResealLegacyRows`, and the
-`TestRoundTripAndAAD` project check; `internal/api/http` `TestFork` opens
-the copied secret in the fork. *Rejected:* a column recording the
+pseudo-project. The project-bound form's additional data is
+`repose-secret-v2`, a zero byte, the project id, a zero byte and the name
+(`secrets.SealBound`; `secrets.Seal` and `secrets.Open` take the project
+id).
+
+An api image from before this decision cannot open the bound form. Coolify
+deploys by starting the new container before stopping the old one, and an
+image rollback runs an older one too, so writing the bound form in the same
+release that teaches the api to read it would break secrets for the old
+container and for any rollback past this release. The change is therefore
+split.
+
+This release: `Open` accepts both forms, and `Seal` still writes the
+name-only form (the `sealBound` constant in `internal/api/secrets` is
+off). `Store.Reseal`, which rewrites every name-only row in the bound form
+for the project it sits in, exists and is tested but nothing runs it. A
+name-only row outside the platform pseudo-project whose data key is one of
+the platform's is refused on read (`ErrPlatformKey`), and `Reseal` leaves
+such a row alone, so platform CA material copied into a project does not
+decrypt there. `repose fork` no longer copies ciphertext in SQL:
+`Store.CopyNamed` opens each named secret and seals it for the new project
+in the fork's transaction under the same wrapped key, so a bound row stays
+bound to its own project; a fork now depends on Key Vault, as `secrets set`
+always did. What is not bound in this release: a user's name-only row
+copied into another project under the same name still decrypts there.
+
+Next release, once no image older than this one can be deployed: turn on
+`sealBound`, run `Store.Reseal` at api start (retrying while Key Vault is
+unreachable; it is idempotent and its `UPDATE` matches the old
+ciphertext), and in the release after that drop the name-only read path.
+Tests: `internal/api/secrets` `TestRoundTripAndAAD` (the bound form does
+not open under another project or name), `TestCiphertextIsBoundToItsProject`
+(this release's boundary, both what is bound and what is not),
+`TestResealLegacyRows` (`Put` writes what an older image opens; `Reseal`
+binds it and refuses the platform-key copy); `internal/api/http` `TestFork`
+opens the copied secret in the fork. *Rejected:* a column recording the
 additional-data version (a database writer sets it as easily as the
-ciphertext; a failed tag check under the new data says the same thing for
-free).
+ciphertext; a failed tag check under the bound data says the same thing for
+free); binding in one release (breaks the rolling deploy and rollback).

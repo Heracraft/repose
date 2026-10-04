@@ -300,7 +300,6 @@ func (a *App) Run(ctx context.Context) error {
 	bg, cancelBG := context.WithCancel(ctx)
 	defer cancelBG()
 	go a.logs.Run(bg)
-	go a.resealSecrets(bg)
 
 	if a.cfg.Mode == "http" || a.cfg.Mode == "all" {
 		if a.cfg.LogtoIssuer == "" {
@@ -554,24 +553,3 @@ func (a *App) loops(ctx context.Context) {
 type markOnly struct{}
 
 func (markOnly) Delete(context.Context, string) error { return nil }
-
-// resealSecrets binds the secrets rows sealed before I-433 to their
-// project, retrying while Key Vault is unreachable; once a pass succeeds
-// there is nothing left for later ones.
-func (a *App) resealSecrets(ctx context.Context) {
-	for {
-		n, refused, err := a.sec.Reseal(ctx)
-		if err == nil {
-			if n > 0 || refused > 0 {
-				a.log.Info("secrets resealed", "event", "secrets_reseal", "count", n, "refused", refused)
-			}
-			return
-		}
-		a.log.Warn("secrets reseal failed", "event", "secrets_reseal", "err", err.Error())
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Minute):
-		}
-	}
-}

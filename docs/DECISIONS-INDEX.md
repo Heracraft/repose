@@ -495,4 +495,4 @@ pointer, not a summary.
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11033
 - **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11062
-- **I-433** A named secret's ciphertext is bound to its project as well as its name — 2026-10-03; L11091
+- **I-433** A named secret's ciphertext is being bound to its project as well as its name, over two releases — 2026-10-03; L11091
