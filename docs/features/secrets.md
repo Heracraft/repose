@@ -190,10 +190,10 @@ the reasoning and the Anthropic policy behind it.
 API as ciphertext in Postgres, encrypted with a per-user data key that is
 itself wrapped by an Azure Key Vault key (DECISIONS R3-10). Delivered to the
 guest at start and on every change as `/run/repose/secrets/NAME` on a
-tmpfs, mode 0400, owner `dev`, and exported through
-`/run/repose/secrets.env` into login shells and, through `BASH_ENV`, into
-each non-interactive bash, so every command an agent runs sees the current
-set (DECISIONS I-475).
+tmpfs, mode 0400, owner `dev`, and exported into login shells and, through
+`BASH_ENV`, into each non-interactive bash, so every command an agent runs
+sees the current set (DECISIONS I-475). A value the process or the
+project's `.envrc` set itself is never replaced.
 
 Why central: an unattended agent needs them when no laptop is connected, and
 a stopped guest that restarts at 03:00 for a base bump needs them too. Why
@@ -203,16 +203,19 @@ need one call per secret.
 
 Rules that must hold:
 
-- Names match `[A-Z][A-Z0-9_]{0,63}`. Values up to 64 KB. Binary values are
+- Names match `[A-Z][A-Z0-9_]{0,63}`, except `BASH_ENV`, `ENV` and
+  `REPOSE_ENV_GEN`, which the guest uses to refresh secrets. Values up to
+  64 KB. Binary values are
   base64 on the wire and raw in the file.
 - The API never returns a value. `GET /secrets` lists names and timestamps
   only. The dashboard has no "reveal".
 - A `set` on a running guest pushes `UpdateSecrets` and the file is updated
-  within 5 seconds; `secrets.env` is regenerated and dev's tmux global
-  environment updated. Already running processes are not restarted; the CLI
-  says so. Their next bash command loads the new set (I-475).
-- A `rm` reaches running processes the same way: `secrets.env` keeps an
-  `unset NAME` line for every name removed since boot.
+  within 5 seconds; `secrets.env` and `secrets.refresh` are regenerated
+  and dev's tmux global environment updated. Already running processes are
+  not restarted; the CLI says so. Their next bash command loads the new
+  set, except a variable whose value the process changed itself (I-475).
+- A `rm` reaches running processes the same way: `secrets.refresh` unsets
+  a name the last 16 generations delivered, under the same rule (I-476).
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
 - Secrets are per project. The same name in two projects is two secrets.

@@ -47,14 +47,19 @@ func (p Paths) NixDB() string { return p.join("nix", "var", "nix", "db", "db.sql
 // SecretsDir is /run/repose/secrets: named secret values, 0400 dev.
 func (p Paths) SecretsDir() string { return p.join("run", "repose", "secrets") }
 
-// SecretsEnv is /run/repose/secrets.env, sourced by login shells and by
-// the BASH_ENV loader of every non-interactive bash (DECISIONS I-475).
+// SecretsEnv is /run/repose/secrets.env, 0400 dev: the current secrets as
+// export lines (DECISIONS I-475).
 func (p Paths) SecretsEnv() string { return p.join("run", "repose", "secrets.env") }
 
-// SecretsNames is /run/repose/secrets.names: every named secret written since
-// boot, one per line, root 0600, so secrets.env keeps unsetting a removed one
-// across a guestd restart (DECISIONS I-475).
-func (p Paths) SecretsNames() string { return p.join("run", "repose", "secrets.names") }
+// SecretsRefresh is /run/repose/secrets.refresh, 0400 dev: the guarded
+// lines the BASH_ENV loader and the profile source to bring a process's
+// secrets up to date without replacing a value it set itself (DECISIONS
+// I-475).
+func (p Paths) SecretsRefresh() string { return p.join("run", "repose", "secrets.refresh") }
+
+// SecretsState is /run/repose/secrets.state, root 0600: the last generations
+// of exported secrets, from which guestd writes secrets.refresh (I-475).
+func (p Paths) SecretsState() string { return p.join("run", "repose", "secrets.state") }
 
 // HooksSock is /run/repose/hooks.sock, the agent hook ingest.
 func (p Paths) HooksSock() string { return p.join("run", "repose", "hooks.sock") }

@@ -784,25 +784,54 @@ in
 
       # I-475: the agent's commands are `bash -c` children of a process that
       # loaded the secrets when it started. BASH_ENV, from the PAM
-      # environment over ssh, makes each child load secrets.env again when
-      # its generation changed.
-      with subtest("I-475: a tmux window's bash -c child sees a secret rotated after the window started"):
+      # environment over ssh, makes each child source secrets.refresh when
+      # its REPOSE_ENV_GEN is not the file's. The second file is what guestd
+      # writes for the second generation: a value the parent still holds as
+      # delivered is rotated or unset, one it set itself (MY_LOCAL, as a
+      # .envrc would) stays.
+      with subtest("I-475: a tmux window's bash -c child sees a secret rotated after the window started, and keeps its own value"):
           guest.succeed("""cat > /tmp/be-parent <<'EOF'
-      echo "bash_env=$BASH_ENV start=$MY_TOKEN"
+      echo "bash_env=$BASH_ENV start=$MY_TOKEN local=$MY_LOCAL"
+      export MY_LOCAL=from-envrc
       while [ ! -e /tmp/be-go ]; do sleep 0.1; done
-      bash -c 'echo "child=$MY_TOKEN gone=$GONE_TOKEN."'
+      bash -c 'echo "child=$MY_TOKEN gone=$GONE_TOKEN. local=$MY_LOCAL"'
       echo done
       EOF
+      cat > /tmp/refresh-aa <<'EOF'
+      # repose-env-gen 00000000000000aa
+      export MY_TOKEN='s3cr3t' GONE_TOKEN='g' MY_LOCAL='prod' REPOSE_ENV_GEN=00000000000000aa
+      EOF
+      cat > /tmp/refresh-bb <<'EOF'
+      # repose-env-gen 00000000000000bb
+      case ''${REPOSE_ENV_GEN-} in
+      00000000000000aa) __repose_g=1 ;;
+      00000000000000bb) __repose_g=2 ;;
+      *) __repose_g=0 ;;
+      esac
+      case $__repose_g in 1) __repose_d=s'g' ;; *) __repose_d= ;; esac
+      [ "''${GONE_TOKEN+s$GONE_TOKEN}" != "$__repose_d" ] || unset GONE_TOKEN
+      case $__repose_g in 1|2) __repose_d=s'prod' ;; *) __repose_d= ;; esac
+      [ "''${MY_LOCAL+s$MY_LOCAL}" != "$__repose_d" ] || export MY_LOCAL='prod'
+      case $__repose_g in 1) __repose_d=s's3cr3t' ;; 2) __repose_d=s'rotated' ;; *) __repose_d= ;; esac
+      [ "''${MY_TOKEN+s$MY_TOKEN}" != "$__repose_d" ] || export MY_TOKEN='rotated'
+      export REPOSE_ENV_GEN=00000000000000bb
+      unset __repose_g __repose_d
+      EOF
       chmod 0755 /tmp/be-parent; rm -f /tmp/be-go /tmp/out-be""")
-          guest.succeed("printf \"export REPOSE_SECRETS_GEN=00000000000000aa\\nexport MY_TOKEN='s3cr3t'\\nexport GONE_TOKEN='g'\\n\" > /run/repose/secrets.env")
+          guest.succeed("install -m 0400 -o dev -g dev /tmp/refresh-aa /run/repose/secrets.refresh")
           ssh("tmux new-window -t todo-app -n be -d 'bash /tmp/be-parent > /tmp/out-be 2>&1'")
           guest.wait_until_succeeds("grep -q start= /tmp/out-be", timeout=30)
-          guest.succeed("printf \"export REPOSE_SECRETS_GEN=00000000000000bb\\nexport MY_TOKEN='rotated'\\nunset GONE_TOKEN\\n\" > /run/repose/secrets.env")
+          guest.succeed("install -m 0400 -o dev -g dev /tmp/refresh-bb /run/repose/secrets.refresh")
           guest.succeed("touch /tmp/be-go")
           out = wait_out("be")
           print(out)
-          assert "bash_env=/etc/repose/bash-env.sh start=s3cr3t" in out, out
-          assert "child=rotated gone=." in out, out
+          assert "bash_env=/etc/repose/bash-env.sh start=s3cr3t local=prod" in out, out
+          assert "child=rotated gone=. local=from-envrc" in out, out
+          # A login shell goes through the same file: no generation, so it
+          # gets every secret.
+          env = guest.succeed("sudo -u dev bash -lc 'echo $MY_TOKEN $MY_LOCAL $REPOSE_ENV_GEN'").strip()
+          assert env == "rotated prod 00000000000000bb", env
+          guest.succeed("rm -f /run/repose/secrets.refresh")
 
       with subtest("I-227: installs land on PATH (go install, npm i -g)"):
           guest.succeed("""install -d -o dev -g dev /tmp/gi /tmp/npmpkg/bin && cat > /tmp/gi/go.mod <<'EOF'

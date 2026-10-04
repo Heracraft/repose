@@ -177,3 +177,18 @@ func TestSecretsImport(t *testing.T) {
 		t.Fatalf("missing file: %v", err)
 	}
 }
+
+// I-475: the variables the machine uses to refresh secrets are refused by
+// set and by import, before anything is sent.
+func TestShellNamesAreRefused(t *testing.T) {
+	err := validateImport([]dotenvEntry{{Name: "A", Value: "1", Line: 1}, {Name: "BASH_ENV", Value: "/x", Line: 2}})
+	if err == nil || !strings.Contains(err.Error(), "line 2: BASH_ENV is reserved") {
+		t.Fatalf("import: %v", err)
+	}
+	for _, n := range []string{"BASH_ENV", "ENV", "REPOSE_ENV_GEN"} {
+		err := SecretsSetCmd(context.Background(), &Env{}, "", n, []byte("x"))
+		if err == nil || !strings.Contains(err.Error(), "is reserved") {
+			t.Fatalf("set %s: %v", n, err)
+		}
+	}
+}

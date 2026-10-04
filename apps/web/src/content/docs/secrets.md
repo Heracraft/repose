@@ -36,12 +36,14 @@ The file is read the way docker compose and the dotenv libraries read it: `#` co
 
 On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. A change, a removal included, reaches a running machine within seconds. Each command an agent runs after that sees it, and so does each new shell or tmux window. A program already running, such as a dev server or a shell you have open, keeps the old value until you restart it (`exec $SHELL` in a shell).
 
+A value you set yourself wins over a secret of the same name and stays when secrets change later: one in the project's `.envrc`, one you export in a shell, or one you give a single command (`STRIPE_KEY=sk_test ./run-tests.sh`). The machine does this with two environment variables of its own. `BASH_ENV` points every bash at `/etc/repose/bash-env.sh`, which refreshes the secrets; if you set your own `BASH_ENV`, commands under it stop picking up changes. `REPOSE_ENV_GEN` records which version of your secrets a process holds. Neither can be a secret's name, and nor can `ENV`.
+
 ```
 repose secrets list
 repose secrets rm STRIPE_SECRET_KEY
 ```
 
-`list` shows names and dates, never values, and on a terminal it also lists the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. Secrets belong to one project; [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters; values up to 64 KB.
+`list` shows names and dates, never values, and on a terminal it also lists the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. Secrets belong to one project; [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
 The dashboard's project **Secrets** page does the same.
 

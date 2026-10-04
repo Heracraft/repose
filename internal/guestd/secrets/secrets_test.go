@@ -271,120 +271,130 @@ func readEnv(t *testing.T, p sysdep.Paths) string {
 	return string(b)
 }
 
-// I-475: a name removed since boot is unset in secrets.env, so an agent that
-// inherited it loses it in its next command.
-func TestSecretsEnvUnsetsARemovedName(t *testing.T) {
+// I-475: secrets.env is the current set; secrets.refresh unsets a name the
+// last generations delivered and the current one does not, guarded.
+func TestRefreshUnsetsARemovedName(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}); err != nil {
-		t.Fatal(err)
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}))
+	refresh := func() string {
+		b, err := os.ReadFile(p.SecretsRefresh())
+		must(t, err)
+		return string(b)
 	}
-	if env := readEnv(t, p); strings.Contains(env, "unset") {
-		t.Fatalf("nothing was removed, yet:\n%s", env)
+	if strings.Contains(refresh(), "unset B") {
+		t.Fatalf("nothing was removed, yet:\n%s", refresh())
 	}
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
-		t.Fatal(err)
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	if env := readEnv(t, p); strings.Contains(env, "B=") || strings.Contains(env, "unset") {
+		t.Fatalf("secrets.env after removing B:\n%s", env)
 	}
-	env := readEnv(t, p)
-	if !strings.Contains(env, "\nunset B\n") || strings.Contains(env, "export B=") {
-		t.Fatalf("B is not unset:\n%s", env)
+	if !strings.Contains(refresh(), `[ "${B+s$B}" != "$__repose_d" ] || unset B`+"\n") {
+		t.Fatalf("B has no guarded unset:\n%s", refresh())
 	}
-	// An unrelated later write keeps the unset line: an agent started
-	// before the removal may still hold B.
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("C", "3")}); err != nil {
-		t.Fatal(err)
+	// Setting it again exports it.
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "4")}))
+	if r := refresh(); strings.Contains(r, "unset B") || !strings.Contains(r, "export B='4'") {
+		t.Fatalf("B set again:\n%s", r)
 	}
-	if env := readEnv(t, p); !strings.Contains(env, "\nunset B\n") {
-		t.Fatalf("the unset line went away after an unrelated write:\n%s", env)
-	}
-	// Setting it again exports it and drops the unset line.
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "4")}); err != nil {
-		t.Fatal(err)
-	}
-	env = readEnv(t, p)
-	if strings.Contains(env, "unset B") || !strings.Contains(env, "export B='4'") {
-		t.Fatalf("B set again:\n%s", env)
+	for path, want := range map[string]os.FileMode{p.SecretsRefresh(): 0o400, p.SecretsState(): 0o600, p.SecretsEnv(): 0o400} {
+		fi, err := os.Stat(path)
+		must(t, err)
+		if fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %o, want %o", filepath.Base(path), fi.Mode().Perm(), want)
+		}
 	}
 }
 
-// A guestd restart is a new Handler over the same tmpfs; the names written
-// before it are read back from secrets.names.
-func TestSecretsEnvRemovedNamesSurviveAGuestdRestart(t *testing.T) {
+// A guestd restart is a new Handler over the same tmpfs: it reads the
+// generations back and keeps the current one while nothing changes.
+func TestGenerationsSurviveAGuestdRestart(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
-		t.Fatal(err)
-	}
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}))
+	g1 := genOf(t, p)
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	g2 := genOf(t, p)
 
 	restarted := New(p, sysdep.NewFakeRunner(), quietLog())
 	restarted.uid, restarted.gid = -1, -1
-	if err := restarted.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("C", "3")}); err != nil {
-		t.Fatal(err)
+	must(t, restarted.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	if g := genOf(t, p); g != g2 {
+		t.Fatalf("a restart changed the generation: %s then %s", g2, g)
 	}
-	if env := readEnv(t, p); !strings.Contains(env, "\nunset B\n") {
-		t.Fatalf("a guestd restart forgot the removed name:\n%s", env)
+	st := restarted.readState()
+	if len(st.Gens) != 2 || st.Gens[0].Gen != g1 || st.Gens[1].Gen != g2 {
+		t.Fatalf("state after restart = %+v", st)
 	}
-	fi, err := os.Stat(p.SecretsNames())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("secrets.names mode = %o, want 600", fi.Mode().Perm())
-	}
-	b, _ := os.ReadFile(p.SecretsNames())
-	if string(b) != "A\nB\nC\n" {
-		t.Fatalf("secrets.names = %q", b)
+	b, _ := os.ReadFile(p.SecretsRefresh())
+	if !strings.Contains(string(b), "unset B\n") {
+		t.Fatalf("a guestd restart forgot the removed name:\n%s", b)
 	}
 }
 
-// A guest whose secrets were written by a guestd from before I-475 has no
-// names file; the names in the secrets directory stand in for it.
-func TestSecretsEnvUnsetsANameRemovedOnAnUpgradedGuest(t *testing.T) {
+// A state file that is not what guestd writes is a new history, not an
+// error, and nothing from it reaches a file shells source.
+func TestUnreadableStateStartsANewHistory(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("OLD", "2")}); err != nil {
-		t.Fatal(err)
+	must(t, sysdep.WriteFileAtomic(p.SecretsState(), []byte(`{"gens":[{"gen":"$(evil)","values":{"X":"MQ=="}},{"gen":"00000000000000aa","values":{"a b":"MQ==","BASH_ENV":"MQ==","OK":"MQ=="}}]}`), 0o600, -1, -1))
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	b, _ := os.ReadFile(p.SecretsRefresh())
+	if strings.Contains(string(b), "evil") || strings.Contains(string(b), "a b") || strings.Contains(string(b), "BASH_ENV") || !strings.Contains(string(b), "unset OK") {
+		t.Fatalf("refresh from a doctored state:\n%s", b)
 	}
-	if err := os.Remove(p.SecretsNames()); err != nil {
-		t.Fatal(err)
+	must(t, os.WriteFile(p.SecretsState(), []byte("not json"), 0o600))
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}))
+	if st := h.readState(); len(st.Gens) != 1 {
+		t.Fatalf("state = %+v", st)
 	}
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
-		t.Fatal(err)
+}
+
+// BASH_ENV, ENV and the generation variable run the refresh; a secret by
+// one of those names keeps its file and never becomes a variable.
+func TestShellReservedNamesAreNotExported(t *testing.T) {
+	h, p, run := newHandler(t)
+	must(t, h.Write(context.Background(), []*guestdv1.Secret{
+		secret("BASH_ENV", "/tmp/mine"), secret("ENV", "e"), secret("REPOSE_ENV_GEN", "g"), secret("__repose_d", "d"), secret("A", "1"),
+	}))
+	for _, f := range []string{readEnv(t, p), string(mustRead(t, p.SecretsRefresh()))} {
+		if strings.Contains(f, "/tmp/mine") || strings.Contains(f, "ENV='e'") || strings.Contains(f, "'g'") || strings.Contains(f, "'d'") {
+			t.Fatalf("a reserved name was exported:\n%s", f)
+		}
 	}
-	if env := readEnv(t, p); !strings.Contains(env, "\nunset OLD\n") {
-		t.Fatalf("OLD is not unset:\n%s", env)
+	for _, c := range run.Calls() {
+		if strings.Contains(string(c.Stdin), "/tmp/mine") {
+			t.Fatalf("BASH_ENV pushed to tmux: %s", c.Stdin)
+		}
 	}
+	if b := mustRead(t, filepath.Join(p.SecretsDir(), "BASH_ENV")); string(b) != "/tmp/mine" {
+		t.Fatalf("file = %q", b)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	must(t, err)
+	return b
 }
 
 func TestSecretsEnvGenerationChangesOnlyWithTheContent(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
-	gen := func() string {
-		first, _, _ := strings.Cut(readEnv(t, p), "\n")
-		g, ok := strings.CutPrefix(first, "export REPOSE_SECRETS_GEN=")
-		if !ok || !genRe.MatchString(g) {
-			t.Fatalf("first line = %q", first)
-		}
-		return g
-	}
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
-		t.Fatal(err)
-	}
-	g1 := gen()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret(ReservedUserCA, "ca")}); err != nil {
-		t.Fatal(err)
-	}
-	if g := gen(); g != g1 {
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	g1 := genOf(t, p)
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret(ReservedUserCA, "ca")}))
+	if g := genOf(t, p); g != g1 {
 		t.Fatalf("the same secrets got a new generation: %s then %s", g1, g)
 	}
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}); err != nil {
-		t.Fatal(err)
-	}
-	if g := gen(); g == g1 {
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}))
+	if g := genOf(t, p); g == g1 {
 		t.Fatal("a changed value kept the generation")
+	}
+	first, _, _ := strings.Cut(string(mustRead(t, p.SecretsRefresh())), "\n")
+	if first != "# repose-env-gen "+genOf(t, p) {
+		t.Fatalf("refresh first line = %q", first)
 	}
 }
 
@@ -402,6 +412,10 @@ var trickyValues = map[string]string{
 	"SPACES":    "  two  spaces  ",
 	"UNICODE":   "café ☃",
 	"GLOB":      "*",
+	"TILDE":     "~/x",
+	"FORMAT":    "#{pane_id} %if 1 {",
+	"HIGH":      "\xff\x80 raw",
+	"CTRL":      "\x1b[0m\r\t",
 }
 
 func trickyList() []*guestdv1.Secret {
@@ -436,13 +450,9 @@ func TestSecretsEnvTrickyValuesSurviveBash(t *testing.T) {
 func TestSecretsArePushedToTmux(t *testing.T) {
 	h, p, run := newHandler(t)
 	ctx := context.Background()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "x;")}); err != nil {
-		t.Fatal(err)
-	}
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "x;")}))
 	run.Reset()
-	if err := h.Write(ctx, []*guestdv1.Secret{secret("B", "x;"), secret(ReservedUserCA, "ca")}); err != nil {
-		t.Fatal(err)
-	}
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("B", "x;\n$\"\\"), secret(ReservedUserCA, "ca")}))
 	var tmux []sysdep.RunSpec
 	for _, c := range run.Calls() {
 		if c.Argv[0] == "tmux" {
@@ -455,15 +465,14 @@ func TestSecretsArePushedToTmux(t *testing.T) {
 	if tmux[0].User != "dev" {
 		t.Errorf("tmux ran as %q, want dev", tmux[0].User)
 	}
-	first, _, _ := strings.Cut(readEnv(t, p), "\n")
-	gen := strings.TrimPrefix(first, "export REPOSE_SECRETS_GEN=")
-	want := []string{"tmux",
-		"set-environment", "-g", "B", `x\;`, ";",
-		"set-environment", "-gu", "A", ";",
-		"set-environment", "-g", "REPOSE_SECRETS_GEN", gen,
+	if strings.Join(tmux[0].Argv, " ") != "tmux source-file -" {
+		t.Fatalf("tmux argv = %q: values must not be arguments", tmux[0].Argv)
 	}
-	if strings.Join(tmux[0].Argv, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("tmux argv = %q\nwant %q", tmux[0].Argv, want)
+	want := "set-environment -g B \"x;\\012\\$\\\"\\\\\"\n" +
+		"set-environment -gu A\n" +
+		"set-environment -g REPOSE_ENV_GEN " + genOf(t, p) + "\n"
+	if string(tmux[0].Stdin) != want {
+		t.Fatalf("tmux stdin = %q\nwant %q", tmux[0].Stdin, want)
 	}
 }
 
@@ -492,44 +501,10 @@ func TestTmuxFailureDoesNotFailTheWrite(t *testing.T) {
 	}
 }
 
-// Values large enough to pass the kernel's limit for one exec are split over
-// several tmux calls, and the generation is in the last one.
-func TestTmuxPushIsBatched(t *testing.T) {
-	h, _, run := newHandler(t)
-	var list []*guestdv1.Secret
-	for i := 0; i < 12; i++ {
-		list = append(list, secret("BIG_"+string(rune('A'+i)), strings.Repeat("v", MaxValueBytes)))
-	}
-	if err := h.Write(context.Background(), list); err != nil {
-		t.Fatal(err)
-	}
-	var calls [][]string
-	for _, c := range run.Calls() {
-		if c.Argv[0] == "tmux" {
-			calls = append(calls, c.Argv)
-		}
-	}
-	if len(calls) < 3 {
-		t.Fatalf("tmux calls = %d, want the 768 KiB split", len(calls))
-	}
-	for i, argv := range calls {
-		size := 0
-		for _, a := range argv {
-			size += len(a)
-		}
-		if size > 300<<10 {
-			t.Errorf("call %d carries %d bytes", i, size)
-		}
-		hasGen := strings.Contains(strings.Join(argv, " "), "REPOSE_SECRETS_GEN")
-		if hasGen != (i == len(calls)-1) {
-			t.Errorf("call %d of %d: generation present = %v", i, len(calls), hasGen)
-		}
-	}
-}
-
-// The arguments pushTmux builds, run by a real tmux on a private socket: a
-// window started afterwards sees every tricky value byte for byte, and a
-// removed name is gone from the global environment.
+// The script pushTmux sends, sourced from stdin by a real tmux on a private
+// socket: a window started afterwards sees every tricky value byte for byte,
+// values far past tmux's 16 KiB command limit included, and a removed name
+// is gone from the global environment.
 func TestTmuxArgumentsAgainstARealTmux(t *testing.T) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
@@ -552,14 +527,23 @@ func TestTmuxArgumentsAgainstARealTmux(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command(tmux, "-S", sock, "kill-server").Run() })
 	run("set-environment", "-g", "GONE", "x")
 
-	env := envFile{unsets: []string{"GONE"}, gen: "00000000000000aa"}
+	values := map[string]string{
+		"BIG_A": strings.Repeat("a", MaxValueBytes),
+		"BIG_B": strings.Repeat("\x01\xff\n", MaxValueBytes/3),
+	}
 	for n, v := range trickyValues {
+		values[n] = v
+	}
+	env := envFile{unsets: []string{"GONE"}, gen: "00000000000000aa"}
+	for n, v := range values {
 		env.rows = append(env.rows, envRow{n, v})
 	}
-	for _, args := range tmuxBatches(env) {
-		run(args...)
+	cmd := exec.Command(tmux, "-S", sock, "-f", "/dev/null", "source-file", "-")
+	cmd.Stdin = strings.NewReader(string(tmuxScript(env)))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("source-file: %v %s", err, out)
 	}
-	for name, want := range trickyValues {
+	for name, want := range values {
 		out := filepath.Join(dir, name)
 		run("new-window", "-d", "printenv "+name+" > "+out+"; printenv GONE > "+out+".gone; echo done > "+out+".done")
 		deadline := time.Now().Add(5 * time.Second)

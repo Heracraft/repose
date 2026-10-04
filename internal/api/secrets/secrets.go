@@ -63,6 +63,21 @@ var reserved = map[string]bool{
 	"user_ca.pub":                   true,
 }
 
+// shellNames are names the guest uses to keep each command's secrets current
+// (DECISIONS I-475): BASH_ENV and ENV name the loader, REPOSE_ENV_GEN is its
+// marker. A secret by one of them would switch the refresh off, so PUT
+// refuses them; one stored before stays listable and deletable, and guestd
+// never exports it.
+var shellNames = map[string]bool{
+	"BASH_ENV":       true,
+	"ENV":            true,
+	"REPOSE_ENV_GEN": true,
+}
+
+// IsShellName reports whether name is one of the guest's shell names, which
+// PUT refuses.
+func IsShellName(name string) bool { return shellNames[name] }
+
 // ValidName reports whether a user-facing name is acceptable.
 func ValidName(name string) bool {
 	return nameRe.MatchString(name) && !reserved[name]
@@ -238,7 +253,7 @@ func (s *Store) Put(ctx context.Context, userID, projectID, name string, value [
 	if !nameRe.MatchString(name) && !s.isPlatform(projectID) {
 		return ErrInvalidName
 	}
-	if reserved[name] {
+	if reserved[name] || shellNames[name] {
 		return ErrInvalidName
 	}
 	if len(value) > MaxValueBytes && !s.isPlatform(projectID) {

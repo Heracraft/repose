@@ -61,6 +61,7 @@ var internalEnvVars = map[string]string{
 	"REPOSE_DEVSHELL_QUIET":  "set in the guest by the exec script for the dev-shell loader, never read on the laptop (exec.go)",
 	"REPOSE_TEST_GOOS":       "tests only: pretend to be another OS (goos())",
 	"REPOSE_CLAUDE_PLATFORM": "tests only: the guest's platform settings path in the Claude merge script",
+	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
 }
 
 func readCLIDoc(t *testing.T) string {

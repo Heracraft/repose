@@ -1098,6 +1098,9 @@ func (f *Fake) putSecret(w http.ResponseWriter, r *http.Request) *apiError {
 	if !secretNameRe.MatchString(name) {
 		return invalid("name: must match [A-Z][A-Z0-9_]{0,63}")
 	}
+	if name == "BASH_ENV" || name == "ENV" || name == "REPOSE_ENV_GEN" {
+		return invalid("name: %q is reserved: the machine uses it to keep each command's secrets current", name)
+	}
 	raw, err := base64.StdEncoding.DecodeString(body.Value)
 	if err != nil {
 		return invalid("value: must be base64")

@@ -30,6 +30,8 @@ SRC
   # the way an agent runs each command.
   agentParent = pkgs.writeShellScript "i475-agent-parent" ''
     printf '%s %s\n' "''${OLD_ONE-<unset>}" "''${NEW_ONE-<unset>}" > /tmp/i475.parent
+    # What the project's .envrc does after the profile: its own value.
+    export PLAIN=from-envrc
     while [ ! -e /tmp/i475.go ]; do ${pkgs.coreutils}/bin/sleep 0.1; done
     ${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/printenv NEW_ONE' > /tmp/i475.new || :
     if ${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/printenv OLD_ONE' > /tmp/i475.old; then
@@ -37,6 +39,7 @@ SRC
     else
       echo gone > /tmp/i475.oldstate
     fi
+    ${pkgs.bash}/bin/bash -c 'echo "$PLAIN $ROT"' > /tmp/i475.kept
     : > /tmp/i475.done
   '';
 in
@@ -190,16 +193,19 @@ pkgs.testers.runNixOSTest {
             {"name": "PLAIN", "value": base64.b64encode(b"simple").decode()},
         ]})
         guest.fail("test -e /run/repose/secrets/TRICKY")
-        guest.fail("grep -q 'export TRICKY=' /run/repose/secrets.env")
-        # I-475: the removed name is unset for processes that inherited it.
-        guest.succeed("grep -qx 'unset TRICKY' /run/repose/secrets.env")
-        guest.succeed("stat -c '%a %U' /run/repose/secrets.names | grep -qx '600 root'")
+        guest.fail("grep -q TRICKY /run/repose/secrets.env")
+        # I-475: the removed name is unset, guarded, for processes that
+        # inherited it.
+        guest.succeed("grep -q '|| unset TRICKY$' /run/repose/secrets.refresh")
+        guest.succeed("stat -c '%a %U' /run/repose/secrets.refresh | grep -qx '400 dev'")
+        guest.succeed("stat -c '%a %U' /run/repose/secrets.state | grep -qx '600 root'")
 
     with subtest("I-475: a long-running bash's next command sees a secret written after it started, not a removed one"):
         enc = lambda v: base64.b64encode(v.encode()).decode()
         call("write-secrets", {"secrets": [
             {"name": "PLAIN", "value": enc("simple")},
             {"name": "OLD_ONE", "value": enc("old-value")},
+            {"name": "ROT", "value": enc("r1")},
         ]})
         guest.succeed("rm -f /tmp/i475.*")
         guest.succeed(
@@ -213,6 +219,7 @@ pkgs.testers.runNixOSTest {
         call("write-secrets", {"secrets": [
             {"name": "PLAIN", "value": enc("simple")},
             {"name": "NEW_ONE", "value": enc("new;value")},
+            {"name": "ROT", "value": enc("r2")},
         ]})
         guest.succeed("touch /tmp/i475.go")
         guest.wait_for_file("/tmp/i475.done")
@@ -220,6 +227,10 @@ pkgs.testers.runNixOSTest {
         assert out == "new;value", out
         out = guest.succeed("cat /tmp/i475.oldstate").strip()
         assert out == "gone", out
+        # PLAIN, which the parent set itself, stays; ROT, held as
+        # delivered, is rotated.
+        out = guest.succeed("cat /tmp/i475.kept").strip()
+        assert out == "from-envrc r2", out
         # A user who cannot read the file gets nothing and no error, under
         # strict mode.
         out = guest.succeed(
@@ -287,16 +298,21 @@ pkgs.testers.runNixOSTest {
         call("write-secrets", {"secrets": [
             {"name": "PLAIN", "value": enc("simple")},
             {"name": "TMUX_ONE", "value": enc("tmux;")},
+            {"name": "TMUX_BIG", "value": enc("b" * 40000)},
         ]})
         out = guest.succeed("sudo -u dev tmux show-environment -g TMUX_ONE").strip()
         assert out == "TMUX_ONE=tmux;", out
+        # Past tmux's 16 KiB command limit: the values go in on stdin.
+        out = guest.succeed("sudo -u dev tmux show-environment -g TMUX_BIG").strip()
+        assert out == "TMUX_BIG=" + "b" * 40000, len(out)
         gen = guest.succeed("head -1 /run/repose/secrets.env").strip()
-        out = guest.succeed("sudo -u dev tmux show-environment -g REPOSE_SECRETS_GEN").strip()
+        out = guest.succeed("sudo -u dev tmux show-environment -g REPOSE_ENV_GEN").strip()
         assert "export " + out == gen, (out, gen)
         call("write-secrets", {"secrets": [
             {"name": "PLAIN", "value": enc("simple")},
         ]})
         guest.fail("sudo -u dev tmux show-environment -g TMUX_ONE")
+        guest.fail("sudo -u dev tmux show-environment -g TMUX_BIG")
 
     with subtest("Sample reports the tmux windows and agent states"):
         # The absolute path, because the tmux server's own PATH is the user

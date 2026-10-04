@@ -12,7 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -133,7 +133,7 @@ func (h *Handler) Write(ctx context.Context, list []*guestdv1.Secret) error {
 		return err
 	}
 	removed := len(removedNames)
-	env, err := h.writeEnv(list, removedNames)
+	env, err := h.writeEnv(list)
 	if err != nil {
 		return err
 	}
@@ -185,15 +185,46 @@ func (h *Handler) removeStale(keep map[string]bool) ([]string, error) {
 	return removed, nil
 }
 
-// genVar is the variable secrets.env sets on its first line. The BASH_ENV
-// loader (nix/guest/base/bash-env.sh) compares it with the environment it
-// inherited and sources the file only when they differ, so a command whose
-// parent already holds the current secrets keeps any value its parent set
-// for it on purpose (DECISIONS I-475).
-const genVar = "REPOSE_SECRETS_GEN"
+// genVar is the variable that records which generation of the secrets a
+// process's environment was formed from. secrets.env sets it on its first
+// line and secrets.refresh on its last; the BASH_ENV loader
+// (nix/guest/base/bash-env.sh) compares it with the refresh file's first line
+// (DECISIONS I-475). The name holds none of SECRET, KEY, TOKEN or
+// PASS, so a sandbox that drops variables matching those (Codex's default
+// shell_environment_policy) keeps it.
+const genVar = "REPOSE_ENV_GEN"
 
-// envFile is what writeEnv wrote: the exported rows, the names it unsets and
-// the generation, which pushTmux mirrors into the tmux server.
+// keepGens is how many generations secrets.refresh can bring up to date with
+// its guarded lines. A process formed from an older one is treated as one
+// that was never given a secret: it gets the names it lacks and keeps the
+// values it has (I-475).
+const keepGens = 16
+
+// shellReserved are names guestd never exports, even as a secret, because
+// they run the mechanism of I-475: BASH_ENV and ENV name the loader, and
+// genVar is its marker. The secret file is still written (I-475).
+var shellReserved = map[string]bool{"BASH_ENV": true, "ENV": true, genVar: true}
+
+// exported reports whether a named secret becomes an environment variable.
+func exported(name string) bool {
+	return !shellReserved[name] && !strings.HasPrefix(name, "__repose_")
+}
+
+// generation is one state of the exported secrets: its id and the values it
+// delivered.
+type generation struct {
+	Gen    string            `json:"gen"`
+	Values map[string][]byte `json:"values"`
+}
+
+// secretsState is /run/repose/secrets.state: the last keepGens generations,
+// oldest first, the current one last.
+type secretsState struct {
+	Gens []generation `json:"gens"`
+}
+
+// envFile is what writeEnv wrote, for pushTmux to mirror into the tmux
+// server: the exported rows, the names to drop and the generation.
 type envFile struct {
 	rows   []envRow
 	unsets []string
@@ -202,194 +233,256 @@ type envFile struct {
 
 type envRow struct{ name, value string }
 
-// writeEnv rewrites /run/repose/secrets.env from the non-reserved secrets, in
-// name order so the file does not churn. A name written since boot and absent
-// now gets an `unset NAME` line, so a process that inherited it (an agent
-// started before `repose secrets rm`) loses it in its next command. Those
-// names are kept in secrets.names, written before secrets.env, so a guestd
-// restart keeps unsetting them; removed are the names removeStale just took
-// away, which covers a guest whose names file predates I-475.
+// writeEnv records the exported secrets as a generation and rewrites the two
+// files shells read from it, in name order so they do not churn:
 //
-// The first line is `export REPOSE_SECRETS_GEN=<hex>`. It changes when the
-// rest of the file changes and only then.
-func (h *Handler) writeEnv(list []*guestdv1.Secret, removed []string) (envFile, error) {
+//   - secrets.env: `export REPOSE_ENV_GEN=<gen>` and an `export NAME='value'`
+//     line per secret. The whole current set, for whoever sources it.
+//   - secrets.refresh: what the BASH_ENV loader and /etc/profile.d/repose.sh
+//     source when a process's REPOSE_ENV_GEN is not the current one. For
+//     each name it compares the value the process holds with the value the
+//     process's generation delivered, and replaces or unsets it only when
+//     they match, so a value the process or its project's .envrc set on
+//     purpose survives a later write (I-475).
+//
+// The generation stays the same while the exported set does.
+func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
 	var out envFile
-	current := make(map[string]bool, len(list))
+	current := map[string][]byte{}
 	for _, s := range list {
-		if _, ok := reserved[s.GetName()]; ok {
+		if _, ok := reserved[s.GetName()]; ok || !exported(s.GetName()) {
 			continue
 		}
 		out.rows = append(out.rows, envRow{s.GetName(), string(s.GetValue())})
-		current[s.GetName()] = true
+		current[s.GetName()] = s.GetValue()
 	}
 	sort.Slice(out.rows, func(i, j int) bool { return out.rows[i].name < out.rows[j].name })
 
-	known, err := h.readNames()
-	if err != nil {
-		return out, err
-	}
-	for _, n := range removed {
-		known[n] = true
-	}
-	for n := range current {
-		known[n] = true
-	}
-	all := make([]string, 0, len(known))
-	for n := range known {
-		all = append(all, n)
-		if !current[n] {
-			out.unsets = append(out.unsets, n)
-		}
-	}
-	sort.Strings(all)
-	sort.Strings(out.unsets)
-	if err := sysdep.WriteFileAtomic(h.paths.SecretsNames(), []byte(strings.Join(all, "\n")+"\n"), 0o600, 0, 0); err != nil {
-		return out, sysdep.Errf(sysdep.CodeInternal, "write secret names: %w", err)
-	}
-
-	var body bytes.Buffer
-	body.WriteString("# Written by guestd. Sourced by every bash through BASH_ENV and by login shells; do not edit.\n")
-	for _, r := range out.rows {
-		fmt.Fprintf(&body, "export %s=%s\n", r.name, shellQuote(r.value))
-	}
-	for _, n := range out.unsets {
-		fmt.Fprintf(&body, "unset %s\n", n)
-	}
-
-	out.gen = h.previousGen(body.Bytes())
-	if out.gen == "" {
+	st := h.readState()
+	if n := len(st.Gens); n > 0 && sameValues(st.Gens[n-1].Values, current) {
+		out.gen = st.Gens[n-1].Gen
+	} else {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
 			return out, sysdep.Errf(sysdep.CodeInternal, "generate secrets generation: %w", err)
 		}
 		out.gen = hex.EncodeToString(b[:])
+		st.Gens = append(st.Gens, generation{Gen: out.gen, Values: current})
+		if len(st.Gens) > keepGens {
+			st.Gens = append([]generation(nil), st.Gens[len(st.Gens)-keepGens:]...)
+		}
 	}
-	file := append([]byte("export "+genVar+"="+out.gen+"\n"), body.Bytes()...)
-	if err := sysdep.WriteFileAtomic(h.paths.SecretsEnv(), file, 0o400, h.uid, h.gid); err != nil {
+	stateJSON, err := json.Marshal(st)
+	if err != nil {
+		return out, sysdep.Errf(sysdep.CodeInternal, "encode secrets state: %w", err)
+	}
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsState(), stateJSON, 0o600, 0, 0); err != nil {
+		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets state: %w", err)
+	}
+
+	known := map[string]bool{}
+	for _, g := range st.Gens {
+		for n := range g.Values {
+			known[n] = true
+		}
+	}
+	names := make([]string, 0, len(known))
+	for n := range known {
+		names = append(names, n)
+		if _, ok := current[n]; !ok {
+			out.unsets = append(out.unsets, n)
+		}
+	}
+	sort.Strings(names)
+	sort.Strings(out.unsets)
+
+	var env bytes.Buffer
+	fmt.Fprintf(&env, "export %s=%s\n", genVar, out.gen)
+	env.WriteString("# Written by guestd: the current secrets; do not edit.\n")
+	for _, r := range out.rows {
+		fmt.Fprintf(&env, "export %s=%s\n", r.name, shellQuote(r.value))
+	}
+
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsRefresh(), refreshScript(st, names, current, out.gen), 0o400, h.uid, h.gid); err != nil {
+		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets refresh file: %w", err)
+	}
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsEnv(), env.Bytes(), 0o400, h.uid, h.gid); err != nil {
 		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets env file: %w", err)
 	}
 	return out, nil
 }
 
-// readNames reads secrets.names; a missing file is an empty set (first write
-// since boot).
-func (h *Handler) readNames() (map[string]bool, error) {
-	names := map[string]bool{}
-	b, err := os.ReadFile(h.paths.SecretsNames())
-	if errors.Is(err, os.ErrNotExist) {
-		return names, nil
+// refreshScript is secrets.refresh. It is POSIX sh, runs builtins only, and
+// sets nothing but the secrets, REPOSE_ENV_GEN and two scratch variables it
+// unsets again:
+//
+//	# repose-env-gen <gen>
+//	case ${REPOSE_ENV_GEN-} in g1) __repose_g=1 ;; ... *) __repose_g=0 ;; esac
+//	case $__repose_g in 1|2) __repose_d=s'old' ;; 3) __repose_d=s'new' ;; *) __repose_d= ;; esac
+//	[ "${NAME+s$NAME}" != "$__repose_d" ] || export NAME='new'
+//	...
+//	export REPOSE_ENV_GEN=<gen>
+//
+// __repose_d is what the process's generation delivered for NAME: "s" and
+// the value, or empty when it delivered nothing (the name was not a secret
+// then, or the generation is unknown). "${NAME+s$NAME}" is the same encoding
+// of what the process holds. Only when the two match does the line export
+// the new value, or unset a removed name.
+func refreshScript(st secretsState, names []string, current map[string][]byte, gen string) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "# repose-env-gen %s\n", gen)
+	b.WriteString("# Written by guestd. Sourced by /etc/repose/bash-env.sh when REPOSE_ENV_GEN differs from the line above; do not edit.\n")
+	b.WriteString("case ${" + genVar + "-} in\n")
+	for i, g := range st.Gens {
+		fmt.Fprintf(&b, "%s) __repose_g=%d ;;\n", g.Gen, i+1)
 	}
-	if err != nil {
-		return nil, sysdep.Errf(sysdep.CodeInternal, "read secret names: %w", err)
-	}
-	for _, n := range strings.Split(string(b), "\n") {
-		// A line that is not a name is dropped rather than written into a
-		// file every shell sources.
-		if nameRe.MatchString(n) {
-			names[n] = true
+	b.WriteString("*) __repose_g=0 ;;\nesac\n")
+	for _, n := range names {
+		// The generations that delivered each value of n, by value.
+		var order []string
+		byValue := map[string][]string{}
+		for i, g := range st.Gens {
+			v, ok := g.Values[n]
+			if !ok {
+				continue
+			}
+			if _, seen := byValue[string(v)]; !seen {
+				order = append(order, string(v))
+			}
+			byValue[string(v)] = append(byValue[string(v)], fmt.Sprint(i+1))
+		}
+		b.WriteString("case $__repose_g in")
+		for _, v := range order {
+			fmt.Fprintf(&b, " %s) __repose_d=s%s ;;", strings.Join(byValue[v], "|"), shellQuote(v))
+		}
+		b.WriteString(" *) __repose_d= ;; esac\n")
+		fmt.Fprintf(&b, "[ \"${%s+s$%s}\" != \"$__repose_d\" ] || ", n, n)
+		if v, ok := current[n]; ok {
+			fmt.Fprintf(&b, "export %s=%s\n", n, shellQuote(string(v)))
+		} else {
+			fmt.Fprintf(&b, "unset %s\n", n)
 		}
 	}
-	return names, nil
+	fmt.Fprintf(&b, "export %s=%s\nunset __repose_g __repose_d\n", genVar, gen)
+	return b.Bytes()
 }
 
-// previousGen returns the generation of the secrets.env on disk when the rest
-// of it equals body, and "" otherwise.
-func (h *Handler) previousGen(body []byte) string {
-	old, err := os.ReadFile(h.paths.SecretsEnv())
+// readState reads secrets.state. A missing or unreadable one (first write
+// since boot, or a guest whose guestd predates I-475) is an empty history,
+// which only costs a process formed before it the guarded replacement.
+func (h *Handler) readState() secretsState {
+	var st secretsState
+	b, err := os.ReadFile(h.paths.SecretsState())
 	if err != nil {
-		return ""
+		return secretsState{}
 	}
-	first, rest, ok := bytes.Cut(old, []byte("\n"))
-	if !ok || !bytes.Equal(rest, body) {
-		return ""
+	if err := json.Unmarshal(b, &st); err != nil {
+		h.log.Warn("secrets state unreadable, starting a new history", "event", "write_secrets_state")
+		return secretsState{}
 	}
-	gen, ok := strings.CutPrefix(string(first), "export "+genVar+"=")
-	if !ok || !genRe.MatchString(gen) {
-		return ""
+	// Anything not shaped like what writeEnv writes is dropped rather than
+	// written into a file every shell sources.
+	gens := st.Gens[:0]
+	for _, g := range st.Gens {
+		if !genRe.MatchString(g.Gen) {
+			continue
+		}
+		for n := range g.Values {
+			if !nameRe.MatchString(n) || !exported(n) {
+				delete(g.Values, n)
+			}
+		}
+		gens = append(gens, g)
 	}
-	return gen
+	st.Gens = gens
+	return st
+}
+
+func sameValues(a, b map[string][]byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for n, v := range a {
+		w, ok := b[n]
+		if !ok || !bytes.Equal(v, w) {
+			return false
+		}
+	}
+	return true
 }
 
 var genRe = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// pushTmux mirrors the file into dev's tmux server's global environment, so a
-// new window starts with the current secrets even when its shell is not bash
-// (DECISIONS I-475). No tmux server is the normal state before SetupProject,
-// and any failure here is logged and ignored: the secrets are on the tmpfs and
-// the BASH_ENV loader picks them up regardless.
+// pushTmux mirrors the current set into dev's tmux server's global
+// environment, so a new window starts with it even when its shell is not
+// bash (DECISIONS I-475). No tmux server is the normal state before
+// SetupProject, and any failure here is logged and ignored: the secrets are
+// on the tmpfs and the BASH_ENV loader picks them up regardless.
 //
-// The values travel as tmux arguments. tmux reads an argument ending in ';' as
-// the end of a command, and "\;" at the end as a literal ';' (cmd-parse.y,
-// cmd_parse_from_arguments), so such a value gets a backslash before its last
-// byte. The generation goes in the last command, after every value, so a
-// failure part way leaves tmux with an old generation and the loader still
-// reloads.
+// The commands go to `tmux source-file -` on stdin, never as arguments: an
+// argument is readable by every user in /proc/<pid>/cmdline, and the tmux
+// client refuses a command longer than 16 KiB (I-476). The generation is the
+// last command, so a failure part way leaves tmux with an old generation and
+// the loader still refreshes.
 func (h *Handler) pushTmux(ctx context.Context, env envFile) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	for _, args := range tmuxBatches(env) {
-		res, err := h.run.Run(ctx, sysdep.RunSpec{
-			Argv:      append([]string{"tmux"}, args...),
-			User:      "dev",
-			Env:       sysdep.DevEnv(h.paths, "dev"),
-			MaxOutput: 4 << 10,
-		})
-		switch {
-		case err != nil:
-			h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "error_code", sysdep.CodeOf(err))
-			return
-		case res.ExitCode != 0:
-			// stderr is not logged: tmux may echo an argument back.
-			if !strings.Contains(string(res.Stderr), "no server running") &&
-				!strings.Contains(string(res.Stderr), "error connecting") {
-				h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "exit_code", res.ExitCode)
-			}
-			return
+	res, err := h.run.Run(ctx, sysdep.RunSpec{
+		Argv:      []string{"tmux", "source-file", "-"},
+		Stdin:     tmuxScript(env),
+		User:      "dev",
+		Env:       sysdep.DevEnv(h.paths, "dev"),
+		MaxOutput: 4 << 10,
+	})
+	switch {
+	case err != nil:
+		h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "error_code", sysdep.CodeOf(err))
+	case res.ExitCode != 0:
+		// stderr is not logged: tmux may echo a line back.
+		if !strings.Contains(string(res.Stderr), "no server running") &&
+			!strings.Contains(string(res.Stderr), "error connecting") {
+			h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "exit_code", res.ExitCode)
 		}
 	}
 }
 
-// tmuxBatches turns env into tmux argument lists of about 256 KiB each, under
-// the kernel's limit for one exec, commands joined by ";". The generation is
-// the last command of the last batch.
-func tmuxBatches(env envFile) [][]string {
-	var cmds [][]string
+// tmuxScript is the tmux configuration pushTmux sources: one
+// set-environment line per secret, one -gu line per removed name, and the
+// generation last.
+func tmuxScript(env envFile) []byte {
+	var b bytes.Buffer
 	for _, r := range env.rows {
-		cmds = append(cmds, []string{"set-environment", "-g", r.name, tmuxArg(r.value)})
+		fmt.Fprintf(&b, "set-environment -g %s %s\n", r.name, tmuxQuote(r.value))
 	}
 	for _, n := range env.unsets {
-		cmds = append(cmds, []string{"set-environment", "-gu", n})
+		fmt.Fprintf(&b, "set-environment -gu %s\n", n)
 	}
-	cmds = append(cmds, []string{"set-environment", "-g", genVar, env.gen})
-
-	const batchBytes = 256 << 10
-	var batches [][]string
-	var cur []string
-	size := 0
-	for _, c := range cmds {
-		n := 0
-		for _, a := range c {
-			n += len(a) + 1
-		}
-		if len(cur) > 0 && size+n > batchBytes {
-			batches = append(batches, cur)
-			cur, size = nil, 0
-		}
-		if len(cur) > 0 {
-			cur = append(cur, ";")
-		}
-		cur = append(cur, c...)
-		size += n
-	}
-	return append(batches, cur)
+	fmt.Fprintf(&b, "set-environment -g %s %s\n", genVar, env.gen)
+	return b.Bytes()
 }
 
-// tmuxArg keeps a value ending in ';' from being read as a command separator.
-func tmuxArg(v string) string {
-	if strings.HasSuffix(v, ";") {
-		return v[:len(v)-1] + `\;`
+// tmuxQuote writes v as one double-quoted tmux configuration token on one
+// line. Inside double quotes tmux expands $ and a leading ~, and reads \ as
+// an escape (cmd-parse.y), so \, " and $ get a backslash, and ~ and every
+// byte outside printable ASCII, a newline included, become a three-digit
+// octal escape. TestTmuxArgumentsAgainstARealTmux holds each case.
+func tmuxQuote(v string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case c == '"' || c == '\\' || c == '$':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c >= 0x20 && c < 0x7e: // 0x7e is ~, which tmux expands to $HOME
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "\\%03o", c)
+		}
 	}
-	return v
+	b.WriteByte('"')
+	return b.String()
 }
 
 // shellQuote single-quotes a value, escaping an embedded quote as '\” so a

@@ -4,7 +4,7 @@
 # /etc/pam/environment (the SSH session and dev's systemd user manager, so
 # user units and the tmux server it starts). TZ and REPOSE_PROJECT come
 # from /etc/repose/env (written by guestd at SetupProject) and named
-# secrets from /run/repose/secrets.env, both sourced by
+# secrets from /run/repose/secrets.refresh, both sourced by
 # /etc/profile.d/repose.sh, which also exports DISPLAY while the desktop
 # is up. That file is sourced from every shell through extraInit so login
 # and interactive shells behave the same. A non-interactive bash (how an
@@ -52,7 +52,13 @@ in
       . /etc/repose/env
       set +a
     fi
-    if [ -r /run/repose/secrets.env ]; then
+    # Secrets through the same guarded refresh as BASH_ENV (I-475): a
+    # shell with no secrets gets them all, and a value its parent set on
+    # purpose stays. secrets.env alone is a guest whose secrets an older
+    # guestd wrote.
+    if [ -r /run/repose/secrets.refresh ]; then
+      . /etc/repose/bash-env.sh
+    elif [ -r /run/repose/secrets.env ]; then
       . /run/repose/secrets.env
     fi
     # DISPLAY only while the on-demand desktop's X server is up.
