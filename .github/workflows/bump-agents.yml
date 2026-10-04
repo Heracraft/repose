@@ -1,6 +1,13 @@
 # Daily: bump the agent overlay to upstream's latest releases and open a PR
 # (docs/workstreams/12-nix-config-pipeline.md "Agent overlay"). Merging the
 # PR changes no guest until `repose-admin base publish`.
+#
+# Two jobs (DECISIONS I-428). `build` downloads, builds and runs the new
+# agents, so it holds a read-only token, keeps no credentials in .git, and
+# runs each binary with an empty environment. `pr` holds the write token and
+# runs nothing `build` downloaded: it checks the versions.json artifact
+# (scripts/bump-agents-pr.sh) and commits it on a branch for review.
+# Actions are pinned by commit (DECISIONS I-429).
 
 name: bump-agents
 
@@ -9,30 +16,67 @@ on:
     - cron: "17 5 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
-  bump:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          persist-credentials: false
       # v31 installs a current Nix. v27 brings 2.22, which cannot update a
       # lock holding the relative fragment-placeholder path input once the
       # bump has made the tree dirty (failed daily from 2026-09-21).
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+      - name: bump and build
+        id: bump
+        env:
+          # Read-only; only for api.github.com's rate limit. The agents run
+          # under env -i and never see it.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          scripts/bump-agents.sh
+          if git diff --quiet -- nix/overlay/agents/versions.json; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.bump.outputs.changed == '1'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: versions
+          path: nix/overlay/agents/versions.json
+          retention-days: 3
+          if-no-files-found: error
+
+  pr:
+    needs: build
+    if: needs.build.outputs.changed == '1'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Credentials stay in .git for the branch push. Nothing in this job
+      # executes what `build` downloaded.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: versions
+          path: ${{ runner.temp }}/bump
       - name: git identity
         run: |
           git config user.name "repose-bot"
           git config user.email "repose-bot@users.noreply.github.com"
-      - name: bump, build, open PR
+      - name: check and open PR
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/bump-agents.sh --pr
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/bump-agents-pr.sh "$RUNNER_TEMP/bump/versions.json"

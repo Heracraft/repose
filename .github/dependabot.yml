@@ -1,0 +1,8 @@
+# Actions are pinned by commit (DECISIONS I-429). Dependabot proposes the
+# new commit and version comment as a PR; a person reviews and merges it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -4,27 +4,28 @@
 #
 # For each agent in nix/overlay/agents/versions.json: ask upstream for its
 # latest version, prefetch the release asset, rewrite the entry, build the
-# package and run `<agent> --version`. With --pr, commit the change on a
-# branch and open a pull request titled like
-# "agents: claude-code 2.1.278, codex 0.155.1". Merging the PR changes no
-# guest until `repose-admin base publish`.
+# package and run `<agent> --version` with an empty environment. It leaves
+# the rewritten versions.json in the tree and commits nothing:
+# scripts/bump-agents-pr.sh checks that file and opens the pull request,
+# in a separate CI job that runs nothing this script downloaded
+# (DECISIONS I-428). Merging the PR changes no guest until
+# `repose-admin base publish`.
 #
-# Needs: bash, curl, jq, nix (flakes), git; gh for --pr.
-# Usage: scripts/bump-agents.sh [--pr] [--only <agent>[,<agent>]] [--check]
+# Needs: bash, curl, jq, nix (flakes), git.
+# Usage: scripts/bump-agents.sh [--only <agent>[,<agent>]] [--check]
 #   --check   only report which agents are behind; exit 2 if any
 set -euo pipefail
 
 root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 versions="$root/nix/overlay/agents/versions.json"
-pr=0
 check=0
 only=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --pr) pr=1 ;;
+    --pr) echo "$0: --pr moved to scripts/bump-agents-pr.sh (DECISIONS I-428)" >&2; exit 64 ;;
     --check) check=1 ;;
     --only) only="$2"; shift ;;
-    *) echo "usage: $0 [--pr] [--check] [--only a,b]" >&2; exit 64 ;;
+    *) echo "usage: $0 [--check] [--only a,b]" >&2; exit 64 ;;
   esac
   shift
 done
@@ -153,23 +154,12 @@ for c in "${changed[@]}"; do
   # just edited) are still included.
   out=$(nix build --no-link --print-out-paths "git+file://$root?dir=nix#$attr")
   echo "$a: built $out"
-  HOME=$(mktemp -d) "$out/bin/$b" --version
+  # The one place a downloaded binary runs. env -i: it sees no token or
+  # other variable of the caller, only a scratch HOME and PATH.
+  env -i HOME="$(mktemp -d)" PATH="$PATH" "$out/bin/$b" --version
   if [ "$a" = codex ]; then
     test -x "$out/bin/codex-code-mode-host"
   fi
 done
 
-title="agents: $(printf '%s, ' "${changed[@]}" | sed 's/, $//')"
-echo "$title"
-
-if [ "$pr" = 1 ]; then
-  branch="bump/agents-$(date -u +%Y%m%d)"
-  git -C "$root" checkout -B "$branch"
-  git -C "$root" add nix/overlay/agents/versions.json
-  git -C "$root" commit -m "$title" -m "Automated by scripts/bump-agents.sh. Merging changes no guest until repose-admin base publish (docs/workstreams/12-nix-config-pipeline.md)."
-  git -C "$root" push -f origin "$branch"
-  gh pr create --repo "$(git -C "$root" remote get-url origin | sed -E 's#.*github.com[:/]##; s#\.git$##')" \
-    --head "$branch" --base main --title "$title" \
-    --body "Automated bump. Each package built and printed its version in CI; merging changes no guest until \`repose-admin base publish\`." \
-    || gh pr edit "$branch" --title "$title"
-fi
+echo "agents: $(printf '%s, ' "${changed[@]}" | sed 's/, $//')"

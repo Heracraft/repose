@@ -1,27 +1,89 @@
 # Cuts a CLI release from a tag: `git tag v0.1.0 && git push origin v0.1.0`.
-# GoReleaser builds the four targets in .goreleaser.yaml, uploads the
-# archives and checksums.txt to a GitHub release, and install.sh (served at
-# https://repose.herakraft.co/install.sh) resolves "latest" to that tag.
+# GoReleaser builds the four targets in .goreleaser.yaml and uploads the
+# archives and checksums.txt to a draft release. The `sign` job then checks
+# the archives against checksums.txt, signs checksums.txt with the release
+# key (checksums.txt.sig), attests the archives' build provenance and
+# publishes the draft (DECISIONS I-430). A draft is not "latest", so
+# install.sh (served at https://repose.herakraft.co/install.sh) never sees
+# a release before it is signed, and it refuses one whose signature does
+# not verify against the public key it embeds.
 # The matrix build itself is exercised on every push by ci.yml's
 # cli-goreleaser job (--snapshot); this workflow only publishes.
+# Actions and GoReleaser are pinned (DECISIONS I-429).
 name: release
 on:
   push:
     tags: ["v*"]
-permissions:
-  contents: write
+permissions: {}
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
         with:
-          version: "~> v2"
+          version: v2.18.2
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+  sign:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    # The signing key is a secret of this environment, which the owner
+    # limits to v* tags; no other workflow or job can read it.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: download the draft's assets and check them
+        run: |
+          mkdir dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern checksums.txt --pattern 'repose_*.tar.gz'
+          cd dist
+          set -- repose_*.tar.gz
+          test "$#" -eq 4
+          test "$(wc -l < checksums.txt)" -eq 4
+          sha256sum -c checksums.txt
+      - name: sign checksums.txt
+        env:
+          REPOSE_RELEASE_SIGNING_KEY: ${{ secrets.REPOSE_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$REPOSE_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::REPOSE_RELEASE_SIGNING_KEY is not set in the release environment; the draft stays unpublished"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/release-signing-key.pem"
+          (umask 077 && printf '%s\n' "$REPOSE_RELEASE_SIGNING_KEY" > "$key")
+          openssl dgst -sha256 -sign "$key" -out dist/checksums.txt.sig dist/checksums.txt
+          rm -f "$key"
+          # Against the public key install.sh carries, so a release that
+          # install.sh would refuse is never published.
+          sed -n "/^RELEASE_PUBKEY='/,/END PUBLIC KEY/p" install.sh \
+            | sed "s/^RELEASE_PUBKEY='//; s/'\$//" > "$RUNNER_TEMP/release.pub.pem"
+          openssl dgst -sha256 -verify "$RUNNER_TEMP/release.pub.pem" \
+            -signature dist/checksums.txt.sig dist/checksums.txt
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist/repose_*.tar.gz
+      - name: upload the signature and publish
+        run: |
+          gh release upload "$TAG" dist/checksums.txt.sig --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"

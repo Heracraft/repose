@@ -148,6 +148,20 @@ Rules that hold regardless of convenience. Each names its failure.
   an unrecorded access to tenant data.
 - **Certificates expire in 24 hours** and the gateway checks revocation.
   A longer lifetime makes a stolen laptop a longer problem.
+- **Code from outside the repository never runs next to a write token.**
+  A workflow job that downloads and runs upstream code (the daily agent
+  bump) holds a read-only token, keeps no credentials in `.git` and runs the
+  binaries with an empty environment; the job that commits runs nothing it
+  downloaded, and its result is a pull request a person reviews (DECISIONS
+  I-428). Every action is pinned to a commit and every tool to a version
+  (I-429). A shortcut that gives the downloading job `contents: write` puts
+  a path to `main`, and so to production, in an upstream release.
+- **install.sh installs only a release it can verify.** A release's
+  `checksums.txt` is signed by the release workflow's `sign` job with a key
+  only that job's environment holds; install.sh embeds the public half and
+  refuses a missing or failing signature, and pins the checksums of the
+  releases cut before signing (I-430). A checksum fetched from the same
+  place as the archive proves only that the download finished.
 - **`security_type = Standard` and Intel hosts.** Not security in itself,
   but a Trusted Launch host silently has no `/dev/kvm`, and a fallback to
   containers "just for now" would collapse boundary 1.
@@ -264,7 +278,12 @@ Written down so nobody believes otherwise.
   user; no upstream DDoS protection beyond what Azure gives a public IP.
 - **Supply chain of the agent overlay.** Agents are repackaged from
   upstream binary releases with pinned hashes; there is no independent
-  verification of upstream builds.
+  verification of upstream builds. The hash is what upstream served when
+  the bump ran; the bump PR's review is the check, and the bump job holds
+  no write access (I-428).
+- **A forged `main`.** install.sh and its signing public key are served by
+  the site `main` deploys, so whoever can push to `main` can change both.
+  The `main` ruleset (owner's setting, I-428) is what stops that.
 - **A tenant's agent misusing the tenant's own tool logins.** Inside the
   guest, gh and Codex tokens are readable by any process as `dev`. That is
   the same exposure as on the tenant's laptop.

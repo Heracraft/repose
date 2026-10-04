@@ -33,8 +33,10 @@ guest without breaking the ones that asked to be left alone.
   `codex`, `gemini-cli`, `pi-coding-agent` that fetch upstream release
   binaries by version and hash (`versions.json`), plus the npm MCP
   servers; a `scripts/bump-agents.sh` that reads upstream release feeds,
-  updates `versions.json` with new hashes, builds, and opens a PR; a GitHub
-  Actions workflow running it daily. The overlay is also pushed to a
+  updates `versions.json` with new hashes and builds; a
+  `scripts/bump-agents-pr.sh` that checks the result and opens a PR; a
+  GitHub Actions workflow running them daily in two jobs, the first with no
+  write access (DECISIONS I-428). The overlay is also pushed to a
   binary cache (Cachix or an S3-compatible bucket served by `nix-serve` on
   the Coolify VM; decision recorded at implementation as I-n) so hosts do
   not rebuild it.
@@ -292,8 +294,10 @@ that file, with `autoPatchelfHook` where binaries are dynamically linked
 binary; opencode is a Go/bun binary). `scripts/bump-agents.sh` queries each
 upstream (npm registry for Claude Code's manifest, GitHub releases for the
 rest), prefetches, rewrites `versions.json`, runs `nix build .#<agent>` and
-`<agent> --version`, and opens a PR titled `agents: claude-code 2.1.273,
-codex 0.155.0`. Merging the PR does nothing to guests until `base publish`.
+`<agent> --version` with an empty environment. In a second CI job, one
+that runs none of the downloaded code, `scripts/bump-agents-pr.sh` checks
+that only values changed and opens a PR titled `agents: claude-code 2.1.273,
+codex 0.155.0` (DECISIONS I-428). Merging the PR does nothing to guests until `base publish`.
 
 ## 6. Failure modes
 

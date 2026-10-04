@@ -33,8 +33,8 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - run: go build ./...
@@ -51,30 +51,32 @@ jobs:
           go run ./cmd/repose-admin db verify
       # Built from source with the same toolchain go.mod pins; the prebuilt
       # action binaries lag the Go release and refuse newer go.mod versions.
-      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      # An exact version, bumped by hand (DECISIONS I-429).
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
       - run: golangci-lint run ./...
 
   proto:
     name: buf lint and breaking
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: bufbuild/buf-action@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
         with:
           lint: true
           breaking: ${{ github.event_name == 'pull_request' }}
           breaking_against: https://github.com/${{ github.repository }}.git#branch=main
           push: false
+          version: 1.73.0
 
   nix:
     name: nix flake check (evaluate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Pinned to the dev box's Nix: relative path inputs (the fragment
       # placeholder, DECISIONS I-28) are locked as "./..." entries that older
       # releases reject as unlocked.
-      - uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           install_url: https://releases.nixos.org/nix/nix-2.35.2/install
           extra_nix_config: |
@@ -86,7 +88,7 @@ jobs:
         run: nix build --no-link "git+file://$GITHUB_WORKSPACE?dir=nix#guestd" "git+file://$GITHUB_WORKSPACE?dir=nix#hostd"
       # The fragment pipeline's real-Nix corpus (docs/interfaces/nix-build-contract.md
       # "Fixtures and the test corpus") and the menu's full-catalog evaluation.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: real-nix corpus
@@ -105,22 +107,23 @@ jobs:
         if: env.CACHIX_AUTH_TOKEN != '' && github.ref == 'refs/heads/main'
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        # cachix from the flake's locked nixpkgs, not the registry's.
         run: |
-          nix profile install nixpkgs#cachix
+          nix profile install --inputs-from "git+file://$GITHUB_WORKSPACE?dir=nix" nixpkgs#cachix
           nix build --print-out-paths --no-link ./nix#claude-code ./nix#opencode ./nix#codex ./nix#gemini-cli ./nix#pi-coding-agent ./nix#chrome-devtools-mcp ./nix#playwright-mcp             | cachix push repose
 
   cli-goreleaser:
     name: cli GoReleaser matrix build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
         with:
-          version: "~> v2"
+          version: v2.18.2
           args: build --snapshot --clean
       - name: assert all four targets built
         run: |
@@ -133,8 +136,8 @@ jobs:
     name: nix run .#repose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           install_url: https://releases.nixos.org/nix/nix-2.35.2/install
           extra_nix_config: |
@@ -148,8 +151,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: build and package a fake release, like GoReleaser would
@@ -161,13 +164,34 @@ jobs:
           go build -ldflags "-s -w -X main.version=v0.0.0-ci" -o /tmp/fake-release/repose ./cmd/repose
           tar -czf "/tmp/fake-release/repose_v0.0.0-ci_${os}_${arch}.tar.gz" -C /tmp/fake-release repose
           (cd /tmp/fake-release && shasum -a 256 "repose_v0.0.0-ci_${os}_${arch}.tar.gz" > checksums.txt)
+          # Signed with a throwaway key, as release.yml signs with the real
+          # one (DECISIONS I-430); install.sh takes the test key only with
+          # REPOSE_INSTALL_BASE_URL set.
+          openssl ecparam -name prime256v1 -genkey -noout -out /tmp/ci-release-key.pem
+          openssl ec -in /tmp/ci-release-key.pem -pubout -out /tmp/ci-release-key.pub.pem
+          openssl dgst -sha256 -sign /tmp/ci-release-key.pem -out /tmp/fake-release/checksums.txt.sig /tmp/fake-release/checksums.txt
       - name: serve it locally
         run: |
           cd /tmp/fake-release && nohup python3 -m http.server 8791 > /tmp/http.log 2>&1 &
           sleep 1
+      - name: install.sh refuses an unsigned or tampered release
+        env:
+          REPOSE_INSTALL_BASE_URL: http://127.0.0.1:8791
+          REPOSE_INSTALL_PUBKEY: /tmp/ci-release-key.pub.pem
+        run: |
+          cd /tmp/fake-release
+          mv checksums.txt.sig sig.keep
+          if sh "$GITHUB_WORKSPACE/install.sh" --version v0.0.0-ci; then echo "installed without a signature"; exit 1; fi
+          mv sig.keep checksums.txt.sig
+          cp checksums.txt sums.keep
+          echo "0000000000000000000000000000000000000000000000000000000000000000  other.tar.gz" >> checksums.txt
+          if sh "$GITHUB_WORKSPACE/install.sh" --version v0.0.0-ci; then echo "installed with a tampered checksums.txt"; exit 1; fi
+          mv sums.keep checksums.txt
+          test ! -e "$HOME/.local/bin/repose"
       - name: install.sh --version v0.0.0-ci
         env:
           REPOSE_INSTALL_BASE_URL: http://127.0.0.1:8791
+          REPOSE_INSTALL_PUBKEY: /tmp/ci-release-key.pub.pem
         run: sh install.sh --version v0.0.0-ci
       - name: repose version prints the tag
         run: |
@@ -178,8 +202,8 @@ jobs:
     name: shell completions load in bash, zsh, fish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - run: sudo apt-get update && sudo apt-get install -y zsh fish
@@ -192,8 +216,8 @@ jobs:
     name: alert rules, dashboards
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           # The same pin as the nix job above, so CI runs one Nix.
           install_url: https://releases.nixos.org/nix/nix-2.35.2/install
@@ -209,13 +233,13 @@ jobs:
     name: dashboard unit + e2e tests, Docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - run: pnpm install --frozen-lockfile
@@ -240,15 +264,15 @@ jobs:
       # scores above 90.
       - name: lighthouse accessibility
         run: |
-          npm i -g lighthouse@13
+          npm i -g lighthouse@13.5.0
           pnpm --filter web exec playwright test --config playwright.a11y.config.ts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: lighthouse-reports

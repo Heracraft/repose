@@ -11029,3 +11029,83 @@ Test: docs.spec.ts "an experimental page says so under its title".
 Checked at 1440 and 390, light and dark. *Rejected:* moving the five
 packages to devDependencies (adapter-node bundles those; it fixes today's
 five and not the next one added to dependencies).
+
+**I-428. Agent bumps run downloaded binaries in a job with no write access.**
+The daily bump-agents workflow builds each new agent release and runs
+`<agent> --version` to prove it starts. That binary is upstream code that
+nobody has reviewed yet, and it ran in the same job that held a token with
+`contents: write` in its environment and in `.git/config`. The workflow is
+now two jobs. `build` has `contents: read`, checks out with
+`persist-credentials: false`, and runs `scripts/bump-agents.sh`, which no
+longer commits or pushes and starts each agent under `env -i` with only a
+scratch `HOME` and `PATH`. It uploads the rewritten `versions.json` as an
+artifact. `pr` holds `contents: write` and `pull-requests: write`, runs no
+Nix and nothing `build` downloaded, and hands the artifact to
+`scripts/bump-agents-pr.sh`. That script accepts the file only when it has
+the same entries as the committed one and only values changed: version
+strings, `https` URLs on downloads.claude.ai, github.com or
+registry.npmjs.org, and `sha256-` SRI hashes. It then commits it on a
+`bump/agents-<date>` branch and opens the PR, which a person reviews before
+it reaches `main`. `scripts/bump-agents.sh --pr` is gone and says where it
+moved. Tests: `test/supplychain` (`TestBumpAgentsRunsDownloadsWithoutWriteAccess`,
+`TestBumpAgentsPRAcceptsOnlyValueChanges`). *Not done here:* checking
+upstream provenance (npm provenance, GitHub attestations) before recording
+a hash; the hash is still whatever upstream served at bump time.
+*Owner:* protect `main` with a ruleset (pull request with one approval, no
+force push, no deletion, `github-actions[bot]` not on the bypass list),
+because `main` deploys api, api-grpc and web on every push (I-112).
+
+**I-429. CI pins every action to a commit and every tool to a version.**
+A tag such as `actions/checkout@v4` can be moved by whoever controls that
+repository, and `go install ...@latest` or GoReleaser `~> v2` run whatever
+was released last. In jobs that hold a write token or a signing key that is
+code from outside the repository running with our credentials. Every
+`uses:` in `.github/workflows/` is now `owner/repo@<40-hex commit> # vX.Y.Z`;
+`.github/dependabot.yml` proposes new commits weekly as PRs. GoReleaser is
+`v2.18.2`, golangci-lint `v2.14.0`, buf `1.73.0`, Lighthouse `13.5.0`, and
+the Cachix CLI comes from the flake's locked nixpkgs instead of the
+registry. Workflow-level permissions are read-only or empty everywhere;
+`infra.yml`'s `id-token: write` moved to the `plan` job, the only one that
+exchanges it for Azure credentials. Tests: `test/supplychain`
+(`TestActionsArePinnedByCommit`, `TestToolsHaveExactVersions`,
+`TestNoWorkflowGrantsWriteToEveryJob`). *Owner:* turn on "Require actions
+to be pinned to a full-length commit SHA" in the repository's Actions
+settings, so a new workflow cannot skip the pin.
+
+**I-430. CLI releases sign checksums.txt; install.sh refuses a release it cannot verify.**
+install.sh checked the archive against `checksums.txt` from the same
+release, which guards against a broken download and nothing more: whoever
+can upload one file can upload both. A release now goes through two jobs.
+GoReleaser uploads to a draft (`release.draft: true`), which is never
+`releases/latest`. The `sign` job, in the `release` environment that holds
+`REPOSE_RELEASE_SIGNING_KEY` (an ECDSA P-256 private key, PEM), downloads
+the draft's assets, checks the four archives against `checksums.txt`,
+signs it with `openssl dgst -sha256 -sign` into `checksums.txt.sig`,
+verifies that signature against the public key install.sh embeds,
+attests the archives' build provenance (`actions/attest-build-provenance`,
+so `gh attestation verify` works too), uploads the signature and publishes
+the draft. A missing secret fails the job and the draft stays unpublished.
+
+install.sh embeds the public key. For a release it does not pin, it needs
+`openssl`, downloads `checksums.txt.sig` and refuses to install when the
+file is missing or does not verify. Releases v0.1.0 to v0.1.27, cut before
+signing, have no signature; install.sh pins the SHA-256 of each one's
+`checksums.txt` as published and refuses one that differs, so
+`--version v0.1.11` keeps working and stays checked. P-256 with `openssl
+dgst` was chosen because the LibreSSL in macOS and the OpenSSL in Linux
+distributions both verify it; the LibreSSL 3.3 that macOS ships has no
+Ed25519 in its command line tool, and minisign or cosign would be a tool the user has to install first. For
+tests, `REPOSE_INSTALL_PUBKEY` replaces the key, and only when
+`REPOSE_INSTALL_BASE_URL` is set. Tests: `test/supplychain`
+(`TestInstallShRequiresASignedChecksumsFile`,
+`TestInstallShPinsReleasesBeforeSigning`,
+`TestReleaseIsSignedBeforePublishing`) and ci.yml's `cli-install` job,
+which signs its fake release and checks the refusals on Linux and macOS.
+Rotating the key: `docs/ops/RELEASE.md` "The release signing key".
+*Limits:* install.sh and the key are served from the site that `main`
+deploys, so this stops a forged release, not a forged `main` (I-428's
+ruleset covers that). GoReleaser and the signer share a workflow run; a
+compromised GoReleaser could still change the archives before they are
+signed (I-429's pin narrows that). *Owner:* create the `release`
+environment limited to `v*` tags, store the key as its secret, and turn on
+immutable releases and a tag ruleset for `v*`.

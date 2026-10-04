@@ -20,16 +20,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   check:
     name: fmt, validate, policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
         with:
           tofu_version: "1.12.6"
 
@@ -67,15 +66,19 @@ jobs:
     # Azure credentials are federated to this repository's OIDC identity; where
     # they are absent the job is skipped rather than failing the build.
     if: ${{ vars.AZURE_CLIENT_ID != '' }}
+    # Only this job exchanges an OIDC token for Azure credentials.
+    permissions:
+      contents: read
+      id-token: write
     env:
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
         with:
           tofu_version: "1.12.6"
 
