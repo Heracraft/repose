@@ -11029,3 +11029,89 @@ Test: docs.spec.ts "an experimental page says so under its title".
 Checked at 1440 and 390, light and dark. *Rejected:* moving the five
 packages to devDependencies (adapter-node bundles those; it fixes today's
 five and not the next one added to dependencies).
+
+**I-460. An abuse hold covers every copy of the held project.**
+(security release, 2026-10-03) The I-239 hold kept a held project from
+starting, and a restore or fork that starts its copy was refused, but a
+copy made with `start: false` was a new project with no abuse record of
+its own, so it could be started later and the operator review I-239
+promises never happened. The hold now refuses every copy of a held
+project, started or not: `POST /projects/restore`,
+`POST /projects/:id/snapshots/:sid/restore` with `as_new_project`, and
+`POST /projects/:id/fork` answer `403 forbidden` with
+`detail.reason = "abuse_hold"` whatever `start` says. An in-place restore
+that does not start stays allowed: the project keeps its own hold, and a
+held user can still roll a volume back while waiting for review. Test:
+`TestMinerStopsGuestAndThirdStrikeHoldsStarts` (every unstarted copy route
+refused, no project created). *Rejected:* copying the source's hold
+rows onto the copy (a second set of rows to clear, and an operator
+clearing one would leave the other).
+
+**I-461. A failed restore leaves no stale guest address and no volume to boot.**
+(security release, 2026-10-03) An in-place restore destroys the old guest
+first, and hostd releases its address then, but the api cleared
+`projects.guest_ip` only when it sent the Restore. A restore that failed
+in between (no capacity, a deleted snapshot, a failed build) left the
+project holding an address the host could give the next guest, and two
+live rows with one address make the edge's hook lookup fail for the new
+guest. Now:
+
+- The destroy_guest result of a restore clears `guest_id`, `guest_ip` and
+  `vsock_cid` at once. A `not_found` from that destroy (the guest a
+  restore replaces was never recorded, after a restore that failed before
+  hostd wrote its state) counts as done, so the restore can be run again.
+- On Hello, a project in `error` whose guest the host does not report,
+  with no open op, lets go of its address (rows left before this fix).
+  Its guest id stays.
+- hostd removes the volume of a restore that failed, and a restore run
+  again on the same guest id starts on a fresh volume, so no half-written
+  volume is left to boot.
+- `POST /projects/:id/start` on a project whose newest create or restore
+  is a restore that failed before its guest was ready answers
+  `409 conflict` with `detail.reason = "restore_unfinished"`, naming the
+  restore. Before, a start of such a project either failed at the host
+  or would have booted an empty volume. A restore that failed only in
+  its start phase restored the volume and is not refused.
+
+Tests: `TestFailedInPlaceRestoreReleasesTheGuest`,
+`TestRestoreFailingAfterDestroyReleasesTheGuest`,
+`TestHelloReleasesAddressOfAMissingGuest`, and the failed-restore volume
+check in `TestSnapshotRestoreRoundTrip`. *Rejected:* scoping the edge's
+lookup by host (the edge sends only the source address, and the stale row
+was the bug).
+
+**I-462. Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing.**
+(security release, 2026-10-03) features/snapshots.md said a snapshot was
+verified by checksum and a restore checked one; nothing did. Now hostd
+hashes the bytes it hands the store while uploading, checks that the
+store holds that many bytes, and returns the hex SHA-256 in
+`SnapshotResult`, `StopResult` and `SnapshotDone` (`sha256`, new). The
+api keeps it in `snapshots.sha256` (migration 0012) and sends it in
+`Restore.sha256`. hostd reads the blob's version (the ETag), downloads
+that version once to hash it, and refuses the restore with
+`internal: snapshot checksum mismatch` before any guest state or volume
+exists when it differs. The write then reads the same version, pinned
+per range, and is hashed again; a difference there fails the restore and
+removes the volume. So the bytes a restore writes match what the host
+uploaded, and a holder of the snapshot store's write access (the shared
+Blob identity, SECURITY.md "Not mitigated") cannot get altered bytes
+into a tenant's machine. The `Blob` interface gains `Stat` (size and
+version, replacing `Exists`) and a version argument on `Download`.
+
+Compatibility, for one release: a `Restore` without `sha256` (an older
+api, or a snapshot row from before this entry) restores unchecked, and an
+older hostd ignores the field; a result without `sha256` (an older hostd)
+writes a row with none. Rows from before 0012 have no digest and restore
+unchecked until they expire; a project stopped for months keeps such a
+snapshot. The extra download costs about what the restore's own download
+does (eight parallel ranges took 1.4 s for a 902 MB snapshot on host-01,
+I-403). Tests: `TestSnapshotRestoreRoundTrip` (digest in the result and
+the event, upper-case accepted, a malformed one refused, a wrong one
+refused with no guest record and no LVM call, bytes changed between check
+and write fail and leave no volume), `testVersions` for `FileBlob` and
+`MemBlob`, and the digest round trip in
+`TestRestoreOntoHostAndSecretValueInFragmentRefused`. *Rejected:*
+downloading to a host file before writing (disk the size of the snapshot
+on every restore); hashing only during the write (decompresses and
+writes bytes before they are known to be good); Blob's own MD5 or CRC64
+(it lives in the store and changes with the blob).

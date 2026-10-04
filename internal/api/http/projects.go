@@ -510,6 +510,19 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
 	}
+	// A restore that failed before its guest was ready leaves the project
+	// with no usable volume: the old one was destroyed first, the new one
+	// is incomplete. A start would boot an empty or half-written volume,
+	// so the way back is another restore (DECISIONS I-461).
+	if p.State == "error" {
+		unfinished, err := ops.UnfinishedRestore(r.Context(), s.d.Pool, p.ID)
+		if err != nil {
+			return err
+		}
+		if unfinished {
+			return withDetail(errf("conflict", "%s has no usable volume because the restore into it did not finish; restore a snapshot into it again, or remove it with `repose rm %s`", p.Slug, p.Slug), map[string]any{"reason": "restore_unfinished"})
+		}
+	}
 	if p.GuestID == nil {
 		// A create that failed before CreateGuest (no host with capacity,
 		// a failed build) left the project in error with no guest; a

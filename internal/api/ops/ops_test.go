@@ -3,7 +3,9 @@ package ops_test
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -342,6 +344,25 @@ func TestRestoreOntoHostAndSecretValueInFragmentRefused(t *testing.T) {
 	if restore == nil || restore.BlobPath != snap.BlobPath || restore.SystemClosure == "" || len(restore.HostKey) == 0 {
 		t.Fatalf("Restore command: %+v", restore)
 	}
+	// I-462: the stop's digest is in the row, and the Restore carries it
+	// for hostd to check the blob against.
+	if snap.Sha256 == nil || len(*snap.Sha256) != 64 || restore.Sha256 != *snap.Sha256 {
+		t.Fatalf("snapshot digest %v, Restore's %q", snap.Sha256, restore.Sha256)
+	}
+	// A digest the store's blob does not match fails the restore; a row
+	// from before I-462 has none and restores unchecked.
+	if _, err := h.Pool.Exec(h.Ctx, "update snapshots set sha256 = $2 where id = $1", sid, strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if rop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindRestore, ProjectID: &pid, SnapshotID: &sid, Phases: []string{ops.PhaseRestore}})); rop.State != "error" || rop.Error == nil || !strings.Contains(fmt.Sprint(rop.Error), "checksum") {
+		t.Fatalf("restore against a wrong digest: %s %v", rop.State, rop.Error)
+	}
+	if _, err := h.Pool.Exec(h.Ctx, "update snapshots set sha256 = null where id = $1", sid); err != nil {
+		t.Fatal(err)
+	}
+	if rop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindRestore, ProjectID: &pid, SnapshotID: &sid, Phases: ops.PlanRestore(h.Project(pid), true, false)})); rop.State != "done" {
+		t.Fatalf("restore of a snapshot without a digest: %+v", rop.Error)
+	}
 	// A fragment containing a current secret value is refused before Build.
 	if err := h.Secrets.Put(h.Ctx, u.ID.String(), pid.String(), "API_KEY", []byte("sk-verysecret")); err != nil {
 		t.Fatal(err)
@@ -489,6 +510,78 @@ func TestDrainAndHelloReconcile(t *testing.T) {
 	h.ReconnectHost(t)
 	h.WaitFor("state reconciled from Hello", func() bool { return h.Project(p.ID).State == "running" })
 	_ = fakehostd.Options{}
+}
+
+// I-461: a restore that fails after its destroy_guest phase, before the
+// Restore is sent (here: the snapshot was deleted), leaves the project
+// with no guest, no address and no vsock cid, and UnfinishedRestore says
+// so until a restore succeeds.
+func TestRestoreFailingAfterDestroyReleasesTheGuest(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("rory")
+	p := h.CreateRunning(u, "res")
+	pid := p.ID
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Phases: ops.PlanStop()}))
+	if op.State != "done" || op.SnapshotID == nil {
+		t.Fatalf("stop: %+v", op.Error)
+	}
+	sid := *op.SnapshotID
+	if _, err := h.Pool.Exec(h.Ctx, "update snapshots set deleted_at = now() where id = $1", sid); err != nil {
+		t.Fatal(err)
+	}
+	p = h.Project(pid)
+	rop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindRestore, ProjectID: &pid, SnapshotID: &sid, Phases: ops.PlanRestore(p, true, true)}))
+	if rop.State != "error" {
+		t.Fatalf("restore of a deleted snapshot: %s", rop.State)
+	}
+	p = h.Project(pid)
+	if p.State != "error" || p.GuestID != nil || p.GuestIP != nil || p.VsockCID != nil {
+		t.Fatalf("after the failed restore: state %s guest %v ip %v cid %v", p.State, p.GuestID, p.GuestIP, p.VsockCID)
+	}
+	if un, err := ops.UnfinishedRestore(h.Ctx, h.Pool, pid); err != nil || !un {
+		t.Fatalf("UnfinishedRestore after a failed restore: %v %v", un, err)
+	}
+	if _, err := h.Pool.Exec(h.Ctx, "update snapshots set deleted_at = null where id = $1", sid); err != nil {
+		t.Fatal(err)
+	}
+	rop = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindRestore, ProjectID: &pid, SnapshotID: &sid, Phases: ops.PlanRestore(p, true, true)}))
+	if rop.State != "done" {
+		t.Fatalf("restore again: %+v", rop.Error)
+	}
+	if un, err := ops.UnfinishedRestore(h.Ctx, h.Pool, pid); err != nil || un {
+		t.Fatalf("UnfinishedRestore after a restore that succeeded: %v %v", un, err)
+	}
+	if p = h.Project(pid); p.State != "running" || p.GuestIP == nil {
+		t.Fatalf("after the restore again: %+v", p)
+	}
+}
+
+// I-461: a project in error whose guest the host does not report (left
+// by an in-place restore that failed before the fix) lets go of its
+// address on Hello; a project whose guest the host has keeps it.
+func TestHelloReleasesAddressOfAMissingGuest(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("hedy")
+	kept := h.CreateRunning(u, "kept")
+	stale := h.CreateRunning(u, "stale")
+	keptIP := h.Project(kept.ID).GuestIP
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error', guest_id = $2 where id = $1", stale.ID, store.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error' where id = $1", kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.ReconnectHost(t)
+	h.WaitFor("missing guest's address released", func() bool {
+		p := h.Project(stale.ID)
+		return p.GuestIP == nil && p.VsockCID == nil
+	})
+	if p := h.Project(stale.ID); p.GuestID == nil || p.State != "error" {
+		t.Fatalf("the stale project lost its guest id or state: %+v", p)
+	}
+	if p := h.Project(kept.ID); p.GuestIP == nil || *p.GuestIP != *keptIP {
+		t.Fatalf("a project whose guest the host has lost its address: %+v", p)
+	}
 }
 
 // A project whose create failed before CreateGuest has no guest, so its

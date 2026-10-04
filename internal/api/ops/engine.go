@@ -372,6 +372,12 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			e.logs.Unbind(op.CommandID.String())
 		}
 		e.m.CommandsTotal.WithLabelValues(currentPhase(op), resultLabel(res)).Inc()
+		if !res.Ok && res.Error != nil && res.Error.Code == "not_found" && op.Kind == KindRestore && currentPhase(op) == PhaseDestroyGuest {
+			// The guest a restore replaces is already gone (a restore
+			// that failed before hostd recorded its guest): what the
+			// phase was for is done (DECISIONS I-461).
+			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
+		}
 		if !res.Ok {
 			code, msg, line := "internal", "command failed", 0
 			if res.Error != nil {
@@ -544,6 +550,17 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 			if len(open) == 0 {
 				e.log.Warn("host no longer has a running project's guest", "event", "reconcile_missing", "project_id", p.ID.String())
 				_ = store.SetProjectState(ctx, e.pool, p.ID, "error") // best effort; the next start re-creates
+			}
+		}
+		// A project in error whose guest the host no longer has (an
+		// in-place restore that failed before I-461 left these) holds an
+		// address the host has released and may give the next guest. It
+		// lets go of it; its guest id stays for the operator to see.
+		if p.GuestID != nil && !known[*p.GuestID] && p.State == "error" && p.GuestIP != nil {
+			open, _ := store.OpenOpsForProject(ctx, e.pool, p.ID)
+			if len(open) == 0 {
+				e.log.Warn("releasing the address of a guest the host no longer has", "event", "reconcile_missing", "project_id", p.ID.String())
+				_, _ = e.pool.Exec(ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1 and guest_id = $2 and state = 'error'", p.ID, *p.GuestID) // best effort; the next Hello tries again
 			}
 		}
 	}

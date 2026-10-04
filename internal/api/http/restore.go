@@ -135,10 +135,10 @@ func (s *Server) restoreByName(w http.ResponseWriter, r *http.Request) error {
 	if err := s.gate(r, u, billing.Request{Class: class, AddDiskBytes: src.VolumeBytes}); err != nil {
 		return err
 	}
-	if start {
-		if err := s.abuseGate(ctx, src); err != nil {
-			return err
-		}
+	// A copy of a held project is refused whether or not it starts: it
+	// would carry no hold of its own (DECISIONS I-239, I-460).
+	if err := s.abuseGate(ctx, src); err != nil {
+		return err
 	}
 	target, opID, err := s.restoreAsNew(ctx, u, src, snap, name, start)
 	if err != nil {

@@ -7,6 +7,8 @@ package hostd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -148,6 +150,13 @@ func (f *Fake) SetKernelChanged(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.opts.KernelChanged = v
+}
+
+// sum is the digest the fake reports for a blob it "uploaded": the
+// SHA-256 of its path, which is all a fake blob holds.
+func (f *Fake) sum(blob string) string {
+	h := sha256.Sum256([]byte(blob))
+	return hex.EncodeToString(h[:])
 }
 
 // SetFail changes the failure map at runtime.
@@ -432,12 +441,12 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
 			blob = fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
-			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30}}})
+			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}})
 		}
 		f.setState(g, "stopping", "")
 		f.setState(g, "stopped", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30}}
+			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}
 		})
 	case *hostdv1.Command_DestroyGuest:
 		f.mu.Lock()
@@ -512,11 +521,16 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return unresponsive(id, g) // no Freeze without guestd
 		}
 		blob := fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
-		f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30}}})
+		f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}})
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Snapshot{Snapshot: &hostdv1.SnapshotResult{BlobPath: blob, Bytes: 1 << 30}}
+			r.Payload = &hostdv1.Result_Snapshot{Snapshot: &hostdv1.SnapshotResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}
 		})
 	case *hostdv1.Command_Restore:
+		// A digest is checked against the one this fake reported for the
+		// blob, as hostd checks it against the stored bytes (I-462).
+		if want := c.Restore.Sha256; want != "" && want != f.sum(c.Restore.BlobPath) {
+			return errResult(id, "internal", "snapshot checksum mismatch")
+		}
 		f.mu.Lock()
 		if f.draining {
 			f.mu.Unlock()

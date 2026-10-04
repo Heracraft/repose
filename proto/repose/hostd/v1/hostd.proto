@@ -182,6 +182,7 @@ message Restore {
   string remote_url = 15;
   bytes project_json = 16;
   string system_closure = 17;  // I-26: the closure to root; empty means the api rebuilds before StartGuest
+  string sha256 = 18;  // I-462: hex SHA-256 of the stored blob; when set, hostd checks the whole blob against it before writing the volume
 }
 message UpdateSecrets { string guest_id = 1; repeated Secret secrets = 2; }
 message SetPrincipals { string guest_id = 1; repeated string principals = 2; }
@@ -233,10 +234,10 @@ message Result {
   }
 }
 message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; }
-message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; }  // blob_path and bytes when snapshot_first (I-26)
+message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
-message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; }
+message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 
 message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
@@ -289,7 +290,7 @@ message AgentQuestion {
   uint32 timeout_s = 7;
   string state = 8;
 }
-message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; }
+message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; }
 message HostWarning { string kind = 1; string detail = 2; }
 // An operator's SSH login to the host, from the PAM hook that runs
 // `hostd audit-login`: what the api turns into the audit_log row 14 §5

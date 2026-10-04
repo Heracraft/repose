@@ -15,14 +15,15 @@ const opConflictRetryInterval = 250 * time.Millisecond
 // queues an update_secrets op the caller gets no id for, and
 // stop/start/resize/destroy answer 409 conflict "an operation is in
 // progress" while it runs, usually well under a second — the only
-// conflict these four routes ever produce. Any other error returns
-// immediately.
+// conflict these four routes ever produce without a reason. A conflict
+// that names one (start's `restore_unfinished`, DECISIONS I-461) will not
+// pass by waiting. Any other error returns immediately.
 func retryOnOpConflict(ctx context.Context, fn func() error) error {
 	deadline := time.Now().Add(opConflictRetryWindow)
 	for {
 		err := fn()
 		var apiErr *APIError
-		if err == nil || !errors.As(err, &apiErr) || apiErr.Code != "conflict" {
+		if err == nil || !errors.As(err, &apiErr) || apiErr.Code != "conflict" || apiErr.Detail["reason"] != nil {
 			return err
 		}
 		if time.Now().After(deadline) {

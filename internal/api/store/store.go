@@ -184,9 +184,12 @@ type Snapshot struct {
 	DeletedAt     *time.Time `db:"deleted_at"`
 	RestoringOpID *uuid.UUID `db:"restoring_op_id"`
 	CreatedAt     time.Time  `db:"created_at"`
+	// Sha256 is the hex SHA-256 of the stored blob, which a restore
+	// checks; nil for a snapshot taken before I-462.
+	Sha256 *string `db:"sha256"`
 }
 
-const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at`
+const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at, sha256`
 
 // Event is an events row.
 type Event struct {
