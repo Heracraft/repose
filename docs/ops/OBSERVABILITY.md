@@ -69,6 +69,17 @@ through the list. The api logs `waitlist_join` (user_id, position),
 `waitlist_invite` (count) and `waitlist_expire` (count), never an email
 address. `repose-admin seats` and `repose-admin waitlist list` name them.
 
+Named secrets: at start every api process rewrites the secret rows still
+bound to their name alone in the project-bound form (DECISIONS I-474) and
+logs `secrets_reseal` (resealed, refused, pass) after each pass,
+`secrets_reseal_fail` (code: `key_service_unavailable` or `db`) before a
+retry, and once `secrets_name_only_none` (refused): a pass at least 15
+minutes after start found no row left to rewrite, which is the signal
+that step 3 of I-433 (dropping the name-only read path) can ship.
+`refused` counts rows left as they are: name-only rows under the
+platform's data key outside the platform project, and rows that open in
+neither form. Counts only, never a name or a project.
+
 ## Looking for abuse
 
 Grafana "Abuse": fleet-wide top `comm` by CPU over 24 hours, top projects

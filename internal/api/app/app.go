@@ -300,6 +300,10 @@ func (a *App) Run(ctx context.Context) error {
 	bg, cancelBG := context.WithCancel(ctx)
 	defer cancelBG()
 	go a.logs.Run(bg)
+	// Every api process, in every mode, binds the name-only secret rows
+	// to their project in the background (DECISIONS I-474): startup does
+	// not wait on Key Vault, and the passes retry until it answers.
+	go a.sec.ResealLoop(bg, a.log, a.cfg.Reseal)
 
 	if a.cfg.Mode == "http" || a.cfg.Mode == "all" {
 		if a.cfg.LogtoIssuer == "" {

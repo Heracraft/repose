@@ -76,6 +76,9 @@ const (
 	// that one themselves on other connections, and a session lock held
 	// by the loop blocked them forever (DECISIONS I-357).
 	LockWaitlistTick int64 = 1012
+	// LockSecretsReseal serialises the secrets reseal passes the api runs at
+	// start (DECISIONS I-474).
+	LockSecretsReseal int64 = 1013
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

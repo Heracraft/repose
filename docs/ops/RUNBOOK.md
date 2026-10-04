@@ -152,6 +152,7 @@ copy-paste version):
 | Revoke all certs for a user | `repose-admin certs revoke --user <handle>` |
 | Rotate a host's mTLS cert | `repose-admin hosts rotate-cert host-NN` (the old certificate works until the new one connects; refused for a `lost` or `retired` host, I-432) |
 | Rotate the Key Vault wrapping key | `az keyvault key rotate` then `repose-admin secrets rewrap` |
+| Know when the name-only secret read path can go (I-433 step 3) | `secrets_name_only_none` in the api log of a release with I-474 (both apps, after a deploy); until it appears, `secrets_reseal` and `secrets_reseal_fail` show each pass (I-474) |
 | Query audit log | `repose-admin audit --user <handle> --since 24h` |
 | See the seats and the waitlist | `repose-admin seats` (total, held, free, waiting, source), `repose-admin waitlist list` (position, handle, joined, invited, hold, converted, expired, by) |
 | Invite someone ahead of the queue | `repose-admin waitlist admit <handle>`, or `repose-admin waitlist admit --next N` for the next N; a 72-hour seat hold and one email each, audited `waitlist_admit` (I-269, I-290) |

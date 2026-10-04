@@ -11953,3 +11953,55 @@ environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
 release signing key").
 ciphertext; a failed tag check under the bound data says the same thing for
 free); binding in one release (breaks the rolling deploy and rollback).
+
+**I-474. Named secrets are written bound to their project, and the api rebinds older rows at start.**
+(security release, 2026-10-04; step 2 of I-433) `secrets.Seal` now
+always writes the project-bound form: the `sealBound` switch and
+`secrets.SealBound` are gone, and `Put`, `PutReserved`, `CopyNamed` (fork)
+and `Reseal` all go through `Seal`. `Open` still accepts a row bound to
+its name alone for this release; step 3 of I-433 removes that path in the
+release after this one. An api from before I-433 cannot open what this one
+writes, which is why I-433 shipped the reader first.
+
+Every api process (`http`, `grpc` and `all`) starts `Store.ResealLoop` in
+the background from `App.Run`, so startup does not wait on Key Vault. A
+pass takes the advisory lock `db.LockSecretsReseal` (1013) so the api and
+api-grpc containers, and the old and new container of a Coolify rolling
+deploy, do not unwrap the same keys at once; a process that finds the lock
+held tries again later. Inside a pass each `UPDATE` matches the ciphertext
+it read, so two overlapping passes, or a `secrets set` landing between a
+pass's read and its write, leave every row as one whole writer left it. A
+failed pass (Key Vault or Postgres unreachable) is retried from 5 seconds,
+doubling to 5 minutes. The loop makes a second pass 15 minutes after the
+first, because the container a rolling deploy replaces keeps writing
+name-only rows until it stops, and ends at the first pass from the second
+on that rewrote nothing, with the log line `secrets_name_only_none`. That
+line is the operator's signal that no row needs the name-only read path
+and step 3 can be scheduled. A name-only row under the platform's data
+key outside the platform project is still refused on read and left as it
+is by the reseal (counted in `refused`). The log lines carry counts and an
+error code only, never a name, a project or a value
+(`docs/ops/OBSERVABILITY.md`).
+
+What this does not close: a user's name-only row copied into another
+project by a database write before the reseal reached it is resealed in
+the project it sits in, as I-433 accepted for its first step; a copy made
+after the reseal does not decrypt.
+Tests (real Postgres): `internal/api/secrets` `TestRoundTripAndAAD` (`Put`
+writes the bound form; it does not open under another project or in the
+name-only form), `TestCiphertextIsBoundToItsProject` (a bound row copied
+into another project does not open, a name-only row does until `Reseal`,
+the platform-key copy is refused before and after), `TestResealLegacyRows`
+(converts user and platform rows, refuses the platform-key copy, a second
+run rewrites nothing), `TestConcurrentResealKeepsEveryRow` (three
+concurrent passes over 60 name-only rows: each row counted once, each
+opens bound in its own project with its own value),
+`TestResealDoesNotOverwriteANewerPut`, `TestCopyNamedBindsToTheFork`,
+`TestResealLoopRetriesWhileKeyVaultIsDown`; `internal/api/app`
+`TestStartResealsAfterKeyVaultReturns` (the api is healthy with Key Vault
+down and rebinds the row once it answers); `internal/api/http` `TestFork`.
+*Rejected:* resealing inside `New` before serving (a Key Vault outage
+would keep the api down); one pass per start only (misses rows the old
+container writes during the rolling deploy); a gauge of name-only rows
+(counting them means opening every row on every scrape; a pass already
+does that, so the pass logs the result).
