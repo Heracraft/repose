@@ -353,3 +353,39 @@ func TestHostWarningKindsAreAFixedSet(t *testing.T) {
 		}
 	}
 }
+
+// TestEdgeHookPathSharesTheGuestCap: events over the edge's hook path
+// count toward the same hourly cap as the vsock path, and past it the
+// edge path stores nothing either.
+func TestEdgeHookPathSharesTheGuestCap(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	m := metrics.NewNop()
+	ing := events.New(pool, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, host := seedOn(t, pool)
+	now := time.Now()
+	half := events.GuestEventsPerHour / 2
+	for _, src := range []string{"host", "http"} {
+		if _, err := pool.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source)
+			select gen_random_uuid(), $1, $2, $3, 'agent_message', 'x', $5 from generate_series(1, $4)`, pid, now, now.Unix(), half, src); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() int {
+		var n int
+		_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1", pid).Scan(&n)
+		return n
+	}
+	before := count()
+	id, err := ing.FromEdge(ctx, "10.64.4.9", "codex", "completed", "over the cap")
+	if err != nil || id != uuid.Nil || count() != before {
+		t.Fatalf("edge event past the cap: id %s, err %v, rows %d -> %d", id, err, before, count())
+	}
+	ev := &hostdv1.Event{EventId: "vsock-over", Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "codex", Kind: "completed", Summary: "x"}}}
+	if !ing.OnEvent(ctx, host, ev) || count() != before {
+		t.Fatalf("vsock event past a cap reached half over the edge: rows %d -> %d", before, count())
+	}
+	if got := testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("project_cap")); got != 2 {
+		t.Fatalf("project_cap refusals %v, want 2", got)
+	}
+}
