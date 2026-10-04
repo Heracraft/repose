@@ -11489,3 +11489,148 @@ built, `<name>` must be a per-project preview name the api keeps unique;
 how it is chosen is decided with the feature. Previews are not built, so
 nothing a user sees changes. Tests: `TestRoute`,
 `TestRouteNeverSplitsSlugAndHandle`.
+**I-448. Egress and CPU are metered from a guest's boot to its stop.**
+(security review, 2026-10-03) A guest's sample cursor (its last reading of
+the tap's bytes and the unit's CPU time) outlived a stop, while the tap and
+the unit it read did not: the first sample after a start compared a fresh
+counter with the old cursor and counted nothing, and teardown deleted the
+tap without reading it, so bytes before a guest's first sample and after
+its last went unmetered. These counts are the egress the plan's allowance,
+the overage charge and the 4x stop are measured against.
+- The cursor starts at zero when boot creates the tap, so the first tick
+  counts from boot.
+- `teardown` reads the tap once more after the hypervisor has stopped and
+  before deleting it, and sends one `Samples` with that guest's last rx and
+  tx deltas. Every path that ends a guest (stop, destroy, a failed boot, an
+  unexpected exit, reconcile) goes through it. Its state is `stopping`, so
+  the api's hours, which count `running` samples, do not gain a minute.
+- A reading below the cursor is a counter that started again from zero
+  (a tap or a unit recreated) and counts in full instead of becoming a new
+  baseline.
+- The tick and the final reading read the tap and move the cursor under one
+  lock, so the same bytes are never counted by both.
+- A `Samples` timestamp is never at or before the previous one: the api
+  keys samples on (project, second) and keeps the first row for a second,
+  so a final reading in the same second as a tick would have been lost.
+- Destroy no longer sends a final sample from the nft egress counter: its
+  bytes since the last tick are the bytes the stop's tap reading already
+  sent. The counter stays, as host-conventions.md describes it.
+Not changed: a hostd restart under a running guest still loses the bytes
+since the last tick before the restart (the cursor is in memory), and
+hours still count 60 s per running sample, so a run shorter than a tick
+bills its egress but no running time. Tests:
+`internal/hostd/guest/metering_test.go`.
+
+**I-449. The pool's thin volumes together are at most 1.5 times the
+pool.** (security review, 2026-10-03) Placement and
+resize checked a volume against the pool's free space and the plan's disk,
+never against what the host's volumes could grow to, and a full thin pool
+fails the writes of every volume in it. hostd now refuses, with
+`insufficient_capacity`, a create, a restore or a resize after which the
+virtual sizes of every thin volume in the pool, guests and the caches'
+`repose-cache` volume (not `snap-*`, which share their origin's blocks for
+the length of an upload), would pass `PoolOvercommit` (1.5) times the
+pool.
+1.5 is the ratio the design already sells: 30 seats on a 256 GB host at
+100 GB of plan disk each is 3 TB on DESIGN §4's 2 TB pool. Volumes already
+past the budget keep running and starting; they cannot grow. The api
+shows the refusal as it shows any capacity refusal ("the host has no room
+for this project right now").
+- *Rejected by the owner (2026-10-03): a bound on one volume* (at most half
+  the pool, so filling it would take more than one tenant). Plans sell up
+  to 500 GB of disk per account and one project may hold all of it; a
+  per-volume cap below that breaks what is sold, and on host-01's 476 GiB
+  pool it would have been about 238 GiB. The cost of the choice: one
+  tenant can still fill the pool alone, up to their plan's disk. The
+  remedy is a larger data disk later, which also raises the budget.
+Not done
+here: the api's scheduler still places by free space alone and learns of
+the budget only from hostd's refusal, and nothing yet acts at 90 percent
+beyond refusing creates. Tests: `internal/hostd/guest/poolbudget_test.go`,
+`internal/hostd/lvm` `TestRealAllocated`.
+
+**I-450. Each guest's disk is rate-limited by its size class.** (security
+review, 2026-10-03) Every guest volume is on one data disk (16,000 IOPS and
+600 MB/s on host-01), opened `direct=on` with no limit, so the guests and
+the host's snapshots and restores shared the disk with nothing keeping one
+guest from most of it. Cloud Hypervisor's own `--disk` rate limiter now caps reads and
+writes together, as token buckets refilled every second (`bw_size=<bytes a
+second>,bw_refill_time=1000,ops_size=<IOPS>,ops_refill_time=1000`):
+`small` 2,000 IOPS and 80 MB/s, `large` 3,000 and 120, `xl` 4,000 and
+150, each at most a quarter of the data disk. The limiter sits in the
+hypervisor, so it holds with `direct=on` and leaves what the host itself
+does to a volume (snapshot reads, restore writes) unlimited. A cgroup
+`io.max` on the volume was the alternative; it needs the unit's device
+resolved by systemd and says nothing in `ch.args`, where an operator reads
+the guest's shape. The limits are in the argv, so a guest takes them at
+its next start. Checked: Cloud Hypervisor 53 parses the options (an
+unknown one fails with "Error parsing --disk"). Tests:
+`internal/hostd/ch/testdata/args.golden`,
+`internal/hostd/guest/limits_test.go`.
+
+**I-451. What a guest receives from outside the host is shaped to 1 Gbit/s
+(amends I-217).** (security review, 2026-10-03) I-217 moved the shape to what
+a guest sends and left downloads unlimited, so the guests and the WireGuard
+tunnel shared the host NIC's receive bandwidth with no per-guest bound. Each tap's root now carries an HTB, handle `2:`, whose
+default class `2:20` is `rate 1000mbit ceil 1000mbit` with 10 ms of burst (at least 128 KiB)
+and fq_codel under it; class `2:10` at 10 Gbit/s takes what comes from a
+`ShapeExempt` source (`10.64.0.0/12`, the gateway; `10.63.255.254`, the
+caches), so the caches stay as fast as I-217 made them. Quantum and burst
+are 64 KB or more because the host hands the tap GSO packets of that size.
+1 Gbit/s is five times the upload limit; a 1 GB image pull takes about 8 s.
+The root is added with `tc qdisc replace` when `tc qdisc show` lacks
+`htb 2:`, which also swaps out a tap still carrying the root HTB `1:` from
+before I-217 (the one release I-217 accepted it for is over); classes,
+leaf and filters are `replace` with fixed handles. hostd re-applies the
+shape to running guests when it starts (reconcile), so this reaches them
+without a restart. `sch_htb` and `sch_fq_codel` are loaded. Checked on a
+tap in a network namespace: a tap with the old `1:` root ends with `2:`
+and both classes, and a second run and a new rate change nothing else.
+Tests: `internal/hostd/net/testdata/{create,reshape}.golden`.
+
+**I-452. A guest's console reaches its log at 2 KiB a second, and the
+console has a log buffer of its own.** (security review, 2026-10-03) The
+Tailer copied a guest's serial output without a limit, and Fluent Bit sent
+the host journal and every console through one output with one 1 GB disk
+buffer that drops its oldest chunks when full, so while Loki was
+unreachable every console and the host journal competed for the same
+buffer.
+- The Tailer keeps a token bucket per guest: 2 KiB a second, 1 MiB at once
+  (a boot log fits). Output over it is still read from the socket, so the
+  guest's console never stalls (I-186), and is dropped; the log then gets
+  one line, `[repose: N bytes of console output dropped, over the limit of
+  2048 bytes a second]`, before the next output it keeps, or at close.
+- Fluent Bit has two outputs to the same Loki, `host.*` with `bufferLimit`
+  and `console.*` with the new `consoleBufferLimit` (1G each), so consoles
+  fill only their own buffer.
+- `ops/loki/retention.yaml` sets the ingestion limits it had commented out
+  (16 MB/s tenant, 5 MB/s per stream). A console stream is one guest.
+Tests: `internal/hostd/console` `TestRateLimit`; Fluent Bit's
+`--dry-run` passes on the rendered configuration.
+
+**I-453. A guest holds at most 16,384 tracked connections, and the host's
+table holds 1,048,576.** (security review, 2026-10-03) Every connection a
+guest opens through the host, or to the caches, takes an entry in the
+host's one conntrack table. I-240 limits how fast a guest opens new flows
+but not how many it keeps, an idle established TCP entry lasted five days,
+and new flows to the caches had no rate. The table is shared by every
+guest and the host; when it is full, the kernel refuses new flows for all
+of them.
+- `guest_fwd`, before the I-240 rate: `ct state new add @guest_conns {
+  ip saddr ct count over 16384 } goto flows_drop`. `guest_in` does the
+  same for the cache ports, then a new-flow rate of its own (set
+  `guest_cache_rate`, the same 200/s and 2000 burst as I-240), then
+  accepts. Drops are counted with the flows kind (`flows-<guest_id>`), as
+  new flows the host refused; the EgressBlocked alert's threshold for
+  flows already covers them. `guest_conns` is dynamic with no timeout: an
+  element goes with its last connection.
+- `nf_conntrack_max` is 1,048,576: a D64's most guests (55, all small) at
+  the cap take 901,120, which leaves the rest for the host's own flows.
+  `nf_conntrack_tcp_timeout_established` is 86,400 s, as kube-proxy sets
+  it; SSH and the agents' connections keep alive well inside a day.
+  `nf_conntrack` and `nft_connlimit` load at boot, before the sysctls.
+16,384 open connections is far past a browser, a test suite or a crawl of
+one's own app. Checked: the rendered ruleset loads into a kernel
+(`nft -c` and `nft -f` in a network namespace), and a `ct count over 3`
+rule in a namespace let three connections through and dropped the next
+three.

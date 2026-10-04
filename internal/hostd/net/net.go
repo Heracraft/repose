@@ -37,7 +37,9 @@ type Net interface {
 	// counter and rule.
 	AddGuestRules(ctx context.Context, guestID, ip, mac, tap string) error
 	DelGuestRules(ctx context.Context, guestID, ip, mac, tap string) error
-	Shape(ctx context.Context, tap string, mbit int) error
+	// Shape limits what the guest sends to upMbit and what the host sends
+	// it, from anywhere but the host itself, to downMbit.
+	Shape(ctx context.Context, tap string, upMbit, downMbit int) error
 	Unshape(ctx context.Context, tap string) error
 	// CounterBytes reads the guest's egress counter.
 	CounterBytes(ctx context.Context, guestID string) (uint64, error)
@@ -254,23 +256,31 @@ func (n *Real) DelGuestRules(ctx context.Context, guestID, ip, mac, tap string) 
 var ShapeExempt = []string{"10.64.0.0/12", "10.63.255.254/32"}
 
 var (
-	ingressRe    = regexp.MustCompile(`(?m)^qdisc ingress ffff: `)
-	legacyRootRe = regexp.MustCompile(`(?m)^qdisc htb 1: root `)
+	ingressRe  = regexp.MustCompile(`(?m)^qdisc ingress ffff: `)
+	downRootRe = regexp.MustCompile(`(?m)^qdisc htb 2: root `)
 )
 
-// Shape implements Net with a policer on the tap's ingress, which is what
-// the guest sends (DECISIONS I-217): on the ingress qdisc, one `pass`
-// filter per ShapeExempt prefix, then a flower with no match policing every other IPv4
-// packet to mbit with a 500 ms burst. What the host sends to the guest
-// (downloads, the caches) is not limited.
+// Shape implements Net in two directions.
 //
-// Idempotent and reconciling: the ingress qdisc is added only when absent
-// and every filter is a `replace` with a fixed prio and handle, so a re-run
-// or a new rate swaps them in place, with no window and no duplicate. A tap
-// still carrying the root HTB of the shape before I-217 (which limited
-// host-to-guest traffic) has it removed after the policer is in place;
-// connections through it survive.
-func (n *Real) Shape(ctx context.Context, tap string, mbit int) error {
+// What the guest sends is the tap's ingress (DECISIONS I-217): on the
+// ingress qdisc, one `pass` filter per ShapeExempt prefix, then a flower
+// with no match policing every other IPv4 packet to upMbit with a 500 ms
+// burst.
+//
+// What the guest receives is the tap's egress (DECISIONS I-451): a root
+// HTB, handle 2:, whose default class 2:20 holds everything to downMbit
+// with 10 ms of burst (at least 128 KiB) and fq_codel under it, and whose
+// class 2:10, at 10 Gbit/s, takes what comes from a ShapeExempt source
+// (the caches, the gateway), so the caches stay as fast as before. The
+// guests and the WireGuard tunnel then share the host NIC's receive
+// bandwidth with a bound on each guest.
+//
+// Idempotent and reconciling: each qdisc is added only when absent and
+// every class and filter is a `replace` with a fixed handle, so a re-run
+// or a new rate swaps them in place, with no window and no duplicate. A
+// tap still carrying the root HTB 1: of the shape before I-217 has it
+// replaced by 2: in one `tc qdisc replace`; connections survive.
+func (n *Real) Shape(ctx context.Context, tap string, upMbit, downMbit int) error {
 	res, err := n.R.Run(ctx, "tc", "qdisc", "show", "dev", tap)
 	if err != nil {
 		return err
@@ -289,8 +299,8 @@ func (n *Real) Shape(ctx context.Context, tap string, mbit int) error {
 		}
 		prio++
 	}
-	rate := strconv.Itoa(mbit) + "mbit"
-	burst := strconv.Itoa(mbit * 1000 * 1000 / 8 / 2) // 500 ms at the rate, in bytes
+	rate := strconv.Itoa(upMbit) + "mbit"
+	burst := strconv.Itoa(upMbit * 1000 * 1000 / 8 / 2) // 500 ms at the rate, in bytes
 	// mtu 64kb: a vnet_hdr tap hands the host GSO packets of up to 64 KB,
 	// which the policer's small default would count as exceeding.
 	if _, err := n.R.Run(ctx, "tc", "filter", "replace", "dev", tap, "parent", "ffff:", "protocol", "ip",
@@ -298,16 +308,38 @@ func (n *Real) Shape(ctx context.Context, tap string, mbit int) error {
 		"action", "police", "rate", rate, "burst", burst, "mtu", "64kb", "conform-exceed", "drop/ok"); err != nil {
 		return err
 	}
-	if legacyRootRe.MatchString(qd) {
-		if _, err := n.R.Run(ctx, "tc", "qdisc", "del", "dev", tap, "root"); err != nil {
+
+	if !downRootRe.MatchString(qd) {
+		if _, err := n.R.Run(ctx, "tc", "qdisc", "replace", "dev", tap, "root", "handle", "2:", "htb", "default", "20"); err != nil {
+			return err
+		}
+	}
+	// The host sends GSO packets of up to 64 KB too: a quantum and a
+	// burst below that would starve the class.
+	if _, err := n.R.Run(ctx, "tc", "class", "replace", "dev", tap, "parent", "2:", "classid", "2:10",
+		"htb", "rate", "10gbit", "burst", "1mb", "cburst", "1mb", "quantum", "65536"); err != nil {
+		return err
+	}
+	down := strconv.Itoa(downMbit) + "mbit"
+	dburst := strconv.Itoa(max(downMbit*1000*1000/8/100, 2*65536)) // 10 ms at the rate, and at least two GSO packets
+	if _, err := n.R.Run(ctx, "tc", "class", "replace", "dev", tap, "parent", "2:", "classid", "2:20",
+		"htb", "rate", down, "ceil", down, "burst", dburst, "cburst", dburst, "quantum", "65536"); err != nil {
+		return err
+	}
+	if _, err := n.R.Run(ctx, "tc", "qdisc", "replace", "dev", tap, "parent", "2:20", "handle", "20:", "fq_codel"); err != nil {
+		return err
+	}
+	for i, src := range ShapeExempt {
+		if _, err := n.R.Run(ctx, "tc", "filter", "replace", "dev", tap, "parent", "2:", "protocol", "ip",
+			"prio", strconv.Itoa(i+1), "handle", "1", "flower", "src_ip", src, "classid", "2:10"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Unshape implements Net: the ingress qdisc with its filters and, on a tap
-// shaped before I-217, the root HTB. An exit status means no such qdisc or
+// Unshape implements Net: the ingress qdisc with its filters and the root
+// HTB with its classes. An exit status means no such qdisc or
 // no device, both nothing to remove.
 func (n *Real) Unshape(ctx context.Context, tap string) error {
 	for _, dir := range []string{"ingress", "root"} {
@@ -425,7 +457,8 @@ func (n *Real) ListTaps(ctx context.Context) ([]string, error) {
 type Fake struct {
 	mu       sync.Mutex
 	Taps     map[string]bool
-	Shaped   map[string]int
+	Shaped   map[string]int    // tap -> upMbit
+	Down     map[string]int    // tap -> downMbit
 	Elements map[string]string // mac . ip . tap by guest
 	Counters map[string]uint64
 	Blocked  map[string]map[string]uint64 // guest -> kind -> packets
@@ -436,7 +469,7 @@ type Fake struct {
 
 // NewFake returns an empty fake network.
 func NewFake() *Fake {
-	return &Fake{Taps: map[string]bool{}, Shaped: map[string]int{}, Elements: map[string]string{}, Counters: map[string]uint64{}, Blocked: map[string]map[string]uint64{}, Stats: map[string][2]uint64{}, FailOn: map[string]error{}}
+	return &Fake{Taps: map[string]bool{}, Shaped: map[string]int{}, Down: map[string]int{}, Elements: map[string]string{}, Counters: map[string]uint64{}, Blocked: map[string]map[string]uint64{}, Stats: map[string][2]uint64{}, FailOn: map[string]error{}}
 }
 
 func (f *Fake) TapExists(_ context.Context, tap string) (bool, error) {
@@ -452,6 +485,9 @@ func (f *Fake) AddTap(_ context.Context, tap string) error {
 	if err := f.FailOn["tap"]; err != nil {
 		return err
 	}
+	if !f.Taps[tap] {
+		f.Stats[tap] = [2]uint64{} // a new tap's counters start at zero
+	}
 	f.Taps[tap] = true
 	return nil
 }
@@ -462,6 +498,8 @@ func (f *Fake) DelTap(_ context.Context, tap string) error {
 	f.Ops = append(f.Ops, "tap-"+tap)
 	delete(f.Taps, tap)
 	delete(f.Shaped, tap)
+	delete(f.Down, tap)
+	delete(f.Stats, tap)
 	return nil
 }
 
@@ -487,14 +525,15 @@ func (f *Fake) DelGuestRules(_ context.Context, guestID, _, _, _ string) error {
 	return nil
 }
 
-func (f *Fake) Shape(_ context.Context, tap string, mbit int) error {
+func (f *Fake) Shape(_ context.Context, tap string, upMbit, downMbit int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Ops = append(f.Ops, "shape+"+tap)
 	if err := f.FailOn["shape"]; err != nil {
 		return err
 	}
-	f.Shaped[tap] = mbit
+	f.Shaped[tap] = upMbit
+	f.Down[tap] = downMbit
 	return nil
 }
 
@@ -503,6 +542,7 @@ func (f *Fake) Unshape(_ context.Context, tap string) error {
 	defer f.mu.Unlock()
 	f.Ops = append(f.Ops, "shape-"+tap)
 	delete(f.Shaped, tap)
+	delete(f.Down, tap)
 	return nil
 }
 
@@ -547,6 +587,15 @@ func (f *Fake) Block(guestID, kind string, packets uint64) {
 		f.Blocked[guestID] = map[string]uint64{}
 	}
 	f.Blocked[guestID][kind] += packets
+}
+
+// Send adds bytes to a tap's counters, as traffic does: rx what the guest
+// received, tx what it sent.
+func (f *Fake) Send(tap string, rx, tx uint64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s := f.Stats[tap]
+	f.Stats[tap] = [2]uint64{s[0] + rx, s[1] + tx}
 }
 
 func (f *Fake) TapStats(tap string) (uint64, uint64, error) {

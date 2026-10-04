@@ -33,7 +33,12 @@ type Spec struct {
 	VolumeDev    string
 	VCPUs        uint32
 	MemMiB       uint64
-	StoreTag     string // ro-store
+	// DiskIOPS and DiskBytesPerSec are the disk's rate limiter, read and
+	// write together, each a token bucket holding one second's worth
+	// (DECISIONS I-450); zero leaves that one unlimited.
+	DiskIOPS        uint64
+	DiskBytesPerSec uint64
+	StoreTag        string // ro-store
 	// AuthTag is the user's Claude login share (DECISIONS I-278); empty
 	// when the guest has none (no user id recorded), and then no second
 	// --fs is rendered.
@@ -65,6 +70,19 @@ func (s Spec) Cmdline() string {
 	return strings.Join(parts, " ")
 }
 
+// diskLimits renders the --disk rate limiter options: buckets refilled
+// every second, so the size is the rate.
+func (s Spec) diskLimits() string {
+	var b strings.Builder
+	if s.DiskBytesPerSec > 0 {
+		fmt.Fprintf(&b, ",bw_size=%d,bw_refill_time=1000", s.DiskBytesPerSec)
+	}
+	if s.DiskIOPS > 0 {
+		fmt.Fprintf(&b, ",ops_size=%d,ops_refill_time=1000", s.DiskIOPS)
+	}
+	return b.String()
+}
+
 // Args renders the cloud-hypervisor argv.
 func (s Spec) Args() []string {
 	args := []string{
@@ -84,7 +102,10 @@ func (s Spec) Args() []string {
 		// writes filled the overhead with pages under writeback and the
 		// kernel OOM-killed the hypervisor (DECISIONS I-230). The guest has
 		// its own page cache; a second one on the host only doubled it.
-		"--disk", "path=" + s.VolumeDev + ",image_type=raw,direct=on",
+		// The rate limiter is Cloud Hypervisor's own, applied before the
+		// request reaches the volume, so it holds with direct=on and covers
+		// nothing the host does to the volume itself (snapshots, restores).
+		"--disk", "path=" + s.VolumeDev + ",image_type=raw,direct=on" + s.diskLimits(),
 		"--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC),
 		"--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", s.CID, VsockSocket(s.GuestDir)),

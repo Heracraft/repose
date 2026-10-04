@@ -137,19 +137,9 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 		return errf(CodeInternal, "%v", err)
 	}
 	m.log(g).Info("destroying guest", "event", "guest_destroy", "keep_volume", c.KeepVolume)
-	// Final egress reading before the counter goes.
-	if final, err := m.d.Net.CounterBytes(ctx, g.GuestID); err == nil {
-		m.mu.Lock()
-		cur := m.last[g.GuestID]
-		delete(m.last, g.GuestID)
-		m.mu.Unlock()
-		if final > cur.egress {
-			m.d.Emit.Samples(&hostdv1.Samples{Ts: m.d.Now().Unix(), Guests: []*hostdv1.GuestSample{{
-				GuestId: g.GuestID, State: StateDestroying, Class: g.Class, NetTxBytesDelta: final - cur.egress,
-				DiskAllocBytes: g.VolumeBytes, Signals: &hostdv1.GuestSignals{},
-			}}, Host: m.hostSample()})
-		}
-	}
+	// The guest's last bytes were metered by the stop's final reading of
+	// its tap (finalSample, DECISIONS I-448); the nft counter is not read
+	// again, since its bytes since the last tick are the same bytes.
 	if err := m.d.Net.DelCounter(ctx, g.GuestID); err != nil {
 		return errf(CodeInternal, "nft delete counter: %v", err)
 	}
@@ -174,6 +164,9 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 		return errf(CodeInternal, "remove guest dir: %v", err)
 	}
 	m.forgetSecrets(g.GuestID)
+	m.curMu.Lock()
+	delete(m.last, g.GuestID)
+	m.curMu.Unlock()
 	g.State = StateDestroyed
 	m.emitEvent(&hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: g.GuestID, State: StateDestroyed}})
 	m.log(g).Info("guest destroyed", "event", "guest_state", "state", StateDestroyed)
@@ -196,6 +189,9 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 		return errf(CodeInvalidArgument, "volume_bytes %d above the %d maximum", c.NewBytes, m.cfg.MaxVolumeBytes)
 	}
 	if c.NewBytes > g.VolumeBytes {
+		if err := m.poolBudget(VolumeName(g.GuestID), c.NewBytes); err != nil {
+			return err
+		}
 		if err := m.d.LVM.ExtendVolume(ctx, VolumeName(g.GuestID), c.NewBytes); err != nil {
 			return errf(CodeInternal, "lvextend: %v", err)
 		}

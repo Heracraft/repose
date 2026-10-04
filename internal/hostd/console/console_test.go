@@ -111,6 +111,7 @@ func TestRunDrainsBeforeClosing(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 	tl := New(sock, filepath.Join(dir, "console.log"))
+	tl.Rate = 0 // every byte reaches the log, so the count below proves the drain
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- tl.Run(ctx) }()
@@ -152,5 +153,35 @@ func TestRunDrainsBeforeClosing(t *testing.T) {
 	st, _ := os.Stat(filepath.Join(dir, "console.log"))
 	if st.Size() != 4096*1024 {
 		t.Fatalf("console.log has %d bytes, want every byte written (%d)", st.Size(), 4096*1024)
+	}
+}
+
+// A guest printing without pause gets Burst bytes, then Rate a second; the
+// rest is dropped with one line saying how much (DECISIONS I-452).
+func TestRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "console.log")
+	tl := New(filepath.Join(dir, "console.sock"), log)
+	now := time.Unix(1_700_000_000, 0)
+	tl.Now = func() time.Time { return now }
+	tl.Rate, tl.Burst = 100, 1000
+	chunk := bytes.Repeat([]byte("x"), 100)
+	for i := 0; i < 30; i++ { // 3000 bytes at once: 1000 fit
+		if n, err := tl.Write(chunk); err != nil || n != len(chunk) {
+			t.Fatalf("write %d: n=%d err=%v; over the limit must still report written", i, n, err)
+		}
+	}
+	now = now.Add(time.Second) // 100 bytes of tokens
+	if _, err := tl.Write([]byte("after\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = tl.Close()
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := string(bytes.Repeat([]byte("x"), 1000)) + "\n[repose: 2000 bytes of console output dropped, over the limit of 100 bytes a second]\nafter\n"
+	if string(b) != want {
+		t.Fatalf("log %q", b)
 	}
 }

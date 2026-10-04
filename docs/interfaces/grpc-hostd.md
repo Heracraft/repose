@@ -83,7 +83,7 @@ command_id returns the stored result) and one of:
 | `StartGuest` | guest_id, plus optionally the same delivery fields as CreateGuest: secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, project_json (I-26: hostd keeps none of them on disk, so the api sends them on every start; a StartGuest with only guest_id is accepted while hostd still has them in memory), and class (I-260: the project's class; when it differs from the recorded one, hostd boots at the new class and records it; empty keeps the recorded class, so an api that does not send it is still accepted) | |
 | `StopGuest` | guest_id, snapshot_first (bool), timeout_s | snapshot_id if taken (assigned by the api), blob_path, bytes (I-26) |
 | `DestroyGuest` | guest_id, keep_volume (bool) | |
-| `ResizeVolume` | guest_id, new_bytes | |
+| `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` when the new size would pass the host's pool budget (as for `CreateGuest` and `Restore`, DECISIONS I-449) |
 | `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp) | system_closure, closure_bytes, kernel_changed (bool) |
 | `ApplyConfig` | guest_id, system_closure, force_reboot (bool) | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied) |
 | `Snapshot` | guest_id, reason (`scheduled|stop|manual`) | snapshot_id, blob_path, bytes |
@@ -114,7 +114,15 @@ parseable.
 **BuildLog**: `command_id`, `seq`, `line`. Streamed during `Build`; the api
 forwards to the CLI over SSE.
 
-**Samples** every 60 seconds, one message per host:
+**Samples** every 60 seconds, one message per host, and one more each time
+a guest's tap is torn down (stop, destroy, a failed boot, an unexpected
+exit): that guest alone, state `stopping`, with the rx and tx bytes since
+its last sample (DECISIONS I-448). Every delta counts from the guest's
+boot; a guest's first sample after a start is no longer a zero baseline.
+`ts` is never at or before the previous message's, so two messages never
+share a (guest, second). Before I-448 destroy sent such a sample from the
+nft counter with state `destroying`; the api treats both the same (only
+`running` samples count as hours).
 
 ```
 Samples { int64 ts; repeated GuestSample guests; HostSample host; }

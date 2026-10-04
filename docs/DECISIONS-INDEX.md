@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-481 entries.
+487 entries.
 
 ## Scope
 
@@ -302,7 +302,7 @@ pointer, not a summary.
 - **I-216** The dashboard is developed against the live api and Logto, not the fake — L4780
 - **I-226** Request log lines name the route, the user and the client — 2026-09-23; L4799
 - **I-220** The menu takes any nixpkgs package by attribute path, and `repose config add/remove` edit it — L4810
-- **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — L4853
+- **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4853
 - **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; L4909
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; L4958
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L4991
@@ -513,3 +513,9 @@ pointer, not a summary.
 - **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11437
 - **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11460
 - **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11480
+- **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11492
+- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; L11524
+- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11552
+- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11571
+- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11591
+- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11611

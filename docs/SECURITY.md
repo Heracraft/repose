@@ -93,9 +93,15 @@ they stop an actor the component map does not draw.
    (I-433). Stops: a Postgres dump (including the R2 backups) revealing
    secrets; a database write moving one project's secrets, or the
    platform's CA keys, into another project's guest.
-7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, egress shaping,
-   thin-volume size, build time and closure caps. Stops: a tenant degrading
-   neighbours.
+7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, shaping both
+   ways on the tap (200 Mbit/s out, 1 Gbit/s in from outside the host),
+   a disk rate limit per class, a cap on tracked connections, a console log
+   rate, build time and closure caps, and the host's thin volumes together
+   bounded at 1.5 times the shared pool (DECISIONS I-217, I-449..I-453).
+   Stops: a tenant degrading neighbours, or filling a table or buffer the
+   host's other guests depend on. Not stopped: one tenant writing its own
+   volume, up to its plan's disk, can still fill a pool smaller than that
+   (the owner's choice in I-449; the remedy is a larger data disk).
 8. **Restricted Nix evaluation** of user fragments: pure, `restrict-eval`,
    no import-from-derivation, sandboxed builds, capped. A fixed-output
    build shares the host's network namespace (Nix gives only those

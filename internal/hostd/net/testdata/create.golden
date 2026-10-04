@@ -22,6 +22,12 @@ tc qdisc add dev tap-0192abcd handle ffff: ingress
 tc filter replace dev tap-0192abcd parent ffff: protocol ip prio 1 handle 1 flower dst_ip 10.64.0.0/12 action pass
 tc filter replace dev tap-0192abcd parent ffff: protocol ip prio 2 handle 1 flower dst_ip 10.63.255.254/32 action pass
 tc filter replace dev tap-0192abcd parent ffff: protocol ip prio 3 handle 1 flower action police rate 200mbit burst 12500000 mtu 64kb conform-exceed drop/ok
+tc qdisc replace dev tap-0192abcd root handle 2: htb default 20
+tc class replace dev tap-0192abcd parent 2: classid 2:10 htb rate 10gbit burst 1mb cburst 1mb quantum 65536
+tc class replace dev tap-0192abcd parent 2: classid 2:20 htb rate 1000mbit ceil 1000mbit burst 1250000 cburst 1250000 quantum 65536
+tc qdisc replace dev tap-0192abcd parent 2:20 handle 20: fq_codel
+tc filter replace dev tap-0192abcd parent 2: protocol ip prio 1 handle 1 flower src_ip 10.64.0.0/12 classid 2:10
+tc filter replace dev tap-0192abcd parent 2: protocol ip prio 2 handle 1 flower src_ip 10.63.255.254/32 classid 2:10
 nft delete element bridge repose guests { 52:54:01:92:ab:cd . 10.64.4.2 . tap-0192abcd }
 bridge fdb del 52:54:01:92:ab:cd dev tap-0192abcd master
 nft -a list chain inet repose guest_dyn

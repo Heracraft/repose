@@ -71,17 +71,22 @@ const (
 	SecretUserCA   = "user_ca.pub"
 )
 
-// Class is a size class.
+// Class is a size class. DiskIOPS and DiskMBps cap the guest's disk, read
+// and write together, so one guest cannot take the shared data disk from
+// the others (DECISIONS I-450).
 type Class struct {
-	VCPUs  uint32
-	MemMiB uint64
+	VCPUs    uint32
+	MemMiB   uint64
+	DiskIOPS uint64
+	DiskMBps uint64
 }
 
-// Classes are the three size classes from DESIGN.md §5.
+// Classes are the three size classes from DESIGN.md §5. The disk caps are
+// each at most a quarter of a host data disk's 16,000 IOPS and 600 MB/s.
 var Classes = map[string]Class{
-	"small": {VCPUs: 2, MemMiB: 4096},
-	"large": {VCPUs: 4, MemMiB: 8192},
-	"xl":    {VCPUs: 8, MemMiB: 16384},
+	"small": {VCPUs: 2, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
+	"large": {VCPUs: 4, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
+	"xl":    {VCPUs: 8, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
 }
 
 // OverheadMiB is what guest@<id> may hold beyond the guest's RAM. The RAM
@@ -134,10 +139,13 @@ type Config struct {
 	VirtiofsSocketWait time.Duration
 	StopTimeoutS       uint32
 	EgressMbit         int
-	StoreTag           string
-	StoreExport        string
-	VirtiofsUser       string
-	VirtiofsBinary     string
+	// DownloadMbit limits what a guest receives from outside the host
+	// (DECISIONS I-451); EgressMbit what it sends (I-217).
+	DownloadMbit   int
+	StoreTag       string
+	StoreExport    string
+	VirtiofsUser   string
+	VirtiofsBinary string
 	// The Claude login share (DECISIONS I-278): UsersDir/<user_id>/claude-auth
 	// holds one user's .credentials.json, served into each of that user's
 	// guests as AuthTag by a virtiofsd running as AuthUser.
@@ -160,6 +168,9 @@ type Config struct {
 	MaxVolumeBytes uint64
 	PoolRefusePct  float64
 	PoolWarnPct    float64
+	// PoolOvercommit bounds the virtual sizes of the pool's thin volumes,
+	// as a multiple of the pool's size (DECISIONS I-449).
+	PoolOvercommit float64
 	StoreHighPct   float64
 	GuestdRetry    time.Duration
 	// GuestdBootRetry is the dial interval until a monitor's first guestd
@@ -184,6 +195,7 @@ func (c Config) Defaults() Config {
 	def(&c.MaxBuilds, 2)
 	def(&c.MaxBuildQueue, 20)
 	def(&c.EgressMbit, 200)
+	def(&c.DownloadMbit, 1000)
 	if c.ReadyTimeout == 0 {
 		c.ReadyTimeout = 60 * time.Second
 	}
@@ -225,6 +237,9 @@ func (c Config) Defaults() Config {
 	}
 	if c.PoolWarnPct == 0 {
 		c.PoolWarnPct = 80
+	}
+	if c.PoolOvercommit == 0 {
+		c.PoolOvercommit = 1.5
 	}
 	if c.StoreHighPct == 0 {
 		c.StoreHighPct = 80
@@ -314,12 +329,17 @@ type Manager struct {
 	stop context.CancelFunc
 	wg   sync.WaitGroup
 
+	// curMu guards the sample cursors and the last sample timestamp; a
+	// tap's counters are read under it (advanceNet).
+	curMu  sync.Mutex
+	last   map[string]sampleCursor
+	lastTs int64
+
 	mu       sync.Mutex
 	workers  map[string]*worker
 	inflight map[string]bool
 	secrets  map[string][]*guestdv1.Secret
 	monitors map[string]*monitor
-	last     map[string]sampleCursor
 	blocked  *blockedTracker
 	ops      chan struct{}
 	buildCh  chan job

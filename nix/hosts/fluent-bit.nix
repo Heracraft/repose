@@ -76,9 +76,18 @@ in
       type = lib.types.str;
       default = "1G";
       description = ''
-        Disk buffer per output while Loki is unreachable
+        Disk buffer for the host journal's output while Loki is unreachable
         (docs/workstreams/10-observability.md §6). Filling it drops the
         oldest chunks; it does not fill the data disk, which is the tenants'.
+      '';
+    };
+    consoleBufferLimit = lib.mkOption {
+      type = lib.types.str;
+      default = "1G";
+      description = ''
+        Disk buffer for the guests' console output, separate from the host
+        journal's so a guest's console cannot evict host lines (DECISIONS
+        I-452).
       '';
     };
   };
@@ -147,19 +156,22 @@ in
               allowlist_key = [ "MESSAGE" "PRIORITY" "component" "unit" "_PID" "SYSLOG_IDENTIFIER" ];
             }
           ];
-          outputs = [
-            {
-              name = "loki";
-              match = "*";
-              host = "\${LOKI_HOST}";
-              port = "\${LOKI_PORT}";
-              labels = "host=\${HOST_ID}";
-              label_keys = "$component,$service_name,$guest_id";
-              line_format = "json";
-              drop_single_key = "off";
-              "storage.total_limit_size" = cfg.observability.bufferLimit;
-              retry_limit = "no_limits";
-            }
+          # Two outputs with a buffer each (DECISIONS I-452): while Loki is
+          # unreachable, guests' console lines fill only their own buffer
+          # and can never drop the host journal's oldest chunks. Each
+          # guest's console is rate-limited by hostd before it is written.
+          outputs = map (o: {
+            name = "loki";
+            host = "\${LOKI_HOST}";
+            port = "\${LOKI_PORT}";
+            labels = "host=\${HOST_ID}";
+            label_keys = "$component,$service_name,$guest_id";
+            line_format = "json";
+            drop_single_key = "off";
+            retry_limit = "no_limits";
+          } // o) [
+            { match = "host.*"; "storage.total_limit_size" = cfg.observability.bufferLimit; }
+            { match = "console.*"; "storage.total_limit_size" = cfg.observability.consoleBufferLimit; }
           ];
         };
       };

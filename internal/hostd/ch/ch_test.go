@@ -15,6 +15,7 @@ func TestArgsGolden(t *testing.T) {
 		Tap: "tap-0192f0a1", MAC: "52:54:01:92:f0:a1", CID: 1000,
 		VolumeDev: "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001",
 		VCPUs:     4, MemMiB: 8192, StoreTag: "ro-store", AuthTag: "claude-auth",
+		DiskIOPS: 3000, DiskBytesPerSec: 120_000_000,
 	}
 	got := strings.Join(s.Args(), "\n") + "\n"
 	want, err := os.ReadFile("testdata/args.golden")
@@ -38,4 +39,18 @@ func TestArgsWithoutAuthTag(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("%d --fs arguments without an auth tag", n)
 	}
+}
+
+// Without limits the disk is rendered as before I-450.
+func TestArgsWithoutDiskLimits(t *testing.T) {
+	s := Spec{GuestDir: "/g", VolumeDev: "/dev/vg-guests/g-1"}
+	for i, a := range s.Args() {
+		if a == "--disk" {
+			if got := s.Args()[i+1]; got != "path=/dev/vg-guests/g-1,image_type=raw,direct=on" {
+				t.Fatalf("--disk %s", got)
+			}
+			return
+		}
+	}
+	t.Fatal("no --disk")
 }
