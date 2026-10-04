@@ -24,6 +24,21 @@ SRC
   '';
 
   devUID = 1000;
+
+  # An agent's shell parent (DECISIONS I-475): a bash that loaded the
+  # secrets when it started, waits, then runs `bash -c printenv` children
+  # the way an agent runs each command.
+  agentParent = pkgs.writeShellScript "i475-agent-parent" ''
+    printf '%s %s\n' "''${OLD_ONE-<unset>}" "''${NEW_ONE-<unset>}" > /tmp/i475.parent
+    while [ ! -e /tmp/i475.go ]; do ${pkgs.coreutils}/bin/sleep 0.1; done
+    ${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/printenv NEW_ONE' > /tmp/i475.new || :
+    if ${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/printenv OLD_ONE' > /tmp/i475.old; then
+      echo present > /tmp/i475.oldstate
+    else
+      echo gone > /tmp/i475.oldstate
+    fi
+    : > /tmp/i475.done
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "guestd";
@@ -72,6 +87,9 @@ pkgs.testers.runNixOSTest {
 
     # /run/repose and its secrets tmpfs, as nix/guest/base/guestd.nix (02)
     # declares them.
+    # The BASH_ENV loader as nix/guest/base/env.nix installs it (I-475).
+    environment.etc."repose/bash-env.sh".source = ../base/bash-env.sh;
+
     systemd.tmpfiles.rules = [
       "d /run/repose 0755 root root -"
       "d /run/repose/secrets 0700 dev dev -"
@@ -172,7 +190,46 @@ pkgs.testers.runNixOSTest {
             {"name": "PLAIN", "value": base64.b64encode(b"simple").decode()},
         ]})
         guest.fail("test -e /run/repose/secrets/TRICKY")
-        guest.fail("grep -q TRICKY /run/repose/secrets.env")
+        guest.fail("grep -q 'export TRICKY=' /run/repose/secrets.env")
+        # I-475: the removed name is unset for processes that inherited it.
+        guest.succeed("grep -qx 'unset TRICKY' /run/repose/secrets.env")
+        guest.succeed("stat -c '%a %U' /run/repose/secrets.names | grep -qx '600 root'")
+
+    with subtest("I-475: a long-running bash's next command sees a secret written after it started, not a removed one"):
+        enc = lambda v: base64.b64encode(v.encode()).decode()
+        call("write-secrets", {"secrets": [
+            {"name": "PLAIN", "value": enc("simple")},
+            {"name": "OLD_ONE", "value": enc("old-value")},
+        ]})
+        guest.succeed("rm -f /tmp/i475.*")
+        guest.succeed(
+            "systemd-run --unit=i475-parent --uid=dev --gid=dev "
+            "-p Environment=BASH_ENV=/etc/repose/bash-env.sh ${agentParent}"
+        )
+        guest.wait_for_file("/tmp/i475.parent")
+        out = guest.succeed("cat /tmp/i475.parent").strip()
+        assert out == "old-value <unset>", out
+
+        call("write-secrets", {"secrets": [
+            {"name": "PLAIN", "value": enc("simple")},
+            {"name": "NEW_ONE", "value": enc("new;value")},
+        ]})
+        guest.succeed("touch /tmp/i475.go")
+        guest.wait_for_file("/tmp/i475.done")
+        out = guest.succeed("cat /tmp/i475.new").strip()
+        assert out == "new;value", out
+        out = guest.succeed("cat /tmp/i475.oldstate").strip()
+        assert out == "gone", out
+        # A user who cannot read the file gets nothing and no error, under
+        # strict mode.
+        out = guest.succeed(
+            "sudo -u nobody env BASH_ENV=/etc/repose/bash-env.sh bash -euo pipefail "
+            "-c 'printf %s \"''${NEW_ONE-unset}\"' 2>&1"
+        )
+        assert out == "unset", out
+        call("write-secrets", {"secrets": [
+            {"name": "PLAIN", "value": enc("simple")},
+        ]})
 
     with subtest("SetPrincipals, then ssh with a matching certificate"):
         guest.succeed('ssh-keygen -t ed25519 -N "" -C repose-ca -f /tmp/ca')
@@ -224,6 +281,22 @@ pkgs.testers.runNixOSTest {
         guest.succeed("grep -q 'TZ=Africa/Nairobi' /etc/repose/env")
         guest.succeed("stat -c '%U' /home/dev/.repose/project.json | grep -q dev")
         guest.wait_until_succeeds("sudo -u dev tmux has-session -t todo-app", timeout=30)
+
+    with subtest("I-475: WriteSecrets sets and unsets dev's tmux global environment"):
+        enc = lambda v: base64.b64encode(v.encode()).decode()
+        call("write-secrets", {"secrets": [
+            {"name": "PLAIN", "value": enc("simple")},
+            {"name": "TMUX_ONE", "value": enc("tmux;")},
+        ]})
+        out = guest.succeed("sudo -u dev tmux show-environment -g TMUX_ONE").strip()
+        assert out == "TMUX_ONE=tmux;", out
+        gen = guest.succeed("head -1 /run/repose/secrets.env").strip()
+        out = guest.succeed("sudo -u dev tmux show-environment -g REPOSE_SECRETS_GEN").strip()
+        assert "export " + out == gen, (out, gen)
+        call("write-secrets", {"secrets": [
+            {"name": "PLAIN", "value": enc("simple")},
+        ]})
+        guest.fail("sudo -u dev tmux show-environment -g TMUX_ONE")
 
     with subtest("Sample reports the tmux windows and agent states"):
         # The absolute path, because the tmux server's own PATH is the user

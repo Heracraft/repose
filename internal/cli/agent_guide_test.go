@@ -51,6 +51,7 @@ var guestCommands = map[string]string{
 	"sudo":     "nix/guest/base/users.nix:security.sudo.enable",
 	"nix":      "system:the Nix the guest's store belongs to",
 	"sh":       "system:NixOS's /bin/sh",
+	"[":        "system:a bash builtin (and coreutils)",
 	"grep":     "system:NixOS's base system path",
 	"df":       "system:NixOS's base system path (coreutils)",
 	"dmesg":    "system:NixOS's base system path (util-linux)",

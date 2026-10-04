@@ -782,6 +782,28 @@ in
           assert "path=ok" in out, out
           assert "agent=repose-env-probe" in out, out
 
+      # I-475: the agent's commands are `bash -c` children of a process that
+      # loaded the secrets when it started. BASH_ENV, from the PAM
+      # environment over ssh, makes each child load secrets.env again when
+      # its generation changed.
+      with subtest("I-475: a tmux window's bash -c child sees a secret rotated after the window started"):
+          guest.succeed("""cat > /tmp/be-parent <<'EOF'
+      echo "bash_env=$BASH_ENV start=$MY_TOKEN"
+      while [ ! -e /tmp/be-go ]; do sleep 0.1; done
+      bash -c 'echo "child=$MY_TOKEN gone=$GONE_TOKEN."'
+      echo done
+      EOF
+      chmod 0755 /tmp/be-parent; rm -f /tmp/be-go /tmp/out-be""")
+          guest.succeed("printf \"export REPOSE_SECRETS_GEN=00000000000000aa\\nexport MY_TOKEN='s3cr3t'\\nexport GONE_TOKEN='g'\\n\" > /run/repose/secrets.env")
+          ssh("tmux new-window -t todo-app -n be -d 'bash /tmp/be-parent > /tmp/out-be 2>&1'")
+          guest.wait_until_succeeds("grep -q start= /tmp/out-be", timeout=30)
+          guest.succeed("printf \"export REPOSE_SECRETS_GEN=00000000000000bb\\nexport MY_TOKEN='rotated'\\nunset GONE_TOKEN\\n\" > /run/repose/secrets.env")
+          guest.succeed("touch /tmp/be-go")
+          out = wait_out("be")
+          print(out)
+          assert "bash_env=/etc/repose/bash-env.sh start=s3cr3t" in out, out
+          assert "child=rotated gone=." in out, out
+
       with subtest("I-227: installs land on PATH (go install, npm i -g)"):
           guest.succeed("""install -d -o dev -g dev /tmp/gi /tmp/npmpkg/bin && cat > /tmp/gi/go.mod <<'EOF'
       module example.com/gi

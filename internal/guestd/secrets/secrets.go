@@ -10,6 +10,9 @@ package secrets
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -125,13 +128,16 @@ func (h *Handler) Write(ctx context.Context, list []*guestdv1.Secret) error {
 		named++
 	}
 
-	removed, err := h.removeStale(seen)
+	removedNames, err := h.removeStale(seen)
 	if err != nil {
 		return err
 	}
-	if err := h.writeEnv(list); err != nil {
+	removed := len(removedNames)
+	env, err := h.writeEnv(list, removedNames)
+	if err != nil {
 		return err
 	}
+	h.pushTmux(ctx, env)
 	if sshMaterial {
 		if err := h.reloadSSHD(ctx); err != nil {
 			return err
@@ -156,16 +162,17 @@ func (h *Handler) ensureDirs() error {
 	return nil
 }
 
-// removeStale deletes secret files whose names are no longer in the set.
-func (h *Handler) removeStale(keep map[string]bool) (int, error) {
+// removeStale deletes secret files whose names are no longer in the set and
+// returns those names.
+func (h *Handler) removeStale(keep map[string]bool) ([]string, error) {
 	entries, err := os.ReadDir(h.paths.SecretsDir())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, nil
+			return nil, nil
 		}
-		return 0, sysdep.Errf(sysdep.CodeInternal, "list secrets directory: %w", err)
+		return nil, sysdep.Errf(sysdep.CodeInternal, "list secrets directory: %w", err)
 	}
-	removed := 0
+	var removed []string
 	for _, e := range entries {
 		if e.IsDir() || keep[e.Name()] || strings.HasPrefix(e.Name(), ".") {
 			continue
@@ -173,33 +180,216 @@ func (h *Handler) removeStale(keep map[string]bool) (int, error) {
 		if err := os.Remove(filepath.Join(h.paths.SecretsDir(), e.Name())); err != nil {
 			return removed, sysdep.Errf(sysdep.CodeInternal, "remove withdrawn secret: %w", err)
 		}
-		removed++
+		removed = append(removed, e.Name())
 	}
 	return removed, nil
 }
 
+// genVar is the variable secrets.env sets on its first line. The BASH_ENV
+// loader (nix/guest/base/bash-env.sh) compares it with the environment it
+// inherited and sources the file only when they differ, so a command whose
+// parent already holds the current secrets keeps any value its parent set
+// for it on purpose (DECISIONS I-475).
+const genVar = "REPOSE_SECRETS_GEN"
+
+// envFile is what writeEnv wrote: the exported rows, the names it unsets and
+// the generation, which pushTmux mirrors into the tmux server.
+type envFile struct {
+	rows   []envRow
+	unsets []string
+	gen    string
+}
+
+type envRow struct{ name, value string }
+
 // writeEnv rewrites /run/repose/secrets.env from the non-reserved secrets, in
-// name order so the file does not churn.
-func (h *Handler) writeEnv(list []*guestdv1.Secret) error {
-	type kv struct{ name, value string }
-	rows := make([]kv, 0, len(list))
+// name order so the file does not churn. A name written since boot and absent
+// now gets an `unset NAME` line, so a process that inherited it (an agent
+// started before `repose secrets rm`) loses it in its next command. Those
+// names are kept in secrets.names, written before secrets.env, so a guestd
+// restart keeps unsetting them; removed are the names removeStale just took
+// away, which covers a guest whose names file predates I-475.
+//
+// The first line is `export REPOSE_SECRETS_GEN=<hex>`. It changes when the
+// rest of the file changes and only then.
+func (h *Handler) writeEnv(list []*guestdv1.Secret, removed []string) (envFile, error) {
+	var out envFile
+	current := make(map[string]bool, len(list))
 	for _, s := range list {
 		if _, ok := reserved[s.GetName()]; ok {
 			continue
 		}
-		rows = append(rows, kv{s.GetName(), string(s.GetValue())})
+		out.rows = append(out.rows, envRow{s.GetName(), string(s.GetValue())})
+		current[s.GetName()] = true
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
+	sort.Slice(out.rows, func(i, j int) bool { return out.rows[i].name < out.rows[j].name })
 
-	var buf bytes.Buffer
-	buf.WriteString("# Written by guestd. Sourced by login shells; do not edit.\n")
-	for _, r := range rows {
-		fmt.Fprintf(&buf, "export %s=%s\n", r.name, shellQuote(r.value))
+	known, err := h.readNames()
+	if err != nil {
+		return out, err
 	}
-	if err := sysdep.WriteFileAtomic(h.paths.SecretsEnv(), buf.Bytes(), 0o400, h.uid, h.gid); err != nil {
-		return sysdep.Errf(sysdep.CodeInternal, "write secrets env file: %w", err)
+	for _, n := range removed {
+		known[n] = true
 	}
-	return nil
+	for n := range current {
+		known[n] = true
+	}
+	all := make([]string, 0, len(known))
+	for n := range known {
+		all = append(all, n)
+		if !current[n] {
+			out.unsets = append(out.unsets, n)
+		}
+	}
+	sort.Strings(all)
+	sort.Strings(out.unsets)
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsNames(), []byte(strings.Join(all, "\n")+"\n"), 0o600, 0, 0); err != nil {
+		return out, sysdep.Errf(sysdep.CodeInternal, "write secret names: %w", err)
+	}
+
+	var body bytes.Buffer
+	body.WriteString("# Written by guestd. Sourced by every bash through BASH_ENV and by login shells; do not edit.\n")
+	for _, r := range out.rows {
+		fmt.Fprintf(&body, "export %s=%s\n", r.name, shellQuote(r.value))
+	}
+	for _, n := range out.unsets {
+		fmt.Fprintf(&body, "unset %s\n", n)
+	}
+
+	out.gen = h.previousGen(body.Bytes())
+	if out.gen == "" {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return out, sysdep.Errf(sysdep.CodeInternal, "generate secrets generation: %w", err)
+		}
+		out.gen = hex.EncodeToString(b[:])
+	}
+	file := append([]byte("export "+genVar+"="+out.gen+"\n"), body.Bytes()...)
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsEnv(), file, 0o400, h.uid, h.gid); err != nil {
+		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets env file: %w", err)
+	}
+	return out, nil
+}
+
+// readNames reads secrets.names; a missing file is an empty set (first write
+// since boot).
+func (h *Handler) readNames() (map[string]bool, error) {
+	names := map[string]bool{}
+	b, err := os.ReadFile(h.paths.SecretsNames())
+	if errors.Is(err, os.ErrNotExist) {
+		return names, nil
+	}
+	if err != nil {
+		return nil, sysdep.Errf(sysdep.CodeInternal, "read secret names: %w", err)
+	}
+	for _, n := range strings.Split(string(b), "\n") {
+		// A line that is not a name is dropped rather than written into a
+		// file every shell sources.
+		if nameRe.MatchString(n) {
+			names[n] = true
+		}
+	}
+	return names, nil
+}
+
+// previousGen returns the generation of the secrets.env on disk when the rest
+// of it equals body, and "" otherwise.
+func (h *Handler) previousGen(body []byte) string {
+	old, err := os.ReadFile(h.paths.SecretsEnv())
+	if err != nil {
+		return ""
+	}
+	first, rest, ok := bytes.Cut(old, []byte("\n"))
+	if !ok || !bytes.Equal(rest, body) {
+		return ""
+	}
+	gen, ok := strings.CutPrefix(string(first), "export "+genVar+"=")
+	if !ok || !genRe.MatchString(gen) {
+		return ""
+	}
+	return gen
+}
+
+var genRe = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// pushTmux mirrors the file into dev's tmux server's global environment, so a
+// new window starts with the current secrets even when its shell is not bash
+// (DECISIONS I-475). No tmux server is the normal state before SetupProject,
+// and any failure here is logged and ignored: the secrets are on the tmpfs and
+// the BASH_ENV loader picks them up regardless.
+//
+// The values travel as tmux arguments. tmux reads an argument ending in ';' as
+// the end of a command, and "\;" at the end as a literal ';' (cmd-parse.y,
+// cmd_parse_from_arguments), so such a value gets a backslash before its last
+// byte. The generation goes in the last command, after every value, so a
+// failure part way leaves tmux with an old generation and the loader still
+// reloads.
+func (h *Handler) pushTmux(ctx context.Context, env envFile) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for _, args := range tmuxBatches(env) {
+		res, err := h.run.Run(ctx, sysdep.RunSpec{
+			Argv:      append([]string{"tmux"}, args...),
+			User:      "dev",
+			Env:       sysdep.DevEnv(h.paths, "dev"),
+			MaxOutput: 4 << 10,
+		})
+		switch {
+		case err != nil:
+			h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "error_code", sysdep.CodeOf(err))
+			return
+		case res.ExitCode != 0:
+			// stderr is not logged: tmux may echo an argument back.
+			if !strings.Contains(string(res.Stderr), "no server running") &&
+				!strings.Contains(string(res.Stderr), "error connecting") {
+				h.log.Warn("secrets not pushed to tmux", "event", "write_secrets_tmux", "exit_code", res.ExitCode)
+			}
+			return
+		}
+	}
+}
+
+// tmuxBatches turns env into tmux argument lists of about 256 KiB each, under
+// the kernel's limit for one exec, commands joined by ";". The generation is
+// the last command of the last batch.
+func tmuxBatches(env envFile) [][]string {
+	var cmds [][]string
+	for _, r := range env.rows {
+		cmds = append(cmds, []string{"set-environment", "-g", r.name, tmuxArg(r.value)})
+	}
+	for _, n := range env.unsets {
+		cmds = append(cmds, []string{"set-environment", "-gu", n})
+	}
+	cmds = append(cmds, []string{"set-environment", "-g", genVar, env.gen})
+
+	const batchBytes = 256 << 10
+	var batches [][]string
+	var cur []string
+	size := 0
+	for _, c := range cmds {
+		n := 0
+		for _, a := range c {
+			n += len(a) + 1
+		}
+		if len(cur) > 0 && size+n > batchBytes {
+			batches = append(batches, cur)
+			cur, size = nil, 0
+		}
+		if len(cur) > 0 {
+			cur = append(cur, ";")
+		}
+		cur = append(cur, c...)
+		size += n
+	}
+	return append(batches, cur)
+}
+
+// tmuxArg keeps a value ending in ';' from being read as a command separator.
+func tmuxArg(v string) string {
+	if strings.HasSuffix(v, ";") {
+		return v[:len(v)-1] + `\;`
+	}
+	return v
 }
 
 // shellQuote single-quotes a value, escaping an embedded quote as '\” so a

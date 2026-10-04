@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,5 +259,325 @@ func TestSSHDReloadRetriesWhileItsStartIsQueued(t *testing.T) {
 	}
 	if reloads != 3 {
 		t.Fatalf("reloads = %d, want 3", reloads)
+	}
+}
+
+func readEnv(t *testing.T, p sysdep.Paths) string {
+	t.Helper()
+	b, err := os.ReadFile(p.SecretsEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// I-475: a name removed since boot is unset in secrets.env, so an agent that
+// inherited it loses it in its next command.
+func TestSecretsEnvUnsetsARemovedName(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}); err != nil {
+		t.Fatal(err)
+	}
+	if env := readEnv(t, p); strings.Contains(env, "unset") {
+		t.Fatalf("nothing was removed, yet:\n%s", env)
+	}
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
+		t.Fatal(err)
+	}
+	env := readEnv(t, p)
+	if !strings.Contains(env, "\nunset B\n") || strings.Contains(env, "export B=") {
+		t.Fatalf("B is not unset:\n%s", env)
+	}
+	// An unrelated later write keeps the unset line: an agent started
+	// before the removal may still hold B.
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("C", "3")}); err != nil {
+		t.Fatal(err)
+	}
+	if env := readEnv(t, p); !strings.Contains(env, "\nunset B\n") {
+		t.Fatalf("the unset line went away after an unrelated write:\n%s", env)
+	}
+	// Setting it again exports it and drops the unset line.
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "4")}); err != nil {
+		t.Fatal(err)
+	}
+	env = readEnv(t, p)
+	if strings.Contains(env, "unset B") || !strings.Contains(env, "export B='4'") {
+		t.Fatalf("B set again:\n%s", env)
+	}
+}
+
+// A guestd restart is a new Handler over the same tmpfs; the names written
+// before it are read back from secrets.names.
+func TestSecretsEnvRemovedNamesSurviveAGuestdRestart(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := New(p, sysdep.NewFakeRunner(), quietLog())
+	restarted.uid, restarted.gid = -1, -1
+	if err := restarted.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("C", "3")}); err != nil {
+		t.Fatal(err)
+	}
+	if env := readEnv(t, p); !strings.Contains(env, "\nunset B\n") {
+		t.Fatalf("a guestd restart forgot the removed name:\n%s", env)
+	}
+	fi, err := os.Stat(p.SecretsNames())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("secrets.names mode = %o, want 600", fi.Mode().Perm())
+	}
+	b, _ := os.ReadFile(p.SecretsNames())
+	if string(b) != "A\nB\nC\n" {
+		t.Fatalf("secrets.names = %q", b)
+	}
+}
+
+// A guest whose secrets were written by a guestd from before I-475 has no
+// names file; the names in the secrets directory stand in for it.
+func TestSecretsEnvUnsetsANameRemovedOnAnUpgradedGuest(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("OLD", "2")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p.SecretsNames()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
+		t.Fatal(err)
+	}
+	if env := readEnv(t, p); !strings.Contains(env, "\nunset OLD\n") {
+		t.Fatalf("OLD is not unset:\n%s", env)
+	}
+}
+
+func TestSecretsEnvGenerationChangesOnlyWithTheContent(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	gen := func() string {
+		first, _, _ := strings.Cut(readEnv(t, p), "\n")
+		g, ok := strings.CutPrefix(first, "export REPOSE_SECRETS_GEN=")
+		if !ok || !genRe.MatchString(g) {
+			t.Fatalf("first line = %q", first)
+		}
+		return g
+	}
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}); err != nil {
+		t.Fatal(err)
+	}
+	g1 := gen()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret(ReservedUserCA, "ca")}); err != nil {
+		t.Fatal(err)
+	}
+	if g := gen(); g != g1 {
+		t.Fatalf("the same secrets got a new generation: %s then %s", g1, g)
+	}
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}); err != nil {
+		t.Fatal(err)
+	}
+	if g := gen(); g == g1 {
+		t.Fatal("a changed value kept the generation")
+	}
+}
+
+// trickyValues are values that break a naive writer, a naive reader or tmux's
+// argument parser.
+var trickyValues = map[string]string{
+	"QUOTE":     "it's",
+	"NEWLINES":  "line one\nline 'two'\n",
+	"DOLLAR":    "$HOME $(echo no) `echo no` ${X:-y}",
+	"BACKSLASH": `a\b\\c\`,
+	"SEMI":      "ends;",
+	"ESC_SEMI":  `ends\;`,
+	"DASH":      "-n",
+	"EMPTY":     "",
+	"SPACES":    "  two  spaces  ",
+	"UNICODE":   "café ☃",
+	"GLOB":      "*",
+}
+
+func trickyList() []*guestdv1.Secret {
+	var list []*guestdv1.Secret
+	for n, v := range trickyValues {
+		list = append(list, secret(n, v))
+	}
+	return list
+}
+
+// Every tricky value comes back byte for byte from a bash that sources the
+// file.
+func TestSecretsEnvTrickyValuesSurviveBash(t *testing.T) {
+	h, p, _ := newHandler(t)
+	if err := h.Write(context.Background(), trickyList()); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range trickyValues {
+		res, err := sysdep.ExecRunner{}.Run(context.Background(), sysdep.RunSpec{
+			Argv: []string{"bash", "-euo", "pipefail", "-c", `. "$1"; printf %s "${!2}"`, "bash", p.SecretsEnv(), name},
+			Env:  []string{"PATH=" + os.Getenv("PATH")},
+		})
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("%s: %v exit %d: %s", name, err, res.ExitCode, res.Stderr)
+		}
+		if string(res.Stdout) != want {
+			t.Errorf("%s: bash reads %q, want %q", name, res.Stdout, want)
+		}
+	}
+}
+
+func TestSecretsArePushedToTmux(t *testing.T) {
+	h, p, run := newHandler(t)
+	ctx := context.Background()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "x;")}); err != nil {
+		t.Fatal(err)
+	}
+	run.Reset()
+	if err := h.Write(ctx, []*guestdv1.Secret{secret("B", "x;"), secret(ReservedUserCA, "ca")}); err != nil {
+		t.Fatal(err)
+	}
+	var tmux []sysdep.RunSpec
+	for _, c := range run.Calls() {
+		if c.Argv[0] == "tmux" {
+			tmux = append(tmux, c)
+		}
+	}
+	if len(tmux) != 1 {
+		t.Fatalf("tmux calls = %d, want 1: %v", len(tmux), run.Calls())
+	}
+	if tmux[0].User != "dev" {
+		t.Errorf("tmux ran as %q, want dev", tmux[0].User)
+	}
+	first, _, _ := strings.Cut(readEnv(t, p), "\n")
+	gen := strings.TrimPrefix(first, "export REPOSE_SECRETS_GEN=")
+	want := []string{"tmux",
+		"set-environment", "-g", "B", `x\;`, ";",
+		"set-environment", "-gu", "A", ";",
+		"set-environment", "-g", "REPOSE_SECRETS_GEN", gen,
+	}
+	if strings.Join(tmux[0].Argv, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("tmux argv = %q\nwant %q", tmux[0].Argv, want)
+	}
+}
+
+// No tmux server (before SetupProject), a tmux failure or a runner error
+// never fail the write.
+func TestTmuxFailureDoesNotFailTheWrite(t *testing.T) {
+	for name, set := range map[string]func(*sysdep.FakeRunner){
+		"no server": func(r *sysdep.FakeRunner) {
+			r.Results["tmux"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("no server running on /tmp/tmux-1000/default")}
+		},
+		"exit 1": func(r *sysdep.FakeRunner) { r.Results["tmux"] = sysdep.RunResult{ExitCode: 1} },
+		"missing": func(r *sysdep.FakeRunner) {
+			r.Errs["tmux"] = os.ErrNotExist
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, p, run := newHandler(t)
+			set(run)
+			if err := h.Write(context.Background(), []*guestdv1.Secret{secret("A", "1")}); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if !strings.Contains(readEnv(t, p), "export A='1'") {
+				t.Fatal("secrets.env not written")
+			}
+		})
+	}
+}
+
+// Values large enough to pass the kernel's limit for one exec are split over
+// several tmux calls, and the generation is in the last one.
+func TestTmuxPushIsBatched(t *testing.T) {
+	h, _, run := newHandler(t)
+	var list []*guestdv1.Secret
+	for i := 0; i < 12; i++ {
+		list = append(list, secret("BIG_"+string(rune('A'+i)), strings.Repeat("v", MaxValueBytes)))
+	}
+	if err := h.Write(context.Background(), list); err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	for _, c := range run.Calls() {
+		if c.Argv[0] == "tmux" {
+			calls = append(calls, c.Argv)
+		}
+	}
+	if len(calls) < 3 {
+		t.Fatalf("tmux calls = %d, want the 768 KiB split", len(calls))
+	}
+	for i, argv := range calls {
+		size := 0
+		for _, a := range argv {
+			size += len(a)
+		}
+		if size > 300<<10 {
+			t.Errorf("call %d carries %d bytes", i, size)
+		}
+		hasGen := strings.Contains(strings.Join(argv, " "), "REPOSE_SECRETS_GEN")
+		if hasGen != (i == len(calls)-1) {
+			t.Errorf("call %d of %d: generation present = %v", i, len(calls), hasGen)
+		}
+	}
+}
+
+// The arguments pushTmux builds, run by a real tmux on a private socket: a
+// window started afterwards sees every tricky value byte for byte, and a
+// removed name is gone from the global environment.
+func TestTmuxArgumentsAgainstARealTmux(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("/tmp", "tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s")
+	run := func(args ...string) {
+		t.Helper()
+		out, err := exec.Command(tmux, append([]string{"-S", sock, "-f", "/dev/null"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("tmux %v: %v %s", args[0], err, out)
+		}
+	}
+	run("new-session", "-d", "-s", "t", "sleep 30")
+	t.Cleanup(func() { _ = exec.Command(tmux, "-S", sock, "kill-server").Run() })
+	run("set-environment", "-g", "GONE", "x")
+
+	env := envFile{unsets: []string{"GONE"}, gen: "00000000000000aa"}
+	for n, v := range trickyValues {
+		env.rows = append(env.rows, envRow{n, v})
+	}
+	for _, args := range tmuxBatches(env) {
+		run(args...)
+	}
+	for name, want := range trickyValues {
+		out := filepath.Join(dir, name)
+		run("new-window", "-d", "printenv "+name+" > "+out+"; printenv GONE > "+out+".gone; echo done > "+out+".done")
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(out + ".done"); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: window did not finish", name)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		got, _ := os.ReadFile(out)
+		if string(got) != want+"\n" {
+			t.Errorf("%s: a tmux window sees %q, want %q", name, got, want)
+		}
+		if gone, _ := os.ReadFile(out + ".gone"); len(gone) != 0 {
+			t.Errorf("a removed name is still in tmux: %q", gone)
+		}
 	}
 }

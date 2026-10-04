@@ -50,7 +50,9 @@ to `tmux attach`, so new windows open there.
 | `/run/repose/` | tmpfs (part of `/run`), 0755 root |
 | `/run/repose/ssh_host_ed25519_key`, `/run/repose/ssh_host_ed25519_key-cert.pub`, `/run/repose/user_ca.pub` | the reserved secrets, root 0600 / 0644, written by guestd `WriteSecrets`; a throwaway key is generated at first sshd start when none was delivered yet |
 | `/run/repose/secrets/<NAME>` | named secret values, tmpfs, 0400 dev, directory 0700 dev |
-| `/run/repose/secrets.env` | `export NAME='...'` lines, 0400 dev, sourced by login shells |
+| `/run/repose/secrets.env` | first line `export REPOSE_SECRETS_GEN=<16 hex>` (changes when the rest of the file does, and only then), then `export NAME='...'` lines and an `unset NAME` line for each name written since boot and absent now; 0400 dev, sourced by login shells and by `/etc/repose/bash-env.sh` (DECISIONS I-475) |
+| `/run/repose/secrets.names` | every named secret written since boot, one per line, root 0600; guestd reads it back after a restart so a removed name keeps its `unset` line (I-475) |
+| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash: sources `/run/repose/secrets.env` when its first line differs from the `REPOSE_SECRETS_GEN` the process inherited; silent, runs no other program, keeps `$?`, the positional parameters and the shell options, a no-op when the file is missing or unreadable (I-475) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
@@ -421,6 +423,13 @@ directory to `LD_LIBRARY_PATH` for manylinux wheels and keeps its own
 path as `sys.executable` (I-228). `DISPLAY=:99` only while the X server
 socket `/tmp/.X11-unix/X99` exists (checked at every shell start); it
 exists while the agents' browser or the desktop viewer runs (I-246).
+`BASH_ENV=/etc/repose/bash-env.sh` everywhere the static values reach,
+and in dev's tmux server and user manager after a base switch, so a
+non-interactive bash (each command an agent runs) loads the secrets guestd
+wrote after its parent started, and drops a removed one. A parent that
+already holds the current `REPOSE_SECRETS_GEN` keeps the values it set for
+its child. guestd also sets each secret, `REPOSE_SECRETS_GEN` and the
+removals in dev's tmux global environment on every `WriteSecrets` (I-475).
 
 ## Ports
 
