@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/db/testdb"
@@ -330,7 +331,7 @@ func TestCiphertextIsBoundToItsProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := s.Reseal(ctx); err != nil {
+	if _, err := s.Reseal(ctx); err != nil {
 		t.Fatal(err)
 	}
 	_, after := newProject(t, s, pool)
@@ -369,16 +370,16 @@ func TestResealLegacyRows(t *testing.T) {
 	}
 	_, other := newProject(t, s, pool)
 	copyRows(t, pool, secrets.PlatformProjectID, other)
-	resealed, refused, err := s.Reseal(ctx)
-	if err != nil || resealed != 2 || refused != 1 {
-		t.Fatalf("reseal: %d resealed, %d refused, %v", resealed, refused, err)
+	res, err := s.Reseal(ctx)
+	if err != nil || res != (secrets.ResealResult{Resealed: 2, Refused: 1}) {
+		t.Fatalf("reseal: %+v %v", res, err)
 	}
 	var before []byte
 	if err := pool.QueryRow(ctx, "select ciphertext from secrets where project_id = $1 and name = 'TOKEN'", pid).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if again, refusedAgain, err := s.Reseal(ctx); err != nil || again != 0 || refusedAgain != 1 {
-		t.Fatalf("second reseal: %d %d %v", again, refusedAgain, err)
+	if again, err := s.Reseal(ctx); err != nil || again != (secrets.ResealResult{Refused: 1}) {
+		t.Fatalf("second reseal: %+v %v", again, err)
 	}
 	var after []byte
 	if err := pool.QueryRow(ctx, "select ciphertext from secrets where project_id = $1 and name = 'TOKEN'", pid).Scan(&after); err != nil {
@@ -421,25 +422,25 @@ func TestConcurrentResealKeepsEveryRow(t *testing.T) {
 		}
 	}
 	var wg sync.WaitGroup
-	results := make([][3]any, 3)
+	results := make([]secrets.ResealResult, 3)
+	errs := make([]error, 3)
 	for i := range results {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			r, f, err := secrets.New(pool, fk).Reseal(ctx)
-			results[i] = [3]any{r, f, err}
+			results[i], errs[i] = secrets.New(pool, fk).Reseal(ctx)
 		}(i)
 	}
 	wg.Wait()
 	total := 0
 	for i, r := range results {
-		if r[2] != nil {
-			t.Fatalf("pass %d: %v", i, r[2])
+		if errs[i] != nil {
+			t.Fatalf("pass %d: %v", i, errs[i])
 		}
-		if r[1].(int) != 0 {
-			t.Fatalf("pass %d refused %d rows", i, r[1])
+		if r.Refused != 0 || r.Failed != 0 {
+			t.Fatalf("pass %d: %+v", i, r)
 		}
-		total += r[0].(int)
+		total += r.Resealed
 	}
 	if total != len(want) {
 		t.Fatalf("passes resealed %d rows between them, want %d", total, len(want))
@@ -450,8 +451,8 @@ func TestConcurrentResealKeepsEveryRow(t *testing.T) {
 			t.Fatalf("%v: %q bound=%v, want %q", k, got, bound, v)
 		}
 	}
-	if again, _, err := s.Reseal(ctx); err != nil || again != 0 {
-		t.Fatalf("after the concurrent passes: %d %v", again, err)
+	if again, err := s.Reseal(ctx); err != nil || again.Resealed != 0 {
+		t.Fatalf("after the concurrent passes: %+v %v", again, err)
 	}
 }
 
@@ -527,9 +528,9 @@ func TestResealDoesNotOverwriteANewerPut(t *testing.T) {
 			t.Error(err)
 		}
 	}}
-	resealed, _, err := secrets.New(pool, hk).Reseal(ctx)
-	if err != nil || resealed != 0 {
-		t.Fatalf("reseal after a concurrent put: %d %v", resealed, err)
+	res, err := secrets.New(pool, hk).Reseal(ctx)
+	if err != nil || res.Resealed != 0 {
+		t.Fatalf("reseal after a concurrent put: %+v %v", res, err)
 	}
 	if v, bound := rowForm(t, fk, pool, pid, "A"); !bound || v != "new" {
 		t.Fatalf("got %q bound=%v, want the newer put", v, bound)
@@ -551,37 +552,164 @@ func TestResealLoopRetriesWhileKeyVaultIsDown(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
-		secrets.New(pool, fk).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, MaxRetry: 50 * time.Millisecond, Again: 100 * time.Millisecond})
+		secrets.New(pool, fk).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, MaxRetry: 50 * time.Millisecond, Again: time.Second})
 		close(done)
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(logs.String(), "key_service_unavailable") {
-		if time.Now().After(deadline) {
-			t.Fatalf("no failed pass logged: %s", logs.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitLog(t, &logs, "key_service_unavailable")
 	fk.SetDown(false)
 	if _, bound := rowForm(t, fk, pool, pid, "A"); bound {
 		t.Fatal("row resealed while Key Vault was down")
 	}
+	// The container a rolling deploy replaces writes a name-only row after
+	// the new one's first pass; the second pass binds it.
+	waitLog(t, &logs, "pass=1")
+	legacyPut(t, seed, fk, pool, uid, pid, "B", "b")
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatalf("loop did not finish: %s", logs.String())
 	}
-	if v, bound := rowForm(t, fk, pool, pid, "A"); !bound || v != "a" {
-		t.Fatalf("after the vault returned: %q bound=%v", v, bound)
+	for n, want := range map[string]string{"A": "a", "B": "b"} {
+		if v, bound := rowForm(t, fk, pool, pid, n); !bound || v != want {
+			t.Fatalf("%s after the loop: %q bound=%v", n, v, bound)
+		}
 	}
 	out := logs.String()
-	for _, w := range []string{"event=secrets_reseal resealed=1", "event=secrets_name_only_none"} {
-		if !strings.Contains(out, w) {
-			t.Fatalf("log lacks %q:\n%s", w, out)
+	var passes []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "event=secrets_reseal ") || strings.Contains(l, "event=secrets_name_only_none") {
+			passes = append(passes, l)
 		}
+	}
+	want := []string{"resealed=1 refused=0 failed=0 pass=1", "resealed=1 refused=0 failed=0 pass=2", "resealed=0 refused=0 failed=0 pass=3", "event=secrets_name_only_none"}
+	if len(passes) != len(want) {
+		t.Fatalf("got passes %q, want %q", passes, want)
+	}
+	for i, w := range want {
+		if !strings.Contains(passes[i], w) {
+			t.Fatalf("line %d is %q, want %q", i, passes[i], w)
+		}
+	}
+	if strings.Contains(out, "secrets_reseal_incomplete") {
+		t.Fatalf("incomplete logged with every row bound:\n%s", out)
 	}
 	if strings.Contains(out, "\"A\"") || strings.Contains(out, "name=A") || strings.Contains(out, "=a ") {
 		t.Fatalf("log carries a name or value:\n%s", out)
 	}
+}
+
+// waitLog waits up to 10 seconds for want to appear in logs.
+func waitLog(t *testing.T, logs *syncBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(logs.String(), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("log lacks %q:\n%s", want, logs.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// badKeyRow writes a name-only row for a new user and project, then points
+// its data key at a key version the vault does not have, as a disabled or
+// purged Key Vault key version would leave it.
+func badKeyRow(t *testing.T, s *secrets.Store, fk *kv.Fake, pool *dbPool) (projectID string) {
+	t.Helper()
+	uid, pid := newProject(t, s, pool)
+	legacyPut(t, s, fk, pool, uid, pid, "LOST", "l")
+	if _, err := pool.Exec(context.Background(), "update secrets set kv_key_version = 'gone' where project_id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
+// A row whose data key does not unwrap is skipped and counted in Failed;
+// the rows after it are still resealed. Several distinct keys failing in a
+// row is taken as Key Vault being down, and the pass fails.
+func TestResealSkipsARowKeyVaultWillNotUnwrap(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	badKeyRow(t, s, fk, pool)
+	uid, pid := newProject(t, s, pool)
+	for _, n := range []string{"A", "B"} {
+		legacyPut(t, s, fk, pool, uid, pid, n, strings.ToLower(n))
+	}
+	res, err := s.Reseal(ctx)
+	if err != nil || res != (secrets.ResealResult{Resealed: 2, Failed: 1}) {
+		t.Fatalf("reseal with one bad row: %+v %v", res, err)
+	}
+	for _, n := range []string{"A", "B"} {
+		if v, bound := rowForm(t, fk, pool, pid, n); !bound || v != strings.ToLower(n) {
+			t.Fatalf("%s: %q bound=%v", n, v, bound)
+		}
+	}
+	if _, err := pool.Exec(ctx, "delete from secrets where project_id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	badKeyRow(t, s, fk, pool)
+	badKeyRow(t, s, fk, pool)
+	if res, err := secrets.New(pool, fk).Reseal(ctx); !errors.Is(err, secrets.ErrKeyServiceUnavailable) || res.Failed != 3 {
+		t.Fatalf("three bad keys in a row: %+v %v", res, err)
+	}
+	fk.SetDown(true)
+	if _, err := secrets.New(pool, fk).Reseal(ctx); !errors.Is(err, secrets.ErrKeyServiceUnavailable) {
+		t.Fatalf("vault down: %v", err)
+	}
+}
+
+// ResealLoop with a row Key Vault will not unwrap: it binds the others,
+// then stops with secrets_reseal_incomplete once a second pass fails on
+// the same rows, and never claims secrets_name_only_none.
+func TestResealLoopStopsOnARowThatNeverUnwraps(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	badKeyRow(t, s, fk, pool)
+	uid, pid := newProject(t, s, pool)
+	legacyPut(t, s, fk, pool, uid, pid, "A", "a")
+	var logs syncBuffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	secrets.New(pool, fk).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, Again: 50 * time.Millisecond})
+	if ctx.Err() != nil {
+		t.Fatalf("loop did not finish: %s", logs.String())
+	}
+	if v, bound := rowForm(t, fk, pool, pid, "A"); !bound || v != "a" {
+		t.Fatalf("good row: %q bound=%v", v, bound)
+	}
+	out := logs.String()
+	for _, w := range []string{"resealed=1 refused=0 failed=1 pass=1", "resealed=0 refused=0 failed=1 pass=2", "event=secrets_reseal_incomplete failed=1"} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("log lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "secrets_name_only_none") || strings.Contains(out, "secrets_reseal_fail") {
+		t.Fatalf("a bad row was reported as done or as an outage:\n%s", out)
+	}
+}
+
+// Postgres unreachable at start: the lock cannot be taken, and the failed
+// pass is logged with code=db.
+func TestResealLoopLogsDBCodeWhenPostgresIsDown(t *testing.T) {
+	pool, err := pgxpool.New(context.Background(), "postgres://nobody@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	var logs syncBuffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		secrets.New(pool, kv.New()).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, MaxRetry: 50 * time.Millisecond})
+		close(done)
+	}()
+	waitLog(t, &logs, "event=secrets_reseal_fail code=db err=")
+	cancel()
+	<-done
 }
 
 type syncBuffer struct {
