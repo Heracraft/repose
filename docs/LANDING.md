@@ -11,13 +11,19 @@ the grammar it adds.
 
 ## What we sell
 
-A dev machine in the cloud in one command, that an agent can wreck. Two
-ideas, and every visual serves one of them:
+Your laptop's dev environment, replicated in the cloud in one command,
+for solo founders and their agents (DECISIONS I-477). Two ideas, the
+first one leading, and every visual serves one of them:
 
-1. `repose run` in a checkout turns your laptop's working state into a
-   cloud dev machine that feels like your own box.
+1. `repose run` in a checkout replicates your laptop's dev environment
+   (your code with its unpushed and uncommitted work, your tools, your
+   logins) on a cloud machine that feels like your own box. Your private
+   things stay home.
 2. The agent runs there with full permissions; the damage stays on that
    machine, and it comes back.
+
+The reader is one person shipping alone, with agents doing the work. The
+page says so once, in the label above the headline.
 
 Not notifications, not answering from your phone, not "check in from
 anywhere", not remote control, not always-on, not collaboration, not a
@@ -138,6 +144,11 @@ Frames of it for reference: record them from the live page before starting.
 
 ## "Your working state, in one command"
 
+Titled "Your laptop's setup, in one command" since I-477, with one
+sentence for what the picture does not show: the globally installed CLIs,
+the copied logins, and the SSH keys staying home. This file keeps the old
+name for the section (`OneCommand.svelte`).
+
 The owner chose the animated version (anime.js): the laptop's commits and
 changed files copy across into the cloud machine panel when `repose run`
 fires; `node_modules/` stays behind, struck. Keep it animated.
@@ -149,7 +160,10 @@ fires; `node_modules/` stays behind, struck. Keep it animated.
   A feature card gets one line of facts the picture does not show, no
   explanation of the picture. A step is its title and its command. The
   hero's lead is three short sentences: the machine, the wreck, the
-  snapshot.
+  snapshot. Since I-477 the headline is "Your dev environment,
+  replicated in the cloud", the label above it "For solo founders and
+  their agents", and "full permissions" sits in the lead's second
+  sentence.
 
 - Never write as if the product were Claude-only: "the agent" drives the
   browser, reads the console; not "Claude Code does X".
@@ -242,7 +256,8 @@ and underlined every heading. The page is one system:
   to a cell between the rails, no pie (it would read as a gauge).
 - **Anchored, never floating.** The gauges and counts sit in their line
   or card, the footer's shapes stand on its rule.
-- **The blue bar marks "full permissions" and the prices, nothing else.**
+- **The blue bar marks "replicated" in the headline and the prices,
+  nothing else** (it marked "full permissions" until I-477).
   Section headings are bold serif with no bar.
 - **Shapes move one way**: a group lands in place when it comes into
   view. The one other shape motion carries meaning (owner, 2026-09-27):
@@ -432,8 +447,8 @@ at 1280 to 1920 wide, so hydration does not resize it either (I-399).
 
 - **The chrome, once on load**: the rails draw from the top down (1.1s,
   `--land-ease`, `cubic-bezier(0.65, 0, 0.35, 1)`); the ticks fade in
-  after them (0.4s ease-out, from 0.9s); the blue bar under "full
-  permissions" wipes in from the left (0.8s, `--land-ease`, from 0.5s).
+  after them (0.4s ease-out, from 0.9s); the blue bar under
+  "replicated" wipes in from the left (0.8s, `--land-ease`, from 0.5s).
   The prices' bar does not move.
 - **Shapes landing**: a group lands in place when it comes into view, one
   shape after another (`.land` in `layout.css`: opacity 0.3s ease-out,
@@ -549,7 +564,7 @@ by `+page.svelte` alone; the house tokens stay in `layout.css`):
 - **The hero.** One stack on the left edge: the headline, the lead under
   it, then the button and the install command on one row. Nothing is
   pushed to the right; the picture fills the width. The blue bar under
-  "full permissions" and on the prices is unchanged. The picture (owner,
+  "replicated" (I-477) and on the prices is unchanged. The picture (owner,
   2026-09-27) is your laptop, your cloud machine, and on the right a
   stack: the snapshots panel (titled, the miniatures shrink into it) over
   the internet as a bare 52px globe, no window, since the internet is not

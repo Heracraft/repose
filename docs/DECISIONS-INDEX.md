@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-496 entries.
+497 entries.
 
 ## Scope
 
@@ -528,3 +528,4 @@ pointer, not a summary.
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11874
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11884
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11927
+- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; L11957

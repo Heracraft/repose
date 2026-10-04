@@ -11953,3 +11953,25 @@ environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
 release signing key").
 ciphertext; a failed tag check under the bound data says the same thing for
 free); binding in one release (breaks the rolling deploy and rollback).
+
+**I-477. The landing leads with replicating your laptop's dev environment,
+for solo founders.** (owner, 2026-10-04; amends docs/LANDING.md "What we
+sell", "The hero" and "Shape language"'s blue bar)
+A competitor (boat.dev) sells cheap agent sandboxes by the second, with a
+public URL, a virtual desktop and an SDK for fleets. Its page is written
+for people building agent products. The owner's launch video calls
+repose "Replicate your dev environment", and the owner wants the page to
+own that claim for solo founders: one person whose agents do the work. The
+headline is now "Your dev environment, replicated in the cloud", with the
+blue bar under "replicated"; above it a label reads "For solo founders and
+their agents". The lead keeps its three beats (the machine, the wreck, the
+snapshot) and carries "full permissions" in its second sentence. "Your
+working state, in one command" becomes "Your laptop's setup, in one
+command", with one sentence naming what the picture cannot show: the
+globally installed CLIs and the copied logins (`sync.md`, `machine.md`
+"Your laptop's tools come along", `secrets.md` "Logins copied from your
+laptop"), and that the SSH keys stay home. The title and meta description
+say the same.
+*Rejected:* naming boat or any other product on the page; a price
+comparison (boat bills per second, repose is a flat month, and the
+numbers swap with the hours run).
