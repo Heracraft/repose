@@ -11816,3 +11816,58 @@ directory owned by anyone but itself or the intended owner, and sets
 owner and mode through a descriptor opened `O_DIRECTORY|O_NOFOLLOW`, so a
 link swapped in after the check fails the open. The guests directory, the
 guest directory and the users directories go through the same function.
+**I-467. The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies.**
+(security review, 2026-10-03; amends I-311) I-311 kept cookies in
+Chrome so that nothing a tool reads works after the bridge closes. The
+same holds now for the other things a login hands the browser. In the
+copy of network, fetch and audit events the tools get (Chrome's own
+traffic is untouched), the front removes the `Authorization`,
+`Proxy-Authorization` and common API-key headers (`X-Api-Key`,
+`X-Auth-Token`, `X-Access-Token`, `X-Amz-Security-Token`,
+`X-Goog-Api-Key`, `X-Vault-Token`, `Private-Token`) beside Cookie and
+Set-Cookie, from header maps, header lists and header text alike; drops
+request bodies (`postData`, `postDataEntries`); and drops
+`rawCookieLine` from audit issues, where Chrome puts a whole Set-Cookie
+line for a cookie it rejected. Every `Network.*`, `Fetch.*` and
+`Audits.*` event is now decoded and scrubbed, not a list of known ones,
+so an event Chrome adds later is covered. Refused always: the readers of
+request and response bodies (`Network.getResponseBody`,
+`getRequestPostData`, `getResponseBodyForInterception`,
+`takeResponseBodyForInterceptionAsStream`, `searchInResponseBody`,
+`streamResourceContent`, `loadNetworkResource`, `Fetch.getResponseBody`,
+`takeResponseBodyAsStream`, `Page.getResourceContent`,
+`searchInResource`, `Audits.getEncodedResponse`), and the `DOMStorage`,
+`IndexedDB` and `CacheStorage` domains, which read any site's stored data
+rather than the page's. `IO.read` stays: no body stream can be opened,
+and Playwright's PDFs arrive through it.
+
+What the agents lose: a tool's "show me the response body" fails with a
+refusal that says to read the page, and a tool that rewrites a paused
+request's headers sends it without the removed ones. They still read
+pages, run scripts in them, and see URLs, statuses and the other headers.
+What stays an accepted gap (user docs): a page's own JavaScript can read
+what that page can, including bodies it fetches from its own site.
+Evidence: `TestBridgeCredentialsAgainstChromium` against a real Chromium
+(a page's fetch carried its Authorization header to the server; the tool
+watching the network saw none of the header, the body or the rejected
+cookie line, and a body read was refused); fake-peer tests for every
+refusal and scrub; Playwright and chrome-devtools-mcp still work through
+the front.
+
+**I-468. A dropped path is judged by the file it reads, and key files are never a drop.**
+(security review, 2026-10-03; amends I-280) The input proxy checked the
+pasted path for system directories and hidden components, then read
+whatever the path led to. It now follows every symlink first and applies
+the same checks to the file that would be read, both when the paste is
+scanned and again just before the copy, and reads only a regular file. A
+file named like a private key or key store is text, not a drop, whatever
+folder it is in: `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (not
+`.pub`), and `.pem`, `.p12`, `.pfx`, `.p8`, `.ppk`, `.jks`, `.keystore`,
+`.kdbx`, `.keychain`, `.keychain-db`. `.key` is not on the list: Keynote
+uses it. Every copy names its files on the tmux status line
+("copied report.pdf to the machine"), so a path pasted because an agent
+asked for it never leaves the laptop unseen. Tests: the scanner table
+(key names), `TestDropFileFollowsLinks` (a link to a hidden file, to a
+hidden directory, to a system file and to a key are not drops), and the
+pty test (a link to a hidden file is typed as text and nothing is
+copied; a copy is named).

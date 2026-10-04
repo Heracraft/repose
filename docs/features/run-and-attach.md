@@ -268,8 +268,11 @@ with two exceptions:
   single- or double-quoted, `file://` URIs (empty host or `localhost`),
   separated by spaces or newlines, or one unquoted path with spaces.
   Paths under system directories (`/etc`, `/usr`, `/nix`, ...), paths
-  with a hidden component (`~/.ssh/id_ed25519`, `.env`) and pastes over
-  64 KiB are text. A read with no paste markers that is only such
+  with a hidden component (`~/.ssh/id_ed25519`, `.env`), files named
+  like a private key or key store (`id_ed25519`, `*.pem`, `*.p12`, ...),
+  and pastes over 64 KiB are text. The checks apply to the pasted path
+  and again to the file it resolves to after every symlink, which is
+  what is read (I-468). A read with no paste markers that is only such
   paths is a drop too (a terminal not asked for bracketed paste).
   Each file is copied over the project's multiplexed ssh with
   `repose paste`'s script (same directory, modes, symlink and owner
@@ -280,7 +283,9 @@ with two exceptions:
   toplevel, when that checkout is the project's) whose guest copy under
   `$HOME/<slug>` has the same size is not copied: its guest path is
   typed. Over 20 files or a file over 20 MB: nothing copied, the original
-  paste goes through, and `tmux display-message` says why.
+  paste goes through, and `tmux display-message` says why. A copy is
+  named there too ("copied report.pdf to the machine"), so no file
+  leaves the laptop unseen (I-468).
 - Ctrl+V (0x16, CSI u `118;5u`, modifyOtherKeys `27;5;118~`): the
   clipboard is read as `repose paste` reads it, for up to 2 s. A PNG is
   copied to `/tmp/repose-paste/<ts>.png` and its path typed as above;

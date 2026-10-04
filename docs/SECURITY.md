@@ -36,7 +36,7 @@ five trust boundaries are rows 1, 2, 4 and 3 here in that order; its
 fifth, **operator to tenant data**, has no mechanism to describe and is
 under "Not mitigated in the first release" instead, which is what
 `ARCHITECTURE.md` itself says of it ("Recorded, not mitigated, until
-per-project LUKS"). Rows 5 to 12 are boundaries this document adds because
+per-project LUKS"). Rows 5 to 13 are boundaries this document adds because
 they stop an actor the component map does not draw.
 
 1. **KVM between guest and host.** Cloud Hypervisor on KVM, launched by
@@ -159,6 +159,18 @@ they stop an actor the component map does not draw.
     credential), putting altered bytes into a tenant's machine. Snapshots
     taken before I-462 carry no digest and restore unchecked until they
     expire, and a project stopped for months can keep one indefinitely.
+13. **The CLI between a guest and the laptop.** What a guest can reach on
+    the laptop goes through the CLI, which decides it there. The browser
+    bridge (I-311, I-467) passes the agents' CDP to the user's Chrome
+    message by message: no cookies, credential headers, request or
+    response bodies or other sites' stored data reach the guest, and no
+    laptop file, Chrome page or extension is opened. The input proxy
+    (I-280, I-468) copies a pasted path only when the file it resolves to,
+    after every symlink, is a regular file outside hidden and system
+    directories and not named like a key, and names every copy on the
+    status line. Stops: an agent in the user's own guest copying out a
+    login it could only use while the user lends it, or a laptop file the
+    user did not mean to send.
 
 ## Non-negotiables
 
