@@ -143,6 +143,11 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 	if serr != nil {
 		return nil, serr
 	}
+	// The new closure's paths must be in the guest's store before it
+	// switches to them.
+	if err := m.extendView(ctx, g.GuestID, c.SystemClosure); err != nil {
+		return nil, errf(CodeInternal, "%v", err)
+	}
 	reg, derr := m.d.Nix.DumpDB(ctx, c.SystemClosure)
 	if derr != nil {
 		return nil, errf(CodeInternal, "nix-store --dump-db: %v", derr)

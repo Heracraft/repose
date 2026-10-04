@@ -11029,3 +11029,101 @@ Test: docs.spec.ts "an experimental page says so under its title".
 Checked at 1440 and 390, light and dark. *Rejected:* moving the five
 packages to devDependencies (adapter-node bundles those; it fixes today's
 five and not the next one added to dependencies).
+
+**I-463. Each guest's store is a view of its own closure.** (security
+review, 2026-10-03; amends R2-1, I-48 and I-61) Every guest's virtiofsd
+used to share `/run/repose/store-export`, a read-only bind of the whole
+host store with `.links` masked. Masking `.links` stopped one way of
+listing the store, and the store directory itself stayed listable, so a
+guest could read every project's closure and fragment source on the host
+and the host's own system closure. Two fixes were weighed. Keeping
+fragment sources out of the store (or deleting them after each build)
+leaves every other project's built system, with whatever its fragment put
+into `/etc` or a home directory, and the host closure in view. Making the
+export root unlistable breaks the guest: its `/nix/store` is an overlay
+whose readdir needs the lower layer, and the guest's own garbage
+collection lists the store. A per-guest view removes all three exposures
+and keeps R2-1's design: guests still read the host's store paths
+directly, with no copy.
+
+How: `virtiofsd@<id>` runs with `PrivateMounts=yes` and
+`TemporaryFileSystem=/run/repose/store-view` (root-owned, mode 0755,
+16 MiB), shares `/run/repose/store-view`, and pivots into it as before
+(`--sandbox namespace`). Once it has, hostd lists the guest's closure
+(`nix-store -qR`) and, from a thread that joins that unit's mount
+namespace, bind-mounts each store path in read-only, nosuid, nodev, with
+private propagation (a clone of a store path keeps the host store's peer
+group otherwise); a store path that is a symlink is recreated as one.
+Nothing is mounted in the host's namespace, so systemd tracks none of it.
+At boot this runs before the hypervisor starts; an in-place apply adds the
+new closure's paths before guestd switches, and leaves the old ones until
+the guest's next start, since processes the switch did not restart still
+use them. 1,119 paths (this guest's closure) bound in 47 ms with
+virtiofsd 1.14 serving, and a path added while it served appeared in its
+root (internal/hostd/storeview, TestVirtiofsdServesTheView, root only).
+A view that cannot be filled fails the boot at the virtiofsd step.
+
+The whole-store export stays for one release: guests started before this
+keep it until their next start (hostd binds nothing into a virtiofsd whose
+root is not a tmpfs), and `hostd --store-export /run/repose/store-export`
+switches every new start back to it. The release after removes
+`repose-store-export.service` and the flag's old meaning. *Rejected:* a
+hard-link farm per closure (about 57,000 directories per guest on the root
+filesystem, seconds per start, and the 65,000-link limit on popular
+inodes); bind mounts in the host namespace (one systemd mount unit per
+store path per guest); `systemctl bind` for the in-place additions (it
+leaves the new mount shared with the host store's peer group). Interface:
+`host-conventions.md` (store view row, virtiofsd invocation).
+
+**I-464. Each user's Claude login share is its own 16 MiB volume.**
+(security review, 2026-10-03; amends I-278) The share was a directory on
+the host's root filesystem that a guest writes freely, so one guest could
+fill `/` and with it the store, hostd's state, builds and logs for every
+tenant on the host. hostd now creates `vg-guests/auth-<user_id>` (thin,
+16 MiB, ext4 with no reserved blocks and 256 inodes) and mounts it
+`nosuid,nodev,noexec` at the same `users/<user_id>/claude-auth` path, so
+the virtiofsd and the hypervisor arguments are unchanged and the most one
+user can write on a host is that volume. The guest cannot write the
+volume's metadata, only files through virtiofsd. A share directory from
+before is renamed `claude-auth.legacy` at the first mount, never opened,
+and the sweep removes it once no guest of that user runs; the user signs
+in to Claude Code once more on that host. The sweep unmounts and removes
+the volume with the user's directory, and removes a volume whose directory
+is gone. A volume that cannot be created or mounted leaves the guest
+without the share (I-278's failure rule). *Rejected:* ext4 project quotas
+on the root filesystem (enabling the quota feature needs it unmounted);
+one shared volume for every user (one user filling it signs every user on
+the host out); copying the old file into the volume (I-278: repose code
+never reads or copies it). Interface: `host-conventions.md` (users row,
+thin pool row, virtiofsd-auth invocation).
+
+**I-465. dumpe2fs and e2fsck run in a sandboxed transient unit.**
+(security review, 2026-10-03) A guest writes every byte of its volume,
+and hostd ran `dumpe2fs` on each snapshot and `e2fsck -fp` on each
+restored volume as root in its own service, which holds the host's mTLS
+key and the snapshot storage credential. A memory-safety bug in
+e2fsprogs's parsing would have landed there. Both now run through
+`systemd-run --pipe --wait` as a dynamic user with no capabilities,
+`PrivateNetwork`, `RestrictAddressFamilies=AF_UNIX`, `/var/lib/repose` and
+`/run/repose` inaccessible, the `@system-service` syscall set, 2 GB of
+memory at most, and `DevicePolicy=closed` with `DeviceAllow` naming only
+that volume (read-only for dumpe2fs); the unit joins the device node's
+group so it can open it. Output and exit codes pass through, so restore
+still reads e2fsck's 1 and 4. Checked on a loop device: dumpe2fs output
+and e2fsck exit 1 then 0 came back, another block device was refused with
+EPERM, an inet socket with EAFNOSUPPORT. `blkid` at create is left as it
+is: it reads a volume hostd has just created. *Rejected:*
+`RestrictAddressFamilies=none` (systemd-run refuses it for a transient
+unit); denying `@network-io` (dumpe2fs dies on it); running as root
+without capabilities (still reads every root-owned file).
+
+**I-466. hostd creates the guest directory's socket directories without
+following a link.** (security review, 2026-10-03) The guest directory is
+writable by the hypervisor's user, so `virtiofsd/` or `virtiofsd-auth/`
+may already exist there as something hostd did not create, and hostd's
+`MkdirAll`, `Chown` and `Chmod` followed a symlink to its target. hostd
+now removes anything at those names that is not a directory, removes a
+directory owned by anyone but itself or the intended owner, and sets
+owner and mode through a descriptor opened `O_DIRECTORY|O_NOFOLLOW`, so a
+link swapped in after the check fails the open. The guests directory, the
+guest directory and the users directories go through the same function.

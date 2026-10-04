@@ -24,6 +24,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
 	"github.com/heracraft/repose/internal/obs"
@@ -92,6 +93,7 @@ type harness struct {
 	st      *state.DB
 	lvm     *lvm.Fake
 	mount   *mount.Fake
+	view    *storeview.Fake
 	net     *hnet.Fake
 	sd      *systemd.Fake
 	chc     *ch.Fake
@@ -139,6 +141,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	h.st = st
 	h.lvm = lvm.NewFake()
 	h.mount = mount.NewFake()
+	h.view = storeview.NewFake()
 	h.net = hnet.NewFake()
 	h.sd = systemd.NewFake()
 	h.chc = &ch.Fake{}
@@ -201,7 +204,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	logger := obs.NewTestLogger(t, obs.ComponentHostd, io.Discard)
 	h.metrics = metrics.New()
 	m, err := New(cfg, Deps{
-		State: st, LVM: h.lvm, Mount: h.mount, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
+		State: st, LVM: h.lvm, Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
 		Stream: &snapshot.FakeStreamer{LVM: h.lvm}, Emit: h.rec, Metrics: h.metrics, Log: logger,
 		Guestd:  vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") }},
 		MemInfo: func() (uint64, uint64, error) { return 64 << 30, 40 << 30, nil },

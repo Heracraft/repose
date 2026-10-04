@@ -60,7 +60,7 @@ Any agent can message you or ask you a question with two commands on the machine
 
 Logins are kept on the machine's disk, except Claude Code's (below). They survive stops and are in snapshots.
 
-**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, open the URL on your laptop, approve, paste the code back. Your other machines are then logged in too, including ones you create later. The login is kept on the host, next to your machines rather than on their disks, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, the CLI opens the Claude window for the login and asks you to run the prompt again after. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
+**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, open the URL on your laptop, approve, paste the code back. Your other machines are then logged in too, including ones you create later. The login is kept on the host, next to your machines rather than on their disks, in a 16 MB space of its own that holds only that file, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, the CLI opens the Claude window for the login and asks you to run the prompt again after. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
 
 Instead of logging in, you can store a long-lived token from your laptop as a secret. Remote Control, connectors and Claude in Chrome don't work with it.
 

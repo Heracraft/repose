@@ -50,11 +50,13 @@ tenants' guests, and nothing else. Every path, device and rule in
   `g-<id>` volumes of `vg-guests`; `hostd` runs as root (it needs LVM,
   nftables, tap creation), starts every `guest@<id>` as the `hostd` user
   (in `kvm`; DECISIONS I-51) and drops to `virtiofsd:virtiofsd` when
-  spawning virtiofsd with `--sandbox namespace --shared-dir /run/repose/store-export
-  --cache auto --xattr --socket-group hostd`. virtiofsd sees only `/nix/store`; the store's
-  `.links` directory is excluded by mounting a bind of `/nix/store` at
-  `/run/repose/store-export` with `.links` masked by an empty tmpfs mount on
-  top, and sharing that path.
+  spawning virtiofsd with `--sandbox namespace --shared-dir /run/repose/store-view
+  --cache auto --xattr --socket-group hostd`. virtiofsd sees only the
+  guest's own closure: `/run/repose/store-view` is an empty tmpfs in the
+  unit's private mount namespace into which hostd binds each path of the
+  closure (DECISIONS I-463). The earlier whole-store export
+  (`/run/repose/store-export`, `.links` masked) stays one release for
+  guests started before it.
 - `nix/hosts/hostd.nix`: `systemd.services.hostd` with `Restart=always`,
   `RestartSec=2`, `After=network-online.target repose-host-net.service`,
   `ExecStart=${hostd}/bin/hostd --state /var/lib/repose/hostd`,
@@ -148,14 +150,17 @@ and `wg0` at boot. The first boot (before registration) has no bridge, which
 is fine because there are no guests yet; `repose-register.service` triggers
 a restart of `repose-host-net.service` after writing `host.json`.
 
-### The store export and `.links`
+### The store a guest sees
 
-`/nix/store/.links` is the hard-link farm used by `nix-store --optimise`.
-Sharing it lets a guest enumerate every path in the store, which leaks what
-other tenants have built. It is masked with an empty tmpfs on the export
-bind mount, so `ls /nix/store/.links` inside a guest shows nothing. The
-guest can still read any store path by its hash, which is the same as any
-public binary cache; the leak being closed is enumeration, not access.
+A guest sees its own closure and nothing else of the host store (DECISIONS
+I-463). The first design shared the whole store with `.links` (the
+hard-link farm of `nix-store --optimise`) masked, on the reasoning that a
+path is only readable by its hash. The store directory itself stayed
+listable, though, so every project's closure and fragment source and the
+host's own system closure were readable from any guest. Each
+`virtiofsd@<id>` now shares an empty tmpfs in its own mount namespace, and
+hostd binds the guest's closure into it at boot and adds a new closure's
+paths before an in-place switch.
 
 ### Thin pool sizing and the 80 percent rule
 

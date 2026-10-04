@@ -32,6 +32,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
 	"github.com/heracraft/repose/internal/obs"
@@ -136,9 +137,12 @@ type Config struct {
 	StopTimeoutS       uint32
 	EgressMbit         int
 	StoreTag           string
-	StoreExport        string
-	VirtiofsUser       string
-	VirtiofsBinary     string
+	// StoreExport is what each guest's virtiofsd shares: storeview.Dir
+	// (the default) gives every guest a view of its own closure only
+	// (I-463); any other directory is shared whole, as before I-463.
+	StoreExport    string
+	VirtiofsUser   string
+	VirtiofsBinary string
 	// The Claude login share (DECISIONS I-278): UsersDir/<user_id>/claude-auth
 	// holds one user's .credentials.json, served into each of that user's
 	// guests as AuthTag by a virtiofsd running as AuthUser.
@@ -198,7 +202,7 @@ func (c Config) Defaults() Config {
 		c.StoreTag = "ro-store"
 	}
 	if c.StoreExport == "" {
-		c.StoreExport = "/run/repose/store-export"
+		c.StoreExport = storeview.Dir
 	}
 	if c.VirtiofsUser == "" {
 		c.VirtiofsUser = "virtiofsd"
@@ -278,6 +282,7 @@ type Deps struct {
 	State   *state.DB
 	LVM     lvm.LVM
 	Mount   mount.Mounter
+	View    storeview.View
 	Net     hnet.Net
 	Systemd systemd.Systemd
 	CH      ch.Client

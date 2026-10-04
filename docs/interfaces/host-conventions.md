@@ -17,7 +17,8 @@ change to either happens in the same commit.
 | `/run/repose/join-token` | one-shot registration token, written to the installed system over SSH by `infra/azure/modules/host` or by hand per the runbook, mode 0600, deleted after Register. Not from cloud-init: nixos-anywhere replaces the system that ran cloud-init (DECISIONS I-20) |
 | `/run/repose/host.env` | rendered from `host.json` at boot by `repose-host-net`: `HOST_ID`, `GUEST_CIDR`, `BRIDGE_ADDR`, `WG_ADDR`, `LOKI_HOST`, `LOKI_PORT`. Read by units that need the addresses (node_exporter, Fluent Bit); hostd may read it too. No secrets in it. |
 | `/run/repose/wg0.conf`, `/run/repose/host_ca.pub`, `/run/repose/sshd.conf` | also rendered from `host.json`; wg-quick, sshd `TrustedUserCAKeys` and sshd `ListenAddress` respectively. |
-| `/run/repose/store-export/` | read-only bind of `/nix/store` with an empty tmpfs over `.links`. **This, not `/nix/store`, is what virtiofsd shares** (`--shared-dir /run/repose/store-export`), so a guest cannot enumerate the store through the hard-link farm. |
+| `/run/repose/store-view/` | Mount point of each guest's store view (DECISIONS I-463); empty on the host. `virtiofsd@<id>` runs with `PrivateMounts=yes` and `TemporaryFileSystem=/run/repose/store-view:mode=0755,nosuid,nodev,size=16m`, shares this path, and pivots into it; hostd then bind-mounts every path of the guest's closure (`nix-store -qR`) into that namespace, read-only, `nosuid,nodev`, private propagation (a symlink store path is recreated as a symlink). An in-place apply adds the new closure's paths before the switch; nothing is removed until the guest's next start. Nothing is mounted in the host namespace. |
+| `/run/repose/store-export/` | Kept for one release (I-463): read-only bind of `/nix/store` with an empty tmpfs over `.links`, the whole store. Guests started before I-463 use it until their next start; `hostd --store-export /run/repose/store-export` shares it again for every new start. Removed the release after. |
 | `/nix/var/nix/gcroots/repose/<guest_id>` | GC root for the guest's system closure; removed on destroy. `rev-<project_id>-<revision_id>` roots keep the last 3 built revisions per project and are all removed when the project's guest is destroyed (DECISIONS I-115; a later restore rebuilds). |
 | `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464) |
 | `/var/log/repose/` | hostd log (journald is primary), build logs per op |
@@ -259,7 +260,8 @@ API socket is used for `shutdown` (after guestd's Shutdown timed out),
 virtiofsd runs as `virtiofsd:virtiofsd` with `--sandbox namespace` (a
 user and mount namespace with the export pivot_rooted in; `chroot` is
 root-only and virtiofsd refuses it for an unprivileged user, DECISIONS
-I-48) sharing `/run/repose/store-export` (never `/nix/store` directly),
+I-48) sharing `/run/repose/store-view`, the guest's own store view
+(I-463; `--store-export` names the whole-store export for one release),
 binding `virtiofsd/virtiofsd.sock` with `--socket-group hostd` so the
 hypervisor can connect. A guest with a user id also gets `--fs
 tag=claude-auth,socket=virtiofsd-auth/virtiofsd.sock`, served by

@@ -157,6 +157,7 @@ type FakeUnit struct {
 	ExitCode int
 	CPUNSec  uint64
 	MemBytes uint64
+	MainPID  int
 }
 
 // Fake is the in-memory unit table for tests. OnRun runs before a unit is
@@ -246,6 +247,8 @@ func (f *Fake) Show(_ context.Context, unit string, props ...string) (map[string
 			out[p] = fmt.Sprint(u.CPUNSec)
 		case "MemoryCurrent":
 			out[p] = fmt.Sprint(u.MemBytes)
+		case "MainPID":
+			out[p] = fmt.Sprint(u.MainPID)
 		}
 	}
 	return out, nil

@@ -493,3 +493,7 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11033
+- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11078
+- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11100
+- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11120

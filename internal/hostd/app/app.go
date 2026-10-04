@@ -35,6 +35,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/shell"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/stream"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
@@ -257,8 +258,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		cfg.Lookup = func(string) (int, int, error) { return os.Getuid(), os.Getgid(), nil }
 	}
 	consoles := &consoleSet{log: log}
+	sdr := systemd.NewReal(r)
 	mgr, err := guest.New(cfg, guest.Deps{
-		State: st, LVM: l, Mount: &mount.Real{R: r}, Net: hnet.NewReal(r), Systemd: systemd.NewReal(r), CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
+		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 	})
