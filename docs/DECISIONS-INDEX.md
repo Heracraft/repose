@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-461 entries.
+463 entries.
 
 ## Scope
 
@@ -493,3 +493,5 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-439** Tenant builds on a host reach the public internet only — 2026-10-03; L11033
+- **I-440** Build log redaction matches multi-line and encoded values, and covers a failed build's error — 2026-10-03; L11070

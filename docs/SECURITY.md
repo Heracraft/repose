@@ -84,8 +84,15 @@ they stop an actor the component map does not draw.
    thin-volume size, build time and closure caps. Stops: a tenant degrading
    neighbours.
 8. **Restricted Nix evaluation** of user fragments: pure, `restrict-eval`,
-   no import-from-derivation, sandboxed builds, capped. Stops: a fragment
-   reading host files or running unsandboxed code during a build.
+   no import-from-derivation, sandboxed builds, capped. A fixed-output
+   build shares the host's network namespace (Nix gives only those
+   network), so the `inet repose` output chain sends every socket of the
+   `nixbld` group and of the build user to `build_out`, which admits the
+   public internet on the provider NIC and DNS to the resolved stub and
+   drops IMDS, the wire server, loopback, the guest bridge, the mesh and
+   every private and link-local range (DECISIONS I-439). Stops: a fragment
+   reading host files, running unsandboxed code during a build, or
+   reaching from a build anything a guest may not reach.
 
 ## Non-negotiables
 
@@ -93,8 +100,13 @@ Rules that hold regardless of convenience. Each names its failure.
 
 - **No inbound to hosts.** A host with a public port is a host whose
   hypervisor is reachable from the internet.
-- **IMDS is blocked from guests.** The Azure metadata service issues
-  managed-identity tokens; a guest that can reach it can act as the host.
+- **IMDS is blocked from guests and from tenant builds.** The Azure
+  metadata service issues managed-identity tokens; a guest that can reach
+  it can act as the host. Tenant code runs in two places with a route to
+  it: the guest NIC (dropped in `guest_fwd`) and a fixed-output build on
+  the host, which runs in the host's network namespace as a `nixbld` user
+  (dropped in `build_out`, I-439). A new way for tenant input to run code
+  on a host needs the same drop before it ships.
 - **Guests never share a bridge without the drop rules.** A shortcut that
   puts two taps on a plain bridge is a shared L2 between tenants.
 - **Claude credentials are never copied, read or proxied by the platform.**

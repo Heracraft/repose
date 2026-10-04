@@ -197,6 +197,26 @@ in
           host.succeed("nft list chain inet repose guest_fwd | grep -q '169.254.169.254'")
           host.succeed("nft list chain inet repose guest_fwd | grep -q '10.64.0.0/12'")
 
+      with subtest("Nix build accounts reach the internet and nothing of the host's (I-439)"):
+          host.succeed("nft list chain inet repose output | grep -q 'meta skgid 30000 jump build_out'")
+          host.succeed("nft list chain inet repose output | grep -q 'meta skuid \"nixbuild\" jump build_out'")
+          host.succeed("systemd-run --unit lo-probe ${pkgs.python3}/bin/python3 -m http.server 8999 --bind 127.0.0.1")
+          host.wait_for_open_port(8999)
+          # A nixbld user is what a fixed-output builder runs as, in the
+          # host's network namespace; nixbuild is hostd's eval user.
+          for wrap in ["setpriv --reuid=nixbld1 --regid=nixbld --clear-groups",
+                       "setpriv --reuid=nixbuild --regid=nixbuild --clear-groups"]:
+              host.succeed(f"{wrap} curl -sf -m5 http://203.0.113.9/ >/dev/null")
+              host.fail(f"{wrap} curl -sf -m5 http://169.254.169.254/ >/dev/null")
+              host.fail(f"{wrap} curl -sf -m5 http://127.0.0.1:8999/ >/dev/null")
+              host.fail(f"{wrap} curl -sf -m5 http://{host_ip}:8999/ >/dev/null")
+          # root and other host accounts keep their paths
+          host.succeed("curl -sf -m5 http://127.0.0.1:8999/ >/dev/null")
+          host.succeed("curl -sf -m5 http://169.254.169.254/ >/dev/null")
+          host.succeed("setpriv --reuid=nobody --regid=nogroup --clear-groups curl -sf -m5 http://127.0.0.1:8999/ >/dev/null")
+          host.succeed("nft list chain inet repose build_out | grep -E 'oifname \"lo\" counter packets [1-9]'")
+          host.succeed("systemctl stop lo-probe")
+
       with subtest("repose-host-net configures br-guests and wg0 from host.json"):
           host.succeed("mkdir -p /var/lib/repose/hostd && install -m 0600 ${fixture} /var/lib/repose/hostd/host.json")
           host.succeed("systemctl restart repose-host-net.service")

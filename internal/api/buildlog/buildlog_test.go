@@ -2,6 +2,7 @@ package buildlog_test
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
 	"os"
 	"strings"
@@ -109,5 +110,41 @@ func TestReadWaitsForTheFlushInFlight(t *testing.T) {
 			t.Fatalf("round %d: read %d lines, want at least %d", round, len(lines), round)
 		}
 		<-done
+	}
+}
+
+// A multi-line value (a PEM key) never appears whole on one log line, so
+// each of its lines is redacted on its own, as is its base64 form; the PEM
+// armour stays readable and values under MinRedact are left alone. Redact
+// applies the same set to the error a failed build carries.
+func TestRedactionOfMultiLineAndEncodedValues(t *testing.T) {
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\r\nAAAAMwAAAAtzc2gtZWQyNTUxOQAAACDPLANTED\n-----END OPENSSH PRIVATE KEY-----\n"
+	s := buildlog.New(nil, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	opID := store.NewID()
+	s.SetRedactions(opID, []string{key, "sk-live-PLANTED", "abc"})
+	cases := map[string]string{
+		"key: b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ":                     "key: [redacted]",
+		"  AAAAMwAAAAtzc2gtZWQyNTUxOQAAACDPLANTED":                            "  [redacted]",
+		"-----BEGIN OPENSSH PRIVATE KEY-----":                                 "-----BEGIN OPENSSH PRIVATE KEY-----",
+		"b64 " + base64.StdEncoding.EncodeToString([]byte("sk-live-PLANTED")): "b64 [redacted]",
+		"url " + base64.URLEncoding.EncodeToString([]byte(key)):               "url [redacted]",
+		"abcdef": "abcdef",
+	}
+	for in, want := range cases {
+		if got := s.Redact(opID, in); got != want {
+			t.Errorf("Redact(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := s.Redact(opID, "failed:\n"+key); strings.Contains(got, "PLANTED") || strings.Contains(got, "b3BlbnNzaC1rZXkt") {
+		t.Fatalf("whole key in a message: %q", got)
+	}
+	// Longest first: the whole value goes before any line of it, so the
+	// result is one marker, not a value broken around markers.
+	if got := s.Redact(opID, key); got != "[redacted]" {
+		t.Fatalf("whole key = %q", got)
+	}
+	s.ClearRedactions(opID)
+	if got := s.Redact(opID, "sk-live-PLANTED"); got != "sk-live-PLANTED" {
+		t.Fatalf("after clear: %q", got)
 	}
 }

@@ -145,7 +145,9 @@ A fragment may:
   see the real `final` and `prev`);
 - fetch sources with `pkgs.fetchurl`, `pkgs.fetchFromGitHub`,
   `pkgs.fetchgit` and friends, always with a hash: fixed-output fetches run
-  in the build sandbox with network, which is Nix's normal model;
+  in the build sandbox with network, which is Nix's normal model, and reach
+  the public internet only (the host's firewall drops the build accounts'
+  traffic to private, loopback and link-local addresses, DECISIONS I-439);
 - build things with `pkgs.writeShellScriptBin`, `pkgs.buildNpmPackage`,
   `pkgs.buildGoModule`, `pkgs.rustPlatform.buildRustPackage`, any nixpkgs
   builder;

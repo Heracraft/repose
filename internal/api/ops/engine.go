@@ -623,6 +623,9 @@ func (e *Engine) failWithLine(ctx context.Context, op *store.Op, code, msg strin
 	if op.CommandID != nil {
 		e.logs.Unbind(op.CommandID.String())
 	}
+	// A failed build's message carries the tail of the builder's log,
+	// which goes through the same redaction as the log lines.
+	msg = e.logs.Redact(op.ID, msg)
 	e.logs.ClearRedactions(op.ID)
 	e.placeWaiting.Delete(op.ID)
 	errObj := map[string]any{"code": code, "message": msg}

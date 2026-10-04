@@ -125,7 +125,13 @@ rotates keys does the same restart itself.
     the hostd-owned `guest_smtp`/`guest_stratum`/`guest_flows`, then
     drop), `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`
     (empty at boot, hostd-owned), `nat`
-    (masquerade `10.64.0.0/12` out of the provider NIC), `output` (accept).
+    (masquerade `10.64.0.0/12` out of the provider NIC), `output` (policy
+    accept; sockets of the `nixbld` group and of the build user jump to
+    `build_out`), `build_out` (accept DNS to the resolved stub
+    `127.0.0.53`, drop anything leaving on `lo`, drop IMDS, the wire
+    server and every private, CGNAT, loopback, link-local and reserved
+    range, drop anything not leaving on the provider NIC; DECISIONS
+    I-439).
   - `bridge repose`: set `guests` (`ether_addr . ipv4_addr . ifname`,
     hostd-owned), chain `forward` (policy drop: no frame is switched
     between taps), chain `input` (frames from `tap-*` to the host: ARP and

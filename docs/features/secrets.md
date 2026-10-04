@@ -220,7 +220,14 @@ Rules that must hold:
   message. Build logs are scanned for every current secret value of that
   project before storage and matching substrings are replaced with
   `[redacted]`, because a Nix build that echoes an environment variable is a
-  common way a token leaks into a log that lives 90 days.
+  common way a token leaks into a log that lives 90 days. The scan looks for
+  each value whole, its standard and URL-safe base64, and, for a value of
+  several lines (a PEM key, a JSON credential), each line on its own except
+  PEM armour lines, since logs are stored a line at a time. The error a
+  failed build stores (it carries the builder's log tail) goes through the
+  same scan, and a fragment holding any of those strings is refused before
+  evaluation. Values under 4 bytes are not matched: they would turn
+  ordinary words into `[redacted]` (DECISIONS I-440).
 - Rotating the Key Vault key re-wraps every DEK without touching
   ciphertext; `repose-admin secrets rewrap` does it and is rehearsed before
   launch.

@@ -57,6 +57,7 @@ type Fake struct {
 	mu       sync.Mutex
 	guests   map[string]*Guest
 	results  map[string]*hostdv1.Result
+	failMsg  map[string]string
 	draining bool
 	nextIP   int
 	send     func(*hostdv1.HostMessage) error
@@ -159,6 +160,18 @@ func (f *Fake) SetFail(kind, code string) {
 	} else {
 		f.opts.Fail[kind] = code
 	}
+}
+
+// SetFailMessage sets the message a failing command of kind returns, as
+// hostd's build_failed carries the builder's log tail; empty restores the
+// default.
+func (f *Fake) SetFailMessage(kind, msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failMsg == nil {
+		f.failMsg = map[string]string{}
+	}
+	f.failMsg[kind] = msg
 }
 
 // SetGuestdDead marks a guest's guestd dead or alive.
@@ -347,7 +360,11 @@ func (f *Fake) Execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return r
 	}
 	if code, ok := f.opts.Fail[kind(cmd)]; ok {
-		r := errResult(cmd.CommandId, code, "fake host was told to fail "+kind(cmd))
+		msg := "fake host was told to fail " + kind(cmd)
+		if m := f.failMsg[kind(cmd)]; m != "" {
+			msg = m
+		}
+		r := errResult(cmd.CommandId, code, msg)
 		f.results[cmd.CommandId] = r
 		f.mu.Unlock()
 		return r

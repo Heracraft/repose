@@ -7,7 +7,9 @@ package buildlog
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -74,17 +76,67 @@ func (s *Store) OpFor(commandID string) (uuid.UUID, bool) {
 	return id, ok
 }
 
-// SetRedactions registers the strings that must never be stored for an op.
+// MinRedact is the shortest value matched. Shorter values are left alone:
+// a three-byte secret would turn every word containing it into [redacted],
+// and docs/features/secrets.md says so.
+const MinRedact = 4
+
+// Needles returns the strings to look for so that none of values is stored:
+// each value whole, its standard and URL-safe base64, and, for a value of
+// several lines (a PEM key, a JSON credential), each line on its own,
+// because logs and fragments are matched one line at a time and a
+// multi-line value never appears whole on one. PEM armour lines
+// ("-----BEGIN ...") are not secret and are skipped. Longest first, so a
+// whole value is replaced before any line of it.
+func Needles(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(v string) {
+		if len(v) >= MinRedact && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	for _, v := range values {
+		if len(v) < MinRedact {
+			continue
+		}
+		add(v)
+		add(base64.StdEncoding.EncodeToString([]byte(v)))
+		add(base64.URLEncoding.EncodeToString([]byte(v)))
+		if strings.ContainsAny(v, "\r\n") {
+			for _, l := range strings.FieldsFunc(v, func(r rune) bool { return r == '\n' || r == '\r' }) {
+				l = strings.TrimSpace(l)
+				if !strings.HasPrefix(l, "-----") {
+					add(l)
+				}
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
+	return out
+}
+
+// SetRedactions registers the values that must never be stored for an op.
 func (s *Store) SetRedactions(opID uuid.UUID, values []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var keep []string
-	for _, v := range values {
-		if len(v) >= 4 {
-			keep = append(keep, v)
-		}
+	s.redact[opID] = Needles(values)
+}
+
+// Redact replaces an op's registered values in text, for what the api stores
+// besides log lines (the error a failed build carries).
+func (s *Store) Redact(opID uuid.UUID, text string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return redact(s.redact[opID], text)
+}
+
+func redact(needles []string, text string) string {
+	for _, v := range needles {
+		text = strings.ReplaceAll(text, v, "[redacted]")
 	}
-	s.redact[opID] = keep
+	return text
 }
 
 // ClearRedactions forgets an op's redaction set.
@@ -97,9 +149,7 @@ func (s *Store) ClearRedactions(opID uuid.UUID) {
 // Append queues a line; it is persisted by the next flush.
 func (s *Store) Append(opID uuid.UUID, seq int64, line string) {
 	s.mu.Lock()
-	for _, v := range s.redact[opID] {
-		line = strings.ReplaceAll(line, v, "[redacted]")
-	}
+	line = redact(s.redact[opID], line)
 	s.pending[opID] = append(s.pending[opID], Line{Seq: seq, Line: line, TS: time.Now().UTC()})
 	full := len(s.pending[opID]) >= s.batch
 	s.mu.Unlock()
