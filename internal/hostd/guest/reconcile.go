@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
 )
 
@@ -49,10 +50,33 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			}
 		}
 	}
+	m.flagWholeStore(ctx)
 	m.sweepStaleSnapshots(ctx)
 	m.SweepAuthShares(ctx)
 	m.refreshGuestGauge()
 	return nil
+}
+
+// flagWholeStore logs every running guest whose virtiofsd still shares the
+// whole host store: one started before I-463, which keeps that export until
+// it restarts. The host switch runbook restarts them (`hostd guests` shows
+// them as whole-store); this line is how a missed one is found.
+func (m *Manager) flagWholeStore(ctx context.Context) {
+	if m.cfg.StoreExport != storeview.Dir || m.d.View == nil {
+		return
+	}
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return
+	}
+	for _, g := range gs {
+		if g.State != StateRunning {
+			continue
+		}
+		if s, err := m.d.View.Serves(ctx, virtiofs.Unit(g.GuestID)); err == nil && s == storeview.ServesWhole {
+			m.log(g).Warn("guest shares the whole store; restart it", "event", "store_view_restart_needed")
+		}
+	}
 }
 
 // sweepStaleSnapshots removes LVM snapshot volumes left by a hostd that

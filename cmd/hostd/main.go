@@ -190,13 +190,17 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 			return fail(err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "GUEST\tPROJECT\tCLASS\tSTATE\tIP\tUNIT\tVIRTIOFSD\tGUESTD\tREASON")
+		_, _ = fmt.Fprintln(tw, "GUEST\tPROJECT\tCLASS\tSTATE\tIP\tUNIT\tVIRTIOFSD\tSTORE\tGUESTD\tREASON")
 		for _, g := range gs {
 			gd := "down"
 			if g.GuestdOK {
 				gd = "ok"
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.GuestID, g.ProjectID, g.Class, g.State, g.IP, g.Unit, g.Virtiofsd, gd, g.Reason)
+			store := g.Store
+			if store == "" {
+				store = "-"
+			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.GuestID, g.ProjectID, g.Class, g.State, g.IP, g.Unit, g.Virtiofsd, store, gd, g.Reason)
 		}
 		return failIf(tw.Flush())
 	case "snapshot-all", "snapshot":

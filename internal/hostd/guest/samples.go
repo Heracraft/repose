@@ -253,8 +253,12 @@ type Status struct {
 	CID       uint32 `json:"vsock_cid"`
 	Unit      string `json:"unit"`
 	Virtiofsd string `json:"virtiofsd"`
-	GuestdOK  bool   `json:"guestd_ok"`
-	Closure   string `json:"system_closure"`
+	// Store is what the guest's virtiofsd shares: "view" (its own
+	// closure, I-463) or "whole-store" (started before I-463; restart the
+	// guest), empty when it is not running.
+	Store    string `json:"store,omitempty"`
+	GuestdOK bool   `json:"guestd_ok"`
+	Closure  string `json:"system_closure"`
 }
 
 // Guests lists every guest with its live unit states.
@@ -271,6 +275,9 @@ func (m *Manager) Guests(ctx context.Context) ([]Status, error) {
 		}
 		if a, _ := m.d.Systemd.IsActive(ctx, virtiofs.Unit(g.GuestID)); a {
 			st.Virtiofsd = "active"
+			if m.d.View != nil {
+				st.Store, _ = m.d.View.Serves(ctx, virtiofs.Unit(g.GuestID)) // a column, best effort
+			}
 		}
 		if mon := m.monitorOf(g.GuestID); mon != nil && mon.current() != nil {
 			st.GuestdOK = true

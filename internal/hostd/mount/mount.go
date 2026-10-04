@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -99,6 +100,7 @@ type Fake struct {
 	mu     sync.Mutex
 	Mounts map[string]string // path -> dev
 	Err    error             // returned by Mount when set
+	Calls  int               // Mount calls that mounted
 }
 
 // NewFake returns an empty Fake.
@@ -119,7 +121,11 @@ func (f *Fake) Mount(_ context.Context, dev, path string) error {
 	if f.Err != nil {
 		return f.Err
 	}
+	if _, ok := f.Mounts[filepath.Clean(path)]; ok {
+		return fmt.Errorf("mount: %s is already mounted", path)
+	}
 	f.Mounts[filepath.Clean(path)] = dev
+	f.Calls++
 	return nil
 }
 

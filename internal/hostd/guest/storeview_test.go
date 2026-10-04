@@ -1,6 +1,8 @@
 package guest
 
 import (
+	"context"
+	"os"
 	"slices"
 	"testing"
 
@@ -70,5 +72,59 @@ func TestWholeStoreExportStillWorks(t *testing.T) {
 	}
 	if len(h.view.Views) != 0 {
 		t.Fatalf("bound into a whole export: %v", h.view.Views)
+	}
+}
+
+// After a restart the view still holds the closures the guest ran before
+// (its nix database lists their paths as valid, and a user's profile may
+// point into them), as long as the host has them; one the host removed is
+// left out without failing the boot.
+func TestViewKeepsPastClosures(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	unit := "virtiofsd@" + gid1
+	first := h.closure
+	closure2 := fakeClosure(t, "nixos-system-v2")
+	gone := fakeClosure(t, "nixos-system-gone")
+	h.mustOK(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: gone}))
+	h.mustOK(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: closure2}))
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.guest(gid1).PastClosures; !slices.Equal(got, []string{gone, first}) {
+		t.Fatalf("past closures %v", got)
+	}
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	h.view.Reset(unit) // a new virtiofsd starts with an empty view
+	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	for _, p := range []string{closure2, first} {
+		if !h.view.Has(unit, p) {
+			t.Fatalf("view after restart lacks %s", p)
+		}
+	}
+	if h.view.Has(unit, gone) {
+		t.Fatal("view holds a closure the host no longer has")
+	}
+}
+
+// A guest whose virtiofsd was started before I-463 shares the whole store
+// until it restarts: `hostd guests` says so, and reconcile logs it.
+func TestGuestsFlagsAWholeStoreExport(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.create(gid2)
+	h.view.Whole = map[string]bool{"virtiofsd@" + gid2: true}
+	if err := h.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	gs, err := h.m.Guests(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{gid1: storeview.ServesView, gid2: storeview.ServesWhole}
+	for _, g := range gs {
+		if g.Store != want[g.GuestID] {
+			t.Fatalf("%s store %q, want %q", g.GuestID, g.Store, want[g.GuestID])
+		}
 	}
 }

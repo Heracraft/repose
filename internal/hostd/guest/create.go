@@ -291,7 +291,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
 		return m.fail(g, stepVirtiofsd, err)
 	}
-	if err := m.extendView(ctx, g.GuestID, g.SystemClosure); err != nil {
+	if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
 		return m.fail(g, stepVirtiofsd, err)
 	}
 	// The user's Claude login share (DECISIONS I-278), attached only when
@@ -414,16 +414,22 @@ func (m *Manager) teardown(ctx context.Context, g *state.Guest) {
 	}
 }
 
-// extendView adds the closure's paths to the guest's store view (I-463):
+// extendView adds the closures' paths to the guest's store view (I-463):
 // at boot, before the hypervisor starts, and before an in-place switch.
-func (m *Manager) extendView(ctx context.Context, guestID, closure string) error {
+// closures[0] is the one the guest runs; when the others cannot be listed
+// (a path half removed from the host store) the view holds that one alone.
+func (m *Manager) extendView(ctx context.Context, guestID string, closures []string) error {
 	if m.cfg.StoreExport != storeview.Dir {
 		return nil
 	}
 	if m.d.View == nil {
 		return errors.New("store view: not configured")
 	}
-	paths, err := m.d.Nix.Requisites(ctx, closure)
+	paths, err := m.d.Nix.Requisites(ctx, closures...)
+	if err != nil && len(closures) > 1 {
+		m.d.Log.Warn("store view: earlier closures left out", "event", "store_view", "guest_id", guestID, "err", err.Error())
+		paths, err = m.d.Nix.Requisites(ctx, closures[0])
+	}
 	if err != nil {
 		return fmt.Errorf("store view: %w", err)
 	}
@@ -431,6 +437,39 @@ func (m *Manager) extendView(ctx context.Context, guestID, closure string) error
 		return fmt.Errorf("store view: %w", err)
 	}
 	return nil
+}
+
+// viewClosures is what a guest's view holds at boot: the closure it runs,
+// then every closure it ran before that hostd recorded and the project's
+// kept revisions, those still on the host. The guest's nix database lists
+// the paths of every closure it was ever given as valid, and nix never
+// fetches a valid path again, so a user's profile can point into an
+// earlier closure (a package the user installed that the system already
+// had). The whole-store export showed those paths for as long as the host
+// kept them; the view shows the same ones of this guest's own.
+func (m *Manager) viewClosures(g *state.Guest) []string {
+	out := []string{g.SystemClosure}
+	seen := map[string]bool{g.SystemClosure: true}
+	add := func(p string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		if _, err := os.Lstat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	for _, p := range g.PastClosures {
+		add(p)
+	}
+	if es, err := m.d.Roots.List(); err == nil {
+		for _, e := range es {
+			if strings.HasPrefix(e.Name, "rev-"+g.ProjectID+"-") {
+				add(e.Target)
+			}
+		}
+	}
+	return out
 }
 
 // waitSocket waits for a virtiofsd unit to bind its socket, failing early

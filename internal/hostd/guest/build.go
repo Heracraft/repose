@@ -145,7 +145,7 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 	}
 	// The new closure's paths must be in the guest's store before it
 	// switches to them.
-	if err := m.extendView(ctx, g.GuestID, c.SystemClosure); err != nil {
+	if err := m.extendView(ctx, g.GuestID, []string{c.SystemClosure}); err != nil {
 		return nil, errf(CodeInternal, "%v", err)
 	}
 	reg, derr := m.d.Nix.DumpDB(ctx, c.SystemClosure)
@@ -209,6 +209,15 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 func (m *Manager) adoptClosure(g *state.Guest, closure string) *Error {
 	if err := m.d.Roots.Set(g.GuestID, closure); err != nil {
 		return errf(CodeInternal, "gcroot: %v", err)
+	}
+	if g.SystemClosure != "" && g.SystemClosure != closure {
+		past := []string{g.SystemClosure}
+		for _, p := range g.PastClosures {
+			if p != closure && p != g.SystemClosure && len(past) < state.MaxPastClosures {
+				past = append(past, p)
+			}
+		}
+		g.PastClosures = past
 	}
 	g.SystemClosure = closure
 	if info, err := nixbuild.ClosureInfo(closure); err == nil {

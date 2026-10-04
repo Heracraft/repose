@@ -113,3 +113,19 @@ func TestFsckSandboxed(t *testing.T) {
 		t.Fatalf("fsck argv %s", argv)
 	}
 }
+
+// With Sandbox set, blkid runs in shell.Sandboxed with read-only access to
+// the one volume, and its "no filesystem" exit (2) still reads as false.
+func TestHasFilesystemSandboxed(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{{Prefix: []string{"systemd-run"}, Result: shell.Result{ExitCode: 2}}}}
+	l := &Real{VG: "vg-guests", Pool: "thin", R: r, Sandbox: true}
+	has, err := l.HasFilesystem(context.Background(), "g-1")
+	if err != nil || has {
+		t.Fatalf("has %v err %v", has, err)
+	}
+	argv := strings.Join(r.Calls[0], " ")
+	if !strings.HasPrefix(argv, "systemd-run ") || !strings.Contains(argv, "DeviceAllow=/dev/vg-guests/g-1 r") ||
+		!strings.HasSuffix(argv, "-- blkid -s TYPE -o value /dev/vg-guests/g-1") {
+		t.Fatalf("blkid argv %s", argv)
+	}
+}

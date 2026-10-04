@@ -368,6 +368,10 @@ type Manager struct {
 	maxIndex    uint32
 	poolWarned  time.Time
 	storeWarned time.Time
+
+	// authLocks serialises one user's login-share volume work: two of
+	// their guests booting together, and the sweep (I-464).
+	authLocks sync.Map // user id -> *sync.Mutex
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
