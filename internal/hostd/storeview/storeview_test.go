@@ -100,6 +100,9 @@ func TestBindIntoAView(t *testing.T) {
 	if err := v.Populate(context.Background(), "virtiofsd@g", paths); err != nil {
 		t.Fatalf("second populate: %v", err)
 	}
+	if s, err := v.Serves(context.Background(), "virtiofsd@g"); err != nil || s != ServesView {
+		t.Fatalf("serves %q %v, want %q", s, err, ServesView)
+	}
 	root := fmt.Sprintf("/proc/%d/root", pid)
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -182,8 +185,12 @@ func TestPopulateLeavesALegacyExportAlone(t *testing.T) {
 	}
 	sd := systemd.NewFake()
 	sd.Units["virtiofsd@g"] = &systemd.FakeUnit{Active: true, MainPID: 42}
-	if err := (&Real{SD: sd, Proc: proc}).Populate(context.Background(), "virtiofsd@g", []string{"/nix/store/2ndah67h0z5m31v2wkdmg2md4380ggr5-bash"}); err != nil {
+	r := &Real{SD: sd, Proc: proc}
+	if err := r.Populate(context.Background(), "virtiofsd@g", []string{"/nix/store/2ndah67h0z5m31v2wkdmg2md4380ggr5-bash"}); err != nil {
 		t.Fatal(err)
+	}
+	if s, err := r.Serves(context.Background(), "virtiofsd@g"); err != nil || s != ServesWhole {
+		t.Fatalf("serves %q %v, want %q", s, err, ServesWhole)
 	}
 }
 

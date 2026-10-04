@@ -37,32 +37,39 @@ var ErrLocked = errors.New("hostd already running")
 
 // Guest is one row of the guest table. Secrets are never stored here.
 type Guest struct {
-	GuestID       string            `json:"guest_id"`
-	ProjectID     string            `json:"project_id"`
-	UserID        string            `json:"user_id,omitempty"`
-	ProjectSlug   string            `json:"project_slug,omitempty"`
-	RemoteURL     string            `json:"remote_url,omitempty"`
-	Class         string            `json:"class"`
-	VolumeBytes   uint64            `json:"volume_bytes"`
-	SystemClosure string            `json:"system_closure"`
-	State         string            `json:"state"`
-	Reason        string            `json:"reason,omitempty"`
-	IP            string            `json:"ip"`
-	MAC           string            `json:"mac"`
-	Tap           string            `json:"tap"`
-	CID           uint32            `json:"vsock_cid"`
-	IPIndex       uint32            `json:"ip_index"`
-	Env           map[string]string `json:"env,omitempty"`
-	Principals    []string          `json:"principals,omitempty"`
-	SSHCAPub      string            `json:"ssh_ca_pub,omitempty"`
-	HooksConfig   []byte            `json:"hooks_config,omitempty"`
-	ProjectJSON   []byte            `json:"project_json,omitempty"`
-	Kernel        string            `json:"kernel,omitempty"`
-	Initrd        string            `json:"initrd,omitempty"`
-	BootID        string            `json:"boot_id,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
+	GuestID       string `json:"guest_id"`
+	ProjectID     string `json:"project_id"`
+	UserID        string `json:"user_id,omitempty"`
+	ProjectSlug   string `json:"project_slug,omitempty"`
+	RemoteURL     string `json:"remote_url,omitempty"`
+	Class         string `json:"class"`
+	VolumeBytes   uint64 `json:"volume_bytes"`
+	SystemClosure string `json:"system_closure"`
+	// PastClosures are the system closures this guest ran before, newest
+	// first, at most MaxPastClosures: its store view holds them too, since
+	// its nix database still lists their paths as valid (I-463).
+	PastClosures []string          `json:"past_closures,omitempty"`
+	State        string            `json:"state"`
+	Reason       string            `json:"reason,omitempty"`
+	IP           string            `json:"ip"`
+	MAC          string            `json:"mac"`
+	Tap          string            `json:"tap"`
+	CID          uint32            `json:"vsock_cid"`
+	IPIndex      uint32            `json:"ip_index"`
+	Env          map[string]string `json:"env,omitempty"`
+	Principals   []string          `json:"principals,omitempty"`
+	SSHCAPub     string            `json:"ssh_ca_pub,omitempty"`
+	HooksConfig  []byte            `json:"hooks_config,omitempty"`
+	ProjectJSON  []byte            `json:"project_json,omitempty"`
+	Kernel       string            `json:"kernel,omitempty"`
+	Initrd       string            `json:"initrd,omitempty"`
+	BootID       string            `json:"boot_id,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
 }
+
+// MaxPastClosures bounds Guest.PastClosures.
+const MaxPastClosures = 16
 
 // Command is an idempotency record. Status is "started" until the result is
 // stored, then "done".

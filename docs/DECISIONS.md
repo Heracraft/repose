@@ -11046,6 +11046,20 @@ collection lists the store. A per-guest view removes all three exposures
 and keeps R2-1's design: guests still read the host's store paths
 directly, with no copy.
 
+Which paths: the closure the guest runs, the closures it ran before
+(hostd records up to 16 per guest) and the project's kept revisions
+(`rev-*` roots), those still on the host. The guest's nix database lists
+every closure it was ever given as valid, and nix never fetches a valid
+path again, so a package a user installed that the system already had
+points into a system closure; with only the current closure in the view
+that package would break at the first restart after the next base or
+config change. The whole-store export showed those paths for as long as
+the host kept them; the view shows this guest's own, under the same
+condition. A path the host has garbage-collected is missing in the guest
+as it was before; the guest's own `nix-collect-garbage` tolerates such a
+path (checked on a local store: a valid path with its files gone is
+deleted without error).
+
 How: `virtiofsd@<id>` runs with `PrivateMounts=yes` and
 `TemporaryFileSystem=/run/repose/store-view` (root-owned, mode 0755,
 16 MiB), shares `/run/repose/store-view`, and pivots into it as before
@@ -11063,10 +11077,14 @@ virtiofsd 1.14 serving, and a path added while it served appeared in its
 root (internal/hostd/storeview, TestVirtiofsdServesTheView, root only).
 A view that cannot be filled fails the boot at the virtiofsd step.
 
-The whole-store export stays for one release: guests started before this
-keep it until their next start (hostd binds nothing into a virtiofsd whose
-root is not a tmpfs), and `hostd --store-export /run/repose/store-export`
-switches every new start back to it. The release after removes
+Guests running when a host switches to this are restarted at the switch:
+`hostd guests` shows a guest whose virtiofsd still shares the whole store
+as `whole-store`, reconcile logs `store_view_restart_needed` for each, and
+the host switch runbook restarts them through the api (hostd binds nothing
+into a virtiofsd whose root is not a tmpfs, so until then they run as
+before). The whole-store export stays one release as the rollback:
+`hostd --store-export /run/repose/store-export` switches every new start
+back to it. The release after removes
 `repose-store-export.service` and the flag's old meaning. *Rejected:* a
 hard-link farm per closure (about 57,000 directories per guest on the root
 filesystem, seconds per start, and the 65,000-link limit on popular
@@ -11089,7 +11107,11 @@ before is renamed `claude-auth.legacy` at the first mount, never opened,
 and the sweep removes it once no guest of that user runs; the user signs
 in to Claude Code once more on that host. The sweep unmounts and removes
 the volume with the user's directory, and removes a volume whose directory
-is gone. A volume that cannot be created or mounted leaves the guest
+is gone. All of this runs under a per-user lock, so two guests of one
+user booting together create, format and mount the volume once, and the
+sweep checks again under that lock that no guest of the user exists
+before it removes anything; each step also accepts an existing volume,
+filesystem or mount. A volume that cannot be created or mounted leaves the guest
 without the share (I-278's failure rule). *Rejected:* ext4 project quotas
 on the root filesystem (enabling the quota feature needs it unmounted);
 one shared volume for every user (one user filling it signs every user on
@@ -11097,7 +11119,7 @@ the host out); copying the old file into the volume (I-278: repose code
 never reads or copies it). Interface: `host-conventions.md` (users row,
 thin pool row, virtiofsd-auth invocation).
 
-**I-465. dumpe2fs and e2fsck run in a sandboxed transient unit.**
+**I-465. dumpe2fs, e2fsck and blkid run in a sandboxed transient unit.**
 (security review, 2026-10-03) A guest writes every byte of its volume,
 and hostd ran `dumpe2fs` on each snapshot and `e2fsck -fp` on each
 restored volume as root in its own service, which holds the host's mTLS
@@ -11111,8 +11133,11 @@ that volume (read-only for dumpe2fs); the unit joins the device node's
 group so it can open it. Output and exit codes pass through, so restore
 still reads e2fsck's 1 and 4. Checked on a loop device: dumpe2fs output
 and e2fsck exit 1 then 0 came back, another block device was refused with
-EPERM, an inet socket with EAFNOSUPPORT. `blkid` at create is left as it
-is: it reads a volume hostd has just created. *Rejected:*
+EPERM, an inet socket with EAFNOSUPPORT. `blkid`, which hostd runs before
+mkfs to see whether a volume already has a filesystem, goes through the
+same sandbox with read-only access: a create retried for a guest whose
+first create failed probes a volume the guest may have written, and its
+exit 2 ("nothing found") passes through like the others. *Rejected:*
 `RestrictAddressFamilies=none` (systemd-run refuses it for a transient
 unit); denying `@network-io` (dumpe2fs dies on it); running as root
 without capabilities (still reads every root-owned file).

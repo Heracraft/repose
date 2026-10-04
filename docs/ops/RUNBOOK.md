@@ -630,6 +630,13 @@ so the derivation is copied and built there:
    `ssh host-01 $out/bin/switch-to-configuration dry-activate`: what
    restarts. A change to hostd alone restarts hostd; guests keep running.
 5. `ssh host-01 "nix-env -p /nix/var/nix/profiles/system --set $out && $out/bin/switch-to-configuration switch"`
+6. Guests whose virtiofsd shares the whole host store (started before
+   DECISIONS I-463) are restarted at the switch, after telling their users:
+   `ssh host-01 hostd guests` lists them with `whole-store` in the STORE
+   column, and each one gets `repose-admin projects restart <project id>`.
+   Run `hostd guests` again until no line says `whole-store`; a reconcile
+   logs `store_view_restart_needed` for any that was missed. The same
+   restart moves a user's login share onto its own volume (I-464).
 
 A push to main redeploys the api, which drops hostd's stream for a few
 seconds; a stop or restore timed across a push looks slow.

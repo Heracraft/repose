@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/ch"
@@ -42,6 +43,14 @@ const authLastGuest = "last-guest"
 // started before the change still serves it until it stops; the sweep
 // removes it once no guest of the user runs.
 const authLegacy = "claude-auth.legacy"
+
+// lockUser holds the user's login-share lock until the returned func runs.
+func (m *Manager) lockUser(userID string) func() {
+	v, _ := m.authLocks.LoadOrStore(userID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // AuthVolumeName is the login-share volume of a user.
 func AuthVolumeName(userID string) string { return "auth-" + userID }
@@ -77,6 +86,10 @@ func (m *Manager) prepareAuthShare(ctx context.Context, g *state.Guest, dir stri
 	}
 	udir := m.authUserDir(g.UserID)
 	share := filepath.Join(udir, "claude-auth")
+	// Two guests of one user booting together would otherwise race on
+	// lvcreate, mkfs and mount; each step below also accepts what an
+	// earlier run left (an existing volume, filesystem or mount).
+	defer m.lockUser(g.UserID)()
 	if err := os.MkdirAll(filepath.Dir(m.cfg.UsersDir), 0o755); err != nil {
 		return virtiofs.AuthConfig{}, err
 	}
@@ -164,6 +177,37 @@ func (m *Manager) removeAuthShare(ctx context.Context, userID string) error {
 	return os.RemoveAll(m.authUserDir(userID))
 }
 
+// sweepUser removes the user's share under the user's lock, after checking
+// again that the marker is old and no guest of the user exists: a guest
+// that booted since the sweep listed the guests has stamped the marker.
+func (m *Manager) sweepUser(ctx context.Context, userID, marker string, now time.Time) (bool, error) {
+	defer m.lockUser(userID)()
+	fi, err := os.Stat(marker)
+	if err != nil || now.Sub(fi.ModTime()) <= m.cfg.AuthKeep {
+		return false, nil
+	}
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return false, err
+	}
+	for _, g := range gs {
+		if g.UserID == userID {
+			return false, nil
+		}
+	}
+	return true, m.removeAuthShare(ctx, userID)
+}
+
+// removeOrphanVolume removes a user's volume whose directory is gone,
+// unless a guest of the user created it again meanwhile.
+func (m *Manager) removeOrphanVolume(ctx context.Context, userID string) error {
+	defer m.lockUser(userID)()
+	if _, err := os.Lstat(m.authUserDir(userID)); err == nil {
+		return nil
+	}
+	return m.removeAuthShare(ctx, userID)
+}
+
 // startAuthShare runs the guest's login-share virtiofsd and waits for its
 // socket. The guest boots without the share when this fails: the user
 // then signs in inside that guest as before, which is better than a guest
@@ -223,8 +267,9 @@ func (m *Manager) SweepAuthShares(ctx context.Context) {
 		case has[id] || errors.Is(err, fs.ErrNotExist):
 			err = touch(marker, now)
 		case err == nil && now.Sub(fi.ModTime()) > m.cfg.AuthKeep:
-			err = m.removeAuthShare(ctx, id)
-			if err == nil {
+			var removed bool
+			removed, err = m.sweepUser(ctx, id, marker, now)
+			if removed {
 				m.d.Log.Info("login share removed", "event", "auth_share_sweep", "user_id", id)
 			}
 		}
@@ -252,7 +297,7 @@ func (m *Manager) SweepAuthShares(ctx context.Context) {
 			continue
 		}
 		if _, err := os.Lstat(m.authUserDir(id)); errors.Is(err, fs.ErrNotExist) {
-			if err := m.removeAuthShare(ctx, id); err != nil {
+			if err := m.removeOrphanVolume(ctx, id); err != nil {
 				m.d.Log.Warn("login share sweep: orphan volume", "event", "auth_share_sweep", "volume", v, "err", err.Error())
 			}
 		}

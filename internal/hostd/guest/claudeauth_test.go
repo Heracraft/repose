@@ -2,14 +2,17 @@ package guest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/state"
 )
 
 // A guest with a user id boots with that user's login share (I-278): the
@@ -260,5 +263,45 @@ func TestLoginShareMountFailureBootsWithout(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(h.sd.Units["guest@"+gid1].Argv, " "), "claude-auth") {
 		t.Fatal("hypervisor got a share whose volume never mounted")
+	}
+}
+
+// Guests of one user booting together set the volume up once: the second
+// waits for the first and finds the volume made and mounted (I-464).
+func TestLoginShareSetupIsSerialisedPerUser(t *testing.T) {
+	h := newHarness(t, nil)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			dir := filepath.Join(h.cfg.GuestsDir, fmt.Sprintf("g-%d", i))
+			if err := h.m.prepareGuestDir(dir); err != nil {
+				errs <- err
+				return
+			}
+			_, err := h.m.prepareAuthShare(context.Background(), &state.Guest{GuestID: fmt.Sprintf("g-%d", i), UserID: "user-1"}, dir)
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.mount.Calls != 1 {
+		t.Fatalf("%d mounts of one user's volume", h.mount.Calls)
+	}
+	mkfs := 0
+	for _, op := range h.lvm.Ops {
+		if op == "mkfs" {
+			mkfs++
+		}
+	}
+	if mkfs != 1 {
+		t.Fatalf("%d mkfs runs for one user's volume", mkfs)
 	}
 }

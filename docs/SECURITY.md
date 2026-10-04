@@ -52,9 +52,11 @@ they stop an actor the component map does not draw.
    unprivileged `virtiofsd` in a user and mount namespace sandbox (I-48,
    I-463). Stops: a tenant or their agent reaching the host or the store's
    write path, or reading another project's closure or fragment source or
-   the host's own system closure, none of which is in the view. Guests
-   started before I-463 keep the whole-store export until their next
-   start.
+   the host's own system closure, none of which is in the view. The view
+   also holds the closures that guest ran before, while the host has them
+   (its own nix database lists them as valid). Guests running when a host
+   switches to I-463 are restarted at the switch (RUNBOOK, "Switch a host
+   to main").
 2. **The bridge and nftables between guests.** Per-guest tap attached
    `isolated on learning off flood off` with a static FDB entry; the
    `bridge repose` table drops every switched frame and admits ARP and
@@ -273,13 +275,14 @@ Written down so nobody believes otherwise.
   upstream binary releases with pinned hashes; there is no independent
   verification of upstream builds.
 - **Filesystem tools read what a guest wrote.** hostd runs `dumpe2fs` on
-  every snapshot and `e2fsck -fp` on every restore over a volume whose
-  every byte the guest chose. Both run sandboxed (I-465): a dynamic user
+  every snapshot, `e2fsck -fp` on every restore and `blkid` before mkfs, over
+  a volume whose every byte the guest may have chosen. Both run sandboxed (I-465): a dynamic user
   with no capabilities and no network, no view of hostd's state, and only
   that one device. A parser bug in e2fsprogs therefore needs a second,
   kernel or systemd, bug to reach the host; it can still corrupt or stall
-  that one guest's snapshot or restore. `blkid` at create reads a volume
-  hostd has just made, and runs unsandboxed.
+  that one guest's snapshot or restore. `blkid`, which probes a volume
+  before mkfs (a guest's, when a failed create is retried), runs in the
+  same sandbox.
 - **A tenant's agent misusing the tenant's own tool logins.** Inside the
   guest, gh and Codex tokens are readable by any process as `dev`. That is
   the same exposure as on the tenant's laptop.

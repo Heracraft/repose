@@ -10,7 +10,8 @@
 #
 # The whole-store export (/run/repose/store-export, a read-only bind of
 # /nix/store with an empty tmpfs over `.links`) is kept for one release:
-# guests started before I-463 still use it until their next start, and
+# guests running when a host switches to I-463 are restarted at the switch
+# (RUNBOOK, "Switch a host to main"), and
 # `hostd --store-export /run/repose/store-export` switches back to it.
 # Remove it in the release after.
 { config, lib, pkgs, ... }:

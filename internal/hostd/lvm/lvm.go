@@ -42,8 +42,9 @@ type Real struct {
 	VG   string // vg-guests
 	Pool string // thin
 	R    shell.Runner
-	// Sandbox runs e2fsck, which parses and repairs metadata a guest
-	// wrote, in shell.Sandboxed rather than as hostd (DECISIONS I-465).
+	// Sandbox runs e2fsck and blkid, which parse metadata a guest may
+	// have written, in shell.Sandboxed rather than as hostd (DECISIONS
+	// I-465).
 	Sandbox bool
 }
 
@@ -84,9 +85,14 @@ func (l *Real) CreateVolume(ctx context.Context, name string, bytes uint64) erro
 	return err
 }
 
-// HasFilesystem implements LVM via blkid.
+// HasFilesystem implements LVM via blkid, which probes the volume's first
+// blocks: a guest's once it has run, so it is sandboxed like e2fsck.
 func (l *Real) HasFilesystem(ctx context.Context, name string) (bool, error) {
-	res, err := l.R.Run(ctx, "blkid", "-s", "TYPE", "-o", "value", l.DevPath(name))
+	argv := []string{"blkid", "-s", "TYPE", "-o", "value", l.DevPath(name)}
+	if l.Sandbox {
+		argv = shell.Sandboxed(l.DevPath(name), false, argv...)
+	}
+	res, err := l.R.Run(ctx, argv...)
 	var ee *shell.ExitError
 	if errors.As(err, &ee) && ee.Result.ExitCode == 2 {
 		return false, nil // blkid: no filesystem found

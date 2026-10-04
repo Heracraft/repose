@@ -82,9 +82,9 @@ type Builder interface {
 	// guest loads so the paths it sees through the shared store are valid in
 	// its own database (DECISIONS I-67).
 	DumpDB(ctx context.Context, path string) ([]byte, error)
-	// Requisites returns the store paths in the closure of path: what a
-	// guest's store view holds (DECISIONS I-463).
-	Requisites(ctx context.Context, path string) ([]string, error)
+	// Requisites returns the store paths in the closure of paths, once
+	// each: what a guest's store view holds (DECISIONS I-463).
+	Requisites(ctx context.Context, paths ...string) ([]string, error)
 }
 
 // Info is what a system closure exposes for booting.
@@ -199,16 +199,16 @@ func (b *Real) Defaults() *Real {
 }
 
 // Requisites implements Builder.
-func (b *Real) Requisites(ctx context.Context, path string) ([]string, error) {
-	res, err := b.R.Run(ctx, "nix-store", "-qR", path)
+func (b *Real) Requisites(ctx context.Context, paths ...string) ([]string, error) {
+	res, err := b.R.Run(ctx, append([]string{"nix-store", "-qR"}, paths...)...)
 	if err != nil {
 		return nil, fmt.Errorf("nix-store -qR: %w", err)
 	}
-	paths := strings.Fields(string(res.Stdout))
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("nix-store -qR %s: empty closure", path)
+	out := strings.Fields(string(res.Stdout))
+	if len(out) == 0 {
+		return nil, fmt.Errorf("nix-store -qR of %d paths: empty closure", len(paths))
 	}
-	return paths, nil
+	return out, nil
 }
 
 // DumpDB implements Builder.
@@ -700,13 +700,24 @@ func (f *Fake) Build(ctx context.Context, req Request, log func(string)) (*Resul
 }
 
 // Requisites implements Builder.
-func (f *Fake) Requisites(_ context.Context, path string) ([]string, error) {
+func (f *Fake) Requisites(_ context.Context, paths ...string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if r, ok := f.Closures[path]; ok {
-		return append([]string(nil), r...), nil
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range paths {
+		r, ok := f.Closures[p]
+		if !ok {
+			r = []string{p}
+		}
+		for _, q := range r {
+			if !seen[q] {
+				seen[q] = true
+				out = append(out, q)
+			}
+		}
 	}
-	return []string{path}, nil
+	return out, nil
 }
 
 // DumpDB implements Builder with an empty listing.

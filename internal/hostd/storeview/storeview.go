@@ -2,9 +2,10 @@
 // closure (DECISIONS I-463). The guest's virtiofsd@<id> unit starts with a
 // private mount namespace whose shared directory is an empty tmpfs, and
 // virtiofsd pivots into it; hostd then bind-mounts each path of the
-// guest's system closure into that namespace, read-only and with private
+// guest's system closures into that namespace (the one it runs and the
+// ones it ran before, see guest.viewClosures), read-only and with private
 // propagation. Nothing is mounted in the host's namespace, so systemd
-// tracks none of it, and a guest can list and read its own closure and
+// tracks none of it, and a guest can list and read its own closures and
 // nothing else: not other projects' closures or fragment sources, not the
 // host's system.
 //
@@ -45,7 +46,17 @@ type View interface {
 	// Populate makes each store path appear in the view served by unit.
 	// Paths already there are left alone.
 	Populate(ctx context.Context, unit string, paths []string) error
+	// Serves says what unit's running virtiofsd shares: ServesView,
+	// ServesWhole (the pre-I-463 export), or "" when it is not running or
+	// has not entered its shared directory yet.
+	Serves(ctx context.Context, unit string) (string, error)
 }
+
+// What a running virtiofsd shares.
+const (
+	ServesView  = "view"
+	ServesWhole = "whole-store"
+)
 
 // Real binds into the namespace of the unit's main process.
 type Real struct {
@@ -59,6 +70,31 @@ type Real struct {
 
 // ErrNotPivoted is returned when virtiofsd did not enter its view in time.
 var ErrNotPivoted = errors.New("virtiofsd did not enter its store view")
+
+// Serves implements View.
+func (r *Real) Serves(ctx context.Context, unit string) (string, error) {
+	proc := r.Proc
+	if proc == "" {
+		proc = "/proc"
+	}
+	props, err := r.SD.Show(ctx, unit, "MainPID")
+	if err != nil {
+		return "", err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(props["MainPID"]))
+	if err != nil || pid <= 0 {
+		return "", nil
+	}
+	switch root, err := rootOf(proc, pid); {
+	case err != nil:
+		return "", err
+	case root == rootView:
+		return ServesView, nil
+	case root == rootOther:
+		return ServesWhole, nil
+	}
+	return "", nil
+}
 
 // Populate implements View. A unit started before I-463 serves the whole
 // store export; it is left as it is until the guest's next boot.
@@ -148,6 +184,7 @@ type Fake struct {
 	mu    sync.Mutex
 	Views map[string]map[string]bool // unit -> store path -> present
 	Err   error
+	Whole map[string]bool // units that serve the whole store
 }
 
 // NewFake returns an empty Fake.
@@ -169,6 +206,20 @@ func (f *Fake) Populate(_ context.Context, unit string, paths []string) error {
 		v[p] = true
 	}
 	return nil
+}
+
+// Serves implements View: ServesWhole for a unit in Whole, ServesView for
+// one populated, "" otherwise.
+func (f *Fake) Serves(_ context.Context, unit string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case f.Whole[unit]:
+		return ServesWhole, nil
+	case f.Views[unit] != nil:
+		return ServesView, nil
+	}
+	return "", nil
 }
 
 // Has reports whether unit's view holds p.
