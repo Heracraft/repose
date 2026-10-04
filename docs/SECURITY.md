@@ -94,14 +94,17 @@ they stop an actor the component map does not draw.
    cross-user lookups return 404. Stops: enumeration.
 6. **Envelope encryption for named secrets**: Postgres holds ciphertext and
    a wrapped DEK; Key Vault holds the wrapping key; the api can wrap and
-   unwrap but not export. Each ciphertext is bound to its name, and the
-   platform's CA material does not decrypt outside the platform
-   pseudo-project. Binding every row to its project id as well comes over
-   two releases (I-433): this one reads the project-bound form and the next
-   writes it, so until then a user's secret row copied into another project
-   under the same name still decrypts there. Stops: a Postgres dump
-   (including the R2 backups) revealing secrets; a database write moving
-   the platform's CA keys into a project's guest.
+   unwrap but not export. Each ciphertext is bound to its project id and
+   its name (AES-GCM additional data, I-433), so a row copied into another
+   project or renamed does not decrypt. Every write uses that form, and
+   each api process rewrites the rows an older release wrote bound to the
+   name alone in the background at start (I-474). Until step 3 of I-433
+   removes it next release, the api still reads the name-only form, so a
+   name-only row copied before that rewrite reached it still decrypts in
+   its new project; the platform's CA material in that form is refused
+   outside the platform pseudo-project. Stops: a Postgres dump (including
+   the R2 backups) revealing secrets; a database write moving a secret,
+   the platform's CA keys included, into another project's guest.
 7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, shaping both
    ways on the tap (200 Mbit/s out, 1 Gbit/s in from outside the host),
    a disk rate limit per class, a cap on tracked connections, a console log

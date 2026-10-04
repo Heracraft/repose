@@ -253,6 +253,33 @@ runs on, so `Ctrl-V` in the guest never sees the laptop's screenshot.
 the kitty and WezTerm key bindings that ran it left /docs/run-and-attach
 when Ctrl+V did the same through the input proxy (I-280).
 
+## A dropped connection attaches again (I-469)
+
+On the input-proxy path (macOS and Linux with a terminal), an attach whose
+ssh ends with 255 does not end the command:
+
+```
+Connection to ssh.repose.herakraft.co closed by remote host.
+
+repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.
+```
+
+- The CLI probes with `ssh <alias> true` every second, for up to 2
+  minutes, and attaches again to the session (`tmux attach -t <slug>`,
+  not the agent window the first attach named), so tmux redraws the
+  screen the user left. Keys typed while it waits are dropped; Ctrl-C or
+  Ctrl-D stops it.
+- A certificate refusal gets a new certificate (a relay ends when its
+  certificate expires, I-436); a refusal after a renewal that worked
+  ends the wait. A stopped, destroyed, errored or unknown
+  project ends the wait at once with the gateway's line.
+- An attach that drops again within 5 seconds of a reattach ends the
+  command: `the connection to todo-app dropped again at once; giving up.`
+- Past 2 minutes: ``could not reach todo-app for 2 minutes. `repose
+  attach todo-app` attaches again once it answers.``, exit 255.
+- Where the CLI has become ssh (Windows, `REPOSE_INPUT_PROXY=0`, no
+  terminal) the command ends with 255 as before.
+
 ## Drop a file or paste an image while attached (I-280)
 
 On macOS and Linux, `run` and `attach` run `ssh -t ... tmux attach` on a

@@ -782,6 +782,48 @@ in
           assert "path=ok" in out, out
           assert "agent=repose-env-probe" in out, out
 
+      # I-475: the agent's commands are `bash -c` children of a process that
+      # loaded the secrets when it started. BASH_ENV, from the PAM
+      # environment over ssh, makes each child source secrets.refresh when
+      # its REPOSE_ENV_GEN is not the file's. The second file is what guestd
+      # writes for the second generation: a value the parent holds as
+      # guestd exported it is rotated or unset, one it set itself (MY_LOCAL,
+      # as a .envrc would) stays.
+      with subtest("I-475: a tmux window's bash -c child sees a secret rotated after the window started, and keeps its own value"):
+          guest.succeed("""cat > /tmp/be-parent <<'EOF'
+      echo "bash_env=$BASH_ENV start=$MY_TOKEN local=$MY_LOCAL"
+      export MY_LOCAL=from-envrc
+      while [ ! -e /tmp/be-go ]; do sleep 0.1; done
+      bash -c 'echo "child=$MY_TOKEN gone=$GONE_TOKEN. local=$MY_LOCAL"'
+      echo done
+      EOF
+      cat > /tmp/refresh-aa <<'EOF'
+      # repose-env-gen 00000000000000aa
+      export MY_TOKEN='s3cr3t' GONE_TOKEN='g' MY_LOCAL='prod' REPOSE_ENV_GEN=00000000000000aa
+      EOF
+      cat > /tmp/refresh-bb <<'EOF'
+      # repose-env-gen 00000000000000bb
+      case ''${GONE_TOKEN+s$GONE_TOKEN} in s'g') unset GONE_TOKEN ;; esac
+      case ''${MY_LOCAL+s$MY_LOCAL} in ''') export MY_LOCAL='prod' ;; esac
+      case ''${MY_TOKEN+s$MY_TOKEN} in '''|s's3cr3t') export MY_TOKEN='rotated' ;; esac
+      export REPOSE_ENV_GEN=00000000000000bb
+      EOF
+      chmod 0755 /tmp/be-parent; rm -f /tmp/be-go /tmp/out-be""")
+          guest.succeed("install -m 0400 -o dev -g dev /tmp/refresh-aa /run/repose/secrets.refresh")
+          ssh("tmux new-window -t todo-app -n be -d 'bash /tmp/be-parent > /tmp/out-be 2>&1'")
+          guest.wait_until_succeeds("grep -q start= /tmp/out-be", timeout=30)
+          guest.succeed("install -m 0400 -o dev -g dev /tmp/refresh-bb /run/repose/secrets.refresh")
+          guest.succeed("touch /tmp/be-go")
+          out = wait_out("be")
+          print(out)
+          assert "bash_env=/etc/repose/bash-env.sh start=s3cr3t local=prod" in out, out
+          assert "child=rotated gone=. local=from-envrc" in out, out
+          # A login shell goes through the same file: no generation, so it
+          # gets every secret.
+          env = guest.succeed("sudo -u dev bash -lc 'echo $MY_TOKEN $MY_LOCAL $REPOSE_ENV_GEN'").strip()
+          assert env == "rotated prod 00000000000000bb", env
+          guest.succeed("rm -f /run/repose/secrets.refresh")
+
       with subtest("I-227: installs land on PATH (go install, npm i -g)"):
           guest.succeed("""install -d -o dev -g dev /tmp/gi /tmp/npmpkg/bin && cat > /tmp/gi/go.mod <<'EOF'
       module example.com/gi

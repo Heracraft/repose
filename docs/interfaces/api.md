@@ -146,6 +146,9 @@ Names: `[A-Z][A-Z0-9_]{0,63}`. The names `ssh_host_ed25519_key`,
 `ssh_host_ed25519_key-cert.pub` and `user_ca.pub` are reserved for the guest's
 sshd material (delivered by hostd into the same tmpfs from the explicit
 `CreateGuest` fields, see I-3 and I-10) and are rejected with `invalid`.
+PUT also rejects `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN` with `invalid`: the
+guest uses them to keep each command's secrets current (I-475). A secret by
+one of those names stored before is still listed and deletable.
 
 ## Snapshots
 

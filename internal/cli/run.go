@@ -205,7 +205,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if l := tempLine(project, time.Now(), false); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
-		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach)
+		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach, renewFor(e, project))
 	}
 
 	// The machine's checkout, as its sync or carry found it (I-368).
@@ -395,7 +395,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		return nil
 	}
 	startSessionHelper(e, helper)
-	return attachTmux(target, project.Slug, window, tz, helper.RepoDir, afterAttach)
+	return attachTmux(target, project.Slug, window, tz, helper.RepoDir, afterAttach, renewFor(e, project))
 }
 
 // syncResultLine is what a run prints about its sync. With nothing new on
@@ -630,7 +630,11 @@ func hasOAuthSecret(ctx context.Context, c *Client, projectID string) (bool, err
 // after, when not nil, runs once the attach has returned on the
 // input-proxy path, the only one where the CLI is still there to run it
 // (a temporary machine's session-end check, I-352).
-func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func()) error {
+//
+// On that path a dropped connection attaches again once the machine
+// answers (I-469); renew, when not nil, is how a certificate that ended
+// the connection by expiring (I-436) is replaced.
+func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), renew func(context.Context) error) error {
 	extra := []string{"-t"}
 	if tz != "" {
 		if err := os.Setenv("TZ", tz); err == nil {
@@ -640,7 +644,9 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func()) err
 	remote := attachCommand(slug, window)
 	if inputProxyEnabled() {
 		args := append(append(append([]string{}, extra...), t.Args...), remote)
-		if handled, err := runInputProxy(args, newDropHandler(t, slug, repoDir)); handled {
+		re := newReattacher(t, slug, renew)
+		re.args = append(append(append([]string{}, extra...), t.Args...), attachCommand(slug, ""))
+		if handled, err := runInputProxy(args, newDropHandler(t, slug, repoDir), re); handled {
 			if after != nil {
 				after()
 			}
@@ -712,6 +718,16 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 			return ctx.Err()
 		case <-time.After(sshRetryInterval):
 		}
+	}
+}
+
+// renewFor is a dropped attach's certificate renewal (I-469): connect's
+// slow path, which issues a certificate when the one on disk no longer
+// covers the project and checks the machine answers.
+func renewFor(e *Env, project *Project) func(context.Context) error {
+	return func(ctx context.Context) error {
+		_, err := connect(ctx, e, project)
+		return err
 	}
 }
 

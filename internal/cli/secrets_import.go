@@ -147,6 +147,8 @@ func validateImport(entries []dotenvEntry) error {
 		switch {
 		case reservedSecretNames[en.Name]:
 			bad = append(bad, fmt.Sprintf("line %d: %s is reserved for the machine's sshd", en.Line, en.Name))
+		case shellSecretNames[en.Name]:
+			bad = append(bad, fmt.Sprintf("line %d: %s is reserved: the machine uses it to keep each command's secrets current", en.Line, en.Name))
 		case !secretNameRe.MatchString(en.Name):
 			bad = append(bad, fmt.Sprintf("line %d: %s is not a secret name (uppercase letters, digits and _, starting with a letter, up to 64)", en.Line, en.Name))
 		case len(en.Value) > secretMaxBytes:

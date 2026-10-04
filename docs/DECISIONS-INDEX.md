@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-497 entries.
+505 entries.
 
 ## Scope
 
@@ -320,7 +320,7 @@ pointer, not a summary.
 - **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; L5519
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5561
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5608
-- **I-241** Gaps the user docs found, closed in code rather than documented as broken — 2026-09-23; L5653
+- **I-241** Gaps the user docs found, closed in code rather than documented as broken — 2026-09-23; amended by I-475; L5653
 - **I-238** Guests cannot send mail straight to port 25; submission ports stay open, and blocked attempts are counted per guest — 2026-09-24; L5705
 - **I-239** A known cryptocurrency miner stops its guest automatically; three stops in 24 hours hold the project until an operator clears it; the pool ports are blocked; full CPU with nobody there for six hours is an alert — 2026-09-24; L5744
 - **I-240** New outbound flows are rate-limited per guest, far above what development does; flows over the limit are dropped and counted, open ones are never cut — 2026-09-24; L5825
@@ -529,3 +529,11 @@ pointer, not a summary.
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11884
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11927
 - **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; L11957
+- **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; L11979
+- **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; L12099
+- **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L12125
+- **I-469** A dropped attach attaches again, and `repose open` reconnects — 2026-10-04; L12192
+- **I-470** systemd holds the gateway's SSH socket — 2026-10-04; L12226
+- **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12247
+- **I-472** An edge switch leaves the network up — 2026-10-04; L12297
+- **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319

@@ -11105,9 +11105,9 @@ Rotating the key: `docs/ops/RELEASE.md` "The release signing key".
 deploys, so this stops a forged release, not a forged `main` (I-428's
 ruleset covers that). GoReleaser and the signer share a workflow run; a
 compromised GoReleaser could still change the archives before they are
-signed (I-429's pin narrows that). *Owner:* create the `release`
-environment limited to `v*` tags, store the key as its secret, and turn on
-immutable releases and a tag ruleset for `v*`.
+signed (I-429's pin narrows that). The `release`
+environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
+release signing key").
 **I-431. The api's `/internal` listener admits only the gateway's certificate.** (security release, 2026-10-03)
 One X.509 CA signs the hosts' client certificates (CN = host id) and the
 gateway's (CN `gateway`), and the `/internal` listener on 8444 accepted any
@@ -11208,8 +11208,8 @@ not open under another project or name), `TestCiphertextIsBoundToItsProject`
 binds it and refuses the platform-key copy); `internal/api/http` `TestFork`
 opens the copied secret in the fork. *Rejected:* a column recording the
 additional-data version (a database writer sets it as easily as the
-ciphertext; a failed tag check under the new data says the same thing for
-free).
+ciphertext; a failed tag check under the bound data says the same thing for
+free); binding in one release (breaks the rolling deploy and rollback).
 **I-441. Guests report guest kinds only; platform kinds come from the api.**
 (security release, 2026-10-04) `notifyKinds` held the guest kinds and the
 platform kinds in one map, and both guest paths (an `AgentEvent` over
@@ -11975,3 +11975,368 @@ say the same.
 *Rejected:* naming boat or any other product on the page; a price
 comparison (boat bills per second, repose is a flat month, and the
 numbers swap with the hours run).
+
+**I-475. Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself.**
+(secrets-env, 2026-10-04; amends I-241) A secret set after an agent
+started reached `/run/repose/secrets/NAME` but not the agent's commands.
+`secrets.env` was sourced only by `/etc/profile.d/repose.sh`, which a
+shell reads when it starts, and an agent runs each command as a
+non-login, non-interactive `bash -c` that inherits the agent's
+environment (Claude Code's shell snapshot exports only PATH). The agent
+guide said secrets were environment variables, so agents guessed and
+spent turns on it.
+`BASH_ENV=/etc/repose/bash-env.sh` is now a session variable, so it is
+in `/etc/set-environment`, the PAM environment, dev's user manager and
+the tmux server; the activation script that refreshes PATH there after a
+base switch sets it too. A stable `/etc` path rather than a store path,
+so a process holding BASH_ENV across a switch still finds it.
+The rule is by value. For each name guestd keeps the values it exported
+before and no longer does, distinct, oldest first, the last 16 per name,
+in `/run/repose/secrets.state` (root 0600, tmpfs), and writes
+`/run/repose/secrets.refresh` (dev 0400, tmpfs) from them: per current
+secret `case ${NAME+s$NAME} in ''|s'earlier'...) export NAME='current'
+;; esac`, per removed one the same patterns without `''` and `unset NAME`.
+A process that lacks a secret gets it; one that holds an earlier value
+guestd exported gets the current one; any other value is the process's
+own and stays across any number of later writes: the project's `.envrc`
+(loaded by the agent wrappers after the profile, I-259), an override for
+one command (`STRIPE_KEY=sk_test ./run-tests.sh`), and a removed secret
+the `.envrc` now provides with another value. A first version re-sourced
+the whole file whenever the generation differed; since an agent's own
+generation never changes, every command after the first write replaced
+the `.envrc`'s values with the secrets, which reviewers reproduced.
+Each environment guestd gives out also carries `REPOSE_ENV_GEN=<16 hex>`,
+which changes when the exported set does and only then. The loader
+sources the refresh file only when its first line, `# repose-env-gen
+<gen>`, names another generation than the process's, so a process formed
+from the current set pays one `read` per bash. The marker decides nothing
+else. Its name holds none of `KEY`, `SECRET` or `TOKEN`, so a sandbox
+that drops those (Codex's `shell_environment_policy`) keeps the fast path.
+Second review (2026-10-04): a second version compared each value with
+what the process's own generation delivered, keeping the last 16
+generations. Every write is a generation and `secrets import` makes one
+per line, so after 16 writes to any names an agent's generation expired:
+a rotation and a removal stopped reaching it, `exec $SHELL` stopped
+working, and a name its sandbox dropped came back. Bounding history per
+name instead of per write removes the expiry for everything but a name
+changed more than 16 times while an agent holds its oldest value (that
+process keeps it, as it would any value of its own), and drops about
+150 lines of generation bookkeeping. What it gives up, stated rather
+than half kept: a name a process lacks is filled in on its next bash
+after a change, whatever removed it. The generation version kept a
+sandbox's drop only for names that existed when the agent started and
+only within the 16 generations; a `*KEY*` secret set later reached the
+sandbox anyway. To keep a secret out of a command, give the variable an
+empty value or leave `BASH_ENV` out of its environment (in Codex,
+`shell_environment_policy.exclude`). A value that equals an earlier
+secret value follows the secret: an `.envrc` that loads the same `.env`
+the user imported gets the user's later changes, and loses the variable
+when the secret is removed (the generation version did the same).
+A process with no generation (an ssh login, a user unit, a process from
+before this guestd) follows the same rule. `/etc/profile.d/repose.sh`
+sources the loader too, so a login shell does; it falls back to sourcing
+`secrets.env` when no refresh file exists (a guest whose secrets an older
+guestd wrote). `secrets.env` is now `export REPOSE_ENV_GEN=<gen>` and one
+`export` line per current secret.
+The refresh file holds the earlier values, a removed secret's included,
+readable by dev, until the guest restarts or 16 newer values of that name
+replace them: without them it could not take a removed value out of a
+process that inherited it. The public docs say so, and tell the user to
+revoke a leaked key at its provider. The comparison runs in the shell, so
+it compares values, not hashes: hashing would need a program per name per
+command. Cost for a process with an older generation, measured with bash
+5.3 (`bash -c true`, 2.0 ms without the loader): ten 64 B secrets each
+changed 16 times +0.6 ms; thirty 1 KiB ones each changed 16 times (526 KB
+file) +5.5 ms; twenty 64 KiB ones, one changed 16 times (2.4 MB) +28 ms,
+all twenty changed 16 times (22 MB) +235 ms. A process with the current
+generation pays nothing measurable. The large cases are outside what
+secrets are used for; per-generation delta files would cut them to the
+names that changed but need the per-generation history this entry
+removed, and are the next step if they show up.
+The loader runs builtins only and is POSIX sh, prints nothing (xtrace and
+verbose are off while it runs, so `bash -x` never echoes a value), keeps
+`$?`, `$_`, the positional parameters and the shell options, and does
+nothing when the file is missing or unreadable (nobody and other users,
+before the first write). `$_` is saved first and put back by a final
+`: "$saved"` whose trace goes to /dev/null, so a script's first command
+still sees its own path; the saved copy stays as an unexported
+`__repose_bash_env_u`, since unsetting it would change `$_` again. Root
+reads the dev file and loads the secrets, as `/etc/profile.d/repose.sh`
+already did for a root login shell. Secrets named `BASH_ENV`, `ENV` or
+`REPOSE_ENV_GEN`, or starting `__repose_`, would switch the refresh off:
+the api and the CLI refuse them on set (one stored before stays listable
+and deletable), and guestd writes the file but never exports it.
+Rejected: a PROMPT_COMMAND or DEBUG trap (interactive shells only, and
+agents' shells are not); re-exec'ing agents on a change (kills their
+work); exporting secrets through the agent wrappers (still fixed at
+agent start); secrets winning over `.envrc` after any rotation (the
+first version's behaviour; a test run would silently use a live key);
+per-generation history, bounded (the second version; expires) or kept
+for the guest's life (every write rewrites a table that grows with
+writes); dropping a removed value from the file at once (an agent would
+keep the removed key). `sh` does not read BASH_ENV, so a command an agent
+runs with `sh -c` or a `#!/bin/sh` script keeps the inherited values; the
+public docs and the agent guide say so.
+Tests: `internal/guestd/secrets/loader_test.go` runs the loader with real
+bash under `set -euo pipefail`, `set -u` and a script, with the file
+missing, present, unreadable and empty; an override kept with a current
+and with a stale generation across rotations and removals, a dropped
+name filled in and an emptied one kept empty
+(`TestLoaderKeepsOverridesAcrossLaterWrites`); a rotation and a removal
+reaching an agent after 64 writes to other names, and its oldest value
+kept only after 17 values of its own name
+(`TestLoaderAfterManyWritesToOtherNames`); no generation; `$_` equal to a
+run without the loader for a script and `-c`, with and without `-x`
+(`TestLoaderKeepsUnderscore`); tricky values from bash and sh; `bash -x`
+silent. `secrets_test.go` `TestEarlierValuesAreBoundedPerName`.
+`e2e_test.go` drives an agent-like bash in a real tmux window through 35
+writes, 32 of them each adding another name, and finds no value of the
+run in any `/proc/*/cmdline`; VM subtests in `nix/guest/tests/guestd.nix` (a
+`systemd-run` parent as dev that sets its own value, then `WriteSecrets`)
+and `nix/guest/tests/default.nix` (a tmux window opened over ssh, and a
+login shell).
+
+**I-476. Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin.**
+(secrets-env, 2026-10-04) Loading secrets alone cannot take away a
+variable a process inherited, so `repose secrets rm` left the old value in
+an agent's commands. `secrets.refresh` now has a guarded `unset NAME` line
+for every name guestd exported before and does not now (I-475's rule:
+only when the process holds one of the values guestd exported for it).
+The reserved names of I-10 never enter the state or either file. On each
+write guestd also pipes a tmux configuration to `tmux source-file -`, as
+dev: `set-environment -g NAME "value"` per secret, `-gu NAME` per removed
+name and `-g REPOSE_ENV_GEN` last, so a new tmux window matches even when
+its command is not bash. The first version passed the values as
+arguments: `/proc/<pid>/cmdline` is readable by every uid, and the tmux
+client refuses a command over 16 KiB (`command too long`), so one 64 KiB
+secret broke the push. On stdin neither applies. Each value is one
+double-quoted token: `\`, `"` and `$` get a backslash, and `~` (expanded
+even inside quotes at a token's start) and every byte outside printable
+ASCII become octal escapes. No tmux server, a tmux error or a missing
+tmux is logged by exit code only, never with stderr, and does not fail
+the request: the tmpfs and BASH_ENV already carry the secrets. The
+generation goes last so a failure part way leaves tmux refreshing.
+Tests: `TestRefreshUnsetsARemovedName`, `TestHistorySurvivesAGuestdRestart`,
+`TestUnreadableStateStartsANewHistory`, `TestShellReservedNamesAreNotExported`,
+`TestSecretsArePushedToTmux`, `TestTmuxFailureDoesNotFailTheWrite`,
+`TestTmuxArgumentsAgainstARealTmux` (two 64 KiB values and the tricky
+ones through a real tmux), `TestEndToEndAgentInTmux`.
+
+**I-474. Named secrets are written bound to their project, and the api rebinds older rows at start.**
+(security release, 2026-10-04; step 2 of I-433) `secrets.Seal` now
+always writes the project-bound form: the `sealBound` switch and
+`secrets.SealBound` are gone, and `Put`, `PutReserved`, `CopyNamed` (fork)
+and `Reseal` all go through `Seal`. `Open` still accepts a row bound to
+its name alone for this release; step 3 of I-433 removes that path in the
+release after this one. An api from before I-433 cannot open what this one
+writes, which is why I-433 shipped the reader first.
+
+Every api process (`http`, `grpc` and `all`) starts `Store.ResealLoop` in
+the background from `App.Run`, so startup does not wait on Key Vault. A
+pass takes the advisory lock `db.LockSecretsReseal` (1013) so the api and
+api-grpc containers, and the old and new container of a Coolify rolling
+deploy, do not unwrap the same keys at once; a process that finds the lock
+held tries again later. Inside a pass each `UPDATE` matches the ciphertext
+it read, so two overlapping passes, or a `secrets set` landing between a
+pass's read and its write, leave every row as one whole writer left it. A
+failed pass (Key Vault or Postgres unreachable) is retried from 5 seconds,
+doubling to 5 minutes. A pass checks Key Vault with `CurrentVersion`
+first. A row whose data key does not unwrap (a disabled or purged key
+version, a corrupt `dek_wrapped`) is skipped and counted in `failed`, so
+one bad row does not stall every pass; three distinct data keys failing
+in a row end the pass as a Key Vault outage. The loop makes a second pass
+15 minutes after the first, because the container a rolling deploy
+replaces keeps writing name-only rows until it stops, and ends at the
+first pass from the second on that rewrote nothing. With no row skipped it
+logs `secrets_name_only_none`, the operator's signal that no row needs the
+name-only read path and step 3 can be scheduled. With the same number of
+rows skipped as the pass before it logs `secrets_reseal_incomplete` with
+that count instead, and step 3 waits until those rows are repaired or
+deleted. A name-only row under the platform's data key outside the
+platform project is still refused on read and left as it is by the
+reseal (counted in `refused`). `secrets_reseal_fail` carries `code`
+(`key_service_unavailable`, or `db` for any Postgres failure including
+the lock) and the error text; no line carries a name, a project or a
+value (`docs/ops/OBSERVABILITY.md`).
+
+What this does not close: a user's name-only row copied into another
+project by a database write before the reseal reached it is resealed in
+the project it sits in, as I-433 accepted for its first step; a copy made
+after the reseal does not decrypt.
+Tests (real Postgres): `internal/api/secrets` `TestRoundTripAndAAD` (`Put`
+writes the bound form; it does not open under another project or in the
+name-only form), `TestCiphertextIsBoundToItsProject` (a bound row copied
+into another project does not open, a name-only row does until `Reseal`,
+the platform-key copy is refused before and after), `TestResealLegacyRows`
+(converts user and platform rows, refuses the platform-key copy, a second
+run rewrites nothing), `TestConcurrentResealKeepsEveryRow` (three
+concurrent passes over 60 name-only rows: each row counted once, each
+opens bound in its own project with its own value),
+`TestResealDoesNotOverwriteANewerPut`, `TestCopyNamedBindsToTheFork`,
+`TestResealSkipsARowKeyVaultWillNotUnwrap`,
+`TestResealLoopStopsOnARowThatNeverUnwraps`,
+`TestResealLoopLogsDBCodeWhenPostgresIsDown`,
+`TestResealLoopRetriesWhileKeyVaultIsDown` (a name-only row written after
+the first pass is bound by the second; `secrets_name_only_none` follows
+the third, which rewrote nothing); `internal/api/app`
+`TestStartResealsAfterKeyVaultReturns` (the api is healthy with Key Vault
+down and rebinds the row once it answers); `internal/api/http` `TestFork`.
+*Rejected:* resealing inside `New` before serving (a Key Vault outage
+would keep the api down); one pass per start only (misses rows the old
+container writes during the rolling deploy); ending the pass on the first
+unwrap error (one unreadable row would stall every pass and hide
+`secrets_name_only_none` behind a Key Vault outage that is not
+happening); a gauge of name-only rows
+(counting them means opening every row on every scrape; a pass already
+does that, so the pass logs the result).
+**I-469. A dropped attach attaches again, and `repose open` reconnects.**
+(edge-zero-downtime, 2026-10-04) An attach's ssh that ended with 255
+(ssh's own failure: Wi-Fi went, the laptop slept, the edge restarted)
+ended the command, though the tmux session on the machine was still there.
+On the input-proxy path (macOS and Linux with a terminal, I-280) the CLI
+now keeps the terminal raw and its one input reader, prints `repose: lost
+the connection to <slug>. Reconnecting; Ctrl-C stops.`, runs `ssh <target>
+true` every second for up to 2 minutes, and attaches again to the session
+(not to the agent window the first attach named, so the user lands where
+they were). Keys typed while it waits are dropped; Ctrl-C or Ctrl-D stops
+the wait. A certificate refusal gets a renewal through `connect` (a
+relay ends at its certificate's expiry, I-436), tried again on the next
+refusal if it failed; a refusal after a renewal that worked ends the
+wait with the gateway's line, as does a stopped, destroyed,
+errored or unknown project; an
+attach that drops again within 5 seconds of a reattach ends it too, so a
+connection that cannot hold is not retried for ever. Past 2 minutes:
+`could not reach <slug> for 2 minutes. \`repose attach <slug>\` attaches
+again once it answers.` and exit 255 as before. `repose open` runs its
+ssh as a child instead of becoming it, and reconnects the same way on
+the same local port; Ctrl-C ends it with status 0 as before. The session
+helper's auto-forward (I-199) keeps the ControlMaster's pid and, when a
+reconnect brings a new master, adds its forwards again, unannounced.
+Where the CLI has become ssh (Windows, `REPOSE_INPUT_PROXY=0`, no
+terminal) nothing changes. *Rejected:* mosh or Eternal Terminal (a second
+transport through the gateway for a problem tmux already solves);
+reconnecting inside ssh with `ServerAliveCountMax` (ssh cannot reconnect).
+Tests: `TestAttachLoopReattachesAfterADrop` (real ssh on a pty through a
+proxy that cuts the connection and refuses for 2 s: the same program gets
+what is typed before and after), `TestReattach*` (the waits, the final
+banners, one renewal, Ctrl-C, flapping, a cancelled `open`),
+`TestForwardOverTheControlMaster` (after `ssh -O exit` and a new master
+the forward answers again on the same port with no second message).
+
+**I-470. systemd holds the gateway's SSH socket.** (edge-zero-downtime,
+2026-10-04) `gateway-ssh.socket` listens on 22 with
+`FileDescriptorName=ssh` and a 4096 backlog; `gateway.service` requires
+it, takes the socket from `LISTEN_FDS` and is `Type=notify` (READY=1 once
+it serves). While no gateway runs (a crash, `systemctl restart gateway`)
+a client's connection waits in the backlog and the next gateway serves
+it, where before it was refused for a second or more. The socket carries
+the service's `ConditionPathExists`, so a fresh edge does not queue
+connections for a gateway that cannot start. 443 and the WireGuard
+listeners (hook ingest, metrics) stay the gateway's own: without its
+wildcard certificate the preview stub does not serve, and a held 443
+would hang clients where it refused them. Outside systemd the gateway
+binds `GATEWAY_LISTEN` as before. NixOS's switch never restarts a changed
+`.socket` unit (switch-to-configuration-ng leaves sockets alone), so a
+change to it is a deliberate `systemctl restart gateway-ssh.socket
+gateway`, which drops sessions (ops/RUNBOOK.md "Switch the edge").
+Tests: `TestRestartQueuesConnections` (a dial made while no gateway runs
+completes on the next one), `TestSystemdReloadAndRestart` (the same under
+this machine's systemd with the edge's unit settings, a client dialing
+while the unit is stopped is served after `systemctl start`).
+
+**I-471. A switch hands the gateway over instead of restarting it.**
+(edge-zero-downtime, 2026-10-04) An edge switch restarted the gateway,
+and since the gateway terminates SSH (I-1), every user's terminal,
+editor, forward and copy died with it. `gateway.service` is now
+`reloadIfChanged`, and its `ExecReload` is `gateway handover` from the
+new build: it sends its executable path and environment (the new unit's,
+so a changed `Environment=` takes effect) over
+`/run/repose-gateway/control.sock` (the unit's RuntimeDirectory, 0700,
+peer uid checked). The running gateway starts that build with its
+listening sockets as `LISTEN_FDS` (named, no `LISTEN_PID`) and the
+notify socket, waits up to 30 s for it to write `ready` on a pipe, then
+sends `MAINPID=<new>` and a `BARRIER=1` so systemd has read it before
+anything else happens, answers the client, stops accepting, shuts its
+HTTP listeners down and serves its open relays until each ends (a relay
+lasts at most 24 hours, I-436), then exits. `NotifyAccess=all`, since the
+new process says READY=1 before it is the main one. A new build that
+does not come up is killed and the old one serves on; the reload, and so
+the switch, fails with the reason. SSH session keys cannot leave the
+process (`x/crypto/ssh` keeps them private), so this is a drain, not a
+migration. What it costs: during a drain each process keeps its own
+relay counts, so the 200-relay and 32-per-user caps apply per process
+and a user can briefly hold more than 32; the draining process is not
+scraped (its metrics listener went to the new one) and its relays are
+missing from `repose_gateway_sessions`; it still refreshes revocations
+every 30 s and ends revoked relays, but no longer gets a push. A crash of
+the new main process makes systemd restart the unit, which ends the
+draining process too. systemd logs `Supervising process N which is not
+our child. We'll most likely not notice when it exits.` on each handover;
+systemd 261 does notice (pidfd), checked by killing the handed-over
+process. `systemctl restart gateway` still ends every session at once,
+for a fix in relay code that must reach open connections. The first
+switch onto this build cannot hand over (the running gateway has no
+control socket, and it holds :22, so the new socket unit fails to
+start); RUNBOOK "Switch the edge" has the one restart it needs.
+*Rejected:* cloudflare/tableflip (it re-executes the running binary's own
+path, and on NixOS the new build is another store path); a master
+process that never changes and supervises workers (the master's code
+could then only change by a restart, and systemd tracks a non-child
+main process anyway); SO_REUSEPORT between two units (a second unit
+name per build, and a switch would still stop the old one). Tests:
+`TestHandoverKeepsOpenSessions` (real processes: a session opened before
+the handover keeps echoing, new connections and new sessions on the old
+connection work, MAINPID names a process running the new path, the old
+process exits once its last relay closes, and a second handover back
+works), `TestHandoverFailureKeepsServing`, `TestSystemdReloadAndRestart`
+(this machine's systemd 261, DynamicUser and the edge's sandbox: rewrite
+the unit to name build B, daemon-reload, reload; MainPID moves to B, the
+session survives, the unit stays active, the old pid exits after its
+client closes; SIGKILL to B restarts the unit).
+
+**I-472. An edge switch leaves the network up.** (edge-zero-downtime,
+2026-10-04) Two units took the network down on an ordinary switch.
+`wireguard-wg0`'s script names the store paths of `ip` and `wg`, so any
+nixpkgs bump changed it, and its restart deletes wg0 with every host peer
+wgsync added: each relay died, and hosts were unreachable until wgsync's
+next pass up to 30 s later. It is now `reloadIfChanged` with an
+`ExecReload` that re-applies the key, port and address to the live
+interface (creating it only if it is missing) and keeps every peer. A
+changed address is added beside the old one; removing an address is a
+deliberate `systemctl restart wireguard-wg0`. Static peers
+(`wireguard-wg0-peer-*`) still restart when their unit changes, a
+sub-second gap on the control plane's and the monitoring server's
+tunnels that no relay uses. dhcpcd restarts whenever its package changes
+and, by default, removes eth0's address and default route when it stops;
+`networking.dhcpcd.persistent = true` leaves the interface configured
+across the restart (Azure's address is static). Checked: systemd 261
+runs `ExecReload` on a `oneshot` `RemainAfterExit` unit;
+switch-to-configuration-ng reloads an `X-ReloadIfChanged` unit instead
+of restarting it; the built edge's units carry both. Not checked on the
+edge itself before its first switch with this (ops/RUNBOOK.md "Switch the
+edge" says what to look at).
+
+**I-473. One edge for now; the way to two is written down.**
+(edge-zero-downtime, 2026-10-04) I-470..I-472 make a switch harmless, but
+the edge is still one VM: a reboot (a kernel update), an Azure host
+event or a crash of the VM ends every connection and nothing connects
+until it is back. The CLI's reattach (I-469) and editors' reconnects
+hide a short one. The fix is two edges behind an Azure Standard Load
+Balancer on 22 (and 443 when preview URLs exist): the load balancer
+stops sending new flows to an edge whose health probe fails and lets its
+established TCP flows continue "until idle timeout or connection closure"
+(Azure's health probe documentation, checked 2026-10-04; the idle timeout
+is 4 minutes by default, up to 100, and the CLI's `ServerAliveInterval
+30` keeps a quiet session under it), so an edge is drained by failing its probe
+(a file the probe checks, or stopping a small health listener), switched
+or rebooted once its relays are gone, and put back. What it needs:
+each host peers with both hubs (wgsync on each edge, hosts' WireGuard
+config listing two endpoints), a guest route that works through either
+edge, the revocation push sent to both, and caps (200 relays, 32 per
+user) that are per edge, which halves a user's share on each unless the
+edges share counts. Costs: the load balancer's hourly charge and its
+per-GB data processing, and a second D2s_v7. *Revisit when:* the edge
+needs a reboot that cannot wait for a quiet hour, uptime is promised in
+the terms, or one edge's relays near 200 (`repose_gateway_sessions`).
+Until then a kernel update on the edge is announced and done at a quiet
+hour (RUNBOOK "Switch the edge").

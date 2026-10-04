@@ -40,6 +40,9 @@ func (s *Server) putSecret(w http.ResponseWriter, r *http.Request) error {
 		}
 		return errf("invalid", "secret names match [A-Z][A-Z0-9_]{0,63}")
 	}
+	if secrets.IsShellName(name) {
+		return errf("invalid", "%s is reserved: the machine uses it to keep each command's secrets current", name)
+	}
 	var body struct {
 		Value string `json:"value"`
 	}

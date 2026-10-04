@@ -24,6 +24,9 @@ type Config struct {
 	// KeyVault, when set, replaces the Azure Key Vault (or the in-memory
 	// dev vault); tests use it to share one vault across processes.
 	KeyVault secrets.KeyVault
+	// Reseal tunes the background pass that binds name-only secret rows
+	// to their project at start (DECISIONS I-474); tests shorten it.
+	Reseal secrets.ResealOptions
 
 	DatabaseURL     string
 	LogtoIssuer     string

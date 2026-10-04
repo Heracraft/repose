@@ -16,6 +16,10 @@ var reservedSecretNames = map[string]bool{
 	"user_ca.pub":                   true,
 }
 
+// shellSecretNames mirrors docs/interfaces/api.md: the variables the machine
+// uses to keep each command's secrets current (DECISIONS I-475).
+var shellSecretNames = map[string]bool{"BASH_ENV": true, "ENV": true, "REPOSE_ENV_GEN": true}
+
 // SecretsSetCmd implements `repose secrets set NAME` (07-cli.md §5.10).
 func SecretsSetCmd(ctx context.Context, e *Env, projectArg, name string, value []byte) error {
 	if !secretNameRe.MatchString(name) {
@@ -23,6 +27,9 @@ func SecretsSetCmd(ctx context.Context, e *Env, projectArg, name string, value [
 	}
 	if reservedSecretNames[name] {
 		return exitf(ExitUsage, "%s is reserved for the guest's sshd material", name)
+	}
+	if shellSecretNames[name] {
+		return exitf(ExitUsage, "%s is reserved: the machine uses it to keep each command's secrets current", name)
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {

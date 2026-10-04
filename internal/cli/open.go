@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +58,34 @@ func OpenPortCmd(ctx context.Context, e *Env, projectArg string, port int, local
 	if !noBrowser {
 		_ = openBrowser(url)
 	}
-	return execReplaceSSH(target, append(ownConnection(), "-N", "-L", openForwardSpec(localPort, l)), "")
+	return keepForward(ctx, e, project, target, append(ownConnection(), "-N", "-L", openForwardSpec(localPort, l)))
+}
+
+// keepForward runs a forward's ssh in the foreground until Ctrl-C or until
+// it fails, and starts it again when its connection drops (I-469), so a
+// forward outlives a laptop's sleep or an edge restart. The local port is
+// the same each time.
+func keepForward(ctx context.Context, e *Env, project *Project, t sshTarget, extra []string) error {
+	re := newReattacher(t, project.Slug, renewFor(e, project))
+	args := append(append([]string{}, extra...), t.Args...)
+	for attempt := 0; ; attempt++ {
+		cmd := exec.Command("ssh", args...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, e.Out, e.ErrOut
+		started := time.Now()
+		err := cmd.Run()
+		if ctx.Err() != nil {
+			return nil // Ctrl-C: the forward was meant to end
+		}
+		if cmd.ProcessState == nil {
+			return exitf(ExitGeneric, "Could not run ssh: %v. repose needs the OpenSSH client (`ssh`) on your PATH.", err)
+		}
+		if !connectionLost(cmd) || !re.again(ctx, e.ErrOut, nil, time.Since(started), attempt > 0) {
+			if code := cmd.ProcessState.ExitCode(); code != 0 {
+				return silent(code)
+			}
+			return nil
+		}
+	}
 }
 
 // listenerFor finds port among `ss -Hltn` output and says where to reach

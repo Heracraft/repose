@@ -190,8 +190,11 @@ the reasoning and the Anthropic policy behind it.
 API as ciphertext in Postgres, encrypted with a per-user data key that is
 itself wrapped by an Azure Key Vault key (DECISIONS R3-10). Delivered to the
 guest at start and on every change as `/run/repose/secrets/NAME` on a
-tmpfs, mode 0400, owner `dev`, and exported into login shells through
-`/run/repose/secrets.env`.
+tmpfs, mode 0400, owner `dev`, and exported into login shells and, through
+`BASH_ENV`, into each non-interactive bash, so every command an agent runs
+sees the current set (DECISIONS I-475). A value is kept when it differs
+from every value guestd delivered for that name (the last 16 per name), so
+an `.envrc` or per-command value different from the secret stays.
 
 Why central: an unattended agent needs them when no laptop is connected, and
 a stopped guest that restarts at 03:00 for a base bump needs them too. Why
@@ -201,19 +204,33 @@ need one call per secret.
 
 Rules that must hold:
 
-- Names match `[A-Z][A-Z0-9_]{0,63}`. Values up to 64 KB. Binary values are
+- Names match `[A-Z][A-Z0-9_]{0,63}`, except `BASH_ENV`, `ENV` and
+  `REPOSE_ENV_GEN`, which the guest uses to refresh secrets. Values up to
+  64 KB. Binary values are
   base64 on the wire and raw in the file.
 - The API never returns a value. `GET /secrets` lists names and timestamps
   only. The dashboard has no "reveal".
 - A `set` on a running guest pushes `UpdateSecrets` and the file is updated
-  within 5 seconds; `secrets.env` is regenerated. Already running processes
-  are not restarted; the CLI says so.
+  within 5 seconds; `secrets.env` and `secrets.refresh` are regenerated
+  and dev's tmux global environment updated. Already running processes are
+  not restarted; the CLI says so. Their next bash command loads the new
+  set, except a variable holding a value guestd did not deliver for that
+  name (I-475). Commands run by `sh` rather than bash keep what their
+  parent had.
+- A `rm` reaches running processes the same way: `secrets.refresh` unsets
+  the name where a process holds one of the values guestd delivered for it
+  (I-476). Those values stay in `secrets.refresh` (dev 0400, tmpfs) until
+  the guest restarts; the public docs tell the user to revoke a leaked key
+  at its provider.
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
 - Secrets are per project. The same name in two projects is two secrets.
-  Each ciphertext is bound to its name (AES-GCM additional data), and to
-  its project id as well once the second step of DECISIONS I-433 ships;
-  until then the api reads that form and still writes the name-only one.
+  Each ciphertext is bound to its project id and its name (AES-GCM
+  additional data, DECISIONS I-433), so a row copied into another project
+  or renamed does not decrypt. Rows written before I-474 were bound to
+  the name alone; each api process rewrites them in the bound form in the
+  background at start, retrying while Key Vault is unreachable, and the
+  api reads the old form for one more release.
   `repose fork` copies the source's values into
   each copy in the same transaction that creates it, opened and sealed
   again for the copy under the same user key and wrapped key, which is the
