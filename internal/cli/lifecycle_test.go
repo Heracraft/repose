@@ -118,6 +118,18 @@ func TestRetryOnOpConflict(t *testing.T) {
 		}
 	})
 
+	t.Run("does not retry a conflict that names its reason", func(t *testing.T) {
+		calls := 0
+		want := &APIError{Code: "conflict", Message: "todo has no usable volume", Detail: map[string]any{"reason": "restore_unfinished"}}
+		err := retryOnOpConflict(context.Background(), func() error {
+			calls++
+			return want
+		})
+		if err != want || calls != 1 {
+			t.Fatalf("err = %v calls = %d", err, calls)
+		}
+	})
+
 	t.Run("does not retry a non-conflict error", func(t *testing.T) {
 		calls := 0
 		want := &APIError{Code: "not_found", Message: "project not found"}

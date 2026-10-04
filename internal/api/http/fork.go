@@ -101,10 +101,10 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if start {
-		if err := s.abuseGate(ctx, src); err != nil {
-			return err
-		}
+	// A fork of a held project is refused whether or not the copies
+	// start: they would carry no hold of their own (DECISIONS I-460).
+	if err := s.abuseGate(ctx, src); err != nil {
+		return err
 	}
 	var out []forkedProject
 	resent := false

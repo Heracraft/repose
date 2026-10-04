@@ -84,8 +84,10 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// A held project's snapshot does not start anywhere, as itself or as a
-	// new project, until the hold is cleared (DECISIONS I-239).
-	if start {
+	// new project, until the hold is cleared (DECISIONS I-239). A copy is
+	// refused even unstarted: it would be a project with no hold of its
+	// own (I-460). An unstarted restore in place keeps the project's hold.
+	if start || body.AsNewProject != nil {
 		if err := s.abuseGate(ctx, src); err != nil {
 			return err
 		}

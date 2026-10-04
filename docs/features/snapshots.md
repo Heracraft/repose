@@ -51,8 +51,10 @@ Taking (DECISIONS R3-6):
   the volume's size. A volume whose journal still needs replaying (a
   guest that was killed rather than stopped) is read whole, which is
   slower and just as restorable.
-- A snapshot writes a `snapshots` row with size and reason only after the
-  upload has been verified by size and checksum against Blob.
+- A snapshot writes a `snapshots` row with size, reason and SHA-256 only
+  after the upload has finished and Blob holds as many bytes as hostd sent
+  (DECISIONS I-462). hostd hashes the bytes it uploads; the digest lives in
+  Postgres, out of reach of anyone who can only write to Blob.
 - A running agent is not paused for a snapshot. Docker containers are not
   paused. A database mid-write in the guest gets a crash-consistent copy,
   which is what a power cut would give; the doc says so.
@@ -84,8 +86,18 @@ Restoring:
   counts toward the project limit.
 - Restore works onto any host, not only the one the snapshot came from. The
   release checklist rehearses exactly that.
-- A restore verifies the download checksum before writing the volume, and
-  a failed restore leaves the target volume untouched.
+- A restore checks the whole blob against the recorded SHA-256 before it
+  creates the new volume or any guest state, then writes from the same
+  blob version and checks it again (I-462). A mismatch fails the restore
+  with "snapshot checksum mismatch". A snapshot taken before I-462 has no
+  digest and restores unchecked.
+- A failed restore leaves no volume behind: hostd removes the new one. An
+  in-place restore has already destroyed the old guest, so the project
+  lets go of the old guest and its address when that destroy finishes,
+  shows `error`, and `start` refuses with `restore_unfinished` until a
+  restore succeeds (I-461).
+- A held project (I-239) cannot be copied: a restore as a new project or
+  a fork of it is refused whether or not the copy would start (I-460).
 
 Forking (DECISIONS I-254, I-255):
 

@@ -2,10 +2,13 @@ package guest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"path"
+	"strings"
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -138,7 +141,11 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	}
 	blobPath := BlobPath(g, t.start)
 	meta := map[string]string{"guest_id": g.GuestID, "class": g.Class, "volume_bytes": fmt.Sprint(g.VolumeBytes), "reason": t.reason}
-	n, uerr := m.d.Blob.Upload(ctx, blobPath, r, meta)
+	// The digest of exactly the bytes handed to the store goes back to the
+	// api, which keeps it in Postgres; a restore checks the blob against
+	// it, so bytes changed in the store are never restored (I-462).
+	h := sha256.New()
+	n, uerr := m.d.Blob.Upload(ctx, blobPath, io.TeeReader(r, h), meta)
 	cerr := r.Close()
 	if uerr == nil && cerr != nil {
 		uerr = cerr
@@ -146,6 +153,15 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	if uerr != nil {
 		return t.fail(errf(CodeInternal, "snapshot upload failed: %v", uerr))
 	}
+	// The store must hold what was sent before the api records it.
+	info, ok, serr := m.d.Blob.Stat(ctx, blobPath)
+	if serr != nil {
+		return t.fail(errf(CodeInternal, "snapshot upload check: %v", serr))
+	}
+	if !ok || info.Size != int64(n) {
+		return t.fail(errf(CodeInternal, "snapshot upload check: the store holds %d bytes of %d", info.Size, n))
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
 	if m.d.Metrics != nil {
 		m.d.Metrics.SnapshotBytesTotal.Add(float64(n))
 		m.d.Metrics.SnapshotBytes.Set(float64(n))
@@ -161,13 +177,19 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	}
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(),
 		"format", format, "raw_reason", why, "used_bytes", used, "volume_bytes", g.VolumeBytes)
-	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n}})
-	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n}, nil
+	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
+	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil
 }
 
 func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.CreateResult, *Error) {
 	if c.GuestId == "" || c.ProjectId == "" || c.BlobPath == "" {
 		return nil, errf(CodeInvalidArgument, "guest_id, project_id and blob_path required")
+	}
+	want := strings.ToLower(c.Sha256)
+	if want != "" {
+		if b, err := hex.DecodeString(want); err != nil || len(b) != sha256.Size {
+			return nil, errf(CodeInvalidArgument, "sha256 must be 64 hex digits")
+		}
 	}
 	if _, err := hexPrefix(c.GuestId); err != nil {
 		return nil, err.(*Error)
@@ -185,7 +207,8 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	if err := m.capacityCheck(c.GuestId, c.Class, c.VolumeBytes, false); err != nil {
 		return nil, err
 	}
-	if ok, err := m.d.Blob.Exists(ctx, c.BlobPath); err != nil {
+	info, ok, err := m.d.Blob.Stat(ctx, c.BlobPath)
+	if err != nil {
 		return nil, errf(CodeInternal, "blob: %v", err)
 	} else if !ok {
 		return nil, errf(CodeNotFound, "snapshot %s not in the store", c.BlobPath)
@@ -197,6 +220,23 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 			return nil, errf(CodeNotFound, "system closure %s is not in the host store", c.SystemClosure)
 		}
 	}
+	// The whole blob is checked against the digest the api recorded before
+	// a byte of it is decompressed or written, and before any guest state
+	// exists; the write below reads the same version and is checked again
+	// (I-462). A snapshot from before I-462 has no digest and is restored
+	// unchecked.
+	verifyStart := m.d.Now()
+	if want != "" {
+		vh := sha256.New()
+		if err := m.d.Blob.Download(ctx, c.BlobPath, info.Version, vh); err != nil {
+			return nil, errf(CodeInternal, "snapshot download failed: %v", err)
+		}
+		if got := hex.EncodeToString(vh.Sum(nil)); got != want {
+			m.d.Log.Error("snapshot checksum mismatch", "event", "restore_fail", "guest_id", c.GuestId, "code", CodeInternal)
+			return nil, errf(CodeInternal, "snapshot checksum mismatch: the stored snapshot is not the one that was taken; nothing was restored")
+		}
+	}
+	verified := m.d.Now()
 	idx, err := m.d.State.AllocIndex(c.GuestId, m.maxIndex)
 	if err != nil {
 		return nil, errf(CodeInsufficientCapacity, "%v", err)
@@ -215,20 +255,33 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	log := m.log(g)
 	log.Info("restoring guest", "event", "guest_create", "class", g.Class)
 	start := m.d.Now()
+	vol := VolumeName(g.GuestID)
 	fail := func(e *Error) (*hostdv1.CreateResult, *Error) {
 		log.Error("restore failed", "event", "restore_fail", "code", e.Code, "reason", e.Message, "duration_ms", m.d.Now().Sub(start).Milliseconds())
+		// A half-written volume is never left for a start to boot (I-461).
+		if err := m.d.LVM.RemoveVolume(context.Background(), vol); err != nil {
+			log.Warn("removing the volume of a failed restore", "event", "restore_fail", "err", err.Error())
+		}
 		_ = m.setState(g, StateError, "restore: "+e.Message) // e is what the api sees; the state write is logged inside
 		return nil, e
 	}
-	vol := VolumeName(g.GuestID)
+	// A volume left by an earlier attempt at this guest holds a partial
+	// write; an extent stream writes only used blocks, so it starts over
+	// on a fresh one.
+	if existing != nil {
+		if err := m.d.LVM.RemoveVolume(ctx, vol); err != nil {
+			return fail(errf(CodeInternal, "lvremove: %v", err))
+		}
+	}
 	if err := m.d.LVM.CreateVolume(ctx, vol, g.VolumeBytes); err != nil {
 		return fail(errf(CodeInternal, "lvcreate: %v", err))
 	}
 	pr, pw := io.Pipe()
 	dlErr := make(chan error, 1)
 	var downloaded countingWriter
+	wh := sha256.New()
 	go func() {
-		err := m.d.Blob.Download(ctx, c.BlobPath, io.MultiWriter(pw, &downloaded))
+		err := m.d.Blob.Download(ctx, c.BlobPath, info.Version, io.MultiWriter(pw, &downloaded, wh))
 		_ = pw.CloseWithError(err) // the reader sees err; CloseWithError itself cannot fail
 		dlErr <- err
 	}()
@@ -239,6 +292,9 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	}
 	if werr != nil {
 		return fail(errf(CodeInternal, "restore stream: %v", werr))
+	}
+	if want != "" && hex.EncodeToString(wh.Sum(nil)) != want {
+		return fail(errf(CodeInternal, "snapshot checksum mismatch: the stored snapshot changed during the restore"))
 	}
 	written := m.d.Now()
 	code, err := m.d.LVM.Fsck(ctx, vol)
@@ -251,7 +307,7 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	// The stages a slow restore spent its time on: the download and the
 	// write overlap, the check follows (I-403).
 	log.Info("restore done", "event", "restore_done", "bytes", uint64(downloaded), "duration_ms", m.d.Now().Sub(start).Milliseconds(),
-		"write_ms", written.Sub(start).Milliseconds(), "fsck_ms", m.d.Now().Sub(written).Milliseconds(), "volume_bytes", g.VolumeBytes)
+		"verify_ms", verified.Sub(verifyStart).Milliseconds(), "verified", want != "", "write_ms", written.Sub(start).Milliseconds(), "fsck_ms", m.d.Now().Sub(written).Milliseconds(), "volume_bytes", g.VolumeBytes)
 	if g.SystemClosure != "" {
 		if err := m.d.Roots.Set(g.GuestID, g.SystemClosure); err != nil {
 			return fail(errf(CodeInternal, "gcroot: %v", err))

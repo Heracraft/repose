@@ -108,6 +108,37 @@ func TestMinerStopsGuestAndThirdStrikeHoldsStarts(t *testing.T) {
 		if rs.status != 403 {
 			t.Fatalf("restore of a held project as a new one: %d %s", rs.status, rs.raw)
 		}
+		// A copy that is not started is refused too: started later, it
+		// would be a project with no hold of its own (I-460).
+		var sid uuid.UUID
+		if err := e.h.Pool.QueryRow(ctx, "select id from snapshots where project_id = $1 order by taken_at desc limit 1", pid).Scan(&sid); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range []struct {
+			path string
+			body map[string]any
+		}{
+			{"/projects/restore", map[string]any{"slug": "hashy", "name": "hashy-3", "start": false}},
+			{"/projects/restore", map[string]any{"snapshot_id": sid.String(), "name": "hashy-4", "start": false}},
+			{"/projects/" + pid.String() + "/snapshots/" + sid.String() + "/restore", map[string]any{"as_new_project": "hashy-5", "start": false}},
+			{"/projects/" + pid.String() + "/fork", map[string]any{"snapshot_id": sid.String(), "start": false}},
+		} {
+			rs := e.do(t, tok, "POST", c.path, c.body)
+			errObj, _ := rs.body["error"].(map[string]any)
+			detail, _ := errObj["detail"].(map[string]any)
+			if rs.status != 403 || detail["reason"] != "abuse_hold" {
+				t.Fatalf("unstarted copy of a held project (%s %v): %d %s", c.path, c.body, rs.status, rs.raw)
+			}
+		}
+		var copies int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where slug like 'hashy%' and id <> $1", pid).Scan(&copies); err != nil || copies != 0 {
+			t.Fatalf("a refused copy left %d projects (%v)", copies, err)
+		}
+		// An in-place restore that does not start keeps the project's own
+		// hold, so it is not refused; one that starts is.
+		if rs := e.do(t, tok, "POST", "/projects/"+pid.String()+"/snapshots/"+sid.String()+"/restore", map[string]any{"start": true}); rs.status != 403 {
+			t.Fatalf("started in-place restore of a held project: %d %s", rs.status, rs.raw)
+		}
 	}
 	if got := testutil.ToFloat64(e.h.Metrics.AbuseStopsTotal.WithLabelValues("miner")); got != abuse.Strikes {
 		t.Fatalf("repose_api_abuse_stops_total{kind=miner} = %v", got)

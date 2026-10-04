@@ -3,10 +3,12 @@ package snapshot
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/shell"
@@ -20,12 +22,13 @@ func TestFileBlobRoundTrip(t *testing.T) {
 		t.Fatalf("upload %d %v", n, err)
 	}
 	var out bytes.Buffer
-	if err := b.Download(ctx, "u1/p1/2026-09-19T03:00:00Z.img.zst", &out); err != nil || out.String() != "hello" {
+	if err := b.Download(ctx, "u1/p1/2026-09-19T03:00:00Z.img.zst", "", &out); err != nil || out.String() != "hello" {
 		t.Fatalf("download %q %v", out.String(), err)
 	}
-	if ok, _ := b.Exists(ctx, "u1/p1/nope"); ok {
+	if _, ok, _ := b.Stat(ctx, "u1/p1/nope"); ok {
 		t.Fatal("missing blob reported present")
 	}
+	testVersions(t, b, "u1/p1/2026-09-19T03:00:00Z.img.zst")
 	if _, err := b.Upload(ctx, "../escape", strings.NewReader("x"), nil); err == nil {
 		t.Fatal("path traversal accepted")
 	}
@@ -87,5 +90,39 @@ func TestPipelineWithRealTools(t *testing.T) {
 	got, _ := os.ReadFile(dst)
 	if !bytes.Equal(got, payload) {
 		t.Fatal("restored bytes differ")
+	}
+}
+
+func TestMemBlobVersions(t *testing.T) {
+	testVersions(t, NewMemBlob(), "u1/p1/a.img.zst")
+}
+
+// testVersions is I-462's promise: a download of the version Stat
+// reported reads those bytes, and once the blob is replaced it fails
+// with ErrVersionChanged instead of reading the new ones.
+func testVersions(t *testing.T, b Blob, path string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := b.Upload(ctx, path, strings.NewReader("first"), nil); err != nil {
+		t.Fatal(err)
+	}
+	info, ok, err := b.Stat(ctx, path)
+	if err != nil || !ok || info.Size != 5 || info.Version == "" {
+		t.Fatalf("stat: %+v %v %v", info, ok, err)
+	}
+	var out bytes.Buffer
+	if err := b.Download(ctx, path, info.Version, &out); err != nil || out.String() != "first" {
+		t.Fatalf("download of the version stat reported: %q %v", out.String(), err)
+	}
+	time.Sleep(2 * time.Millisecond) // a file's version is its mtime
+	if _, err := b.Upload(ctx, path, strings.NewReader("second!"), nil); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := b.Download(ctx, path, info.Version, &out); !errors.Is(err, ErrVersionChanged) || out.Len() != 0 {
+		t.Fatalf("download of a replaced version: %q %v", out.String(), err)
+	}
+	if next, _, _ := b.Stat(ctx, path); next.Version == info.Version || next.Size != 7 {
+		t.Fatalf("stat after replace: %+v (was %+v)", next, info)
 	}
 }

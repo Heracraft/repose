@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -24,11 +25,24 @@ import (
 type Blob interface {
 	// Upload stores r at path with metadata and returns the bytes written.
 	Upload(ctx context.Context, path string, r io.Reader, meta map[string]string) (uint64, error)
-	// Download streams path into w.
-	Download(ctx context.Context, path string, w io.Writer) error
-	// Exists reports whether path is stored.
-	Exists(ctx context.Context, path string) (bool, error)
+	// Stat reports what is stored at path; ok is false when nothing is.
+	Stat(ctx context.Context, path string) (info Info, ok bool, err error)
+	// Download streams path into w. A non-empty version fails the
+	// download with ErrVersionChanged unless the stored bytes are still
+	// that version, so two downloads of one version read the same bytes
+	// (DECISIONS I-462).
+	Download(ctx context.Context, path, version string, w io.Writer) error
 }
+
+// Info is what a store holds at a path.
+type Info struct {
+	Size int64
+	// Version changes whenever the stored bytes do: the ETag on Azure.
+	Version string
+}
+
+// ErrVersionChanged is a download of a version the store no longer holds.
+var ErrVersionChanged = errors.New("blob changed since it was checked")
 
 type countingReader struct {
 	r io.Reader
@@ -90,8 +104,15 @@ func (f *FileBlob) Upload(_ context.Context, path string, r io.Reader, meta map[
 	return cr.n, nil
 }
 
-// Download implements Blob.
-func (f *FileBlob) Download(_ context.Context, path string, w io.Writer) error {
+// fileVersion is a FileBlob's version: an upload renames a new file into
+// place, so its modification time and size change with the bytes.
+func fileVersion(fi os.FileInfo) string {
+	return fmt.Sprintf("%d-%d", fi.ModTime().UnixNano(), fi.Size())
+}
+
+// Download implements Blob. The open file keeps the bytes it was opened
+// with when an upload renames another over it.
+func (f *FileBlob) Download(_ context.Context, path, version string, w io.Writer) error {
 	p, err := f.full(path)
 	if err != nil {
 		return err
@@ -101,21 +122,33 @@ func (f *FileBlob) Download(_ context.Context, path string, w io.Writer) error {
 		return err
 	}
 	defer func() { _ = r.Close() }() // read only
+	if version != "" {
+		fi, err := r.Stat()
+		if err != nil {
+			return err
+		}
+		if fileVersion(fi) != version {
+			return ErrVersionChanged
+		}
+	}
 	_, err = io.Copy(w, r)
 	return err
 }
 
-// Exists implements Blob.
-func (f *FileBlob) Exists(_ context.Context, path string) (bool, error) {
+// Stat implements Blob.
+func (f *FileBlob) Stat(_ context.Context, path string) (Info, bool, error) {
 	p, err := f.full(path)
 	if err != nil {
-		return false, err
+		return Info{}, false, err
 	}
-	_, err = os.Stat(p)
+	fi, err := os.Stat(p)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return Info{}, false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return Info{}, false, err
+	}
+	return Info{Size: fi.Size(), Version: fileVersion(fi)}, true, nil
 }
 
 // AzureBlob uploads to a container with the host's managed identity.
@@ -166,9 +199,10 @@ func (a *AzureBlob) Upload(ctx context.Context, path string, r io.Reader, meta m
 // GET of a 902 MB snapshot from host-01 ran at 104 MB/s (8.7 s); eight
 // ranges at once took 1.4 s, and once a restore's writes went direct the
 // single stream was what a restore waited on (DECISIONS I-403). Every
-// range is pinned to the ETag the size came from, so a blob replaced
-// mid-restore fails it instead of mixing two snapshots.
-func (a *AzureBlob) Download(ctx context.Context, path string, w io.Writer) error {
+// range is pinned to the ETag the size came from (the version asked for,
+// when one is), so a blob replaced mid-restore fails it instead of mixing
+// two snapshots.
+func (a *AzureBlob) Download(ctx context.Context, path, version string, w io.Writer) error {
 	bc := a.client.ServiceClient().NewContainerClient(a.container).NewBlobClient(path)
 	props, err := bc.GetProperties(ctx, nil)
 	if err != nil {
@@ -176,6 +210,9 @@ func (a *AzureBlob) Download(ctx context.Context, path string, w io.Writer) erro
 	}
 	if props.ContentLength == nil || props.ETag == nil {
 		return errors.New("blob download: no length or ETag")
+	}
+	if version != "" && string(*props.ETag) != version {
+		return fmt.Errorf("blob download: %w", ErrVersionChanged)
 	}
 	cond := &blob.AccessConditions{ModifiedAccessConditions: &blob.ModifiedAccessConditions{IfMatch: props.ETag}}
 	fetch := func(ctx context.Context, off int64, dst []byte) error {
@@ -279,17 +316,20 @@ func parallelRanges(ctx context.Context, size, block int64, parallel int, fetch 
 	return first
 }
 
-// Exists implements Blob.
-func (a *AzureBlob) Exists(ctx context.Context, path string) (bool, error) {
-	_, err := a.client.ServiceClient().NewContainerClient(a.container).NewBlobClient(path).GetProperties(ctx, &blob.GetPropertiesOptions{})
+// Stat implements Blob.
+func (a *AzureBlob) Stat(ctx context.Context, path string) (Info, bool, error) {
+	props, err := a.client.ServiceClient().NewContainerClient(a.container).NewBlobClient(path).GetProperties(ctx, &blob.GetPropertiesOptions{})
 	if err != nil {
 		var re *azcore.ResponseError
 		if errors.As(err, &re) && re.StatusCode == 404 {
-			return false, nil
+			return Info{}, false, nil
 		}
-		return false, err
+		return Info{}, false, err
 	}
-	return true, nil
+	if props.ContentLength == nil || props.ETag == nil {
+		return Info{}, false, errors.New("blob stat: no length or ETag")
+	}
+	return Info{Size: *props.ContentLength, Version: string(*props.ETag)}, true, nil
 }
 
 // MemBlob is an in-memory store for tests.
@@ -303,6 +343,10 @@ type MemBlob struct {
 	FailNext int
 	// BeforeUpload, when set, runs at the start of every Upload.
 	BeforeUpload func(path string)
+	// BeforeDownload, when set, runs at the start of every Download.
+	BeforeDownload func(path string)
+	// gen counts the uploads to each path: the version Stat reports.
+	gen map[string]int
 }
 
 // NewMemBlob returns an empty store.
@@ -333,23 +377,40 @@ func (m *MemBlob) Upload(_ context.Context, path string, r io.Reader, meta map[s
 	}
 	m.Blobs[path] = b
 	m.Meta[path] = meta
+	if m.gen == nil {
+		m.gen = map[string]int{}
+	}
+	m.gen[path]++
 	return uint64(len(b)), nil
 }
 
-func (m *MemBlob) Download(_ context.Context, path string, w io.Writer) error {
+func (m *MemBlob) Download(_ context.Context, path, version string, w io.Writer) error {
+	if m.BeforeDownload != nil {
+		m.BeforeDownload(path)
+	}
 	m.mu.Lock()
 	b, ok := m.Blobs[path]
+	cur := strconv.Itoa(m.gen[path])
 	m.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("blob %s not found", path)
+	}
+	if version != "" && version != cur {
+		return ErrVersionChanged
 	}
 	_, err := w.Write(b)
 	return err
 }
 
-func (m *MemBlob) Exists(_ context.Context, path string) (bool, error) {
+// Stat implements Blob. A test that writes Blobs directly changes the
+// bytes without changing the version, as a store that broke its promise
+// would.
+func (m *MemBlob) Stat(_ context.Context, path string) (Info, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.Blobs[path]
-	return ok, nil
+	b, ok := m.Blobs[path]
+	if !ok {
+		return Info{}, false, nil
+	}
+	return Info{Size: int64(len(b)), Version: strconv.Itoa(m.gen[path])}, true, nil
 }

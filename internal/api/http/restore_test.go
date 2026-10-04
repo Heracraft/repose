@@ -2,6 +2,8 @@ package httpapi_test
 
 import (
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // TestRestoreByName is I-167: after a destroy, the project is listed
@@ -150,4 +152,66 @@ func TestRestoreOfADestroyingProjectSaysSo(t *testing.T) {
 		t.Fatalf("restore of a destroying project: %d %s", r.status, r.raw)
 	}
 	t.Logf("%s", r.raw)
+}
+
+// I-461: an in-place restore that fails after the old guest is destroyed
+// leaves the project in error without the old guest's address (the host
+// has released it and may give it to the next guest). A start would boot
+// an empty or half-written volume, so it is refused and names the
+// restore; the restore run again brings the project back.
+func TestFailedInPlaceRestoreReleasesTheGuest(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-rhea", "rhea")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "rhea", "class": "small"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	if r := e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil); r.status != 202 {
+		t.Fatalf("stop: %d %s", r.status, r.raw)
+	} else if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("stop op: %+v", op.Error)
+	}
+	snaps := e.do(t, tok, "GET", "/projects/"+pid+"/snapshots", nil)
+	if snaps.status != 200 || len(snaps.list) == 0 {
+		t.Fatalf("snapshots: %d %s", snaps.status, snaps.raw)
+	}
+	sid := snaps.list[0].(map[string]any)["id"].(string)
+
+	oldGuest := *e.h.Project(uuid.MustParse(pid)).GuestID
+	e.h.Fake.SetFail("Restore", "internal")
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"start": false})
+	if r.status != 202 {
+		t.Fatalf("restore: %d %s", r.status, r.raw)
+	}
+	if op := e.waitOp(t, r); op.State != "error" {
+		t.Fatalf("restore op with the host failing it: %s", op.State)
+	}
+	// The old guest is gone and so is its address; the guest id is the
+	// failed restore's, which the next restore destroys first.
+	p := e.h.Project(uuid.MustParse(pid))
+	if p.State != "error" || p.GuestIP != nil || p.VsockCID != nil || p.GuestID == nil || *p.GuestID == oldGuest {
+		t.Fatalf("after a failed in-place restore: state %s guest %v ip %v cid %v", p.State, p.GuestID, p.GuestIP, p.VsockCID)
+	}
+	st := e.do(t, tok, "POST", "/projects/"+pid+"/start", nil)
+	errObj, _ := st.body["error"].(map[string]any)
+	detail, _ := errObj["detail"].(map[string]any)
+	if st.status != 409 || detail["reason"] != "restore_unfinished" {
+		t.Fatalf("start after a failed restore: %d %s", st.status, st.raw)
+	}
+
+	e.h.Fake.SetFail("Restore", "")
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", nil)
+	if r.status != 202 {
+		t.Fatalf("restore again: %d %s", r.status, r.raw)
+	}
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("restore again: %+v", op.Error)
+	}
+	if p := e.h.Project(uuid.MustParse(pid)); p.State != "running" || p.GuestID == nil || p.GuestIP == nil {
+		t.Fatalf("after the restore again: %+v", p)
+	}
 }

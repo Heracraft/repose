@@ -1505,6 +1505,30 @@ removed regardless. A 403 means the managed identity lost its role on the
 egress from the host is broken (NAT gateway). The api retries once from
 its timer; `SnapshotStale` fires if a running project stays without one.
 
+## hostd: snapshot checksum mismatch
+
+Restore result `internal: snapshot checksum mismatch` (DECISIONS I-462):
+the blob in the store is not the one hostd uploaded, by the SHA-256 the
+api recorded in `snapshots.sha256`. Nothing was written: the check runs
+before any volume or guest state exists ("changed during the restore"
+means the second check failed and the new volume was removed). Treat it
+as a possible tampering incident, not a retry: do not restore that
+snapshot, keep the blob, read the storage account's access logs for
+writes to its path after `taken_at`, and record what you find in
+`docs/security/`. The project restores from an older snapshot whose
+digest matches. A restore that fails this way leaves the project in
+`error` with `start` refused (`restore_unfinished`, I-461) until a
+restore succeeds.
+
+## api: project in error after a failed restore
+
+`start` answers `409 conflict` `restore_unfinished` (DECISIONS I-461):
+the project's newest restore failed before its guest was ready, the old
+volume is gone and the new one was removed. The user, or an operator with
+`repose-admin projects restore`, runs the restore again; the op's `error` says why
+the first one failed. hostd removing the failed restore's volume and the
+api clearing the old guest's address are both automatic.
+
 ## hostd: build exceeds time
 
 `build_timeout: build timed out after 30 minutes while building <name>`

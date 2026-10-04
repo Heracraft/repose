@@ -3,6 +3,8 @@ package guest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -504,6 +506,62 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 		t.Fatalf("fsck message %s", res.Error.Message)
 	}
 	h.lvm.FsckExit = 0
+	if _, ok := h.lvm.Volumes["g-0192f0a3-3333-7000-8000-000000000003"]; ok {
+		t.Fatal("a failed restore left its half-written volume for a start to boot (I-461)")
+	}
+	// I-462: the result carries the SHA-256 of the stored blob, and a
+	// restore given it checks the whole blob before writing anything.
+	sum := sha256.Sum256(h.blob.Blobs[sr.BlobPath])
+	if sr.Sha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("snapshot sha256 %q, blob's %x", sr.Sha256, sum)
+	}
+	h.rec.mu.Lock()
+	for _, e := range h.rec.events {
+		if s := e.GetSnapshotDone(); s != nil && s.BlobPath == sr.BlobPath && s.Sha256 != sr.Sha256 {
+			t.Errorf("snapshot_done sha256 %q, result's %q", s.Sha256, sr.Sha256)
+		}
+	}
+	h.rec.mu.Unlock()
+	restoreReq := func(gid, sum string) *hostdv1.Restore {
+		return &hostdv1.Restore{ProjectId: "proj-0192f0a1", GuestId: gid, BlobPath: sr.BlobPath, Class: "large", VolumeBytes: 40 << 30, SystemClosure: h.closure, Sha256: sum}
+	}
+	gid4 := "0192f0a3-4444-7000-8000-000000000004"
+	h.mustOK(cmd(restoreReq(gid4, strings.ToUpper(sr.Sha256))))
+	if string(h.lvm.GetData("g-"+gid4)) != "the tenant's filesystem" {
+		t.Fatal("verified restore wrote different bytes")
+	}
+	gid5 := "0192f0a3-5555-7000-8000-000000000005"
+	h.mustFail(cmd(restoreReq(gid5, "abc")), CodeInvalidArgument)
+	lvmOps := len(h.lvm.Ops)
+	res = h.mustFail(cmd(restoreReq(gid5, strings.Repeat("0", 64))), CodeInternal)
+	if !strings.Contains(res.Error.Message, "checksum mismatch") {
+		t.Fatalf("mismatch message %s", res.Error.Message)
+	}
+	if _, err := h.st.GetGuest(gid5); err == nil {
+		t.Fatal("a restore whose blob failed its checksum recorded a guest")
+	}
+	if _, ok := h.lvm.Volumes["g-"+gid5]; ok || len(h.lvm.Ops) != lvmOps {
+		t.Fatalf("a restore whose blob failed its checksum touched LVM: %v", h.lvm.Ops[lvmOps:])
+	}
+	// Bytes that change under an unchanged version between the check and
+	// the write (a store breaking its promise) fail the restore after the
+	// write, and its volume goes.
+	downloads := 0
+	h.blob.BeforeDownload = func(path string) {
+		downloads++
+		if downloads == 2 {
+			h.blob.Blobs[path] = []byte("someone else's filesystem")
+		}
+	}
+	gid6 := "0192f0a3-6666-7000-8000-000000000006"
+	res = h.mustFail(cmd(restoreReq(gid6, sr.Sha256)), CodeInternal)
+	h.blob.BeforeDownload = nil
+	if !strings.Contains(res.Error.Message, "checksum mismatch") {
+		t.Fatalf("mismatch during write: %s", res.Error.Message)
+	}
+	if _, ok := h.lvm.Volumes["g-"+gid6]; ok {
+		t.Fatal("a restore that failed its checksum left its volume")
+	}
 	// Upload failure removes the LVM snapshot and reports internal.
 	h.blob.Fail = fmt.Errorf("403 from blob")
 	res = h.mustFail(cmd(&hostdv1.Snapshot{GuestId: gid1, Reason: "scheduled"}), CodeInternal)

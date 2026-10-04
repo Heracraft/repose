@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-487 entries.
+490 entries.
 
 ## Scope
 
@@ -519,3 +519,6 @@ pointer, not a summary.
 - **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11571
 - **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11591
 - **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11611
+- **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11637
+- **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11654
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11687

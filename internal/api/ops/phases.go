@@ -115,6 +115,28 @@ func PlanRestore(p *store.Project, hasClosure, start bool) []string {
 	return ph
 }
 
+// UnfinishedRestore reports whether the project's newest create or
+// restore is a restore that failed before its guest was ready, which
+// leaves the project with no usable volume (DECISIONS I-461). A restore
+// that failed only in its start_guest phase restored the volume, and a
+// later create or restore supersedes it.
+func UnfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID) (bool, error) {
+	var kind, state string
+	var step int
+	var params map[string]any
+	err := q.QueryRow(ctx, `select kind, state, step, params from ops where project_id = $1 and kind in ('create', 'restore') order by created_at desc limit 1`, projectID).Scan(&kind, &state, &step, &params)
+	if db.IsNoRows(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if kind != KindRestore || state != "error" {
+		return false, nil
+	}
+	return currentPhase(&store.Op{Step: step, Params: params}) != PhaseStartGuest, nil
+}
+
 // PlanBuild builds and, when the guest runs, applies.
 func PlanBuild(running bool) []string {
 	if running {
@@ -733,10 +755,19 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		remote = *p.RemoteURL
 	}
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: &hostdv1.Restore{
-		ProjectId: p.ID.String(), GuestId: gidStr, BlobPath: snap.BlobPath, Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: closure,
+		ProjectId: p.ID.String(), GuestId: gidStr, BlobPath: snap.BlobPath, Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: closure, Sha256: sha256Of(snap),
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
 		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project,
 	}}}, hostID, false, nil
+}
+
+// sha256Of is the digest a Restore checks the blob against (I-462): ""
+// for a snapshot taken before digests were recorded, restored unchecked.
+func sha256Of(s *store.Snapshot) string {
+	if s.Sha256 == nil {
+		return ""
+	}
+	return *s.Sha256
 }
 
 // PendingRevisionSQL selects the revision a start applies: the newest
@@ -875,7 +906,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		return e.setState(ctx, p, "running")
 	case PhaseStopGuest:
 		if s := res.GetStop(); s != nil && s.BlobPath != "" {
-			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), "stop"); err != nil {
+			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, "stop"); err != nil {
 				return err
 			}
 		}
@@ -888,10 +919,16 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if s == nil || s.BlobPath == "" {
 			return errors.New("snapshot result without a blob path")
 		}
-		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), snapshotReason(op))
+		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, snapshotReason(op))
 	case PhaseDestroyGuest:
 		if op.Kind != KindDestroy {
-			return nil // restore: the old guest is gone, the new one follows
+			// Restore: the old guest is gone and hostd has released its
+			// address, so the project lets go of it now, not when the
+			// restore phase is sent; a restore that fails in between
+			// would otherwise leave the project holding an address the
+			// host gives the next guest (DECISIONS I-461).
+			_, err := e.pool.Exec(ctx, "update projects set guest_id = null, guest_ip = null, vsock_cid = null where id = $1 and guest_id = $2", p.ID, p.GuestID)
+			return err
 		}
 		return e.markDestroyed(ctx, op, p.ID)
 	case PhaseResize:
@@ -936,7 +973,9 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 	return nil
 }
 
-func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, reason string) error {
+// recordSnapshot writes the snapshot row. sha256 is the digest hostd
+// computed while uploading, "" from a hostd older than I-462.
+func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, reason string) error {
 	id := store.NewID()
 	var expires *time.Time
 	if op.Kind == KindDestroy {
@@ -944,9 +983,10 @@ func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Proj
 		expires = &t
 	}
 	var got uuid.UUID
-	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at) values ($1, $2, $3, $4, $5, $6, now(), $7)
-		on conflict (blob_path) do update set reason = excluded.reason, bytes = greatest(snapshots.bytes, excluded.bytes), expires_at = coalesce(excluded.expires_at, snapshots.expires_at)
-		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires).Scan(&got)
+	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, sha256) values ($1, $2, $3, $4, $5, $6, now(), $7, nullif($8, ''))
+		on conflict (blob_path) do update set reason = excluded.reason, bytes = greatest(snapshots.bytes, excluded.bytes), expires_at = coalesce(excluded.expires_at, snapshots.expires_at), sha256 = coalesce(snapshots.sha256, excluded.sha256)
+		where snapshots.project_id = excluded.project_id
+		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires, sha256).Scan(&got)
 	if err != nil {
 		return err
 	}

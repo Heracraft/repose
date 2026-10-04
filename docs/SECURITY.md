@@ -36,7 +36,7 @@ five trust boundaries are rows 1, 2, 4 and 3 here in that order; its
 fifth, **operator to tenant data**, has no mechanism to describe and is
 under "Not mitigated in the first release" instead, which is what
 `ARCHITECTURE.md` itself says of it ("Recorded, not mitigated, until
-per-project LUKS"). Rows 5 to 11 are boundaries this document adds because
+per-project LUKS"). Rows 5 to 12 are boundaries this document adds because
 they stop an actor the component map does not draw.
 
 1. **KVM between guest and host.** Cloud Hypervisor on KVM, launched by
@@ -146,6 +146,15 @@ they stop an actor the component map does not draw.
     stream, zeroing a neighbour's metering, or closing another tenant's
     question; and a compromised host changing the state of, or notifying
     for, another host's projects.
+12. **Snapshot digests in Postgres** (DECISIONS I-462). hostd hashes every
+    snapshot as it uploads it and the api keeps the SHA-256 in
+    `snapshots.sha256`; a restore hashes the whole blob, pinned to one
+    version, before it creates a volume or guest state, and again while it
+    writes. Stops: anyone who can write to the snapshot store, but not to
+    Postgres (the shared Blob identity below, a leaked storage
+    credential), putting altered bytes into a tenant's machine. Snapshots
+    taken before I-462 carry no digest and restore unchecked until they
+    expire, and a project stopped for months can keep one indefinitely.
 
 ## Non-negotiables
 
@@ -309,7 +318,8 @@ Written down so nobody believes otherwise.
   ruleset). One user per guest would close it.
 - **One Blob identity for every host** (review M-3). Each host can read
   and delete every tenant's snapshots fleet-wide. Per-host containers or
-  api-issued SAS tokens close it.
+  api-issued SAS tokens close it. Since I-462 it can no longer get a
+  changed snapshot restored (boundary 9), except one taken before I-462.
 - **Hosts registered before I-139 trust no Host CA until their first
   rotate** (review M-1, closed in code 2026-09-21 by I-139:
   `RegisterResponse.host_ca_pub`). host-01 is one of them; the runbook's
@@ -334,7 +344,9 @@ Written down so nobody believes otherwise.
 - **Abuse detection is partly automatic.** A guest running a known
   cryptocurrency miner (by process name) is stopped with a snapshot, and
   three such stops in 24 hours hold the project until an operator runs
-  `repose-admin abuse clear` (DECISIONS I-239). Outbound tcp 25 and the
+  `repose-admin abuse clear` (DECISIONS I-239). The hold covers copies:
+  a held project cannot be restored as a new project or forked, started
+  or not (I-460). Outbound tcp 25 and the
   mining pools' default ports are blocked (I-238, I-239), and new outbound
   flows are rate-limited per guest (I-240). Anything else (a miner under
   another name, a scanner, spam over a submission port) is a sample or a

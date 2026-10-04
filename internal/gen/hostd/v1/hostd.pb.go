@@ -1631,6 +1631,7 @@ type Restore struct {
 	RemoteUrl     string                 `protobuf:"bytes,15,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
 	ProjectJson   []byte                 `protobuf:"bytes,16,opt,name=project_json,json=projectJson,proto3" json:"project_json,omitempty"`
 	SystemClosure string                 `protobuf:"bytes,17,opt,name=system_closure,json=systemClosure,proto3" json:"system_closure,omitempty"` // I-26: the closure to root; empty means the api rebuilds before StartGuest
+	Sha256        string                 `protobuf:"bytes,18,opt,name=sha256,proto3" json:"sha256,omitempty"`                                    // I-462: hex SHA-256 of the stored blob; when set, hostd checks the whole blob against it before writing the volume
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1780,6 +1781,13 @@ func (x *Restore) GetProjectJson() []byte {
 func (x *Restore) GetSystemClosure() string {
 	if x != nil {
 		return x.SystemClosure
+	}
+	return ""
+}
+
+func (x *Restore) GetSha256() string {
+	if x != nil {
+		return x.Sha256
 	}
 	return ""
 }
@@ -2633,6 +2641,7 @@ type StopResult struct {
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
 	BlobPath      string                 `protobuf:"bytes,2,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	Sha256        string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2686,6 +2695,13 @@ func (x *StopResult) GetBytes() uint64 {
 		return x.Bytes
 	}
 	return 0
+}
+
+func (x *StopResult) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
 }
 
 type BuildResult struct {
@@ -2805,6 +2821,7 @@ type SnapshotResult struct {
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
 	BlobPath      string                 `protobuf:"bytes,2,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	Sha256        string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2858,6 +2875,13 @@ func (x *SnapshotResult) GetBytes() uint64 {
 		return x.Bytes
 	}
 	return 0
+}
+
+func (x *SnapshotResult) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
 }
 
 type ExecResult struct {
@@ -3675,6 +3699,7 @@ type SnapshotDone struct {
 	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
 	BlobPath      string                 `protobuf:"bytes,3,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,4,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	Sha256        string                 `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3735,6 +3760,13 @@ func (x *SnapshotDone) GetBytes() uint64 {
 		return x.Bytes
 	}
 	return 0
+}
+
+func (x *SnapshotDone) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
 }
 
 type HostWarning struct {
@@ -4181,7 +4213,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\fforce_reboot\x18\x03 \x01(\bR\vforceReboot\"=\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf7\x04\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8f\x05\n" +
 	"\aRestore\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -4205,7 +4237,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
 	"remote_url\x18\x0f \x01(\tR\tremoteUrl\x12!\n" +
 	"\fproject_json\x18\x10 \x01(\fR\vprojectJson\x12%\n" +
-	"\x0esystem_closure\x18\x11 \x01(\tR\rsystemClosure\x1a6\n" +
+	"\x0esystem_closure\x18\x11 \x01(\tR\rsystemClosure\x12\x16\n" +
+	"\x06sha256\x18\x12 \x01(\tR\x06sha256\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
@@ -4269,25 +4302,27 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\apayload\"F\n" +
 	"\fCreateResult\x12\x19\n" +
 	"\bguest_ip\x18\x01 \x01(\tR\aguestIp\x12\x1b\n" +
-	"\tvsock_cid\x18\x02 \x01(\rR\bvsockCid\"`\n" +
+	"\tvsock_cid\x18\x02 \x01(\rR\bvsockCid\"x\n" +
 	"\n" +
 	"StopResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x02 \x01(\tR\bblobPath\x12\x14\n" +
-	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"\x80\x01\n" +
+	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\x12\x16\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"\x80\x01\n" +
 	"\vBuildResult\x12%\n" +
 	"\x0esystem_closure\x18\x01 \x01(\tR\rsystemClosure\x12#\n" +
 	"\rclosure_bytes\x18\x02 \x01(\x04R\fclosureBytes\x12%\n" +
 	"\x0ekernel_changed\x18\x03 \x01(\bR\rkernelChanged\"R\n" +
 	"\vApplyResult\x12\x1a\n" +
 	"\brebooted\x18\x01 \x01(\bR\brebooted\x12'\n" +
-	"\x0freboot_required\x18\x02 \x01(\bR\x0erebootRequired\"d\n" +
+	"\x0freboot_required\x18\x02 \x01(\bR\x0erebootRequired\"|\n" +
 	"\x0eSnapshotResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x02 \x01(\tR\bblobPath\x12\x14\n" +
-	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\"Y\n" +
+	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\x12\x16\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"Y\n" +
 	"\n" +
 	"ExecResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
@@ -4361,13 +4396,14 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x18\n" +
 	"\aoptions\x18\x06 \x03(\tR\aoptions\x12\x1b\n" +
 	"\ttimeout_s\x18\a \x01(\rR\btimeoutS\x12\x14\n" +
-	"\x05state\x18\b \x01(\tR\x05state\"}\n" +
+	"\x05state\x18\b \x01(\tR\x05state\"\x95\x01\n" +
 	"\fSnapshotDone\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x03 \x01(\tR\bblobPath\x12\x14\n" +
-	"\x05bytes\x18\x04 \x01(\x04R\x05bytes\"9\n" +
+	"\x05bytes\x18\x04 \x01(\x04R\x05bytes\x12\x16\n" +
+	"\x06sha256\x18\x05 \x01(\tR\x06sha256\"9\n" +
 	"\vHostWarning\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xa5\x01\n" +

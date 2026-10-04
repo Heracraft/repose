@@ -60,7 +60,7 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 	if u.err != nil {
 		return nil, u.err
 	}
-	res.SnapshotId, res.BlobPath, res.Bytes = u.sr.SnapshotId, u.sr.BlobPath, u.sr.Bytes
+	res.SnapshotId, res.BlobPath, res.Bytes, res.Sha256 = u.sr.SnapshotId, u.sr.BlobPath, u.sr.Bytes, u.sr.Sha256
 	return res, nil
 }
 

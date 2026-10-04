@@ -90,6 +90,10 @@ repose snapshots restore SNAPSHOT_ID --as-new todo-app-old
 
 The dashboard's snapshot list has **Create**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
 
+Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it before writing anything, and stops with `snapshot checksum mismatch` if they differ. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
+
+If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`.
+
 ## Destroy and restore
 
 ```
