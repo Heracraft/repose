@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"errors"
 	"os"
 	"testing"
@@ -67,8 +66,20 @@ func TestRoundTripAndAAD(t *testing.T) {
 	if _, err := secrets.Open(dek, pid, "OTHER", ct); err == nil {
 		t.Fatal("ciphertext decrypted under another name")
 	}
-	if _, err := secrets.Open(dek, uuid.NewString(), "DATABASE_URL", ct); err == nil {
-		t.Fatal("ciphertext decrypted under another project")
+	// The project-bound form (written from the release after I-433) does
+	// not open under another project or another name.
+	bound, err := secrets.SealBound(dek, pid, "DATABASE_URL", []byte("postgres://secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secrets.Open(dek, uuid.NewString(), "DATABASE_URL", bound); err == nil {
+		t.Fatal("bound ciphertext decrypted under another project")
+	}
+	if _, err := secrets.Open(dek, pid, "OTHER", bound); err == nil {
+		t.Fatal("bound ciphertext decrypted under another name")
+	}
+	if v, err := secrets.Open(dek, pid, "DATABASE_URL", bound); err != nil || string(v) != "postgres://secret" {
+		t.Fatalf("bound ciphertext under its own project: %v %q", err, v)
 	}
 	if v, err := secrets.Open(dek, pid, "DATABASE_URL", ct); err != nil || string(v) != "postgres://secret" {
 		t.Fatalf("open under own name: %v %q", err, v)
@@ -208,27 +219,8 @@ func TestDEKCacheLimitsKeyVaultCalls(t *testing.T) {
 	}
 }
 
-// sealLegacy is how rows were sealed before I-433: bound to the name only.
-func sealLegacy(t *testing.T, dek []byte, name string, value []byte) []byte {
+func platformProject(t *testing.T, pool *dbPool) {
 	t.Helper()
-	block, err := aes.NewCipher(dek)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	_, _ = rand.Read(nonce)
-	return append(nonce, gcm.Seal(nil, nonce, value, []byte(name))...)
-}
-
-// A row copied into another project, from a user's project or from the
-// platform's CA material, does not decrypt there (I-433).
-func TestCiphertextIsBoundToItsProject(t *testing.T) {
-	pool := testdb.Open(t)
-	s := secrets.New(pool, kv.New())
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'platform') on conflict do nothing", secrets.PlatformUserID); err != nil {
 		t.Fatal(err)
@@ -236,6 +228,25 @@ func TestCiphertextIsBoundToItsProject(t *testing.T) {
 	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values ($1, $1, 'platform', 'platform', 'large', 'stopped', 1) on conflict do nothing", secrets.PlatformProjectID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func copyRows(t *testing.T, pool *dbPool, from, to string) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version)
+		select gen_random_uuid(), $2, name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1`, from, to); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// What this release binds (I-433): a row in the name-only form under the
+// platform's data key does not open outside the platform project, and a
+// project-bound row does not open in another project. A name-only user
+// row still does, until the release that writes the bound form.
+func TestCiphertextIsBoundToItsProject(t *testing.T) {
+	pool := testdb.Open(t)
+	s := secrets.New(pool, kv.New())
+	ctx := context.Background()
+	platformProject(t, pool)
 	if err := s.PutPlatform(ctx, "SSH_USER_CA", []byte("ca private key")); err != nil {
 		t.Fatal(err)
 	}
@@ -243,35 +254,44 @@ func TestCiphertextIsBoundToItsProject(t *testing.T) {
 	if err := s.Put(ctx, uid, victim, "AWS_SECRET", []byte("victim value")); err != nil {
 		t.Fatal(err)
 	}
-	_, attacker := newProject(t, s, pool)
-	for _, from := range []string{victim, secrets.PlatformProjectID} {
-		if _, err := pool.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version)
-			select gen_random_uuid(), $2, name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1`, from, attacker); err != nil {
-			t.Fatal(err)
-		}
+
+	_, platformCopy := newProject(t, s, pool)
+	copyRows(t, pool, secrets.PlatformProjectID, platformCopy)
+	if _, err := s.DecryptForGuest(ctx, platformCopy); !errors.Is(err, secrets.ErrPlatformKey) {
+		t.Fatalf("platform row in a user project: %v", err)
 	}
-	if vals, err := s.DecryptForGuest(ctx, attacker); err == nil {
-		t.Fatalf("copied rows decrypted in another project: %d values", len(vals))
+
+	_, nameOnly := newProject(t, s, pool)
+	copyRows(t, pool, victim, nameOnly)
+	if vals, err := s.DecryptForGuest(ctx, nameOnly); err != nil || len(vals) != 1 {
+		t.Fatalf("name-only rows are not bound to a project in this release: %+v %v", vals, err)
+	}
+
+	if _, _, err := s.Reseal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, boundCopy := newProject(t, s, pool)
+	copyRows(t, pool, victim, boundCopy)
+	if vals, err := s.DecryptForGuest(ctx, boundCopy); err == nil {
+		t.Fatalf("a bound row decrypted in another project: %d values", len(vals))
+	}
+	if vals, err := s.DecryptForGuest(ctx, victim); err != nil || len(vals) != 1 || string(vals[0].Value) != "victim value" {
+		t.Fatalf("own project after reseal: %+v %v", vals, err)
 	}
 	if v, err := s.GetPlatform(ctx, "SSH_USER_CA"); err != nil || string(v) != "ca private key" {
 		t.Fatalf("platform: %q %v", v, err)
 	}
 }
 
-// Rows sealed before I-433 still open, Reseal binds them to their
-// project, and a legacy row under the platform's key outside the platform
-// project is refused and left alone.
+// This release writes the name-only form an older api can open; Reseal,
+// for the next release, binds those rows to their project and leaves a
+// platform-key row outside the platform project alone.
 func TestResealLegacyRows(t *testing.T) {
 	pool := testdb.Open(t)
 	fk := kv.New()
 	s := secrets.New(pool, fk)
 	ctx := context.Background()
-	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'platform') on conflict do nothing", secrets.PlatformUserID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values ($1, $1, 'platform', 'platform', 'large', 'stopped', 1) on conflict do nothing", secrets.PlatformProjectID); err != nil {
-		t.Fatal(err)
-	}
+	platformProject(t, pool)
 	if err := s.PutPlatform(ctx, "SSH_USER_CA", []byte("ca private key")); err != nil {
 		t.Fatal(err)
 	}
@@ -279,35 +299,24 @@ func TestResealLegacyRows(t *testing.T) {
 	if err := s.Put(ctx, uid, pid, "TOKEN", []byte("v")); err != nil {
 		t.Fatal(err)
 	}
-	// Turn both into rows as the previous release wrote them.
-	legacy := func(project, name string, value []byte) {
+	rowDEK := func() (ct, dek []byte) {
 		var wrapped []byte
 		var version string
-		if err := pool.QueryRow(ctx, "select dek_wrapped, kv_key_version from secrets where project_id = $1 and name = $2", project, name).Scan(&wrapped, &version); err != nil {
+		if err := pool.QueryRow(ctx, "select ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1", pid).Scan(&ct, &wrapped, &version); err != nil {
 			t.Fatal(err)
 		}
 		dek, err := fk.Unwrap(ctx, wrapped, version)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pool.Exec(ctx, "update secrets set ciphertext = $3 where project_id = $1 and name = $2", project, name, sealLegacy(t, dek, name, value)); err != nil {
-			t.Fatal(err)
-		}
+		return ct, dek
 	}
-	legacy(pid, "TOKEN", []byte("v"))
-	legacy(secrets.PlatformProjectID, "SSH_USER_CA", []byte("ca private key"))
-	if vals, err := s.DecryptForGuest(ctx, pid); err != nil || len(vals) != 1 || string(vals[0].Value) != "v" {
-		t.Fatalf("legacy row before reseal: %+v %v", vals, err)
+	ct, dek := rowDEK()
+	if v, err := nameOnlyOpen(dek, "TOKEN", ct); err != nil || string(v) != "v" {
+		t.Fatalf("Put did not write the form an older api opens: %v", err)
 	}
-	// A legacy platform row copied into a user's project.
 	_, other := newProject(t, s, pool)
-	if _, err := pool.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version)
-		select gen_random_uuid(), $1, name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $2`, other, secrets.PlatformProjectID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.DecryptForGuest(ctx, other); !errors.Is(err, secrets.ErrPlatformKey) {
-		t.Fatalf("legacy platform row in a user project: %v", err)
-	}
+	copyRows(t, pool, secrets.PlatformProjectID, other)
 	resealed, refused, err := s.Reseal(ctx)
 	if err != nil || resealed != 2 || refused != 1 {
 		t.Fatalf("reseal: %d resealed, %d refused, %v", resealed, refused, err)
@@ -315,16 +324,27 @@ func TestResealLegacyRows(t *testing.T) {
 	if again, _, err := s.Reseal(ctx); err != nil || again != 0 {
 		t.Fatalf("second reseal: %d %v", again, err)
 	}
-	var ct, wrapped []byte
-	var version string
-	if err := pool.QueryRow(ctx, "select ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1", pid).Scan(&ct, &wrapped, &version); err != nil {
-		t.Fatal(err)
-	}
-	dek, _ := fk.Unwrap(ctx, wrapped, version)
+	ct, dek = rowDEK()
 	if _, err := secrets.Open(dek, uuid.NewString(), "TOKEN", ct); err == nil {
 		t.Fatal("a resealed row opens under another project")
+	}
+	if v, err := secrets.Open(dek, pid, "TOKEN", ct); err != nil || string(v) != "v" {
+		t.Fatalf("resealed row under its project: %q %v", v, err)
 	}
 	if v, err := s.GetPlatform(ctx, "SSH_USER_CA"); err != nil || string(v) != "ca private key" {
 		t.Fatalf("platform after reseal: %q %v", v, err)
 	}
+}
+
+// nameOnlyOpen is how an api image from before I-433 opens a row.
+func nameOnlyOpen(dek []byte, name string, ct []byte) ([]byte, error) {
+	block, err := aes.NewCipher(dek)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	return gcm.Open(nil, ct[:gcm.NonceSize()], ct[gcm.NonceSize():], []byte(name))
 }

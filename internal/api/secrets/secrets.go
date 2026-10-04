@@ -157,13 +157,19 @@ func (s *Store) userDEK(ctx context.Context, tx pgx.Tx, userID string) (dek, wra
 	return dek, wrapped, version, nil
 }
 
-// aad is what a ciphertext is bound to: its project and its name
-// (DECISIONS I-433), so a row moved to another project or renamed does not
-// decrypt. Rows sealed before it are bound to the name alone; open still
-// accepts those and Reseal rewrites them.
+// aad is the additional data that binds a ciphertext to its project and
+// its name (DECISIONS I-433), so a row moved to another project or renamed
+// does not decrypt. Rows sealed the older way are bound to the name alone;
+// open accepts both.
 func aad(projectID, name string) []byte {
 	return []byte("repose-secret-v2\x00" + projectID + "\x00" + name)
 }
+
+// sealBound turns on writing the project-bound form. It is off for one
+// release (I-433): an api image from before it cannot open that form, and
+// a rolling deploy or a rollback runs one. The release after turns it on
+// and runs Reseal.
+const sealBound = false
 
 func gcmFor(dek []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(dek)
@@ -173,8 +179,7 @@ func gcmFor(dek []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// Seal encrypts value under dek, bound to the project and the name.
-func Seal(dek []byte, projectID, name string, value []byte) ([]byte, error) {
+func seal(dek, additional, value []byte) ([]byte, error) {
 	gcm, err := gcmFor(dek)
 	if err != nil {
 		return nil, err
@@ -183,7 +188,22 @@ func Seal(dek []byte, projectID, name string, value []byte) ([]byte, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return append(nonce, gcm.Seal(nil, nonce, value, aad(projectID, name))...), nil
+	return append(nonce, gcm.Seal(nil, nonce, value, additional)...), nil
+}
+
+// Seal encrypts value under dek in the form this release writes: bound to
+// the name, and to the project as well once sealBound is on.
+func Seal(dek []byte, projectID, name string, value []byte) ([]byte, error) {
+	if sealBound {
+		return SealBound(dek, projectID, name, value)
+	}
+	return seal(dek, []byte(name), value)
+}
+
+// SealBound encrypts value bound to the project and the name, whatever
+// sealBound says (Reseal, tests).
+func SealBound(dek []byte, projectID, name string, value []byte) ([]byte, error) {
+	return seal(dek, aad(projectID, name), value)
 }
 
 // Open reverses Seal.
@@ -192,8 +212,8 @@ func Open(dek []byte, projectID, name string, ciphertext []byte) ([]byte, error)
 	return v, err
 }
 
-// open reverses Seal, and reports legacy when the ciphertext is bound to
-// the name alone (sealed before I-433).
+// open reverses Seal and SealBound, and reports legacy when the
+// ciphertext is bound to the name alone.
 func open(dek []byte, projectID, name string, ciphertext []byte) (value []byte, legacy bool, err error) {
 	gcm, err := gcmFor(dek)
 	if err != nil {
@@ -380,7 +400,9 @@ func (s *Store) refusePlatformDEK(ctx context.Context, projectID string, dek []b
 // Reseal rewrites every row still bound to its name alone so it is bound
 // to its project as well, and returns how many it rewrote. A row under the
 // platform's data key outside the platform project is left alone and
-// counted in refused. The api runs it at start (I-433); it is idempotent.
+// counted in refused. Idempotent. Nothing calls it in this release: an
+// older api image cannot open what it writes; the next release runs it at
+// start with sealBound on (I-433).
 func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
 	rows, err := s.pool.Query(ctx, "select id, project_id, name, ciphertext, dek_wrapped, kv_key_version from secrets")
 	if err != nil {
@@ -426,7 +448,7 @@ func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
 			}
 			return resealed, refused, err
 		}
-		ct, err := Seal(dek, r.project, r.name, v)
+		ct, err := SealBound(dek, r.project, r.name, v)
 		if err != nil {
 			return resealed, refused, err
 		}
@@ -441,7 +463,8 @@ func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
 
 // CopyNamed copies a project's named secrets (not its sshd material) to
 // another project of the same user inside tx: each value is opened and
-// sealed again for the new project under the same data key (I-433).
+// sealed again for the new project under the same data key, so a
+// project-bound row stays bound to its own project (I-433).
 func (s *Store) CopyNamed(ctx context.Context, tx pgx.Tx, fromProjectID, toProjectID string) error {
 	rows, err := tx.Query(ctx, `select name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1 and name ~ '^[A-Z][A-Z0-9_]{0,63}$' order by name`, fromProjectID)
 	if err != nil {
