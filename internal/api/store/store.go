@@ -317,6 +317,24 @@ func GetProjectByGuest(ctx context.Context, q Querier, guestID uuid.UUID) (*Proj
 	return one[Project](ctx, q, "select "+projectCols+" from projects where guest_id = $1", guestID)
 }
 
+// ErrOtherHost is GetProjectOnHost's answer for a guest that belongs to a
+// project placed on another host, or on none.
+var ErrOtherHost = errors.New("guest is not on this host")
+
+// GetProjectOnHost resolves a guest a host reported, and refuses it with
+// ErrOtherHost unless the project is placed on that host: what a host says
+// about a guest counts only for its own guests (DECISIONS I-447).
+func GetProjectOnHost(ctx context.Context, q Querier, guestID, hostID uuid.UUID) (*Project, error) {
+	p, err := GetProjectByGuest(ctx, q, guestID)
+	if err != nil {
+		return nil, err
+	}
+	if p.HostID == nil || *p.HostID != hostID {
+		return nil, ErrOtherHost
+	}
+	return p, nil
+}
+
 // GetProjectByLogin resolves <slug>.<handle>.
 func GetProjectByLogin(ctx context.Context, q Querier, slug, handle string) (*Project, error) {
 	return one[Project](ctx, q, "select "+projectCols+" from projects p where p.slug = $1 and p.destroyed_at is null and p.user_id = (select id from users where handle = $2)", slug, handle)

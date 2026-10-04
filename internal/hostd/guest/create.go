@@ -498,6 +498,9 @@ type monitor struct {
 	lostAt  time.Time
 	lost    bool
 	stopCon func()
+
+	// notifyBucket limits the guest's notifications; only run() touches it.
+	notifyBucket bucket
 }
 
 func (m *Manager) startMonitor(g *state.Guest) *monitor {
@@ -709,33 +712,51 @@ func (mon *monitor) regained() {
 
 func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	m := mon.m
+	switch n.N.(type) {
+	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning:
+		// The ones that become api events pass the guest's bucket, so one
+		// guest cannot fill the host's stream (I-445).
+		if !mon.notifyBucket.take(m.d.Now()) {
+			mon.notifyBucket.dropped++
+			if mon.notifyBucket.dropped == 1 {
+				m.log(mon.g).Warn("guest notifications over the rate; dropping", "event", "notify_dropped", "reason", "rate_limited")
+			}
+			m.notifyDropped("rate_limited")
+			return
+		}
+		if d := mon.notifyBucket.dropped; d > 0 {
+			m.log(mon.g).Info("guest notifications under the rate again", "event", "notify_dropped", "dropped", d)
+			mon.notifyBucket.dropped = 0
+		}
+	}
 	switch v := n.N.(type) {
 	case *guestdv1.Notify_Ready:
 		mon.markReady()
 	case *guestdv1.Notify_AgentEvent:
-		summary := v.AgentEvent.Summary
-		if len(summary) > 1024 {
-			summary = summary[:1024]
+		ae := v.AgentEvent
+		ev, ok := cleanAgentEvent(mon.g.GuestID, ae.Agent, ae.Kind, ae.Summary, ae.TmuxWindow)
+		if !ok {
+			m.notifyDropped("invalid")
+			return
 		}
-		m.log(mon.g).Info("agent event", "event", "agent_event", "agent", v.AgentEvent.Agent, "kind", v.AgentEvent.Kind)
-		m.emitEvent(&hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: mon.g.GuestID, Agent: v.AgentEvent.Agent, Kind: v.AgentEvent.Kind, Summary: summary, TmuxWindow: v.AgentEvent.TmuxWindow}})
+		m.log(mon.g).Info("agent event", "event", "agent_event", "agent", ev.Agent, "kind", ev.Kind)
+		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:
 		q := v.Question
-		text := q.Text
-		if len(text) > 1024 {
-			text = text[:1024]
+		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State)
+		if !ok {
+			m.notifyDropped("invalid")
+			return
 		}
 		// The text is tenant content: counted, never logged.
-		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", q.Agent, "question_id", q.QuestionId, "state", q.State, "text_bytes", len(q.Text))
-		m.emitEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: &hostdv1.AgentQuestion{
-			GuestId: mon.g.GuestID, QuestionId: q.QuestionId, Agent: q.Agent, TmuxWindow: q.TmuxWindow,
-			Text: text, Options: q.Options, TimeoutS: q.TimeoutS, State: q.State,
-		}})
+		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", aq.Agent, "question_id", aq.QuestionId, "state", aq.State, "text_bytes", len(q.Text))
+		m.emitGuestEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: aq})
 	case *guestdv1.Notify_AgentState:
-		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", v.AgentState.Agent, "state", v.AgentState.State)
+		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", cleanToken(v.AgentState.Agent, capAgent), "state", cleanToken(v.AgentState.State, capAgent))
 	case *guestdv1.Notify_Warning:
-		m.log(mon.g).Warn("guest warning", "event", "host_warning", "kind", v.Warning.Kind)
-		m.emitEvent(&hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: v.Warning.Kind, Detail: "guest " + mon.g.GuestID + ": " + v.Warning.Detail}})
+		w := cleanWarning(mon.g.GuestID, v.Warning.Kind, v.Warning.Detail)
+		m.log(mon.g).Warn("guest warning", "event", "host_warning", "kind", w.Kind)
+		m.emitGuestEvent(&hostdv1.Event_HostWarning{HostWarning: w})
 	}
 }
 

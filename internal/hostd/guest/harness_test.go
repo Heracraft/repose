@@ -47,6 +47,10 @@ func (r *recorder) Event(ev *hostdv1.Event) {
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
 }
+func (r *recorder) GuestEvent(ev *hostdv1.Event) bool {
+	r.Event(ev)
+	return true
+}
 func (r *recorder) Samples(s *hostdv1.Samples) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

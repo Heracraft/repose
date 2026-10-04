@@ -103,7 +103,7 @@ func (g *Guard) OnSamples(ctx context.Context, hostID uuid.UUID, s *hostdv1.Samp
 		if process == "" {
 			continue
 		}
-		if err := g.stopForMiner(ctx, gs.GuestId, process, ts); err != nil && ctx.Err() == nil {
+		if err := g.stopForMiner(ctx, hostID, gs.GuestId, process, ts); err != nil && ctx.Err() == nil {
 			g.log.Error("abuse stop failed", "event", "abuse_stop_fail", "host_id", hostID.String(), "guest_id", gs.GuestId, "kind", KindMiner, "err", err.Error())
 		}
 	}
@@ -113,14 +113,15 @@ func (g *Guard) OnSamples(ctx context.Context, hostID uuid.UUID, s *hostdv1.Samp
 // predates its current start (a resent sample from before the last stop),
 // or that already has an op in flight (this stop, still running) is left
 // alone, so one miner is one stop however many samples name it.
-func (g *Guard) stopForMiner(ctx context.Context, guestID, process string, sampleTS time.Time) error {
+func (g *Guard) stopForMiner(ctx context.Context, hostID uuid.UUID, guestID, process string, sampleTS time.Time) error {
 	gid, err := uuid.Parse(guestID)
 	if err != nil {
 		return nil
 	}
-	p, err := store.GetProjectByGuest(ctx, g.pool, gid)
+	// Only the host a project is placed on can have it stopped (I-447).
+	p, err := store.GetProjectOnHost(ctx, g.pool, gid, hostID)
 	if err != nil {
-		if db.IsNoRows(err) {
+		if db.IsNoRows(err) || errors.Is(err, store.ErrOtherHost) {
 			return nil
 		}
 		return err

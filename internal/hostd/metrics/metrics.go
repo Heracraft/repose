@@ -44,6 +44,7 @@ type M struct {
 	GuestCPUSecondsTotal  *prometheus.CounterVec
 	GuestNetBytesTotal    *prometheus.CounterVec
 	EventsPending         prometheus.Gauge
+	GuestNotifyDropped    *prometheus.CounterVec
 	// EgressBlockedTotal and EgressBlockedGuests are the per-guest
 	// nftables blocks summed per host (DECISIONS I-238..I-240): packets
 	// dropped by reason, and guests over their reason's threshold right
@@ -55,6 +56,9 @@ type M struct {
 
 // BlockedReasons is the `reason` enum of the two series above.
 var BlockedReasons = []string{"smtp", "stratum", "flows"}
+
+// NotifyDropReasons is the `reason` enum of repose_host_guest_notify_dropped_total.
+var NotifyDropReasons = []string{"rate_limited", "invalid", "queue_full"}
 
 // New registers every instrument on a fresh registry.
 func New() *M { return NewVersion("dev") }
@@ -90,11 +94,15 @@ func NewVersion(version string) *M {
 		GuestCPUSecondsTotal:  f.counterVec("guest_cpu_seconds_total", "Guest CPU time summed by class.", "class"),
 		GuestNetBytesTotal:    f.counterVec("guest_net_bytes_total", "Guest network bytes by direction.", "direction"),
 		EventsPending:         f.gauge("events_pending", "Events awaiting an api ack."),
+		GuestNotifyDropped:    f.counterVec("guest_notify_dropped_total", "Guest notifications hostd did not forward, by reason: rate_limited (over the per-guest rate), invalid (a kind, id or state a guest may not send), queue_full (the guest events awaiting an ack are at their cap).", "reason"),
 		EgressBlockedTotal:    f.counterVec("egress_blocked_total", "Outbound packets guests sent into a block, by reason: smtp (tcp 25), stratum (mining-pool ports), flows (new flows over the per-guest rate).", "reason"),
 		EgressBlockedGuests:   f.gaugeVec("egress_blocked_guests", "Guests whose blocked packets in the last 10 minutes passed the reason's threshold.", "reason"),
 	}
 	// Every reason exists from startup, so the alert reads 0 rather than
 	// nothing on a host where no guest was ever blocked.
+	for _, r := range NotifyDropReasons {
+		m.GuestNotifyDropped.WithLabelValues(r)
+	}
 	for _, r := range BlockedReasons {
 		m.EgressBlockedTotal.WithLabelValues(r)
 		m.EgressBlockedGuests.WithLabelValues(r).Set(0)

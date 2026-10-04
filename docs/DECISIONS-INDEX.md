@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-461 entries.
+464 entries.
 
 ## Scope
 
@@ -493,3 +493,6 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; L11033
+- **I-446** Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned — 2026-10-03; L11068
+- **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11088

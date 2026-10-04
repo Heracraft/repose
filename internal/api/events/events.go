@@ -40,6 +40,35 @@ var notifyKinds = map[string]bool{
 	"temp_expiring": true, "temp_destroyed": true,
 }
 
+// guestKinds are the agent event kinds a guest may raise
+// (docs/interfaces/grpc-hostd.md); the platform kinds above are the api's.
+var guestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+
+// warningKinds are the host_warning kinds hostd sends, its own and the ones
+// it relays from guestd (docs/interfaces/grpc-hostd.md, vsock-guestd.md).
+// Any other kind is counted as "other": a label value outside a fixed set
+// is a new Prometheus series per value (I-445).
+var warningKinds = map[string]bool{
+	"pool_high": true, "store_high": true, "build_queue_deep": true, "cache_unreachable": true,
+	"guestd_lost": true, "freeze_timeout": true,
+	"disk_high": true, "inotify_exhausted": true, "docker_down": true, "store_path_missing": true,
+	"oom": true, "tmux_down": true, "guest_other": true,
+}
+
+// MaxWarningDetail caps a host warning's detail in the api log.
+const MaxWarningDetail = 256
+
+// Caps on the agent name and window name stored with an event.
+const (
+	MaxAgent  = 32
+	MaxWindow = 64
+)
+
+// GuestEventsPerHour caps the guest-raised events (agent events and
+// questions) stored per project per hour. hostd already limits a guest's
+// notifications; this holds whatever reaches the api (I-445).
+const GuestEventsPerHour = 600
+
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
@@ -110,9 +139,11 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 		}
 		ts = now
 	}
-	if len(n.Summary) > MaxSummary {
-		n.Summary = n.Summary[:MaxSummary]
-	}
+	// Text columns refuse a NUL and invalid UTF-8; one such event would
+	// stay unacked and come back on every reconnect.
+	n.Summary = store.CleanText(n.Summary, MaxSummary)
+	n.Agent = store.CleanText(n.Agent, MaxAgent)
+	n.Window = store.CleanText(n.Window, MaxWindow)
 	var agent, window, hostEventID *string
 	if n.Agent != "" {
 		agent = &n.Agent
@@ -135,10 +166,7 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 				n.ProjectID, n.Agent, n.Kind, ts.Add(-DedupeWindow)).Scan(&prevID, &prevSummary)
 			if err == nil {
 				if n.Summary != "" && !strings.Contains(prevSummary, n.Summary) {
-					merged := prevSummary + "\n" + n.Summary
-					if len(merged) > MaxSummary {
-						merged = merged[:MaxSummary]
-					}
+					merged := store.CleanText(prevSummary+"\n"+n.Summary, MaxSummary)
 					if _, err := tx.Exec(ctx, "update events set summary = $2 where id = $1", prevID, merged); err != nil {
 						return err
 					}
@@ -232,9 +260,11 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 	ts := time.Unix(ev.Ts, 0)
 	switch e := ev.Ev.(type) {
 	case *hostdv1.Event_GuestStateChanged:
-		p, err := i.projectByGuest(ctx, e.GuestStateChanged.GuestId)
+		p, err := i.projectOnHost(ctx, hostID, e.GuestStateChanged.GuestId)
 		if err != nil {
-			i.log.Warn("state change for unknown guest", "event", "guest_state", "host_id", hostID.String(), "guest_id", e.GuestStateChanged.GuestId)
+			if !errors.Is(err, store.ErrOtherHost) {
+				i.log.Warn("state change for unknown guest", "event", "guest_state", "host_id", hostID.String(), "guest_id", e.GuestStateChanged.GuestId)
+			}
 			return true
 		}
 		open, _ := store.OpenOpsForProject(ctx, i.pool, p.ID)
@@ -272,19 +302,39 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 		if i.questions == nil {
 			return true
 		}
+		p, err := i.projectOnHost(ctx, hostID, e.AgentQuestion.GuestId)
+		if err != nil {
+			return true
+		}
+		// A close (a state set) is never capped: it ends a question the
+		// cap already let in.
+		if e.AgentQuestion.State == "" {
+			if capped, err := i.overGuestCap(ctx, p.ID); err != nil {
+				i.log.Error("guest event count", "event", "agent_question", "err", err.Error())
+				return false
+			} else if capped {
+				return true
+			}
+		}
 		if err := i.questions.OnQuestion(ctx, ts, e.AgentQuestion); err != nil {
 			i.log.Error("agent question insert", "event", "agent_question", "err", err.Error())
 			return false
 		}
 		return true
 	case *hostdv1.Event_AgentEvent:
-		p, err := i.projectByGuest(ctx, e.AgentEvent.GuestId)
+		p, err := i.projectOnHost(ctx, hostID, e.AgentEvent.GuestId)
 		if err != nil {
 			return true
 		}
 		kind := e.AgentEvent.Kind
-		if !notifyKinds[kind] {
+		if !guestKinds[kind] {
 			kind = "error"
+		}
+		if capped, err := i.overGuestCap(ctx, p.ID); err != nil {
+			i.log.Error("guest event count", "event", "agent_event", "err", err.Error())
+			return false
+		} else if capped {
+			return true
 		}
 		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, Agent: e.AgentEvent.Agent, Window: e.AgentEvent.TmuxWindow, Summary: e.AgentEvent.Summary, Source: "host", HostEventID: ev.EventId})
 		if err != nil {
@@ -293,12 +343,20 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 		}
 		return true
 	case *hostdv1.Event_SnapshotDone:
-		p, err := i.projectByGuest(ctx, e.SnapshotDone.GuestId)
+		p, err := i.projectOnHost(ctx, hostID, e.SnapshotDone.GuestId)
 		if err != nil {
 			return true
 		}
 		if e.SnapshotDone.BlobPath == "" {
 			return true
+		}
+		if !SnapshotPathOf(p, e.SnapshotDone.BlobPath) {
+			i.m.HostReportsRefused.WithLabelValues("bad_snapshot").Inc()
+			i.log.Warn("snapshot path outside the project's prefix", "event", "snapshot_done", "host_id", hostID.String(), "project_id", p.ID.String())
+			return true
+		}
+		if now := i.now(); ts.After(now) {
+			ts = now
 		}
 		_, err = i.pool.Exec(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at) values ($1, $2, $3, $4, $5, 'scheduled', $6) on conflict (blob_path) do nothing`,
 			store.NewID(), p.ID, p.HostID, e.SnapshotDone.BlobPath, int64(e.SnapshotDone.Bytes), ts)
@@ -308,8 +366,15 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 		}
 		return true
 	case *hostdv1.Event_HostWarning:
-		i.m.HostWarningsTotal.WithLabelValues(e.HostWarning.Kind).Inc()
-		i.log.Warn("host warning", "event", "host_warning", "host_id", hostID.String(), "kind", e.HostWarning.Kind, "detail", e.HostWarning.Detail)
+		kind := e.HostWarning.Kind
+		if !warningKinds[kind] {
+			kind = "other"
+		}
+		i.m.HostWarningsTotal.WithLabelValues(kind).Inc()
+		// hostd writes the detail (a guest's is rebuilt from its numbers
+		// and process name); the cap and cleaning hold it to one short line
+		// whatever a host sends.
+		i.log.Warn("host warning", "event", "host_warning", "host_id", hostID.String(), "kind", kind, "detail", cleanLine(e.HostWarning.Detail, MaxWarningDetail))
 		return true
 	case *hostdv1.Event_OperatorLogin:
 		// The audit row 14 §5 requires for every operator SSH login
@@ -350,12 +415,58 @@ func validState(s string) bool {
 	return false
 }
 
-func (i *Ingest) projectByGuest(ctx context.Context, guestID string) (*store.Project, error) {
+// projectOnHost resolves a guest the host reported, counting and dropping
+// one that is not on that host (I-447).
+func (i *Ingest) projectOnHost(ctx context.Context, hostID uuid.UUID, guestID string) (*store.Project, error) {
 	gid, err := uuid.Parse(guestID)
 	if err != nil {
 		return nil, err
 	}
-	return store.GetProjectByGuest(ctx, i.pool, gid)
+	p, err := store.GetProjectOnHost(ctx, i.pool, gid, hostID)
+	if errors.Is(err, store.ErrOtherHost) {
+		i.m.HostReportsRefused.WithLabelValues("foreign_guest").Inc()
+		i.log.Warn("host reported a guest that is not on it", "event", "foreign_guest", "host_id", hostID.String(), "guest_id", guestID)
+	}
+	return p, err
+}
+
+// overGuestCap reports whether the project already stored
+// GuestEventsPerHour guest-raised events in the last hour.
+func (i *Ingest) overGuestCap(ctx context.Context, projectID uuid.UUID) (bool, error) {
+	var n int
+	err := i.pool.QueryRow(ctx, `select count(*) from (select 1 from events where project_id = $1 and ts > $2 and source = 'host'
+		and kind in ('completed','needs_input','error','agent_message','agent_question') limit $3) x`,
+		projectID, i.now().Add(-time.Hour), GuestEventsPerHour).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	if n >= GuestEventsPerHour {
+		i.m.HostReportsRefused.WithLabelValues("project_cap").Inc()
+		return true, nil
+	}
+	return false, nil
+}
+
+// SnapshotPathOf reports whether a snapshot blob path is one hostd writes
+// for the project: <user_id>/<project_id>/<name> or, for a guest created
+// without a user id, <project_id>/<name>.
+func SnapshotPathOf(p *store.Project, blobPath string) bool {
+	parts := strings.Split(blobPath, "/")
+	name := parts[len(parts)-1]
+	if name == "" || name == "." || name == ".." || !strings.HasSuffix(name, ".img.zst") {
+		return false
+	}
+	switch len(parts) {
+	case 3:
+		return parts[0] == p.UserID.String() && parts[1] == p.ID.String()
+	case 2:
+		return parts[0] == p.ID.String()
+	}
+	return false
+}
+
+func cleanLine(s string, n int) string {
+	return store.CleanText(strings.NewReplacer("\n", " ", "\t", " ").Replace(s), n)
 }
 
 // FromEdge handles a hook event that arrived over HTTP through the edge

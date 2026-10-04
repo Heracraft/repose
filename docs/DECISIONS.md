@@ -11029,3 +11029,76 @@ Test: docs.spec.ts "an experimental page says so under its title".
 Checked at 1440 and 390, light and dark. *Rejected:* moving the five
 packages to devDependencies (adapter-node bundles those; it fixes today's
 five and not the next one added to dependencies).
+
+**I-445. Guest notifications are bounded and rate-limited at hostd, and the api bounds them again.**
+(security release, 2026-10-03) Root in a guest can replace guestd, so a
+`Notify` is tenant-written. Before this, hostd forwarded a warning's kind
+and detail as sent, an agent event's agent, kind and window unbounded, and
+any number of them; the api used the warning kind as a Prometheus label
+value, logged the detail as sent, and stored every agent event. hostd now
+keeps the fixed sets of `docs/interfaces/grpc-hostd.md` ("Guest-raised
+events"): agent event kinds `completed|needs_input|error|agent_message`
+(another is dropped), agent names as `[a-z0-9_-]{1,32}` or `unknown`,
+window names 64 bytes, summary and text 1 KB of clean UTF-8, question ids
+that parse as uuids and states `""|cancelled|expired`, three options of
+64 bytes, warning kinds from guestd's list or `guest_other`, and a warning
+detail hostd writes from the numbers and process name the known kinds
+carry. A token bucket per guest passes 30 at once and one every 2 s
+(an agent turn is one or two notifications; guestd sends a warning kind at
+most once in 10 minutes), counted in
+`repose_host_guest_notify_dropped_total{reason}`. Guest-raised events wait
+for their ack in their own list (2,000; the host's own keep 10,000) and
+are sent from it without blocking `Event` or `Result`, so a flood cannot
+evict a state change or delay a command result. The api accepts the old
+shape for one release and applies the same bounds: an unknown agent event
+kind is stored as `error` (a platform kind such as `billing_stopped` is no
+longer accepted from a guest), text is cleaned of NUL and other control
+characters before insert (a NUL made an insert fail, which left the event
+unacked and resent on every reconnect), a warning kind outside the list
+counts as `other`, the logged detail is one line of 256 bytes, and a
+project stores at most 600 guest-raised events an hour
+(`repose_api_host_reports_refused_total{reason="project_cap"}`).
+Tests: guestinput_test.go (hostd), TestGuestEventsCannotEvictOrBlockHostEvents
+(stream), TestGuestKindsTextAndCaps and TestHostWarningKindsAreAFixedSet
+(api events). *Rejected:* a retention job deleting old events (events are
+the history `repose events` pages through, I-414; the hourly cap bounds
+growth, and how long to keep history is a product decision); a fixed list
+of agent names at hostd (a new agent would need a host release first).
+
+**I-446. Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned.**
+(security release, 2026-10-03) The api queued every guest's
+`meter_samples` and `proc_samples` rows of one Samples message in one
+`pgx.Batch`, which runs as one transaction: one row Postgres refused (a
+NUL in a process name or an agent name, which a guest controls) lost the
+minute for every guest on the host, and the rollup then saw a gap with no
+running time and no egress for each of them. hostd now caps and cleans the
+guest-reported part of a sample (32 agents, 128 processes, `comm` 16
+bytes without control characters, agent state from guestd's four), the
+api cleans the same fields again, and each guest's rows go in a batch of
+their own. When a guest's batch fails, the api stores its host-measured
+fields alone (state, class, CPU, memory, network, disk), so running time
+and egress do not depend on what the guest reported; a failure is counted
+in `repose_api_samples_failed_total{reason}` (`guest_fields` or `insert`)
+and alerted on (`SamplesFailing`, ops/alerts.yaml). Test:
+TestOneGuestsSampleCannotSinkTheHostsBatch (api meter) and
+TestSampleGuestFieldsAreCleaned (hostd). *Rejected:* savepoints inside
+one transaction (a batch per guest is the same isolation with less code,
+and a sample runs once a minute per host).
+
+**I-447. A host's reports count only for its own guests; a question id acts only inside the sending guest's project.**
+(security release, 2026-10-03) Commands and results were already scoped
+to the stream's host; events, `Hello` and samples were resolved by guest
+id alone. The api now takes a guest state change, agent event, question,
+snapshot_done, `Hello` entry, sample or miner stop from a host only when
+the guest's project is placed on that host (`store.GetProjectOnHost`), and
+counts the rest in `repose_api_host_reports_refused_total{reason="foreign_guest"}`.
+A project whose placement was released (a capacity failure sets
+`host_id` null) takes no host reports until it is placed again, which is
+the state it is in. A `snapshot_done` blob path must sit under the
+project's own prefix (`<user_id>/<project_id>/` or `<project_id>/`), and a
+snapshot time in the future is clamped to now. A guest-side question close
+updates only a question of the sending guest's project, and an id that
+another project already holds is ignored rather than announced or read
+back. Tests: TestHostReportsCountOnlyForItsOwnGuests (api events),
+TestHelloCountsOnlyForTheHostsOwnGuests (api ops),
+TestQuestionCloseAndReuseStayInTheSendersProject (api questions).

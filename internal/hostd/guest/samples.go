@@ -85,11 +85,10 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 				sr, err := sess.Sample(sctx)
 				cancel()
 				if err == nil && sr != nil {
-					if sr.Signals != nil {
-						gsm.Signals = sr.Signals
-					}
+					// Guest-written: bounded before it joins the host's batch (I-446).
+					gsm.Signals = cleanSignals(sr.Signals)
 					gsm.Signals.GuestdOk = true
-					gsm.Procs = sr.Procs
+					gsm.Procs = cleanProcs(sr.Procs)
 				} else {
 					lost++
 				}

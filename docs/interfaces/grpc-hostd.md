@@ -134,13 +134,54 @@ the text is tenant content and is never logged),
 `snapshot_done`, `host_warning {kind, detail}` with kinds `pool_high` (80
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
-`guestd_lost` (no vsock for 60 s), `freeze_timeout`; `operator_login
+`guestd_lost` (no vsock for 60 s), `freeze_timeout`, and the guest kinds
+hostd relays from guestd's `Warning` (`disk_high`, `inotify_exhausted`,
+`docker_down`, `store_path_missing`, `oom`, `tmux_down`; any other guest
+kind is sent as `guest_other`); `operator_login
 {pam_type, user_present, key_id, serial, key_fingerprint}` for every SSH
 login to the host, from the PAM hook that runs `hostd audit-login`
 (DECISIONS I-140): the certificate's key id and serial, or a plain key's
 SHA256 fingerprint, never a key or certificate body and never the source
 address; the api writes the `audit_log` row 14 §5 requires, one per host
 event id however often the event is re-sent.
+
+**Guest-raised events** (DECISIONS I-445). `agent_event`, `agent_question`
+and a relayed `host_warning` start as a guest's `Notify`, which root in the
+guest can write, so hostd bounds them before sending: `agent_event.kind` is
+one of the four above (another is dropped); `agent` is at most 32 bytes of
+`[a-z0-9_-]`, anything else `unknown`; `tmux_window` at most 64 bytes and
+`summary` and `text` at most 1 KB, valid UTF-8 without control characters
+(newline and tab allowed in `summary` and `text`); `question_id` is a uuid
+and `state` empty, `cancelled` or `expired` (else dropped); at most 3
+`options` of 64 bytes; a relayed warning's `detail` is written by hostd
+(`guest <id>` and, for the known kinds, the numbers or the process name
+guestd reported). Each guest gets a burst of 30 such notifications and one
+every 2 s after it; the rest are dropped and counted in
+`repose_host_guest_notify_dropped_total{reason}`. hostd keeps guest-raised
+events awaiting an ack apart from its own (at most 2,000 against 10,000),
+and sends them without blocking its own events or results.
+
+The api accepts an event in the old, unbounded shape for one release
+(hostd before I-445) and applies the same bounds itself: it stores an
+`agent_event` kind outside the four as `error`, cleans and cuts `agent`,
+`tmux_window` and `summary`, counts a `host_warning` kind outside the list
+above as `other` and logs at most 256 bytes of `detail` on one line, and
+stores at most 600 guest-raised events per project per hour.
+
+**Host scope** (DECISIONS I-447). An event, a `Hello` entry or a sample
+for a guest counts only when the guest's project is placed on the host
+whose stream carried it; any other is dropped and counted in
+`repose_api_host_reports_refused_total{reason="foreign_guest"}`. A
+`snapshot_done` blob path must be `<user_id>/<project_id>/<name>.img.zst`
+(or `<project_id>/<name>.img.zst`) for that project, and its time is
+clamped to the api's clock.
+
+**Samples** (DECISIONS I-446). hostd cleans the guest-reported part of a
+`GuestSample` (at most 32 `agents` and 128 `procs`, `comm` at most 16
+bytes without control characters, agent `state` one of `working`, `idle`,
+`needs_input`, `unknown`). The api stores each guest's rows in a batch of
+its own; when a guest's rows are refused it stores the host-measured
+fields alone, and counts it in `repose_api_samples_failed_total{reason}`.
 
 ## Idempotency and ordering
 

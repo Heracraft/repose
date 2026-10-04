@@ -523,6 +523,52 @@ tests:
         alertname: EgressBlocked
         exp_alerts: []
 
+  # --- SamplesFailing -----------------------------------------------------
+  - interval: 1m
+    name: SamplesFailing fires on a guest sample stored with host fields only
+    input_series:
+      - series: 'repose_api_samples_failed_total{job="api",instance="10.255.0.9:9103",reason="guest_fields"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'repose_api_samples_failed_total{job="api",instance="10.255.0.9:9103",reason="insert"}'
+        values: "0+0x7"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SamplesFailing
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: SamplesFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              reason: guest_fields
+            exp_annotations:
+              summary: "guest samples were not stored as sent (guest_fields)"
+              description: "1 guest sample(s) in 15 minutes. Loki `{component=\"api\"} | json | event=\"samples_fail\"` names the host, the project and the Postgres error."
+              runbook: "docs/ops/RUNBOOK.md#samplesfailing"
+
+  # --- HostReportsRefused -------------------------------------------------
+  - interval: 1m
+    name: HostReportsRefused fires on a foreign guest and ignores the project cap
+    input_series:
+      - series: 'repose_api_host_reports_refused_total{job="api",instance="10.255.0.9:9103",reason="foreign_guest"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'repose_api_host_reports_refused_total{job="api",instance="10.255.0.9:9103",reason="project_cap"}'
+        values: "0 5 10 15 20 25 30 35"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HostReportsRefused
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: HostReportsRefused
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              reason: foreign_guest
+            exp_annotations:
+              summary: "the api dropped host reports (foreign_guest)"
+              description: "1 report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+              runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
+
   # --- MinerStopped -------------------------------------------------------
   - interval: 1m
     name: MinerStopped fires on the first automatic stop, summed over replicas

@@ -87,6 +87,13 @@ type Stream struct {
 	mu        sync.Mutex
 	events    map[string]*hostdv1.Event
 	eventList []string
+	// Guest-originated events wait in their own list with their own cap, so
+	// a guest that floods cannot evict a host's state change or snapshot
+	// event, and they never block on out (I-445). guestSent marks the ones
+	// sent on the current session.
+	guestList []string
+	guestSent map[string]bool
+	guestKick chan struct{}
 	samples   []*hostdv1.Samples
 	kick      chan struct{}
 	connected bool
@@ -115,6 +122,7 @@ func New(cfg Config, dialer Dialer, host Host, m *metrics.M, log *slog.Logger) *
 		cfg: cfg, dialer: dialer, host: host, metrics: m, log: log,
 		out: make(chan *hostdv1.HostMessage, 8192), events: map[string]*hostdv1.Event{},
 		kick: make(chan struct{}, 1), reconnect: make(chan struct{}, 1),
+		guestSent: map[string]bool{}, guestKick: make(chan struct{}, 1),
 	}
 }
 
@@ -139,21 +147,87 @@ func (s *Stream) Result(res *hostdv1.Result) {
 	s.out <- &hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Result{Result: res}}
 }
 
+// Caps on events awaiting an ack, host-originated and guest-originated.
+const (
+	MaxHostEvents  = 10000
+	MaxGuestEvents = 2000
+)
+
 // Event implements guest.Emitter: kept until acked.
 func (s *Stream) Event(ev *hostdv1.Event) {
 	s.mu.Lock()
 	s.events[ev.EventId] = ev
-	s.eventList = append(s.eventList, ev.EventId)
-	if len(s.eventList) > 10000 {
-		old := s.eventList[0]
-		s.eventList = s.eventList[1:]
-		delete(s.events, old)
+	s.eventList, _ = s.push(s.eventList, ev.EventId, MaxHostEvents)
+	s.setPending()
+	s.mu.Unlock()
+	s.out <- &hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Event{Event: ev}}
+}
+
+// GuestEvent implements guest.Emitter for an event a guest's notification
+// raised. It never blocks; it reports false when the guest list was full and
+// its oldest unacked event was dropped to make room.
+func (s *Stream) GuestEvent(ev *hostdv1.Event) bool {
+	s.mu.Lock()
+	s.events[ev.EventId] = ev
+	var evicted bool
+	s.guestList, evicted = s.push(s.guestList, ev.EventId, MaxGuestEvents)
+	s.setPending()
+	s.mu.Unlock()
+	select {
+	case s.guestKick <- struct{}{}:
+	default:
 	}
+	return !evicted
+}
+
+// push appends id to list, dropping acked ids and then the oldest unacked
+// one when the list is past max. Called with mu held.
+func (s *Stream) push(list []string, id string, max int) ([]string, bool) {
+	list = append(list, id)
+	if len(list) <= max {
+		return list, false
+	}
+	live := list[:0]
+	for _, x := range list {
+		if _, ok := s.events[x]; ok {
+			live = append(live, x)
+		} else {
+			delete(s.guestSent, x)
+		}
+	}
+	list = live
+	if len(list) <= max {
+		return list, false
+	}
+	old := list[0]
+	delete(s.events, old)
+	delete(s.guestSent, old)
+	return list[1:], true
+}
+
+func (s *Stream) setPending() {
 	if s.metrics != nil {
 		s.metrics.EventsPending.Set(float64(len(s.events)))
 	}
+}
+
+// sendGuestEvents sends the guest events not yet sent on this session.
+func (s *Stream) sendGuestEvents(sess hostdv1.HostService_SessionClient) error {
+	s.mu.Lock()
+	var todo []*hostdv1.Event
+	for _, id := range s.guestList {
+		if ev, ok := s.events[id]; ok && !s.guestSent[id] {
+			todo = append(todo, ev)
+			s.guestSent[id] = true
+		}
+	}
 	s.mu.Unlock()
-	s.out <- &hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Event{Event: ev}}
+	for _, ev := range todo {
+		if err := sess.Send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Event{Event: ev}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Samples implements guest.Emitter: buffered, oldest dropped past the cap.
@@ -290,11 +364,15 @@ func (s *Stream) sender(ctx context.Context, sess hostdv1.HostService_SessionCli
 			pending = append(pending, ev)
 		}
 	}
+	s.guestSent = map[string]bool{}
 	s.mu.Unlock()
 	for _, ev := range pending {
 		if err := sess.Send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Event{Event: ev}}); err != nil {
 			return err
 		}
+	}
+	if err := s.sendGuestEvents(sess); err != nil {
+		return err
 	}
 	if err := s.flushSamples(sess); err != nil {
 		return err
@@ -311,6 +389,10 @@ func (s *Stream) sender(ctx context.Context, sess hostdv1.HostService_SessionCli
 			}
 		case <-s.kick:
 			if err := s.flushSamples(sess); err != nil {
+				return err
+			}
+		case <-s.guestKick:
+			if err := s.sendGuestEvents(sess); err != nil {
 				return err
 			}
 		case m := <-s.out:
@@ -376,9 +458,8 @@ func (s *Stream) receiver(ctx context.Context, sess hostdv1.HostService_SessionC
 		case *hostdv1.ApiMessage_Ack:
 			s.mu.Lock()
 			delete(s.events, m.Ack.EventId)
-			if s.metrics != nil {
-				s.metrics.EventsPending.Set(float64(len(s.events)))
-			}
+			delete(s.guestSent, m.Ack.EventId)
+			s.setPending()
 			s.mu.Unlock()
 		}
 		if ctx.Err() != nil {

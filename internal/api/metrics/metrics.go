@@ -39,17 +39,27 @@ type M struct {
 	BillingSubscriptions *prometheus.CounterVec
 	// BillingStopsTotal counts machines the api stopped for billing, by
 	// reason (past_due, ended, egress); BillingStopped alerts on it.
-	BillingStopsTotal   *prometheus.CounterVec
-	SnapshotAgeSeconds  prometheus.Gauge
-	GRPCStreams         prometheus.Gauge
-	OpsTotal            *prometheus.CounterVec
-	OpsOpen             *prometheus.GaugeVec
-	BuildDuration       *prometheus.HistogramVec
-	SecretsOpsTotal     *prometheus.CounterVec
-	CommandsTotal       *prometheus.CounterVec
-	SamplesTotal        prometheus.Counter
-	EventsTotal         *prometheus.CounterVec
-	HostWarningsTotal   *prometheus.CounterVec
+	BillingStopsTotal  *prometheus.CounterVec
+	SnapshotAgeSeconds prometheus.Gauge
+	GRPCStreams        prometheus.Gauge
+	OpsTotal           *prometheus.CounterVec
+	OpsOpen            *prometheus.GaugeVec
+	BuildDuration      *prometheus.HistogramVec
+	SecretsOpsTotal    *prometheus.CounterVec
+	CommandsTotal      *prometheus.CounterVec
+	SamplesTotal       prometheus.Counter
+	EventsTotal        *prometheus.CounterVec
+	HostWarningsTotal  *prometheus.CounterVec
+	// HostReportsRefused counts what a host reported that the api dropped
+	// (I-445..I-447): foreign_guest (a guest of a project placed on
+	// another host, or on none), project_cap (a project past its hourly
+	// cap on stored guest events), bad_snapshot (a snapshot path outside
+	// the project's prefix).
+	HostReportsRefused *prometheus.CounterVec
+	// SamplesFailed counts guests whose sample row was not stored as sent:
+	// guest_fields (stored with the host-measured fields only), insert
+	// (nothing stored).
+	SamplesFailed       *prometheus.CounterVec
 	EgressAlertProjects prometheus.Gauge
 	// PartitionDropFailTotal is the input of the PartitionDropFail alert
 	// (ops/alerts.yaml): the sample tables keep partitions past retention, so
@@ -118,6 +128,8 @@ func New(reg prometheus.Registerer) *M {
 		SamplesTotal:                 prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_samples_total", Help: "Sample messages ingested."}),
 		EventsTotal:                  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_events_total", Help: "Events ingested by kind."}, []string{"kind"}),
 		HostWarningsTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_host_warnings_total", Help: "Host warnings by kind."}, []string{"kind"}),
+		HostReportsRefused:           prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_host_reports_refused_total", Help: "Host events, Hello entries and samples the api dropped, by reason."}, []string{"reason"}),
+		SamplesFailed:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_samples_failed_total", Help: "Guests whose sample row was not stored as sent, by reason."}, []string{"reason"}),
 		PartitionDropFailTotal:       prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_partition_drop_fail_total", Help: "Partition maintenance runs that failed (docs/workstreams/10-observability.md §6)."}),
 		EgressAlertProjects:          prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_egress_alert_projects", Help: "Projects over 1 TB egress in 24 h."}),
 		BillingGapMinutes:            prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_billing_gap_minutes_total", Help: "Minutes a running project had no sample."}),
@@ -142,14 +154,23 @@ func New(reg prometheus.Registerer) *M {
 	m.BillingWebhookTotal.WithLabelValues("none", "bad_signature")
 	m.BillingOverageChargesTotal.WithLabelValues("ok")
 	m.BillingOverageChargesTotal.WithLabelValues("error")
+	for _, r := range RefusedReasons {
+		m.HostReportsRefused.WithLabelValues(r)
+	}
+	for _, r := range []string{"guest_fields", "insert"} {
+		m.SamplesFailed.WithLabelValues(r)
+	}
 	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
 		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.BillingStopsTotal, m.SnapshotAgeSeconds,
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
-		m.HostWarningsTotal, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
+		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
 		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal)
 	return m
 }
+
+// RefusedReasons is the reason enum of repose_api_host_reports_refused_total.
+var RefusedReasons = []string{"foreign_guest", "project_cap", "bad_snapshot"}
 
 // NewNop returns metrics on a private registry (tests). It is the checked
 // registry of internal/obs/metrics, so a series that breaks the naming rules

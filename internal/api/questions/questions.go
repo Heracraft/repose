@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -103,36 +102,21 @@ func New(pool *db.Pool, ev *events.Ingest, send Sender, log *slog.Logger) *Servi
 	return &Service{pool: pool, events: ev, send: send, log: log.With("component", "api"), Now: time.Now, Interval: 2 * time.Second}
 }
 
+// clean trims s and makes it storable (no NUL or other control character
+// but newline and tab, valid UTF-8), at most n bytes.
 func clean(s string, n int) string {
-	s = strings.ToValidUTF8(strings.TrimSpace(s), "?")
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for len(s) > 0 && !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s
+	return store.CleanText(strings.TrimSpace(s), n)
 }
 
 // OnQuestion records a guest's question (events.QuestionHandler). A repeat
 // of a known id is ignored; a guest-side close (state cancelled|expired)
-// closes the row without anything to deliver back.
+// closes the row without anything to deliver back. Both act only on the
+// sending guest's own project's questions: an id another project holds is
+// ignored (DECISIONS I-447).
 func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.AgentQuestion) error {
 	id, err := uuid.Parse(q.QuestionId)
 	if err != nil {
 		return nil // nothing to store and nothing a resend would fix
-	}
-	if q.State != "" {
-		st := q.State
-		if st != StateCancelled && st != StateExpired {
-			return nil
-		}
-		_, err := s.pool.Exec(ctx, "update questions set state = $2, delivered_at = now(), delivery = 'guest' where id = $1 and state = 'pending'", id, st)
-		if err == nil {
-			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st)
-		}
-		return err
 	}
 	gid, err := uuid.Parse(q.GuestId)
 	if err != nil {
@@ -145,11 +129,26 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 	if err != nil {
 		return err
 	}
+	if q.State != "" {
+		st := q.State
+		if st != StateCancelled && st != StateExpired {
+			return nil
+		}
+		tag, err := s.pool.Exec(ctx, "update questions set state = $2, delivered_at = now(), delivery = 'guest' where id = $1 and project_id = $3 and state = 'pending'", id, st, p.ID)
+		if err == nil && tag.RowsAffected() > 0 {
+			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st)
+		}
+		return err
+	}
 	var known bool
-	var eventID uuid.UUID
-	err = s.pool.QueryRow(ctx, "select event_id from questions where id = $1", id).Scan(&eventID)
+	var eventID, owner uuid.UUID
+	err = s.pool.QueryRow(ctx, "select event_id, project_id from questions where id = $1", id).Scan(&eventID, &owner)
 	switch {
 	case err == nil:
+		if owner != p.ID {
+			s.log.Warn("question id held by another project", "event", "agent_question", "question_id", id.String(), "project_id", p.ID.String())
+			return nil
+		}
 		known = true
 	case !db.IsNoRows(err):
 		return err
@@ -189,22 +188,26 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 			state, nextAt = StateNoChannel, now
 		}
 		eventID = store.NewID()
-		agent := q.Agent
+		agent := store.CleanText(q.Agent, events.MaxAgent)
 		if agent == "" {
 			agent = "shell"
 		}
 		var window *string
-		if q.TmuxWindow != "" {
-			window = &q.TmuxWindow
+		if w := store.CleanText(q.TmuxWindow, events.MaxWindow); w != "" {
+			window = &w
 		}
 		if _, err := s.pool.Exec(ctx, `insert into questions (id, project_id, guest_id, event_id, agent, tmux_window, text, options, state, expires_at, deliver_next_at, created_at)
 			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) on conflict (id) do nothing`,
 			id, p.ID, gid, eventID, agent, window, text, opts, state, ts.Add(timeout), nextAt, ts); err != nil {
 			return err
 		}
-		// Whatever row won a race, its event id is the one to use.
-		if err := s.pool.QueryRow(ctx, "select event_id from questions where id = $1", id).Scan(&eventID); err != nil {
+		// Whatever row won a race, its event id is the one to use; a row
+		// another project won is not this guest's to announce.
+		if err := s.pool.QueryRow(ctx, "select event_id, project_id from questions where id = $1", id).Scan(&eventID, &owner); err != nil {
 			return err
+		}
+		if owner != p.ID {
+			return nil
 		}
 		s.log.Info("question opened", "event", "agent_question", "question_id", id.String(), "project_id", p.ID.String(), "agent", agent, "state", state, "options", len(opts), "text_bytes", len(text))
 	}
@@ -215,7 +218,7 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		window      *string
 		created     time.Time
 	}
-	if err := s.pool.QueryRow(ctx, "select agent, tmux_window, text, created_at from questions where id = $1", id).Scan(&row.agent, &row.window, &row.text, &row.created); err != nil {
+	if err := s.pool.QueryRow(ctx, "select agent, tmux_window, text, created_at from questions where id = $1 and project_id = $2", id, p.ID).Scan(&row.agent, &row.window, &row.text, &row.created); err != nil {
 		return err
 	}
 	w := ""
