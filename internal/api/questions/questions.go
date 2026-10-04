@@ -189,7 +189,7 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 			state, nextAt = StateNoChannel, now
 		}
 		eventID = store.NewID()
-		agent := q.Agent
+		agent := events.GuestAgent(q.Agent)
 		if agent == "" {
 			agent = "shell"
 		}

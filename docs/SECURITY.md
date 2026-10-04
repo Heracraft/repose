@@ -36,7 +36,7 @@ five trust boundaries are rows 1, 2, 4 and 3 here in that order; its
 fifth, **operator to tenant data**, has no mechanism to describe and is
 under "Not mitigated in the first release" instead, which is what
 `ARCHITECTURE.md` itself says of it ("Recorded, not mitigated, until
-per-project LUKS"). Rows 5 to 8 are boundaries this document adds because
+per-project LUKS"). Rows 5 to 10 are boundaries this document adds because
 they stop an actor the component map does not draw.
 
 1. **KVM between guest and host.** Cloud Hypervisor on KVM, launched by
@@ -86,6 +86,22 @@ they stop an actor the component map does not draw.
 8. **Restricted Nix evaluation** of user fragments: pure, `restrict-eval`,
    no import-from-derivation, sandboxed builds, capped. Stops: a fragment
    reading host files or running unsandboxed code during a build.
+9. **Guest-reported events are guest events.** A guest reports agent
+   events over vsock (guestd, through hostd) or, when guestd is down, to
+   the edge's hook ingest. Both the edge and the api accept only the
+   kinds a guest produces (`completed`, `needs_input`, `error`,
+   `agent_message`) and the agent names guestd sends; every platform
+   kind, `notifications_paused` included, is written by the api alone,
+   and guest events go through the dedupe and the hourly cap (I-441).
+   Stops: a tenant's code sending its owner mail worded as a platform
+   notice, or flooding the shared outbox past the cap.
+10. **The api reaches user-chosen URLs only on the public internet.** The
+    ntfy sender dials through a check on the resolved address that refuses
+    loopback, private (the mesh and the VNet included), link-local
+    (IMDS), CGNAT and other reserved ranges and the Azure wire server,
+    ignores proxy settings, and follows no redirect; a literal such
+    address or `localhost` is refused when the URL is saved (I-444).
+    Stops: a user using the api as a probe into the platform's network.
 
 ## Non-negotiables
 

@@ -2,8 +2,11 @@ package auth_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +46,51 @@ func TestVerify(t *testing.T) {
 	}
 	if f.JWKSHits() > 3 {
 		t.Fatalf("jwks fetched %d times", f.JWKSHits())
+	}
+}
+
+// A token with a kid nobody issued must not make the api fetch the JWKS
+// each time: the kid is read before the signature is checked.
+func TestUnknownKidDoesNotRefetchEachRequest(t *testing.T) {
+	f := logto.New(aud)
+	defer f.Close()
+	v := auth.NewVerifier(f.Issuer(), aud, nil)
+	ctx := context.Background()
+	if _, err := v.Verify(ctx, f.Token("s")); err != nil {
+		t.Fatal(err)
+	}
+	base := f.JWKSHits()
+	forge := func(kid string) string {
+		h := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT","kid":"` + kid + `"}`))
+		p := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"x","exp":9999999999}`))
+		return h + "." + p + ".c2ln"
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := v.Verify(ctx, forge(fmt.Sprintf("kid-%d", i))); !errors.Is(err, auth.ErrInvalidToken) {
+				t.Errorf("forged kid %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if got := f.JWKSHits() - base; got > 1 {
+		t.Fatalf("100 unknown kids caused %d JWKS fetches, want at most 1", got)
+	}
+	// Past the interval, one more unknown kid may fetch once (a key
+	// rotated in is picked up).
+	auth.SetClockForTest(v, time.Now().Add(auth.MinRefreshInterval+time.Second))
+	for i := 0; i < 10; i++ {
+		_, _ = v.Verify(ctx, forge("later"))
+	}
+	if got := f.JWKSHits() - base; got > 2 {
+		t.Fatalf("after the interval: %d fetches, want at most 2", got)
+	}
+	// Known kids still verify throughout.
+	if _, err := v.Verify(ctx, f.Token("s")); err != nil {
+		t.Fatal(err)
 	}
 }
 

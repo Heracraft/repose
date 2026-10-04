@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/billing"
@@ -94,6 +96,15 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 				pu, err := url.Parse(v)
 				if err != nil || (pu.Scheme != "https" && pu.Scheme != "http") || pu.Host == "" {
 					return errf("invalid", "ntfy_url must be an http(s) URL")
+				}
+				// The sender refuses every non-public address when it dials
+				// (I-444); a literal one, or localhost, is refused here too,
+				// so the mistake shows when the URL is saved.
+				if h := strings.ToLower(strings.TrimSuffix(pu.Hostname(), ".")); h == "localhost" || strings.HasSuffix(h, ".localhost") {
+					return errf("invalid", "ntfy_url must point at a public address")
+				}
+				if ip, err := netip.ParseAddr(pu.Hostname()); err == nil && !notify.PublicAddr(ip) {
+					return errf("invalid", "ntfy_url must point at a public address")
 				}
 				if _, err := s.d.Pool.Exec(r.Context(), "update users set ntfy_url = $2 where id = $1", u.ID, v); err != nil {
 					return err

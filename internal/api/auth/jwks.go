@@ -45,11 +45,22 @@ type Verifier struct {
 	mu        sync.Mutex
 	keys      map[string]any
 	fetched   time.Time
+	attempted time.Time // last fetch started, successful or not
 	cacheTTL  time.Duration
 	staleMax  time.Duration
 	nowFunc   func() time.Time
 	lastError error
+
+	// refreshMu lets one fetch run at a time; callers that queued behind
+	// it find attempted recent and use what it fetched.
+	refreshMu sync.Mutex
 }
+
+// MinRefreshInterval is the least time between two JWKS fetches. The kid is
+// read before the signature is checked, so without it any request with an
+// unseen kid would make the api fetch the JWKS: a key Logto rotates in is
+// picked up at most this long after the previous fetch.
+const MinRefreshInterval = 30 * time.Second
 
 // NewVerifier makes a verifier for the issuer and API resource.
 func NewVerifier(issuer, audience string, client *http.Client) *Verifier {
@@ -177,11 +188,10 @@ func (v *Verifier) key(ctx context.Context, kid string) (any, error) {
 	if ok && fresh {
 		return k, nil
 	}
-	err := v.refresh(ctx)
+	err := v.maybeRefresh(ctx)
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if err != nil {
-		v.lastError = err
 		if len(v.keys) == 0 || now.Sub(v.fetched) > v.staleMax {
 			return nil, fmt.Errorf("%w: %v", ErrIdentityProviderUnavailable, err)
 		}
@@ -190,6 +200,32 @@ func (v *Verifier) key(ctx context.Context, kid string) (any, error) {
 		return k, nil
 	}
 	return nil, fmt.Errorf("%w: unknown key id", ErrInvalidToken)
+}
+
+// maybeRefresh fetches the JWKS unless a fetch started less than
+// MinRefreshInterval ago, in which case it reports that fetch's result.
+// The fetch runs detached from the caller's context, so one client giving
+// up does not fail the requests queued behind it; the http client's
+// timeout bounds it.
+func (v *Verifier) maybeRefresh(ctx context.Context) error {
+	v.refreshMu.Lock()
+	defer v.refreshMu.Unlock()
+	v.mu.Lock()
+	now := v.nowFunc()
+	if !v.attempted.IsZero() && now.Sub(v.attempted) >= 0 && now.Sub(v.attempted) < MinRefreshInterval {
+		err := v.lastError
+		v.mu.Unlock()
+		return err
+	}
+	v.attempted = now
+	v.mu.Unlock()
+	err := v.refresh(context.WithoutCancel(ctx))
+	if err != nil {
+		v.mu.Lock()
+		v.lastError = err
+		v.mu.Unlock()
+	}
+	return err
 }
 
 // Verify checks signature, issuer, audience and expiry.

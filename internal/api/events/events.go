@@ -40,6 +40,28 @@ var notifyKinds = map[string]bool{
 	"temp_expiring": true, "temp_destroyed": true,
 }
 
+// GuestKinds are the notifying kinds a guest may report, over vsock or the
+// edge's hook path: the hook kinds and repose-notify's message (guestd's
+// hooks package sends nothing else). Every other kind in notifyKinds is
+// written by the api itself, and a guest that names one is refused, so a
+// tenant's own code cannot send its owner mail worded as a platform notice
+// or reach notifications_paused, which skips the dedupe and the hourly cap.
+var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+
+// guestAgents are the agent names a guest may attribute an event to:
+// guestd's five and "shell" for repose-notify and repose-ask run from a
+// shell. The name reaches the notification's title and subject.
+var guestAgents = map[string]bool{"claude": true, "opencode": true, "codex": true, "gemini": true, "pi": true, "shell": true}
+
+// GuestAgent is the agent name to store for a guest-sourced event: the
+// name itself when it is one guestd sends, else "".
+func GuestAgent(name string) string {
+	if guestAgents[name] {
+		return name
+	}
+	return ""
+}
+
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
@@ -283,10 +305,10 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 			return true
 		}
 		kind := e.AgentEvent.Kind
-		if !notifyKinds[kind] {
+		if !GuestKinds[kind] {
 			kind = "error"
 		}
-		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, Agent: e.AgentEvent.Agent, Window: e.AgentEvent.TmuxWindow, Summary: e.AgentEvent.Summary, Source: "host", HostEventID: ev.EventId})
+		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, Agent: GuestAgent(e.AgentEvent.Agent), Window: e.AgentEvent.TmuxWindow, Summary: e.AgentEvent.Summary, Source: "host", HostEventID: ev.EventId})
 		if err != nil {
 			i.log.Error("agent event insert", "event", "agent_event", "err", err.Error())
 			return false
@@ -358,6 +380,9 @@ func (i *Ingest) projectByGuest(ctx context.Context, guestID string) (*store.Pro
 	return store.GetProjectByGuest(ctx, i.pool, gid)
 }
 
+// ErrNotGuestKind is FromEdge's answer to a kind a guest may not report.
+var ErrNotGuestKind = errors.New("unknown event kind")
+
 // FromEdge handles a hook event that arrived over HTTP through the edge
 // (I-4): the source ip maps to a project.
 func (i *Ingest) FromEdge(ctx context.Context, sourceIP, agent, kind, summary string) (uuid.UUID, error) {
@@ -369,10 +394,10 @@ func (i *Ingest) FromEdge(ctx context.Context, sourceIP, agent, kind, summary st
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if !notifyKinds[kind] {
-		return uuid.Nil, errors.New("unknown event kind")
+	if !GuestKinds[kind] {
+		return uuid.Nil, ErrNotGuestKind
 	}
-	id, _, err := i.Insert(ctx, Incoming{ProjectID: p.ID, TS: i.now(), Kind: kind, Agent: agent, Summary: summary, Source: "http"})
+	id, _, err := i.Insert(ctx, Incoming{ProjectID: p.ID, TS: i.now(), Kind: kind, Agent: GuestAgent(agent), Summary: summary, Source: "http"})
 	return id, err
 }
 

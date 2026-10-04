@@ -123,8 +123,10 @@ Channels (`workstreams/13-notifications.md` §5.6):
   wrote (a summary, a project name, a question) is escaped where it is
   placed. An agent email carries the summary, a `repose attach` row, a
   button to the project and, once the platform's signing key exists (from
-  the api's first start), a one-click unsubscribe line that turns email
-  off with no login; an `agent_question` renders its options as buttons
+  the api's first start), an unsubscribe line and a matching
+  `List-Unsubscribe` header (RFC 8058 one-click). The link opens a page
+  whose button turns email off with no login; a GET alone changes
+  nothing, and the link expires 90 days after the email (I-442); an `agent_question` renders its options as buttons
   calling the signed reply links. On by default at signup; no time-based
   default change.
 - ntfy: the user sets any ntfy-compatible URL, including a self-hosted

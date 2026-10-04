@@ -26,10 +26,11 @@ carries `X-Request-Id`.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/me` | `{id, handle, email, github_login, tz, created_at, billing: {status: none\|trial\|active\|past_due\|suspended\|exempt, plan: solo\|plus\|pro\|null, seats, period_end, trial_end, cancel_at, has_card, trial_credit_cents}, limits: {projects, xl, memory_gb, disk_gb, egress_gb}, waitlist: {position, joined_at, invited_at, hold_until}\|null}` (`status` is a projection of the subscription, I-289: `none` is an account with no plan yet, `trial` a `trialing` subscription; `trial_credit_cents` is always 0 and `xl` is 1 on Pro, 0 otherwise, both kept one release; `waitlist` is set while the user holds a place, I-290) |
-| PATCH | `/me` | `{tz?, notify: {email?: bool, ntfy_url?: string\|null}}` |
+| PATCH | `/me` | `{tz?, notify: {email?: bool, ntfy_url?: string\|null}}`. An `ntfy_url` must be http(s); one whose host is `localhost` or a literal non-public address is `400 invalid` (DECISIONS I-444) |
 | DELETE | `/me` | begins cancellation (stops guests, 30-day retention) |
 | POST | `/me/notify-test` | sends a test event to every configured channel → `{email: ok\|error, ntfy: ok\|error}` |
-| GET | `/notify/unsubscribe?token=` | no auth; the token is a signed, non-expiring user id (13-notifications.md §5.6) from an email's unsubscribe link. Sets `notify_email = false` and returns a plain-text confirmation; an invalid or forged token gets `invalid` |
+| GET | `/notify/unsubscribe?token=` | no auth; the link in an email's unsubscribe line and its `List-Unsubscribe` header (13-notifications.md §5.6, DECISIONS I-442). The token is signed and names the user and an expiry 90 days after the email was sent; a token of the earlier shape (the user id alone, no expiry) is still accepted until the release after next. Answers an HTML page with a button that POSTs; a GET changes nothing, because mail scanners open links. Expired → `410`, invalid → `400`, both HTML |
+| POST | `/notify/unsubscribe?token=` | no auth; sets `notify_email = false` and drops queued email rows, answering an HTML confirmation. `token` may also be a form field; a mail client's RFC 8058 one-click POST (`List-Unsubscribe=One-Click` body, token in the query) is the same call. Expired → `410`, invalid → `400` |
 
 `handle` is derived from the GitHub login at first sign-in, lowercased, `[a-z0-9-]`,
 unique; it is the second half of the SSH login name.
@@ -258,7 +259,7 @@ and `POST /billing/portal`.
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
 | GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
-| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)` |
+| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. `kind` is one a guest may report (`completed`, `needs_input`, `error`, `agent_message`); any other is `400 invalid` (DECISIONS I-441). An `agent` that is not one guestd sends (`claude`, `opencode`, `codex`, `gemini`, `pi`, `shell`) is stored as no agent |
 
 ## Rate limits
 

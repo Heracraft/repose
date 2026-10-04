@@ -173,14 +173,19 @@ func (f *Fake) deleteMe(w http.ResponseWriter, r *http.Request) *apiError {
 // or dashboard code ever calls this route (a user's browser does, from an
 // email), so a real signature has nothing to prove here.
 func (f *Fake) notifyUnsubscribe(w http.ResponseWriter, r *http.Request) *apiError {
-	id := r.URL.Query().Get("token")
-	u, ok := f.users[id]
+	// The token is the user id here. GET only shows the confirmation, as
+	// the api does (I-442); POST turns email off.
+	u, ok := f.users[r.FormValue("token")]
 	if !ok {
-		return errf("invalid", "this unsubscribe link is invalid or has expired")
+		return errf("invalid", "this unsubscribe link is not valid")
 	}
-	u.NotifyEmail = false
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodPost {
+		_, _ = w.Write([]byte("Unsubscribe from repose email notifications? POST to this URL to confirm.\n"))
+		return nil
+	}
+	u.NotifyEmail = false
 	_, _ = w.Write([]byte("You have been unsubscribed from repose email notifications.\n"))
 	return nil
 }

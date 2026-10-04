@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -234,5 +235,53 @@ func TestAgentMessagesAreNotCollapsedAndShareTheCap(t *testing.T) {
 	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'agent_message'").Scan(&n)
 	if n != 40 {
 		t.Fatalf("capped messages were dropped: %d stored", n)
+	}
+}
+
+// A guest names only guest kinds and guest agents: a platform kind from the
+// edge is refused, one over vsock is stored as an error with no outbox row
+// worded as a platform notice, and notifications_paused (which skips the
+// dedupe and the cap) is never reachable from a guest.
+func TestGuestCannotSendPlatformKinds(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	pid, gid := seed(t, pool)
+	now := time.Now()
+	for _, kind := range []string{"billing_stopped", "abuse_stopped", "notifications_paused", "destroy_failed", "temp_destroyed", "agent_question", "welcome", "guest_state_changed"} {
+		if _, err := ing.FromEdge(ctx, "10.64.4.9", "claude", kind, "x"); !errors.Is(err, events.ErrNotGuestKind) {
+			t.Errorf("edge %s: %v, want ErrNotGuestKind", kind, err)
+		}
+	}
+	for i := 0; i < 60; i++ {
+		ev := &hostdv1.Event{EventId: fmt.Sprint("plat-", i), Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "claude\r\nBcc: x", Kind: "notifications_paused", Summary: "x"}}}
+		if !ing.OnEvent(ctx, uuid.Nil, ev) {
+			t.Fatal("not acked")
+		}
+	}
+	var n int
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind <> 'error' and source <> 'api'", pid).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d guest events stored with a non-guest kind", n)
+	}
+	// The 60 collapse into one error event (dedupe applies), which has no
+	// agent because the name was not one guestd sends.
+	var agents []string
+	rows, _ := pool.Query(ctx, "select coalesce(agent, '') from events where project_id = $1 and kind = 'error'", pid)
+	for rows.Next() {
+		var a string
+		_ = rows.Scan(&a)
+		agents = append(agents, a)
+	}
+	rows.Close()
+	if len(agents) != 1 || agents[0] != "" {
+		t.Fatalf("error events %q, want one with no agent", agents)
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox o join events e on e.id = o.event_id where e.project_id = $1", pid).Scan(&n)
+	if n != 2 {
+		t.Fatalf("outbox rows %d, want 2 (one event, two channels)", n)
+	}
+	if got := events.GuestAgent("codex"); got != "codex" {
+		t.Fatalf("GuestAgent(codex) = %q", got)
 	}
 }

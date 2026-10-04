@@ -7,7 +7,7 @@ order: 16
 
 ## Email
 
-Email is on from the start and goes to the address on your account. Each message about a machine has a link that turns these emails off. To switch it yourself:
+Email is on from the start and goes to the address on your account. Each message about a machine has an unsubscribe link. It opens a page with an **Unsubscribe** button, so a mail scanner that follows links can't turn your email off, and it works for 90 days after the email was sent. Mail apps that show their own unsubscribe button use the same link. To switch it yourself:
 
 ```
 repose notify set --email off
@@ -33,7 +33,7 @@ email: ok
 ntfy: ok
 ```
 
-A self-hosted ntfy server works the same way. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy none`.
+A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy none`.
 
 Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy URL saves with the **Save** button next to it.
 

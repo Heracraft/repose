@@ -270,8 +270,10 @@ func (e *env) subscribe(t *testing.T, sub, plan string) {
 }
 
 // TestNotifyUnsubscribe covers docs/workstreams/13-notifications.md §5.6
-// and §9's "unsubscribe link that works": a valid token flips
-// notify_email off with no auth, and a forged or malformed one is refused.
+// and §9's "unsubscribe link that works" (DECISIONS I-442): GET shows a
+// confirmation and changes nothing, POST with a valid token flips
+// notify_email off with no auth, and a forged, malformed or expired token
+// is refused.
 func TestNotifyUnsubscribe(t *testing.T) {
 	e := newEnv(t)
 	tok := e.signIn(t, "sub-uns", "uns")
@@ -283,44 +285,87 @@ func TestNotifyUnsubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notifyEmail := func() bool {
+		t.Helper()
+		var v bool
+		if err := e.h.Pool.QueryRow(e.h.Ctx, "select notify_email from users where id = $1", userID).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	exp := time.Now().Add(time.Hour)
 
 	// Invalid tokens never touch the row.
-	if resp := e.do(t, "", "GET", "/notify/unsubscribe?token=garbage", nil); resp.status != 400 {
-		t.Fatalf("garbage token: %d %s", resp.status, resp.raw)
+	for _, m := range []string{"GET", "POST"} {
+		if resp := e.do(t, "", m, "/notify/unsubscribe?token=garbage", nil); resp.status != 400 {
+			t.Fatalf("%s garbage token: %d %s", m, resp.status, resp.raw)
+		}
 	}
 	// A well-formed token signed for a user id nobody has is not an error
 	// (it verifies; there is just no row to update) and must not touch the
 	// real user's row.
-	other := e.unsub.Sign(uuid.New())
-	if resp := e.do(t, "", "GET", "/notify/unsubscribe?token="+other, nil); resp.status != 200 {
+	other := e.unsub.Sign(uuid.New(), exp)
+	if resp := e.do(t, "", "POST", "/notify/unsubscribe?token="+other, nil); resp.status != 200 {
 		t.Fatalf("unknown-user token: %d %s", resp.status, resp.raw)
 	}
-	var notifyEmail bool
-	if err := e.h.Pool.QueryRow(e.h.Ctx, "select notify_email from users where id = $1", userID).Scan(&notifyEmail); err != nil {
-		t.Fatal(err)
-	}
-	if !notifyEmail {
+	if !notifyEmail() {
 		t.Fatal("an unrelated token's success must not have touched this user's row")
 	}
 
-	// A valid token flips it off, with no Authorization header.
-	token := e.unsub.Sign(userID)
+	// GET, what a link scanner does, only shows the confirmation.
+	token := e.unsub.Sign(userID, exp)
 	resp := e.do(t, "", "GET", "/notify/unsubscribe?token="+token, nil)
-	if resp.status != 200 || !strings.Contains(string(resp.raw), "unsubscribed") {
-		t.Fatalf("unsubscribe: %d %s", resp.status, resp.raw)
+	if resp.status != 200 || !strings.Contains(string(resp.raw), `method="post" action="/v1/notify/unsubscribe"`) || !strings.Contains(string(resp.raw), token) {
+		t.Fatalf("unsubscribe page: %d %s", resp.status, resp.raw)
 	}
-	if err := e.h.Pool.QueryRow(e.h.Ctx, "select notify_email from users where id = $1", userID).Scan(&notifyEmail); err != nil {
-		t.Fatal(err)
+	if !notifyEmail() {
+		t.Fatal("GET turned email off")
 	}
-	if notifyEmail {
-		t.Fatal("notify_email was not cleared")
+
+	// An expired token is refused on both.
+	old := e.unsub.Sign(userID, time.Now().Add(-time.Minute))
+	for _, m := range []string{"GET", "POST"} {
+		if resp := e.do(t, "", m, "/notify/unsubscribe?token="+old, nil); resp.status != 410 {
+			t.Fatalf("%s expired token: %d %s", m, resp.status, resp.raw)
+		}
+	}
+	if !notifyEmail() {
+		t.Fatal("an expired token turned email off")
 	}
 
 	// A tampered signature is refused.
 	idPart, _, _ := strings.Cut(token, ".")
 	_, sigPart, _ := strings.Cut(other, ".")
-	if resp := e.do(t, "", "GET", "/notify/unsubscribe?token="+idPart+"."+sigPart, nil); resp.status != 400 {
+	if resp := e.do(t, "", "POST", "/notify/unsubscribe?token="+idPart+"."+sigPart, nil); resp.status != 400 {
 		t.Fatalf("tampered token: %d %s", resp.status, resp.raw)
+	}
+
+	// The page's form POST, and RFC 8058's one-click POST (token in the
+	// query, List-Unsubscribe=One-Click in the body), flip it off with no
+	// Authorization header.
+	form := url.Values{"token": {token}}
+	res, err := http.PostForm(e.api.URL+"/v1/notify/unsubscribe", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "unsubscribed") {
+		t.Fatalf("form post: %d %s", res.StatusCode, body)
+	}
+	if notifyEmail() {
+		t.Fatal("notify_email was not cleared")
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update users set notify_email = true where id = $1", userID); err != nil {
+		t.Fatal(err)
+	}
+	res, err = http.Post(e.api.URL+"/v1/notify/unsubscribe?token="+token, "application/x-www-form-urlencoded", strings.NewReader("List-Unsubscribe=One-Click"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || notifyEmail() {
+		t.Fatalf("one-click post: %d, notify_email still on: %v", res.StatusCode, notifyEmail())
 	}
 }
 
@@ -1245,6 +1290,12 @@ func TestPatchMeNtfyNullClears(t *testing.T) {
 	set(map[string]any{"ntfy_url": nil})
 	if got := ntfy(); got != nil {
 		t.Fatalf("ntfy_url null did not clear: %v", got)
+	}
+	// A literal non-public address, or localhost, is refused when saved.
+	for _, bad := range []string{"http://127.0.0.1:8080/t", "http://169.254.169.254/latest", "http://[::1]/t", "http://10.255.0.1:3100/t", "http://localhost/t", "http://api.localhost./t"} {
+		if r := e.do(t, tok, "PATCH", "/me", map[string]any{"notify": map[string]any{"ntfy_url": bad}}); r.status != 400 {
+			t.Fatalf("ntfy_url %s: %d %s, want 400", bad, r.status, r.raw)
+		}
 	}
 	set(map[string]any{"ntfy_url": "https://ntfy.example/b"})
 	set(map[string]any{"ntfy_url": ""})
