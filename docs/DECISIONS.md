@@ -12399,7 +12399,8 @@ apply`, so a new machine for that repository booted on the bare base. The
 owner chose (2026-10-04) that a project's `.nix` file configures its
 machines automatically. After a run's or sync's sync, the CLI sends the
 root `repose.nix` of the project's own checkout (`checkoutOwnsProject`,
-or the checkout a `--temp` run was made from) as the project's fragment
+or, on a temporary machine, which has no remote, the checkout the run
+just synced into it) as the project's fragment
 through the existing `PUT /projects/{id}/config`, does not wait for the
 build, and prints one line naming the revision. The api skips only a
 fragment that is already applied, so the CLI keeps

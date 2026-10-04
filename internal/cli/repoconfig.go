@@ -34,8 +34,9 @@ const repoConfigName = "repose.nix"
 // config apply` still sends it on demand.
 //
 // Only the project's own checkout counts: the repository whose remote is
-// the project's (or its by_dir directory), or the checkout a temporary
-// machine was just made from. Another repository's repose.nix never
+// the project's (or its by_dir directory), or, on a temporary machine
+// (which has no remote and is reached by name), the checkout this run
+// just synced into it. Another repository's repose.nix never
 // replaces this machine's configuration.
 func (e *Env) applyRepoConfig(ctx context.Context, project *Project, root string, temp bool) {
 	if root == "" || project == nil {
@@ -95,7 +96,13 @@ func (e *Env) lastRepoConfigStands(ctx context.Context, project *Project, revisi
 		}
 		switch r.Status {
 		case "failed", "error":
-			msg := strings.TrimSuffix(firstLine(r.Error), ".")
+			// The api's code prefix ("eval_failed: ") and the name the
+			// build gives the file are not what the user edits.
+			msg := firstLine(r.Error)
+			if code, rest, ok := strings.Cut(msg, ": "); ok && !strings.ContainsAny(code, " .") {
+				msg = rest
+			}
+			msg = strings.TrimSuffix(strings.ReplaceAll(msg, "fragment.nix", repoConfigName), ".")
 			if msg == "" {
 				msg = "the build failed"
 			}
