@@ -102,7 +102,8 @@ once, in this order (DECISIONS I-92):
    gateway logs `listener disabled` for `preview` and serves everything
    else.
 
-Then `systemctl restart gateway wgsync` and verify `ssh -p 22
+Then `systemctl restart gateway wgsync` (the gateway's `Requires=`
+starts `gateway-ssh.socket`, whose condition is now met) and verify `ssh -p 22
 probe.nobody@ssh.repose.herakraft.co` returns `certificate required`, and
 `wg show` on the edge lists the control plane's peer with a recent
 handshake (`infra/README.md`, "Wiring the control plane to the edge").
@@ -334,10 +335,11 @@ A relay ends when its certificate is revoked or expires (I-436):
 `session_close` with `reason` `revoked` or `cert_expired` is expected
 after a `repose logout` or a day-old certificate.
 
-A gateway restart (a deploy) drops every relay; the guest's tmux session
-survives, so `repose attach` reconnects. `nixos-rebuild switch --rollback`
-on the edge restores the previous gateway in seconds, and `wgsync` rebuilds
-the peer set within 30 s.
+A switch hands over without dropping relays; a gateway restart or an
+edge reboot drops every relay, the guest's tmux session survives, and
+`run`, `attach` and `open` reconnect on their own ("Switch the edge").
+`nixos-rebuild switch --rollback` on the edge restores the previous
+gateway in seconds, and `wgsync` rebuilds the peer set within 30 s.
 
 ## EgressHigh
 
@@ -681,6 +683,62 @@ so the derivation is copied and built there:
 
 A push to main redeploys the api, which drops hostd's stream for a few
 seconds; a stop or restore timed across a push looks slow.
+
+## Switch the edge
+
+With the owner's word for this switch (`docs/ops/RELEASE.md`), from a
+clean checkout of the pushed main commit:
+
+1. `nix build ./nix#nixosConfigurations.edge.config.system.build.toplevel`
+   builds here; then `NIX_SSHOPTS="-p 2222" nixos-rebuild dry-activate
+   --flake ./nix#edge --target-host root@<edge ip>` says what it would
+   restart, reload and start.
+2. The same with `switch`.
+
+What a switch does to users (DECISIONS I-470..I-472): `gateway` and
+`wireguard-wg0` are reloaded, not restarted. The reload of `gateway` is a
+handover: the new build takes port 22 and every new connection, and the
+old process serves its open relays until each ends (at most 24 hours).
+Nobody's terminal, editor or forward drops. Check it:
+
+- `journalctl -u gateway -n 30` shows `handover starting`, `handed over`
+  (with the new `pid`) and `gateway draining` with the old process's
+  `relays`; `systemctl show -p MainPID gateway` is the new pid.
+  `systemctl status gateway` lists both processes while the old one
+  drains. systemd's line `Supervising process N which is not our child`
+  is expected; it does notice that process ending (I-471).
+- `wg show wg0 peers | wc -l` is the same before and after.
+- `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` answers `certificate
+  required`.
+
+A failed handover fails the switch with the gateway's reason (`the
+running gateway refused the handover and serves on: ...`); the old
+gateway still serves. Fix the build and switch again, or restart (below).
+
+When sessions must end, which drops every one of them (users' `run`,
+`attach`, `open` and editors reconnect, I-469):
+
+- **The first switch onto I-471.** The running gateway has no control
+  socket, so the reload fails (`no gateway answers on
+  /run/repose-gateway/control.sock`), and the new `gateway-ssh.socket`
+  cannot bind 22 while the old gateway holds it. Announce it, then
+  `systemctl stop gateway && systemctl start gateway-ssh.socket gateway`.
+  Every later switch is a handover.
+- **A fix in relay code that open connections must get.** A handover
+  leaves them on the old code. `systemctl restart gateway`; connections
+  made during the restart wait in the socket and are served.
+- **A change to `gateway-ssh.socket`** (its port, backlog). A switch never
+  restarts a socket unit: `systemctl restart gateway-ssh.socket gateway`.
+- **A change to the gateway's sandbox** (`DynamicUser`, capabilities,
+  paths): a handover starts the new build inside the old process's
+  sandbox. `systemctl restart gateway`.
+- **wg0's address or key file path removed or changed.** The reload adds
+  a new address beside the old and never removes one:
+  `systemctl restart wireguard-wg0 wgsync` (wgsync re-adds host peers at
+  once on its start, otherwise within 30 s).
+- **A kernel update** needs a reboot, which ends every connection until
+  the edge is back (about a minute). Announce it and pick a quiet hour;
+  the edge is one VM (I-473).
 
 ## Switch failed
 

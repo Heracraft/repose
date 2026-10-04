@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -20,38 +21,98 @@ import (
 // nothing has run, so the caller execs ssh as before. Once ssh ran, the
 // result is its exit status: nil for 0, silent(code) otherwise, 128+N
 // for a signal N, as a shell reports it.
-func runInputProxy(args []string, h *dropHandler) (handled bool, err error) {
+//
+// With re set, an ssh that ends with 255 (the connection dropped) is
+// started again once re says the machine answers (I-469): the terminal
+// stays in raw mode and keeps one reader across the attaches.
+func runInputProxy(args []string, h *dropHandler, re *reattacher) (handled bool, err error) {
 	in, out := int(os.Stdin.Fd()), int(os.Stdout.Fd())
 	if !term.IsTerminal(in) || !term.IsTerminal(out) {
 		return false, nil
 	}
-	size, err := pty.GetsizeFull(os.Stdin)
-	if err != nil {
+	if _, err := pty.GetsizeFull(os.Stdin); err != nil {
 		return false, nil
 	}
 	state, err := term.MakeRaw(in)
 	if err != nil {
 		return false, nil
 	}
-	restore := func() { _ = term.Restore(in, state) }
-	cmd := exec.Command("ssh", args...)
-	ptmx, err := pty.StartWithSize(cmd, size)
-	if err != nil {
-		restore()
-		return false, nil
-	}
-	timingf("attach through the input proxy")
+	defer func() { _ = term.Restore(in, state) }()
 	stopWatch := startClipboardWatch() // Cmd+V with an image on macOS (I-341)
 	defer stopWatch()
-	return true, proxySession(cmd, ptmx, os.Stdin, os.Stdout, h, restore)
+	var input <-chan []byte
+	start := func() <-chan []byte {
+		// Only once ssh runs: a proxy that cannot start reads nothing.
+		if input == nil {
+			input = readInput(os.Stdin)
+		}
+		return input
+	}
+	return attachLoop(args, h, re, start, os.Stdout, func() (*pty.Winsize, error) { return pty.GetsizeFull(os.Stdin) })
+}
+
+// attachLoop is the proxy's attaches: ssh on a pty, proxied until it ends,
+// and again after a dropped connection while re says so. input gives the
+// terminal's input once the first ssh runs; size is the terminal's size
+// at each start. started is false only when the first ssh could not
+// start.
+func attachLoop(args []string, h *dropHandler, re *reattacher, input func() <-chan []byte, out io.Writer, size func() (*pty.Winsize, error)) (started bool, err error) {
+	for attempt := 0; ; attempt++ {
+		ws, err := size()
+		if err != nil {
+			return attempt > 0, err
+		}
+		if attempt > 0 && re.args != nil {
+			args = re.args
+		}
+		cmd := exec.Command("ssh", args...)
+		ptmx, err := pty.StartWithSize(cmd, ws)
+		if err != nil {
+			if attempt == 0 {
+				return false, nil
+			}
+			return true, err
+		}
+		in := input()
+		timingf("attach through the input proxy")
+		began := time.Now()
+		err = proxySession(cmd, ptmx, in, out, h)
+		if re == nil || !connectionLost(cmd) {
+			return true, err
+		}
+		if !re.again(context.Background(), out, in, time.Since(began), attempt > 0) {
+			return true, err
+		}
+	}
+}
+
+// readInput reads the terminal for as long as the process lives, one
+// chunk per read, and closes the channel when the terminal is gone.
+func readInput(stdin io.Reader) <-chan []byte {
+	chunks := make(chan []byte, 256)
+	go func() {
+		defer close(chunks)
+		buf := make([]byte, 32<<10)
+		for {
+			n, err := stdin.Read(buf)
+			if n > 0 {
+				p := make([]byte, n)
+				copy(p, buf[:n])
+				chunks <- p
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return chunks
 }
 
 // proxySession is the proxy's life once ssh runs on ptmx: the terminal's
 // output copied out, its input through the scanner, window size changes
 // passed on, and signals meant for the session handed to ssh.
-func proxySession(cmd *exec.Cmd, ptmx *os.File, stdin io.Reader, stdout io.Writer, h *dropHandler, restore func()) error {
+func proxySession(cmd *exec.Cmd, ptmx *os.File, chunks <-chan []byte, stdout io.Writer, h *dropHandler) error {
 	defer func() { _ = ptmx.Close() }()
-	defer restore()
 
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
@@ -71,23 +132,6 @@ func proxySession(cmd *exec.Cmd, ptmx *os.File, stdin io.Reader, stdout io.Write
 	go func() {
 		_, _ = io.Copy(stdout, ptmx)
 		close(outDone)
-	}()
-
-	chunks := make(chan []byte, 256)
-	go func() {
-		defer close(chunks)
-		buf := make([]byte, 32<<10)
-		for {
-			n, err := stdin.Read(buf)
-			if n > 0 {
-				p := make([]byte, n)
-				copy(p, buf[:n])
-				chunks <- p
-			}
-			if err != nil {
-				return
-			}
-		}
 	}()
 
 	sc := &inputScanner{isFile: localDropFile}

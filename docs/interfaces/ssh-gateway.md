@@ -84,6 +84,13 @@ Two CAs, both ed25519, private keys in the api's secret store:
    (`administratively prohibited`). Through v0.1.13 the CLI's config said
    `ForwardAgent yes`; such a client still connects, and only the agent
    request is refused.
+8. On the edge, port 22 is a systemd socket (`gateway-ssh.socket`,
+   I-470): a connection made while no gateway runs waits and is served
+   by the next one. A deploy is a handover, not a restart (I-471): the
+   new gateway takes the sockets and the new connections, and the old
+   one serves its open relays until each ends (item 5). A client sees no
+   change; its relay keeps the old gateway's code until it reconnects.
+   Only a restart of the unit or of the edge ends open relays at once.
 
 ## Guest sshd
 
@@ -170,6 +177,18 @@ from before I-281 or naming another binary. `repose run` checks with
 the blocks were in `~/.ssh/repose/config` itself, with no `# project`
 line; ssh reads that shape as before, and the first command that
 connects after the upgrade replaces it.
+
+### Reconnecting
+
+On macOS and Linux with a terminal, `repose run` and `repose attach` run
+ssh under the input proxy, and when ssh ends with 255 they run
+`ssh <alias> true` every second for up to 2 minutes and attach again to
+the tmux session (I-469). A certificate refusal gets one certificate
+issue first; the gateway's `is stopped`, `is being destroyed`, `is in
+error` and `no such project` banners end the wait. `repose open` runs its
+`ssh -N -L` as a child and does the same. With a ControlMaster, each
+reconnect after a drop opens a new master; the session helper re-adds its
+forwards there.
 
 ## Test CA
 

@@ -148,6 +148,11 @@ type forwarder struct {
 	// test on a machine full of its own listeners can say which exist.
 	listeners func(ctx context.Context) (string, error)
 	ctl       func(ctx context.Context, op, spec string) error
+	// master is the running ControlMaster's pid, "" when none answers.
+	// The forwards live in that process: when the connection drops and
+	// the attach connects again (I-469), a new master has none of them.
+	master   func(ctx context.Context) string
+	masterID string
 }
 
 func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
@@ -159,7 +164,34 @@ func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
 		return string(out), err
 	}
 	f.ctl = f.control
+	f.master = func(ctx context.Context) string { return masterPID(ctx, t) }
 	return f
+}
+
+func (f *forwarder) masterPID(ctx context.Context) string {
+	if f.master == nil {
+		return ""
+	}
+	return f.master(ctx)
+}
+
+// masterPID is the pid `ssh -O check` reports ("Master running
+// (pid=N)"), "" when no master answers.
+func masterPID(ctx context.Context, t sshTarget) string {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ssh", append([]string{"-O", "check"}, t.Args...)...)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	_, rest, ok := strings.Cut(string(out), "(pid=")
+	if !ok {
+		return ""
+	}
+	pid, _, _ := strings.Cut(rest, ")")
+	return pid
 }
 
 type forwardEntry struct {
@@ -195,6 +227,19 @@ func (f *forwarder) sync(ctx context.Context) (bool, error) {
 	}
 	want := parseListeners(out)
 	changed := false
+	readd := map[int]bool{}
+	if m := f.masterPID(ctx); m != "" && m != f.masterID {
+		if f.masterID != "" {
+			// A new connection: the old master took its forwards with
+			// it. Add them again, quietly; they were announced once.
+			for gp := range f.fwd {
+				readd[gp] = true
+				delete(f.fwd, gp)
+				changed = true
+			}
+		}
+		f.masterID = m
+	}
 	for gp, fe := range f.fwd {
 		if l, ok := want[gp]; ok && l.Host == fe.Host {
 			continue
@@ -224,6 +269,7 @@ func (f *forwarder) sync(ctx context.Context) (bool, error) {
 		f.fwd[gp] = forwardEntry{Local: lp, Host: want[gp].Host}
 		changed = true
 		switch {
+		case readd[gp]:
 		case lp == gp:
 			if len(f.pending) == 0 {
 				f.pendingFirst = time.Now()

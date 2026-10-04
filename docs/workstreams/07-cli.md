@@ -391,6 +391,9 @@ $ repose run
    to the guest (the input proxy, DECISIONS I-280); the exit status is
    ssh's. With `REPOSE_INPUT_PROXY=0`, on Windows, or when stdin or stdout
    is not a terminal, the CLI process replaces itself with ssh as before.
+   Under the input proxy an ssh that ends with 255 attaches again once
+   the machine answers, for up to 2 minutes (DECISIONS I-469;
+   `features/run-and-attach.md` "A dropped connection attaches again").
 
 `repose attach [PROJECT]` is steps 1 (resolve, no create), 3, 4, 8. A
 project that is not running exits 5 with its true state, the reason
@@ -842,6 +845,12 @@ removes all of them including the `Include` line.
       rejected, SSH timeout after running. Evidence: entries exist. —
       closed: ops/RUNBOOK.md "CLI: user cannot log in", "CLI: certificate
       rejected", "CLI: SSH timeout after running" (commit d61bf56)
+- [x] A dropped attach attaches again and `repose open` reconnects
+      (I-469). Evidence: `TestAttachLoopReattachesAfterADrop` (real ssh on
+      a pty, a proxy cuts the connection and refuses for 2 s, the program
+      in tmux gets the keys typed before and after), `TestReattach*`,
+      `TestForwardOverTheControlMaster` (forward back on a new master, no
+      second message). — closed 2026-10-04 (edge-zero-downtime)
 
 ### Real-API evidence (M2, 2026-09-20/21)
 

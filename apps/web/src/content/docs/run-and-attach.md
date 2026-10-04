@@ -56,7 +56,9 @@ Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on
 
 ## Detach and come back
 
-Press `Ctrl-b`, let go, then `d`. You're back on your laptop and everything on the machine keeps running. Closing the terminal, losing Wi-Fi or closing the laptop does the same.
+Press `Ctrl-b`, let go, then `d`. You're back on your laptop and everything on the machine keeps running. Closing the terminal does the same.
+
+If Wi-Fi drops or the laptop sleeps while you're attached, `run` and `attach` say `lost the connection` and attach again by themselves once the machine answers, for up to 2 minutes, with the screen as you left it. `Ctrl-C` stops waiting. The machine keeps running either way.
 
 To get back, from the checkout or from anywhere:
 

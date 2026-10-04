@@ -225,6 +225,32 @@ func TestForwardOverTheControlMaster(t *testing.T) {
 	})
 	t.Logf("status-right: %q", bar)
 
+	// The connection drops and the attach connects again (I-469): the new
+	// master has none of the old one's forwards until the helper sees the
+	// new pid and adds them back, on the same laptop port, unannounced.
+	if out, err := exec.Command("ssh", append([]string{"-O", "exit"}, mux.Args...)...).CombinedOutput(); err != nil {
+		t.Fatalf("ssh -O exit: %v %s", err, out)
+	}
+	if _, err := runSSH(ctx, mux, "true", nil); err != nil { // a new master
+		t.Fatal(err)
+	}
+	mu.Lock()
+	announced := len(said)
+	mu.Unlock()
+	waitFor(t, func() bool {
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", local))
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return true
+	})
+	mu.Lock()
+	if len(said) != announced {
+		t.Errorf("re-adding announced again: %q", said[announced:])
+	}
+	mu.Unlock()
+
 	// The server stops: within two seconds the forward is gone.
 	listening.Lock()
 	up = false
