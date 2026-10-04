@@ -49,6 +49,16 @@ written so they cannot happen quietly.
       page, and `go test ./internal/cli -run TestDocs` passes (it fails on a
       CLI command, flag, config.toml key, environment variable or exit code
       missing from, or left behind in, `cli.md`).
+- [ ] Text a user reads (docs, landing, dashboard, emails, agent guide)
+      gives only help the reader asked for (DECISIONS I-485): a page
+      delivers what its title promises; no reassurance, no narrating
+      what the screen shows, no "next, read X", no fact repeated on a
+      second page instead of linked. The failure this prevents: each
+      helpful line passes review alone, and together they make every
+      page longer for the reader who came for one answer. Evidence:
+      `pnpm --filter web exec vitest run src/lib/docs.test.ts` passes,
+      and each new or changed paragraph was read against the user on
+      their fiftieth visit, with what was cut named in the commit.
 - [ ] Output from a command that worked, and every listing, says what
       happened or what is, and stops: no `repose ...` command to run next.
       A next command goes only on a failure, a refusal, a warning that

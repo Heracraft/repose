@@ -12417,3 +12417,52 @@ Alternatives. An environment variable or flag that turns hints off:
 rejected, since the default is what everyone reads. Hints shown only
 the first time, remembered on the laptop as the idle note is: rejected
 for now; it adds state to deliver a lesson the docs already give.
+
+**I-485. Trust the reader: say what is true, where they look for it,
+once, and stop.** (all surfaces, quiet-success, 2026-10-04; generalizes
+I-484 and LANDING.md's "No hand-holding" of 2026-09-27)
+
+The pattern. Twice in a week the owner cut text for the same reason:
+the landing's explanatory captions and paragraphs (2026-09-27), and
+the CLI's next-command hints on success lines and listings (I-484).
+Both were written for an imagined beginner who is lost. The person who
+actually reads them is not lost: you have run `repose ls` many times,
+you came to a docs page for one answer, you looked at the landing to
+see what repose is. Each line was added on its own and looked helpful
+on its own. Together they cost every reader attention on every read,
+and they tell you the product doubts you can find your way.
+
+The rule. Help the reader asked for is welcome: `--help`, a docs page,
+a tutorial, an error (being stuck is asking). Help nobody asked for is
+cut. Say each fact once, on the page or in the line where the reader
+looks for it, and link to it from elsewhere.
+
+The test for any line, in any surface: picture the user on their
+fiftieth visit. If the line gives them nothing, cut it, unless it
+prevents a loss they cannot undo or unblocks them.
+
+By surface:
+
+- CLI output: I-484. A result line reports the result; a next command
+  goes on failures and refusals; per-row state is a column.
+- Docs: a page delivers what its title promises. No narrating what the
+  reader is about to see ("A tab opens and you're looking at..."), no
+  reassurance ("Nothing to type", "don't worry", "that's it"), no
+  "next, read X" endings, no restating the previous paragraph. A fact
+  lives on one page; other pages link to it. A tutorial walks through
+  steps because you opened it for that, and still skips what the screen
+  already shows.
+- Copy (landing, dashboard, emails): a heading is its title; one
+  sentence of fact; no instructions for reading the page, no "get
+  started in seconds". LANDING.md "Copy" has the landing's specifics.
+- Agent guide: the same, read by an agent: facts and commands it needs,
+  no encouragement.
+
+Enforced by `TestSuccessOutputNamesNoCommand` for the CLI and by the
+docs test `asks nothing of the reader it did not ask for`
+(`apps/web/src/lib/docs.test.ts`) for the phrasings a grep can catch.
+Prose judgement stays with review: CHECKLIST, "For every change".
+Alternatives: a style guide page of examples alone, rejected, since the
+two cuts this week both passed review that had LANDING's rule in hand;
+the tests stop the phrasings, and the rule in CLAUDE.md reaches the
+agents who write the text.

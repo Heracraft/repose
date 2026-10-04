@@ -80,16 +80,19 @@ release (`docs/ops/RELEASE.md`, DECISIONS I-416, I-424).
 Switching an existing worktree to another branch, or deleting one that is
 not yours, still needs the user's approval.
 
-## Output that worked says what happened, and stops
+## Trust the reader
 
-A CLI line for a command that succeeded, and every listing, states the
-result or the state; it never ends with a `repose ...` command to run
-next. Those belong on failures and refusals, where the user is stuck
-(DECISIONS I-153, I-484). Each such hint looks kind in its own diff;
-together they bury the table the user asked for under lessons they read
-on every run (`repose ls` grew a "`repose keep X` keeps it" line per
-temporary machine, 2026-10-04). Put per-row state in a column.
-`TestSuccessOutputNamesNoCommand` enforces most of it.
+Every line a user reads (CLI output, docs, landing and dashboard copy,
+emails, the agent guide) says what is true, where they look for it,
+once, and stops. Help they asked for is welcome: `--help`, a docs page,
+a tutorial, an error. Help nobody asked for is cut: a next command after
+a success, a footer explaining a table, reassurance, narrating what the
+screen shows, "next, read X". Test each line against the user on their
+fiftieth visit; if it gives them nothing, cut it, unless it prevents a
+loss they cannot undo or unblocks them. Each such line looks kind in its
+own diff, which is how they pile up (the landing's captions, 2026-09-27;
+`repose ls` with a "`repose keep X` keeps it" line per temporary
+machine, 2026-10-04). DECISIONS I-485, I-484.
 
 ## Names are fixed
 
