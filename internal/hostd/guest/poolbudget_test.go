@@ -7,7 +7,6 @@ import (
 	"github.com/heracraft/repose/internal/hostd/lvm"
 )
 
-
 // The host's thin volumes together cannot pass 1.5 times the pool, by
 // create or by resize (DECISIONS I-449). One volume has no bound of its
 // own: a plan's whole disk may be one project's. A 200 GB pool: 300 GB in
