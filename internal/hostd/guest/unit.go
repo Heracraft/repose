@@ -89,7 +89,9 @@ func LookupUser(name string) (uid, gid int, err error) {
 //
 // The owner of everything but the virtiofsd directory is hostd's own uid
 // (root on a host), which keeps ch.args, guest.json and console.log out of
-// the hypervisor's reach.
+// the hypervisor's reach. Every directory goes through ensureDir: the
+// hypervisor's user can create entries in <id>/, so a name there may be a
+// planted link.
 func (m *Manager) prepareGuestDir(dir string) error {
 	lookup := m.cfg.Lookup
 	if lookup == nil {
@@ -103,27 +105,14 @@ func (m *Manager) prepareGuestDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("virtiofsd user %s: %w", m.cfg.VirtiofsUser, err)
 	}
-	if err := os.MkdirAll(m.cfg.GuestsDir, 0o711); err != nil {
+	if err := os.MkdirAll(filepath.Dir(m.cfg.GuestsDir), 0o755); err != nil {
 		return err
 	}
-	if err := os.Chmod(m.cfg.GuestsDir, 0o711); err != nil {
+	if err := ensureDir(m.cfg.GuestsDir, 0o711, -1, -1); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := ensureDir(dir, os.FileMode(0o770)|os.ModeSticky, -1, ggid); err != nil {
 		return err
 	}
-	if err := os.Chown(dir, -1, ggid); err != nil {
-		return fmt.Errorf("chown %s: %w", filepath.Base(dir), err)
-	}
-	if err := os.Chmod(dir, os.FileMode(0o770)|os.ModeSticky); err != nil {
-		return err
-	}
-	vdir := filepath.Join(dir, "virtiofsd")
-	if err := os.MkdirAll(vdir, 0o750); err != nil {
-		return err
-	}
-	if err := os.Chown(vdir, vuid, ggid); err != nil {
-		return fmt.Errorf("chown %s/virtiofsd: %w", filepath.Base(dir), err)
-	}
-	return os.Chmod(vdir, 0o750)
+	return ensureDir(filepath.Join(dir, "virtiofsd"), 0o750, vuid, ggid)
 }

@@ -42,7 +42,9 @@ func hasAuthShare(g *state.Guest) bool { return userIDRe.MatchString(g.UserID) }
 
 // prepareAuthShare creates the user's share and the guest's socket
 // directory and marks the user as having a guest here. Every step is
-// idempotent; a directory that exists is re-owned and re-moded.
+// idempotent; a directory that exists is re-owned and re-moded through
+// ensureDir, which never follows a link: the socket directory is in the
+// guest directory, where the hypervisor's user can create entries.
 func (m *Manager) prepareAuthShare(g *state.Guest, dir string) (virtiofs.AuthConfig, error) {
 	lookup := m.cfg.Lookup
 	if lookup == nil {
@@ -58,6 +60,9 @@ func (m *Manager) prepareAuthShare(g *state.Guest, dir string) (virtiofs.AuthCon
 	}
 	udir := m.authUserDir(g.UserID)
 	share := filepath.Join(udir, "claude-auth")
+	if err := os.MkdirAll(filepath.Dir(m.cfg.UsersDir), 0o755); err != nil {
+		return virtiofs.AuthConfig{}, err
+	}
 	for _, d := range []struct {
 		path     string
 		mode     os.FileMode
@@ -70,15 +75,7 @@ func (m *Manager) prepareAuthShare(g *state.Guest, dir string) (virtiofs.AuthCon
 		// its socket there and the hypervisor (group) connects to it.
 		{filepath.Dir(ch.AuthSocket(dir)), 0o750, auid, ggid},
 	} {
-		if err := os.MkdirAll(d.path, d.mode); err != nil {
-			return virtiofs.AuthConfig{}, err
-		}
-		if d.uid >= 0 {
-			if err := os.Chown(d.path, d.uid, d.gid); err != nil {
-				return virtiofs.AuthConfig{}, fmt.Errorf("chown %s: %w", filepath.Base(d.path), err)
-			}
-		}
-		if err := os.Chmod(d.path, d.mode); err != nil {
+		if err := ensureDir(d.path, d.mode, d.uid, d.gid); err != nil {
 			return virtiofs.AuthConfig{}, err
 		}
 	}

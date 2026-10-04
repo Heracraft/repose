@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"github.com/heracraft/repose/internal/hostd/state"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,5 +64,58 @@ func TestPrepareGuestDirNamesTheMissingUser(t *testing.T) {
 	err := h.m.prepareGuestDir(filepath.Join(h.cfg.GuestsDir, gid1))
 	if err == nil || !strings.Contains(err.Error(), "guest user hostd") {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// A link planted at a socket directory's name, by the hypervisor's user
+// that can write the guest directory, is replaced by a real directory;
+// the chown and chmod never reach the link's target.
+func TestSocketDirsDoNotFollowAPlantedLink(t *testing.T) {
+	h := newHarness(t, nil)
+	dir := filepath.Join(h.cfg.GuestsDir, gid1)
+	if err := h.m.prepareGuestDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.Mkdir(victim, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"virtiofsd", "virtiofsd-auth"} {
+		p := filepath.Join(dir, name)
+		if err := os.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(victim, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.m.prepareGuestDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.prepareAuthShare(&state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"virtiofsd", "virtiofsd-auth"} {
+		fi, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || !fi.IsDir() {
+			t.Fatalf("%s: %v %v, want a real directory", name, fi, err)
+		}
+	}
+	if fi, _ := os.Stat(victim); fi.Mode().Perm() != 0o700 {
+		t.Fatalf("link target re-moded to %o", fi.Mode().Perm())
+	}
+	// A plain file planted there goes the same way.
+	p := filepath.Join(dir, "virtiofsd-auth")
+	if err := os.RemoveAll(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.prepareAuthShare(&state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(p); err != nil || !fi.IsDir() {
+		t.Fatalf("virtiofsd-auth: %v %v", fi, err)
 	}
 }
