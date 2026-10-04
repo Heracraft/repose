@@ -17,6 +17,12 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`ssh todo-app.repose` says `Permission denied`.** The certificate couldn't be renewed, most often because you're logged out: run `repose login`, then connect again. `repose attach todo-app` also renews it.
 
+**`too many open connections for your account; close some and try again`.** You have 32 SSH connections open through the gateway, across all your projects. A script that opens connections without closing them is the usual cause. See [SSH connections](/docs/limits#ssh-connections).
+
+**`kex_exchange_identification: Connection closed by remote host`.** Your address opened more connections at once than the gateway lets in, or failed to log in many times in a row; `ssh -v` shows the gateway's reason on a line starting `repose gateway:`. Wait a minute and connect again. After many failed logins, the wait is 10 minutes.
+
+**Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there.
+
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It shows the same error the editor got, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``; connecting never starts one.
 
 **`Guest is running but SSH did not answer in 60s.`** `repose logs --kind console` shows the boot log. `repose start` restarts a stuck machine.

@@ -28,6 +28,8 @@ type session struct {
 	slug   string
 	handle string
 	serial uint64
+	// validTo is the certificate's expiry; zero for none.
+	validTo time.Time
 	// id names this relay in the session reports (I-176): random, so two
 	// connections under one certificate are two sessions.
 	id     string
@@ -39,6 +41,23 @@ type session struct {
 	toGuest   atomic.Int64
 	toClient  atomic.Int64
 	log       *slog.Logger
+
+	// cancel ends the relay; endReason says why, for the close log line.
+	cancel    context.CancelFunc
+	endReason atomic.Value
+}
+
+// Why a relay ended before either side closed it (I-436).
+const (
+	endRevoked     = "revoked"
+	endCertExpired = "cert_expired"
+	endSessionCap  = "session_cap"
+)
+
+// end stops the relay; the first reason given is the one logged.
+func (s *session) end(reason string) {
+	s.endReason.CompareAndSwap(nil, reason)
+	s.cancel()
 }
 
 // Channel types relayed in each direction (06-gateway-edge.md §5.4).
@@ -55,8 +74,27 @@ var (
 func (s *session) run(ctx context.Context) {
 	g := s.gw
 	s.log = g.log.With("project_id", s.route.ProjectID, "cert_serial", s.serial)
-	ctx, cancel := context.WithTimeout(ctx, g.cfg.SessionCap)
+	// A relay lasts at most SessionCap, and never past the certificate it
+	// was opened with (I-436): ssh multiplexes later commands over this
+	// connection without authenticating again.
+	limit, reason := g.cfg.SessionCap, endSessionCap
+	if !s.validTo.IsZero() {
+		if d := s.validTo.Sub(g.cfg.Clock()); d < limit {
+			limit, reason = d, endCertExpired
+		}
+	}
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	s.cancel = cancel
+	capTimer := time.AfterFunc(max(limit, 0), func() { s.end(reason) })
+	defer capTimer.Stop()
+	// Registered before the dial, then checked once: a revocation that
+	// landed between authentication and here ends the relay too.
+	g.addSession(s)
+	defer g.removeSession(s)
+	if g.revoked.IsRevoked(s.serial) {
+		s.end(endRevoked)
+	}
 
 	guest, gchans, greqs, err := s.dialGuest(ctx)
 	if err != nil {
@@ -132,7 +170,11 @@ func (s *session) run(ctx context.Context) {
 	g.cfg.Metrics.Sessions.Dec()
 	dur := g.cfg.Clock().Sub(s.startedAt)
 	g.cfg.Metrics.SessionSeconds.Observe(dur.Seconds())
-	s.log.Info("session closed", "event", "session_close", "source_prefix", s.prefix,
+	ended, _ := s.endReason.Load().(string)
+	if ended == "" {
+		ended = "closed"
+	}
+	s.log.Info("session closed", "event", "session_close", "source_prefix", s.prefix, "reason", ended,
 		"duration_ms", dur.Milliseconds(), "bytes_to_guest", s.toGuest.Load(), "bytes_to_client", s.toClient.Load())
 	go func() {
 		<-opened

@@ -61,12 +61,17 @@ func (s *syncBuffer) String() string {
 }
 
 type harnessOpts struct {
-	maxConns     int
-	maxAuthPerIP int
-	authTimeout  time.Duration
-	keepalive    time.Duration
-	revRefresh   time.Duration
-	dialTimeout  time.Duration
+	maxConns        int
+	maxConnsPerUser int
+	maxPreAuth      int
+	maxAuthPerIP    int
+	// users, when set, are the fake api's accounts by bearer token; it
+	// must include fakeapi.CannedUser, who owns the harness project.
+	users       map[string]fakeapi.User
+	authTimeout time.Duration
+	keepalive   time.Duration
+	revRefresh  time.Duration
+	dialTimeout time.Duration
 }
 
 func genKey(t *testing.T) (ed25519.PrivateKey, ssh.Signer) {
@@ -94,7 +99,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := fakeapi.New(fakeapi.Options{CA: ca})
+	api := fakeapi.New(fakeapi.Options{CA: ca, Users: o.users})
 	t.Cleanup(api.Close)
 	project, err := api.CreateProject("todo-app", "large")
 	if err != nil {
@@ -127,6 +132,8 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 		HostKey:           hostSigner,
 		GatewayKey:        gwKey,
 		MaxConns:          o.maxConns,
+		MaxConnsPerUser:   o.maxConnsPerUser,
+		MaxPreAuth:        o.maxPreAuth,
 		MaxAuthPerIP:      o.maxAuthPerIP,
 		AuthTimeout:       o.authTimeout,
 		Keepalive:         o.keepalive,

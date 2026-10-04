@@ -191,7 +191,7 @@ func TestSSHFilesCover(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeCert([]string{p.ID}, now.Add(12*time.Hour))
+	writeCert([]string{p.ID}, now.Add(20*time.Hour))
 	if _, ok := sshFilesCover(sd, p, now); ok {
 		t.Fatal("covered without known_hosts or config")
 	}
@@ -206,15 +206,15 @@ func TestSSHFilesCover(t *testing.T) {
 	if h, ok := sshFilesCover(sd, p, now); !ok || h != "user-x1" {
 		t.Fatalf("not covered: %q %v", h, ok)
 	}
-	writeCert([]string{"another-project"}, now.Add(12*time.Hour))
+	writeCert([]string{"another-project"}, now.Add(20*time.Hour))
 	if _, ok := sshFilesCover(sd, p, now); ok {
 		t.Fatal("covered by a certificate without the project")
 	}
-	writeCert([]string{p.ID}, now.Add(10*time.Minute))
+	writeCert([]string{p.ID}, now.Add(certReuseMargin-time.Minute))
 	if _, ok := sshFilesCover(sd, p, now); ok {
 		t.Fatal("covered by a certificate inside the reuse margin")
 	}
-	writeCert([]string{p.ID}, now.Add(12*time.Hour))
+	writeCert([]string{p.ID}, now.Add(20*time.Hour))
 	if _, ok := sshFilesCover(sd, &Project{ID: p.ID, Slug: "renamed"}, now); ok {
 		t.Fatal("covered without a Host block for the slug")
 	}

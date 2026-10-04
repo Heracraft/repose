@@ -23,9 +23,17 @@ const (
 	StaleAfter = time.Hour
 	RouteTTL   = 5 * time.Second
 	CertTTL    = 4 * time.Minute
-	// revocationKeep bounds the in-memory set: a user certificate lives
-	// 12 hours, so a serial revoked 13 hours ago cannot be presented.
-	revocationKeep = 13 * time.Hour
+	// revocationKeep is how long a serial stays in the in-memory set after
+	// the gateway first sees it. A revoked certificate was issued before
+	// its revocation, so it expires within sshca.UserCertTTL of the gateway
+	// learning of it; the extra hour covers clock skew between the api
+	// that signs and the gateway that checks. A certificate whose validity
+	// window is longer than this is refused outright (maxCertSpan), so no
+	// certificate can outlive its serial's entry (I-434).
+	revocationKeep = sshca.UserCertTTL + time.Hour
+	// maxCertSpan is the longest ValidBefore-ValidAfter the gateway
+	// accepts: the api issues UserCertTTL plus the minute of backdating.
+	maxCertSpan = revocationKeep
 	// revocationOverlap is re-fetched on every refresh so a revocation
 	// that landed while a request was in flight is not missed.
 	revocationOverlap = 30 * time.Second

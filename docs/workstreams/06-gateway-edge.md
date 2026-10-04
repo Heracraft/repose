@@ -123,8 +123,15 @@ in-process `ssh.NewServer` standing in for a guest sshd.
   `<slug> is stopped; run \`repose start\``. The route (guest ip,
   project id) is stored in `Permissions.Extensions` for the connection.
 - Host key: `ssh.NewCertSigner(hostCert, hostKey)`.
-- Limits: 4 concurrent auth attempts per source IP, 200 concurrent
-  connections total, 30 s auth timeout, `MaxAuthTries 3`.
+- Limits (DECISIONS I-435): before the handshake, 4 connections in the
+  handshake per source (an IPv6 source by its /64) and 64 in all, checked
+  before any SSH byte is sent; 10 s to authenticate; `MaxAuthTries 3`.
+  After authentication, 200 relays in all and 32 per user. The edge's
+  nftables admits 64 open and 20 new connections a second per source on
+  tcp/22.
+- A login under another user's handle (the certificate's `key_id`
+  handle differs) is refused with `certificate not valid for this
+  project` before any route lookup (I-437).
 
 ### 5.3 Gateway: dialing the guest
 
@@ -174,7 +181,8 @@ After both sides exist, the gateway relays:
 
 The relay is per-connection goroutines with a context that cancels on
 either side's close, and a hard cap of 24 hours per connection (tmux keeps
-the session; the CLI reconnects).
+the session; the CLI reconnects). A relay also ends when its
+certificate expires or is revoked (I-436).
 
 ### 5.5 Session reporting and metrics
 
@@ -196,7 +204,9 @@ accepted connection is counted by `sessions_total`, so there is no
 
 Logs: one line per connection open (`session_open`) and close
 (`session_close`) with `project_id`, `cert_serial`, `source_prefix` (the
-source truncated to /24 for IPv4 and /48 for IPv6), duration and bytes; auth
+source truncated to /24 for IPv4 and /48 for IPv6), duration and bytes, and
+on close a `reason` (`closed`, `revoked`, `cert_expired`, `session_cap`;
+I-436); auth
 failures (`auth_fail`) with `reason` and the truncated source. Never the
 login name's handle, never a full source address, never channel contents
 (docs/ops/OBSERVABILITY.md; enforced by `internal/obs` redaction and the
@@ -234,9 +244,10 @@ Recorded here so nobody adds it.
 ### 5.8 Preview proxy stub
 
 `:443` serves a static page and `/healthz`. `internal/gateway/preview/`
-contains `Route(host string) (project, port, error)` parsing
-`<port>-<slug>-<handle>.repose.herakraft.co` (handle included because
-slugs are per user), `Authenticate(r *http.Request) (userID, error)`
+contains `Route(host string) (Target, error)` parsing
+`<port>-<name>.repose.herakraft.co` into the port and the name as one
+opaque label (I-438: a slug and a handle joined by a dash cannot be split
+back), `Authenticate(r *http.Request) (userID, error)`
 returning `not implemented`, and a reverse proxy skeleton. The wildcard
 certificate is provisioned by workstream 11 with DNS validation and placed
 at `/var/lib/repose/edge/tls/`; the stub serves it so the certificate
@@ -253,9 +264,10 @@ pipeline is proven before the feature exists.
 | Certificate expired | `permission denied (certificate expired)` | CLI refreshes and retries once automatically |
 | Wrong principal | `certificate not valid for this project` | CLI re-requests a cert including the project |
 | Connection cap reached | refuse with `gateway busy` | alert at 80 percent |
+| One user's relay share reached | `too many open connections for your account; close some and try again` | user closes connections |
 | Gateway restart (deploy) | every relay drops; tmux sessions in guests persist | CLI reconnects on the next `attach`; a banner on reconnect says `reconnected` |
 | Malformed login name | banner and auth failure | user sees the banner |
-| Source IP auth flood | 4 concurrent attempts then `rate_limited` | metric |
+| Source IP auth flood | 4 connections in the handshake, then closed before the handshake (`rate_limited`) | metric |
 
 ## 7. Testing
 

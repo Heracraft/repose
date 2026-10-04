@@ -58,14 +58,16 @@ or from a terminal, `zed ssh://todo-app.repose/home/dev/todo-app`. In Zed itself
 
 ## JetBrains Gateway
 
-Gateway uses its own SSH client instead of your `ssh`, so it can't renew the certificate for you. Run `ssh todo-app.repose true` before connecting, and again after 24 hours. Then in Gateway, choose **SSH**, add a connection to host `todo-app.repose`, choose **OpenSSH config and authentication agent** for authentication, and open `/home/dev/todo-app`. We haven't tested Gateway yet.
+Gateway uses its own SSH client instead of your `ssh`, so it can't renew the certificate for you. Run `ssh todo-app.repose true` before connecting, and again when Gateway loses the connection: a connection ends when its certificate expires. Then in Gateway, choose **SSH**, add a connection to host `todo-app.repose`, choose **OpenSSH config and authentication agent** for authentication, and open `/home/dev/todo-app`. We haven't tested Gateway yet.
 
 ## How it works
 
 `repose login` adds one line to `~/.ssh/config`, `Include ~/.ssh/repose/config`, and writes that file. Before every `ssh` to a `.repose` host, the file has ssh run `repose ssh-prepare`, which checks the host's entry and your certificate:
 
 - When both are in place, it returns at once. It reads a few files and makes no network call.
-- When the certificate has expired (they last 24 hours) or the project is new to this laptop, it gets a new certificate and writes the project's entry, then ssh goes on with them.
+- When the certificate has less than 12 hours left (they last 24 hours) or the project is new to this laptop, it gets a new certificate and writes the project's entry, then ssh goes on with them.
+
+A connection ends when the certificate it logged in with expires, so one that `ssh` opens lasts at least 12 hours. Editors reconnect on their own, and the reconnect renews the certificate.
 
 It never asks you anything, so an editor can't hang on it. The entries themselves are in `~/.ssh/repose/hosts`, one per project.
 

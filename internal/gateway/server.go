@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ const (
 	MsgWrongPrincipal = "certificate not valid for this project"
 	MsgControlPlane   = "gateway cannot reach control plane; try again shortly"
 	MsgBusy           = "gateway busy"
+	MsgUserBusy       = "too many open connections for your account; close some and try again"
 	MsgRateLimited    = "too many authentication attempts from your address; try again later"
 	MsgNotReady       = "environment is not accepting connections yet"
 	// MsgStoppedFmt takes the slug twice.
@@ -71,13 +73,18 @@ type Config struct {
 	// GuestPort is the guest sshd port (22).
 	GuestPort int
 
-	MaxConns     int
-	MaxAuthPerIP int
-	AuthTimeout  time.Duration
-	MaxAuthTries int
-	DialTimeout  time.Duration
-	Keepalive    time.Duration
-	SessionCap   time.Duration
+	// MaxConns caps relays (authenticated connections); MaxConnsPerUser
+	// caps one user's share of them. MaxPreAuth caps connections still in
+	// the handshake, MaxAuthPerIP one source's share of those (I-435).
+	MaxConns        int
+	MaxConnsPerUser int
+	MaxPreAuth      int
+	MaxAuthPerIP    int
+	AuthTimeout     time.Duration
+	MaxAuthTries    int
+	DialTimeout     time.Duration
+	Keepalive       time.Duration
+	SessionCap      time.Duration
 	// RevocationRefresh and CARefresh override the §5.2 windows (tests).
 	RevocationRefresh time.Duration
 	CARefresh         time.Duration
@@ -100,8 +107,14 @@ type Gateway struct {
 	certs   *certCache
 	limiter *limiter
 	conns   connCounter
+	preAuth connCounter
+	users   *keyedCounter
 	wg      sync.WaitGroup
 	log     *slog.Logger
+
+	// sessions are the open relays, so a revocation can end them (I-436).
+	sessMu   sync.Mutex
+	sessions map[*session]struct{}
 }
 
 // New validates the configuration and applies the defaults of §5.2.
@@ -117,6 +130,12 @@ func New(cfg Config) (*Gateway, error) {
 	}
 	if cfg.MaxConns == 0 {
 		cfg.MaxConns = DefaultMaxConns
+	}
+	if cfg.MaxConnsPerUser == 0 {
+		cfg.MaxConnsPerUser = DefaultMaxConnsPerUser
+	}
+	if cfg.MaxPreAuth == 0 {
+		cfg.MaxPreAuth = DefaultMaxPreAuth
 	}
 	if cfg.MaxAuthPerIP == 0 {
 		cfg.MaxAuthPerIP = DefaultMaxAuthPerIP
@@ -155,14 +174,17 @@ func New(cfg Config) (*Gateway, error) {
 		cfg.Dial = (&net.Dialer{}).DialContext
 	}
 	g := &Gateway{
-		cfg:     cfg,
-		revoked: newRevocationCache(cfg.Clock),
-		cas:     newCACache(cfg.Clock),
-		routes:  newRouteCache(cfg.Clock),
-		certs:   newCertCache(cfg.Clock),
-		limiter: newLimiter(cfg.MaxAuthPerIP, cfg.Clock),
-		conns:   connCounter{max: cfg.MaxConns},
-		log:     cfg.Log,
+		cfg:      cfg,
+		revoked:  newRevocationCache(cfg.Clock),
+		cas:      newCACache(cfg.Clock),
+		routes:   newRouteCache(cfg.Clock),
+		certs:    newCertCache(cfg.Clock),
+		limiter:  newLimiter(cfg.MaxAuthPerIP, cfg.Clock),
+		conns:    connCounter{max: cfg.MaxConns},
+		preAuth:  connCounter{max: cfg.MaxPreAuth},
+		users:    newKeyedCounter(cfg.MaxConnsPerUser),
+		log:      cfg.Log,
+		sessions: map[*session]struct{}{},
 	}
 	return g, nil
 }
@@ -183,8 +205,37 @@ func (g *Gateway) Prime(ctx context.Context) error {
 // SetCAs installs CA keys without the api (tests, and a hostdev edge).
 func (g *Gateway) SetCAs(userLine, hostLine string) error { return g.cas.Set(userLine, hostLine) }
 
-// Revoke pushes a serial into the revocation set immediately.
-func (g *Gateway) Revoke(serial uint64) { g.revoked.Push(serial) }
+// Revoke pushes a serial into the revocation set immediately and ends the
+// relays authenticated with it.
+func (g *Gateway) Revoke(serial uint64) {
+	g.revoked.Push(serial)
+	g.endRevoked()
+}
+
+// endRevoked ends every open relay whose certificate is now revoked
+// (I-436). The relay's own teardown closes the guest connection, then the
+// client's.
+func (g *Gateway) endRevoked() {
+	g.sessMu.Lock()
+	defer g.sessMu.Unlock()
+	for s := range g.sessions {
+		if g.revoked.IsRevoked(s.serial) {
+			s.end(endRevoked)
+		}
+	}
+}
+
+func (g *Gateway) addSession(s *session) {
+	g.sessMu.Lock()
+	defer g.sessMu.Unlock()
+	g.sessions[s] = struct{}{}
+}
+
+func (g *Gateway) removeSession(s *session) {
+	g.sessMu.Lock()
+	defer g.sessMu.Unlock()
+	delete(g.sessions, s)
+}
 
 // RefreshLoop keeps the revocation list (every 30 s) and the CA keys
 // (hourly) fresh until ctx ends. Failures are logged and counted in the
@@ -199,6 +250,8 @@ func (g *Gateway) RefreshLoop(ctx context.Context) {
 		defer cancel()
 		if err := g.revoked.Refresh(rctx, g.cfg.API); err != nil {
 			g.log.Warn("revocation refresh failed", "event", "route_fail", "reason", "revoked_refresh", "age_ms", g.revoked.Age().Milliseconds(), "err", err.Error())
+		} else {
+			g.endRevoked()
 		}
 		g.cfg.Metrics.RevocationCacheAge.Set(g.revoked.Age().Seconds())
 	}
@@ -265,14 +318,17 @@ func (g *Gateway) Open() int { return g.conns.open() }
 
 // connState is what authentication decides for one connection.
 type connState struct {
-	busy    bool
-	limited bool
 	// set by the public key callback on success
-	route  *Route
-	slug   string
-	handle string
-	serial uint64
-	keyID  string
+	route       *Route
+	slug        string
+	handle      string
+	serial      uint64
+	keyID       string
+	validBefore time.Time // zero for a certificate without expiry
+	// relay and user are the slots taken on success; HandleConn releases
+	// them when the connection ends.
+	relay bool
+	user  string
 	// the last failure, for the log line
 	result string
 	// told is the last banner sent on this connection. ssh offers the
@@ -294,27 +350,36 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 		_ = tc.SetKeepAlive(true)                  // best effort; the SSH keepalive is the real check
 		_ = tc.SetKeepAlivePeriod(g.cfg.Keepalive) // same
 	}
+	// The pre-auth budgets are checked before the handshake: a banned or
+	// over-limit source, or a gateway with every pre-auth slot taken, is
+	// answered with one plain line and closed at once, holding nothing
+	// (I-435).
+	if !g.limiter.beginAuth(src) {
+		g.refuseEarly(ctx, c, ResultRateLimited, MsgRateLimited, prefix)
+		return
+	}
+	if !g.preAuth.acquire() {
+		g.limiter.endAuth(src, false)
+		g.refuseEarly(ctx, c, ResultBusy, MsgBusy, prefix)
+		return
+	}
 	st := &connState{}
-	if !g.conns.acquire() {
-		st.busy = true
-	} else {
-		defer g.conns.release()
-	}
-	tracked := false
-	if !st.busy && !g.limiter.beginAuth(src) {
-		st.limited = true
-	} else if !st.busy {
-		tracked = true
-	}
+	defer func() {
+		if st.relay {
+			g.conns.release()
+		}
+		if st.user != "" {
+			g.users.release(st.user)
+		}
+	}()
 
-	_ = c.SetDeadline(g.cfg.Clock().Add(g.cfg.AuthTimeout)) // a conn that cannot take a deadline fails the handshake instead
+	_ = c.SetDeadline(time.Now().Add(g.cfg.AuthTimeout)) // a conn that cannot take a deadline fails the handshake instead
 	sconn, chans, reqs, err := ssh.NewServerConn(c, g.serverConfig(ctx, st))
 	// The per-source slot covers the authentication phase only (§5.2: N
 	// concurrent auth *attempts*), not the whole relay; release it here so a
 	// user's own many connections are not throttled against each other.
-	if tracked {
-		g.limiter.endAuth(src, err != nil)
-	}
+	g.preAuth.release()
+	g.limiter.endAuth(src, err != nil)
 	if err != nil {
 		_ = c.Close() // already failing; nothing to report to
 		if st.result == "" {
@@ -335,11 +400,25 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 		slug:      st.slug,
 		handle:    st.handle,
 		serial:    st.serial,
+		validTo:   st.validBefore,
 		id:        newSessionID(),
 		prefix:    prefix,
 		startedAt: g.cfg.Clock(),
 	}
 	sess.run(ctx)
+}
+
+// refuseEarly answers a connection refused before its handshake: one line
+// ahead of any SSH version string, which clients skip or show with -v, then
+// close. No key exchange is spent on it.
+func (g *Gateway) refuseEarly(ctx context.Context, c net.Conn, result, message, prefix string) {
+	g.cfg.Metrics.AuthFailTotal.WithLabelValues(result).Inc()
+	_ = c.SetWriteDeadline(time.Now().Add(time.Second)) // best effort: the line is a courtesy
+	_, _ = c.Write([]byte("repose gateway: " + message + "\r\n"))
+	_ = c.Close() // refused; nothing more to say
+	if g.log.Enabled(ctx, slog.LevelDebug) {
+		g.log.Debug("connection refused before handshake", "event", "auth_fail", "reason", result, "source_prefix", prefix)
+	}
 }
 
 // serverConfig is the per-connection SSH server configuration.
@@ -379,12 +458,6 @@ func (g *Gateway) fail(st *connState, result, message string) (*ssh.Permissions,
 // authenticate is the decision chain of §5.2: certificate, CA, validity,
 // revocation, route, principal, state.
 func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-	if st.busy {
-		return g.fail(st, ResultBusy, MsgBusy)
-	}
-	if st.limited {
-		return g.fail(st, ResultRateLimited, MsgRateLimited)
-	}
 	slug, handle, err := ParseLogin(conn.User())
 	if err != nil {
 		return g.fail(st, ResultBadLogin, BadLoginMessage)
@@ -410,8 +483,25 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	if cert.ValidBefore != uint64(ssh.CertTimeInfinity) && now >= int64(cert.ValidBefore) {
 		return g.fail(st, ResultExpired, MsgExpired)
 	}
+	// The revocation set keeps a serial for revocationKeep; a certificate
+	// valid for longer, or forever, could outlive its entry (I-434).
+	if cert.ValidBefore == uint64(ssh.CertTimeInfinity) || cert.ValidBefore < cert.ValidAfter ||
+		time.Duration(cert.ValidBefore-cert.ValidAfter)*time.Second > maxCertSpan {
+		return g.fail(st, ResultBadCA, MsgBadCA)
+	}
 	if g.revoked.IsRevoked(cert.Serial) {
 		return g.fail(st, ResultRevoked, MsgRevoked)
+	}
+	// A login under another user's handle gets the same answer whether or
+	// not that project exists, and costs no route lookup (I-437). The
+	// handle is the one the api signed into key_id; after a handle rename
+	// the CLI's one re-issue on this banner brings the new one. The
+	// gateway's own certificates (key_id ending :via-gateway, I-431) are
+	// for the gateway's dial to a guest and do not split, so a client that
+	// presents one is refused here too.
+	userID, certHandle, ok := certUser(cert.KeyId)
+	if !ok || certHandle != handle {
+		return g.fail(st, ResultWrongPrincipal, MsgWrongPrincipal)
 	}
 	login := slug + "." + handle
 	started := g.cfg.Clock()
@@ -446,6 +536,19 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	if err := checker.CheckCert(route.ProjectID, cert); err != nil {
 		return g.fail(st, ResultBadCA, MsgBadCA)
 	}
+	// The relay budgets (I-435): taken last, so a refused attempt holds
+	// neither, and once only, since ssh stops calling back after success.
+	if !g.conns.acquire() {
+		return g.fail(st, ResultBusy, MsgBusy)
+	}
+	if !g.users.acquire(userID) {
+		g.conns.release()
+		return g.fail(st, ResultBusy, MsgUserBusy)
+	}
+	st.relay, st.user = true, userID
+	if cert.ValidBefore != uint64(ssh.CertTimeInfinity) {
+		st.validBefore = time.Unix(int64(cert.ValidBefore), 0)
+	}
 	st.route, st.slug, st.handle, st.serial, st.keyID, st.result = route, slug, handle, cert.Serial, cert.KeyId, ResultOK
 	perms := &ssh.Permissions{
 		CriticalOptions: cert.CriticalOptions,
@@ -456,6 +559,17 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 		},
 	}
 	return perms, nil
+}
+
+// certUser splits a user certificate's key_id, "<user_id>:<handle>"
+// (docs/interfaces/ssh-gateway.md). The gateway's own certificates carry a
+// third part and do not split.
+func certUser(keyID string) (userID, handle string, ok bool) {
+	parts := strings.Split(keyID, ":")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func keysEqual(a, b ssh.PublicKey) bool {
