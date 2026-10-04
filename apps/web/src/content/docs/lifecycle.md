@@ -22,7 +22,7 @@ AGENTS lists each agent in the machine's tmux session with its state: `working`,
 
 `repose ls -q` prints only the names, for scripts: `repose ls -q | xargs -n1 repose stop` stops everything.
 
-A machine runs until you stop it; repose never stops one for being idle. It does tell you when one is, see [Idle machines](#idle-machines). For one project in detail, including which processes are listening on ports:
+For one project in detail, including which processes are listening on ports:
 
 ```
 repose status todo-app
@@ -42,13 +42,13 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose attach` gets you onto a started one, and `repose run` in the checkout starts a stopped machine too.
+Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose run` in the checkout starts a stopped machine too.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
 ## Idle machines
 
-A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine, because an agent's long job can look the same from outside. It tells you instead:
+A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine; it tells you instead:
 
 ```
 $ repose ls
@@ -137,9 +137,9 @@ For an experiment that shouldn't touch your main project, create another one by 
 repose run --name todo-app-experiment
 ```
 
-It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. Running the same command again in the checkout attaches to `todo-app-experiment` again, and `repose attach todo-app-experiment` gets you back onto it from anywhere. This is also how to run several agents on one repository without them sharing a working tree.
+It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. This is also how to run several agents on one repository without them sharing a working tree.
 
-`--name` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. It never lands on a project with another name. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
+`--name` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
 
 The second machine has no git remote of its own, and your checkout's `repose` remote stays pointed at the original. To bring its work back, add a remote for it:
 
@@ -149,11 +149,11 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as your home directory, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` For a machine you won't want tomorrow, use `--temp` instead.
+In a directory with no git remote, such as your home directory, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.`
 
 ## Temporary machines
 
-For a test or a spike that nobody will want the next day, `--temp` makes a new machine that is destroyed after 24 hours, with no snapshot:
+`--temp` makes a new machine that is destroyed after 24 hours, with no snapshot:
 
 ```
 $ cd ~/code/todo-app
@@ -201,7 +201,7 @@ from its snapshot of 2026-09-25 14:02 in 48s:
   todo-app-fork-3  running (large)
 ```
 
-`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`, so paths inside the project keep working. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
+`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run --project todo-app-fork-2 "..."`, which leaves the copy's checkout as it is.
 

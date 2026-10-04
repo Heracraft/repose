@@ -117,7 +117,7 @@ test('plan_limit names the machines using the memory, each with a Stop', async (
 	);
 	await expect(refusal.getByRole('link', { name: 'Upgrade' })).toHaveAttribute('href', '/billing');
 	await refusal.getByRole('button', { name: `Stop ${using.slug}` }).click();
-	await expect(page.getByText(`Stopped ${using.slug}. Start this one again now.`)).toBeVisible({
+	await expect(page.getByText(`Stopped ${using.slug}.`)).toBeVisible({
 		timeout: 10_000
 	});
 	await expect(refusal.getByRole('button', { name: /^Stop / })).toHaveCount(0);

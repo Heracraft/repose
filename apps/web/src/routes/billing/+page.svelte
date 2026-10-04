@@ -597,9 +597,7 @@
 		<div class="form-section">
 			<h2 class="text-xl font-semibold">Invoices</h2>
 			{#if invoices.length === 0}
-				<p class="mt-2 text-sm text-ink-muted">
-					No invoices yet. The first comes with the first charge.
-				</p>
+				<p class="mt-2 text-sm text-ink-muted">No invoices yet.</p>
 			{:else}
 				<ul class="mt-2" aria-label="Invoices">
 					{#each invoices as inv (inv.id)}

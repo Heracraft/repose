@@ -25,7 +25,7 @@ To change the default for projects you create from now on, set `default_agent = 
 
 ## Let it run without asking
 
-Claude Code starts in `bypassPermissions` mode on every machine: it runs commands and edits files without asking. The machine is the limit of what it can break, and a snapshot can put it back. Your deny rules still apply, and removing a critical path such as a home directory still asks.
+Claude Code starts in `bypassPermissions` mode on every machine: it runs commands and edits files without asking. Your deny rules still apply, and removing a critical path such as a home directory still asks.
 
 To start in another mode, set `defaultMode` in `~/.claude/settings.json`, on your laptop (copied to every machine at `run`) or on one machine. Your value is kept.
 
@@ -50,17 +50,15 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 ```
 
-For the others, see each agent's own documentation.
-
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. Add a line to the agent's instructions (`CLAUDE.md`, `AGENTS.md`) telling it to use them. The answer can come from ntfy, email, the dashboard or `repose reply` on your laptop; see [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. Add a line to the agent's instructions (`CLAUDE.md`, `AGENTS.md`) telling it to use them. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
 
 ## Log in
 
 Logins are kept on the machine's disk, except Claude Code's (below). They survive stops and are in snapshots.
 
-**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, open the URL on your laptop, approve, paste the code back. Your other machines are then logged in too, including ones you create later. The login is kept on the host, next to your machines rather than on their disks, in a 16 MB space of its own that holds only that file, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, the CLI opens the Claude window for the login and asks you to run the prompt again after. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
+**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, open the URL on your laptop, approve, paste the code back. Your other machines are then logged in too, including ones you create later. The login is kept on the host, in a 16 MB space of its own that holds only that file, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, the CLI opens the Claude window for the login and asks you to run the prompt again after. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
 
 Instead of logging in, you can store a long-lived token from your laptop as a secret. Remote Control, connectors and Claude in Chrome don't work with it.
 
@@ -87,7 +85,7 @@ Never copied: your login, conversation history, `~/.claude.json`, and anything n
 
 ## MCP servers
 
-HTTP servers (Linear, Sentry, Notion, GitHub and the like) and stdio servers that only need `npx` and a token work on the machine. Store the token as a secret and refer to it as `${VAR}`. MCP servers you added on your laptop with `claude mcp add` at user scope live in `~/.claude.json`, which isn't copied, so they aren't on the machine until you add them there. Add servers there with `claude mcp add`, or commit them in the repository's `.mcp.json`.
+HTTP servers (Linear, Sentry, Notion, GitHub and the like) and stdio servers that only need `npx` and a token work on the machine. Store the token as a secret and refer to it as `${VAR}`. MCP servers you added on your laptop with `claude mcp add` at user scope live in `~/.claude.json`, which isn't copied. Add servers on the machine with `claude mcp add`, or commit them in the repository's `.mcp.json`.
 
 Servers that need your laptop (Apple Notes, Xcode, desktop automation, Claude in Chrome) don't work on the machine. The browser tools are covered in [The machine](/docs/machine#browser); `repose browser bridge` lends the machine's browser tools your laptop's Chrome, logins included, which covers most of what Claude in Chrome would; see [Lend the agents your Chrome](/docs/your-chrome).
 

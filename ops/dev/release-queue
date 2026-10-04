@@ -79,6 +79,22 @@ needs_of() {
   printf '%s\n' "${t[@]}" | sort -u | paste -sd, -
 }
 
+# trust_reader runs the guards against help nobody asked for (DECISIONS
+# I-484, I-485) on a branch that ships CLI output or web text, so a hint
+# on a success line or a reassuring docs sentence never reaches the queue.
+trust_reader() {
+  local needs=$1 top; top=$(git rev-parse --show-toplevel)
+  if [[ " $needs " == *" cli "* ]]; then
+    (cd "$top" && go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1 >/dev/null) ||
+      die "add: the CLI prints help nobody asked for (DECISIONS I-484); see: go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures'"
+  fi
+  if [[ " $needs " == *" web "* ]]; then
+    [ -d "$top/apps/web/node_modules" ] || die "add: apps/web has no node_modules, so the copy guards cannot run; pnpm install in $top first"
+    (cd "$top/apps/web" && pnpm exec vitest run src/lib/docs.test.ts src/lib/copy.test.ts >/dev/null 2>&1) ||
+      die "add: the docs or the site carry help nobody asked for (DECISIONS I-485); see: pnpm exec vitest run src/lib/docs.test.ts src/lib/copy.test.ts in apps/web"
+  fi
+}
+
 cmd_add() {
   local live="" note=""
   while [ $# -gt 0 ]; do
@@ -100,6 +116,7 @@ cmd_add() {
     [ -z "$clash" ] || die "add: $branch conflicts with main in: $(paste -sd' ' <<<"$clash"); run 'git merge main' here, resolve, and queue again"
   fi
   local needs; needs=$(needs_of main...HEAD)
+  trust_reader "$needs"
   locked
   local f prev=""
   f=$state/entries/$(key "$branch")

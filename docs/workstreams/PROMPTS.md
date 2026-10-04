@@ -179,6 +179,10 @@ Rules:
   not a host. nix build and nix flake check are fine.
 - Never log prompts, terminal contents, process arguments, environment
   variables, secret values, tokens, certificate bodies, or email.
+- Trust the reader (CLAUDE.md, DECISIONS I-484, I-485): CLI output that
+  worked says what happened and stops; docs, copy and emails give only
+  help the reader asked for. `just done-check` and `release-queue add`
+  run the guards.
 - Run `just done-check` and `just lint` before reporting. Finish with a
   report listing every checklist item and its evidence, then what is not
   done and why.

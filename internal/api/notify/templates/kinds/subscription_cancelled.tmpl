@@ -1,6 +1,6 @@
 {{define "heading"}}Your plan ends{{if .P.Has "ends_at"}} on {{.P.Date "ends_at"}}{{else}} at the end of the period{{end}}{{end}}
 {{define "body"}}{{.P.Plan "plan"}} stays on until then, and your machines run until then. At that point they stop.
 
-Snapshots are kept 30 days after that, so you can pick up where you left off if you come back. Changed your mind? Resume the plan from your plan page before it ends.{{end}}
+Snapshots are kept 30 days after that. You can resume the plan before it ends.{{end}}
 {{define "link_label"}}Resume the plan{{end}}
 {{define "link_url"}}{{.Billing}}{{end}}

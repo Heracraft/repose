@@ -341,9 +341,6 @@
 					{#if extraPackages.length}
 						<div class="form-section">
 							<h2 class="text-xl font-semibold">Extra packages</h2>
-							<p class="mt-1 text-sm text-ink-muted">
-								Added from nixpkgs with <code>repose config add</code>.
-							</p>
 							<ul class="mt-2">
 								{#each extraPackages as pkg (pkg)}
 									<li class="check-list-row">

@@ -9,7 +9,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Logging in and connecting
 
-**``Not logged in. Run `repose login`.``** Your login expired or you logged out. Run `repose login`.
+**``Not logged in. Run `repose login`.``** Your login expired or you logged out.
 
 **`No repose project for github.com/you/app`** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 

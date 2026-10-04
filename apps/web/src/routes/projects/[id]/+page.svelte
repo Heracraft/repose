@@ -276,7 +276,7 @@
 					opBusy = undefined;
 					if (refusal)
 						refusal = { ...refusal, projects: refusal.projects.filter((p) => p.id !== target.id) };
-					toast.success(`Stopped ${target.slug}. Start this one again now.`);
+					toast.success(`Stopped ${target.slug}.`);
 				},
 				target.id
 			);
@@ -512,7 +512,6 @@
 			{#if project.state === 'running'}
 				<span class="tabular-nums">up {uptime(project.started_at)}</span>
 			{/if}
-			<code>ssh {project.slug}.repose</code>
 			<a href={resolve('/projects/[id]/config', { id })} class="link">Config</a>
 			<a href={resolve('/projects/[id]/secrets', { id })} class="link">Secrets</a>
 		</p>

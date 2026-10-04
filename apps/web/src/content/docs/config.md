@@ -8,7 +8,7 @@ order: 13
 There are two ways to install software on a project's machine:
 
 - **On the machine**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk. See [The machine](/docs/machine#installing-more).
-- **In the project's configuration**, with `repose config`. This page. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
+- **In the project's configuration**, with `repose config`. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
 
 ## Add a package
 
@@ -24,7 +24,7 @@ Applied revision 4f1c2a9e in 45s.
 
 Any package from nixpkgs works; search names at [search.nixos.org](https://search.nixos.org/packages). Nested names work too, such as `python312Packages.black`. A few names are menu entries that set up more than a package: `postgresql`, `redis` and the other databases also start the service.
 
-Each step shows a spinner and its time while it runs. The steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
+The build steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
 
 The build usually takes under a minute. It's switched into the running machine without a restart, so your agents keep running and new shells see the new packages. If the build fails, nothing changes:
 
@@ -44,7 +44,7 @@ repose config remove air
 
 If you press Ctrl-C while it builds, only the CLI stops. The build carries on and is applied when it finishes; `repose config show --revisions` shows when it has.
 
-A change to the kernel is built but not switched in, because that needs a restart. The CLI says so; the machine starts on it the next time it starts: `repose stop && repose start`.
+A change to the kernel is built but not switched in, because that needs a restart. The machine starts on it the next time it starts: `repose stop && repose start`.
 
 ## The menu
 
@@ -57,11 +57,11 @@ The dashboard's project **Config** page has the same list as a menu: tick an ent
 | Tools     | AWS CLI, OpenTofu, Kubernetes tools, Shell extras                                                 |
 | Deploy    | Wrangler, Supabase CLI, flyctl, Vercel CLI, portless, cloudflared                                 |
 
-Databases listen on localhost only. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work straight away.
+Databases listen on localhost only. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work.
 
 ## Write it in Nix
 
-Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module for the user `dev`. Nix is the language NixOS machines are configured in. You only need it for things the menu can't express, such as dotfiles or environment variables.
+Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module for the user `dev`. You only need it for things the menu can't express, such as dotfiles or environment variables.
 
 ```
 repose config show            # print it

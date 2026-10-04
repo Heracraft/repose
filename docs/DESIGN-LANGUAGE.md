@@ -346,8 +346,10 @@ Every view that loads or acts has each of these:
   succeeds, so the banner and its button stay through a retry and keep
   the keyboard's focus; a breadcrumb waiting on the failed load's name
   reads "Project", not "…".
-- **Empty**: an h2 that says so ("No projects yet") and one sentence on
-  how to get something there, with the command when the CLI is the way.
+- **Empty**: an h2 that says so ("No projects yet"). When the screen has
+  no way to add one, one sentence on how, with the command when the CLI
+  is the way; when it has one (a form below), at most one sentence of
+  fact the user needs, never instructions for the form (I-485).
 - **Disabled**: the one disabled look (see Buttons; a ghost button fades
   to `opacity-50`) and `cursor-not-allowed`, and a sentence
   that says why when the reason is not obvious ("Stop todo-app first",

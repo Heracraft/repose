@@ -28,7 +28,7 @@ Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma'
 
 ## Installing more
 
-Install on the machine the way you would anywhere. The result stays on the machine's disk and is on your `PATH`:
+Installs stay on the machine's disk and on your `PATH`:
 
 ```
 npm i -g tsx
@@ -61,7 +61,7 @@ The last line only appears when other packages have a command by that name. Inst
 Installing 2 of your tools in the background: air, portless
 ```
 
-Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. Nothing waits for these. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`.
+Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`.
 
 Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`.
 
@@ -84,7 +84,7 @@ In your own shells, direnv is set up: put `use flake` in the repository's `.envr
 
 ## Ports
 
-While you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. Start `pnpm dev` on the machine and open `http://localhost:5173` on your laptop. tmux shows each new forward:
+While you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
 
 ```text
 ⇄ localhost:5173 → :5173
@@ -122,7 +122,7 @@ repose run "screenshot each signup step with playwright"
 
 Playwright test suites run without `npx playwright install`.
 
-To watch the browser or use it yourself (a captcha, a passkey), one command:
+To watch the browser or use it yourself (a captcha, a passkey):
 
 ```
 $ repose browser
@@ -130,9 +130,9 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 (the view sleeps after 30 idle minutes).
 ```
 
-Your browser opens on that link and shows the agent's browser, live, at the size of your tab (make the tab bigger and the machine's screen grows with it). Nothing to type: the password is the part of the link after `#`, which your browser reads and never sends anywhere. Click and type in the page to solve a captcha, log in or approve a passkey; the agent's browser tools use whatever you logged into. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.
+Your browser opens on that link and shows the agent's browser, live, at the size of your tab. The password is the part of the link after `#`, which your browser reads and never sends anywhere. The agent's browser tools use whatever you log into there. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.
 
-The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-open` to print the link without opening a browser, and `repose browser --stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. The view sleeps after 30 minutes with nobody watching; opening the page again wakes it. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it.
+The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-open` to print the link without opening a browser, and `repose browser --stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. Opening the page again wakes a sleeping view. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it.
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page. `repose open --desktop` is the old name of the command and still works.
 
@@ -162,4 +162,4 @@ A project's size is chosen when it's created (`repose run --size`, default `larg
 
 The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it (taking a snapshot), changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. Asking for the size a project already has does nothing.
 
-It prints what the new size gives and costs, for example `xl: 8 vCPU, 16 GB memory, $0.28 an hour up to $199 a month`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).
+It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).

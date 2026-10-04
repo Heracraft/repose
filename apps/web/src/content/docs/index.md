@@ -35,7 +35,7 @@ Credentials: gh
 Ready in 14s.
 ```
 
-You're now in a shell on the machine, in `/home/dev/your-project` (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. The shell runs inside tmux, a terminal session that keeps running when you disconnect.
+You're now in a shell on the machine, in `/home/dev/your-project` (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. The shell runs inside tmux.
 
 ## 3. Log in to Claude Code on the machine
 
@@ -55,7 +55,7 @@ Detach from tmux with `Ctrl-b` then `d`. Back on your laptop:
 repose run "write tests for src/billing.ts and commit them"
 ```
 
-The CLI starts Claude Code in a new tmux window on the machine, types your prompt and attaches you. Watch, or detach and close the laptop. The agent keeps working.
+The CLI starts Claude Code in a new tmux window on the machine, types your prompt and attaches you. Detach and close the laptop; the agent keeps working.
 
 ## 6. Show it a screenshot
 
@@ -91,13 +91,3 @@ repose stop
 ```
 
 A stopped machine costs only its disk. The next `repose run` starts it again in about 10 seconds with your files where you left them. Running processes, agents included, don't survive a stop.
-
-## Next
-
-- [Run and attach](/docs/run-and-attach): tmux, several agents, `repose ps`, and `repose exec npm test` to run one command.
-- [SSH and editors](/docs/ssh-and-editors): `ssh your-project.repose`, scp, rsync, and `repose code` for VS Code, Cursor or Zed.
-- [Sync](/docs/sync): what travels to the machine, and `git fetch repose` for what comes back.
-- [The machine](/docs/machine): what's installed, ports, the browser.
-- [Lend the agents your Chrome](/docs/your-chrome): your logins, for as long as you keep the bridge open, on the sites you name.
-- Tutorials: [git with repose](/docs/tutorial-git), [watching the agent's browser](/docs/tutorial-watch-browser), [a git workflow for several agents](/docs/tutorial-git-workflow) and [running a swarm](/docs/tutorial-conductor).
-- [Pricing](/docs/billing).
