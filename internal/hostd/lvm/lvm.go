@@ -20,6 +20,8 @@ type LVM interface {
 	CreateVolume(ctx context.Context, name string, bytes uint64) error
 	HasFilesystem(ctx context.Context, name string) (bool, error)
 	Mkfs(ctx context.Context, name string) error
+	// MkfsShare makes the small ext4 of a login-share volume (I-464).
+	MkfsShare(ctx context.Context, name string) error
 	RemoveVolume(ctx context.Context, name string) error
 	ExtendVolume(ctx context.Context, name string, bytes uint64) error
 	Snapshot(ctx context.Context, name, snap string) error
@@ -105,6 +107,17 @@ func (l *Real) Mkfs(ctx context.Context, name string) error {
 		return err
 	}
 	_, err = l.R.Run(ctx, "mkfs.ext4", "-q", "-L", "guest", "-E", "lazy_itable_init=1", l.DevPath(name))
+	return err
+}
+
+// MkfsShare implements LVM: no reserved blocks and 256 inodes, which bounds
+// the file count as the volume size bounds the bytes (DECISIONS I-464).
+func (l *Real) MkfsShare(ctx context.Context, name string) error {
+	has, err := l.HasFilesystem(ctx, name)
+	if err != nil || has {
+		return err
+	}
+	_, err = l.R.Run(ctx, "mkfs.ext4", "-q", "-m", "0", "-N", "256", "-L", "claude-auth", l.DevPath(name))
 	return err
 }
 
@@ -303,6 +316,9 @@ func (f *Fake) Mkfs(_ context.Context, name string) error {
 	v.HasFS = true
 	return nil
 }
+
+// MkfsShare implements LVM.
+func (f *Fake) MkfsShare(ctx context.Context, name string) error { return f.Mkfs(ctx, name) }
 
 // RemoveVolume implements LVM.
 func (f *Fake) RemoveVolume(_ context.Context, name string) error {

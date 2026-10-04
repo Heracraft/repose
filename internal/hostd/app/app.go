@@ -28,6 +28,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/metrics"
+	"github.com/heracraft/repose/internal/hostd/mount"
 	hnet "github.com/heracraft/repose/internal/hostd/net"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/register"
@@ -257,7 +258,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	consoles := &consoleSet{log: log}
 	mgr, err := guest.New(cfg, guest.Deps{
-		State: st, LVM: l, Net: hnet.NewReal(r), Systemd: systemd.NewReal(r), CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
+		State: st, LVM: l, Mount: &mount.Real{R: r}, Net: hnet.NewReal(r), Systemd: systemd.NewReal(r), CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 	})

@@ -27,6 +27,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/gcroot"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/metrics"
+	"github.com/heracraft/repose/internal/hostd/mount"
 	hnet "github.com/heracraft/repose/internal/hostd/net"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
@@ -149,6 +150,9 @@ type Config struct {
 	// AuthKeep is how long a user's login share outlives their last guest
 	// on this host; zero means 30 days, the snapshot retention.
 	AuthKeep time.Duration
+	// AuthVolumeBytes is the size of each user's login-share volume,
+	// auth-<user_id> in the guest pool (I-464); zero means 16 MiB.
+	AuthVolumeBytes uint64
 	// GuestUser is the unprivileged user guest@<id> (Cloud Hypervisor) runs
 	// as (I-51). It owns the taps and is in group kvm; the guest volumes
 	// are group-owned by it through the host's udev rule.
@@ -207,6 +211,9 @@ func (c Config) Defaults() Config {
 	}
 	if c.AuthUser == "" {
 		c.AuthUser = "repose-auth"
+	}
+	if c.AuthVolumeBytes == 0 {
+		c.AuthVolumeBytes = 16 << 20
 	}
 	if c.AuthKeep == 0 {
 		c.AuthKeep = 30 * 24 * time.Hour
@@ -270,6 +277,7 @@ type Emitter interface {
 type Deps struct {
 	State   *state.DB
 	LVM     lvm.LVM
+	Mount   mount.Mounter
 	Net     hnet.Net
 	Systemd systemd.Systemd
 	CH      ch.Client

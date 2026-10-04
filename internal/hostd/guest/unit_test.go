@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"context"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func TestSocketDirsDoNotFollowAPlantedLink(t *testing.T) {
 	if err := h.m.prepareGuestDir(dir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.m.prepareAuthShare(&state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
+	if _, err := h.m.prepareAuthShare(context.Background(), &state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"virtiofsd", "virtiofsd-auth"} {
@@ -112,7 +113,7 @@ func TestSocketDirsDoNotFollowAPlantedLink(t *testing.T) {
 	if err := os.WriteFile(p, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.m.prepareAuthShare(&state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
+	if _, err := h.m.prepareAuthShare(context.Background(), &state.Guest{GuestID: gid1, UserID: "user-1"}, dir); err != nil {
 		t.Fatal(err)
 	}
 	if fi, err := os.Lstat(p); err != nil || !fi.IsDir() {
