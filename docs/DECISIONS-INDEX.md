@@ -527,4 +527,4 @@ pointer, not a summary.
 - **I-465** dumpe2fs, e2fsck and blkid run in a sandboxed transient unit — 2026-10-03; L11851
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11874
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11884
-- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11922
+- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11927

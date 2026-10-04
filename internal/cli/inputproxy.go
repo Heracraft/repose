@@ -373,10 +373,49 @@ func dropFile(p string) (string, bool) {
 		return "", false
 	}
 	fi, err := os.Stat(real)
-	if err != nil || !fi.Mode().IsRegular() {
+	if err != nil || !fi.Mode().IsRegular() || holdsPrivateKey(real) {
 		return "", false
 	}
 	return real, true
+}
+
+// keySniffBytes is how much of a file holdsPrivateKey reads.
+const keySniffBytes = 4 << 10
+
+// holdsPrivateKey reports a file that starts with a private key whatever
+// its name: a PEM or OpenSSH key (server.key, a key saved as .txt), an
+// armored PGP secret key (.asc), or a binary OpenPGP secret key (.gpg,
+// .pgp). Keynote's .key files, public keys, signatures and encrypted
+// files are not keys and still copy. A file that can't be read is not a
+// drop either.
+func holdsPrivateKey(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return true
+	}
+	defer func() { _ = f.Close() }()
+	buf := make([]byte, keySniffBytes)
+	n, _ := io.ReadFull(f, buf)
+	buf = buf[:n]
+	if bytes.Contains(buf, []byte("PRIVATE KEY-----")) || bytes.Contains(buf, []byte("-----BEGIN PGP PRIVATE KEY BLOCK-----")) {
+		return true
+	}
+	if ext := strings.ToLower(filepath.Ext(p)); (ext == ".gpg" || ext == ".pgp") && n > 0 {
+		return openPGPPacketTag(buf[0]) == 5 // secret-key packet, RFC 9580 §5
+	}
+	return false
+}
+
+// openPGPPacketTag is the packet type a first byte starts, or -1.
+func openPGPPacketTag(b byte) int {
+	switch {
+	case b&0x80 == 0:
+		return -1
+	case b&0x40 != 0:
+		return int(b & 0x3f)
+	default:
+		return int(b>>2) & 0x0f
+	}
 }
 
 // shellWords splits s the way a POSIX shell splits words, with quotes and

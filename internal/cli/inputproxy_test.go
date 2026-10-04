@@ -275,6 +275,13 @@ func TestDropFileFollowsLinks(t *testing.T) {
 		}
 		return p
 	}
+	writeData := func(rel, data string) string {
+		p := write(rel)
+		if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
 	link := func(target, rel string) string {
 		p := filepath.Join(dir, rel)
 		if err := os.Symlink(target, p); err != nil {
@@ -299,6 +306,16 @@ func TestDropFileFollowsLinks(t *testing.T) {
 		{link("/etc/hosts", "links/hosts.txt"), ""},
 		{write("Downloads/server.pem"), ""},
 		{link(filepath.Join(dir, "Downloads/server.pem"), "links/server.txt"), ""},
+		{writeData("Downloads/server.key", "-----BEGIN EC PRIVATE KEY-----\nMHc\n-----END EC PRIVATE KEY-----\n"), ""},
+		{writeData("Downloads/backup.txt", "my key:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3Bl\n"), ""},
+		{writeData("Downloads/secret.asc", "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQ\n"), ""},
+		{writeData("Downloads/secret.gpg", "\x95\x01\xd8\x04"), ""},
+		{writeData("Downloads/secret-new.gpg", "\xc5\x58\x04"), ""},
+		{writeData("Downloads/talk.key", "PK\x03\x04 keynote"), filepath.Join(dir, "Downloads/talk.key")},
+		{writeData("Downloads/public.asc", "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmQ\n"), filepath.Join(dir, "Downloads/public.asc")},
+		{writeData("Downloads/release.tar.gz.asc", "-----BEGIN PGP SIGNATURE-----\n\niQ\n"), filepath.Join(dir, "Downloads/release.tar.gz.asc")},
+		{writeData("Downloads/notes.txt.gpg", "\x85\x01\x0c\x03"), filepath.Join(dir, "Downloads/notes.txt.gpg")},
+		{writeData("Downloads/pubring.gpg", "\x99\x01\x0d\x04"), filepath.Join(dir, "Downloads/pubring.gpg")},
 		{filepath.Join(dir, "Pictures"), ""},
 		{filepath.Join(dir, "missing.png"), ""},
 	}

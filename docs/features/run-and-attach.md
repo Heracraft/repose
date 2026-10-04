@@ -270,7 +270,9 @@ with two exceptions:
   Paths under system directories (`/etc`, `/usr`, `/nix`, ...), paths
   with a hidden component (`~/.ssh/id_ed25519`, `.env`), files named
   like a private key or key store (`id_ed25519`, `*.pem`, `*.p12`, ...),
-  and pastes over 64 KiB are text. The checks apply to the pasted path
+  files whose first 4 KiB hold a PEM, OpenSSH or PGP private key or start
+  an OpenPGP secret-key packet (`.gpg`, `.pgp`), and pastes over 64 KiB
+  are text. `.key` is judged by content only (Keynote uses it). The checks apply to the pasted path
   and again to the file it resolves to after every symlink, which is
   what is read (I-468). A read with no paste markers that is only such
   paths is a drop too (a terminal not asked for bracketed paste).

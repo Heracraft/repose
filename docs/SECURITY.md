@@ -167,14 +167,16 @@ they stop an actor the component map does not draw.
     the laptop goes through the CLI, which decides it there. The browser
     bridge (I-311, I-467) passes the agents' CDP to the user's Chrome
     message by message: no cookies, credential headers, request or
-    response bodies or other sites' stored data reach the guest, and no
-    laptop file, Chrome page or extension is opened. The input proxy
-    (I-280, I-468) copies a pasted path only when the file it resolves to,
-    after every symlink, is a regular file outside hidden and system
-    directories and not named like a key, and names every copy on the
-    status line. Stops: an agent in the user's own guest copying out a
-    login it could only use while the user lends it, or a laptop file the
-    user did not mean to send.
+    response bodies, WebSocket or server-sent event payloads, or other
+    sites' stored data reach the guest through the protocol (a page's own
+    JavaScript, which the agents can run, still reads what the page can),
+    and no laptop file, Chrome page or extension is opened. The input
+    proxy (I-280, I-468) copies a pasted path only when the file it
+    resolves to, after every symlink, is a regular file outside hidden and
+    system directories, not named like a key and not starting with a
+    private key, and names every copy on the status line. Stops: an agent
+    in the user's own guest copying out a login it could only use while
+    the user lends it, or a laptop file the user did not mean to send.
 
 ## Non-negotiables
 
