@@ -219,7 +219,7 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 		e.addReposeRemote(ctx, guess, target, nil) // I-272
 	}
 	startSessionHelper(e, helper)
-	return true, attachTmux(target, guess.Slug, "", tz, helper.RepoDir, nil)
+	return true, attachTmux(target, guess.Slug, "", tz, helper.RepoDir, nil, renewFor(e, guess))
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the

@@ -198,7 +198,37 @@ in
     };
     # wg-quick/wireguard-wg0 must not start before its key exists, or the
     # unit fails on a fresh edge; wgsync (below) is what fills the peers.
-    systemd.services."wireguard-wg0".unitConfig.ConditionPathExists = "${stateDir}/wg.key";
+    #
+    # A switch reloads the interface in place instead of restarting it
+    # (DECISIONS I-472). The unit's script names the store paths of ip and
+    # wg, so any nixpkgs bump changed it, and a restart deletes wg0 with
+    # every host peer wgsync added: each relay died and hosts were
+    # unreachable until wgsync's next pass, up to 30 s later. The reload
+    # re-applies the key, port and address to the live interface and keeps
+    # its peers. A changed address is added beside the old one; removing an
+    # address, like any change that must start from nothing, is a
+    # deliberate `systemctl restart wireguard-wg0` (ops/RUNBOOK.md "Edge").
+    systemd.services."wireguard-wg0" = {
+      unitConfig.ConditionPathExists = "${stateDir}/wg.key";
+      reloadIfChanged = true;
+      serviceConfig.ExecReload = pkgs.writeShellScript "wireguard-wg0-reload" ''
+        set -eu
+        ip=${pkgs.iproute2}/bin/ip
+        if ! "$ip" link show dev wg0 >/dev/null 2>&1; then
+          "$ip" link add dev wg0 type wireguard
+        fi
+        "$ip" address replace "${cfg.wgAddress}/16" dev wg0
+        ${pkgs.wireguard-tools}/bin/wg set wg0 private-key "${stateDir}/wg.key" listen-port "${toString cfg.wgPort}"
+        "$ip" link set up dev wg0
+      '';
+    };
+
+    # dhcpcd restarts whenever its package or config changes, and by default
+    # takes eth0's address and default route down when it stops: every
+    # client connection to the gateway lost its route for that moment.
+    # Persistent leaves the interface configured across the restart
+    # (DECISIONS I-472); the address is Azure's static private one.
+    networking.dhcpcd.persistent = true;
 
     # --- firewall: exactly the ports of §5.1 -------------------------------
     networking.firewall.enable = false; # the nftables table below is the firewall
@@ -274,10 +304,40 @@ in
     '';
 
     # --- the gateway service ------------------------------------------------
+    # systemd holds the public SSH socket (DECISIONS I-470): while no
+    # gateway runs (a crash, a restart) a client's connection waits in the
+    # backlog and is served by the next one, where it was refused before.
+    # Only :22; 443 and the WireGuard listeners are the gateway's own and
+    # pass to a successor on a handover.
+    systemd.sockets.gateway-ssh = {
+      description = "repose SSH gateway socket";
+      wantedBy = [ "sockets.target" ];
+      # Like the service: on a fresh edge nothing may trigger a gateway
+      # that cannot start, or connections would queue for nothing.
+      unitConfig.ConditionPathExists = [
+        "${stateDir}/gateway.crt"
+        "${stateDir}/ssh_host_ed25519_key"
+      ];
+      listenStreams = [ "22" ];
+      socketConfig = {
+        FileDescriptorName = "ssh";
+        Service = "gateway.service";
+        Backlog = 4096;
+      };
+    };
+
+    # A switch reloads the gateway rather than restarting it (DECISIONS
+    # I-471): ExecReload is `gateway handover` from the new build, which
+    # starts that build on the same sockets, makes it the main process
+    # and leaves the old one serving its open sessions until they end.
+    # `systemctl restart gateway` still ends every session at once, for a
+    # fix that must reach open connections.
     systemd.services.gateway = {
       description = "repose SSH gateway (relay to tenant guests)";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" "wireguard-wg0.service" ];
+      requires = [ "gateway-ssh.socket" ];
+      after = [ "network-online.target" "wireguard-wg0.service" "gateway-ssh.socket" ];
+      reloadIfChanged = true;
       wants = [ "network-online.target" ];
       # Needs the mTLS client cert, the api CA and the host key; without them
       # it cannot reach /internal or present a verifiable host certificate.
@@ -293,7 +353,8 @@ in
         HOST_KEY = "${stateDir}/ssh_host_ed25519_key";
         HOST_CERT = "${stateDir}/ssh_host_ed25519_key-cert.pub";
         GATEWAY_SSH_KEY = "${stateDir}/gateway_ssh_key";
-        GATEWAY_LISTEN = ":22";
+        GATEWAY_LISTEN = ":22"; # used only when started without the socket
+        GATEWAY_CONTROL = "/run/repose-gateway/control.sock";
         METRICS_LISTEN = "${cfg.wgAddress}:9102";
         HOOK_LISTEN = "${cfg.wgAddress}:8443";
         HOOK_TLS_CERT = "${tlsDir}/edge-internal.crt";
@@ -304,8 +365,16 @@ in
       };
       serviceConfig = {
         ExecStart = "${cfg.gatewayPackage}/bin/gateway serve";
-        # 22 and 443 are privileged; DynamicUser needs the capability to bind
-        # them. Everything else the gateway touches is a file it reads and a
+        ExecReload = "${cfg.gatewayPackage}/bin/gateway handover";
+        # READY=1 once it serves; on a handover the old process names the
+        # new one with MAINPID=, and the new one's READY=1 comes from a
+        # process that is not yet the main one, hence all.
+        Type = "notify";
+        NotifyAccess = "all";
+        RuntimeDirectory = "repose-gateway";
+        RuntimeDirectoryMode = "0700";
+        # 443 is privileged, and so is 22 when the gateway runs without its
+        # socket; DynamicUser needs the capability to bind them. Everything else the gateway touches is a file it reads and a
         # network dial, which need no privilege.
         DynamicUser = true;
         SupplementaryGroups = [ "repose-edge" ];

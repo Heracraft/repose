@@ -11953,3 +11953,155 @@ environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
 release signing key").
 ciphertext; a failed tag check under the bound data says the same thing for
 free); binding in one release (breaks the rolling deploy and rollback).
+
+**I-469. A dropped attach attaches again, and `repose open` reconnects.**
+(edge-zero-downtime, 2026-10-04) An attach's ssh that ended with 255
+(ssh's own failure: Wi-Fi went, the laptop slept, the edge restarted)
+ended the command, though the tmux session on the machine was still there.
+On the input-proxy path (macOS and Linux with a terminal, I-280) the CLI
+now keeps the terminal raw and its one input reader, prints `repose: lost
+the connection to <slug>. Reconnecting; Ctrl-C stops.`, runs `ssh <target>
+true` every second for up to 2 minutes, and attaches again to the session
+(not to the agent window the first attach named, so the user lands where
+they were). Keys typed while it waits are dropped; Ctrl-C or Ctrl-D stops
+the wait. A certificate refusal gets a renewal through `connect` (a
+relay ends at its certificate's expiry, I-436), tried again on the next
+refusal if it failed; a refusal after a renewal that worked ends the
+wait with the gateway's line, as does a stopped, destroyed,
+errored or unknown project; an
+attach that drops again within 5 seconds of a reattach ends it too, so a
+connection that cannot hold is not retried for ever. Past 2 minutes:
+`could not reach <slug> for 2 minutes. \`repose attach <slug>\` attaches
+again once it answers.` and exit 255 as before. `repose open` runs its
+ssh as a child instead of becoming it, and reconnects the same way on
+the same local port; Ctrl-C ends it with status 0 as before. The session
+helper's auto-forward (I-199) keeps the ControlMaster's pid and, when a
+reconnect brings a new master, adds its forwards again, unannounced.
+Where the CLI has become ssh (Windows, `REPOSE_INPUT_PROXY=0`, no
+terminal) nothing changes. *Rejected:* mosh or Eternal Terminal (a second
+transport through the gateway for a problem tmux already solves);
+reconnecting inside ssh with `ServerAliveCountMax` (ssh cannot reconnect).
+Tests: `TestAttachLoopReattachesAfterADrop` (real ssh on a pty through a
+proxy that cuts the connection and refuses for 2 s: the same program gets
+what is typed before and after), `TestReattach*` (the waits, the final
+banners, one renewal, Ctrl-C, flapping, a cancelled `open`),
+`TestForwardOverTheControlMaster` (after `ssh -O exit` and a new master
+the forward answers again on the same port with no second message).
+
+**I-470. systemd holds the gateway's SSH socket.** (edge-zero-downtime,
+2026-10-04) `gateway-ssh.socket` listens on 22 with
+`FileDescriptorName=ssh` and a 4096 backlog; `gateway.service` requires
+it, takes the socket from `LISTEN_FDS` and is `Type=notify` (READY=1 once
+it serves). While no gateway runs (a crash, `systemctl restart gateway`)
+a client's connection waits in the backlog and the next gateway serves
+it, where before it was refused for a second or more. The socket carries
+the service's `ConditionPathExists`, so a fresh edge does not queue
+connections for a gateway that cannot start. 443 and the WireGuard
+listeners (hook ingest, metrics) stay the gateway's own: without its
+wildcard certificate the preview stub does not serve, and a held 443
+would hang clients where it refused them. Outside systemd the gateway
+binds `GATEWAY_LISTEN` as before. NixOS's switch never restarts a changed
+`.socket` unit (switch-to-configuration-ng leaves sockets alone), so a
+change to it is a deliberate `systemctl restart gateway-ssh.socket
+gateway`, which drops sessions (ops/RUNBOOK.md "Switch the edge").
+Tests: `TestRestartQueuesConnections` (a dial made while no gateway runs
+completes on the next one), `TestSystemdReloadAndRestart` (the same under
+this machine's systemd with the edge's unit settings, a client dialing
+while the unit is stopped is served after `systemctl start`).
+
+**I-471. A switch hands the gateway over instead of restarting it.**
+(edge-zero-downtime, 2026-10-04) An edge switch restarted the gateway,
+and since the gateway terminates SSH (I-1), every user's terminal,
+editor, forward and copy died with it. `gateway.service` is now
+`reloadIfChanged`, and its `ExecReload` is `gateway handover` from the
+new build: it sends its executable path and environment (the new unit's,
+so a changed `Environment=` takes effect) over
+`/run/repose-gateway/control.sock` (the unit's RuntimeDirectory, 0700,
+peer uid checked). The running gateway starts that build with its
+listening sockets as `LISTEN_FDS` (named, no `LISTEN_PID`) and the
+notify socket, waits up to 30 s for it to write `ready` on a pipe, then
+sends `MAINPID=<new>` and a `BARRIER=1` so systemd has read it before
+anything else happens, answers the client, stops accepting, shuts its
+HTTP listeners down and serves its open relays until each ends (a relay
+lasts at most 24 hours, I-436), then exits. `NotifyAccess=all`, since the
+new process says READY=1 before it is the main one. A new build that
+does not come up is killed and the old one serves on; the reload, and so
+the switch, fails with the reason. SSH session keys cannot leave the
+process (`x/crypto/ssh` keeps them private), so this is a drain, not a
+migration. What it costs: during a drain each process keeps its own
+relay counts, so the 200-relay and 32-per-user caps apply per process
+and a user can briefly hold more than 32; the draining process is not
+scraped (its metrics listener went to the new one) and its relays are
+missing from `repose_gateway_sessions`; it still refreshes revocations
+every 30 s and ends revoked relays, but no longer gets a push. A crash of
+the new main process makes systemd restart the unit, which ends the
+draining process too. systemd logs `Supervising process N which is not
+our child. We'll most likely not notice when it exits.` on each handover;
+systemd 261 does notice (pidfd), checked by killing the handed-over
+process. `systemctl restart gateway` still ends every session at once,
+for a fix in relay code that must reach open connections. The first
+switch onto this build cannot hand over (the running gateway has no
+control socket, and it holds :22, so the new socket unit fails to
+start); RUNBOOK "Switch the edge" has the one restart it needs.
+*Rejected:* cloudflare/tableflip (it re-executes the running binary's own
+path, and on NixOS the new build is another store path); a master
+process that never changes and supervises workers (the master's code
+could then only change by a restart, and systemd tracks a non-child
+main process anyway); SO_REUSEPORT between two units (a second unit
+name per build, and a switch would still stop the old one). Tests:
+`TestHandoverKeepsOpenSessions` (real processes: a session opened before
+the handover keeps echoing, new connections and new sessions on the old
+connection work, MAINPID names a process running the new path, the old
+process exits once its last relay closes, and a second handover back
+works), `TestHandoverFailureKeepsServing`, `TestSystemdReloadAndRestart`
+(this machine's systemd 261, DynamicUser and the edge's sandbox: rewrite
+the unit to name build B, daemon-reload, reload; MainPID moves to B, the
+session survives, the unit stays active, the old pid exits after its
+client closes; SIGKILL to B restarts the unit).
+
+**I-472. An edge switch leaves the network up.** (edge-zero-downtime,
+2026-10-04) Two units took the network down on an ordinary switch.
+`wireguard-wg0`'s script names the store paths of `ip` and `wg`, so any
+nixpkgs bump changed it, and its restart deletes wg0 with every host peer
+wgsync added: each relay died, and hosts were unreachable until wgsync's
+next pass up to 30 s later. It is now `reloadIfChanged` with an
+`ExecReload` that re-applies the key, port and address to the live
+interface (creating it only if it is missing) and keeps every peer. A
+changed address is added beside the old one; removing an address is a
+deliberate `systemctl restart wireguard-wg0`. Static peers
+(`wireguard-wg0-peer-*`) still restart when their unit changes, a
+sub-second gap on the control plane's and the monitoring server's
+tunnels that no relay uses. dhcpcd restarts whenever its package changes
+and, by default, removes eth0's address and default route when it stops;
+`networking.dhcpcd.persistent = true` leaves the interface configured
+across the restart (Azure's address is static). Checked: systemd 261
+runs `ExecReload` on a `oneshot` `RemainAfterExit` unit;
+switch-to-configuration-ng reloads an `X-ReloadIfChanged` unit instead
+of restarting it; the built edge's units carry both. Not checked on the
+edge itself before its first switch with this (ops/RUNBOOK.md "Switch the
+edge" says what to look at).
+
+**I-473. One edge for now; the way to two is written down.**
+(edge-zero-downtime, 2026-10-04) I-470..I-472 make a switch harmless, but
+the edge is still one VM: a reboot (a kernel update), an Azure host
+event or a crash of the VM ends every connection and nothing connects
+until it is back. The CLI's reattach (I-469) and editors' reconnects
+hide a short one. The fix is two edges behind an Azure Standard Load
+Balancer on 22 (and 443 when preview URLs exist): the load balancer
+stops sending new flows to an edge whose health probe fails and lets its
+established TCP flows continue "until idle timeout or connection closure"
+(Azure's health probe documentation, checked 2026-10-04; the idle timeout
+is 4 minutes by default, up to 100, and the CLI's `ServerAliveInterval
+30` keeps a quiet session under it), so an edge is drained by failing its probe
+(a file the probe checks, or stopping a small health listener), switched
+or rebooted once its relays are gone, and put back. What it needs:
+each host peers with both hubs (wgsync on each edge, hosts' WireGuard
+config listing two endpoints), a guest route that works through either
+edge, the revocation push sent to both, and caps (200 relays, 32 per
+user) that are per edge, which halves a user's share on each unless the
+edges share counts. Costs: the load balancer's hourly charge and its
+per-GB data processing, and a second D2s_v7. *Revisit when:* the edge
+needs a reboot that cannot wait for a quiet hour, uptime is promised in
+the terms, or one edge's relays near 200 (`repose_gateway_sessions`).
+Until then a kernel update on the edge is announced and done at a quiet
+hour (RUNBOOK "Switch the edge").

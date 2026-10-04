@@ -285,7 +285,9 @@ func (g *Gateway) RefreshLoop(ctx context.Context) {
 }
 
 // Serve accepts connections until the listener closes or ctx ends, then
-// waits for open relays to finish (they end when ctx ends).
+// waits for open relays to finish (they end when ctx ends). Closing the
+// listener while ctx lives is a drain: no new connection is taken, and the
+// open relays run until they end on their own (a handover, I-471).
 func (g *Gateway) Serve(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
@@ -303,6 +305,9 @@ func (g *Gateway) Serve(ctx context.Context, ln net.Listener) error {
 				continue
 			}
 			g.wg.Wait()
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
 		g.wg.Add(1)
