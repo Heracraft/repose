@@ -72,3 +72,28 @@ func TestFakeLifecycle(t *testing.T) {
 		t.Fatal("snapshot still exists")
 	}
 }
+
+// Allocated sums the pool's thin volumes, leaving out snapshots, volumes
+// of another pool or none, and the volume being resized.
+func TestRealAllocated(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: []string{"lvs", "--noheadings"}, Result: shell.Result{Stdout: []byte(
+			"  thin|509999996928|\n" +
+				"  g-1|42949672960|thin\n" +
+				"  g-2|21474836480|thin\n" +
+				"  snap-g-1-1700000000000|42949672960|thin\n" +
+				"  repose-cache|68719476736|thin\n" +
+				"  other|1073741824|\n")}},
+	}}
+	l := &Real{VG: "vg-guests", Pool: "thin", R: r}
+	got, err := l.Allocated(context.Background(), "g-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := uint64(42949672960 + 68719476736); got != want {
+		t.Fatalf("allocated %d, want %d", got, want)
+	}
+	if c := strings.Join(r.Calls[0], " "); c != "lvs --noheadings --units b --nosuffix --separator | -o lv_name,lv_size,pool_lv vg-guests" {
+		t.Fatalf("command %q", c)
+	}
+}

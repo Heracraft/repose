@@ -6,15 +6,18 @@
 #              ICMP on the provider NIC, ssh on the provider NIC only while
 #              bootstrap is on; frames from guests go to guest_in.
 #   guest_in   guests to the host: replies to flows the host itself opened
-#              (operator ssh to a guest until the gateway exists), ICMP
-#              echo rate-limited, everything else dropped (there is no
-#              DHCP; guests get static addresses).
+#              (operator ssh to a guest until the gateway exists), the
+#              caches under the same per-guest connection cap and a rate
+#              of their own (I-453), ICMP echo rate-limited, everything
+#              else dropped (there is no DHCP; guests get static
+#              addresses).
 #   guest_fwd  policy drop: established both ways; the gateway over wg0 to
 #              guest sshd; from guests: IPv6 dropped (guests have none),
 #              tcp 25 dropped through smtp_drop (DECISIONS I-238), the
 #              mining-pool ports dropped through stratum_drop (I-239), new
-#              flows over the per-guest rate dropped through flows_drop
-#              (I-240); then through guest_dyn (hostd's counters)
+#              flows past the per-guest tracked-connection cap (I-453) or
+#              over the per-guest rate (I-240) dropped through flows_drop;
+#              then through guest_dyn (hostd's counters)
 #              and then to the internet only: IMDS, the Azure wire server,
 #              every private range (10.64.0.0/12 is other guests, the rest
 #              is the VNet, the WireGuard mesh, link-local) all dropped,
@@ -92,6 +95,13 @@ in
       default = 2000;
       description = "New outbound flows a guest may open at once above flowRate before the rate applies (I-240).";
     };
+    maxConnections = lib.mkOption {
+      type = lib.types.ints.positive;
+      # DECISIONS I-453: 55 guests (a D64's most, all small) at the cap
+      # take 901,120 of the host's 1,048,576 conntrack entries (kernel.nix).
+      default = 16384;
+      description = "Connections one guest may hold in the host's connection tracking table at once, outbound and to the caches together (I-453).";
+    };
   };
 
   config.networking.nftables = {
@@ -129,6 +139,24 @@ in
           size 65535
           flags dynamic,timeout
           timeout 1m
+        }
+        # The same for new flows to the caches, which never leave the host
+        # and so are not under guest_flow_rate (I-453).
+        set guest_cache_rate {
+          type ipv4_addr
+          size 65535
+          flags dynamic,timeout
+          timeout 1m
+        }
+        # Each guest address's tracked connections, through the host and
+        # to the caches (I-453). The host has one conntrack table; without
+        # a cap one guest could fill it and every new flow on the host,
+        # other guests' and the gateway's included, would be dropped. An
+        # element goes when its last connection does.
+        set guest_conns {
+          type ipv4_addr
+          size 65535
+          flags dynamic
         }
 
         chain smtp_drop {
@@ -179,7 +207,10 @@ in
           ct direction reply ct state established,related accept
           ${lib.optionalString config.repose.host.caches.enable ''
           # The npm and Docker Hub caches, on the host services address
-          # only (caches.nix, DECISIONS I-202).
+          # only (caches.nix, DECISIONS I-202), under the guest's
+          # connection cap and a new-flow rate like outbound's (I-453).
+          ip daddr ${config.repose.host.caches.address} tcp dport { ${toString config.repose.host.caches.npm.port}, ${toString config.repose.host.caches.docker.port} } ct state new add @guest_conns { ip saddr ct count over ${toString egress.maxConnections} } goto flows_drop
+          ip daddr ${config.repose.host.caches.address} tcp dport { ${toString config.repose.host.caches.npm.port}, ${toString config.repose.host.caches.docker.port} } ct state new update @guest_cache_rate { ip saddr limit rate over ${toString egress.flowRate}/second burst ${toString egress.flowBurst} packets } goto flows_drop
           ip daddr ${config.repose.host.caches.address} tcp dport { ${toString config.repose.host.caches.npm.port}, ${toString config.repose.host.caches.docker.port} } accept
           ''}
           # A deliberate, rate-limited exception for debugging from a guest.
@@ -203,9 +234,11 @@ in
           iifname "br-guests" tcp dport 25 goto smtp_drop
           # Mining pools' default stratum ports (I-239).
           iifname "br-guests" tcp dport { ${ports egress.blockedTcpPorts} } goto stratum_drop
-          # New flows past the per-guest rate: a scan or a flood, never a
+          # New flows past the guest's tracked-connection cap (I-453),
+          # then past the per-guest rate: a scan or a flood, never a
           # package manager (I-240 has the measurement). Only the flows
           # over the limit are dropped; established ones are untouched.
+          iifname "br-guests" ct state new add @guest_conns { ip saddr ct count over ${toString egress.maxConnections} } goto flows_drop
           iifname "br-guests" ct state new update @guest_flow_rate { ip saddr limit rate over ${toString egress.flowRate}/second burst ${toString egress.flowBurst} packets } goto flows_drop
           iifname "br-guests" jump guest_dyn
 

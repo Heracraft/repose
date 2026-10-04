@@ -311,8 +311,10 @@ func TestStopStartDestroy(t *testing.T) {
 	if err := h.roots.Set("rev-other-project-01", h.closure); err != nil {
 		t.Fatal(err)
 	}
-	// Destroy from running, with a final egress sample and nothing left.
+	// Destroy from running, with a final egress sample (from the tap,
+	// I-448) and nothing left.
 	h.net.Counters[gid1] = 12345
+	h.net.Send(h.guest(gid1).Tap, 0, 12345)
 	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
 	if _, err := h.st.GetGuest(gid1); err == nil {
 		t.Fatal("record still present after destroy")
@@ -737,9 +739,11 @@ func TestSamplesMergeHostAndGuestd(t *testing.T) {
 	h.net.Counters[gid1] = 2000
 	h.lvm.Volumes["g-"+gid1].Used = 3 << 30
 	ctx := context.Background()
+	// The first sample counts from boot: the cursor starts at zero when
+	// the tap is created (I-448).
 	s := h.m.CollectSamples(ctx)
-	if len(s.Guests) != 1 || s.Guests[0].CpuNsDelta != 0 {
-		t.Fatalf("first sample has no delta baseline: %v", s.Guests)
+	if len(s.Guests) != 1 || s.Guests[0].CpuNsDelta != 1_000_000_000 || s.Guests[0].NetRxBytesDelta != 1000 || s.Guests[0].NetTxBytesDelta != 2000 {
+		t.Fatalf("first sample does not count from boot: %v", s.Guests)
 	}
 	h.sd.Set("guest@"+gid1, 3_000_000_000, 600<<20)
 	h.net.Stats[h.guest(gid1).Tap] = [2]uint64{1500, 2600}

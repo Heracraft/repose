@@ -9,7 +9,7 @@ change to either happens in the same commit.
 | Path | What |
 |---|---|
 | `/var/lib/repose/hostd/` | `cert.pem`, `key.pem` (mTLS to api), `host.json` (see below), `state.db` (bbolt: guest table for reconciliation). Mode 0700, written by `hostd register`. |
-| `/var/lib/repose/guests/<guest_id>/` | `ch.args` (the rendered cloud-hypervisor argv, one argument per line; DECISIONS I-27), `guest.json` (non-secret copy of the guest record for `hostd reconcile --rebuild`), `ch.sock` (Cloud Hypervisor API), `vsock.sock` (host side of the guest's vsock, `CONNECT 5000` reaches guestd), `console.sock` (serial; hostd copies it into `console.log`, rotated at 64 MB keeping 3), `virtiofsd/virtiofsd.sock`, `virtiofsd-auth/virtiofsd.sock` (the login share, I-278). The parent is `0711 root`; the directory is `1770 root:hostd` so the unprivileged `guest@<id>` (I-51) can create its sockets but not remove hostd's files; `virtiofsd/` is `0750 virtiofsd:hostd` and the socket in it is group `hostd` (`--socket-group`); `virtiofsd-auth/` is the same with owner `repose-auth`. Secrets are never written here: they are delivered to the guest's tmpfs over vsock. |
+| `/var/lib/repose/guests/<guest_id>/` | `ch.args` (the rendered cloud-hypervisor argv, one argument per line; DECISIONS I-27), `guest.json` (non-secret copy of the guest record for `hostd reconcile --rebuild`), `ch.sock` (Cloud Hypervisor API), `vsock.sock` (host side of the guest's vsock, `CONNECT 5000` reaches guestd), `console.sock` (serial; hostd copies it into `console.log`, rotated at 64 MB keeping 3, at most 2 KiB a second with a 1 MiB burst; output over that is read and dropped, and the log gets one `[repose: N bytes of console output dropped, ...]` line, DECISIONS I-452), `virtiofsd/virtiofsd.sock`, `virtiofsd-auth/virtiofsd.sock` (the login share, I-278). The parent is `0711 root`; the directory is `1770 root:hostd` so the unprivileged `guest@<id>` (I-51) can create its sockets but not remove hostd's files; `virtiofsd/` is `0750 virtiofsd:hostd` and the socket in it is group `hostd` (`--socket-group`); `virtiofsd-auth/` is the same with owner `repose-auth`. Secrets are never written here: they are delivered to the guest's tmpfs over vsock. |
 | `/var/lib/repose/users/<user_id>/` | The Claude login share (DECISIONS I-278). `0711 root` like its parent; `claude-auth/` is `0700 repose-auth` and holds only the `.credentials.json` Claude Code writes from inside the user's guests. hostd creates both, never opens anything inside `claude-auth/`, and stamps `last-guest` (root) when a guest of that user boots and at each sweep while one exists; the sweep (hostd start, daily) removes the whole directory 30 days after the stamp. Not on any guest volume, so in no snapshot. |
 | `/var/lib/repose/builds/<revision_id>/` | `fragment.nix` for a `Build`; see `nix-build-contract.md` |
 | `/var/lib/repose/base/<base_ref>/` | checkout of the platform repository at that revision (its `nix/` is the flake hostd evaluates) |
@@ -19,7 +19,7 @@ change to either happens in the same commit.
 | `/run/repose/wg0.conf`, `/run/repose/host_ca.pub`, `/run/repose/sshd.conf` | also rendered from `host.json`; wg-quick, sshd `TrustedUserCAKeys` and sshd `ListenAddress` respectively. |
 | `/run/repose/store-export/` | read-only bind of `/nix/store` with an empty tmpfs over `.links`. **This, not `/nix/store`, is what virtiofsd shares** (`--shared-dir /run/repose/store-export`), so a guest cannot enumerate the store through the hard-link farm. |
 | `/nix/var/nix/gcroots/repose/<guest_id>` | GC root for the guest's system closure; removed on destroy. `rev-<project_id>-<revision_id>` roots keep the last 3 built revisions per project and are all removed when the project's guest is destroyed (DECISIONS I-115; a later restore rebuilds). |
-| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>` |
+| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`. hostd refuses (`insufficient_capacity`) a create, restore or resize that makes one volume more than 50 percent of the pool, or the virtual sizes of the pool's thin volumes (every one but `snap-*`, the cache volume included) more than 1.5 times the pool (DECISIONS I-449) |
 | `/var/log/repose/` | hostd log (journald is primary), build logs per op |
 | `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`) |
 
@@ -111,10 +111,14 @@ rotates keys does the same restart itself.
     gateway exists (DECISIONS I-74); ICMP echo to the host rate-limited to
     5/second; everything else dropped, and a guest's own first packet is
     the original direction, so nothing a guest opens reaches the host; no
-    DHCP), `guest_fwd` (policy drop;
+    DHCP; new flows to the cache ports go to `flows_drop` past the guest's
+    connection cap in set `guest_conns` or over its bucket in set
+    `guest_cache_rate`, 200/second burst 2000, I-453), `guest_fwd` (policy drop;
     established; `wg0 → br-guests` tcp 22 for the gateway; from
     `br-guests`: IPv6 dropped, tcp 25 to `smtp_drop` (DECISIONS I-238),
     tcp 3333, 5555, 7777, 14433 and 14444 to `stratum_drop` (I-239), `ct
+    state new add @guest_conns { ip saddr ct count over 16384 }` to
+    `flows_drop` (I-453), `ct
     state new` over the per-guest bucket in set `guest_flow_rate`
     (`limit rate over 200/second burst 2000 packets`, I-240) to
     `flows_drop`, jump `guest_dyn`, then drop
@@ -144,8 +148,13 @@ rotates keys does the same restart itself.
     back; a stop deletes the rules by handle, a destroy the counters. A
     `systemctl reload nftables` flushes only the chains this configuration
     declares; `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`,
-    the counters, the `guest_flow_rate` elements and the `guests` set
-    survive.
+    the counters, the `guest_flow_rate`, `guest_cache_rate` and
+    `guest_conns` elements and the `guests` set survive.
+  - Connection tracking (I-453): `nf_conntrack_max` 1048576 and
+    `nf_conntrack_tcp_timeout_established` 86400 (`kernel.nix`); a guest
+    holds at most 16384 entries (`repose.host.guestEgress.maxConnections`),
+    outbound and to the caches together, and a flow past that is dropped
+    and counted as `flows-<guest_id>`.
 - Per-guest egress shape, 200 Mbit/s, on what the guest sends (hostd,
   DECISIONS I-217). A guest's egress is its tap's ingress, so each tap
   gets `tc qdisc add dev <tap> handle ffff: ingress` (only when absent)
@@ -155,16 +164,25 @@ rotates keys does the same restart itself.
   `flower action police rate 200mbit burst <500 ms> mtu 64kb
   conform-exceed drop/ok` (a flower with no match: `matchall` cannot be
   replaced in place). Traffic to the host itself (the gateway, the
-  host services address) is never limited, and nothing limits what the
-  host sends to a guest. hostd re-applies the shape to every running
-  guest when it starts; `replace` makes that a no-op or an in-place swap.
-  The exact commands are `internal/hostd/net/testdata/*.golden`.
-  Before I-217 the shape was `tc qdisc replace dev <tap> root handle 1:
-  htb default 10` with class `1:10`, which limited host-to-guest traffic
-  instead. For one release a tap may still carry it: hostd's shape
-  removes it (`tc qdisc del dev <tap> root`) after the policer is in
-  place, and `sch_htb` stays loaded. `sch_ingress`, `cls_flower`,
-  `act_police` and `act_gact` are loaded (`kernel.nix`).
+  host services address) is never limited.
+- Per-guest download shape, 1 Gbit/s, on what the host sends the guest
+  from anywhere but the host itself (DECISIONS I-451): the tap's root is
+  `tc qdisc replace dev <tap> root handle 2: htb default 20` (only when
+  `tc qdisc show` lacks `htb 2:`), then `tc class replace ... parent 2:
+  classid 2:10 htb rate 10gbit burst 1mb cburst 1mb quantum 65536`, `tc
+  class replace ... parent 2: classid 2:20 htb rate 1000mbit ceil 1000mbit
+  burst <10 ms, at least 128 KiB> cburst <the same> quantum 65536`, `tc qdisc replace ... parent
+  2:20 handle 20: fq_codel`, and `tc filter replace ... parent 2: protocol
+  ip prio <n> handle 1 flower src_ip <prefix> classid 2:10` for
+  `10.64.0.0/12` (prio 1) and `10.63.255.254/32` (prio 2), so the gateway
+  and the caches are not limited. hostd re-applies both shapes to every
+  running guest when it starts; `replace` makes that a no-op or an
+  in-place swap. The exact commands are
+  `internal/hostd/net/testdata/*.golden`. Before I-217 the root was `htb
+  1:` with class `1:10` at 200 Mbit/s; a tap still carrying it has it
+  replaced by `2:` in the same `tc qdisc replace`. `sch_htb`,
+  `sch_fq_codel`, `sch_ingress`, `cls_flower`, `act_police` and
+  `act_gact` are loaded (`kernel.nix`).
 - WireGuard `wg0` (`wg-quick-wg0.service`, config rendered from
   `host.json`) to the edge; host address from the edge's `10.255.0.0/16`
   pool, `AllowedIPs 10.255.0.0/16`, keepalive 25 s. `AllowedIPs` on the
@@ -185,6 +203,8 @@ no user id) and
 `repose-guests-slice.service` (sets `guests.slice` `MemoryMax` to RAM minus
 the reserve: 8 GiB below 128 GiB, 16 GiB above), `hostd.service`,
 `fluent-bit.service` (ships journald and every guest's console log to Loki,
+through two outputs with a disk buffer each, so consoles cannot evict
+host lines (DECISIONS I-452),
 and serves its own Prometheus metrics on `<wg0>:2021/api/v1/metrics/prometheus`
 so that a host which has stopped shipping is visible),
 `prometheus-node-exporter.service` (on
@@ -244,11 +264,13 @@ rw`, `DeviceAllow=/dev/vg-guests/g-<id> rw`, `RestrictAddressFamilies=AF_UNIX
 AF_VSOCK`. Cloud Hypervisor therefore runs as `hostd` (in group `kvm`,
 owner of the tap, group of its own volume through the udev rule in
 `virt.nix`), sees only its own guest directory, and can open exactly three
-device nodes. The devices: `--disk path=/dev/vg-guests/g-<id>,image_type=raw,direct=on`
+device nodes. The devices: `--disk path=/dev/vg-guests/g-<id>,image_type=raw,direct=on,bw_size=<bytes>,bw_refill_time=1000,ops_size=<iops>,ops_refill_time=1000`
 (I-63; `direct=on` since I-230: the volume is opened O_DIRECT so the guest's
 disk I/O never lands in host page cache charged to the unit, whose RAM part
 is unreclaimable shmem; the guest sees the volume's own 4096-byte logical
-blocks either way),
+blocks either way; the rate limiter since I-450, reads and writes together,
+per class: `small` 2000 IOPS and 80 MB/s, `large` 3000 and 120, `xl` 4000
+and 150, taken at the guest's next start),
 `--net tap=tap-<8hex>,mac=52:54:<4 bytes of the id's sha256>`, `--fs tag=ro-store,socket=
 virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,
 `--serial socket=console.sock`, `--console off`, `--memory

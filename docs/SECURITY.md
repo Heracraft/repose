@@ -80,9 +80,14 @@ they stop an actor the component map does not draw.
    a wrapped DEK; Key Vault holds the wrapping key; the api can wrap and
    unwrap but not export. Stops: a Postgres dump (including the R2 backups)
    revealing secrets.
-7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, egress shaping,
-   thin-volume size, build time and closure caps. Stops: a tenant degrading
-   neighbours.
+7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, shaping both
+   ways on the tap (200 Mbit/s out, 1 Gbit/s in from outside the host),
+   a disk rate limit per class, a cap on tracked connections, a console log
+   rate, and a thin-volume size bounded against the shared pool (no volume
+   over half of it, all volumes together under 1.5 times it), plus build
+   time and closure caps (DECISIONS I-217, I-449..I-453). Stops: a tenant
+   degrading neighbours, or filling a table, pool or buffer the host's
+   other guests depend on.
 8. **Restricted Nix evaluation** of user fragments: pure, `restrict-eval`,
    no import-from-derivation, sandboxed builds, capped. Stops: a fragment
    reading host files or running unsandboxed code during a build.

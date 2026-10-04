@@ -1,7 +1,9 @@
 // Package console captures a guest's serial output. Cloud Hypervisor cannot
 // reopen a log file for rotation, so the runner passes `--serial socket=`
 // and a Tailer copies the socket into console.log, rotating at 64 MB and
-// keeping 3 old files. Fluent Bit tails the current file.
+// keeping 3 old files. Fluent Bit tails the current file. What one guest
+// adds to its log is rate-limited, so a guest printing without pause cannot
+// fill the host's shared log buffer or the log store (DECISIONS I-452).
 package console
 
 import (
@@ -15,10 +17,13 @@ import (
 	"time"
 )
 
-// Defaults from workstream 03 §5.13.
+// Defaults from workstream 03 §5.13, and the rate limit of I-452: 2 KiB a
+// second sustained, with 1 MiB at once, which a boot log fits in.
 const (
 	RotateBytes = 64 << 20
 	Keep        = 3
+	RateBytes   = 2 << 10
+	BurstBytes  = 1 << 20
 )
 
 // DrainQuiet and DrainMax bound the read-out before capture closes the
@@ -37,15 +42,61 @@ type Tailer struct {
 	Keep   int
 	// Retry is the reconnect interval while the socket is absent.
 	Retry time.Duration
+	// Rate and Burst are a token bucket on what reaches the log, in bytes:
+	// Rate a second, Burst at once; Rate 0 is unlimited. Output over it is
+	// still read from the socket, so the guest's console never stalls,
+	// and dropped; one line in the log then says how much went.
+	Rate  int64
+	Burst int64
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
 
 	mu      sync.Mutex
 	written int64
 	f       *os.File
+	tokens  float64
+	filled  time.Time
+	dropped int64
 }
 
 // New returns a Tailer with the documented defaults.
 func New(socket, log string) *Tailer {
-	return &Tailer{Socket: socket, Log: log, Rotate: RotateBytes, Keep: Keep, Retry: 500 * time.Millisecond}
+	return &Tailer{Socket: socket, Log: log, Rotate: RotateBytes, Keep: Keep, Retry: 500 * time.Millisecond, Rate: RateBytes, Burst: BurstBytes}
+}
+
+func (t *Tailer) now() time.Time {
+	if t.Now != nil {
+		return t.Now()
+	}
+	return time.Now()
+}
+
+// allow takes n bytes from the bucket, refilled for the time since the
+// last call; false means the bytes are over the limit.
+func (t *Tailer) allow(n int) bool {
+	if t.Rate <= 0 {
+		return true
+	}
+	now := t.now()
+	if t.filled.IsZero() {
+		t.tokens = float64(t.Burst)
+	} else if d := now.Sub(t.filled); d > 0 {
+		t.tokens += d.Seconds() * float64(t.Rate)
+		if t.tokens > float64(t.Burst) {
+			t.tokens = float64(t.Burst)
+		}
+	}
+	t.filled = now
+	if t.tokens < float64(n) {
+		return false
+	}
+	t.tokens -= float64(n)
+	return true
+}
+
+// droppedLine is the line the log gets in place of output over the limit.
+func (t *Tailer) droppedLine() []byte {
+	return []byte(fmt.Sprintf("\n[repose: %d bytes of console output dropped, over the limit of %d bytes a second]\n", t.dropped, t.Rate))
 }
 
 func (t *Tailer) open() error {
@@ -80,29 +131,53 @@ func (t *Tailer) rotate() error {
 	return t.open()
 }
 
-// Write appends to the log, rotating when the size cap is reached.
+// Write appends to the log, rotating when the size cap is reached. Output
+// over the rate limit is counted and dropped, and reported as written, so
+// the caller keeps reading the socket.
 func (t *Tailer) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if !t.allow(len(p)) {
+		t.dropped += int64(len(p))
+		return len(p), nil
+	}
+	if t.dropped > 0 {
+		if err := t.write(t.droppedLine()); err != nil {
+			return 0, err
+		}
+		t.dropped = 0
+	}
+	if err := t.write(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (t *Tailer) write(p []byte) error {
 	if t.f == nil {
 		if err := t.open(); err != nil {
-			return 0, err
+			return err
 		}
 	}
 	if t.written+int64(len(p)) > t.Rotate {
 		if err := t.rotate(); err != nil {
-			return 0, err
+			return err
 		}
 	}
 	n, err := t.f.Write(p)
 	t.written += int64(n)
-	return n, err
+	return err
 }
 
-// Close closes the log.
+// Close closes the log, first noting any output dropped since the last
+// write.
 func (t *Tailer) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.dropped > 0 {
+		_ = t.write(t.droppedLine()) // best effort: the capture is ending either way
+		t.dropped = 0
+	}
 	if t.f == nil {
 		return nil
 	}

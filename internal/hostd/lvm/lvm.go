@@ -28,6 +28,10 @@ type LVM interface {
 	VolumeStats(ctx context.Context, name string) (size, used uint64, err error)
 	// PoolStats returns the thin pool's size and free bytes.
 	PoolStats(ctx context.Context) (size, free uint64, err error)
+	// Allocated returns the sum of the virtual sizes of the pool's thin
+	// volumes, except snapshots (snap-*, which share their origin's blocks
+	// and live only while one uploads) and the volume named except.
+	Allocated(ctx context.Context, except string) (uint64, error)
 	// Fsck runs e2fsck -fp and returns its exit code (0 or 1 is clean).
 	Fsck(ctx context.Context, name string) (int, error)
 	// ListVolumes returns every volume name in the group except the pool.
@@ -188,6 +192,31 @@ func (l *Real) PoolStats(ctx context.Context) (uint64, uint64, error) {
 	}
 	used := uint64(float64(size) * pct / 100)
 	return size, size - used, nil
+}
+
+// Allocated implements LVM with one lvs of the volume group.
+func (l *Real) Allocated(ctx context.Context, except string) (uint64, error) {
+	rows, err := l.lvs(ctx, l.VG, "lv_name,lv_size,pool_lv")
+	if err != nil {
+		return 0, err
+	}
+	var sum uint64
+	for _, r := range rows {
+		f := strings.Split(r, "|")
+		if len(f) < 3 {
+			return 0, fmt.Errorf("lvs: unexpected row %q", r)
+		}
+		name, pool := strings.TrimSpace(f[0]), strings.TrimSpace(f[2])
+		if pool != l.Pool || name == except || strings.HasPrefix(name, "snap-") {
+			continue
+		}
+		size, err := strconv.ParseUint(strings.TrimSpace(f[1]), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("lvs: size %q: %w", f[1], err)
+		}
+		sum += size
+	}
+	return sum, nil
 }
 
 // Fsck implements LVM.
@@ -361,6 +390,19 @@ func (f *Fake) PoolStats(context.Context) (uint64, uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.PoolSize, f.PoolFree, nil
+}
+
+// Allocated implements LVM.
+func (f *Fake) Allocated(_ context.Context, except string) (uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var sum uint64
+	for name, v := range f.Volumes {
+		if name != except && !strings.HasPrefix(name, "snap-") {
+			sum += v.Size
+		}
+	}
+	return sum, nil
 }
 
 // Fsck implements LVM.

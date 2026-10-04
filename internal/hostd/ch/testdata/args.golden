@@ -12,7 +12,7 @@ boot=4
 --memory
 size=8192M,shared=on
 --disk
-path=/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001,image_type=raw,direct=on
+path=/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001,image_type=raw,direct=on,bw_size=120000000,bw_refill_time=1000,ops_size=3000,ops_refill_time=1000
 --net
 tap=tap-0192f0a1,mac=52:54:01:92:f0:a1
 --fs

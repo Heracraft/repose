@@ -63,8 +63,9 @@ func marshalGuest(g *state.Guest) ([]byte, error) {
 }
 
 // capacityCheck applies the host-level refusals shared by Create and
-// Restore: draining, pool nearly full, memory for the class.
-func (m *Manager) capacityCheck(class string, volumeBytes uint64, needMem bool) *Error {
+// Restore: draining, pool nearly full, the pool's allocation budget,
+// memory for the class.
+func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needMem bool) *Error {
 	if m.Draining() {
 		return errf(CodeInsufficientCapacity, "host draining")
 	}
@@ -82,8 +83,40 @@ func (m *Manager) capacityCheck(class string, volumeBytes uint64, needMem bool) 
 	if pct >= m.cfg.PoolRefusePct {
 		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
 	}
+	if err := m.poolBudget(VolumeName(guestID), volumeBytes); err != nil {
+		return err
+	}
 	if needMem && m.FreeMemBytes() < (c.MemMiB+OverheadMiB)<<20 {
 		return errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", class)
+	}
+	return nil
+}
+
+// poolBudget refuses a volume of bytes, created or grown to that size,
+// that would let one tenant or all of them fill the shared thin pool
+// (DECISIONS I-449). A thin volume takes pool space only as it is
+// written, so the pool is sold more than once; these two bounds keep that
+// within reach of the autoextend headroom and the operator's pool_high
+// warning. No single volume may be more than VolumeMaxPoolPct of the
+// pool, so a full pool takes more than one tenant writing, and the
+// virtual sizes of every thin volume in the pool (guests and the caches'
+// volume; not snapshots, not name itself) together with this one may not
+// pass PoolOvercommit times the pool. Volumes already over either bound
+// keep running and starting; they cannot grow.
+func (m *Manager) poolBudget(name string, bytes uint64) *Error {
+	size, _, err := m.d.LVM.PoolStats(m.ctx)
+	if err != nil {
+		return errf(CodeInternal, "thin pool: %v", err)
+	}
+	if limit := float64(size) * m.cfg.VolumeMaxPoolPct / 100; float64(bytes) > limit {
+		return errf(CodeInsufficientCapacity, "a %d GB volume is more than this host allows for one volume (%d GB)", bytes>>30, uint64(limit)>>30)
+	}
+	alloc, err := m.d.LVM.Allocated(m.ctx, name)
+	if err != nil {
+		return errf(CodeInternal, "lvs: %v", err)
+	}
+	if budget := float64(size) * m.cfg.PoolOvercommit; float64(alloc+bytes) > budget {
+		return errf(CodeInsufficientCapacity, "thin pool allocation budget: %d GB allocated, %d GB more would pass %d GB", alloc>>30, bytes>>30, uint64(budget)>>30)
 	}
 	return nil
 }
@@ -125,7 +158,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	} else if !ok {
 		return nil, errf(CodeNotFound, "system closure %s is not in the host store", c.SystemClosure)
 	}
-	if err := m.capacityCheck(c.Class, c.VolumeBytes, existing == nil || existing.State != StateCreating); err != nil {
+	if err := m.capacityCheck(c.GuestId, c.Class, c.VolumeBytes, existing == nil || existing.State != StateCreating); err != nil {
 		return nil, err
 	}
 
@@ -227,6 +260,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams,
 		IP: g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
 		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: class.VCPUs, MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
+		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 	}
 	argv := spec.Args()
 	if err := os.WriteFile(filepath.Join(dir, "ch.args"), []byte(strings.Join(argv, "\n")+"\n"), 0o640); err != nil {
@@ -241,10 +275,11 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	if err := m.d.Net.AddTap(ctx, g.Tap); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
+	m.resetCursor(g.GuestID)
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
-	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit); err != nil {
+	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
 
@@ -361,11 +396,14 @@ func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.
 
 // teardown removes tap, tc, nft membership, the virtiofsd and guest units
 // and console capture. The volume, GC root, counter and address remain.
+// The tap's counters are read once more after the hypervisor is gone and
+// before the tap is (finalSample).
 func (m *Manager) teardown(ctx context.Context, g *state.Guest) {
 	if mon := m.removeMonitor(g.GuestID); mon != nil {
 		mon.stop()
 	}
-	_ = m.d.Systemd.Stop(ctx, GuestUnit(g.GuestID))               // best effort in reverse order; each step's absence is fine
+	_ = m.d.Systemd.Stop(ctx, GuestUnit(g.GuestID)) // best effort in reverse order; each step's absence is fine
+	m.finalSample(g)
 	_ = virtiofs.Stop(ctx, m.d.Systemd, g.GuestID)                // same
 	_ = virtiofs.StopAuth(ctx, m.d.Systemd, g.GuestID)            // same
 	_ = m.d.Net.Unshape(ctx, g.Tap)                               // same

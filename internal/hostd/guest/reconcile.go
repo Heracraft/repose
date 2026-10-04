@@ -128,7 +128,7 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 // counters (DECISIONS I-238..I-240) is counted without a restart; the
 // blocks themselves are the host's and apply to it already.
 func (m *Manager) reshape(ctx context.Context, g *state.Guest) {
-	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit); err != nil {
+	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		m.d.Log.Warn("egress shape not re-applied", "event", "reconcile_shape", "guest_id", g.GuestID, "err", err.Error())
 	}
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {

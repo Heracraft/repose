@@ -397,10 +397,11 @@ in
           inet.fail(f"nc -z -w3 {host_ip} 4873")
           inet.fail(f"nc -z -w3 {host_ip} 5000")
 
-      with subtest("hostd's shape limits what a guest sends out, not what it receives, and never host-local traffic"):
-          # I-217. The tc commands are hostd's own, from the Go golden
-          # (a tap shaped before I-217 migrated, then re-applied), at
-          # 20 Mbit/s here so the VM's links are well above the cap.
+      with subtest("hostd's shape limits what a guest sends out and what it receives from outside the host, never host-local traffic"):
+          # I-217 and I-451. The tc commands are hostd's own, from the Go
+          # golden (a tap shaped before I-217 migrated, then re-applied),
+          # with both caps at 20 Mbit/s here so the VM's links are well
+          # above them.
           import re, time
           cap = 20
           blocks, cur = [], []
@@ -411,8 +412,12 @@ in
                   continue
               if blocks and line.startswith("tc "):
                   # the burst stays hostd's 500 ms of the rate
-                  cur.append(re.sub(r"rate \d+mbit burst \d+", f"rate {cap}mbit burst {cap * 125000 // 2}",
-                                    line.replace("tap-0192abcd", "tap-ga")))
+                  line = re.sub(r"rate \d+mbit burst \d+", f"rate {cap}mbit burst {cap * 125000 // 2}",
+                                line.replace("tap-0192abcd", "tap-ga"))
+                  # the download class keeps hostd's burst: 10 ms, at least 128 KiB
+                  dburst = max(cap * 1250, 131072)
+                  cur.append(re.sub(r"rate \d+mbit ceil \d+mbit burst \d+ cburst \d+",
+                                    f"rate {cap}mbit ceil {cap}mbit burst {dburst} cburst {dburst}", line))
           migrate, reapply = blocks[0], [c for c in blocks[1] if " qdisc del " not in c]
           print("\n".join(migrate + reapply))
 
@@ -445,15 +450,18 @@ in
 
           for c in migrate:
               host.succeed(c)
-          print(host.succeed("tc qdisc show dev tap-ga; tc filter show dev tap-ga ingress"))
-          host.fail("tc qdisc show dev tap-ga | grep -q htb")
+          print(host.succeed("tc qdisc show dev tap-ga; tc class show dev tap-ga; tc filter show dev tap-ga ingress"))
+          host.fail("tc qdisc show dev tap-ga | grep -q 'htb 1:'")
+          host.succeed("tc qdisc show dev tap-ga | grep -q '^qdisc htb 2: root'")
           # re-applying (hostd restarted) replaces, never duplicates
           for c in reapply:
               host.succeed(c)
           filters = host.succeed("tc filter show dev tap-ga ingress | grep -c '^filter .* handle 0x1'").strip()
           assert filters == "3", f"{filters} filters after a re-apply, want 3"
+          filters = host.succeed("tc filter show dev tap-ga parent 2: | grep -c '^filter .* handle 0x1'").strip()
+          assert filters == "2", f"{filters} download filters after a re-apply, want 2"
 
-          # host -> guest (a guest's downloads, the caches): not capped
+          # host -> guest (the gateway, the caches): not capped
           ga_sink(22)
           down = mbit("head -c 100M /dev/zero | nc -N -w10 10.64.4.2 22", 100)
           assert down > cap * 3, f"host -> guest at {down:.0f} Mbit/s"
@@ -471,6 +479,12 @@ in
           inet_sink()
           out = mbit(f"{ga} sh -c 'head -c 20M /dev/zero | nc -N -w30 203.0.113.9 9000'", 20)
           assert cap * 0.6 < out < cap * 1.3, f"shaped guest -> internet at {out:.0f} Mbit/s, cap {cap}"
+          # internet -> guest, a download the guest opened: capped (I-451)
+          inet.succeed(f"systemd-run --unit inet-src-{next(sinks)} --collect ${pkgs.bash}/bin/sh -c 'head -c 20M /dev/zero | ${pkgs.netcat-openbsd}/bin/nc -N -l 9002'")
+          inet.wait_until_succeeds("ss -tlnH | grep -c ':9002 ' >/dev/null")
+          dl = mbit(f"{ga} sh -c 'nc -d -w30 203.0.113.9 9002 > /dev/null'", 20)
+          assert cap * 0.6 < dl < cap * 1.3, f"internet -> shaped guest at {dl:.0f} Mbit/s, cap {cap}"
+          print(host.succeed("tc -s class show dev tap-ga"))
           print(host.succeed("tc -s filter show dev tap-ga ingress"))
 
       with subtest("Fluent Bit ships journald and console logs to Loki with the documented labels"):

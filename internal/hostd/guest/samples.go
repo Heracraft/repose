@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
 	"github.com/heracraft/repose/internal/obs"
 )
@@ -15,9 +16,103 @@ import (
 // the call sites read the same as before.
 const levelNotice = obs.LevelNotice
 
+// sampleCursor is a running guest's last reading of its cumulative
+// counters: the hypervisor unit's CPU time and its tap's bytes.
 type sampleCursor struct {
-	cpu, rx, tx, egress uint64
-	seen                bool
+	cpu, rx, tx uint64
+	seen        bool
+}
+
+// counterDelta is how far a cumulative counter moved since prev. A reading
+// below prev is a counter that started again from zero (a new tap or a new
+// unit) and counts in full.
+func counterDelta(prev, cur uint64) uint64 {
+	if cur >= prev {
+		return cur - prev
+	}
+	return cur
+}
+
+// resetCursor starts a guest's counters at zero when its tap is created, so
+// its first sample counts every byte since boot instead of setting a
+// baseline (DECISIONS I-448).
+func (m *Manager) resetCursor(guestID string) {
+	m.curMu.Lock()
+	m.last[guestID] = sampleCursor{seen: true}
+	m.curMu.Unlock()
+}
+
+// advanceNet reads a guest's tap counters and moves its cursor past them,
+// returning what the guest received and sent since the previous reading.
+// The read and the move happen under curMu, so a tick and the final
+// reading at teardown never count the same bytes twice. ok is false when
+// the tap could not be read; a cursor not yet seen (hostd restarted under
+// a running guest) takes the reading as its baseline.
+func (m *Manager) advanceNet(guestID, tap string) (drx, dtx uint64, ok bool) {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	rx, tx, err := m.d.Net.TapStats(tap)
+	if err != nil {
+		return 0, 0, false
+	}
+	cur := m.last[guestID]
+	if cur.seen {
+		drx, dtx = counterDelta(cur.rx, rx), counterDelta(cur.tx, tx)
+	}
+	cur.rx, cur.tx, cur.seen = rx, tx, true
+	m.last[guestID] = cur
+	return drx, dtx, true
+}
+
+// advanceCPU moves a guest's CPU cursor to cpu and returns the delta.
+func (m *Manager) advanceCPU(guestID string, cpu uint64) uint64 {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	cur := m.last[guestID]
+	var d uint64
+	if cur.seen {
+		d = counterDelta(cur.cpu, cpu)
+	}
+	cur.cpu, cur.seen = cpu, true
+	m.last[guestID] = cur
+	return d
+}
+
+// sampleTs is the timestamp for a Samples message: now, but never at or
+// before the last one sent, since the api keys samples on (project, second)
+// and drops a second row for the same second (DECISIONS I-448).
+func (m *Manager) sampleTs() int64 {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	ts := m.d.Now().Unix()
+	if ts <= m.lastTs {
+		ts = m.lastTs + 1
+	}
+	m.lastTs = ts
+	return ts
+}
+
+// finalSample reads a guest's tap one last time before teardown deletes it
+// and sends what the guest sent and received since the last tick, so bytes
+// between the last tick and the stop are metered (DECISIONS I-448). The
+// sample's state is stopping: the api's hours count running samples only.
+// The cursor goes with the tap; the next boot starts a new one.
+func (m *Manager) finalSample(g *state.Guest) {
+	drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap)
+	m.curMu.Lock()
+	delete(m.last, g.GuestID)
+	m.curMu.Unlock()
+	if !ok || (drx == 0 && dtx == 0) || m.d.Emit == nil {
+		return
+	}
+	m.d.Emit.Samples(&hostdv1.Samples{Ts: m.sampleTs(), Guests: []*hostdv1.GuestSample{{
+		GuestId: g.GuestID, State: StateStopping, Class: g.Class, DiskAllocBytes: g.VolumeBytes,
+		NetRxBytesDelta: drx, NetTxBytesDelta: dtx, Signals: &hostdv1.GuestSignals{},
+	}}, Host: m.hostSample()})
+	if m.d.Metrics != nil {
+		m.d.Metrics.GuestNetBytesTotal.WithLabelValues("rx").Add(float64(drx))
+		m.d.Metrics.GuestNetBytesTotal.WithLabelValues("tx").Add(float64(dtx))
+	}
 }
 
 func (m *Manager) hostSample() *hostdv1.HostSample {
@@ -38,7 +133,7 @@ func (m *Manager) hostSample() *hostdv1.HostSample {
 
 // CollectSamples builds one Samples message for every guest on the host.
 func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
-	s := &hostdv1.Samples{Ts: m.d.Now().Unix(), Host: m.hostSample()}
+	s := &hostdv1.Samples{Ts: m.sampleTs(), Host: m.hostSample()}
 	gs, err := m.d.State.ListGuests()
 	if err != nil {
 		m.d.Log.Error("samples: state read failed", "event", "samples", "err", err.Error())
@@ -51,35 +146,15 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			gsm.DiskAllocBytes, gsm.DiskUsedBytes = size, used
 		}
 		if g.State == StateRunning {
-			m.mu.Lock()
-			cur := m.last[g.GuestID]
-			m.mu.Unlock()
-			next := cur
 			if props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "CPUUsageNSec", "MemoryCurrent"); err == nil {
 				cpu, _ := strconv.ParseUint(props["CPUUsageNSec"], 10, 64)
 				mem, _ := strconv.ParseUint(props["MemoryCurrent"], 10, 64)
 				gsm.MemRssBytes = mem
-				if cur.seen && cpu >= cur.cpu {
-					gsm.CpuNsDelta = cpu - cur.cpu
-				}
-				next.cpu = cpu
+				gsm.CpuNsDelta = m.advanceCPU(g.GuestID, cpu)
 			}
-			if rx, tx, err := m.d.Net.TapStats(g.Tap); err == nil {
-				if cur.seen && rx >= cur.rx {
-					gsm.NetRxBytesDelta = rx - cur.rx
-				}
-				if cur.seen && tx >= cur.tx {
-					gsm.NetTxBytesDelta = tx - cur.tx
-				}
-				next.rx, next.tx = rx, tx
+			if drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap); ok {
+				gsm.NetRxBytesDelta, gsm.NetTxBytesDelta = drx, dtx
 			}
-			if eg, err := m.d.Net.CounterBytes(ctx, g.GuestID); err == nil {
-				next.egress = eg
-			}
-			next.seen = true
-			m.mu.Lock()
-			m.last[g.GuestID] = next
-			m.mu.Unlock()
 			if sess, err := m.session(g.GuestID); err == nil {
 				sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				sr, err := sess.Sample(sctx)

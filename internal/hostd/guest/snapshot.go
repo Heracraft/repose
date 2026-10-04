@@ -182,7 +182,7 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		}
 		return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
 	}
-	if err := m.capacityCheck(c.Class, c.VolumeBytes, false); err != nil {
+	if err := m.capacityCheck(c.GuestId, c.Class, c.VolumeBytes, false); err != nil {
 		return nil, err
 	}
 	if ok, err := m.d.Blob.Exists(ctx, c.BlobPath); err != nil {

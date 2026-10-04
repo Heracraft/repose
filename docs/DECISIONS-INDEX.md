@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-461 entries.
+467 entries.
 
 ## Scope
 
@@ -302,7 +302,7 @@ pointer, not a summary.
 - **I-216** The dashboard is developed against the live api and Logto, not the fake — L4780
 - **I-226** Request log lines name the route, the user and the client — 2026-09-23; L4799
 - **I-220** The menu takes any nixpkgs package by attribute path, and `repose config add/remove` edit it — L4810
-- **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — L4853
+- **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4853
 - **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; L4909
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; L4958
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L4991
@@ -493,3 +493,9 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11033
+- **I-449** One thin volume is at most half the pool, and the pool's volumes together at most 1.5 times it — 2026-10-03; L11065
+- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11089
+- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11108
+- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11128
+- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11148

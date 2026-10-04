@@ -101,7 +101,7 @@ func TestRealRendersDocumentedCommands(t *testing.T) {
 	if err := n.AddGuestRules(ctx, "g1", "10.64.4.2", "52:54:01:92:ab:cd", "tap-0192abcd"); err != nil {
 		t.Fatal(err)
 	}
-	if err := n.Shape(ctx, "tap-0192abcd", 200); err != nil {
+	if err := n.Shape(ctx, "tap-0192abcd", 200, 1000); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.DelGuestRules(ctx, "g1", "10.64.4.2", "52:54:01:92:ab:cd", "tap-0192abcd"); err != nil {
@@ -197,7 +197,7 @@ func TestTapStatsAreGuestView(t *testing.T) {
 
 // qdiscModel answers `tc qdisc` the way the kernel would for one tap, so
 // Shape's migration and idempotence are tested against state, not a script.
-type qdiscModel struct{ htb, ingress bool }
+type qdiscModel struct{ htb, htb2, ingress bool }
 
 func (q *qdiscModel) handle(argv []string) (shell.Result, error) {
 	fail := func() (shell.Result, error) {
@@ -208,9 +208,12 @@ func (q *qdiscModel) handle(argv []string) (shell.Result, error) {
 	switch verb + " " + last {
 	case "show " + last:
 		out := ""
-		if q.htb {
+		switch {
+		case q.htb:
 			out += "qdisc htb 1: root refcnt 2 r2q 10 default 0x10 direct_packets_stat 0 direct_qlen 1000\n"
-		} else {
+		case q.htb2:
+			out += "qdisc htb 2: root refcnt 2 r2q 10 default 0x20 direct_packets_stat 0 direct_qlen 1000\n"
+		default:
 			out += "qdisc fq_codel 0: root refcnt 2 limit 10240p flows 1024 quantum 1514\n"
 		}
 		if q.ingress {
@@ -228,10 +231,17 @@ func (q *qdiscModel) handle(argv []string) (shell.Result, error) {
 		}
 		q.ingress = false
 	case "del root":
-		if !q.htb {
+		if !q.htb && !q.htb2 {
 			return fail() // "Cannot delete qdisc with handle of zero."
 		}
-		q.htb = false
+		q.htb, q.htb2 = false, false
+	case "replace 20":
+		if len(argv) > 5 && argv[5] == "root" {
+			if q.htb2 {
+				return fail() // replacing a qdisc with itself would drop its classes; Shape must not
+			}
+			q.htb, q.htb2 = false, true
+		}
 	}
 	return shell.Result{}, nil
 }
@@ -241,21 +251,21 @@ func TestShapeMigratesLegacyRootAndIsIdempotent(t *testing.T) {
 	r := &shell.Fake{Scripts: []shell.Script{{Prefix: []string{"tc", "qdisc"}, Handle: q.handle}}}
 	n := NewReal(r)
 	ctx := context.Background()
-	if err := n.Shape(ctx, "tap-0192abcd", 200); err != nil {
+	if err := n.Shape(ctx, "tap-0192abcd", 200, 1000); err != nil {
 		t.Fatal(err)
 	}
-	if q.htb || !q.ingress {
-		t.Fatalf("after the first Shape htb=%v ingress=%v; want the legacy root gone and the ingress policer in place", q.htb, q.ingress)
+	if q.htb || !q.htb2 || !q.ingress {
+		t.Fatalf("after the first Shape htb=%v htb2=%v ingress=%v; want the legacy root replaced by 2: and the ingress policer in place", q.htb, q.htb2, q.ingress)
 	}
 	// a hostd restart re-applies, here with a new rate: nothing added twice
-	if err := n.Shape(ctx, "tap-0192abcd", 100); err != nil {
+	if err := n.Shape(ctx, "tap-0192abcd", 100, 500); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.Unshape(ctx, "tap-0192abcd"); err != nil {
 		t.Fatal(err)
 	}
-	if q.htb || q.ingress {
-		t.Fatalf("after Unshape htb=%v ingress=%v", q.htb, q.ingress)
+	if q.htb || q.htb2 || q.ingress {
+		t.Fatalf("after Unshape htb=%v htb2=%v ingress=%v", q.htb, q.htb2, q.ingress)
 	}
 	if err := n.Unshape(ctx, "tap-0192abcd"); err != nil {
 		t.Fatalf("a second Unshape must be a no-op: %v", err)
