@@ -43,7 +43,10 @@ was queued is marked; queue it again or the release takes the old commit.
 
 `add` reads the branch's diff against main and names the deploy targets it
 reaches. Go packages count through `go list -deps`: a change to
-`internal/obs` reaches every server binary but not the CLI.
+`internal/obs` reaches every server binary but not the CLI. A non-Go
+file under `cmd/` or `internal/` (an embedded email template, a
+migration) counts as a change to the nearest package above it, so an
+email edit ships as `api`.
 
 | Target | Reached by | Shipped by | Who may run it |
 |---|---|---|---|

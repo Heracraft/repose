@@ -56,7 +56,19 @@ needs_of() {
   grep -q '^infra/' <<<"$files" && t+=(infra)
   grep -qE '^nix/(flake\.(nix|lock)|packages\.nix|overlay/)' <<<"$files" && t+=(base host edge)
   # Go: a changed package ships in every binary that imports it.
-  pkgs=$(grep -E '^(cmd|internal)/.*\.go$|^go\.(mod|sum)$' <<<"$files" | sed -E 's|/[^/]+$||' | sort -u || true)
+  # A non-Go file under cmd/ or internal/ (an embedded email template, a
+  # migration) ships with the nearest package above it.
+  pkgs=$(
+    while IFS= read -r p; do
+      case $p in
+        go.mod | go.sum) echo "$p" ;;
+        cmd/* | internal/*)
+          local d=${p%/*}
+          while [ "$d" != cmd ] && [ "$d" != internal ] && ! compgen -G "$d/*.go" >/dev/null; do d=${d%/*}; done
+          echo "$d" ;;
+      esac
+    done <<<"$files" | sort -u
+  )
   if [ -n "$pkgs" ]; then
     local mod; mod=$(go list -m)
     for cmd in api repose-admin repose hostd guestd repose-hook gateway; do
