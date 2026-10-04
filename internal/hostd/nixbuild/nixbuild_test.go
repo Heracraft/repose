@@ -63,6 +63,82 @@ func TestMapEvalErrorFixtures(t *testing.T) {
 	}
 }
 
+// The personal layer's errors (DECISIONS I-490), captured from `nix eval`
+// of this flake with a personal.nix beside fragment.nix: the location is
+// reported as machine.nix, the name users know, with its line in
+// PersonalLine; the verbatim output names machine.nix too.
+func TestMapEvalErrorPersonal(t *testing.T) {
+	cases := []struct {
+		file, wantFirst      string
+		wantPersonal, wantFr int32
+	}{
+		{"personal-syntax.stderr", "syntax error at machine.nix:5:1, unexpected '}', expecting ';'", 5, 0},
+		{"personal-missing.stderr", "attribute 'ripgrepp' missing at machine.nix:3:21", 3, 0},
+		{"personal-conflict.stderr", "option 'home.sessionVariables.EDITOR' is set in both machine.nix and the project's configuration; wrap the one that should win in lib.mkForce", 0, 0},
+	}
+	for _, c := range cases {
+		e := MapEvalError(fixture(t, c.file))
+		if got := firstLine(e.Message); !strings.HasPrefix(got, c.wantFirst) {
+			t.Errorf("%s: first line\n got %q\nwant %q", c.file, got, c.wantFirst)
+		}
+		if e.PersonalLine != c.wantPersonal || e.FragmentLine != c.wantFr {
+			t.Errorf("%s: personal_line %d fragment_line %d, want %d %d", c.file, e.PersonalLine, e.FragmentLine, c.wantPersonal, c.wantFr)
+		}
+		if strings.Contains(e.Message, "personal.nix") {
+			t.Errorf("%s: message still says personal.nix", c.file)
+		}
+	}
+}
+
+// A personal layer is written beside the fragment only when the base's
+// flake reads it, and an empty one leaves no file and the eval cache key
+// of a build without the layer.
+func TestPersonalFileAndKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := writePersonal(dir, []byte("{ }")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "personal.nix")); string(b) != "{ }" {
+		t.Fatalf("personal.nix = %q", b)
+	}
+	if err := writePersonal(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "personal.nix")); !os.IsNotExist(err) {
+		t.Fatal("empty personal left personal.nix behind")
+	}
+	b := (&Real{}).Defaults()
+	req := Request{RevisionID: "r", Fragment: []byte("{ }"), BaseRef: "abc", BaseVersion: "v"}
+	plain := b.evalKey(req)
+	req.Personal = []byte("")
+	if b.evalKey(req) != plain {
+		t.Fatal("an empty personal layer changed the eval cache key")
+	}
+	req.Personal = []byte("{ home.packages = [ ]; }")
+	withP := b.evalKey(req)
+	if withP == plain {
+		t.Fatal("the personal layer is not in the eval cache key")
+	}
+	req.Personal = []byte("{ home.packages = [ ]; } ")
+	if b.evalKey(req) == withP {
+		t.Fatal("two personal layers share a key")
+	}
+	// The key with no personal layer is the one I-405 shipped: version 1,
+	// the inputs, the fragment.
+	checkout := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(checkout, "nix"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(checkout, "nix", "flake.nix"), []byte(`{ outputs = _: { }; }`), 0o644)
+	if b.basePersonal(checkout) {
+		t.Fatal("an old base reads as reading personal.nix")
+	}
+	_ = os.WriteFile(filepath.Join(checkout, "nix", "flake.nix"), []byte(`personalPath = "${fragment}/personal.nix";`), 0o644)
+	if !b.basePersonal(checkout) {
+		t.Fatal("a new base does not read as reading personal.nix")
+	}
+}
+
 func TestMapBuildErrorAndTimeouts(t *testing.T) {
 	e := MapBuildError(fixture(t, "build.stderr"))
 	if e.Code != "build_failed" || firstLine(e.Message) != "build of fails-1.0 failed" {
@@ -431,5 +507,67 @@ func TestEvalCache(t *testing.T) {
 	before = evals()
 	if res, _, err := build("r7", "{ b = 1; }", ""); err != nil || res.EvalCached || evals() != before+1 {
 		t.Fatalf("after a failed build: %+v %v", res, err)
+	}
+}
+
+// Build with a personal layer (DECISIONS I-490): an old base gets no
+// personal.nix and a log line saying so, with the eval cache entry of a
+// build without the layer; a base that reads it gets the file and its own
+// cache entry.
+func TestBuildPersonalLayer(t *testing.T) {
+	closure := fakeClosure(t)
+	base := fakeBase(t)
+	const drvA = "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-nixos-system-guest.drv"
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: []string{"timeout", "-k", "5", "60", "nix", "eval"}, Result: shell.Result{Stdout: []byte(drvA + "\n")}},
+		{Prefix: []string{"timeout", "-k", "5", "1800", "nix", "build"}, Result: shell.Result{Stdout: []byte(closure + "\n")}},
+		{Prefix: []string{"nix", "path-info", "-S"}, Result: shell.Result{Stdout: []byte(closure + "\t5368709120\n")}},
+	}}
+	b := (&Real{R: r, BuildsDir: t.TempDir(), BaseDir: base, Roots: gcroot.Roots{Dir: t.TempDir()}, Timeout: "timeout"}).Defaults()
+	lim := Limits{EvalS: 60, BuildS: 1800, Cores: 8, ClosureBytes: 20 << 30}
+	evals := func() int { return len(r.CallsWithPrefix("timeout", "-k", "5", "60", "nix", "eval")) }
+	build := func(rev string, personal []byte) (*Result, []string) {
+		t.Helper()
+		var lines []string
+		res, err := b.Build(context.Background(), Request{ProjectID: "p1", RevisionID: rev, Fragment: []byte("{ }"), Personal: personal, BaseRef: "abc123", Limits: lim},
+			func(l string) { lines = append(lines, l) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res, lines
+	}
+	personal := []byte("{ pkgs, ... }: { home.packages = [ pkgs.jq ]; }")
+
+	build("r1", nil)
+	res, lines := build("r2", personal)
+	if !res.EvalCached || evals() != 1 {
+		t.Fatalf("old base: the personal layer should be dropped and the plain build's evaluation reused (%d evals)", evals())
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "this base predates machine.nix") {
+		t.Fatalf("old base: no log line: %q", lines)
+	}
+	if _, err := os.Stat(filepath.Join(b.BuildsDir, "r2", "personal.nix")); !os.IsNotExist(err) {
+		t.Fatal("old base: personal.nix written")
+	}
+
+	_ = os.WriteFile(filepath.Join(base, "abc123", "nix", "flake.nix"), []byte(`{ personalPath = "${fragment}/personal.nix"; }`), 0o644)
+	res, lines = build("r3", personal)
+	if res.EvalCached || evals() != 2 {
+		t.Fatalf("new base: the personal layer must miss the plain build's cache entry (%d evals)", evals())
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "predates") {
+		t.Fatalf("new base: %q", lines)
+	}
+	if got, _ := os.ReadFile(filepath.Join(b.BuildsDir, "r3", "personal.nix")); string(got) != string(personal) {
+		t.Fatalf("personal.nix = %q", got)
+	}
+	if res, _ := build("r4", personal); !res.EvalCached || evals() != 2 {
+		t.Fatal("the same personal layer again should hit the cache")
+	}
+	if res, _ := build("r5", nil); !res.EvalCached || evals() != 2 {
+		t.Fatal("no personal layer on the new base should hit the plain entry")
+	}
+	if _, err := os.Stat(filepath.Join(b.BuildsDir, "r5", "personal.nix")); !os.IsNotExist(err) {
+		t.Fatal("empty personal layer wrote personal.nix")
 	}
 }

@@ -1,0 +1,1095 @@
+warning: Git tree '/var/lib/repose/base/REV' is dirty
+warning: not writing modified lock file of flake 'git+file:///var/lib/repose/base/REV?dir=nix':
+• Updated input 'fragment':
+    'path:./guest/fragment-placeholder'
+  → 'path:/var/lib/repose/builds/REVISION?lastModified=1791157168&narHash=sha256-J3/4bhhtNmMdTWOphcbrP2NMTN4r%2Bs9lzDCdkm00qVI%3D' (2026-10-04)
+error:
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1724:17:
+         1723|         zipAttrsWith (
+         1724|           name: values:
+             |                 ^
+         1725|           let
+
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1729:13:
+         1728|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1729|             head values
+             |             ^
+         1730|           else
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating the attribute 'mergedValue'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1276:5:
+         1275|     # Type-check the remaining definitions, and merge them. Or throw if no definitions.
+         1276|     mergedValue =
+             |     ^
+         1277|       if isDefined then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1277:7:
+         1276|     mergedValue =
+         1277|       if isDefined then
+             |       ^
+         1278|         if type.merge ? v2 then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1231:7:
+         1230|       # original singleton straight to the type merge.
+         1231|       if
+             |       ^
+         1232|         length defs == 1
+
+       … in the right operand of the AND (&&) operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1233:9:
+         1232|         length defs == 1
+         1233|         && addErrorContext "while evaluating definitions from `${(head defs).file}':" (
+             |         ^
+         1234|           !(head defs).value ? _type
+
+       … while evaluating definitions from `/nix/store/bgxq0a75z1gzy3x90x0bp6bx2ayigj1j-source/nixos/modules/system/activation/top-level.nix':
+
+       … in the argument of the not operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1234:12:
+         1233|         && addErrorContext "while evaluating definitions from `${(head defs).file}':" (
+         1234|           !(head defs).value ? _type
+             |            ^
+         1235|         )
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:866:21:
+          865|             inherit (module) file;
+          866|             inherit value;
+             |                     ^
+          867|           }) module.config
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/activation/top-level.nix:78:26:
+           77|   # Handle assertions and warnings
+           78|   baseSystemAssertWarn = lib.asserts.checkAssertWarn config.assertions config.warnings baseSystem;
+             |                          ^
+           79|
+
+       … while calling 'checkAssertWarn'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/asserts.nix:196:27:
+          195|   checkAssertWarn =
+          196|     assertions: warnings: val:
+             |                           ^
+          197|     let
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/asserts.nix:203:7:
+          202|     else
+          203|       showWarnings warnings val;
+             |       ^
+          204|
+
+       … while calling 'showWarnings'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1051:28:
+         1050|
+         1051|   showWarnings = warnings: res: foldr warn res warnings;
+             |                            ^
+         1052|
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1051:33:
+         1050|
+         1051|   showWarnings = warnings: res: foldr warn res warnings;
+             |                                 ^
+         1052|
+
+       … while calling 'foldr'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:138:14:
+          137|   foldr =
+          138|     op: nul: list:
+             |              ^
+          139|     let
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:143:5:
+          142|     in
+          143|     fold' 0;
+             |     ^
+          144|
+
+       … while calling 'fold''
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:141:15:
+          140|       len = length list;
+          141|       fold' = n: if n == len then nul else op (elemAt list n) (fold' (n + 1));
+             |               ^
+          142|     in
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:141:18:
+          140|       len = length list;
+          141|       fold' = n: if n == len then nul else op (elemAt list n) (fold' (n + 1));
+             |                  ^
+          142|     in
+
+       … while calling the 'length' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:140:13:
+          139|     let
+          140|       len = length list;
+             |             ^
+          141|       fold' = n: if n == len then nul else op (elemAt list n) (fold' (n + 1));
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/activation/top-level.nix:78:72:
+           77|   # Handle assertions and warnings
+           78|   baseSystemAssertWarn = lib.asserts.checkAssertWarn config.assertions config.warnings baseSystem;
+             |                                                                        ^
+           79|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `warnings':
+
+       … while evaluating the attribute 'mergedValue'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1276:5:
+         1275|     # Type-check the remaining definitions, and merge them. Or throw if no definitions.
+         1276|     mergedValue =
+             |     ^
+         1277|       if isDefined then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1277:7:
+         1276|     mergedValue =
+         1277|       if isDefined then
+             |       ^
+         1278|         if type.merge ? v2 then
+
+       … while evaluating the attribute 'values'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1270:11:
+         1269|         {
+         1270|           values = defsSorted;
+             |           ^
+         1271|           inherit (defsFiltered) highestPrio;
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1264:13:
+         1263|             # Avoid sorting if we don't have to.
+         1264|             if any (def: def.value._type or "" == "order") defsFiltered.values then
+             |             ^
+         1265|               sortProperties defsFiltered.values
+
+       … while calling the 'any' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1264:16:
+         1263|             # Avoid sorting if we don't have to.
+         1264|             if any (def: def.value._type or "" == "order") defsFiltered.values then
+             |                ^
+         1265|               sortProperties defsFiltered.values
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1259:26:
+         1258|           # Process mkOverride properties.
+         1259|           defsFiltered = filterOverrides' defsNormalized;
+             |                          ^
+         1260|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1460:5:
+         1459|     in
+         1460|     defs:
+             |     ^
+         1461|     # Optimize for the singleton case, equivalent to the `else` clause.
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1462:5:
+         1461|     # Optimize for the singleton case, equivalent to the `else` clause.
+         1462|     if length defs == 1 then
+             |     ^
+         1463|       {
+
+       … while calling the 'length' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1462:8:
+         1461|     # Optimize for the singleton case, equivalent to the `else` clause.
+         1462|     if length defs == 1 then
+             |        ^
+         1463|       {
+
+       … while calling the 'concatMap' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1244:28:
+         1243|           # Process mkMerge and mkIf properties.
+         1244|           defsNormalized = concatMap (
+             |                            ^
+         1245|             m:
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1245:13:
+         1244|           defsNormalized = concatMap (
+         1245|             m:
+             |             ^
+         1246|             map (
+
+       … while calling the 'map' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1246:13:
+         1245|             m:
+         1246|             map (
+             |             ^
+         1247|               value:
+
+       … while evaluating definitions from `/nix/store/bgxq0a75z1gzy3x90x0bp6bx2ayigj1j-source/nixos/modules/system/boot/systemd.nix':
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1255:82:
+         1254|                 }
+         1255|             ) (addErrorContext "while evaluating definitions from `${m.file}':" (dischargeProperties m.value))
+             |                                                                                  ^
+         1256|           ) defs;
+
+       … while calling 'dischargeProperties'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1411:5:
+         1410|   dischargeProperties =
+         1411|     def:
+             |     ^
+         1412|     if def ? _type then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1412:5:
+         1411|     def:
+         1412|     if def ? _type then
+             |     ^
+         1413|       if def._type == "if" then
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:866:21:
+          865|             inherit (module) file;
+          866|             inherit value;
+             |                     ^
+          867|           }) module.config
+
+       … while calling the 'concatLists' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:547:7:
+          546|       in
+          547|       concatLists (
+             |       ^
+          548|         mapAttrsToList (
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:549:17:
+          548|         mapAttrsToList (
+          549|           name: service:
+             |                 ^
+          550|           let
+
+       … while calling the 'concatLists' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:555:11:
+          554|           in
+          555|           concatLists [
+             |           ^
+          556|             (optional (type == "oneshot" && (restart == "always" || restart == "on-success"))
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:556:14:
+          555|           concatLists [
+          556|             (optional (type == "oneshot" && (restart == "always" || restart == "on-success"))
+             |              ^
+          557|               "Service '${name}.service' with 'Type=oneshot' cannot have 'Restart=always' or 'Restart=on-success'"
+
+       … while calling 'optional'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:805:20:
+          804|   */
+          805|   optional = cond: elem: if cond then [ elem ] else [ ];
+             |                    ^
+          806|
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/lists.nix:805:26:
+          804|   */
+          805|   optional = cond: elem: if cond then [ elem ] else [ ];
+             |                          ^
+          806|
+
+       … in the left operand of the AND (&&) operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:556:42:
+          555|           concatLists [
+          556|             (optional (type == "oneshot" && (restart == "always" || restart == "on-success"))
+             |                                          ^
+          557|               "Service '${name}.service' with 'Type=oneshot' cannot have 'Restart=always' or 'Restart=on-success'"
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/modules/system/boot/systemd.nix:551:20:
+          550|           let
+          551|             type = service.serviceConfig.Type or "";
+             |                    ^
+          552|             restart = service.serviceConfig.Restart or "no";
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `systemd.services.home-manager-dev.serviceConfig':
+
+       … while evaluating the attribute 'mergedValue'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1276:5:
+         1275|     # Type-check the remaining definitions, and merge them. Or throw if no definitions.
+         1276|     mergedValue =
+             |     ^
+         1277|       if isDefined then
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1028:13:
+         1027|             headError = checkDefsForError check loc defs;
+         1028|             value = mapAttrs (
+             |             ^
+         1029|               n: v:
+
+       … while calling the 'mapAttrs' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1028:21:
+         1027|             headError = checkDefsForError check loc defs;
+         1028|             value = mapAttrs (
+             |                     ^
+         1029|               n: v:
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1022:17:
+         1021|                 # Meaning it is less lazy
+         1022|                 filterAttrs (n: v: v.optionalValue ? value) (
+             |                 ^
+         1023|                   zipAttrsWith (name: defs: mergeDefinitions (loc ++ [ name ]) elemType defs) (pushPositions defs)
+
+       … while calling 'filterAttrs'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:23:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                       ^
+          668|
+
+       … while calling the 'removeAttrs' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:28:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                            ^
+          668|
+
+       … while calling the 'filter' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:45:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                                             ^
+          668|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:53:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                                                     ^
+          668|
+
+       … in the argument of the not operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:60:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                                                            ^
+          668|
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:60:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                                                            ^
+          668|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1022:33:
+         1021|                 # Meaning it is less lazy
+         1022|                 filterAttrs (n: v: v.optionalValue ? value) (
+             |                                 ^
+         1023|                   zipAttrsWith (name: defs: mergeDefinitions (loc ++ [ name ]) elemType defs) (pushPositions defs)
+
+       … while evaluating the attribute 'optionalValue'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1342:5:
+         1341|
+         1342|     optionalValue = if isDefined then { value = mergedValue; } else { };
+             |     ^
+         1343|   };
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1342:21:
+         1341|
+         1342|     optionalValue = if isDefined then { value = mergedValue; } else { };
+             |                     ^
+         1343|   };
+
+       (10 duplicate frames omitted)
+
+       … while evaluating definitions from `/nix/store/2dx8avbzvz3lrv20r7d5s90iwdlbq5rp-source/nixos':
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1255:82:
+         1254|                 }
+         1255|             ) (addErrorContext "while evaluating definitions from `${m.file}':" (dischargeProperties m.value))
+             |                                                                                  ^
+         1256|           ) defs;
+
+       … while calling 'dischargeProperties'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1411:5:
+         1410|   dischargeProperties =
+         1411|     def:
+             |     ^
+         1412|     if def ? _type then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1412:5:
+         1411|     def:
+         1412|     if def ? _type then
+             |     ^
+         1413|       if def._type == "if" then
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:969:11:
+          968|           inherit (def) file;
+          969|           value = v;
+             |           ^
+          970|         }) def.value
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:969:11:
+          968|           inherit (def) file;
+          969|           value = v;
+             |           ^
+          970|         }) def.value
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1724:17:
+         1723|         zipAttrsWith (
+         1724|           name: values:
+             |                 ^
+         1725|           let
+
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1729:13:
+         1728|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1729|             head values
+             |             ^
+         1730|           else
+
+       … while calling the 'getAttr' builtin
+         at «nix-internal»/derivation-internal.nix:50:17:
+           49|     value = commonAttrs // {
+           50|       outPath = builtins.getAttr outputName strict;
+             |                 ^
+           51|       drvPath = strict.drvPath;
+
+       … while calling the 'derivationStrict' builtin
+         at «nix-internal»/derivation-internal.nix:37:12:
+           36|
+           37|   strict = derivationStrict drvAttrs;
+             |            ^
+           38|
+
+       … while evaluating derivation 'home-manager-generation'
+         whose name attribute is located at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/stdenv/generic/make-derivation.nix:651:11
+
+       … while evaluating attribute 'buildCommand' of derivation 'home-manager-generation'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/trivial-builders/default.nix:88:9:
+           87|         inherit name;
+           88|         buildCommand = lib.toFunction buildCommand finalAttrs;
+             |         ^
+           89|         passAsFile = defaultPassAsFile ++ (userAttrs.passAsFile or [ ]);
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/trivial-builders/default.nix:88:24:
+           87|         inherit name;
+           88|         buildCommand = lib.toFunction buildCommand finalAttrs;
+             |                        ^
+           89|         passAsFile = defaultPassAsFile ++ (userAttrs.passAsFile or [ ]);
+
+       … while calling 'toFunction'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1211:16:
+         1210|   */
+         1211|   toFunction = v: if isFunction v then v else k: v;
+             |                ^
+         1212|
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1211:19:
+         1210|   */
+         1211|   toFunction = v: if isFunction v then v else k: v;
+             |                   ^
+         1212|
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1211:22:
+         1210|   */
+         1211|   toFunction = v: if isFunction v then v else k: v;
+             |                      ^
+         1212|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1131:5:
+         1130|     in
+         1131|     f: isFunction f || (f ? __functor && isFunction f.__functor && isFunction (f.__functor f));
+             |     ^
+         1132|
+
+       … in the left operand of the OR (||) operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1131:21:
+         1130|     in
+         1131|     f: isFunction f || (f ? __functor && isFunction f.__functor && isFunction (f.__functor f));
+             |                     ^
+         1132|
+
+       … while calling the 'isFunction' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/trivial.nix:1131:8:
+         1130|     in
+         1131|     f: isFunction f || (f ? __functor && isFunction f.__functor && isFunction (f.__functor f));
+             |        ^
+         1132|
+
+       … while calling the 'getAttr' builtin
+         at «nix-internal»/derivation-internal.nix:50:17:
+           49|     value = commonAttrs // {
+           50|       outPath = builtins.getAttr outputName strict;
+             |                 ^
+           51|       drvPath = strict.drvPath;
+
+       … while calling the 'derivationStrict' builtin
+         at «nix-internal»/derivation-internal.nix:37:12:
+           36|
+           37|   strict = derivationStrict drvAttrs;
+             |            ^
+           38|
+
+       … while evaluating derivation 'home-manager-files'
+         whose name attribute is located at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/stdenv/generic/make-derivation.nix:651:11
+
+       … while evaluating attribute 'buildCommand' of derivation 'home-manager-files'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/trivial-builders/default.nix:88:9:
+           87|         inherit name;
+           88|         buildCommand = lib.toFunction buildCommand finalAttrs;
+             |         ^
+           89|         passAsFile = defaultPassAsFile ++ (userAttrs.passAsFile or [ ]);
+
+       (7 duplicate frames omitted)
+
+       … while calling the 'concatStringsSep' builtin
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:678:13:
+          677|           ''
+          678|           + lib.concatStrings (
+             |             ^
+          679|             map (v: ''
+
+       … while calling anonymous lambda
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:679:18:
+          678|           + lib.concatStrings (
+          679|             map (v: ''
+             |                  ^
+          680|               insertFile ${
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:681:17:
+          680|               insertFile ${
+          681|                 lib.escapeShellArgs [
+             |                 ^
+          682|                   (sourceStorePath v)
+
+       … while calling 'concatMapStringsSep'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:261:13:
+          260|   concatMapStringsSep =
+          261|     sep: f: list:
+             |             ^
+          262|     concatStringsSep sep (map f list);
+
+       … while calling the 'concatStringsSep' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:262:5:
+          261|     sep: f: list:
+          262|     concatStringsSep sep (map f list);
+             |     ^
+          263|
+
+       … while calling 'escapeShellArg'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1220:5:
+         1219|   escapeShellArg =
+         1220|     arg:
+             |     ^
+         1221|     let
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1231:5:
+         1230|     in
+         1231|     if match "[[:alnum:],._+:@%/-]+" string == null then
+             |     ^
+         1232|       "'${replaceString "'" "'\\''" string}'"
+
+       … while calling the 'match' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1231:8:
+         1230|     in
+         1231|     if match "[[:alnum:],._+:@%/-]+" string == null then
+             |        ^
+         1232|       "'${replaceString "'" "'\\''" string}'"
+
+       … while evaluating the second argument passed to builtins.match
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1229:9:
+         1228|         # dependency on the entire original source.
+         1229|         if isPath arg && !isStorePath arg then "${arg}" else toString arg;
+             |         ^
+         1230|     in
+
+       … in the left operand of the AND (&&) operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1229:23:
+         1228|         # dependency on the entire original source.
+         1229|         if isPath arg && !isStorePath arg then "${arg}" else toString arg;
+             |                       ^
+         1230|     in
+
+       … while calling the 'isPath' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/strings.nix:1229:12:
+         1228|         # dependency on the entire original source.
+         1229|         if isPath arg && !isStorePath arg then "${arg}" else toString arg;
+             |            ^
+         1230|     in
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:682:20:
+          681|                 lib.escapeShellArgs [
+          682|                   (sourceStorePath v)
+             |                    ^
+          683|                   v.target
+
+       … while calling 'sourceStorePath'
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:45:5:
+           44|   sourceStorePath =
+           45|     file:
+             |     ^
+           46|     let
+
+       … while evaluating a branch condition
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:50:5:
+           49|     in
+           50|     if builtins.hasContext sourcePath then
+             |     ^
+           51|       file.source
+
+       … while calling the 'hasContext' builtin
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:50:8:
+           49|     in
+           50|     if builtins.hasContext sourcePath then
+             |        ^
+           51|       file.source
+
+       … while evaluating the argument passed to builtins.hasContext
+
+       … while calling the 'toString' builtin
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:47:20:
+           46|     let
+           47|       sourcePath = toString file.source;
+             |                    ^
+           48|       sourceName = config.lib.strings.storeFileName (baseNameOf sourcePath);
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/files.nix:47:29:
+           46|     let
+           47|       sourcePath = toString file.source;
+             |                             ^
+           48|       sourceName = config.lib.strings.storeFileName (baseNameOf sourcePath);
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `home-manager.users.dev.home.file."/home/dev/.config/fontconfig/conf.d/10-hm-fonts.conf".source':
+
+       (12 duplicate frames omitted)
+
+       … while evaluating definitions from `/nix/store/2dx8avbzvz3lrv20r7d5s90iwdlbq5rp-source/modules/misc/xdg':
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1255:82:
+         1254|                 }
+         1255|             ) (addErrorContext "while evaluating definitions from `${m.file}':" (dischargeProperties m.value))
+             |                                                                                  ^
+         1256|           ) defs;
+
+       … while calling 'dischargeProperties'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1411:5:
+         1410|   dischargeProperties =
+         1411|     def:
+             |     ^
+         1412|     if def ? _type then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1412:5:
+         1411|     def:
+         1412|     if def ? _type then
+             |     ^
+         1413|       if def._type == "if" then
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:866:21:
+          865|             inherit (module) file;
+          866|             inherit value;
+             |                     ^
+          867|           }) module.config
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:866:21:
+          865|             inherit (module) file;
+          866|             inherit value;
+             |                     ^
+          867|           }) module.config
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `home-manager.users.dev.xdg.configFile."fontconfig/conf.d/10-hm-fonts.conf".source':
+
+       (12 duplicate frames omitted)
+
+       … while evaluating definitions from `/nix/store/2dx8avbzvz3lrv20r7d5s90iwdlbq5rp-source/modules/misc/fontconfig.nix':
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1255:82:
+         1254|                 }
+         1255|             ) (addErrorContext "while evaluating definitions from `${m.file}':" (dischargeProperties m.value))
+             |                                                                                  ^
+         1256|           ) defs;
+
+       … while calling 'dischargeProperties'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1411:5:
+         1410|   dischargeProperties =
+         1411|     def:
+             |     ^
+         1412|     if def ? _type then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1412:5:
+         1411|     def:
+         1412|     if def ? _type then
+             |     ^
+         1413|       if def._type == "if" then
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:866:21:
+          865|             inherit (module) file;
+          866|             inherit value;
+             |                     ^
+          867|           }) module.config
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/misc/fontconfig.nix:438:33:
+          437|       lib.nameValuePair "fontconfig/conf.d/${config.target}" {
+          438|         inherit (config) enable source;
+             |                                 ^
+          439|       }
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `home-manager.users.dev.fonts.fontconfig.configFile.fonts.source':
+
+       (15 duplicate frames omitted)
+
+       … while calling the 'concatMap' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1419:9:
+         1418|       else if def._type == "merge" then
+         1419|         concatMap dischargeProperties def.contents
+             |         ^
+         1420|       else
+
+       … while calling 'dischargeProperties'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1411:5:
+         1410|   dischargeProperties =
+         1411|     def:
+             |     ^
+         1412|     if def ? _type then
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1414:9:
+         1413|       if def._type == "if" then
+         1414|         if isBool def.condition then
+             |         ^
+         1415|           if def.condition then dischargeProperties def.content else [ ]
+
+       … while calling the 'isBool' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1414:12:
+         1413|       if def._type == "if" then
+         1414|         if isBool def.condition then
+             |            ^
+         1415|           if def.condition then dischargeProperties def.content else [ ]
+
+       … while evaluating the attribute 'condition'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1581:13:
+         1580|     _type = "if";
+         1581|     inherit condition content;
+             |             ^
+         1582|   };
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/misc/fontconfig.nix:149:22:
+          148|         lib.mkMerge [
+          149|           (lib.mkIf (config.settings != { }) (lib.mkDerivedConfig options.settings mkSettingsFile))
+             |                      ^
+          150|           (lib.mkIf (config.text != null) (lib.mkDerivedConfig options.text mkTextFile))
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:283:38:
+          282|             let
+          283|               recurse = mapAttrs (n: v: if isOption v then v.value else recurse v);
+             |                                      ^
+          284|             in
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1181:7:
+         1180|     // {
+         1181|       value = addErrorContext "while evaluating the option `${showOption loc}':" (
+             |       ^
+         1182|         # Apply the 'apply' function to the merged value. This allows options to
+
+       … while evaluating the option `home-manager.users.dev.fonts.fontconfig.configFile.fonts.settings':
+
+       (20 duplicate frames omitted)
+
+       … while evaluating derivation 'home-manager-path'
+         whose name attribute is located at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/stdenv/generic/make-derivation.nix:651:11
+
+       … while evaluating attribute 'chosenOutputs' of derivation 'home-manager-path'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/buildenv/default.nix:113:9:
+          112|
+          113|         chosenOutputs = map (drv: {
+             |         ^
+          114|           paths =
+
+       … while evaluating list element at index 7
+
+       … while evaluating attribute 'paths'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/buildenv/default.nix:114:11:
+          113|         chosenOutputs = map (drv: {
+          114|           paths =
+             |           ^
+          115|             # First add the usual output(s): respect if user has chosen explicitly,
+
+       … while evaluating list element at index 0
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/buildenv/default.nix:114:11:
+          113|         chosenOutputs = map (drv: {
+          114|           paths =
+             |           ^
+          115|             # First add the usual output(s): respect if user has chosen explicitly,
+
+       … while calling the 'getAttr' builtin
+         at «nix-internal»/derivation-internal.nix:50:17:
+           49|     value = commonAttrs // {
+           50|       outPath = builtins.getAttr outputName strict;
+             |                 ^
+           51|       drvPath = strict.drvPath;
+
+       … while calling the 'derivationStrict' builtin
+         at «nix-internal»/derivation-internal.nix:37:12:
+           36|
+           37|   strict = derivationStrict drvAttrs;
+             |            ^
+           38|
+
+       … while evaluating derivation 'hm-session-vars.sh'
+         whose name attribute is located at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/stdenv/generic/make-derivation.nix:651:11
+
+       … while evaluating attribute 'text' of derivation 'hm-session-vars.sh'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/pkgs/build-support/trivial-builders/default.nix:135:11:
+          134|           name
+          135|           text
+             |           ^
+          136|           executable
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/home-environment.nix:671:11:
+          670|
+          671|         ${config.lib.shell.exportAll cfg.sessionVariables}
+             |           ^
+          672|       ''
+
+       … while calling 'exportAll'
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/lib/shell.nix:78:5:
+           77|   exportAll =
+           78|     vars:
+             |     ^
+           79|     lib.concatStringsSep "\n" (lib.mapAttrsToList export (lib.filterAttrs (_k: v: v != null) vars));
+
+       … while calling the 'concatStringsSep' builtin
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/lib/shell.nix:79:5:
+           78|     vars:
+           79|     lib.concatStringsSep "\n" (lib.mapAttrsToList export (lib.filterAttrs (_k: v: v != null) vars));
+             |     ^
+           80|
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/lib/shell.nix:79:32:
+           78|     vars:
+           79|     lib.concatStringsSep "\n" (lib.mapAttrsToList export (lib.filterAttrs (_k: v: v != null) vars));
+             |                                ^
+           80|
+
+       … while calling 'mapAttrsToList'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1092:23:
+         1091|   */
+         1092|   mapAttrsToList = f: attrs: attrValues (mapAttrs f attrs);
+             |                       ^
+         1093|
+
+       … while calling the 'attrValues' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1092:30:
+         1091|   */
+         1092|   mapAttrsToList = f: attrs: attrValues (mapAttrs f attrs);
+             |                              ^
+         1093|
+
+       … while calling the 'mapAttrs' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:1092:42:
+         1091|   */
+         1092|   mapAttrsToList = f: attrs: attrValues (mapAttrs f attrs);
+             |                                          ^
+         1093|
+
+       … from call site
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/lib/shell.nix:79:59:
+           78|     vars:
+           79|     lib.concatStringsSep "\n" (lib.mapAttrsToList export (lib.filterAttrs (_k: v: v != null) vars));
+             |                                                           ^
+           80|
+
+       (6 duplicate frames omitted)
+
+       … while calling anonymous lambda
+         at «github:nix-community/home-manager/efa3ccb4c3cc90d832eab232976379058fa75aa3?narHash=sha256-pD3qVlQ4mUCFoTWrYtxecpSitQMsgJvJIN0FUIDZoEU%3D»/modules/lib/shell.nix:79:80:
+           78|     vars:
+           79|     lib.concatStringsSep "\n" (lib.mapAttrsToList export (lib.filterAttrs (_k: v: v != null) vars));
+             |                                                                                ^
+           80|
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/attrsets.nix:667:70:
+          666|   */
+          667|   filterAttrs = pred: set: removeAttrs set (filter (name: !pred name set.${name}) (attrNames set));
+             |                                                                      ^
+          668|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1029:18:
+         1028|             value = mapAttrs (
+         1029|               n: v:
+             |                  ^
+         1030|               if lazy then
+
+       … while evaluating the attribute 'optionalValue.value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1342:41:
+         1341|
+         1342|     optionalValue = if isDefined then { value = mergedValue; } else { };
+             |                                         ^
+         1343|   };
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1715:19:
+         1714|                 {
+         1715|                   value = t1.merge loc defs;
+             |                   ^
+         1716|                   headError = checkDefsForError t1.check loc defs;
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1715:27:
+         1714|                 {
+         1715|                   value = t1.merge loc defs;
+             |                           ^
+         1716|                   headError = checkDefsForError t1.check loc defs;
+
+       … while calling 'mergeEqualOption'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/options.nix:501:10:
+          500|   mergeEqualOption =
+          501|     loc: defs:
+             |          ^
+          502|     if defs == [ ] then
+
+       … while calling the 'foldl'' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/options.nix:510:8:
+          509|     else
+          510|       (foldl' (
+             |        ^
+          511|         first: def:
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/options.nix:511:16:
+          510|       (foldl' (
+          511|         first: def:
+             |                ^
+          512|         if def.value != first.value then
+
+       … while calling the 'throw' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/options.nix:513:11:
+          512|         if def.value != first.value then
+          513|           throw "The option `${showOption loc}' has conflicting definition values:${
+             |           ^
+          514|             showDefs [
+
+       error: The option `home-manager.users.dev.home.sessionVariables.EDITOR' has conflicting definition values:
+       - In `/nix/store/a18w35waiycs1z97jf68jii6m4pyy88v-source/fragment.nix': "nano"
+       - In `/nix/store/a18w35waiycs1z97jf68jii6m4pyy88v-source/personal.nix': "vim"
+       Use `lib.mkForce value` or `lib.mkDefault value` to change the priority on any of these definitions.

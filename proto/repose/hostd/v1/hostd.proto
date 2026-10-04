@@ -161,6 +161,11 @@ message Build {
   // flake's own stamp, which under hostd's --override-input is "dirty"
   // (DECISIONS I-118).
   string base_version = 6;
+  // The account's personal layer (machine.nix, DECISIONS I-490): a
+  // home-manager module hostd writes as personal.nix beside fragment.nix.
+  // Empty means none, and the build is exactly what it was before the
+  // field existed; a hostd that predates it ignores it.
+  bytes personal = 7;
 }
 message ApplyConfig { string guest_id = 1; string system_closure = 2; bool force_reboot = 3; }
 message Snapshot { string guest_id = 1; string reason = 2; }
@@ -218,6 +223,9 @@ message Error {
   string code = 1;      // see docs/interfaces/grpc-hostd.md
   string message = 2;
   int32 fragment_line = 3;
+  // The line in the personal layer (personal.nix, machine.nix to the
+  // user) when the error is located there; 0 otherwise (DECISIONS I-490).
+  int32 personal_line = 4;
 }
 
 message Result {

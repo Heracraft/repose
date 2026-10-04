@@ -58,7 +58,7 @@ func (m *Manager) build(ctx context.Context, commandID string, c *hostdv1.Build)
 		m.mu.Unlock()
 	}()
 	res, err := m.d.Nix.Build(ctx, nixbuild.Request{
-		ProjectID: c.ProjectId, RevisionID: c.RevisionId, Fragment: c.Fragment, BaseRef: c.BaseRef, BaseVersion: c.BaseVersion,
+		ProjectID: c.ProjectId, RevisionID: c.RevisionId, Fragment: c.Fragment, BaseRef: c.BaseRef, BaseVersion: c.BaseVersion, Personal: c.Personal,
 		Limits: nixbuild.Limits{EvalS: lim.EvalS, BuildS: lim.BuildS, Cores: lim.Cores, ClosureBytes: lim.ClosureBytes},
 	}, func(line string) {
 		m.buildLog(commandID, line)
@@ -71,7 +71,7 @@ func (m *Manager) build(ctx context.Context, commandID string, c *hostdv1.Build)
 			if m.d.Metrics != nil {
 				m.d.Metrics.BuildDuration.WithLabelValues(ne.Code).Observe(dur.Seconds())
 			}
-			return nil, &Error{Code: ne.Code, Message: ne.Message, FragmentLine: ne.FragmentLine}
+			return nil, &Error{Code: ne.Code, Message: ne.Message, FragmentLine: ne.FragmentLine, PersonalLine: ne.PersonalLine}
 		}
 		log.Error("build failed", "event", "build_fail", "code", CodeInternal, "duration_ms", dur.Milliseconds())
 		if m.d.Metrics != nil {

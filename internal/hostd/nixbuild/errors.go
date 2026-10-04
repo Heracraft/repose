@@ -17,6 +17,10 @@ type Error struct {
 	Code         string
 	Message      string
 	FragmentLine int32
+	// PersonalLine is set instead of FragmentLine when Nix located the
+	// error in personal.nix, the account's layer, which users know as
+	// machine.nix (DECISIONS I-490).
+	PersonalLine int32
 }
 
 func (e *Error) Error() string { return e.Code + ": " + firstLine(e.Message) }
@@ -25,7 +29,8 @@ func (e *Error) Error() string { return e.Code + ": " + firstLine(e.Message) }
 const MessageCap = 32 << 10
 
 var (
-	fragLocRe   = regexp.MustCompile(`fragment\.nix:(\d+):(\d+)`)
+	fragLocRe   = regexp.MustCompile(`(fragment|personal)\.nix:(\d+):(\d+)`)
+	personalRe  = regexp.MustCompile(`(?:/nix/store/[^/\s]+/)?personal\.nix\b`)
 	errorLineRe = regexp.MustCompile(`(?m)^\s*error: (.*)$`)
 	didYouMean  = regexp.MustCompile(`(?m)^\s*(Did you mean .*\?)\s*$`)
 	buildingRe  = regexp.MustCompile(`(?m)building '(/nix/store/[^']+\.drv)'`)
@@ -34,6 +39,7 @@ var (
 	hmOptionRe  = regexp.MustCompile("The option `home-manager\\.users\\.dev\\.([^']+)' does not exist")
 	nixPathRe   = regexp.MustCompile(`cannot look up '(<[^>]+>)' in pure evaluation mode`)
 	uriRe       = regexp.MustCompile(`access to URI '([^']+)' is forbidden`)
+	conflictRe  = regexp.MustCompile("The option `home-manager\\.users\\.dev\\.([^']+)' has conflicting definition values")
 )
 
 func firstLine(s string) string {
@@ -51,8 +57,17 @@ func capVerbatim(stderr string) string {
 }
 
 func compose(summary, stderr string) string {
-	return summary + "\n\n" + strings.TrimRight(capVerbatim(stderr), "\n")
+	return summary + "\n\n" + strings.TrimRight(userNames(capVerbatim(stderr)), "\n")
 }
+
+// PersonalName is what users call the personal layer: the file is
+// ~/.config/repose/machine.nix on their laptop and machine.nix on the
+// dashboard, so every location in it is reported under that name.
+const PersonalName = "machine.nix"
+
+// userNames rewrites personal.nix locations in Nix's output to
+// machine.nix, the name the user knows the file by.
+func userNames(s string) string { return personalRe.ReplaceAllString(s, PersonalName) }
 
 // lastError returns the text of the final `error:` line and the byte
 // offset where it starts.
@@ -66,23 +81,36 @@ func lastError(stderr string) (string, int) {
 }
 
 // fragmentLine finds the location Nix reported for the final error: the
-// first fragment.nix mention after the last `error:` line, else the last
-// mention anywhere (the trace), else 0.
-func fragmentLine(stderr string) (int32, string) {
+// first fragment.nix or personal.nix mention after the last `error:`
+// line, else the last mention anywhere (the trace), else none. file is
+// "fragment.nix", "personal.nix" or "".
+func fragmentLine(stderr string) (file string, line int32, loc string) {
+	pick := func(m []string) (string, int32, string) {
+		l, _ := strconv.Atoi(m[2])
+		return m[1] + ".nix", int32(l), m[2] + ":" + m[3]
+	}
 	_, off := lastError(stderr)
 	if off >= 0 {
 		if m := fragLocRe.FindStringSubmatch(stderr[off:]); m != nil {
-			l, _ := strconv.Atoi(m[1])
-			return int32(l), m[1] + ":" + m[2]
+			return pick(m)
 		}
 	}
 	ms := fragLocRe.FindAllStringSubmatch(stderr, -1)
 	if len(ms) > 0 {
-		m := ms[len(ms)-1]
-		l, _ := strconv.Atoi(m[1])
-		return int32(l), m[1] + ":" + m[2]
+		return pick(ms[len(ms)-1])
 	}
-	return 0, ""
+	return "", 0, ""
+}
+
+// located is an Error carrying the line in whichever file it was found.
+func located(code, message, file string, line int32) *Error {
+	e := &Error{Code: code, Message: message}
+	if file == "personal.nix" {
+		e.PersonalLine = line
+	} else {
+		e.FragmentLine = line
+	}
+	return e
 }
 
 // optionHint follows an unknown-option summary. A fragment is a
@@ -100,14 +128,18 @@ const flakeHint = "this file is a Nix flake; `repose config apply` takes a home-
 
 // MapEvalError turns `nix eval` stderr into an eval_failed Error.
 func MapEvalError(stderr string) *Error {
-	msg, _ := lastError(stderr)
+	msg, off := lastError(stderr)
 	if msg == "" {
 		msg = "evaluation failed"
 	}
-	line, loc := fragmentLine(stderr)
+	file, line, loc := fragmentLine(stderr)
 	at := ""
 	if loc != "" {
-		at = " at fragment.nix:" + loc
+		name := file
+		if file == "personal.nix" {
+			name = PersonalName
+		}
+		at = " at " + name + ":" + loc
 	}
 	var summary string
 	switch {
@@ -130,7 +162,12 @@ func MapEvalError(stderr string) *Error {
 		// A flake.nix applied as a fragment: its top-level attributes
 		// reach home-manager as options. The did-you-mean that follows is
 		// about home-manager and only misleads here (DECISIONS I-483).
-		return &Error{Code: "eval_failed", Message: compose(flakeHint, stderr), FragmentLine: line}
+		return located("eval_failed", compose(flakeHint, stderr), file, line)
+	case conflictRe.MatchString(msg) && strings.Contains(stderr[max(off, 0):], "personal.nix") && strings.Contains(stderr[max(off, 0):], "fragment.nix"):
+		// The personal layer and the project's fragment both set one
+		// single-valued option (DECISIONS I-490).
+		m := conflictRe.FindStringSubmatch(msg)
+		summary = "option '" + m[1] + "' is set in both " + PersonalName + " and the project's configuration; wrap the one that should win in lib.mkForce"
 	case hmOptionRe.MatchString(msg):
 		m := hmOptionRe.FindStringSubmatch(msg)
 		summary = "option '" + m[1] + "' does not exist in a fragment" + at + optionHint
@@ -150,7 +187,7 @@ func MapEvalError(stderr string) *Error {
 	if m := didYouMean.FindStringSubmatch(stderr); m != nil {
 		summary += " (" + strings.ToLower(m[1][:1]) + m[1][1:] + ")"
 	}
-	return &Error{Code: "eval_failed", Message: compose(summary, stderr), FragmentLine: line}
+	return located("eval_failed", compose(userNames(summary), stderr), file, line)
 }
 
 // EvalTimeout is the eval_failed Error for a `timeout` exit.

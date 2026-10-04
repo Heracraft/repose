@@ -136,11 +136,19 @@
       };
 
       # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md):
-      # the base plus the fragment at "${fragment}/fragment.nix" applied to
+      # the base plus the fragment at "${fragment}/fragment.nix" (and the
+      # personal layer at "${fragment}/personal.nix" when present) applied to
       # dev. `config.system.build.toplevel` is the system closure; the class
       # is not baked in (DECISIONS I-34, I-43).
       guestSystem = (composeGuest {
         fragmentPath = "${fragment}/fragment.nix";
+        # The account's personal layer, when hostd wrote one beside the
+        # fragment (Build.personal, DECISIONS I-490). hostd looks for the
+        # string personal.nix in this file to know a base reads it.
+        personalPath =
+          if builtins.pathExists "${fragment}/personal.nix"
+          then "${fragment}/personal.nix"
+          else null;
         inherit guestd;
         # The label hostd writes next to the fragment (Build.base_version,
         # DECISIONS I-118): under `--override-input fragment` this flake

@@ -24,7 +24,11 @@
 #     `boot.*` cannot come from a tenant whatever produced the file.
 #
 # The fragment itself is `repose.fragment`; nix/guest/compose.nix and
-# nix/guest/microvm.nix set it. The values are read back from
+# nix/guest/microvm.nix set it. The account's personal layer
+# (`machine.nix`, DECISIONS I-490) is `repose.personal`: the same contract,
+# imported into the same home-manager configuration before the fragment,
+# so lists merge and two definitions of one single-valued option are an
+# error naming both files. Null (the default) imports nothing. The values are read back from
 # home-manager's evaluated configuration, which is the same shape
 # home-manager's own NixOS module uses for `users.users.<n>.packages`.
 { config, lib, ... }:
@@ -101,13 +105,16 @@ let
   # options above declare them.
   fragmentModule = config.repose.fragment;
 
+  # The account's personal layer, or null.
+  personalModule = config.repose.personal;
+
   # The pre-pass for repose.overlays (see the header). A function fragment
   # gets exactly the arguments it names; anything but lib and pkgs is a
   # throw with the rule in it, so a fragment that computes its overlays
   # from config fails with that sentence rather than with a recursion.
-  prePassValue =
+  prePass = m:
     let
-      f = if builtins.isPath fragmentModule || builtins.isString fragmentModule then import fragmentModule else fragmentModule;
+      f = if builtins.isPath m || builtins.isString m then import m else m;
       arg = name:
         if name == "lib" then lib
         else if name == "pkgs" then config.repose.prePassPkgs
@@ -119,6 +126,10 @@ let
     in
     if config.repose.prePassPkgs == null && builtins.isFunction f then [ ]
     else if r.success then r.value else [ ];
+
+  # Personal overlays first, then the project's.
+  prePassValue =
+    (if personalModule != null then prePass personalModule else [ ]) ++ prePass fragmentModule;
 in
 {
   options.repose.prePassPkgs = lib.mkOption {
@@ -142,9 +153,20 @@ in
     '';
   };
 
+  options.repose.personal = lib.mkOption {
+    type = lib.types.nullOr lib.types.deferredModule;
+    default = null;
+    description = ''
+      The account's personal home-manager layer (machine.nix), applied to
+      user dev before the fragment under the same contract. The flake's
+      guestSystem points it at "''${fragment}/personal.nix" when hostd wrote
+      one (DECISIONS I-490); null imports nothing.
+    '';
+  };
+
   config = {
     home-manager.users.dev = {
-      imports = [ fragmentOptions fragmentModule ];
+      imports = [ fragmentOptions ] ++ lib.optional (personalModule != null) personalModule ++ [ fragmentModule ];
     };
 
     # Platform overlay first (the base adds it), then the fragment's.

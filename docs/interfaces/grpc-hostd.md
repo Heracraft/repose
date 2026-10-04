@@ -84,7 +84,7 @@ command_id returns the stored result) and one of:
 | `StopGuest` | guest_id, snapshot_first (bool), timeout_s | snapshot_id if taken (assigned by the api), blob_path, bytes (I-26), sha256 (I-462) |
 | `DestroyGuest` | guest_id, keep_volume (bool) | |
 | `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` when the new size would pass the host's pool budget (as for `CreateGuest` and `Restore`, DECISIONS I-449) |
-| `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp) | system_closure, closure_bytes, kernel_changed (bool) |
+| `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
 | `ApplyConfig` | guest_id, system_closure, force_reboot (bool) | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied) |
 | `Snapshot` | guest_id, reason (`scheduled|stop|manual`) | snapshot_id, blob_path, bytes, sha256 (I-462: hex SHA-256 of the bytes uploaded; hostd checks the store holds `bytes` before answering) |
 | `Restore` | project_id, guest_id (new), blob_path, class, volume_bytes, system_closure (I-26; empty means the api rebuilds before StartGuest), sha256 (I-462; see below), plus every CreateGuest field (secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, user_id, project_slug, remote_url, project_json) | as CreateGuest; the guest ends `stopped`. A failure removes the new volume (I-461) |
@@ -119,7 +119,8 @@ snapshot from before I-462, or an api older than it. A value that is not
 `build_failed`, `build_timeout`, `eval_failed`, `closure_too_large`,
 `guest_unresponsive`, `internal`. `build_failed` and `eval_failed` carry the
 Nix error text verbatim in `message` (capped 32 KB) plus `fragment_line` when
-parseable.
+parseable, or `personal_line` (field 4, I-490) when the location is in the
+personal layer.
 
 **BuildLog**: `command_id`, `seq`, `line`. Streamed during `Build`; the api
 forwards to the CLI over SSE.
