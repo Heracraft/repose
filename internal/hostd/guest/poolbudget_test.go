@@ -46,7 +46,10 @@ func TestPoolBudget(t *testing.T) {
 		t.Fatal("refused create made a volume")
 	}
 	// Exactly at the budget fits; one byte more, by a resize, does not.
-	c.VolumeBytes = 36 << 30
+	// The user's login-share volume (I-464) is a thin volume of the pool
+	// too, so it counts.
+	exact := uint64(36<<30) - h.lvm.Volumes[AuthVolumeName(h.guest(gid1).UserID)].Size
+	c.VolumeBytes = exact
 	h.mustOK(cmd(c))
-	h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid2, NewBytes: 36<<30 + 1}), CodeInsufficientCapacity)
+	h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid2, NewBytes: exact + 1}), CodeInsufficientCapacity)
 }
