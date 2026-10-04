@@ -68,9 +68,13 @@ they stop an actor the component map does not draw.
    host, the VNet, or the mesh.
 3. **SSH certificates with project principals**, checked twice: at the
    gateway (route lookup plus principal match) and at the guest's sshd.
-   24-hour validity (I-267), revocation list. Stops: a tenant or a stolen
-   certificate opening another project; a stolen laptop after 24 hours or
-   after `repose logout` from another device.
+   24-hour validity (I-267), revocation list held for the whole lifetime
+   (I-434). An open connection ends when its certificate is revoked or
+   expires (I-436). A login under another user's handle is refused before
+   any lookup, so it does not reveal whether the project exists (I-437).
+   Stops: a tenant or a stolen certificate opening another project; a
+   stolen laptop, open connections included, after 24 hours or within
+   30 s of `repose logout` from another device.
 4. **mTLS per host** with the host id as CN; every command checked against
    the stream's identity. The api admits only the serial it last issued to
    that host (and the one a rotate replaced, until the new certificate
@@ -330,7 +334,12 @@ Written down so nobody believes otherwise.
   another name, a scanner, spam over a submission port) is a sample or a
   counter on a dashboard, and a human decides.
 - **Denial of service against the gateway or api.** Rate limits exist per
-  user; no upstream DDoS protection beyond what Azure gives a public IP.
+  user. The gateway bounds connections still in the handshake per source
+  and in all, separately from authenticated relays, and the edge's
+  nftables caps open and new connections per source on 22 (I-435), so one
+  address cannot fill the gateway. A distributed flood can still fill the
+  64 handshake slots and delay logins; there is no upstream DDoS
+  protection beyond what Azure gives a public IP.
 - **Supply chain of the agent overlay.** Agents are repackaged from
   upstream binary releases with pinned hashes; there is no independent
   verification of upstream builds. The hash is what upstream served when

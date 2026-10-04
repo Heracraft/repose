@@ -9,19 +9,19 @@ import (
 
 func TestRoute(t *testing.T) {
 	cases := []struct {
-		host         string
-		ok           bool
-		slug, handle string
-		port         int
+		host  string
+		ok    bool
+		label string
+		port  int
 	}{
-		{"3000-todo-app-heracraft.repose.herakraft.co", true, "todo-app", "heracraft", 3000},
-		{"8080-api-heracraft.repose.herakraft.co:443", true, "api", "heracraft", 8080},
-		{"3000-Api-Heracraft.repose.herakraft.co", true, "api", "heracraft", 3000}, // hostnames are case-insensitive; lowercased
-		{"todo-app.heracraft.repose.herakraft.co", false, "", "", 0},
-		{"3000-todo-app.repose.herakraft.co", true, "3000-todo", "app", 0}, // greedy: still parses, but not the intended shape
-		{"99999999-a-b.repose.herakraft.co", false, "", "", 0},
-		{"0-a-b.repose.herakraft.co", false, "", "", 0},
-		{"3000-a-b.example.com", false, "", "", 0},
+		{"3000-todo-app-heracraft.repose.herakraft.co", true, "todo-app-heracraft", 3000},
+		{"8080-api-heracraft.repose.herakraft.co:443", true, "api-heracraft", 8080},
+		{"3000-Api-Heracraft.repose.herakraft.co", true, "api-heracraft", 3000}, // hostnames are case-insensitive; lowercased
+		{"todo-app.heracraft.repose.herakraft.co", false, "", 0},
+		{"3000-todo-.repose.herakraft.co", false, "", 0},
+		{"99999999-a-b.repose.herakraft.co", false, "", 0},
+		{"0-a-b.repose.herakraft.co", false, "", 0},
+		{"3000-a-b.example.com", false, "", 0},
 	}
 	for _, c := range cases {
 		tgt, err := Route(c.host)
@@ -29,9 +29,23 @@ func TestRoute(t *testing.T) {
 			t.Errorf("%q: ok=%v err=%v", c.host, c.ok, err)
 			continue
 		}
-		if c.ok && c.port != 0 && (tgt.Slug != c.slug || tgt.Handle != c.handle || tgt.Port != c.port) {
+		if c.ok && (tgt.Label != c.label || tgt.Port != c.port) {
 			t.Errorf("%q: got %+v", c.host, tgt)
 		}
+	}
+}
+
+// TestRouteNeverSplitsSlugAndHandle pins I-438: two different projects,
+// todo-app of hera-craft and todo-app-hera of craft, give the same host
+// name under the old <slug>-<handle> form, so the parser must not claim
+// either reading.
+func TestRouteNeverSplitsSlugAndHandle(t *testing.T) {
+	tgt, err := Route("3000-todo-app-hera-craft.repose.herakraft.co")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tgt != (Target{Port: 3000, Label: "todo-app-hera-craft"}) {
+		t.Fatalf("got %+v", tgt)
 	}
 }
 

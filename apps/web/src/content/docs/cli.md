@@ -265,7 +265,7 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | Command                             | What it does                                                                                                     |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `repose login`                      | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers). |
-| `repose logout`                     | Log out and revoke SSH certificates. `--purge` removes the CLI's files.                                          |
+| `repose logout`                     | Log out and revoke SSH certificates; connections they opened, on any device, close within 30 seconds. `--purge` removes the CLI's files. |
 | `repose notify set`                 | `--email on\|off`, `--ntfy URL\|none`.                                                                           |
 | `repose notify test`                | Send a test on every channel that's on.                                                                          |
 | `repose version`                    | Print the version.                                                                                               |

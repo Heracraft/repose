@@ -205,6 +205,15 @@ in
     networking.nftables.enable = true;
     networking.nftables.ruleset = ''
       table inet repose-edge {
+        # Per-source bounds on the gateway port (DECISIONS I-435): open
+        # connections from one address, and new ones a second. The
+        # gateway's own pre-auth limits are the finer check; these keep a
+        # flood from reaching it at all.
+        set gw_conns4 { type ipv4_addr; flags dynamic; size 65535; }
+        set gw_conns6 { type ipv6_addr; flags dynamic; size 65535; }
+        set gw_rate4 { type ipv4_addr; flags dynamic,timeout; timeout 1m; size 65535; }
+        set gw_rate6 { type ipv6_addr; flags dynamic,timeout; timeout 1m; size 65535; }
+
         chain input {
           type filter hook input priority filter; policy drop;
           iifname "lo" accept
@@ -212,6 +221,10 @@ in
           ct state invalid drop
 
           # Public: the user SSH gateway, the preview stub, the WireGuard hub.
+          tcp dport 22 ct state new add @gw_conns4 { ip saddr ct count over 64 } counter reject with tcp reset
+          tcp dport 22 ct state new add @gw_conns6 { ip6 saddr ct count over 64 } counter reject with tcp reset
+          tcp dport 22 ct state new update @gw_rate4 { ip saddr limit rate over 20/second burst 40 packets } counter drop
+          tcp dport 22 ct state new update @gw_rate6 { ip6 saddr limit rate over 20/second burst 40 packets } counter drop
           tcp dport 22 accept
           tcp dport 443 accept
           udp dport ${toString cfg.wgPort} accept

@@ -145,7 +145,10 @@ Design (DECISIONS R2-6 chose to document it now):
   API (`GET /internal/route` extended to accept a slug without a handle and
   return the owner; slugs are unique per user, not globally, so the URL
   form must carry the handle: `3000-todo-app-heracraft.repose.herakraft.co`,
-  with the handle as the last segment before the domain).
+  with the handle as the last segment before the domain). DECISIONS
+  I-438: that name cannot be split back when a slug or handle has a dash,
+  so the label after the port must be a per-project preview name the API
+  keeps unique, chosen when this is built.
 - Authentication: a session cookie issued by the dashboard after Logto
   login, scoped to `.repose.herakraft.co`. A request without it redirects
   to the dashboard login with a return URL. The cookie identifies the user;

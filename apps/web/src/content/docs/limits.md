@@ -31,6 +31,12 @@ Data your machines send to the internet is counted against the month's allowance
 - A machine can open 200 new outbound connections a second, in bursts of up to 2000. Installing packages, running test suites and crawling your own app stay well under it.
 - Nothing on the internet can connect to the machine. Reach your own servers on it through [port forwarding](/docs/machine#ports).
 
+## SSH connections
+
+- Your account can hold 32 SSH connections through the gateway at once, across all your projects. `repose` commands share one connection per command, and an editor opens a few.
+- One address can have 4 connections logging in at the same moment, 64 open and 20 new a second. Past that, a new connection is closed before it logs in.
+- A connection ends when the certificate it logged in with expires, or within 30 seconds of `repose logout` on any device. The CLI renews a certificate once it has less than 12 hours left, so a connection a `repose` command or your `ssh` opens lasts at least 12 hours. Editors reconnect by themselves; a `repose attach` that ends this way can be run again, and the tmux session is where you left it.
+
 ## What isn't allowed
 
 The [terms](/terms) have the full wording. In short, don't use a machine to:

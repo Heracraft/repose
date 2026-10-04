@@ -40,6 +40,7 @@ var guideSkippedSections = map[string]string{
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
+	"limits#ssh-connections":                        "the gateway limits connections from laptops into machines; an agent on the machine makes none",
 }
 
 // guestCommands is every command the guide may tell an agent to run, with

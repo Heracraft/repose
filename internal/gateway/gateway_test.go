@@ -600,7 +600,8 @@ func TestConnectionCapAndPerSourceAuthLimit(t *testing.T) {
 
 	// The per-source concurrent-auth cap, with the connection cap kept out of
 	// the way: one raw connection parked in the auth phase holds the single
-	// slot, so a second concurrent auth from the same address is rate limited.
+	// slot, so a second concurrent auth from the same address is refused
+	// before any handshake, with one plain line (I-435).
 	h2 := newHarness(t, harnessOpts{maxConns: 50, maxAuthPerIP: 1, authTimeout: 3 * time.Second})
 	cert2 := h2.userCert(t, key, []string{h2.project.ID}, time.Hour)
 	parked, err := net.Dial("tcp", h2.addr)
@@ -609,9 +610,8 @@ func TestConnectionCapAndPerSourceAuthLimit(t *testing.T) {
 	}
 	defer func() { _ = parked.Close() }()
 	time.Sleep(100 * time.Millisecond)
-	_, banner, err = h2.dial(h2.login, cert2)
-	if err == nil || banner != MsgRateLimited {
-		t.Fatalf("second concurrent auth: err=%v banner=%q", err, banner)
+	if line := firstLine(t, "", h2.addr); line != "repose gateway: "+MsgRateLimited {
+		t.Fatalf("second concurrent auth: first line %q", line)
 	}
 	if v := counterValue(t, h2.metrics.AuthFailTotal.WithLabelValues(ResultRateLimited)); v != 1 {
 		t.Fatalf("auth_total{result=rate_limited} %v", v)
@@ -636,7 +636,7 @@ func TestConnectionCapAndPerSourceAuthLimit(t *testing.T) {
 var soakDialTimeout = 60 * time.Second
 
 func TestSoakHundredConnections(t *testing.T) {
-	h := newHarness(t, harnessOpts{maxConns: 300, maxAuthPerIP: 300, dialTimeout: soakDialTimeout})
+	h := newHarness(t, harnessOpts{maxConns: 300, maxConnsPerUser: 300, maxPreAuth: 300, maxAuthPerIP: 300, dialTimeout: soakDialTimeout})
 	_, key := genKey(t)
 	cert := h.userCert(t, key, []string{h.project.ID}, time.Hour)
 	runtime.GC()

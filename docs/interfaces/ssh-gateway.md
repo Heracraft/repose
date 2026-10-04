@@ -29,10 +29,22 @@ Two CAs, both ed25519, private keys in the api's secret store:
 
 ## Gateway behaviour
 
-1. Accept the TCP connection, present the host certificate.
+1. Accept the TCP connection. A source with 4 connections already in the
+   handshake (an IPv6 source counted by its /64), a banned source, or a
+   gateway with 64 connections in the handshake gets one plain line
+   (`repose gateway: <message>`) before any SSH version string and is
+   closed (DECISIONS I-435). Otherwise present the host certificate. The
+   handshake and authentication must finish within 10 seconds.
 2. Public-key auth only. Verify the offered certificate: signed by User CA,
-   within validity, serial not in the revocation set (refreshed from
-   `/internal/revoked` every 30 s, plus a push on revoke).
+   within validity, a validity span no longer than the gateway's
+   revocation memory (`UserCertTTL` plus one hour, I-434), serial not in
+   the revocation set (refreshed from `/internal/revoked` every 30 s, plus
+   a push on revoke). The login's handle must equal the handle in the
+   certificate's `key_id` (`<user_id>:<handle>`); otherwise the answer is
+   `certificate not valid for this project`, with no route lookup, so it
+   is the same whether that user has such a project or not (I-437). A
+   `key_id` of another shape, such as the gateway's own `:via-gateway`
+   certificates, gets the same answer.
 3. Resolve `login` via `GET /internal/route`. If the project's `state` is
    not `running`, reject with a banner: `todo-app is stopped; run \`repose
    start todo-app\``, `todo-app is being destroyed; \`repose restore
@@ -42,6 +54,10 @@ Two CAs, both ed25519, private keys in the api's secret store:
    `certificate not valid for this project`. Every banner ends in a newline,
    and a connection shows one: the plain key ssh offers after a refused
    certificate gets no second "certificate required" banner (I-189).
+   An accepted connection takes one of 200 relay slots and one of the
+   user's 32 (keyed on the `key_id` user id); over either the banner is
+   `gateway busy` or `too many open connections for your account; close
+   some and try again`.
 4. Terminate the client's SSH session at the gateway, then open a second
    SSH session to `guest_ip:22` over WireGuard and relay channels between
    the two (session, `direct-tcpip` for `-L`, `forwarded-tcpip` for `-R`,
@@ -52,11 +68,15 @@ Two CAs, both ed25519, private keys in the api's secret store:
    pair. The guest's sshd therefore remains a second, independent check.
    Raw TCP relay after auth was rejected because the login name is only
    known after the client's key exchange with the gateway completes.
-5. Report `POST /internal/sessions` on open and close, with the relay's
+5. A relay ends when its certificate expires, when its serial is
+   revoked (at the next refresh or push), or after 24 hours, whichever
+   comes first (I-436); the guest connection is closed first, then the
+   client's. Commands multiplexed over the connection end with it.
+6. Report `POST /internal/sessions` on open and close, with the relay's
    own `session_id` (16 random bytes, hex; DECISIONS I-176): a session is
    a relay, not a certificate, so two terminals under one certificate
    count as two and closing one leaves the other.
-6. Port forwards (`-L`, `-R`) are passed through. Agent forwarding is
+7. Port forwards (`-L`, `-R`) are passed through. Agent forwarding is
    refused (DECISIONS I-247): an `auth-agent-req@openssh.com` from the
    client is answered with failure and never reaches the guest, and an
    `auth-agent@openssh.com` channel the guest opens is rejected
@@ -122,7 +142,7 @@ before it reads the next line and opens `hosts` only at the `Include`, so
 what `repose ssh-prepare <host>` writes is what that same connection
 reads. The prepare returns at once, with no api call, when `hosts` has
 the project's block and the certificate on disk carries the id in the
-block's `# project` line with 30 minutes left; else it takes
+block's `# project` line with 12 hours left (30 minutes before I-436); else it takes
 `~/.ssh/repose/.prepare.lock`, lists the account's projects and runs the
 same certificate issue as `repose run`, which rewrites `hosts` for every
 project. It never prompts: not logged in, an unknown project, or an api

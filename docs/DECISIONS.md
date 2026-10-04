@@ -305,7 +305,7 @@ confirms. Interface: `grpc-hostd.md`.
 
 **I-6. Preview hostnames carry the handle:
 `<port>-<slug>-<handle>.repose.herakraft.co`.** (features) *Why:* slugs are
-unique per user, not globally. Not built in the first release.
+unique per user, not globally. Not built in the first release. Amended by I-438: the form cannot be split when a slug or handle has a dash.
 
 **I-7. `POST /me/notify-test`, and the SSE build-log route accepts
 `?access_token=`.** (08, 13) Browsers cannot set headers on EventSource; the
@@ -11382,3 +11382,110 @@ another project already holds is ignored rather than announced or read
 back. Tests: TestHostReportsCountOnlyForItsOwnGuests (api events),
 TestHelloCountsOnlyForTheHostsOwnGuests (api ops),
 TestQuestionCloseAndReuseStayInTheSendersProject (api questions).
+**I-434. The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory.**
+(security release, 2026-10-03) The gateway's in-memory revocation set
+dropped a serial 13 hours after first seeing it, a window sized for the
+12-hour certificates of R3-9. I-267 raised the lifetime to 24 hours and
+the window stayed, so on a gateway that had been up long enough a
+certificate revoked early in its life became usable again for the rest
+of it. The window is now `sshca.UserCertTTL` plus one hour of clock skew,
+derived from the constant so the two cannot drift apart again, and the
+gateway refuses any user certificate whose validity span is longer than
+that window, or that never expires (`permission denied (certificate not
+signed by the repose CA)`, result `bad_ca`). The api issues
+`UserCertTTL` plus one minute of backdating, so nothing it signs is
+refused. A restart still re-reads the whole list. Tests:
+`TestRevocationKeptForTheCertLifetime` (a revoked 24-hour certificate is
+still refused 6, 13, 18 and 23 hours later across incremental
+refreshes), `TestCertLongerThanRevocationMemoryRefused`. *Rejected for
+now:* carrying `expires_at` in `/internal/revoked` so each serial is
+dropped at its own expiry; it changes an internal contract for a memory
+saving of a few hours of serials.
+
+**I-435. The gateway bounds unauthenticated connections separately from relays.**
+(security release, 2026-10-03) Before, a connection took one of the 200
+relay slots before the per-source check, and held it through the
+handshake for up to 30 seconds whether or not it ever authenticated, so
+idle connections from one address could hold every slot. Now:
+
+- The per-source check (4 connections in the handshake per address, an
+  IPv6 source counted by its /64) and the ban run first, then a global
+  budget of 64 connections in the handshake. A connection over either is
+  sent one plain line (`repose gateway: too many authentication attempts
+  from your address; try again later` or `repose gateway: gateway busy`)
+  ahead of any SSH version string and closed, with no key exchange.
+  OpenSSH shows that line only with `-v`; the user sees
+  `kex_exchange_identification: Connection closed by remote host`.
+- The handshake and authentication must finish within 10 seconds (was
+  30).
+- A relay slot (200) is taken only once authentication succeeds, with a
+  per-user share of 32 relays keyed on the user id in the certificate's
+  `key_id`. Over the share the banner is `too many open connections for
+  your account; close some and try again`, result `busy`; the CLI counts
+  it among the refusals a new certificate cannot fix.
+- The edge's nftables admits at most 64 open connections and 20 new ones
+  a second (burst 40) per source address on tcp/22.
+
+These replace the limits line of `06-gateway-edge.md` §5.2. Tests:
+`TestOneSourceCannotFillTheGateway` (400 idle connections from one
+address hold at most 4 handshake slots and no relay slot; a client from
+a second address connects and runs a command), `TestPreAuthGlobalCap`,
+`TestAuthDeadline`, `TestPerUserRelayCap`,
+`TestConnectionCapAndPerSourceAuthLimit`; the edge ruleset passes
+`nft -c`.
+
+**I-436. A relay ends when its certificate is revoked or expires.**
+(security release, 2026-10-03) Revocation and expiry were checked only at
+authentication, and the CLI's ssh config multiplexes every later command
+over the first connection (`ControlMaster`), so a connection opened
+before `repose logout` on another device, or before the certificate
+expired, kept opening new sessions until the 24-hour connection cap. The
+gateway now keeps its open relays by certificate serial: every
+revocation refresh and push ends the relays whose serial is revoked, and
+each relay lasts at most until its certificate's `valid_before` (and
+never past the 24-hour cap). Ending a relay closes the guest connection
+first, then the client's. `session_close` log lines carry `reason`
+(`revoked`, `cert_expired`, `session_cap`, `closed`).
+
+So that a connection the CLI opens is not cut short soon after it
+starts, the CLI now reuses a certificate on disk only while it has 12
+hours left (was 30 minutes): a new connection lasts at least 12 hours,
+and certificates are issued about twice a day instead of once. Editors
+over Remote-SSH reconnect on their own, and the reconnect runs
+`repose ssh-prepare`, which renews the certificate. Tests:
+`TestRevocationEndsOpenRelays` (push and api refresh each end their
+relay; a relay on another certificate keeps running),
+`TestCertExpiryEndsOpenRelay`, `TestCertUsableFor`.
+
+**I-437. The gateway answers a login under another user's handle the same way whether or not the project exists.**
+(security release, 2026-10-03) The gateway looked up the route for
+whatever `<slug>.<handle>` a client sent before checking the
+certificate's principals, and answered `no such project` for a missing
+project and `certificate not valid for this project` for one that
+exists. Any user with a valid certificate could learn which project
+slugs another user has. The gateway now compares the login's handle with
+the handle the api signed into the certificate's `key_id`
+(`<user_id>:<handle>`) right after the revocation check: a different
+handle, or a `key_id` that is not of that shape (the gateway's own
+`:via-gateway` certificates of I-431 included), gets `certificate not
+valid for this project` with result `wrong_principal` and no route
+lookup. Within your own handle `no such project` is unchanged. After an
+operator renames a handle, the next connection with the old certificate
+gets the same banner, and the CLI's one re-issue on it brings a
+certificate with the new handle. This is SECURITY.md control 5
+("cross-user lookups return 404") applied to the gateway. Tests:
+`TestOtherUsersLoginsAnswerAlike`, `TestGatewayCertFromClientRefused`,
+`TestCertUser`.
+
+**I-438. The preview host parser no longer splits a slug from a handle.**
+(security release, 2026-10-03; amends I-6) `<port>-<slug>-<handle>` has
+more than one reading when either part contains a dash, and both may:
+`3000-todo-app-hera-craft` is `todo-app` of `hera-craft` and
+`todo-app-hera` of `craft`. A proxy built on that split could serve one
+user's project at another user's preview name. The stub's `Route` now
+returns the port and the label after it as one opaque string, and the
+host form is `<port>-<name>.repose.herakraft.co`. When previews are
+built, `<name>` must be a per-project preview name the api keeps unique;
+how it is chosen is decided with the feature. Previews are not built, so
+nothing a user sees changes. Tests: `TestRoute`,
+`TestRouteNeverSplitsSlugAndHandle`.

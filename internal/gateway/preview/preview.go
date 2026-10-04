@@ -19,24 +19,24 @@ import (
 // features/ports-and-previews.md.
 var ErrNotImplemented = errors.New("previews are not enabled yet")
 
-// Target is a resolved preview host: which project and which guest port.
+// Target is a parsed preview host: the guest port and the label that
+// names the project. The label is not split into a slug and a handle: both
+// may contain dashes, so `3000-todo-app-hera-craft` has more than one
+// reading and a split would let one user's project answer for another's
+// preview (I-438). The proxy, when it is built, resolves Label as one
+// per-project preview name the api keeps unique.
 type Target struct {
-	Slug   string
-	Handle string
-	Port   int
+	Port  int
+	Label string
 }
 
-// hostRe matches `<port>-<slug>-<handle>.repose.herakraft.co`, the form
-// DECISIONS I-6 fixed (the handle is the last label before the domain
-// because slugs are unique per user, not globally). Slug and handle are
-// [a-z0-9-]; the port is 1-5 digits.
-var hostRe = regexp.MustCompile(`^([0-9]{1,5})-([a-z0-9-]+)-([a-z0-9-]+)\.repose\.herakraft\.co$`)
+// hostRe matches `<port>-<label>.repose.herakraft.co`: the port is 1-5
+// digits, the label one [a-z0-9-] run that starts and ends with a letter
+// or digit.
+var hostRe = regexp.MustCompile(`^([0-9]{1,5})-([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.repose\.herakraft\.co$`)
 
-// Route parses a preview hostname into its target. The slug/handle split is
-// unambiguous only because both are a single [a-z0-9-] run and the handle is
-// the final label; a slug that itself contains a dash is still parsed
-// correctly because the regexp is greedy on the slug and the handle is the
-// last dash-delimited group. Port 0 and ports above 65535 are rejected.
+// Route parses a preview hostname into its port and label. Port 0 and
+// ports above 65535 are rejected.
 func Route(host string) (Target, error) {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if i := strings.IndexByte(host, ':'); i >= 0 {
@@ -44,16 +44,13 @@ func Route(host string) (Target, error) {
 	}
 	m := hostRe.FindStringSubmatch(host)
 	if m == nil {
-		return Target{}, fmt.Errorf("preview host %q is not <port>-<slug>-<handle>.repose.herakraft.co", host)
+		return Target{}, fmt.Errorf("preview host %q is not <port>-<name>.repose.herakraft.co", host)
 	}
 	port, err := strconv.Atoi(m[1])
 	if err != nil || port < 1 || port > 65535 {
 		return Target{}, fmt.Errorf("preview host %q: port out of range", host)
 	}
-	// The slug is greedy, so for "3000-a-b-c" the slug is "a-b" and the
-	// handle is "c". That matches how the CLI builds the name (handle last).
-	slug, handle := m[2], m[3]
-	return Target{Slug: slug, Handle: handle, Port: port}, nil
+	return Target{Port: port, Label: m[2]}, nil
 }
 
 // Authenticate will check the Logto session cookie and return the user id.

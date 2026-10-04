@@ -297,7 +297,7 @@ func TestCertUsableFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	cert, err := ca.SignUserCert(pub, "u:handle", []string{"p1", "p2"}, time.Hour)
+	cert, err := ca.SignUserCert(pub, "u:handle", []string{"p1", "p2"}, certReuseMargin+time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +308,8 @@ func TestCertUsableFor(t *testing.T) {
 	if certUsableFor(cert, []string{"p1", "p3"}, now, certReuseMargin) {
 		t.Fatal("should not be usable: does not cover p3")
 	}
-	if certUsableFor(cert, []string{"p1"}, now.Add(50*time.Minute), certReuseMargin) {
-		t.Fatal("should not be usable: less than the 30m margin remains")
+	if certUsableFor(cert, []string{"p1"}, now.Add(110*time.Minute), certReuseMargin) {
+		t.Fatal("should not be usable: less than the reuse margin remains")
 	}
 	if certUsableFor(nil, []string{"p1"}, now, certReuseMargin) {
 		t.Fatal("nil cert is never usable")

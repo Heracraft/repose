@@ -323,11 +323,16 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `cannot reach environment: no route to host` | no WireGuard peer or route for the guest's host | on the edge `wg show wg0` and `ip route \| grep <guest cidr>`; `wgsync` adds them from `/internal/hosts` within 30 s — see "HostWgDown" |
 | `permission denied (certificate expired)` / `... not yet valid` | the user's certificate is outside its 24 h validity | the CLI refreshes and retries once; a spike of `expired` is "GatewayAuthSpike" step 2 |
 | `permission denied (certificate revoked)` | logout or a revoked serial | expected; takes effect within 30 s of `repose logout` |
-| `certificate not valid for this project` | the certificate's principals do not contain the resolved project id | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
+| `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
-| `gateway busy` | the 200-connection cap is reached | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
-| `too many authentication attempts from your address; try again later` | 4 concurrent auths or 20 failures from one source | a scan; the ban clears in 10 min |
+| `gateway busy` | the 200-relay cap is reached (banner), or 64 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
+| `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
+| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
 | `login name must be <project>.<user>` | a malformed SSH login name | the user's SSH config is wrong; `repose run` rewrites it |
+
+A relay ends when its certificate is revoked or expires (I-436):
+`session_close` with `reason` `revoked` or `cert_expired` is expected
+after a `repose logout` or a day-old certificate.
 
 A gateway restart (a deploy) drops every relay; the guest's tmux session
 survives, so `repose attach` reconnects. `nixos-rebuild switch --rollback`

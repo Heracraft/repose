@@ -10,11 +10,22 @@ import (
 // per-source ban of ops/RUNBOOK.md "GatewayAuthSpike". Everything here is
 // keyed on the source address in memory only; the address is never logged
 // (docs/ops/OBSERVABILITY.md).
+//
+// A connection passes through two budgets (I-435). Before and during the
+// handshake it holds a per-source slot (DefaultMaxAuthPerIP) and one of
+// DefaultMaxPreAuth global slots, both checked before any SSH byte is
+// sent, and it has DefaultAuthTimeout to authenticate. Once authenticated
+// it holds a relay slot (DefaultMaxConns) and one of its user's
+// DefaultMaxConnsPerUser. An unauthenticated client can therefore never
+// hold a relay slot, and one source cannot hold more than its few
+// pre-auth slots however many connections it opens.
 const (
-	DefaultMaxConns     = 200
-	DefaultMaxAuthPerIP = 4
-	DefaultAuthTimeout  = 30 * time.Second
-	DefaultMaxAuthTries = 3
+	DefaultMaxConns        = 200
+	DefaultMaxConnsPerUser = 32
+	DefaultMaxPreAuth      = 64
+	DefaultMaxAuthPerIP    = 4
+	DefaultAuthTimeout     = 10 * time.Second
+	DefaultMaxAuthTries    = 3
 	// A source with banFailures failures inside banWindow is refused for
 	// banDuration.
 	banFailures = 20
@@ -42,11 +53,15 @@ func newLimiter(maxAuthPerIP int, clock func() time.Time) *limiter {
 	}
 }
 
-// sourceKey is the address without the port.
+// sourceKey is the address without the port; an IPv6 source is keyed on
+// its /64, which one client typically holds whole.
 func sourceKey(addr net.Addr) string {
 	host, _, err := net.SplitHostPort(addr.String())
 	if err != nil {
 		return addr.String()
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return (&net.IPNet{IP: ip.Mask(net.CIDRMask(64, 128)), Mask: net.CIDRMask(64, 128)}).String()
 	}
 	return host
 }
@@ -108,7 +123,38 @@ func (l *limiter) endAuth(src string, failed bool) {
 	}
 }
 
-// connCounter caps the total number of connections.
+// keyedCounter caps the connections held per key (a user id).
+type keyedCounter struct {
+	mu  sync.Mutex
+	n   map[string]int
+	max int
+}
+
+func newKeyedCounter(max int) *keyedCounter {
+	return &keyedCounter{n: map[string]int{}, max: max}
+}
+
+func (k *keyedCounter) acquire(key string) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.max > 0 && k.n[key] >= k.max {
+		return false
+	}
+	k.n[key]++
+	return true
+}
+
+func (k *keyedCounter) release(key string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.n[key] <= 1 {
+		delete(k.n, key)
+		return
+	}
+	k.n[key]--
+}
+
+// connCounter caps a number of connections.
 type connCounter struct {
 	mu   sync.Mutex
 	n    int

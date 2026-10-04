@@ -544,7 +544,7 @@ var (
 		"certificate not signed by the repose ca", "certificate required", "certificate not valid for this project",
 	}
 	otherRefusals = []string{
-		"gateway busy", "too many authentication attempts", "cannot reach control plane",
+		"gateway busy", "too many open connections", "too many authentication attempts", "cannot reach control plane",
 		"not accepting connections yet", "is stopped", "no such project", "login name must be",
 	}
 )

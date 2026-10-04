@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-476 entries.
+481 entries.
 
 ## Scope
 
@@ -91,7 +91,7 @@ pointer, not a summary.
 - **I-3** The api generates each guest's sshd host key and Host-CA certificate and passes them in `CreateGuest` and `Restore` — L291
 - **I-4** Internal routes `GET /internal/hosts`, `POST /internal/gateway-certs`, `POST /internal/events` — L296
 - **I-5** `Heartbeat.draining` and `ApplyResult.reboot_required`, `ApplyConfig.force_reboot` — L301
-- **I-6** Preview hostnames carry the handle: `<port>-<slug>-<handle>.repose.herakraft.co` — L306
+- **I-6** Preview hostnames carry the handle: `<port>-<slug>-<handle>.repose.herakraft.co` — amended by I-438; L306
 - **I-7** `POST /me/notify-test`, and the SSE build-log route accepts `?access_token=` — L310
 - **I-8** CLI gains `events` and `notify set|test` — L314
 - **I-9** The runbook's `repose-admin` surface is the required admin CLI — L317
@@ -508,3 +508,8 @@ pointer, not a summary.
 - **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; L11313
 - **I-446** Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned — 2026-10-03; L11348
 - **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11368
+- **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; L11385
+- **I-435** The gateway bounds unauthenticated connections separately from relays — 2026-10-03; L11405
+- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11437
+- **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11460
+- **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11480

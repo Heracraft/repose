@@ -18,7 +18,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const certReuseMargin = 30 * time.Minute
+// certReuseMargin is how much validity a certificate on disk must have
+// left to be used for a new connection. The gateway ends a connection when
+// its certificate expires (I-436), so this is also the shortest life a
+// connection opened by the CLI can have: half the 24-hour lifetime.
+const certReuseMargin = 12 * time.Hour
 
 // The CLI's own key pair, ~/.ssh/repose/id_ed25519 (DECISIONS I-149). It
 // is generated here, has no passphrase, and is used for nothing but the
