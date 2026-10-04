@@ -11051,9 +11051,8 @@ moved. Tests: `test/supplychain` (`TestBumpAgentsRunsDownloadsWithoutWriteAccess
 `TestBumpAgentsPRAcceptsOnlyValueChanges`). *Not done here:* checking
 upstream provenance (npm provenance, GitHub attestations) before recording
 a hash; the hash is still whatever upstream served at bump time.
-*Owner:* protect `main` with a ruleset (pull request with one approval, no
-force push, no deletion, `github-actions[bot]` not on the bypass list),
-because `main` deploys api, api-grpc and web on every push (I-112).
+`main` deploys api, api-grpc and web on every push (I-112), so its
+repository ruleset, an owner setting, is part of this boundary.
 
 **I-429. CI pins every action to a commit and every tool to a version.**
 A tag such as `actions/checkout@v4` can be moved by whoever controls that
@@ -11068,9 +11067,9 @@ registry. Workflow-level permissions are read-only or empty everywhere;
 `infra.yml`'s `id-token: write` moved to the `plan` job, the only one that
 exchanges it for Azure credentials. Tests: `test/supplychain`
 (`TestActionsArePinnedByCommit`, `TestToolsHaveExactVersions`,
-`TestNoWorkflowGrantsWriteToEveryJob`). *Owner:* turn on "Require actions
-to be pinned to a full-length commit SHA" in the repository's Actions
-settings, so a new workflow cannot skip the pin.
+`TestNoWorkflowGrantsWriteToEveryJob`). The repository's Actions
+setting that requires full-length commit SHAs is the owner's, and keeps a
+new workflow from skipping the pin.
 
 **I-430. CLI releases sign checksums.txt; install.sh refuses a release it cannot verify.**
 install.sh checked the archive against `checksums.txt` from the same
@@ -11871,3 +11870,6 @@ asked for it never leaves the laptop unseen. Tests: the scanner table
 hidden directory, to a system file and to a key are not drops), and the
 pty test (a link to a hidden file is typed as text and nothing is
 copied; a copy is named).
+signed (I-429's pin narrows that). The `release`
+environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
+release signing key").

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -94,11 +95,15 @@ func TestBumpAgentsPRAcceptsOnlyValueChanges(t *testing.T) {
 }
 
 // fakeRelease writes a release directory for version holding one archive
-// for this machine and a checksums.txt, and returns the archive name.
-func fakeRelease(t *testing.T, dir, version string) string {
+// for this machine and a checksums.txt, and returns the archive name. The
+// binary carries build, so two calls with different builds always give
+// different archives, even within the same second (tar keeps mtimes at
+// one-second resolution).
+func fakeRelease(t *testing.T, dir, version string, build int) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "repose")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho repose "+version+"\n"), 0o755); err != nil {
+	body := fmt.Sprintf("#!/bin/sh\necho repose %s build %d\n", version, build)
+	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	arch := map[string]string{"amd64": "amd64", "arm64": "arm64"}[runtime.GOARCH]
@@ -162,7 +167,7 @@ func TestInstallShRequiresASignedChecksumsFile(t *testing.T) {
 	sums := filepath.Join(dir, "checksums.txt")
 	sig := filepath.Join(dir, "checksums.txt.sig")
 
-	fakeRelease(t, dir, version)
+	fakeRelease(t, dir, version, 1)
 	if r := runInstall(t, srv.URL, pub, version); r.err == nil || r.installed || !strings.Contains(r.out, "has no signature") {
 		t.Errorf("unsigned release: err=%v installed=%v out=%s", r.err, r.installed, r.out)
 	}
@@ -179,7 +184,7 @@ func TestInstallShRequiresASignedChecksumsFile(t *testing.T) {
 
 	// Archive swapped after signing: the signed checksum no longer matches.
 	b, _ := os.ReadFile(sums)
-	fakeRelease(t, dir, version)
+	fakeRelease(t, dir, version, 2)
 	if err := os.WriteFile(sums, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +193,7 @@ func TestInstallShRequiresASignedChecksumsFile(t *testing.T) {
 	}
 
 	// checksums.txt rewritten to match the swapped archive, old signature.
-	fakeRelease(t, dir, version)
+	fakeRelease(t, dir, version, 3)
 	if r := runInstall(t, srv.URL, pub, version); r.err == nil || r.installed || !strings.Contains(r.out, "does not verify") {
 		t.Errorf("rewritten checksums.txt: err=%v installed=%v out=%s", r.err, r.installed, r.out)
 	}
@@ -211,7 +216,7 @@ func TestInstallShPinsReleasesBeforeSigning(t *testing.T) {
 
 	// A rebuilt release whose checksums.txt matches its own archive is not
 	// the published one, so it is refused before the archive is checked.
-	fakeRelease(t, dir, version)
+	fakeRelease(t, dir, version, 4)
 	if r := runInstall(t, srv.URL, "", version); r.err == nil || r.installed || !strings.Contains(r.out, "is not the one published") {
 		t.Errorf("replaced checksums.txt: err=%v installed=%v out=%s", r.err, r.installed, r.out)
 	}
