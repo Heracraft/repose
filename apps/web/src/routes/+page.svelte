@@ -146,10 +146,10 @@
 </script>
 
 <svelte:head>
-	<title>repose: let your agents run with full permissions</title>
+	<title>repose: your dev environment, replicated in the cloud</title>
 	<meta
 		name="description"
-		content="A cloud dev machine for your repo in one command, with your code, tools and logins on it, so coding agents can run with full permissions and your laptop stays out of reach."
+		content="One command replicates your laptop's dev environment on a cloud machine: your code, tools and logins. For solo founders whose agents run with full permissions there, while the laptop stays out of reach."
 	/>
 </svelte:head>
 
@@ -224,13 +224,15 @@
 	<main id="main">
 		<section class="sec">
 			<div class="hero-grid inset">
+				<p class="eyebrow">For solo founders and their agents</p>
 				<h1 class="hero-h">
-					<span class="line">Let your agents run</span>
-					<span class="line">with <span class="bar">full permissions</span></span>
+					<span class="line">Your dev environment,</span>
+					<span class="line"><span class="bar">replicated</span> in the cloud</span>
 				</h1>
 				<p class="lead">
-					<span>Your work on a machine of its own.</span> <span>The agent can wreck it.</span>
-					<span>A snapshot puts it back.</span>
+					<span>Your code, tools and logins on a machine of its own.</span>
+					<span>Your agents run there with full permissions.</span>
+					<span>If one wrecks it, a snapshot puts it back.</span>
 				</p>
 				<div class="hero-ctas">
 					{@render authAction('btn btn--lg', 'Get started', 'Open the dashboard')}
@@ -243,7 +245,10 @@
 		</section>
 
 		<section class="sec">
-			<SectionHead shape="pill" title="Your working state, in one command" />
+			<SectionHead shape="pill" title="Your laptop's setup, in one command">
+				Unpushed commits, uncommitted changes and <code>.env</code> files. The CLIs you installed globally.
+				Your gh, Codex and opencode logins. Your SSH keys stay home.
+			</SectionHead>
 			<div class="landing-stage">
 				<OneCommand animated />
 			</div>
@@ -315,7 +320,8 @@
 
 		<section class="sec">
 			<SectionHead id="pricing" title="Pricing">
-				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none.
+				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by
+				the machines you have running; a stopped machine uses none.
 			</SectionHead>
 			<ul class="tiers" use:landOnView>
 				{#each plans as t, i (t.name)}
