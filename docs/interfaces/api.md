@@ -258,7 +258,7 @@ and `POST /billing/portal`.
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
 | GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
-| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. These count toward the project's 600 guest-raised events an hour with the vsock path's (DECISIONS I-445); past the cap the answer is still 202, with a nil `event_id` and nothing stored |
+| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)` |
 
 ## Rate limits
 
@@ -269,6 +269,11 @@ second and shares the budget with the user's dashboard). A refusal is
 client may send the same request again after it. A held op read (`?wait`) is
 one GET however long it is held. Per gateway: unlimited on
 internal.
+
+Hook events on `POST /internal/events` count toward the project's 600
+guest-raised events an hour together with the ones hostd relays over vsock
+(DECISIONS I-445). Past the cap the answer is still 202, with a nil
+`event_id` and nothing stored.
 
 ## Fake
 
