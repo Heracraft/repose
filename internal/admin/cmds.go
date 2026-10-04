@@ -212,7 +212,7 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		if len(projects) > 0 {
 			return fmt.Errorf("%s still holds %d project(s); move them first (projects move)", h.Name, len(projects))
 		}
-		if _, err := e.pool.Exec(ctx, "update hosts set state = 'retired', draining = true where id = $1", h.ID); err != nil {
+		if _, err := e.pool.Exec(ctx, "update hosts set state = 'retired', draining = true, cert_serial = null, prev_cert_serial = null where id = $1", h.ID); err != nil {
 			return err
 		}
 		_, err = e.audited(ctx, "host_retire", h.Name, nil)
@@ -230,7 +230,7 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := e.pool.Exec(ctx, "update hosts set state = 'lost', draining = true where id = $1", h.ID); err != nil {
+		if _, err := e.pool.Exec(ctx, "update hosts set state = 'lost', draining = true, cert_serial = null, prev_cert_serial = null where id = $1", h.ID); err != nil {
 			return err
 		}
 		for _, p := range projects {
@@ -295,6 +295,11 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if h.State == "lost" || h.State == "retired" {
+			// The api refuses these hosts whatever certificate they hold
+			// (I-432); a re-imaged machine joins again with a new token.
+			return fmt.Errorf("%s is %s; a re-imaged machine registers again with `hosts add --name %s --reissue`", h.Name, h.State, h.Name)
+		}
 		c, err := e.loadCA(ctx)
 		if err != nil {
 			return err
@@ -303,7 +308,7 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := e.pool.Exec(ctx, "update hosts set cert_serial = $2, cert_expires_at = $3 where id = $1", h.ID, serial, time.Now().Add(pki.HostCertValidity)); err != nil {
+		if _, err := e.pool.Exec(ctx, "update hosts set prev_cert_serial = cert_serial, cert_serial = $2, cert_expires_at = $3 where id = $1", h.ID, serial, time.Now().Add(pki.HostCertValidity)); err != nil {
 			return err
 		}
 		if _, err := e.audited(ctx, "host_rotate_cert", h.Name, map[string]any{"serial": serial}); err != nil {

@@ -25,6 +25,14 @@ host's `/run/repose/join-token` by cloud-init. Register is called once; the
 certificate is stored at `/var/lib/repose/hostd/{cert,key}.pem` and rotated
 by `Rotate` (unary, same shape) every 30 days.
 
+`Rotate` and `Session` admit a certificate only when its serial is the
+host's `cert_serial`, or the serial the last rotate replaced until the host
+first opens a stream with the new one (I-432). A host in state `lost` or
+`retired` is refused whatever it presents, and an open stream ends at its
+next heartbeat; all of these refusals are `PermissionDenied`. `repose-admin
+hosts mark-lost` and `hosts retire` clear the serials; a re-imaged machine
+joins again with `hosts add --name <name> --reissue`.
+
 `loki_url` is where that host's Fluent Bit ships journald and every guest's
 console log, as `scheme://host[:port]`; it lands in `host.json` under the
 same name, which `host-conventions.md` has documented since workstream 01

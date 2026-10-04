@@ -3,8 +3,9 @@
 Base: `https://api.repose.herakraft.co/v1`. JSON. Auth: `Authorization:
 Bearer <Logto access token>` for user routes (resource
 `https://api.repose.herakraft.co`, verified against Logto JWKS, `sub` is the
-user id). Internal routes under `/internal/` are for the gateway and use a
-shared mTLS client certificate. Errors: `{ "error": { "code": "...",
+user id). Internal routes under `/internal/` are for the gateway and use the
+gateway's mTLS client certificate: CN `gateway`, from the host CA; any other
+client certificate, a host's included, fails the TLS handshake (I-431). Errors: `{ "error": { "code": "...",
 "message": "...", "detail": {...} } }` with codes `unauthenticated`,
 `forbidden`, `not_found`, `invalid`, `conflict`, `payment_required`,
 `capacity`, `waitlisted`, `rate_limited`, `billing_disabled`, `internal`.

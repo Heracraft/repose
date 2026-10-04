@@ -103,6 +103,15 @@ func TestFork(t *testing.T) {
 		if len(s.list) != 1 || s.list[0].(map[string]any)["name"] != "DATABASE_URL" {
 			t.Fatalf("fork %d secrets: %s", i, s.raw)
 		}
+		// It opens in the fork, sealed for the fork (I-433).
+		vals, err := e.h.Secrets.DecryptForGuest(ctx, m["project_id"].(string))
+		found := false
+		for _, v := range vals {
+			found = found || (v.Name == "DATABASE_URL" && string(v.Value) == "postgres://fork-secret")
+		}
+		if err != nil || !found {
+			t.Fatalf("fork %d: the copied secret does not open there: %v", i, err)
+		}
 		var lower int
 		if err := e.h.Pool.QueryRow(ctx, "select count(*) from secrets where project_id = $1 and name !~ '^[A-Z]'", m["project_id"]).Scan(&lower); err != nil {
 			t.Fatal(err)

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-464 entries.
+467 entries.
 
 ## Scope
 
@@ -496,3 +496,6 @@ pointer, not a summary.
 - **I-428** Agent bumps run downloaded binaries in a job with no write access — L11033
 - **I-429** CI pins every action to a commit and every tool to a version — L11058
 - **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11075
+- **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11112
+- **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11141
+- **I-433** A named secret's ciphertext is bound to its project as well as its name — 2026-10-03; L11170

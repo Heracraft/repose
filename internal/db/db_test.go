@@ -30,21 +30,21 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0011 (the plus plan) is the newest: the plan check forgets 'plus',
-	// and 0010's projects.expires_at stays.
+	// 0012 (hosts.prev_cert_serial) is the newest: the column goes, and
+	// 0011's plan check keeps 'plus'.
+	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'prev_cert_serial'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("hosts.prev_cert_serial survives down 1 (0012)")
+	}
 	var def string
 	if err := pool.QueryRow(ctx, "select pg_get_constraintdef(oid) from pg_constraint where conname = 'subscriptions_plan_check'").Scan(&def); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check still allows plus after down (0011): %s", def)
-	}
-	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'projects' and column_name = 'expires_at'").Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatal("projects.expires_at is gone after down 1 (0011 reverted, 0010 kept)")
+	if !strings.Contains(def, "plus") {
+		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0012 reverted, 0011 kept): %s", def)
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {
