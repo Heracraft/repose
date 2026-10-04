@@ -158,7 +158,7 @@ func TestDestroyedListIsOneRowPerName(t *testing.T) {
 	var b strings.Builder
 	writeDestroyedTable(&b, list)
 	got := b.String()
-	if strings.Count(got, "\nizma ") != 1 || !strings.Contains(got, "EARLIER") || !strings.Contains(got, "--destroyed --all") ||
+	if strings.Count(got, "\nizma ") != 1 || !strings.Contains(got, "EARLIER") || strings.Contains(got, "--destroyed --all") ||
 		!strings.Contains(got, "`repose restore e1 --as NEW-NAME`") {
 		t.Fatalf("default table:\n%s", got)
 	}

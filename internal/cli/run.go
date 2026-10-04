@@ -202,7 +202,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		e.addReposeRemote(ctx, project, target, nil) // I-272
 		startSessionHelper(e, helper)
 		tzSaved()
-		if l := tempLine(project, time.Now(), false); l != "" {
+		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
 		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach, renewFor(e, project))
@@ -387,7 +387,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	}
 
 	_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
-	if l := tempLine(project, time.Now(), false); l != "" {
+	if l := tempLine(project, time.Now()); l != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, l)
 	}
 	tzSaved()

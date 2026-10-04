@@ -203,10 +203,10 @@ func TestLoginsLine(t *testing.T) {
 	if l := loginsLine([]string{"git"}, nil, false); l != "" {
 		t.Fatalf("git alone is named on every run, so no hint: %q", l)
 	}
-	if l := loginsLine([]string{"gh", "git"}, nil, false); !strings.Contains(l, "repose secrets choose") {
-		t.Fatalf("hint = %q", l)
+	if l := loginsLine([]string{"gh", "git"}, nil, false); l != "" {
+		t.Fatalf("before any choice, nothing (I-484): %q", l)
 	}
-	if l := loginsLine([]string{"codex"}, map[string]bool{"gh": true, "env": true}, true); l != "Left on your laptop (repose secrets choose): env, gh." {
+	if l := loginsLine([]string{"codex"}, map[string]bool{"gh": true, "env": true}, true); l != "Left on your laptop: env, gh." {
 		t.Fatalf("line = %q", l)
 	}
 	if l := loginsLine([]string{"codex"}, map[string]bool{}, true); l != "" {

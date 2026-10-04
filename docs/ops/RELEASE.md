@@ -91,7 +91,11 @@ Integrate whenever branches are queued; it needs no owner approval.
      `REPOSE_PROJECT REPOSE REPOSE_HOOK_AGENT` first, and keep `TMPDIR`
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit); `go test ./internal/cli
-     -run TestDocs`; the `docs/CHECKLIST.md` greps;
+     -run 'TestDocs|TestSuccessOutputNamesNoCommand'`; the
+     `docs/CHECKLIST.md` greps. A batch that adds or changes CLI output:
+     read its success lines and listings as a user on the hundredth run
+     would, and send back any that teach a command (DECISIONS I-484);
+     the test misses commands assembled at run time;
    - `web`: `pnpm --filter web exec vitest run`, `svelte-check`, `eslint .`,
      `build`, and the playwright suites (on a repose guest, set
      `PLAYWRIGHT_CHROMIUM_PATH` to the base's

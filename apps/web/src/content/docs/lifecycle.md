@@ -36,14 +36,13 @@ The dashboard's project page shows the state, agents, SSH sessions and cost, plu
 ```
 $ repose stop todo-app
 Stopped todo-app in 38s. Snapshot 0192… (2.1 GB).
-Disk is still billed; `repose rm todo-app` to stop that.
+Disk is still billed.
 
 $ repose start todo-app
 todo-app is running (large), ready in 9s.
-`repose attach todo-app` to get in.
 ```
 
-Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk. `repose run` in the checkout starts a stopped machine too.
+Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose attach` gets you onto a started one, and `repose run` in the checkout starts a stopped machine too.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
@@ -55,7 +54,7 @@ A machine is idle when it has been running for 24 hours with no SSH session, no 
 $ repose ls
 PROJECT    CLASS  STATE    UP      AGENTS
 todo-app   large  running  31h02m  claude: idle
-todo-app: idle 26h, still running; `repose stop todo-app` stops it
+todo-app: running for 26h with nobody attached
 ```
 
 - `repose status` shows the same line, and the dashboard's project list shows the idle time under the state.
@@ -99,8 +98,7 @@ If a restore over a project fails, the old disk is already gone, so the project 
 ```
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app.
-Bring it back within 30 days with: repose restore todo-app
+Destroying todo-app. Its final snapshot is kept for 30 days.
 ```
 
 This deletes the machine and its disk and stops all charges for the project. It stops counting toward your [project limit](/docs/limits#projects) at once, while it's still `destroying`. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
@@ -122,8 +120,7 @@ To throw a machine away and start again from your checkout, destroy it and run a
 
 ```
 $ repose rm -y
-Destroying todo-app.
-Bring it back within 30 days with: repose restore todo-app
+Destroying todo-app. Its final snapshot is kept for 30 days.
 $ repose run
 ✓ Destroyed the old todo-app  14s
 ✓ Created todo-app (large)  0.4s
@@ -175,7 +172,7 @@ Not a git repository, so nothing was synced.
 - `--temp` always makes a new machine, named `tmp-` and four letters unless you pass `--name`. It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
 - `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours. It's counted from when the machine was made.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
-- `run`, `attach`, `repose ls` and `repose status` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` The dashboard shows it as temporary.
+- `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.

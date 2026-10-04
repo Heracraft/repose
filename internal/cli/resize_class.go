@@ -69,7 +69,7 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		if _, err := e.Client.PatchProject(ctx, project.ID, PatchProjectRequest{Class: &class}); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(e.Out, "Changed %s from %s to %s: %s. It starts at the new size: `repose start %s`.\n", s, from, class, classSummary(class), s)
+		_, _ = fmt.Fprintf(e.Out, "Changed %s from %s to %s: %s. It starts at the new size.\n", s, from, class, classSummary(class))
 		return nil
 	case "running":
 	default:
@@ -121,6 +121,6 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		return err
 	}
 	pr.Fail()
-	_, _ = fmt.Fprintf(e.Out, "Changed %s from %s to %s: %s. Running again in %s. `repose attach %s` to get in.\n", s, from, class, classSummary(class), fmtElapsed(pr.Total()), s)
+	_, _ = fmt.Fprintf(e.Out, "Changed %s from %s to %s: %s. Running again in %s.\n", s, from, class, classSummary(class), fmtElapsed(pr.Total()))
 	return nil
 }

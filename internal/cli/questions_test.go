@@ -47,7 +47,7 @@ func TestReplyAnswersTheOneWaitingQuestion(t *testing.T) {
 	if err := QuestionsCmd(ctx, e, ""); err != nil {
 		t.Fatal(err)
 	}
-	if s := out.buf.String(); !strings.Contains(s, "todo-app  claude asked") || !strings.Contains(s, "Drop the legacy sessions table?") || !strings.Contains(s, "repose reply todo-app yes|no") {
+	if s := out.buf.String(); !strings.Contains(s, "todo-app  claude asked") || !strings.Contains(s, "Drop the legacy sessions table?") || !strings.Contains(s, "  options: yes|no\n") {
 		t.Fatalf("questions:\n%s", s)
 	}
 	if err := ReplyCmd(ctx, e, []string{"todo-app", "maybe"}, "", "", strings.NewReader(""), false); exitCodeOf(err) != ExitUsage || !strings.Contains(err.Error(), "yes, no") {
@@ -139,7 +139,7 @@ func TestQuestionsSaysWhereItLooked(t *testing.T) {
 	}
 	want := "No questions are waiting in any of your projects.\n" +
 		"Waiting at a prompt in their terminal, which `repose reply` can't answer:\n" +
-		"  claude on todo-app: `repose attach todo-app`\n"
+		"  claude on todo-app\n"
 	if s := out.buf.String(); s != want {
 		t.Fatalf("terminal wait:\n%s\nwant\n%s", s, want)
 	}

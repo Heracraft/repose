@@ -29,13 +29,12 @@ func idleFor(d time.Duration) string {
 	return fmt.Sprintf("%dd", h/24)
 }
 
-// idleLine is "running for 26h with nobody attached; `repose stop todo-app`
-// stops it", or "" for a project that is not idle.
+// idleLine is "running for 26h with nobody attached", or "" for a project that is not idle.
 func idleLine(p *Project, now time.Time) string {
 	if p.Idle == nil || p.State != "running" {
 		return ""
 	}
-	return fmt.Sprintf("running for %s with nobody attached; `repose stop %s` stops it", idleFor(now.Sub(p.Idle.Since)), p.Slug)
+	return fmt.Sprintf("running for %s with nobody attached", idleFor(now.Sub(p.Idle.Since)))
 }
 
 // idleNotedName is the laptop file that remembers which idle stretches
@@ -80,7 +79,7 @@ func idleOthersNote(dir string, projects []Project, current string, now time.Tim
 		return ""
 	}
 	sort.Strings(parts)
-	return fmt.Sprintf("Still running with nobody on it: %s. `repose stop <project>` stops one.", strings.Join(parts, ", "))
+	return fmt.Sprintf("Still running with nobody on it: %s.", strings.Join(parts, ", "))
 }
 
 func sameNoted(a, b map[string]time.Time) bool {

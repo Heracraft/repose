@@ -127,8 +127,7 @@ To watch the browser or use it yourself (a captcha, a passkey), one command:
 ```
 $ repose browser
 Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
-(the view sleeps after 30 idle minutes;
-repose browser --stop ends it).
+(the view sleeps after 30 idle minutes).
 ```
 
 Your browser opens on that link and shows the agent's browser, live, at the size of your tab (make the tab bigger and the machine's screen grows with it). Nothing to type: the password is the part of the link after `#`, which your browser reads and never sends anywhere. Click and type in the page to solve a captcha, log in or approve a passkey; the agent's browser tools use whatever you logged into. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.

@@ -212,8 +212,8 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 		return err
 	}
 	refreshSSHAccess(ctx, e, p.Slug)
-	_, _ = fmt.Fprintf(e.Out, "Restored %s from its snapshot of %s in %s; it is %s (%s). `repose attach %s` to get in.\n",
-		p.Slug, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(pr.Total()), stateWords(p.State), p.Class, p.Slug)
+	_, _ = fmt.Fprintf(e.Out, "Restored %s from its snapshot of %s in %s; it is %s (%s).\n",
+		p.Slug, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(pr.Total()), stateWords(p.State), p.Class)
 	return nil
 }
 
@@ -344,7 +344,6 @@ func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "PROJECT\tCLASS\tDESTROYED\tSNAPSHOT\tSIZE\tRESTORABLE UNTIL\tEARLIER")
 	var inUse []DestroyedProject
-	earlier := false
 	for _, g := range groups {
 		d := g[0]
 		until, destroyed, snap, size := destroyedCells(d)
@@ -356,15 +355,10 @@ func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 		more := "-"
 		if len(g) > 1 {
 			more = fmt.Sprint(len(g) - 1)
-			earlier = true
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, d.Class, destroyed, snap, size, until, more)
 	}
 	_ = tw.Flush()
-	_, _ = fmt.Fprintln(w, "`repose restore NAME` restores the row shown: the newest snapshot of the projects that had that name.")
-	if earlier {
-		_, _ = fmt.Fprintln(w, "EARLIER counts older destroyed projects of the same name; `repose ls --destroyed --all` lists them with the id that restores one.")
-	}
 	for _, d := range inUse {
 		// With a live project of the name, `repose restore NAME` means the
 		// live one (I-167), so the destroyed one is named by its id.
@@ -388,7 +382,6 @@ func writeDestroyedTableAll(w io.Writer, list []DestroyedProject) {
 		}
 	}
 	_ = tw.Flush()
-	_, _ = fmt.Fprintln(w, "`repose restore NAME` restores the first row of each name; `repose restore ID` restores that row (`--as NEW-NAME` when the name is in use).")
 }
 
 // destroyedSlugsForCompletion is what `repose restore <TAB>` offers.

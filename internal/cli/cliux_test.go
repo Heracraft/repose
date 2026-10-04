@@ -124,9 +124,9 @@ func TestDestroyConfirmationIsYesNo(t *testing.T) {
 	if err := DestroyCmd(ctx, e, p.ID, false, false, yes); err != nil {
 		t.Fatalf("confirmed destroy: %v", err)
 	}
-	// I-166: the destroy returns once accepted, with the one command that
-	// brings it back.
-	if !strings.Contains(out.String(), "Destroying age-calculator. Bring it back within 30 days with: repose restore age-calculator\n") {
+	// I-166: the destroy returns once accepted, and says how long it can
+	// come back (I-484: without the command).
+	if !strings.Contains(out.String(), "Destroying age-calculator. Its final snapshot is kept for 30 days.\n") {
 		t.Fatalf("out = %q", out.String())
 	}
 	if _, err := e.Client.GetProject(ctx, p.ID); !isNotFound(err) {
@@ -232,6 +232,9 @@ func TestProjectsTable(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "STATE") || !strings.Contains(lines[0], "MONTH") {
 		t.Fatalf("no header row:\n%s", out.String())
+	}
+	if strings.Contains(lines[0], "LEFT") {
+		t.Fatalf("LEFT is a column only while a temporary machine is listed (I-484):\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "age-calculator: ") || !strings.Contains(out.String(), "`repose start age-calculator`") {
 		t.Fatalf("no reason for the errored project:\n%s", out.String())
