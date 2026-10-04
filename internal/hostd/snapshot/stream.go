@@ -29,6 +29,10 @@ type Streamer interface {
 // raw image's non-zero pieces, to O_DIRECT writes (direct.go, I-403).
 type Pipeline struct {
 	R shell.Runner
+	// Sandbox runs dumpe2fs, which parses metadata the guest wrote, in
+	// shell.Sandboxed rather than as hostd (DECISIONS I-465). hostd sets
+	// it; tests on image files leave it off.
+	Sandbox bool
 }
 
 // Mode names how a stream was produced, for the snapshot log line.

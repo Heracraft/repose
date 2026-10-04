@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/heracraft/repose/internal/hostd/shell"
 )
 
 // The extent format (DECISIONS I-164). A snapshot of an ext4 volume used to
@@ -375,10 +377,14 @@ func readRaw(r io.Reader, dev, direct *os.File) error {
 	return dev.Sync()
 }
 
-// layout runs dumpe2fs on dev and returns its used ranges, or why the
+// layout runs dumpe2fs on dev, sandboxed when p.Sandbox, and returns its used ranges, or why the
 // device must be streamed raw.
 func (p *Pipeline) layout(ctx context.Context, dev string) (*usedLayout, error) {
-	res, err := p.R.Run(ctx, "dumpe2fs", dev)
+	argv := []string{"dumpe2fs", dev}
+	if p.Sandbox {
+		argv = shell.Sandboxed(dev, false, argv...)
+	}
+	res, err := p.R.Run(ctx, argv...)
 	if err != nil {
 		return nil, &errNotExtentable{"dumpe2fs failed (not ext4?)"}
 	}

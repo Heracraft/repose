@@ -257,3 +257,18 @@ func TestExtentSnapshotTiming(t *testing.T) {
 		t.Logf("%s: %d bytes compressed in %s", r.(Moder).Mode().Format, n, time.Since(start).Round(time.Millisecond))
 	}
 }
+
+// With Sandbox set, dumpe2fs on a snapshot runs in shell.Sandboxed with
+// read-only access to that device alone.
+func TestLayoutSandboxed(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{{Prefix: []string{"systemd-run"}, Result: shell.Result{ExitCode: 1}}}}
+	p := &Pipeline{R: r, Sandbox: true}
+	if _, err := p.layout(context.Background(), "/dev/vg-guests/snap-1"); err == nil {
+		t.Fatal("a failed dumpe2fs gave a layout")
+	}
+	argv := strings.Join(r.Calls[0], " ")
+	if !strings.HasPrefix(argv, "systemd-run ") || !strings.Contains(argv, "DeviceAllow=/dev/vg-guests/snap-1 r") ||
+		!strings.HasSuffix(argv, "-- dumpe2fs /dev/vg-guests/snap-1") {
+		t.Fatalf("dumpe2fs argv %s", argv)
+	}
+}

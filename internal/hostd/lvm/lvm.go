@@ -40,6 +40,9 @@ type Real struct {
 	VG   string // vg-guests
 	Pool string // thin
 	R    shell.Runner
+	// Sandbox runs e2fsck, which parses and repairs metadata a guest
+	// wrote, in shell.Sandboxed rather than as hostd (DECISIONS I-465).
+	Sandbox bool
 }
 
 // DevPath is the device node for a volume.
@@ -192,7 +195,11 @@ func (l *Real) PoolStats(ctx context.Context) (uint64, uint64, error) {
 
 // Fsck implements LVM.
 func (l *Real) Fsck(ctx context.Context, name string) (int, error) {
-	_, err := l.R.Run(ctx, "e2fsck", "-fp", l.DevPath(name))
+	argv := []string{"e2fsck", "-fp", l.DevPath(name)}
+	if l.Sandbox {
+		argv = shell.Sandboxed(l.DevPath(name), true, argv...)
+	}
+	_, err := l.R.Run(ctx, argv...)
 	var ee *shell.ExitError
 	if errors.As(err, &ee) {
 		return ee.Result.ExitCode, nil

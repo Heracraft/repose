@@ -208,7 +208,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	defer func() { _ = st.Close() }() // read-only at exit; a close error changes nothing
 	r := shell.Exec{}
-	l := &lvm.Real{VG: o.VG, Pool: o.Pool, R: r}
+	l := &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
 	id, err := EnsureIdentity(ctx, o, log, r, l)
 	if err != nil {
 		return err
@@ -258,7 +258,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	consoles := &consoleSet{log: log}
 	mgr, err := guest.New(cfg, guest.Deps{
 		State: st, LVM: l, Net: hnet.NewReal(r), Systemd: systemd.NewReal(r), CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
-		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r}, Emit: d.strm, Metrics: m, Log: log,
+		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 	})
 	if err != nil {

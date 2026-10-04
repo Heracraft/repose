@@ -72,3 +72,19 @@ func TestFakeLifecycle(t *testing.T) {
 		t.Fatal("snapshot still exists")
 	}
 }
+
+// With Sandbox set, e2fsck runs in shell.Sandboxed and its exit code still
+// reaches the caller: restore reads 1 as "fixed" and 4 as "left errors".
+func TestFsckSandboxed(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{{Prefix: []string{"systemd-run"}, Result: shell.Result{ExitCode: 1}}}}
+	l := &Real{VG: "vg-guests", Pool: "thin", R: r, Sandbox: true}
+	code, err := l.Fsck(context.Background(), "g-1")
+	if err != nil || code != 1 {
+		t.Fatalf("fsck: %d %v", code, err)
+	}
+	argv := strings.Join(r.Calls[0], " ")
+	if !strings.HasPrefix(argv, "systemd-run ") || !strings.Contains(argv, "DynamicUser=yes") ||
+		!strings.Contains(argv, "DeviceAllow=/dev/vg-guests/g-1 rw") || !strings.HasSuffix(argv, "-- e2fsck -fp /dev/vg-guests/g-1") {
+		t.Fatalf("fsck argv %s", argv)
+	}
+}
