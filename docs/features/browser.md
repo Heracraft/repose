@@ -240,8 +240,8 @@ command runs. Three parts, none of which the agent sees:
    Chrome's own server does not answer it. The browser's websocket goes
    to Chrome message by message through the bridge's policy (I-311:
    refusals, hidden targets, no cookies, the navigation log; I-467: no
-   credential headers, request or response bodies, or other sites'
-   stored data); every
+   credential headers, request or response bodies, WebSocket or
+   server-sent event payloads, or other sites' stored data); every
    other request, the other `/json` endpoints and per-page websockets
    included, is 404. It counts the upgrades: each is an MCP server
    attaching, and the CLI says so. With `--allow`, a second CDP
@@ -303,7 +303,8 @@ Behaviour that must hold (guest-desktop VM test, `TestBridgeEndToEnd`):
 - Against a real Chromium (`TestBridgeCredentialsAgainstChromium`): a
   page's request carries its Authorization header to the server, and the
   tool watching the network sees neither that header, the request body,
-  nor a rejected Set-Cookie line; a body read is refused (I-467).
+  a rejected Set-Cookie line, WebSocket frame payloads nor server-sent
+  event data; a body read is refused (I-467).
 
 ## Depends on
 

@@ -494,4 +494,4 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11033
-- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11071
+- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11076

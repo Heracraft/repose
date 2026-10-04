@@ -3,6 +3,8 @@ package cli
 import (
 	"bufio"
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -134,7 +136,28 @@ func testChromium(t *testing.T) (chrome laptopChrome, hits *hitLog, ok, other fu
 			http.Redirect(w, r, "http://other.test:"+port+"/landing", http.StatusFound)
 			return
 		case "/creds":
-			_, _ = fmt.Fprint(w, `<html><body>creds<script>fetch("/api", {method: "POST", headers: {"Authorization": "Bearer SECRET-A", "X-Api-Key": "SECRET-K"}, body: "refresh_token=SECRET-B"})</script></body></html>`)
+			_, _ = fmt.Fprint(w, `<html><body>creds<script>fetch("/api", {method: "POST", headers: {"Authorization": "Bearer SECRET-A", "X-Api-Key": "SECRET-K"}, body: "refresh_token=SECRET-B"});
+new EventSource("/events");
+var ws = new WebSocket("ws://" + location.host + "/ws"); ws.onopen = function () { ws.send("SECRET-S") }</script></body></html>`)
+			return
+		case "/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: SECRET-E\n\n")
+			w.(http.Flusher).Flush()
+			time.Sleep(time.Second)
+			return
+		case "/ws":
+			sum := sha1.Sum([]byte(r.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+			c, brw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer func() { _ = c.Close() }()
+			_, _ = fmt.Fprintf(c, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", base64.StdEncoding.EncodeToString(sum[:]))
+			_, _ = c.Write(encodeWSFrame(wsOpText, []byte("SECRET-W"), false))
+			if _, p, _, err := readWSMessage(brw.Reader, func(wsFrame) error { return nil }); err == nil {
+				hits.add("ws:" + string(p))
+			}
 			return
 		case "/api":
 			hits.add("auth:" + r.Header.Get("Authorization"))
@@ -312,8 +335,8 @@ func TestBridgeCredentialsAgainstChromium(t *testing.T) {
 	}
 	resultOf(t, tool.call(sid, "Page.navigate", map[string]any{"url": ok("/creds")}))
 	time.Sleep(2 * time.Second)
-	if !hits.has("auth:Bearer SECRET-A") {
-		t.Fatal("the page's request never reached the server with its Authorization header")
+	if !hits.has("auth:Bearer SECRET-A") || !hits.has("ws:SECRET-S") {
+		t.Fatal("the page's requests never reached the server with their credentials")
 	}
 	var events []string
 	var apiRequest string
@@ -332,7 +355,7 @@ func TestBridgeCredentialsAgainstChromium(t *testing.T) {
 		}
 	}
 	all := strings.Join(events, "\n")
-	if apiRequest == "" || !strings.Contains(all, "Network.responseReceivedExtraInfo") {
+	if apiRequest == "" || !strings.Contains(all, "Network.responseReceivedExtraInfo") || !strings.Contains(all, "Network.webSocketFrameReceived") || !strings.Contains(all, "Network.webSocketFrameSent") || !strings.Contains(all, "Network.eventSourceMessageReceived") {
 		t.Fatalf("the tool never saw the request and its response:\n%s", all)
 	}
 	if strings.Contains(all, "SECRET") {

@@ -309,6 +309,10 @@ func TestBridgeScrubsCredentialsFromEvents(t *testing.T) {
 			`{"method":"Network.requestWillBeSentExtraInfo","params":{"requestId":"2","headers":{"authorization":"Basic SECRET7","X-Api-Key":"SECRET8","proxy-authorization":"Negotiate SECRET9"}},"sessionId":"S"}`,
 			`{"method":"Fetch.requestPaused","params":{"requestId":"j","request":{"url":"https://example.com/","headers":{"X-Amz-Security-Token":"SECRET10"},"postData":"password=SECRET11"}},"sessionId":"S"}`,
 			`{"method":"Network.responseReceived","params":{"requestId":"2","response":{"status":200,"requestHeadersText":"GET / HTTP/1.1\r\nAuthorization: Bearer SECRET12\r\nAccept: */*\r\n\r\n"}},"sessionId":"S"}`,
+			`{"method":"Network.webSocketFrameReceived","params":{"requestId":"w","timestamp":1,"response":{"opcode":1,"mask":false,"payloadData":"{\"token\":\"SECRET14\"}"}},"sessionId":"S"}`,
+			`{"method":"Network.webSocketFrameSent","params":{"requestId":"w","timestamp":1,"response":{"opcode":1,"mask":true,"payloadData":"auth SECRET15"}},"sessionId":"S"}`,
+			`{"method":"Network.eventSourceMessageReceived","params":{"requestId":"e","timestamp":1,"eventName":"message","eventId":"7","data":"SECRET16"},"sessionId":"S"}`,
+			`{"method":"Network.dataReceived","params":{"requestId":"3","timestamp":1,"dataLength":9,"encodedDataLength":9,"data":"U0VDUkVUMTc="},"sessionId":"S"}`,
 			`{"method":"Network.requestIntercepted","params":{"interceptionId":"x","request":{"url":"https://example.com/","headers":{"Authorization":"Bearer SECRET13"}}},"sessionId":"S"}`,
 			`{"method":"Network.requestWillBeSentExtraInfo","params":{"requestId":"1","headers":{"Cookie":"sid=SECRET","Accept":"*/*"},"associatedCookies":[{"blockedReasons":[],"cookie":{"name":"sid","value":"SECRET"}}]},"sessionId":"S"}`,
 			`{"method":"Network.responseReceivedExtraInfo","params":{"requestId":"1","headers":{"set-cookie":"sid=SECRET2","content-type":"text/html"},"blockedCookies":[],"headersText":"HTTP/1.1 200 OK\r\nSet-Cookie: sid=SECRET3\r\nContent-Type: text/html\r\n\r\n"},"sessionId":"S"}`,
@@ -320,7 +324,7 @@ func TestBridgeScrubsCredentialsFromEvents(t *testing.T) {
 	cl := dialFront(t, front, "/devtools/browser/abc")
 	cl.send(`{"id":1,"method":"Network.enable","sessionId":"S"}`)
 	var all []string
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 13; i++ {
 		m := cl.recv()
 		if m == nil {
 			t.Fatalf("event %d missing", i)
@@ -329,10 +333,10 @@ func TestBridgeScrubsCredentialsFromEvents(t *testing.T) {
 		all = append(all, string(b))
 	}
 	s := strings.Join(all, "\n")
-	if l := strings.ToLower(s); strings.Contains(s, "SECRET") || strings.Contains(l, "cookie") || strings.Contains(l, "authorization") || strings.Contains(s, `"postData"`) || strings.Contains(s, "postDataEntries") {
+	if l := strings.ToLower(s); strings.Contains(s, "SECRET") || strings.Contains(l, "cookie") || strings.Contains(l, "authorization") || strings.Contains(s, `"postData"`) || strings.Contains(s, "postDataEntries") || strings.Contains(s, "payloadData") || strings.Contains(s, "U0VDUkVUMTc") {
 		t.Errorf("credentials reached the tool:\n%s", s)
 	}
-	for _, want := range []string{`"hasPostData":true`, `Accept: */*`, `"url":"https://example.com/token"`, `"Accept":"*/*"`, `"content-type":"text/html"`, `Content-Type: text/html`, `"name":"Content-Type"`, `"dataLength":5`} {
+	for _, want := range []string{`"opcode":1`, `"eventName":"message"`, `"dataLength":9`, `"hasPostData":true`, `Accept: */*`, `"url":"https://example.com/token"`, `"Accept":"*/*"`, `"content-type":"text/html"`, `Content-Type: text/html`, `"name":"Content-Type"`, `"dataLength":5`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("lost %s:\n%s", want, s)
 		}

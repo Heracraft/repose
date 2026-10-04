@@ -11040,7 +11040,10 @@ traffic is untouched), the front removes the `Authorization`,
 `X-Auth-Token`, `X-Access-Token`, `X-Amz-Security-Token`,
 `X-Goog-Api-Key`, `X-Vault-Token`, `Private-Token`) beside Cookie and
 Set-Cookie, from header maps, header lists and header text alike; drops
-request bodies (`postData`, `postDataEntries`); and drops
+request bodies (`postData`, `postDataEntries`), WebSocket frame payloads
+(`payloadData` of `webSocketFrameReceived`/`Sent`), server-sent event
+data (`eventSourceMessageReceived`) and streamed body chunks
+(`dataReceived.data`); and drops
 `rawCookieLine` from audit issues, where Chrome puts a whole Set-Cookie
 line for a cookie it rejected. Every `Network.*`, `Fetch.*` and
 `Audits.*` event is now decoded and scrubbed, not a list of known ones,
@@ -11060,11 +11063,13 @@ refusal that says to read the page, and a tool that rewrites a paused
 request's headers sends it without the removed ones. They still read
 pages, run scripts in them, and see URLs, statuses and the other headers.
 What stays an accepted gap (user docs): a page's own JavaScript can read
-what that page can, including bodies it fetches from its own site.
+what that page can, including bodies it fetches from its own site and
+the messages on its own WebSockets.
 Evidence: `TestBridgeCredentialsAgainstChromium` against a real Chromium
 (a page's fetch carried its Authorization header to the server; the tool
 watching the network saw none of the header, the body or the rejected
-cookie line, and a body read was refused); fake-peer tests for every
+cookie line, the WebSocket messages either way or the server-sent event,
+and a body read was refused); fake-peer tests for every
 refusal and scrub; Playwright and chrome-devtools-mcp still work through
 the front.
 
@@ -11077,11 +11082,18 @@ scanned and again just before the copy, and reads only a regular file. A
 file named like a private key or key store is text, not a drop, whatever
 folder it is in: `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (not
 `.pub`), and `.pem`, `.p12`, `.pfx`, `.p8`, `.ppk`, `.jks`, `.keystore`,
-`.kdbx`, `.keychain`, `.keychain-db`. `.key` is not on the list: Keynote
-uses it. Every copy names its files on the tmux status line
+`.kdbx`, `.keychain`, `.keychain-db`. Nor is a file of any name whose
+first 4 KiB hold a PEM, OpenSSH or PGP private key, or a `.gpg`/`.pgp`
+file that starts with an OpenPGP secret-key packet (tag 5). `.key` and
+`.asc` are judged by that content, not by name: Keynote uses `.key`, and
+`.asc` is mostly public keys and signatures; `.gpg` is mostly encrypted
+files, which still copy. A file that cannot be read is not a drop. Every copy names its files on the tmux status line
 ("copied report.pdf to the machine"), so a path pasted because an agent
 asked for it never leaves the laptop unseen. Tests: the scanner table
 (key names), `TestDropFileFollowsLinks` (a link to a hidden file, to a
-hidden directory, to a system file and to a key are not drops), and the
+hidden directory, to a system file and to a key are not drops; key
+content under `.key`, `.txt`, `.asc` and `.gpg` names is refused, and a
+Keynote-like `.key`, a public key, a signature, an encrypted `.gpg` and
+a public keyring copy), and the
 pty test (a link to a hidden file is typed as text and nothing is
 copied; a copy is named).

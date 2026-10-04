@@ -757,6 +757,11 @@ func (c *cdpConn) filterEvent(method, sid string, m map[string]json.RawMessage) 
 	} else {
 		params, changed = scrubCredentials(params)
 	}
+	if keys := contentKeys[method]; keys != nil {
+		var ch bool
+		params, ch = scrubKeys(params, keys)
+		changed = changed || ch
+	}
 	if !changed {
 		return nil, true
 	}
@@ -788,6 +793,16 @@ var credentialHeaders = map[string]bool{
 var credentialKeys = map[string]bool{
 	"associatedCookies": true, "blockedCookies": true, "exemptedCookies": true,
 	"postData": true, "postDataEntries": true,
+}
+
+// contentKeys are, per event, the fields that carry what a connection
+// sent or received: websocket frames, server-sent events, and streamed
+// body chunks. The tools see that the traffic happened, not its content.
+var contentKeys = map[string]map[string]bool{
+	"Network.webSocketFrameReceived":     {"payloadData": true},
+	"Network.webSocketFrameSent":         {"payloadData": true},
+	"Network.eventSourceMessageReceived": {"data": true},
+	"Network.dataReceived":               {"data": true},
 }
 
 // auditKeys are the fields of Audits events that carry a cookie value:
