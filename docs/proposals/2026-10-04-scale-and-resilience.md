@@ -127,8 +127,8 @@ Azure keeps a managed disk when the VM under it dies. A runbook entry
 that creates a fresh host VM in zone 1, attaches the old disk, and lets
 hostd reconcile from LVM (`hostd reconcile --rebuild`, since state.db is
 on the OS disk under `/var/lib/repose/hostd`) recovers every guest with
-nothing lost, in the time a VM takes to boot. Fly's docs warn about the
-opposite case: local NVMe on Azure's L-series is erased when Azure moves
+nothing lost, in the time a VM takes to boot. Azure documents the
+opposite case: local NVMe on its L-series is erased when Azure moves
 a VM after a hardware fault. Drill it once on a scratch host. Note that
 this path ends if hosts move to Hetzner dedicated servers, where the
 disk is the server's own.
