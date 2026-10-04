@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-490 entries.
+494 entries.
 
 ## Scope
 
@@ -24,7 +24,7 @@ pointer, not a summary.
 
 ## Hosts and guests
 
-- **R2-1** NixOS guests on Cloud Hypervisor via microvm.nix with the host's Nix store shared read-only over virtio-fs — L50
+- **R2-1** NixOS guests on Cloud Hypervisor via microvm.nix with the host's Nix store shared read-only over virtio-fs — amended by I-463; L50
 - **R2-2** NixOS host installed with nixos-anywhere — L58
 - **R2-3** Guest disks are host-local with snapshots to Blob; projects are pinned to a host — L61
 - **R2-17** Host SKU is Intel D64s_v5 with guest images on a Premium SSD v2 managed data disk — L66
@@ -133,7 +133,7 @@ pointer, not a summary.
 - **I-45** Fragment evaluation and builds run as `nixbuild` inside a transient scope, against a `git+file://` flake, with `allowed-uris` derived from the base checkout's lock file, and `--show-trace` — L910
 - **I-46** The agent overlay is built from upstream release binaries pinned in `versions.json` and cached on Cachix — L940
 - **I-47** Base bumps are a planner and a runner in `internal/basebump` over two interfaces the api implements — L962
-- **I-48** virtiofsd's sandbox is `namespace`, and hostd attaches taps with exactly the host-conventions sequence — 2026-09-20; L976
+- **I-48** virtiofsd's sandbox is `namespace`, and hostd attaches taps with exactly the host-conventions sequence — 2026-09-20; amended by I-463; L976
 - **I-49** The tmux-idle heuristic never reads pane content, and its metrics carry the `repose_api_*` prefix, not `repose_notify_*` — amended by I-59; partly amended by I-442; L1018
 - **I-50** Gemini CLI and pi both gained hook mechanisms since 5.3's "at time of writing" rows were written; Gemini CLI itself stopped serving individual-tier requests on 2026-06-18 — 2026-09-20; L1075
 - **I-51** `guest@<id>` runs Cloud Hypervisor as the `hostd` user inside a systemd sandbox; hostd itself stays root — 2026-09-20; L1122
@@ -146,7 +146,7 @@ pointer, not a summary.
 - **I-58** `repose-hook` reads `REPOSE_HOOK_AGENT`, the name the wrappers export — L1264
 - **I-59** `internal/obs` is three packages, because a guest pays for what it imports — L1284
 - **I-60** One observability package, one tracing setup, one api metric family — 2026-09-20; L1308
-- **I-61** The store export bind is made private before `.links` is masked — 2026-09-20; L1357
+- **I-61** The store export bind is made private before `.links` is masked — 2026-09-20; amended by I-463; L1357
 - **I-62** virtiofsd's socket lives in a subdirectory it owns, and hostd fails step 8 when virtiofsd exits — 2026-09-20; L1369
 - **I-63** The guest disk is passed to Cloud Hypervisor with `image_type=raw` — 2026-09-20; L1389
 - **I-64** guestd binds its vsock listener to any CID — 2026-09-20; L1398
@@ -361,7 +361,7 @@ pointer, not a summary.
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7180
 - **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; L7243
 - **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; L7262
-- **I-278** One Claude login per user: the login share — 2026-09-26; L7361
+- **I-278** One Claude login per user: the login share — 2026-09-26; amended by I-464; L7361
 - **I-283** No auto-mode offer on a machine in bypass mode — 2026-09-27; L7446
 - **I-284** The nothing-new check trusts the commits the last sync recorded, not the guest's ref tips — 2026-09-27; L7474
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7506
@@ -522,3 +522,7 @@ pointer, not a summary.
 - **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11637
 - **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11654
 - **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11687
+- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11722
+- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11767
+- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11789
+- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11809

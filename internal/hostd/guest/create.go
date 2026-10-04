@@ -3,6 +3,7 @@ package guest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
@@ -289,6 +291,9 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
 		return m.fail(g, stepVirtiofsd, err)
 	}
+	if err := m.extendView(ctx, g.GuestID, g.SystemClosure); err != nil {
+		return m.fail(g, stepVirtiofsd, err)
+	}
 	// The user's Claude login share (DECISIONS I-278), attached only when
 	// its virtiofsd is up; the hypervisor would otherwise wait on its socket.
 	if m.startAuthShare(ctx, g, dir) {
@@ -407,6 +412,25 @@ func (m *Manager) teardown(ctx context.Context, g *state.Guest) {
 	for _, s := range []string{"ch.sock", "vsock.sock", "console.sock", filepath.Join("virtiofsd", "virtiofsd.sock"), filepath.Join("virtiofsd-auth", "virtiofsd.sock")} {
 		_ = os.Remove(filepath.Join(m.guestDir(g.GuestID), s)) // stale sockets confuse the next boot only if left behind
 	}
+}
+
+// extendView adds the closure's paths to the guest's store view (I-463):
+// at boot, before the hypervisor starts, and before an in-place switch.
+func (m *Manager) extendView(ctx context.Context, guestID, closure string) error {
+	if m.cfg.StoreExport != storeview.Dir {
+		return nil
+	}
+	if m.d.View == nil {
+		return errors.New("store view: not configured")
+	}
+	paths, err := m.d.Nix.Requisites(ctx, closure)
+	if err != nil {
+		return fmt.Errorf("store view: %w", err)
+	}
+	if err := m.d.View.Populate(ctx, virtiofs.Unit(guestID), paths); err != nil {
+		return fmt.Errorf("store view: %w", err)
+	}
+	return nil
 }
 
 // waitSocket waits for a virtiofsd unit to bind its socket, failing early

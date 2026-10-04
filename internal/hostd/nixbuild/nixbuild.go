@@ -82,6 +82,9 @@ type Builder interface {
 	// guest loads so the paths it sees through the shared store are valid in
 	// its own database (DECISIONS I-67).
 	DumpDB(ctx context.Context, path string) ([]byte, error)
+	// Requisites returns the store paths in the closure of path: what a
+	// guest's store view holds (DECISIONS I-463).
+	Requisites(ctx context.Context, path string) ([]string, error)
 }
 
 // Info is what a system closure exposes for booting.
@@ -195,8 +198,8 @@ func (b *Real) Defaults() *Real {
 	return b
 }
 
-// DumpDB implements Builder.
-func (b *Real) DumpDB(ctx context.Context, path string) ([]byte, error) {
+// Requisites implements Builder.
+func (b *Real) Requisites(ctx context.Context, path string) ([]string, error) {
 	res, err := b.R.Run(ctx, "nix-store", "-qR", path)
 	if err != nil {
 		return nil, fmt.Errorf("nix-store -qR: %w", err)
@@ -205,7 +208,16 @@ func (b *Real) DumpDB(ctx context.Context, path string) ([]byte, error) {
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("nix-store -qR %s: empty closure", path)
 	}
-	res, err = b.R.Run(ctx, append([]string{"nix-store", "--dump-db"}, paths...)...)
+	return paths, nil
+}
+
+// DumpDB implements Builder.
+func (b *Real) DumpDB(ctx context.Context, path string) ([]byte, error) {
+	paths, err := b.Requisites(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	res, err := b.R.Run(ctx, append([]string{"nix-store", "--dump-db"}, paths...)...)
 	if err != nil {
 		return nil, fmt.Errorf("nix-store --dump-db: %w", err)
 	}
@@ -660,6 +672,9 @@ type Fake struct {
 	Lines        []string
 	Exists       map[string]bool
 	Calls        []Request
+	// Closures maps a closure to its requisites; a closure not in it is
+	// its own only requisite.
+	Closures map[string][]string
 }
 
 // Build implements Builder.
@@ -682,6 +697,16 @@ func (f *Fake) Build(ctx context.Context, req Request, log func(string)) (*Resul
 		return nil, fail
 	}
 	return &Result{SystemClosure: f.Closure, ClosureBytes: f.ClosureBytes, Kernel: f.Kernel, Initrd: f.Initrd}, nil
+}
+
+// Requisites implements Builder.
+func (f *Fake) Requisites(_ context.Context, path string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.Closures[path]; ok {
+		return append([]string(nil), r...), nil
+	}
+	return []string{path}, nil
 }
 
 // DumpDB implements Builder with an empty listing.

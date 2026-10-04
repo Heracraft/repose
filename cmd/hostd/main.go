@@ -24,6 +24,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/register"
 	"github.com/heracraft/repose/internal/hostd/shell"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 )
 
 var version = "dev" // set by -ldflags at release
@@ -67,7 +68,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.BlobURL, "blob-url", "", "Azure Blob service URL")
 	fs.StringVar(&o.BlobContainer, "blob-container", "repose-snapshots", "Azure Blob container")
 	fs.StringVar(&o.BlobIdentity, "blob-identity", "", "managed identity client id (empty: default credential)")
-	fs.StringVar(&o.StoreExport, "store-export", "/run/repose/store-export", "directory virtiofsd shares")
+	fs.StringVar(&o.StoreExport, "store-export", storeview.Dir, "what each guest's virtiofsd shares: "+storeview.Dir+" is a per-guest view of its own closure (DECISIONS I-463); /run/repose/store-export shares the whole store as before")
 	fs.StringVar(&o.VirtiofsUser, "virtiofsd-user", "virtiofsd", "user virtiofsd runs as")
 	fs.StringVar(&o.GuestUser, "guest-user", "hostd", "unprivileged user the guest@ (Cloud Hypervisor) units run as")
 	fs.BoolVar(&o.ClaudeLoginShare, "claude-login-share", true, "share each user's Claude Code login into all their guests (DECISIONS I-278)")

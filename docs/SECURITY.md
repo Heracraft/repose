@@ -45,12 +45,16 @@ they stop an actor the component map does not draw.
    `/dev/kvm`, `/dev/net/tun`, its own volume, its own guest directory
    and no network address family (I-51); the guest sees
    one block device (its thin volume), one tap, one vsock, one virtio-fs
-   mount and a serial console. The virtio-fs share is
-   `/run/repose/store-export`, a read-only `nosuid,nodev` bind of the
-   store with an empty tmpfs over `.links`, served by an unprivileged
-   `virtiofsd` in a user and mount namespace sandbox (I-48). Stops: a
-   tenant or their agent reaching the host or the store's write path, or
-   enumerating other tenants' closures through the hard-link farm.
+   mount and a serial console. The virtio-fs share is that guest's own
+   store view: an empty tmpfs in its `virtiofsd@<id>` unit's private mount
+   namespace into which hostd binds the guest's closure, each path
+   read-only, `nosuid,nodev` and with private propagation, served by an
+   unprivileged `virtiofsd` in a user and mount namespace sandbox (I-48,
+   I-463). Stops: a tenant or their agent reaching the host or the store's
+   write path, or reading another project's closure or fragment source or
+   the host's own system closure, none of which is in the view. Guests
+   started before I-463 keep the whole-store export until their next
+   start.
 2. **The bridge and nftables between guests.** Per-guest tap attached
    `isolated on learning off flood off` with a static FDB entry; the
    `bridge repose` table drops every switched frame and admits ARP and
@@ -191,6 +195,9 @@ Rules that hold regardless of convenience. Each names its failure.
     `virtiofsd`), which can read other users' shares, so it is the same
     class of bug as a store-virtiofsd escape, which already reads guest
     volumes through group `hostd`.
+  - Size: the share is the user's own 16 MiB volume (256 inodes) mounted
+    at that path (I-464), so the most a guest can write there is that
+    volume; it cannot reach the host's root filesystem.
   - Lifetime: 30 days after the user's last guest on the host, then removed
     by hostd's sweep; not in snapshots.
 - **Secret values never leave `secrets.ciphertext` and the guest tmpfs.**
@@ -366,6 +373,14 @@ Written down so nobody believes otherwise.
 - **A forged `main`.** install.sh and its signing public key are served by
   the site `main` deploys, so whoever can push to `main` can change both.
   The `main` ruleset (owner's setting, I-428) is what stops that.
+- **Filesystem tools read what a guest wrote.** hostd runs `dumpe2fs` on
+  every snapshot and `e2fsck -fp` on every restore over a volume whose
+  every byte the guest chose. Both run sandboxed (I-465): a dynamic user
+  with no capabilities and no network, no view of hostd's state, and only
+  that one device. A parser bug in e2fsprogs therefore needs a second,
+  kernel or systemd, bug to reach the host; it can still corrupt or stall
+  that one guest's snapshot or restore. `blkid` at create reads a volume
+  hostd has just made, and runs unsandboxed.
 - **A tenant's agent misusing the tenant's own tool logins.** Inside the
   guest, gh and Codex tokens are readable by any process as `dev`. That is
   the same exposure as on the tenant's laptop.

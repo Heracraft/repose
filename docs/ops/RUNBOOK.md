@@ -927,11 +927,23 @@ ro-store not found` in its console, commands fail with `No such file or
 directory` for store paths, or guestd sends `Warning{store_path_missing}`.
 
 1. On the host: `systemctl status virtiofsd@<id>`; the unit must be running
-   on `/var/lib/repose/guests/<id>/virtiofsd.sock` with `--shared-dir
-   /nix/store`. If it exited, `journalctl -u virtiofsd@<id>` says why
-   (usually the socket directory or the `virtiofsd` user's permissions).
-   Restart it, then `repose-admin projects restart <id>`; a guest cannot
-   re-mount the share on its own.
+   on `/var/lib/repose/guests/<id>/virtiofsd/virtiofsd.sock` with
+   `--shared-dir /run/repose/store-view` (DECISIONS I-463). If it exited,
+   `journalctl -u virtiofsd@<id>` says why (usually the socket directory or
+   the `virtiofsd` user's permissions). A guest cannot re-mount the share
+   on its own, and a restarted unit starts with an empty view: restart the
+   guest with `repose-admin projects restart <id>`, which binds its closure
+   again.
+   - What the guest's virtiofsd serves:
+     `ls /proc/$(systemctl show -P MainPID virtiofsd@<id>)/root | wc -l`
+     on the host is the number of paths in its view; it must be at least
+     `nix-store -qR $(readlink /nix/var/nix/gcroots/repose/<id>) | wc -l`.
+     A create or start that fails at the virtiofsd step with `store view:`
+     names why the closure could not be bound.
+   - Rolling back to the whole-store export (I-463, for one release):
+     run hostd with `--store-export /run/repose/store-export` and restart
+     the guests that need it. Every new start then shares the whole store
+     as before; write down why.
 2. `store_path_missing` with virtiofsd healthy means the host garbage
    collected a path the guest's system uses: the GC root under
    `/nix/var/nix/gcroots/repose/` is gone. `nix build` the guest's
@@ -2178,6 +2190,15 @@ or all of them ask again at once.
 4. Every refresh failing right after a base publish with a new Claude
    Code: the in-place fallback may be gone. `ops/dev/claude-auth-trace.sh`
    in an e2e machine shows it; roll the base back (DECISIONS I-278).
+5. The share is the user's own 16 MiB volume (DECISIONS I-464):
+   `findmnt /var/lib/repose/users/<user_id>/claude-auth` on the host must
+   show `/dev/mapper/vg--guests-auth--<user_id>`. `df -h` and `df -i` on
+   that path show a full volume (a guest wrote junk there); it fills only
+   that user's share. `auth_share` with `no space` or a mount error means
+   the guest booted without the share. After the release that brought the
+   volume, each user signs in once more per host: the old share was
+   renamed `claude-auth.legacy/` and is swept once none of their guests
+   runs.
 
 A user's directory is removed by hostd 30 days after their last guest on
 that host (`auth_share_sweep`). To turn the share off host-wide, set

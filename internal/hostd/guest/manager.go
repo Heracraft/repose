@@ -27,10 +27,12 @@ import (
 	"github.com/heracraft/repose/internal/hostd/gcroot"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/metrics"
+	"github.com/heracraft/repose/internal/hostd/mount"
 	hnet "github.com/heracraft/repose/internal/hostd/net"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
 	"github.com/heracraft/repose/internal/obs"
@@ -141,8 +143,11 @@ type Config struct {
 	EgressMbit         int
 	// DownloadMbit limits what a guest receives from outside the host
 	// (DECISIONS I-451); EgressMbit what it sends (I-217).
-	DownloadMbit   int
-	StoreTag       string
+	DownloadMbit int
+	StoreTag     string
+	// StoreExport is what each guest's virtiofsd shares: storeview.Dir
+	// (the default) gives every guest a view of its own closure only
+	// (I-463); any other directory is shared whole, as before I-463.
 	StoreExport    string
 	VirtiofsUser   string
 	VirtiofsBinary string
@@ -157,6 +162,9 @@ type Config struct {
 	// AuthKeep is how long a user's login share outlives their last guest
 	// on this host; zero means 30 days, the snapshot retention.
 	AuthKeep time.Duration
+	// AuthVolumeBytes is the size of each user's login-share volume,
+	// auth-<user_id> in the guest pool (I-464); zero means 16 MiB.
+	AuthVolumeBytes uint64
 	// GuestUser is the unprivileged user guest@<id> (Cloud Hypervisor) runs
 	// as (I-51). It owns the taps and is in group kvm; the guest volumes
 	// are group-owned by it through the host's udev rule.
@@ -206,7 +214,7 @@ func (c Config) Defaults() Config {
 		c.StoreTag = "ro-store"
 	}
 	if c.StoreExport == "" {
-		c.StoreExport = "/run/repose/store-export"
+		c.StoreExport = storeview.Dir
 	}
 	if c.VirtiofsUser == "" {
 		c.VirtiofsUser = "virtiofsd"
@@ -219,6 +227,9 @@ func (c Config) Defaults() Config {
 	}
 	if c.AuthUser == "" {
 		c.AuthUser = "repose-auth"
+	}
+	if c.AuthVolumeBytes == 0 {
+		c.AuthVolumeBytes = 16 << 20
 	}
 	if c.AuthKeep == 0 {
 		c.AuthKeep = 30 * 24 * time.Hour
@@ -289,6 +300,8 @@ type Emitter interface {
 type Deps struct {
 	State   *state.DB
 	LVM     lvm.LVM
+	Mount   mount.Mounter
+	View    storeview.View
 	Net     hnet.Net
 	Systemd systemd.Systemd
 	CH      ch.Client

@@ -1,5 +1,7 @@
 // Package virtiofs runs one virtiofsd per guest as a transient unit,
-// exporting the host's store export read-only. virtiofsd has no read-only
+// exporting that guest's store view read-only (DECISIONS I-463): an empty
+// tmpfs in the unit's own mount namespace that hostd fills with the
+// guest's closure (package storeview). virtiofsd has no read-only
 // flag; read-only holds because the virtiofsd user cannot write under the
 // export (a read-only bind mount) and the guest mounts the tag ro.
 //
@@ -15,12 +17,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 )
 
 // Config is where the export lives and who serves it.
 type Config struct {
-	SharedDir string // /run/repose/store-export
+	// SharedDir is storeview.Dir for a per-guest view (I-463), or a
+	// directory holding the whole store (the pre-I-463 export).
+	SharedDir string
 	User      string // virtiofsd
 	Group     string // virtiofsd
 	Binary    string // virtiofsd
@@ -39,12 +44,17 @@ func Start(ctx context.Context, sd systemd.Systemd, cfg Config, guestID, socket 
 		bin = "virtiofsd"
 	}
 	props := []string{"User=" + cfg.User, "Group=" + cfg.Group, "MemoryMax=1G", "Slice=guests.slice"}
+	if cfg.SharedDir == storeview.Dir {
+		props = append(props, storeview.UnitProps()...)
+	}
 	// --no-announce-submounts: the export masks .links with a tmpfs mount
 	// (host-conventions.md). Announced, the guest sees it as a separate
 	// virtiofs mount inside the overlay's lower layer, and overlayfs answers
 	// every lookup crossing into it with EREMOTE ("Object is remote"), which
 	// killed the guest's nix-daemon at its first mkdir of /nix/store/.links
 	// (DECISIONS I-65). Flattened, it is an empty directory like any other.
+	// A store view (I-463) is one bind mount per store path, so the same
+	// flag is what keeps every path in it an ordinary directory.
 	argv := []string{bin, "--socket-path", socket, "--shared-dir", cfg.SharedDir, "--sandbox", "namespace", "--cache", "auto", "--xattr", "--no-announce-submounts"}
 	if cfg.SocketGroup != "" {
 		argv = append(argv, "--socket-group", cfg.SocketGroup)

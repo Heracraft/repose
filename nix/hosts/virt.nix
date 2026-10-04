@@ -1,13 +1,18 @@
 # Hypervisor plumbing: Cloud Hypervisor, virtiofsd, the users hostd drops
-# to, /dev/kvm permissions, and the read-only store export that virtiofsd
-# shares with guests.
+# to, /dev/kvm permissions, and the store guests see.
 #
-# The export is a read-only bind of /nix/store at /run/repose/store-export
-# with an empty tmpfs mounted over `.links`. `.links` is the hard-link farm
-# from store optimisation; sharing it would let a guest enumerate every path
-# in the store, which is what other tenants have built. A guest can still
-# read any path by hash, the same as any public binary cache; the leak being
-# closed is enumeration, not access.
+# Each guest's virtiofsd serves a store view of its own closure only
+# (DECISIONS I-463): /run/repose/store-view is an empty tmpfs inside that
+# virtiofsd unit's private mount namespace, and hostd binds the closure's
+# store paths into it. Nothing of other projects' closures, their fragment
+# sources or the host's own system is in it. The directory below is only
+# the mount point; on the host it stays empty.
+#
+# The whole-store export (/run/repose/store-export, a read-only bind of
+# /nix/store with an empty tmpfs over `.links`) is kept for one release:
+# guests started before I-463 still use it until their next start, and
+# `hostd --store-export /run/repose/store-export` switches back to it.
+# Remove it in the release after.
 { config, lib, pkgs, ... }:
 let
   exportDir = "/run/repose/store-export";
@@ -115,5 +120,6 @@ in
 
   systemd.tmpfiles.rules = [
     "d /run/repose 0755 root root -"
+    "d /run/repose/store-view 0755 root root -"
   ];
 }

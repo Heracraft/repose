@@ -20,6 +20,8 @@ type LVM interface {
 	CreateVolume(ctx context.Context, name string, bytes uint64) error
 	HasFilesystem(ctx context.Context, name string) (bool, error)
 	Mkfs(ctx context.Context, name string) error
+	// MkfsShare makes the small ext4 of a login-share volume (I-464).
+	MkfsShare(ctx context.Context, name string) error
 	RemoveVolume(ctx context.Context, name string) error
 	ExtendVolume(ctx context.Context, name string, bytes uint64) error
 	Snapshot(ctx context.Context, name, snap string) error
@@ -44,6 +46,9 @@ type Real struct {
 	VG   string // vg-guests
 	Pool string // thin
 	R    shell.Runner
+	// Sandbox runs e2fsck, which parses and repairs metadata a guest
+	// wrote, in shell.Sandboxed rather than as hostd (DECISIONS I-465).
+	Sandbox bool
 }
 
 // DevPath is the device node for a volume.
@@ -106,6 +111,17 @@ func (l *Real) Mkfs(ctx context.Context, name string) error {
 		return err
 	}
 	_, err = l.R.Run(ctx, "mkfs.ext4", "-q", "-L", "guest", "-E", "lazy_itable_init=1", l.DevPath(name))
+	return err
+}
+
+// MkfsShare implements LVM: no reserved blocks and 256 inodes, which bounds
+// the file count as the volume size bounds the bytes (DECISIONS I-464).
+func (l *Real) MkfsShare(ctx context.Context, name string) error {
+	has, err := l.HasFilesystem(ctx, name)
+	if err != nil || has {
+		return err
+	}
+	_, err = l.R.Run(ctx, "mkfs.ext4", "-q", "-m", "0", "-N", "256", "-L", "claude-auth", l.DevPath(name))
 	return err
 }
 
@@ -221,7 +237,11 @@ func (l *Real) Allocated(ctx context.Context, except string) (uint64, error) {
 
 // Fsck implements LVM.
 func (l *Real) Fsck(ctx context.Context, name string) (int, error) {
-	_, err := l.R.Run(ctx, "e2fsck", "-fp", l.DevPath(name))
+	argv := []string{"e2fsck", "-fp", l.DevPath(name)}
+	if l.Sandbox {
+		argv = shell.Sandboxed(l.DevPath(name), true, argv...)
+	}
+	_, err := l.R.Run(ctx, argv...)
 	var ee *shell.ExitError
 	if errors.As(err, &ee) {
 		return ee.Result.ExitCode, nil
@@ -325,6 +345,9 @@ func (f *Fake) Mkfs(_ context.Context, name string) error {
 	v.HasFS = true
 	return nil
 }
+
+// MkfsShare implements LVM.
+func (f *Fake) MkfsShare(ctx context.Context, name string) error { return f.Mkfs(ctx, name) }
 
 // RemoveVolume implements LVM.
 func (f *Fake) RemoveVolume(_ context.Context, name string) error {

@@ -167,3 +167,98 @@ func TestNoAuthShareSwitch(t *testing.T) {
 		t.Fatal("hypervisor got a login share with the share switched off")
 	}
 }
+
+// The share is the user's own small volume mounted at claude-auth, not a
+// directory on the host's root filesystem (I-464): what a guest writes
+// there is bounded by the volume.
+func TestLoginShareIsABoundedVolume(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.create(gid2)
+	share := filepath.Join(h.cfg.UsersDir, "user-1", "claude-auth")
+	if dev := h.mount.Mounts[share]; dev != "/dev/vg-guests/auth-user-1" {
+		t.Fatalf("share mounts %q, want the user's volume", dev)
+	}
+	v := h.lvm.Volumes["auth-user-1"]
+	if v == nil || v.Size != 16<<20 || !v.HasFS {
+		t.Fatalf("auth volume %+v", v)
+	}
+	if n := len(h.mount.Mounts); n != 1 {
+		t.Fatalf("%d mounts for one user", n)
+	}
+}
+
+// A share directory from before I-464 is moved aside, never opened, so
+// the mount does not hide a login on the root filesystem; once no guest
+// of the user runs, the sweep removes it.
+func TestLegacyShareMovedAsideThenSwept(t *testing.T) {
+	h := newHarness(t, nil)
+	udir := filepath.Join(h.cfg.UsersDir, "user-1")
+	if err := os.MkdirAll(filepath.Join(udir, "claude-auth"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(udir, "claude-auth", ".credentials.json"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.create(gid1)
+	if _, err := os.Stat(filepath.Join(udir, authLegacy, ".credentials.json")); err != nil {
+		t.Fatalf("legacy share not moved aside: %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(udir, "claude-auth")); len(entries) != 0 {
+		t.Fatalf("mount point not empty: %v", entries)
+	}
+
+	h.m.SweepAuthShares(context.Background())
+	if _, err := os.Stat(filepath.Join(udir, authLegacy)); err != nil {
+		t.Fatal("legacy share removed while a guest of the user runs")
+	}
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	h.m.SweepAuthShares(context.Background())
+	if _, err := os.Stat(filepath.Join(udir, authLegacy)); !os.IsNotExist(err) {
+		t.Fatalf("legacy share survived the sweep: %v", err)
+	}
+	if _, ok := h.mount.Mounts[filepath.Join(udir, "claude-auth")]; !ok {
+		t.Fatal("sweep unmounted the share of a user with a guest")
+	}
+}
+
+// Removing a user's share takes the mount and the volume with it, and a
+// volume whose directory is already gone is removed too.
+func TestSweepRemovesTheVolume(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
+	old := time.Now().Add(-31 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(h.cfg.UsersDir, "user-1", authLastGuest), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.lvm.CreateVolume(context.Background(), "auth-user-orphan", 16<<20); err != nil {
+		t.Fatal(err)
+	}
+	h.m.SweepAuthShares(context.Background())
+	if len(h.mount.Mounts) != 0 {
+		t.Fatalf("mounts left: %v", h.mount.Mounts)
+	}
+	for _, v := range []string{"auth-user-1", "auth-user-orphan"} {
+		if _, ok := h.lvm.Volumes[v]; ok {
+			t.Fatalf("%s survived the sweep", v)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(h.cfg.UsersDir, "user-1")); !os.IsNotExist(err) {
+		t.Fatalf("user dir: %v", err)
+	}
+}
+
+// A volume that cannot be mounted leaves the guest without the share,
+// never with a share on the root filesystem.
+func TestLoginShareMountFailureBootsWithout(t *testing.T) {
+	h := newHarness(t, nil)
+	h.mount.Err = os.ErrPermission
+	h.create(gid1)
+	if h.guest(gid1).State != StateRunning {
+		t.Fatalf("state %s", h.guest(gid1).State)
+	}
+	if strings.Contains(strings.Join(h.sd.Units["guest@"+gid1].Argv, " "), "claude-auth") {
+		t.Fatal("hypervisor got a share whose volume never mounted")
+	}
+}
