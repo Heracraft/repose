@@ -185,20 +185,19 @@ func (h *Handler) removeStale(keep map[string]bool) ([]string, error) {
 	return removed, nil
 }
 
-// genVar is the variable that records which generation of the secrets a
-// process's environment was formed from. secrets.env sets it on its first
-// line and secrets.refresh on its last; the BASH_ENV loader
+// genVar is the variable that records which set of secrets a process's
+// environment was formed from. secrets.env sets it on its first line and
+// secrets.refresh on its last; the BASH_ENV loader
 // (nix/guest/base/bash-env.sh) compares it with the refresh file's first line
-// (DECISIONS I-475). The name holds none of SECRET, KEY, TOKEN or
-// PASS, so a sandbox that drops variables matching those (Codex's default
-// shell_environment_policy) keeps it.
+// and skips the file when they match (DECISIONS I-475). It decides nothing
+// else: the refresh compares values, not generations.
 const genVar = "REPOSE_ENV_GEN"
 
-// keepGens is how many generations secrets.refresh can bring up to date with
-// its guarded lines. A process formed from an older one is treated as one
-// that was never given a secret: it gets the names it lacks and keeps the
-// values it has (I-475).
-const keepGens = 16
+// keepValues is how many earlier values of one name secrets.refresh
+// recognises. A process holding a value of that name older than these keeps
+// it, like any value guestd did not deliver. The bound is per name, so writes
+// to other names never age a name's values out (I-475).
+const keepValues = 16
 
 // shellReserved are names guestd never exports, even as a secret, because
 // they run the mechanism of I-475: BASH_ENV and ENV name the loader, and
@@ -210,17 +209,15 @@ func exported(name string) bool {
 	return !shellReserved[name] && !strings.HasPrefix(name, "__repose_")
 }
 
-// generation is one state of the exported secrets: its id and the values it
-// delivered.
-type generation struct {
-	Gen    string            `json:"gen"`
-	Values map[string][]byte `json:"values"`
-}
-
-// secretsState is /run/repose/secrets.state: the last keepGens generations,
-// oldest first, the current one last.
+// secretsState is /run/repose/secrets.state: the current generation and its
+// values, and for each name the values guestd exported earlier and no longer
+// does, distinct, oldest first, at most keepValues. A removed name keeps its
+// earlier values, so the refresh can take it out of a process that still
+// holds one.
 type secretsState struct {
-	Gens []generation `json:"gens"`
+	Gen     string              `json:"gen"`
+	Current map[string][]byte   `json:"current"`
+	Earlier map[string][][]byte `json:"earlier"`
 }
 
 // envFile is what writeEnv wrote, for pushTmux to mirror into the tmux
@@ -233,17 +230,18 @@ type envFile struct {
 
 type envRow struct{ name, value string }
 
-// writeEnv records the exported secrets as a generation and rewrites the two
-// files shells read from it, in name order so they do not churn:
+// writeEnv records the exported secrets and rewrites the two files shells
+// read from them, in name order so they do not churn:
 //
 //   - secrets.env: `export REPOSE_ENV_GEN=<gen>` and an `export NAME='value'`
 //     line per secret. The whole current set, for whoever sources it.
 //   - secrets.refresh: what the BASH_ENV loader and /etc/profile.d/repose.sh
 //     source when a process's REPOSE_ENV_GEN is not the current one. For
-//     each name it compares the value the process holds with the value the
-//     process's generation delivered, and replaces or unsets it only when
-//     they match, so a value the process or its project's .envrc set on
-//     purpose survives a later write (I-475).
+//     each name it sets the current value where the process lacks the name
+//     or holds an earlier value guestd exported, and unsets a removed name
+//     where the process holds one of its earlier values. Any other value is
+//     the process's own (an .envrc, an export, `NAME=x cmd`) and stays
+//     (I-475).
 //
 // The generation stays the same while the exported set does.
 func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
@@ -259,18 +257,28 @@ func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
 	sort.Slice(out.rows, func(i, j int) bool { return out.rows[i].name < out.rows[j].name })
 
 	st := h.readState()
-	if n := len(st.Gens); n > 0 && sameValues(st.Gens[n-1].Values, current) {
-		out.gen = st.Gens[n-1].Gen
+	if st.Gen != "" && sameValues(st.Current, current) {
+		out.gen = st.Gen
 	} else {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
 			return out, sysdep.Errf(sysdep.CodeInternal, "generate secrets generation: %w", err)
 		}
 		out.gen = hex.EncodeToString(b[:])
-		st.Gens = append(st.Gens, generation{Gen: out.gen, Values: current})
-		if len(st.Gens) > keepGens {
-			st.Gens = append([]generation(nil), st.Gens[len(st.Gens)-keepGens:]...)
+		// A value that stops being current becomes an earlier one; a value
+		// that is current again is not earlier any more.
+		for n, v := range st.Current {
+			if w, ok := current[n]; !ok || !bytes.Equal(v, w) {
+				st.Earlier[n] = appendEarlier(st.Earlier[n], v)
+			}
 		}
+		for n, v := range current {
+			st.Earlier[n] = withoutValue(st.Earlier[n], v)
+			if len(st.Earlier[n]) == 0 {
+				delete(st.Earlier, n)
+			}
+		}
+		st.Gen, st.Current = out.gen, current
 	}
 	stateJSON, err := json.Marshal(st)
 	if err != nil {
@@ -279,21 +287,11 @@ func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
 	if err := sysdep.WriteFileAtomic(h.paths.SecretsState(), stateJSON, 0o600, 0, 0); err != nil {
 		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets state: %w", err)
 	}
-
-	known := map[string]bool{}
-	for _, g := range st.Gens {
-		for n := range g.Values {
-			known[n] = true
-		}
-	}
-	names := make([]string, 0, len(known))
-	for n := range known {
-		names = append(names, n)
+	for n := range st.Earlier {
 		if _, ok := current[n]; !ok {
 			out.unsets = append(out.unsets, n)
 		}
 	}
-	sort.Strings(names)
 	sort.Strings(out.unsets)
 
 	var env bytes.Buffer
@@ -303,7 +301,7 @@ func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
 		fmt.Fprintf(&env, "export %s=%s\n", r.name, shellQuote(r.value))
 	}
 
-	if err := sysdep.WriteFileAtomic(h.paths.SecretsRefresh(), refreshScript(st, names, current, out.gen), 0o400, h.uid, h.gid); err != nil {
+	if err := sysdep.WriteFileAtomic(h.paths.SecretsRefresh(), refreshScript(st), 0o400, h.uid, h.gid); err != nil {
 		return out, sysdep.Errf(sysdep.CodeInternal, "write secrets refresh file: %w", err)
 	}
 	if err := sysdep.WriteFileAtomic(h.paths.SecretsEnv(), env.Bytes(), 0o400, h.uid, h.gid); err != nil {
@@ -312,89 +310,107 @@ func (h *Handler) writeEnv(list []*guestdv1.Secret) (envFile, error) {
 	return out, nil
 }
 
+// appendEarlier adds v as the newest earlier value, once, keeping the last
+// keepValues.
+func appendEarlier(vs [][]byte, v []byte) [][]byte {
+	vs = append(withoutValue(vs, v), v)
+	if len(vs) > keepValues {
+		vs = append([][]byte(nil), vs[len(vs)-keepValues:]...)
+	}
+	return vs
+}
+
+func withoutValue(vs [][]byte, v []byte) [][]byte {
+	out := vs[:0:0]
+	for _, w := range vs {
+		if !bytes.Equal(w, v) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // refreshScript is secrets.refresh. It is POSIX sh, runs builtins only, and
-// sets nothing but the secrets, REPOSE_ENV_GEN and two scratch variables it
-// unsets again:
+// sets nothing but the secrets and REPOSE_ENV_GEN:
 //
 //	# repose-env-gen <gen>
-//	case ${REPOSE_ENV_GEN-} in g1) __repose_g=1 ;; ... *) __repose_g=0 ;; esac
-//	case $__repose_g in 1|2) __repose_d=s'old' ;; 3) __repose_d=s'new' ;; *) __repose_d= ;; esac
-//	[ "${NAME+s$NAME}" != "$__repose_d" ] || export NAME='new'
-//	...
+//	case ${NAME+s$NAME} in ''|s'old1'|s'old2') export NAME='new' ;; esac
+//	case ${GONE+s$GONE} in s'old') unset GONE ;; esac
 //	export REPOSE_ENV_GEN=<gen>
 //
-// __repose_d is what the process's generation delivered for NAME: "s" and
-// the value, or empty when it delivered nothing (the name was not a secret
-// then, or the generation is unknown). "${NAME+s$NAME}" is the same encoding
-// of what the process holds. Only when the two match does the line export
-// the new value, or unset a removed name.
-func refreshScript(st secretsState, names []string, current map[string][]byte, gen string) []byte {
+// "${NAME+s$NAME}" is empty when the process lacks NAME and "s" and the
+// value when it holds one, so the patterns are "lacks it" and "holds a value
+// guestd exported before". Anything else is the process's own value.
+func refreshScript(st secretsState) []byte {
+	names := make([]string, 0, len(st.Current)+len(st.Earlier))
+	for n := range st.Current {
+		names = append(names, n)
+	}
+	for n := range st.Earlier {
+		if _, ok := st.Current[n]; !ok {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "# repose-env-gen %s\n", gen)
+	fmt.Fprintf(&b, "# repose-env-gen %s\n", st.Gen)
 	b.WriteString("# Written by guestd. Sourced by /etc/repose/bash-env.sh when REPOSE_ENV_GEN differs from the line above; do not edit.\n")
-	b.WriteString("case ${" + genVar + "-} in\n")
-	for i, g := range st.Gens {
-		fmt.Fprintf(&b, "%s) __repose_g=%d ;;\n", g.Gen, i+1)
-	}
-	b.WriteString("*) __repose_g=0 ;;\nesac\n")
 	for _, n := range names {
-		// The generations that delivered each value of n, by value.
-		var order []string
-		byValue := map[string][]string{}
-		for i, g := range st.Gens {
-			v, ok := g.Values[n]
-			if !ok {
-				continue
-			}
-			if _, seen := byValue[string(v)]; !seen {
-				order = append(order, string(v))
-			}
-			byValue[string(v)] = append(byValue[string(v)], fmt.Sprint(i+1))
+		var pats []string
+		v, current := st.Current[n]
+		if current {
+			pats = append(pats, "''")
 		}
-		b.WriteString("case $__repose_g in")
-		for _, v := range order {
-			fmt.Fprintf(&b, " %s) __repose_d=s%s ;;", strings.Join(byValue[v], "|"), shellQuote(v))
+		for _, e := range st.Earlier[n] {
+			pats = append(pats, "s"+shellQuote(string(e)))
 		}
-		b.WriteString(" *) __repose_d= ;; esac\n")
-		fmt.Fprintf(&b, "[ \"${%s+s$%s}\" != \"$__repose_d\" ] || ", n, n)
-		if v, ok := current[n]; ok {
-			fmt.Fprintf(&b, "export %s=%s\n", n, shellQuote(string(v)))
+		fmt.Fprintf(&b, "case ${%s+s$%s} in %s) ", n, n, strings.Join(pats, "|"))
+		if current {
+			fmt.Fprintf(&b, "export %s=%s", n, shellQuote(string(v)))
 		} else {
-			fmt.Fprintf(&b, "unset %s\n", n)
+			fmt.Fprintf(&b, "unset %s", n)
 		}
+		b.WriteString(" ;; esac\n")
 	}
-	fmt.Fprintf(&b, "export %s=%s\nunset __repose_g __repose_d\n", genVar, gen)
+	fmt.Fprintf(&b, "export %s=%s\n", genVar, st.Gen)
 	return b.Bytes()
 }
 
 // readState reads secrets.state. A missing or unreadable one (first write
 // since boot, or a guest whose guestd predates I-475) is an empty history,
-// which only costs a process formed before it the guarded replacement.
+// which only costs a process holding a value from before it the
+// replacement: it keeps that value.
 func (h *Handler) readState() secretsState {
-	var st secretsState
+	st := secretsState{Current: map[string][]byte{}, Earlier: map[string][][]byte{}}
 	b, err := os.ReadFile(h.paths.SecretsState())
 	if err != nil {
-		return secretsState{}
+		return st
 	}
-	if err := json.Unmarshal(b, &st); err != nil {
+	var raw secretsState
+	if err := json.Unmarshal(b, &raw); err != nil {
 		h.log.Warn("secrets state unreadable, starting a new history", "event", "write_secrets_state")
-		return secretsState{}
+		return st
 	}
 	// Anything not shaped like what writeEnv writes is dropped rather than
 	// written into a file every shell sources.
-	gens := st.Gens[:0]
-	for _, g := range st.Gens {
-		if !genRe.MatchString(g.Gen) {
-			continue
-		}
-		for n := range g.Values {
-			if !nameRe.MatchString(n) || !exported(n) {
-				delete(g.Values, n)
-			}
-		}
-		gens = append(gens, g)
+	ok := func(n string) bool { return nameRe.MatchString(n) && exported(n) }
+	if genRe.MatchString(raw.Gen) {
+		st.Gen = raw.Gen
 	}
-	st.Gens = gens
+	for n, v := range raw.Current {
+		if ok(n) {
+			st.Current[n] = v
+		}
+	}
+	for n, vs := range raw.Earlier {
+		if ok(n) && len(vs) > 0 {
+			if len(vs) > keepValues {
+				vs = vs[len(vs)-keepValues:]
+			}
+			st.Earlier[n] = vs
+		}
+	}
 	return st
 }
 

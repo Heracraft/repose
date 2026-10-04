@@ -529,9 +529,9 @@ pointer, not a summary.
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11884
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11927
 - **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; L11952
-- **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; L12025
-- **I-469** A dropped attach attaches again, and `repose open` reconnects — 2026-10-04; L12051
-- **I-470** systemd holds the gateway's SSH socket — 2026-10-04; L12085
-- **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12106
-- **I-472** An edge switch leaves the network up — 2026-10-04; L12156
-- **I-473** One edge for now; the way to two is written down — 2026-10-04; L12178
+- **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; L12072
+- **I-469** A dropped attach attaches again, and `repose open` reconnects — 2026-10-04; L12098
+- **I-470** systemd holds the gateway's SSH socket — 2026-10-04; L12132
+- **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12153
+- **I-472** An edge switch leaves the network up — 2026-10-04; L12203
+- **I-473** One edge for now; the way to two is written down — 2026-10-04; L12225

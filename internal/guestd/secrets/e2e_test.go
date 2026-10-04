@@ -2,6 +2,9 @@ package secrets
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,9 +36,11 @@ func (r *privateTmux) Run(ctx context.Context, spec sysdep.RunSpec) (sysdep.RunR
 // End to end on one machine, everything real but the uid: guestd's Write
 // with the exec runner, the BASH_ENV loader, a tmux server and an agent-like
 // bash in a tmux window. The agent's own .envrc value and its per-command
-// override survive two later writes; a secret it holds as delivered is
-// rotated, a removed one dropped, and a new window gets the whole current
-// set, a value far past tmux's 16 KiB command limit included.
+// override survive later writes; after more writes to other names than
+// any history bound, a secret it holds as delivered is rotated, a removed
+// one dropped and a new one added, a new window gets the whole current set,
+// a value far past tmux's 16 KiB command limit included, and no value is in
+// any process's command line.
 func TestEndToEndAgentInTmux(t *testing.T) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
@@ -109,11 +114,25 @@ func TestEndToEndAgentInTmux(t *testing.T) {
 		t.Fatalf("after an unrelated write the agent's commands see %q", got)
 	}
 
-	// A rotation, a removal and a 40 KiB value.
-	big := strings.Repeat("b", 40<<10)
+	// Many writes to other names, as an import of a long .env makes (one
+	// write per line), then a rotation, a removal and a 40 KiB value.
+	many := []*guestdv1.Secret{
+		secret("DATABASE_URL", "prod-db"), secret("STRIPE_KEY", "live-key"),
+		secret("ROTATED", "r1"), secret("GONE", "g"), secret("OTHER", "x"),
+	}
+	for i := 0; i < 2*keepValues; i++ {
+		many = append(many, secret(fmt.Sprint("IMPORTED_", i), "i"))
+		must(t, h.Write(ctx, many))
+	}
+	// mark makes this run's values unique, so the command line scan below
+	// cannot match another program that merely mentions this test.
+	var rnd [8]byte
+	_, _ = rand.Read(rnd[:])
+	mark := hex.EncodeToString(rnd[:])
+	big := mark + strings.Repeat("b", 40<<10-len(mark))
 	must(t, h.Write(ctx, []*guestdv1.Secret{
 		secret("DATABASE_URL", "prod-db-2"), secret("STRIPE_KEY", "live-key-2"),
-		secret("ROTATED", "r2"), secret("OTHER", "x"), secret("BIG", big),
+		secret("ROTATED", "r2"), secret("OTHER", "x"), secret("BIG", big), secret("MARK", "m-"+mark),
 	}))
 	must(t, os.WriteFile(filepath.Join(dir, "go2"), nil, 0o600))
 	if got := waitFor(filepath.Join(dir, "out2")); got != "local-db r2 <unset> x 40960\nsk_test" {
@@ -128,10 +147,21 @@ func TestEndToEndAgentInTmux(t *testing.T) {
 		t.Fatalf("a new window sees %q", got)
 	}
 
-	// No value ever travelled as an argument.
+	// No value ever travelled as an argument: not in what guestd ran, and
+	// not in any process's command line now.
 	for _, argv := range run.argvs {
 		if a := strings.Join(argv, " "); strings.Contains(a, "prod-db") || strings.Contains(a, "bbbb") {
 			t.Fatalf("a value in tmux's argv: %.80s", a)
+		}
+	}
+	cmdlines, _ := filepath.Glob("/proc/[0-9]*/cmdline")
+	for _, c := range cmdlines {
+		b, err := os.ReadFile(c)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(b), mark) {
+			t.Fatalf("%s holds a secret value: %.80q", c, b)
 		}
 	}
 }

@@ -196,7 +196,7 @@ pkgs.testers.runNixOSTest {
         guest.fail("grep -q TRICKY /run/repose/secrets.env")
         # I-475: the removed name is unset, guarded, for processes that
         # inherited it.
-        guest.succeed("grep -q '|| unset TRICKY$' /run/repose/secrets.refresh")
+        guest.succeed("grep -q ') unset TRICKY ;; esac$' /run/repose/secrets.refresh")
         guest.succeed("stat -c '%a %U' /run/repose/secrets.refresh | grep -qx '400 dev'")
         guest.succeed("stat -c '%a %U' /run/repose/secrets.state | grep -qx '600 root'")
 

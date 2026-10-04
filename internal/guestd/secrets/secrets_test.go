@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -271,8 +272,8 @@ func readEnv(t *testing.T, p sysdep.Paths) string {
 	return string(b)
 }
 
-// I-475: secrets.env is the current set; secrets.refresh unsets a name the
-// last generations delivered and the current one does not, guarded.
+// I-475: secrets.env is the current set; secrets.refresh unsets a removed
+// name where the process holds a value guestd exported for it.
 func TestRefreshUnsetsARemovedName(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
@@ -289,13 +290,18 @@ func TestRefreshUnsetsARemovedName(t *testing.T) {
 	if env := readEnv(t, p); strings.Contains(env, "B=") || strings.Contains(env, "unset") {
 		t.Fatalf("secrets.env after removing B:\n%s", env)
 	}
-	if !strings.Contains(refresh(), `[ "${B+s$B}" != "$__repose_d" ] || unset B`+"\n") {
+	if !strings.Contains(refresh(), "case ${B+s$B} in s'2') unset B ;; esac\n") {
 		t.Fatalf("B has no guarded unset:\n%s", refresh())
 	}
 	// Setting it again exports it.
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "4")}))
-	if r := refresh(); strings.Contains(r, "unset B") || !strings.Contains(r, "export B='4'") {
+	if r := refresh(); strings.Contains(r, "unset B") || !strings.Contains(r, "case ${B+s$B} in ''|s'2') export B='4' ;; esac\n") {
 		t.Fatalf("B set again:\n%s", r)
+	}
+	// Back to the earlier value: the newer one becomes the earlier one.
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}))
+	if r := refresh(); !strings.Contains(r, "case ${B+s$B} in ''|s'4') export B='2' ;; esac\n") {
+		t.Fatalf("B set back:\n%s", r)
 	}
 	for path, want := range map[string]os.FileMode{p.SecretsRefresh(): 0o400, p.SecretsState(): 0o600, p.SecretsEnv(): 0o400} {
 		fi, err := os.Stat(path)
@@ -307,12 +313,11 @@ func TestRefreshUnsetsARemovedName(t *testing.T) {
 }
 
 // A guestd restart is a new Handler over the same tmpfs: it reads the
-// generations back and keeps the current one while nothing changes.
-func TestGenerationsSurviveAGuestdRestart(t *testing.T) {
+// history back and keeps the current generation while nothing changes.
+func TestHistorySurvivesAGuestdRestart(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret("B", "2")}))
-	g1 := genOf(t, p)
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
 	g2 := genOf(t, p)
 
@@ -323,12 +328,38 @@ func TestGenerationsSurviveAGuestdRestart(t *testing.T) {
 		t.Fatalf("a restart changed the generation: %s then %s", g2, g)
 	}
 	st := restarted.readState()
-	if len(st.Gens) != 2 || st.Gens[0].Gen != g1 || st.Gens[1].Gen != g2 {
+	if st.Gen != g2 || string(st.Current["A"]) != "1" || len(st.Earlier) != 1 || string(st.Earlier["B"][0]) != "2" {
 		t.Fatalf("state after restart = %+v", st)
 	}
 	b, _ := os.ReadFile(p.SecretsRefresh())
-	if !strings.Contains(string(b), "unset B\n") {
+	if !strings.Contains(string(b), "unset B ;;") {
 		t.Fatalf("a guestd restart forgot the removed name:\n%s", b)
+	}
+}
+
+// Each name keeps its own last keepValues earlier values, however many
+// writes touch other names.
+func TestEarlierValuesAreBoundedPerName(t *testing.T) {
+	h, _, _ := newHandler(t)
+	ctx := context.Background()
+	for i := 0; i < 3*keepValues; i++ {
+		must(t, h.Write(ctx, []*guestdv1.Secret{secret("STABLE_OLD", "s"), secret("ROT", fmt.Sprint("r", i)), secret("OTHER", fmt.Sprint(i))}))
+		if i == 0 {
+			must(t, h.Write(ctx, []*guestdv1.Secret{secret("STABLE_OLD", "s"), secret("ONCE", "o"), secret("ROT", "r0"), secret("OTHER", "0")}))
+		}
+	}
+	st := h.readState()
+	if n := len(st.Earlier["ROT"]); n != keepValues {
+		t.Fatalf("ROT keeps %d earlier values, want %d", n, keepValues)
+	}
+	if got := string(st.Earlier["ROT"][keepValues-1]); got != fmt.Sprint("r", 3*keepValues-2) {
+		t.Fatalf("newest earlier ROT = %q", got)
+	}
+	if _, ok := st.Earlier["STABLE_OLD"]; ok {
+		t.Fatal("a value that never changed has an earlier value")
+	}
+	if got := st.Earlier["ONCE"]; len(got) != 1 || string(got[0]) != "o" {
+		t.Fatalf("a removed name lost its value after %d other writes: %q", 3*keepValues, got)
 	}
 }
 
@@ -337,15 +368,16 @@ func TestGenerationsSurviveAGuestdRestart(t *testing.T) {
 func TestUnreadableStateStartsANewHistory(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
-	must(t, sysdep.WriteFileAtomic(p.SecretsState(), []byte(`{"gens":[{"gen":"$(evil)","values":{"X":"MQ=="}},{"gen":"00000000000000aa","values":{"a b":"MQ==","BASH_ENV":"MQ==","OK":"MQ=="}}]}`), 0o600, -1, -1))
+	must(t, sysdep.WriteFileAtomic(p.SecretsState(), []byte(`{"gen":"$(evil)","current":{"a b":"MQ==","BASH_ENV":"MQ==","OK":"MQ=="},"earlier":{"__repose_x":["MQ=="],"E":["Mg=="]}}`), 0o600, -1, -1))
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
 	b, _ := os.ReadFile(p.SecretsRefresh())
-	if strings.Contains(string(b), "evil") || strings.Contains(string(b), "a b") || strings.Contains(string(b), "BASH_ENV") || !strings.Contains(string(b), "unset OK") {
+	if strings.Contains(string(b), "evil") || strings.Contains(string(b), "a b") || strings.Contains(string(b), "BASH_ENV") ||
+		strings.Contains(string(b), "__repose_x") || !strings.Contains(string(b), "in s'1') unset OK ;;") || !strings.Contains(string(b), "in s'2') unset E ;;") {
 		t.Fatalf("refresh from a doctored state:\n%s", b)
 	}
 	must(t, os.WriteFile(p.SecretsState(), []byte("not json"), 0o600))
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}))
-	if st := h.readState(); len(st.Gens) != 1 {
+	if st := h.readState(); len(st.Earlier) != 0 || string(st.Current["A"]) != "2" {
 		t.Fatalf("state = %+v", st)
 	}
 }

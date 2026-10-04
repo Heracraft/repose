@@ -51,9 +51,9 @@ to `tmux attach`, so new windows open there.
 | `/run/repose/ssh_host_ed25519_key`, `/run/repose/ssh_host_ed25519_key-cert.pub`, `/run/repose/user_ca.pub` | the reserved secrets, root 0600 / 0644, written by guestd `WriteSecrets`; a throwaway key is generated at first sshd start when none was delivered yet |
 | `/run/repose/secrets/<NAME>` | named secret values, tmpfs, 0400 dev, directory 0700 dev |
 | `/run/repose/secrets.env` | first line `export REPOSE_ENV_GEN=<16 hex>` (changes when the set of exported secrets does, and only then), then one `export NAME='...'` line per current secret; 0400 dev (DECISIONS I-475) |
-| `/run/repose/secrets.refresh` | first line `# repose-env-gen <16 hex>`, then POSIX sh that, for each name the last 16 generations or the current one delivered, exports the current value or unsets a removed name only when the process holds the value its own `REPOSE_ENV_GEN` delivered (unset when that generation delivered none, or is unknown), and ends with `export REPOSE_ENV_GEN=<gen>`; 0400 dev; holds the kept generations' values (I-475, I-476) |
-| `/run/repose/secrets.state` | JSON `{"gens": [{"gen", "values": {NAME: base64}}]}`, the last 16 generations oldest first, root 0600; guestd reads it back after a restart (I-475) |
-| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, the positional parameters and the shell options, a no-op when the file is missing or unreadable (I-475) |
+| `/run/repose/secrets.refresh` | first line `# repose-env-gen <16 hex>`, then one POSIX sh line per name guestd exports or exported before: `case ${NAME+s$NAME} in ''\|s'earlier1'\|...) export NAME='current' ;; esac` for a current secret, `case ${NAME+s$NAME} in s'earlier1'\|...) unset NAME ;; esac` for a removed one, and last `export REPOSE_ENV_GEN=<gen>`; 0400 dev; holds up to 16 earlier values per name, a removed name's included, until the guest restarts (I-475, I-476) |
+| `/run/repose/secrets.state` | JSON `{"gen", "current": {NAME: base64}, "earlier": {NAME: [base64, ...]}}`: the current generation and values, and per name the values exported before, distinct, oldest first, at most 16; root 0600; guestd reads it back after a restart (I-475) |
+| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
@@ -427,10 +427,10 @@ exists while the agents' browser or the desktop viewer runs (I-246).
 `BASH_ENV=/etc/repose/bash-env.sh` everywhere the static values reach,
 and in dev's tmux server and user manager after a base switch, so a
 non-interactive bash (each command an agent runs) loads the secrets guestd
-wrote after its parent started, and drops a removed one. It replaces or
-unsets a variable only when the process holds the value its
-`REPOSE_ENV_GEN` delivered, so a value the process or the project's
-`.envrc` set stays. guestd also sets each secret, the removals and
+wrote after its parent started, and drops a removed one. It sets a
+secret the process lacks and replaces or unsets a variable only when the
+process holds one of the last 16 values guestd delivered for that name, so
+a different value the process or the project's `.envrc` set stays. guestd also sets each secret, the removals and
 `REPOSE_ENV_GEN` in dev's tmux global environment on every `WriteSecrets`,
 through `tmux source-file -` on stdin (I-475, I-476). A secret named
 `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` or starting `__repose_` is written as

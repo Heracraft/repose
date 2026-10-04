@@ -786,9 +786,9 @@ in
       # loaded the secrets when it started. BASH_ENV, from the PAM
       # environment over ssh, makes each child source secrets.refresh when
       # its REPOSE_ENV_GEN is not the file's. The second file is what guestd
-      # writes for the second generation: a value the parent still holds as
-      # delivered is rotated or unset, one it set itself (MY_LOCAL, as a
-      # .envrc would) stays.
+      # writes for the second generation: a value the parent holds as
+      # guestd exported it is rotated or unset, one it set itself (MY_LOCAL,
+      # as a .envrc would) stays.
       with subtest("I-475: a tmux window's bash -c child sees a secret rotated after the window started, and keeps its own value"):
           guest.succeed("""cat > /tmp/be-parent <<'EOF'
       echo "bash_env=$BASH_ENV start=$MY_TOKEN local=$MY_LOCAL"
@@ -803,19 +803,10 @@ in
       EOF
       cat > /tmp/refresh-bb <<'EOF'
       # repose-env-gen 00000000000000bb
-      case ''${REPOSE_ENV_GEN-} in
-      00000000000000aa) __repose_g=1 ;;
-      00000000000000bb) __repose_g=2 ;;
-      *) __repose_g=0 ;;
-      esac
-      case $__repose_g in 1) __repose_d=s'g' ;; *) __repose_d= ;; esac
-      [ "''${GONE_TOKEN+s$GONE_TOKEN}" != "$__repose_d" ] || unset GONE_TOKEN
-      case $__repose_g in 1|2) __repose_d=s'prod' ;; *) __repose_d= ;; esac
-      [ "''${MY_LOCAL+s$MY_LOCAL}" != "$__repose_d" ] || export MY_LOCAL='prod'
-      case $__repose_g in 1) __repose_d=s's3cr3t' ;; 2) __repose_d=s'rotated' ;; *) __repose_d= ;; esac
-      [ "''${MY_TOKEN+s$MY_TOKEN}" != "$__repose_d" ] || export MY_TOKEN='rotated'
+      case ''${GONE_TOKEN+s$GONE_TOKEN} in s'g') unset GONE_TOKEN ;; esac
+      case ''${MY_LOCAL+s$MY_LOCAL} in ''') export MY_LOCAL='prod' ;; esac
+      case ''${MY_TOKEN+s$MY_TOKEN} in '''|s's3cr3t') export MY_TOKEN='rotated' ;; esac
       export REPOSE_ENV_GEN=00000000000000bb
-      unset __repose_g __repose_d
       EOF
       chmod 0755 /tmp/be-parent; rm -f /tmp/be-go /tmp/out-be""")
           guest.succeed("install -m 0400 -o dev -g dev /tmp/refresh-aa /run/repose/secrets.refresh")

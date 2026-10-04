@@ -122,6 +122,31 @@ func TestLoaderStrictModeAndFileStates(t *testing.T) {
 	}
 }
 
+// $_ is what it would be without the loader: in a script's first command
+// the path its parent shell put in _ (how `[[ $_ != $0 ]]` tells a sourced
+// script), in a -c string bash's path, with the file current and stale, and
+// under -x with nothing of the loader traced.
+func TestLoaderKeepsUnderscore(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1")}))
+	current := "REPOSE_ENV_GEN=" + genOf(t, p)
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "2")}))
+	loader := loaderFor(t, p.SecretsRefresh())
+	script := filepath.Join(t.TempDir(), "u.sh")
+	must(t, os.WriteFile(script, []byte(`printf '%s\n' "$_"`+"\n"), 0o755))
+	for _, args := range [][]string{{script}, {"-x", script}, {"-c", `printf '%s\n' "$_"`}, {"-xc", `printf '%s\n' "$_"`}} {
+		for _, gen := range []string{"REPOSE_ENV_GEN=", current} {
+			env := []string{gen, "_=" + script}
+			want := runBash(t, "", env, args...)
+			got := runBash(t, loader, env, args...)
+			if got != want || got.code != 0 || got.stdout == "\n" {
+				t.Errorf("bash %q, %s: got %+v, without the loader %+v", args, gen, got, want)
+			}
+		}
+	}
+}
+
 // show prints NAME=value or NAME=<unset> for each name, as a child bash of a
 // process with env sees them.
 func show(t *testing.T, loader string, env []string, names ...string) string {
@@ -150,13 +175,15 @@ func TestLoaderKeepsAnOverrideWhenTheGenerationIsCurrent(t *testing.T) {
 // The case reviewers reproduced: an agent formed from generation 1, whose
 // .envrc then set DATABASE_URL and whose command line set STRIPE_KEY, keeps
 // both after any number of later writes, while a secret it still holds as
-// delivered is rotated and a removed one is dropped.
+// delivered is rotated and a removed one is dropped. A name the agent's
+// sandbox removed comes back on the next change; one it set to empty stays
+// empty.
 func TestLoaderKeepsOverridesAcrossLaterWrites(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
 	must(t, h.Write(ctx, []*guestdv1.Secret{
 		secret("DATABASE_URL", "prod-db"), secret("STRIPE_KEY", "live-key"),
-		secret("ROTATED", "r1"), secret("GONE", "g"), secret("DROPPED", "d"),
+		secret("ROTATED", "r1"), secret("GONE", "g"), secret("DROPPED", "d"), secret("EMPTIED", "e"),
 	}))
 	g1 := genOf(t, p)
 	loader := loaderFor(t, p.SecretsRefresh())
@@ -164,16 +191,16 @@ func TestLoaderKeepsOverridesAcrossLaterWrites(t *testing.T) {
 		"DATABASE_URL=local-db", // from .envrc, after the profile
 		"STRIPE_KEY=sk_test",    // STRIPE_KEY=sk_test ./run-tests.sh
 		"ROTATED=r1", "GONE=g",  // as delivered
-		// DROPPED: the agent's sandbox removed it
+		"EMPTIED=", // DROPPED: a sandbox removed it; EMPTIED: set to empty
 	}
-	names := []string{"DATABASE_URL", "STRIPE_KEY", "ROTATED", "GONE", "DROPPED", "OTHER"}
+	names := []string{"DATABASE_URL", "STRIPE_KEY", "ROTATED", "GONE", "DROPPED", "EMPTIED", "OTHER"}
 
 	// An unrelated write: nothing the agent holds changes.
 	must(t, h.Write(ctx, []*guestdv1.Secret{
 		secret("DATABASE_URL", "prod-db"), secret("STRIPE_KEY", "live-key"),
-		secret("ROTATED", "r1"), secret("GONE", "g"), secret("DROPPED", "d"), secret("OTHER", "x"),
+		secret("ROTATED", "r1"), secret("GONE", "g"), secret("DROPPED", "d"), secret("EMPTIED", "e"), secret("OTHER", "x"),
 	}))
-	want := "DATABASE_URL=local-db STRIPE_KEY=sk_test ROTATED=r1 GONE=g DROPPED=<unset> OTHER=x"
+	want := "DATABASE_URL=local-db STRIPE_KEY=sk_test ROTATED=r1 GONE=g DROPPED=d EMPTIED= OTHER=x"
 	if got := show(t, loader, agent, names...); got != want {
 		t.Fatalf("after an unrelated write:\n got %s\nwant %s", got, want)
 	}
@@ -181,9 +208,9 @@ func TestLoaderKeepsOverridesAcrossLaterWrites(t *testing.T) {
 	// Rotate every secret and remove GONE and DATABASE_URL: only what the
 	// agent still holds as delivered follows.
 	must(t, h.Write(ctx, []*guestdv1.Secret{
-		secret("STRIPE_KEY", "live-key-2"), secret("ROTATED", "r2"), secret("DROPPED", "d2"), secret("OTHER", "x"),
+		secret("STRIPE_KEY", "live-key-2"), secret("ROTATED", "r2"), secret("DROPPED", "d2"), secret("EMPTIED", "e2"), secret("OTHER", "x"),
 	}))
-	want = "DATABASE_URL=local-db STRIPE_KEY=sk_test ROTATED=r2 GONE=<unset> DROPPED=<unset> OTHER=x"
+	want = "DATABASE_URL=local-db STRIPE_KEY=sk_test ROTATED=r2 GONE=<unset> DROPPED=d2 EMPTIED= OTHER=x"
 	if got := show(t, loader, agent, names...); got != want {
 		t.Fatalf("after a rotation:\n got %s\nwant %s", got, want)
 	}
@@ -192,7 +219,7 @@ func TestLoaderKeepsOverridesAcrossLaterWrites(t *testing.T) {
 	g3 := genOf(t, p)
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("STRIPE_KEY", "live-key-3"), secret("OTHER", "x")}))
 	fresh := []string{"REPOSE_ENV_GEN=" + g3, "STRIPE_KEY=live-key-2", "ROTATED=r2", "DROPPED=d2", "OTHER=x"}
-	want = "DATABASE_URL=<unset> STRIPE_KEY=live-key-3 ROTATED=<unset> GONE=<unset> DROPPED=<unset> OTHER=x"
+	want = "DATABASE_URL=<unset> STRIPE_KEY=live-key-3 ROTATED=<unset> GONE=<unset> DROPPED=<unset> EMPTIED=<unset> OTHER=x"
 	if got := show(t, loader, fresh, names...); got != want {
 		t.Fatalf("from generation 3:\n got %s\nwant %s", got, want)
 	}
@@ -215,34 +242,67 @@ func TestLoaderKeepsAnEnvrcValueOfARemovedSecret(t *testing.T) {
 }
 
 // A process with no generation (an ssh login, a user unit, an agent started
-// before this guestd) or one older than keepGens gets the secrets it lacks
-// and keeps every value it has.
-func TestLoaderWithAnUnknownGeneration(t *testing.T) {
+// before this guestd) gets every secret it lacks, and an earlier value it
+// holds is brought up to date like anyone's.
+func TestLoaderWithNoGeneration(t *testing.T) {
 	h, p, _ := newHandler(t)
 	ctx := context.Background()
 	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "a0"), secret("B", "b0")}))
-	old := genOf(t, p)
-	for i := 1; i <= keepGens; i++ {
-		must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", fmt.Sprint("a", i)), secret("B", "b0")}))
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "a1"), secret("B", "b0")}))
+	loader := loaderFor(t, p.SecretsRefresh())
+	for env, want := range map[string]string{
+		"":       "A=a1 B=b0",
+		"A=mine": "A=mine B=b0",
+		"A=a0":   "A=a1 B=b0",
+	} {
+		if got := show(t, loader, []string{env}, "A", "B"); got != want {
+			t.Fatalf("no generation, %q held: %s, want %s", env, got, want)
+		}
+	}
+}
+
+// The second review's failure: an agent started holding API=v1, then the
+// user set many other secrets one by one (an import is one write per line).
+// A rotation of API and then its removal still reach the agent's next
+// command, and a name it emptied stays empty. Only after more than
+// keepValues values of API itself does the agent keep the oldest.
+func TestLoaderAfterManyWritesToOtherNames(t *testing.T) {
+	h, p, _ := newHandler(t)
+	ctx := context.Background()
+	set := []*guestdv1.Secret{secret("API", "v1"), secret("HIDDEN", "h")}
+	must(t, h.Write(ctx, set))
+	agent := []string{"REPOSE_ENV_GEN=" + genOf(t, p), "API=v1", "HIDDEN="}
+	for i := 0; i < 4*keepValues; i++ {
+		set = append(set, secret(fmt.Sprint("IMPORTED_", i), "x"))
+		must(t, h.Write(ctx, set))
 	}
 	loader := loaderFor(t, p.SecretsRefresh())
-	last := fmt.Sprint("A=a", keepGens, " B=b0")
-	if got := show(t, loader, nil, "A", "B"); got != last {
-		t.Fatalf("no generation, nothing held: %s", got)
+	if got := show(t, loader, agent, "API", "HIDDEN", "IMPORTED_0"); got != "API=v1 HIDDEN= IMPORTED_0=x" {
+		t.Fatalf("after %d writes: %s", 4*keepValues, got)
 	}
-	if got := show(t, loader, []string{"A=mine"}, "A", "B"); got != "A=mine B=b0" {
-		t.Fatalf("no generation, A held: %s", got)
+	set[0] = secret("API", "v2")
+	must(t, h.Write(ctx, set))
+	if got := show(t, loader, agent, "API", "HIDDEN"); got != "API=v2 HIDDEN=" {
+		t.Fatalf("rotation: %s", got)
 	}
-	if got := show(t, loader, []string{"REPOSE_ENV_GEN=" + old, "A=a0"}, "A", "B"); got != "A=a0 B=b0" {
-		t.Fatalf("a generation older than %d: %s", keepGens, got)
+	must(t, h.Write(ctx, set[1:]))
+	if got := show(t, loader, agent, "API"); got != "API=<unset>" {
+		t.Fatalf("removal: %s", got)
 	}
-	// The one before it is still known.
-	st := h.readState()
-	if len(st.Gens) != keepGens {
-		t.Fatalf("kept %d generations, want %d", len(st.Gens), keepGens)
+
+	// keepValues later values of API itself: v1 is no longer recognised.
+	for i := 0; i <= keepValues; i++ {
+		set[0] = secret("API", fmt.Sprint("v", 3+i))
+		must(t, h.Write(ctx, set))
 	}
-	if got := show(t, loader, []string{"REPOSE_ENV_GEN=" + st.Gens[0].Gen, "A=a1", "B=b0"}, "A", "B"); got != last {
-		t.Fatalf("the oldest kept generation: %s", got)
+	if got := show(t, loader, agent, "API"); got != "API=v1" {
+		t.Fatalf("after %d values of API: %s", keepValues+1, got)
+	}
+	if got := show(t, loader, []string{"REPOSE_ENV_GEN=" + genOf(t, p), "API=v4"}, "API"); got != "API=v4" {
+		t.Fatalf("current generation: %s", got)
+	}
+	if got := show(t, loader, []string{"API=v4"}, "API"); got != fmt.Sprint("API=v", 3+keepValues) {
+		t.Fatalf("a recognised earlier value: %s", got)
 	}
 }
 
@@ -279,7 +339,8 @@ func TestLoaderTrickyValues(t *testing.T) {
 }
 
 // The marker survives a sandbox that drops variables whose names look
-// sensitive (Codex's shell_environment_policy).
+// sensitive (Codex's shell_environment_policy), so the sandbox's commands
+// keep the loader's fast path.
 func TestGenerationVariableLooksHarmless(t *testing.T) {
 	for _, w := range []string{"SECRET", "KEY", "TOKEN", "PASS", "AUTH", "CRED"} {
 		if strings.Contains(genVar, w) {

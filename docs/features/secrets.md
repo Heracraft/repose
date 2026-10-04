@@ -192,8 +192,9 @@ itself wrapped by an Azure Key Vault key (DECISIONS R3-10). Delivered to the
 guest at start and on every change as `/run/repose/secrets/NAME` on a
 tmpfs, mode 0400, owner `dev`, and exported into login shells and, through
 `BASH_ENV`, into each non-interactive bash, so every command an agent runs
-sees the current set (DECISIONS I-475). A value the process or the
-project's `.envrc` set itself is never replaced.
+sees the current set (DECISIONS I-475). A value is kept when it differs
+from every value guestd delivered for that name (the last 16 per name), so
+an `.envrc` or per-command value different from the secret stays.
 
 Why central: an unattended agent needs them when no laptop is connected, and
 a stopped guest that restarts at 03:00 for a base bump needs them too. Why
@@ -213,9 +214,14 @@ Rules that must hold:
   within 5 seconds; `secrets.env` and `secrets.refresh` are regenerated
   and dev's tmux global environment updated. Already running processes are
   not restarted; the CLI says so. Their next bash command loads the new
-  set, except a variable whose value the process changed itself (I-475).
+  set, except a variable holding a value guestd did not deliver for that
+  name (I-475). Commands run by `sh` rather than bash keep what their
+  parent had.
 - A `rm` reaches running processes the same way: `secrets.refresh` unsets
-  a name the last 16 generations delivered, under the same rule (I-476).
+  the name where a process holds one of the values guestd delivered for it
+  (I-476). Those values stay in `secrets.refresh` (dev 0400, tmpfs) until
+  the guest restarts; the public docs tell the user to revoke a leaked key
+  at its provider.
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
 - Secrets are per project. The same name in two projects is two secrets.
