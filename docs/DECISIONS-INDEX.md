@@ -494,5 +494,5 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-428** Agent bumps run downloaded binaries in a job with no write access — L11033
-- **I-429** CI pins every action to a commit and every tool to a version — L11058
-- **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11075
+- **I-429** CI pins every action to a commit and every tool to a version — L11057
+- **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11074

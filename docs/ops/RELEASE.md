@@ -133,6 +133,9 @@ else integrated with it.
    is the pushed main commit), `cli` tag (the next `v0.1.N`, with notes
    from every branch since the last tag, in the release-notes style), `host`
    switches (RUNBOOK "Switch a host to main") and the `edge` switch.
+   A `cli` tag pushed before the owner has set up the `release`
+   environment and its signing key stays an unpublished draft ("The
+   release signing key" below).
 4. **Check it live.** Run each released branch's `--live` check on
    throwaway `e2e-*` projects, never on the owner's projects, at most two
    alive at once. Paste the output into the release record.
