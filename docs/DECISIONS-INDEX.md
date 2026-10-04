@@ -539,3 +539,4 @@ pointer, not a summary.
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12358
+- **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12394

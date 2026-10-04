@@ -12390,3 +12390,29 @@ menu`, a command the CLI has never had; they now name `home.packages`,
 `repose config add` and `repose.system` (hostd) and `repose config add`
 or the dashboard's Config menu (the base's contract.nix, next base).
 Test: the `flake.stderr` fixture, captured from the live apply.
+
+**I-489. `run` and `sync` apply the checkout's `repose.nix` without being
+asked.** (machine-nix-repo, 2026-10-04; stage 1 of
+`docs/proposals/2026-10-04-your-machine-nix.md`) A `repose.nix` committed
+at a repository's root did nothing until the user ran `repose config
+apply`, so a new machine for that repository booted on the bare base. The
+owner chose (2026-10-04) that a project's `.nix` file configures its
+machines automatically. After a run's or sync's sync, the CLI sends the
+root `repose.nix` of the project's own checkout (`checkoutOwnsProject`,
+or the checkout a `--temp` run was made from) as the project's fragment
+through the existing `PUT /projects/{id}/config`, does not wait for the
+build, and prints one line naming the revision. The api skips only a
+fragment that is already applied, so the CLI keeps
+`~/.config/repose/repo-config.json`, per project the file's SHA-256 and
+the revision it made: the same file is not sent again while that
+revision is building, built or applied, and after it failed the run
+names the error instead of building it again (`repose config apply`
+still retries on demand). A refusal from the api (`invalid`: syntax, a
+secret in the file) and a failed send are warnings; the run goes on. A
+run with `--no-sync`, or outside a repository, sends nothing, and another
+repository's `repose.nix` (another checkout of the machine, I-480, or a
+run by name from elsewhere) never replaces the machine's configuration.
+With the file in the repository, the file is the configuration: a menu
+or dashboard change is replaced the next time the file is sent, and the
+docs say so. Tests: `TestRunAppliesRepoConfig`,
+`TestRepoConfigOnlyFromTheProjectsCheckout`.
