@@ -11062,25 +11062,29 @@ hours still count 60 s per running sample, so a run shorter than a tick
 bills its egress but no running time. Tests:
 `internal/hostd/guest/metering_test.go`.
 
-**I-449. One thin volume is at most half the pool, and the pool's volumes
-together at most 1.5 times it.** (security review, 2026-10-03) Placement and
+**I-449. The pool's thin volumes together are at most 1.5 times the
+pool.** (security review, 2026-10-03) Placement and
 resize checked a volume against the pool's free space and the plan's disk,
 never against what the host's volumes could grow to, and a full thin pool
 fails the writes of every volume in it. hostd now refuses, with
-`insufficient_capacity`, a create, a restore or a resize after which
-- the volume would be more than `VolumeMaxPoolPct` (50) percent of the
-  pool's size, so filling the pool takes more than one tenant; or
-- the virtual sizes of every thin volume in the pool, guests and the
-  caches' `repose-cache` volume (not `snap-*`, which share their origin's
-  blocks for the length of an upload), would pass `PoolOvercommit` (1.5)
-  times the pool.
+`insufficient_capacity`, a create, a restore or a resize after which the
+virtual sizes of every thin volume in the pool, guests and the caches'
+`repose-cache` volume (not `snap-*`, which share their origin's blocks for
+the length of an upload), would pass `PoolOvercommit` (1.5) times the
+pool.
 1.5 is the ratio the design already sells: 30 seats on a 256 GB host at
 100 GB of plan disk each is 3 TB on DESIGN §4's 2 TB pool. Volumes already
-past either bound keep running and starting; they cannot grow. The api
+past the budget keep running and starting; they cannot grow. The api
 shows the refusal as it shows any capacity refusal ("the host has no room
-for this project right now"). On host-01 (a 476 GiB pool) one volume is now
-at most about 238 GiB, below Pro's 500 GB plan disk and the dashboard's
-320 GB resize ceiling; a larger data disk raises both bounds. Not done
+for this project right now").
+- *Rejected by the owner (2026-10-03): a bound on one volume* (at most half
+  the pool, so filling it would take more than one tenant). Plans sell up
+  to 500 GB of disk per account and one project may hold all of it; a
+  per-volume cap below that breaks what is sold, and on host-01's 476 GiB
+  pool it would have been about 238 GiB. The cost of the choice: one
+  tenant can still fill the pool alone, up to their plan's disk. The
+  remedy is a larger data disk later, which also raises the budget.
+Not done
 here: the api's scheduler still places by free space alone and learns of
 the budget only from hostd's refusal, and nothing yet acts at 90 percent
 beyond refusing creates. Tests: `internal/hostd/guest/poolbudget_test.go`,

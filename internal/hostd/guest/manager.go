@@ -169,12 +169,10 @@ type Config struct {
 	PoolRefusePct  float64
 	PoolWarnPct    float64
 	// PoolOvercommit bounds the virtual sizes of the pool's thin volumes,
-	// as a multiple of the pool's size; VolumeMaxPoolPct bounds one volume,
-	// as a percentage of it (DECISIONS I-449).
-	PoolOvercommit   float64
-	VolumeMaxPoolPct float64
-	StoreHighPct     float64
-	GuestdRetry      time.Duration
+	// as a multiple of the pool's size (DECISIONS I-449).
+	PoolOvercommit float64
+	StoreHighPct   float64
+	GuestdRetry    time.Duration
 	// GuestdBootRetry is the dial interval until a monitor's first guestd
 	// session: a booting guest's guestd starts listening at an unknown
 	// moment on every start's critical path, and a 2 s retry cost a
@@ -242,9 +240,6 @@ func (c Config) Defaults() Config {
 	}
 	if c.PoolOvercommit == 0 {
 		c.PoolOvercommit = 1.5
-	}
-	if c.VolumeMaxPoolPct == 0 {
-		c.VolumeMaxPoolPct = 50
 	}
 	if c.StoreHighPct == 0 {
 		c.StoreHighPct = 80

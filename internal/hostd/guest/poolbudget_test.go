@@ -9,41 +9,44 @@ import (
 
 const gid3 = "0192f0a3-3333-7000-8000-000000000003"
 
-// One tenant cannot take a volume past half the pool, and the host's
-// volumes together cannot pass 1.5 times it, by create or by resize
-// (DECISIONS I-449). A 200 GB pool: 100 GB per volume, 300 GB in all.
+// The host's thin volumes together cannot pass 1.5 times the pool, by
+// create or by resize (DECISIONS I-449). One volume has no bound of its
+// own: a plan's whole disk may be one project's. A 200 GB pool: 300 GB in
+// all.
 func TestPoolBudget(t *testing.T) {
 	h := newHarness(t, nil)
 	h.lvm.PoolSize, h.lvm.PoolFree = 200<<30, 200<<30
 	h.create(gid1) // 40 GB
 
-	// One volume over half the pool: the resize that made one tenant's
-	// volume larger than the whole pool is refused, and nothing changed.
-	res := h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid1, NewBytes: 101 << 30}), CodeInsufficientCapacity)
+	// One volume larger than the whole pool is allowed while the budget
+	// holds.
+	h.mustOK(cmd(&hostdv1.ResizeVolume{GuestId: gid1, NewBytes: 250 << 30}))
+
+	// The caches' volume counts; snapshots do not. 250 + 64 = 314 is past
+	// 300, so the next grow is refused and nothing changes.
+	h.lvm.Volumes["repose-cache"] = &lvm.FakeVolume{Size: 64 << 30}
+	h.lvm.Volumes["snap-"+gid1+"-1"] = &lvm.FakeVolume{Size: 250 << 30}
+	res := h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid1, NewBytes: 251 << 30}), CodeInsufficientCapacity)
 	t.Log(res.Error.Message)
-	if h.lvm.Volumes["g-"+gid1].Size != 40<<30 || h.guest(gid1).VolumeBytes != 40<<30 {
+	if h.lvm.Volumes["g-"+gid1].Size != 250<<30 || h.guest(gid1).VolumeBytes != 250<<30 {
 		t.Fatal("refused resize changed the volume")
 	}
-	h.mustOK(cmd(&hostdv1.ResizeVolume{GuestId: gid1, NewBytes: 100 << 30}))
+	// The guest already over the budget keeps starting.
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
 
-	// The caches' volume counts; snapshots do not.
-	h.lvm.Volumes["repose-cache"] = &lvm.FakeVolume{Size: 64 << 30}
-	h.lvm.Volumes["snap-"+gid1+"-1"] = &lvm.FakeVolume{Size: 100 << 30}
-
-	// 100 + 64 + 100 = 264 fits under 300; another 40 does not.
+	// With a smaller cache volume, 250 + 14 = 264: a 40 GB create would
+	// pass 300, a 36 GB one reaches it exactly.
+	h.lvm.Volumes["repose-cache"] = &lvm.FakeVolume{Size: 14 << 30}
 	c := createReq(gid2)
-	c.VolumeBytes = 100 << 30
 	c.SystemClosure = h.closure
-	h.mustOK(cmd(c))
-	c = createReq(gid3)
-	c.SystemClosure = h.closure
-	res = h.mustFail(cmd(c), CodeInsufficientCapacity)
+	res = h.mustFail(cmd(c), CodeInsufficientCapacity) // 250 + 14 + 40 = 304
 	t.Log(res.Error.Message)
-	if _, ok := h.lvm.Volumes["g-"+gid3]; ok {
+	if _, ok := h.lvm.Volumes["g-"+gid2]; ok {
 		t.Fatal("refused create made a volume")
 	}
 	// Exactly at the budget fits; one byte more, by a resize, does not.
 	c.VolumeBytes = 36 << 30
 	h.mustOK(cmd(c))
-	h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid3, NewBytes: 36<<30 + 1}), CodeInsufficientCapacity)
+	h.mustFail(cmd(&hostdv1.ResizeVolume{GuestId: gid2, NewBytes: 36<<30 + 1}), CodeInsufficientCapacity)
 }

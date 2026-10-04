@@ -494,8 +494,8 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11033
-- **I-449** One thin volume is at most half the pool, and the pool's volumes together at most 1.5 times it — 2026-10-03; L11065
-- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11089
-- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11108
-- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11128
-- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11148
+- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; L11065
+- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11093
+- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11112
+- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11132
+- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11152

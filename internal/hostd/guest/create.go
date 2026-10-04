@@ -93,23 +93,18 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 }
 
 // poolBudget refuses a volume of bytes, created or grown to that size,
-// that would let one tenant or all of them fill the shared thin pool
+// that would take the shared thin pool's allocation past its budget
 // (DECISIONS I-449). A thin volume takes pool space only as it is
-// written, so the pool is sold more than once; these two bounds keep that
-// within reach of the autoextend headroom and the operator's pool_high
-// warning. No single volume may be more than VolumeMaxPoolPct of the
-// pool, so a full pool takes more than one tenant writing, and the
-// virtual sizes of every thin volume in the pool (guests and the caches'
-// volume; not snapshots, not name itself) together with this one may not
-// pass PoolOvercommit times the pool. Volumes already over either bound
-// keep running and starting; they cannot grow.
+// written, so the pool is sold more than once: the virtual sizes of every
+// thin volume in the pool (guests and the caches' volume; not snapshots,
+// not name itself) together with this one may not pass PoolOvercommit
+// times the pool. There is no bound on one volume: a plan's whole disk
+// may be one project's (the owner's choice in I-449). Volumes already over
+// the budget keep running and starting; they cannot grow.
 func (m *Manager) poolBudget(name string, bytes uint64) *Error {
 	size, _, err := m.d.LVM.PoolStats(m.ctx)
 	if err != nil {
 		return errf(CodeInternal, "thin pool: %v", err)
-	}
-	if limit := float64(size) * m.cfg.VolumeMaxPoolPct / 100; float64(bytes) > limit {
-		return errf(CodeInsufficientCapacity, "a %d GB volume is more than this host allows for one volume (%d GB)", bytes>>30, uint64(limit)>>30)
 	}
 	alloc, err := m.d.LVM.Allocated(m.ctx, name)
 	if err != nil {
