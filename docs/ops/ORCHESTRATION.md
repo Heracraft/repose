@@ -135,7 +135,9 @@ from the wave cycle, it wins.
   classifier refuses `tofu apply` and `nixos-rebuild switch` to a host with
   tenant guests on it. The conductor writes the exact command into a tmux
   buffer (`apply`, `switch`) and asks the owner to run it. Announce anything
-  that drops live sessions (an edge switch does, for about a second).
+  that drops live sessions (an edge reboot or `systemctl restart gateway`
+  does; an edge switch does not since I-471, except the first one onto
+  it).
 - **Workers and integration sessions never** force-unlock state, use the
   Coolify UI, or put anything about the owner's personal server in a file.
 

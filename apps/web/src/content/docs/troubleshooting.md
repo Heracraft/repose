@@ -21,7 +21,11 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`kex_exchange_identification: Connection closed by remote host`.** Your address opened more connections at once than the gateway lets in, or failed to log in many times in a row; `ssh -v` shows the gateway's reason on a line starting `repose gateway:`. Wait a minute and connect again. After many failed logins, the wait is 10 minutes.
 
-**Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there.
+**Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there. `run` and `attach` do this for you.
+
+**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. The machine is still running. `run` and `attach` attach again as soon as it answers.
+
+**``repose: could not reach todo-app for 2 minutes. `repose attach todo-app` attaches again once it answers.``** The connection didn't come back within 2 minutes. Check your network, then run `repose attach todo-app`. `repose status todo-app` shows whether the machine is running.
 
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It shows the same error the editor got, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``; connecting never starts one.
 

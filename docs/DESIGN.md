@@ -303,7 +303,11 @@ with nightly dumps to Cloudflare R2. The edge is a separate NixOS VM
 (`nix/edge/`) deployed with `nixos-rebuild switch` because the gateway needs
 a raw port and WireGuard needs the kernel module, and a Coolify port mapping
 would cost it rolling deploys. Coolify cannot manage NixOS servers, hence the
-Ubuntu VM.
+Ubuntu VM. A switch of the edge keeps open SSH sessions: systemd holds
+port 22, and the old gateway hands new connections to the new one and
+serves its own until they end (DECISIONS I-470..I-472). The edge is still
+one VM, so its reboot ends every session; the way to two edges behind a
+load balancer is DECISIONS I-473.
 
 ## 10. The CLI
 

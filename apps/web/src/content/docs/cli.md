@@ -48,6 +48,8 @@ Attach to the project's tmux session without syncing. In the project's checkout,
 
 While you're attached, a file you drop on the terminal, or an image you paste with `Cmd+V` or `Ctrl+V`, is copied to the machine and its path there is pasted. See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
+If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. On Windows, or with `REPOSE_INPUT_PROXY=0`, the command ends with exit code 255 instead. See [Detach and come back](/docs/run-and-attach#detach-and-come-back).
+
 ### `repose sync [PROJECT]`
 
 Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. It stops with exit code 6 when the machine has uncommitted changes your laptop would write over. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one.
@@ -106,7 +108,7 @@ Other editors: see [SSH and editors](/docs/ssh-and-editors).
 
 ### `repose open PORT`
 
-Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`.
+Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`. If the connection drops, `open` reconnects on the same laptop port, for up to 2 minutes.
 
 | Flag             | What it does                                                        |
 | ---------------- | ------------------------------------------------------------------- |
@@ -354,4 +356,4 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 | 10   | The configuration build failed.                                                                                                                                                             |
 | 130  | Interrupted with `Ctrl-C`.                                                                                                                                                                  |
 
-Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.
+Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection and `run`, `attach` or `open` could not reconnect within 2 minutes. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.

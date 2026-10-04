@@ -86,6 +86,12 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   picks a free one and forwards to that instead, with a message saying
   so, rather than failing. `repose browser` does the same for 6080
   (I-261).
+- When the forward's connection drops (ssh exits 255), `open` says
+  `repose: lost the connection to <slug>. Reconnecting; Ctrl-C stops.`
+  and starts the same forward again once the machine answers, for up to
+  2 minutes (DECISIONS I-469). Auto-forwards follow a reattach too: the
+  session helper notices the new ControlMaster and adds its forwards
+  there, on the same laptop ports, without a second message.
 - `open PORT`'s forward runs in the foreground and dies with the CLI
   (Ctrl-C, or the parent process exiting). `repose browser`'s is the one
   exception: an `ssh -N` child in its own session, recorded under

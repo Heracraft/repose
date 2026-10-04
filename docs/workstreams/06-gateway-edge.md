@@ -76,7 +76,9 @@ in-process `ssh.NewServer` standing in for a guest sshd.
   control plane is the one static peer (`repose.edge.staticPeers`, values
   in `nix/edge/edge-01.nix`, DECISIONS I-92). `ip_forward = 1`. Routes for
   each host's guest `/22` are added by `wgsync` with `ip route add <cidr>
-  dev wg0`.
+  dev wg0`. A switch reloads `wireguard-wg0` in place instead of
+  restarting it, so wgsync's peers stay (DECISIONS I-472), and dhcpcd is
+  `persistent` so its restart leaves eth0 configured.
 - nftables: input allows 22 (gateway), 443 (preview stub), 51820/udp,
   2222 (operator sshd, key-only, restricted to the wg network and a
   documented operator IP list), 9100 and 9102 from wg only (node_exporter,
@@ -91,7 +93,14 @@ in-process `ssh.NewServer` standing in for a guest sshd.
   the public name sits behind Coolify's proxy, which cannot present the
   client certificate), `GATEWAY_CLIENT_CERT/KEY` paths, `HOST_KEY` and
   `HOST_CERT` paths, `USER_CA_PUB` fetched at start from `/internal/ca` and
-  refreshed hourly. `Restart = always`, `RestartSec = 1`.
+  refreshed hourly. `Restart = always`, `RestartSec = 1`. Port 22 comes
+  from `systemd.sockets.gateway-ssh` (I-470); the unit is `Type =
+  notify`, `reloadIfChanged`, and its `ExecReload` is `gateway handover`,
+  which starts the new build on the same sockets and leaves the old
+  process serving its open relays until they end (I-471). The control
+  socket is `/run/repose-gateway/control.sock` (`RuntimeDirectory`). Log
+  lines of a handover carry `event=handover` and `result` `starting`,
+  `ok`, `failed`, `draining` or `drained`.
 - `systemd.services.wgsync`: runs `gateway wgsync` with
   `CAP_NET_ADMIN`, every 30 s.
 - Operators' sshd on 2222 trusts the Host CA for user certificates minted
@@ -265,7 +274,9 @@ pipeline is proven before the feature exists.
 | Wrong principal | `certificate not valid for this project` | CLI re-requests a cert including the project |
 | Connection cap reached | refuse with `gateway busy` | alert at 80 percent |
 | One user's relay share reached | `too many open connections for your account; close some and try again` | user closes connections |
-| Gateway restart (deploy) | every relay drops; tmux sessions in guests persist | CLI reconnects on the next `attach`; a banner on reconnect says `reconnected` |
+| Gateway deploy (a switch) | handover (I-471): open relays stay on the old process until they end; new connections go to the new one | nothing; a failed handover fails the switch and the old gateway serves on |
+| Gateway restart or crash | every relay drops; connections made meanwhile wait in the socket's backlog (I-470); tmux sessions in guests persist | `run`, `attach` and `open` reconnect within 2 minutes (I-469); editors reconnect |
+| Edge VM reboot | every relay drops and nothing connects until it is back | the same reconnects, if it is back within 2 minutes; one edge is a known single point (I-473) |
 | Malformed login name | banner and auth failure | user sees the banner |
 | Source IP auth flood | 4 connections in the handshake, then closed before the handshake (`rate_limited`) | metric |
 
@@ -291,7 +302,10 @@ pipeline is proven before the feature exists.
 ## 8. Rollback
 
 `nixos-rebuild switch --rollback` on the edge restores the previous gateway
-binary and configuration in seconds; relays drop once. WireGuard peer state
+binary and configuration in seconds, as a handover like any switch
+(I-471): open relays stay, unless the previous build predates handovers,
+when the reload fails and `systemctl restart gateway` finishes the
+rollback and drops relays once. WireGuard peer state
 is rebuilt by `wgsync` within 30 s of any version. No persistent state
 except keys and certificates, which are not changed by deploys.
 
@@ -399,6 +413,29 @@ except keys and certificates, which are not changed by deploys.
 - [x] No `TODO`, `FIXME`, `panic(` outside main, `_ = err` under
       `cmd/gateway`, `internal/gateway`, `nix/edge`. Evidence: grep.
       — closed: the grep returns nothing at d3b72d3 (upkeep, 2026-09-23)
+- [x] A gateway restart queues new connections instead of refusing them
+      (I-470). Evidence: `TestRestartQueuesConnections`, and
+      `TestSystemdReloadAndRestart` under this machine's systemd 261 with
+      the edge's unit settings (a dial while the unit is stopped completes
+      after `systemctl start`). — closed 2026-10-04 (edge-zero-downtime)
+- [x] A reload hands over and keeps open sessions (I-471). Evidence:
+      `TestHandoverKeepsOpenSessions`, `TestHandoverFailureKeepsServing`,
+      `TestSystemdReloadAndRestart` (unit rewritten to build B,
+      daemon-reload, reload: MainPID runs B, the session opened before
+      still echoes, the old pid exits after its client closes, SIGKILL to
+      B restarts the unit). — closed 2026-10-04 (edge-zero-downtime)
+- [x] The built edge reloads `gateway` and `wireguard-wg0` on a switch and
+      runs dhcpcd persistent (I-472). Evidence: the built toplevel's
+      `gateway.service` and `wireguard-wg0.service` carry
+      `X-ReloadIfChanged=true` and an `ExecReload`, `gateway-ssh.socket`
+      listens on 22, dhcpcd's `ExecStart` has `--persistent`;
+      switch-to-configuration-ng reloads `X-ReloadIfChanged` units.
+      — closed 2026-10-04 (edge-zero-downtime)
+- [ ] On the production edge, a switch with a session attached keeps it,
+      and `wg show wg0 peers` is unchanged. Evidence: a `repose attach`
+      that keeps echoing across a second switch after the first one onto
+      I-471 (RUNBOOK "Switch the edge"), and the journal's `handed over`
+      line. — waits on: the owner's edge switch
 
 ### Real-edge evidence (M2, 2026-09-20/21)
 
