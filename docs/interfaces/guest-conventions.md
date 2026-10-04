@@ -44,13 +44,16 @@ to `tmux attach`, so new windows open there.
 | `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them |
 | `/etc/repose/agent-guide.md` | the machine guide agents read, rendered from `nix/guest/base/agent-guide.md` (DECISIONS I-243); the same text is `/etc/claude-code/CLAUDE.md` (Claude Code's managed memory), `developer_instructions` in `/etc/codex/config.toml`, the file named by `instructions` in `/etc/opencode/opencode.json`, and `GEMINI.md` in `/etc/repose/gemini-extension/`; `/etc/repose/pi-extension.js` reads it at each pi run |
 | `/etc/repose/agents.json` | `{<agent>: {binary, version, hook}}` for every shipped agent, for `repose status --verbose` |
-| `/etc/profile.d/repose.sh` | sources `/etc/repose/env` and `/run/repose/secrets.env`, exports `DISPLAY=:99` while the X display `:99` is up (the agents' browser or the desktop viewer runs), prepends the user bin dirs to `PATH` |
+| `/etc/profile.d/repose.sh` | sources `/etc/repose/env`, then the named secrets through `/etc/repose/bash-env.sh` (or `/run/repose/secrets.env` when no `secrets.refresh` exists yet), exports `DISPLAY=:99` while the X display `:99` is up (the agents' browser or the desktop viewer runs), prepends the user bin dirs to `PATH` |
 | `/etc/ssh/principals/dev` | the accepted certificate principals (the project id), written by guestd `SetPrincipals` |
 | `/etc/ssh/ssh_host_ed25519_key`, `ssh_host_ed25519_key-cert.pub`, `user_ca.pub` | symlinks to the reserved secrets below (DECISIONS I-35) |
 | `/run/repose/` | tmpfs (part of `/run`), 0755 root |
 | `/run/repose/ssh_host_ed25519_key`, `/run/repose/ssh_host_ed25519_key-cert.pub`, `/run/repose/user_ca.pub` | the reserved secrets, root 0600 / 0644, written by guestd `WriteSecrets`; a throwaway key is generated at first sshd start when none was delivered yet |
 | `/run/repose/secrets/<NAME>` | named secret values, tmpfs, 0400 dev, directory 0700 dev |
-| `/run/repose/secrets.env` | `export NAME='...'` lines, 0400 dev, sourced by login shells |
+| `/run/repose/secrets.env` | first line `export REPOSE_ENV_GEN=<16 hex>` (changes when the set of exported secrets does, and only then), then one `export NAME='...'` line per current secret; 0400 dev (DECISIONS I-475) |
+| `/run/repose/secrets.refresh` | first line `# repose-env-gen <16 hex>`, then one POSIX sh line per name guestd exports or exported before: `case ${NAME+s$NAME} in ''\|s'earlier1'\|...) export NAME='current' ;; esac` for a current secret, `case ${NAME+s$NAME} in s'earlier1'\|...) unset NAME ;; esac` for a removed one, and last `export REPOSE_ENV_GEN=<gen>`; 0400 dev; holds up to 16 earlier values per name, a removed name's included, until the guest restarts (I-475, I-476) |
+| `/run/repose/secrets.state` | JSON `{"gen", "current": {NAME: base64}, "earlier": {NAME: [base64, ...]}}`: the current generation and values, and per name the values exported before, distinct, oldest first, at most 16; root 0600; guestd reads it back after a restart (I-475) |
+| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
@@ -421,6 +424,17 @@ directory to `LD_LIBRARY_PATH` for manylinux wheels and keeps its own
 path as `sys.executable` (I-228). `DISPLAY=:99` only while the X server
 socket `/tmp/.X11-unix/X99` exists (checked at every shell start); it
 exists while the agents' browser or the desktop viewer runs (I-246).
+`BASH_ENV=/etc/repose/bash-env.sh` everywhere the static values reach,
+and in dev's tmux server and user manager after a base switch, so a
+non-interactive bash (each command an agent runs) loads the secrets guestd
+wrote after its parent started, and drops a removed one. It sets a
+secret the process lacks and replaces or unsets a variable only when the
+process holds one of the last 16 values guestd delivered for that name, so
+a different value the process or the project's `.envrc` set stays. guestd also sets each secret, the removals and
+`REPOSE_ENV_GEN` in dev's tmux global environment on every `WriteSecrets`,
+through `tmux source-file -` on stdin (I-475, I-476). A secret named
+`BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` or starting `__repose_` is written as
+a file and never exported.
 
 ## Ports
 

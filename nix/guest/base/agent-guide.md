@@ -38,9 +38,9 @@ The checkout is named after the folder on the user's laptop it came from, not af
 
 ## Secrets
 
-- The user's secrets are environment variables in your shell and files in `/run/repose/secrets/`. <!-- /docs/secrets#store-an-api-key -->
+- Each command you run sees the user's current secrets as environment variables, and `/run/repose/secrets/NAME` holds the same value. Check that one is set with `[ -n "${NAME:-}" ]`; never read or print the file. <!-- /docs/secrets#store-an-api-key -->
 - Never print, log or commit a secret's value, and never write one into the repository. Refer to it by name, as `$NAME`. <!-- /docs/secrets#store-an-api-key -->
-- If you need a secret that isn't set, ask the user to run `repose secrets set NAME` on their laptop, or `repose secrets import` to set every line of a `.env` file there. New values reach new shells; restart a running server to pick one up. <!-- /docs/secrets#store-an-api-key -->
+- If you need a secret that isn't set, ask the user to run `repose secrets set NAME` on their laptop, or `repose secrets import` to set every line of a `.env` file there. A new value reaches your next command within seconds, unless you or the project's `.envrc` set that variable yourself, which then wins; a long-running process such as a dev server gets it only when you restart it, and a command you run with `sh` instead of `bash` keeps the values you started with. <!-- /docs/secrets#store-an-api-key -->
 - The user's Vercel login is not copied here. If the Vercel CLI says it isn't logged in, ask the user to log in to Vercel on this machine, or to store a team-scoped token with `repose secrets set VERCEL_TOKEN` on their laptop. <!-- /docs/secrets#logins-copied-from-your-laptop -->
 
 ## Browser

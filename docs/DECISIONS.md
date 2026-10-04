@@ -11105,9 +11105,9 @@ Rotating the key: `docs/ops/RELEASE.md` "The release signing key".
 deploys, so this stops a forged release, not a forged `main` (I-428's
 ruleset covers that). GoReleaser and the signer share a workflow run; a
 compromised GoReleaser could still change the archives before they are
-signed (I-429's pin narrows that). *Owner:* create the `release`
-environment limited to `v*` tags, store the key as its secret, and turn on
-immutable releases and a tag ruleset for `v*`.
+signed (I-429's pin narrows that). The `release`
+environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
+release signing key").
 **I-431. The api's `/internal` listener admits only the gateway's certificate.** (security release, 2026-10-03)
 One X.509 CA signs the hosts' client certificates (CN = host id) and the
 gateway's (CN `gateway`), and the `/internal` listener on 8444 accepted any
@@ -11208,8 +11208,8 @@ not open under another project or name), `TestCiphertextIsBoundToItsProject`
 binds it and refuses the platform-key copy); `internal/api/http` `TestFork`
 opens the copied secret in the fork. *Rejected:* a column recording the
 additional-data version (a database writer sets it as easily as the
-ciphertext; a failed tag check under the new data says the same thing for
-free).
+ciphertext; a failed tag check under the bound data says the same thing for
+free); binding in one release (breaks the rolling deploy and rollback).
 **I-441. Guests report guest kinds only; platform kinds come from the api.**
 (security release, 2026-10-04) `notifyKinds` held the guest kinds and the
 platform kinds in one map, and both guest paths (an `AgentEvent` over
@@ -11948,11 +11948,152 @@ Keynote-like `.key`, a public key, a signature, an encrypted `.gpg` and
 a public keyring copy), and the
 pty test (a link to a hidden file is typed as text and nothing is
 copied; a copy is named).
-signed (I-429's pin narrows that). The `release`
-environment and its secret are owner setup (`docs/ops/RELEASE.md` "The
-release signing key").
-ciphertext; a failed tag check under the bound data says the same thing for
-free); binding in one release (breaks the rolling deploy and rollback).
+
+**I-475. Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself.**
+(secrets-env, 2026-10-04; amends I-241) A secret set after an agent
+started reached `/run/repose/secrets/NAME` but not the agent's commands.
+`secrets.env` was sourced only by `/etc/profile.d/repose.sh`, which a
+shell reads when it starts, and an agent runs each command as a
+non-login, non-interactive `bash -c` that inherits the agent's
+environment (Claude Code's shell snapshot exports only PATH). The agent
+guide said secrets were environment variables, so agents guessed and
+spent turns on it.
+`BASH_ENV=/etc/repose/bash-env.sh` is now a session variable, so it is
+in `/etc/set-environment`, the PAM environment, dev's user manager and
+the tmux server; the activation script that refreshes PATH there after a
+base switch sets it too. A stable `/etc` path rather than a store path,
+so a process holding BASH_ENV across a switch still finds it.
+The rule is by value. For each name guestd keeps the values it exported
+before and no longer does, distinct, oldest first, the last 16 per name,
+in `/run/repose/secrets.state` (root 0600, tmpfs), and writes
+`/run/repose/secrets.refresh` (dev 0400, tmpfs) from them: per current
+secret `case ${NAME+s$NAME} in ''|s'earlier'...) export NAME='current'
+;; esac`, per removed one the same patterns without `''` and `unset NAME`.
+A process that lacks a secret gets it; one that holds an earlier value
+guestd exported gets the current one; any other value is the process's
+own and stays across any number of later writes: the project's `.envrc`
+(loaded by the agent wrappers after the profile, I-259), an override for
+one command (`STRIPE_KEY=sk_test ./run-tests.sh`), and a removed secret
+the `.envrc` now provides with another value. A first version re-sourced
+the whole file whenever the generation differed; since an agent's own
+generation never changes, every command after the first write replaced
+the `.envrc`'s values with the secrets, which reviewers reproduced.
+Each environment guestd gives out also carries `REPOSE_ENV_GEN=<16 hex>`,
+which changes when the exported set does and only then. The loader
+sources the refresh file only when its first line, `# repose-env-gen
+<gen>`, names another generation than the process's, so a process formed
+from the current set pays one `read` per bash. The marker decides nothing
+else. Its name holds none of `KEY`, `SECRET` or `TOKEN`, so a sandbox
+that drops those (Codex's `shell_environment_policy`) keeps the fast path.
+Second review (2026-10-04): a second version compared each value with
+what the process's own generation delivered, keeping the last 16
+generations. Every write is a generation and `secrets import` makes one
+per line, so after 16 writes to any names an agent's generation expired:
+a rotation and a removal stopped reaching it, `exec $SHELL` stopped
+working, and a name its sandbox dropped came back. Bounding history per
+name instead of per write removes the expiry for everything but a name
+changed more than 16 times while an agent holds its oldest value (that
+process keeps it, as it would any value of its own), and drops about
+150 lines of generation bookkeeping. What it gives up, stated rather
+than half kept: a name a process lacks is filled in on its next bash
+after a change, whatever removed it. The generation version kept a
+sandbox's drop only for names that existed when the agent started and
+only within the 16 generations; a `*KEY*` secret set later reached the
+sandbox anyway. To keep a secret out of a command, give the variable an
+empty value or leave `BASH_ENV` out of its environment (in Codex,
+`shell_environment_policy.exclude`). A value that equals an earlier
+secret value follows the secret: an `.envrc` that loads the same `.env`
+the user imported gets the user's later changes, and loses the variable
+when the secret is removed (the generation version did the same).
+A process with no generation (an ssh login, a user unit, a process from
+before this guestd) follows the same rule. `/etc/profile.d/repose.sh`
+sources the loader too, so a login shell does; it falls back to sourcing
+`secrets.env` when no refresh file exists (a guest whose secrets an older
+guestd wrote). `secrets.env` is now `export REPOSE_ENV_GEN=<gen>` and one
+`export` line per current secret.
+The refresh file holds the earlier values, a removed secret's included,
+readable by dev, until the guest restarts or 16 newer values of that name
+replace them: without them it could not take a removed value out of a
+process that inherited it. The public docs say so, and tell the user to
+revoke a leaked key at its provider. The comparison runs in the shell, so
+it compares values, not hashes: hashing would need a program per name per
+command. Cost for a process with an older generation, measured with bash
+5.3 (`bash -c true`, 2.0 ms without the loader): ten 64 B secrets each
+changed 16 times +0.6 ms; thirty 1 KiB ones each changed 16 times (526 KB
+file) +5.5 ms; twenty 64 KiB ones, one changed 16 times (2.4 MB) +28 ms,
+all twenty changed 16 times (22 MB) +235 ms. A process with the current
+generation pays nothing measurable. The large cases are outside what
+secrets are used for; per-generation delta files would cut them to the
+names that changed but need the per-generation history this entry
+removed, and are the next step if they show up.
+The loader runs builtins only and is POSIX sh, prints nothing (xtrace and
+verbose are off while it runs, so `bash -x` never echoes a value), keeps
+`$?`, `$_`, the positional parameters and the shell options, and does
+nothing when the file is missing or unreadable (nobody and other users,
+before the first write). `$_` is saved first and put back by a final
+`: "$saved"` whose trace goes to /dev/null, so a script's first command
+still sees its own path; the saved copy stays as an unexported
+`__repose_bash_env_u`, since unsetting it would change `$_` again. Root
+reads the dev file and loads the secrets, as `/etc/profile.d/repose.sh`
+already did for a root login shell. Secrets named `BASH_ENV`, `ENV` or
+`REPOSE_ENV_GEN`, or starting `__repose_`, would switch the refresh off:
+the api and the CLI refuse them on set (one stored before stays listable
+and deletable), and guestd writes the file but never exports it.
+Rejected: a PROMPT_COMMAND or DEBUG trap (interactive shells only, and
+agents' shells are not); re-exec'ing agents on a change (kills their
+work); exporting secrets through the agent wrappers (still fixed at
+agent start); secrets winning over `.envrc` after any rotation (the
+first version's behaviour; a test run would silently use a live key);
+per-generation history, bounded (the second version; expires) or kept
+for the guest's life (every write rewrites a table that grows with
+writes); dropping a removed value from the file at once (an agent would
+keep the removed key). `sh` does not read BASH_ENV, so a command an agent
+runs with `sh -c` or a `#!/bin/sh` script keeps the inherited values; the
+public docs and the agent guide say so.
+Tests: `internal/guestd/secrets/loader_test.go` runs the loader with real
+bash under `set -euo pipefail`, `set -u` and a script, with the file
+missing, present, unreadable and empty; an override kept with a current
+and with a stale generation across rotations and removals, a dropped
+name filled in and an emptied one kept empty
+(`TestLoaderKeepsOverridesAcrossLaterWrites`); a rotation and a removal
+reaching an agent after 64 writes to other names, and its oldest value
+kept only after 17 values of its own name
+(`TestLoaderAfterManyWritesToOtherNames`); no generation; `$_` equal to a
+run without the loader for a script and `-c`, with and without `-x`
+(`TestLoaderKeepsUnderscore`); tricky values from bash and sh; `bash -x`
+silent. `secrets_test.go` `TestEarlierValuesAreBoundedPerName`.
+`e2e_test.go` drives an agent-like bash in a real tmux window through 35
+writes, 32 of them each adding another name, and finds no value of the
+run in any `/proc/*/cmdline`; VM subtests in `nix/guest/tests/guestd.nix` (a
+`systemd-run` parent as dev that sets its own value, then `WriteSecrets`)
+and `nix/guest/tests/default.nix` (a tmux window opened over ssh, and a
+login shell).
+
+**I-476. Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin.**
+(secrets-env, 2026-10-04) Loading secrets alone cannot take away a
+variable a process inherited, so `repose secrets rm` left the old value in
+an agent's commands. `secrets.refresh` now has a guarded `unset NAME` line
+for every name guestd exported before and does not now (I-475's rule:
+only when the process holds one of the values guestd exported for it).
+The reserved names of I-10 never enter the state or either file. On each
+write guestd also pipes a tmux configuration to `tmux source-file -`, as
+dev: `set-environment -g NAME "value"` per secret, `-gu NAME` per removed
+name and `-g REPOSE_ENV_GEN` last, so a new tmux window matches even when
+its command is not bash. The first version passed the values as
+arguments: `/proc/<pid>/cmdline` is readable by every uid, and the tmux
+client refuses a command over 16 KiB (`command too long`), so one 64 KiB
+secret broke the push. On stdin neither applies. Each value is one
+double-quoted token: `\`, `"` and `$` get a backslash, and `~` (expanded
+even inside quotes at a token's start) and every byte outside printable
+ASCII become octal escapes. No tmux server, a tmux error or a missing
+tmux is logged by exit code only, never with stderr, and does not fail
+the request: the tmpfs and BASH_ENV already carry the secrets. The
+generation goes last so a failure part way leaves tmux refreshing.
+Tests: `TestRefreshUnsetsARemovedName`, `TestHistorySurvivesAGuestdRestart`,
+`TestUnreadableStateStartsANewHistory`, `TestShellReservedNamesAreNotExported`,
+`TestSecretsArePushedToTmux`, `TestTmuxFailureDoesNotFailTheWrite`,
+`TestTmuxArgumentsAgainstARealTmux` (two 64 KiB values and the tricky
+ones through a real tmux), `TestEndToEndAgentInTmux`.
 
 **I-474. Named secrets are written bound to their project, and the api rebinds older rows at start.**
 (security release, 2026-10-04; step 2 of I-433) `secrets.Seal` now

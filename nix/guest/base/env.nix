@@ -4,10 +4,13 @@
 # /etc/pam/environment (the SSH session and dev's systemd user manager, so
 # user units and the tmux server it starts). TZ and REPOSE_PROJECT come
 # from /etc/repose/env (written by guestd at SetupProject) and named
-# secrets from /run/repose/secrets.env, both sourced by
+# secrets from /run/repose/secrets.refresh, both sourced by
 # /etc/profile.d/repose.sh, which also exports DISPLAY while the desktop
 # is up. That file is sourced from every shell through extraInit so login
-# and interactive shells behave the same.
+# and interactive shells behave the same. A non-interactive bash (how an
+# agent runs each command) reads none of these, so BASH_ENV points it at
+# /etc/repose/bash-env.sh, which brings the named secrets up to date when
+# guestd has rewritten them since the process started (DECISIONS I-475).
 { config, lib, pkgs, ... }:
 let
   home = "/home/dev";
@@ -35,7 +38,12 @@ in
     # Not a default: without it `gem install` writes to ruby's store path.
     GEM_HOME = "${home}/.local/share/gem";
     PATH = userBinDirs;
+    # A stable /etc path rather than a store path, so a process that kept
+    # an older BASH_ENV across a base switch still finds the file.
+    BASH_ENV = "/etc/repose/bash-env.sh";
   };
+
+  environment.etc."repose/bash-env.sh".source = ./bash-env.sh;
 
   environment.etc."profile.d/repose.sh".text = ''
     # repose guest profile: sourced by every shell (see nix/guest/base/env.nix).
@@ -44,7 +52,13 @@ in
       . /etc/repose/env
       set +a
     fi
-    if [ -r /run/repose/secrets.env ]; then
+    # Secrets through the same guarded refresh as BASH_ENV (I-475): a
+    # shell with no secrets gets them all, and a value its parent set on
+    # purpose stays. secrets.env alone is a guest whose secrets an older
+    # guestd wrote.
+    if [ -r /run/repose/secrets.refresh ]; then
+      . /etc/repose/bash-env.sh
+    elif [ -r /run/repose/secrets.env ]; then
       . /run/repose/secrets.env
     fi
     # DISPLAY only while the on-demand desktop's X server is up.
@@ -65,8 +79,10 @@ in
   # processes keep the PATH they started with: dev's tmux server (a
   # `tmux new-window <cmd>`, how `repose run` starts an agent, runs `bash
   # -c` with the server's environment) and dev's user manager (what a user
-  # unit starts with). Give both the new login PATH. Idempotent; nothing
-  # to do on first boot, when neither is running yet.
+  # unit starts with). Give both the new login PATH and BASH_ENV, so an
+  # agent started after the switch gets current secrets in each command
+  # (I-475). Idempotent; nothing to do on first boot, when neither is
+  # running yet.
   system.activationScripts.repose-user-path = {
     deps = [ "etc" "users" ];
     text = ''
@@ -75,10 +91,11 @@ in
           HOME=/home/dev USER=dev LOGNAME=dev XDG_RUNTIME_DIR=/run/user/1000 \
           ${pkgs.bash}/bin/bash -lc '
             if [ -S /tmp/tmux-1000/default ]; then
-              ${pkgs.tmux}/bin/tmux -S /tmp/tmux-1000/default set-environment -g PATH "$PATH" 2>/dev/null || true
+              ${pkgs.tmux}/bin/tmux -S /tmp/tmux-1000/default set-environment -g PATH "$PATH" \; \
+                set-environment -g BASH_ENV "$BASH_ENV" 2>/dev/null || true
             fi
             if [ -S /run/user/1000/bus ]; then
-              ${pkgs.systemd}/bin/systemctl --user set-environment PATH="$PATH" 2>/dev/null || true
+              ${pkgs.systemd}/bin/systemctl --user set-environment PATH="$PATH" BASH_ENV="$BASH_ENV" 2>/dev/null || true
             fi
           ' || true
       fi

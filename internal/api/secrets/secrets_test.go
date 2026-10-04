@@ -118,6 +118,14 @@ func TestNames(t *testing.T) {
 	if err := s.Put(context.Background(), uid, pid, "bad", []byte("x")); !errors.Is(err, secrets.ErrInvalidName) {
 		t.Fatalf("expected invalid name, got %v", err)
 	}
+	for _, n := range []string{"BASH_ENV", "ENV", "REPOSE_ENV_GEN"} {
+		if !secrets.IsShellName(n) || !secrets.ValidName(n) {
+			t.Fatalf("%s: shell name %v, valid (deletable) %v", n, secrets.IsShellName(n), secrets.ValidName(n))
+		}
+		if err := s.Put(context.Background(), uid, pid, n, []byte("x")); !errors.Is(err, secrets.ErrInvalidName) {
+			t.Fatalf("%s: expected invalid name, got %v", n, err)
+		}
+	}
 	if err := s.Put(context.Background(), uid, pid, "BIG", bytes.Repeat([]byte("x"), secrets.MaxValueBytes+1)); !errors.Is(err, secrets.ErrTooLarge) {
 		t.Fatalf("expected too large, got %v", err)
 	}
