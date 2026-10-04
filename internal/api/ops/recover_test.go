@@ -307,3 +307,22 @@ func TestDestroyStopsFirstAndReportsItsFailure(t *testing.T) {
 		t.Fatalf("no destroy_failed event: %+v", evs)
 	}
 }
+
+// TestHelloCountsOnlyForTheHostsOwnGuests: a host listing another host's
+// guest in its Hello does not move that project's state; the project's
+// own host still reconciles it.
+func TestHelloCountsOnlyForTheHostsOwnGuests(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("helloer")
+	p := h.CreateRunning(u, "hello-scope")
+	h.WaitIdle(p.ID)
+	hello := &hostdv1.Hello{Guests: []*hostdv1.GuestStatus{{GuestId: p.GuestID.String(), State: "stopped"}}}
+	h.Engine.OnHello(h.Ctx, store.NewID(), hello)
+	if got := h.Project(p.ID).State; got != "running" {
+		t.Fatalf("another host's Hello set the state to %s", got)
+	}
+	h.Engine.OnHello(h.Ctx, h.HostID, hello)
+	if got := h.Project(p.ID).State; got != "stopped" {
+		t.Fatalf("the project's own host did not reconcile it: %s", got)
+	}
+}

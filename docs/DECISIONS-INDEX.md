@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-473 entries.
+476 entries.
 
 ## Scope
 
@@ -505,3 +505,6 @@ pointer, not a summary.
 - **I-444** The ntfy sender reaches public addresses only and follows no redirect — 2026-10-04; L11243
 - **I-439** Tenant builds on a host reach the public internet only — 2026-10-03; L11259
 - **I-440** Build log redaction matches multi-line and encoded values, and covers a failed build's error — 2026-10-03; L11296
+- **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; L11313
+- **I-446** Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned — 2026-10-03; L11348
+- **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11368

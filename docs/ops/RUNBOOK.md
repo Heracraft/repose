@@ -365,6 +365,39 @@ already dropped; nothing is stopped.
 3. Decide on the account: `repose-admin users suspend <handle> --reason
    "..."` stops every guest with a snapshot. Nothing here is automatic.
 
+## SamplesFailing
+
+The api could not store a guest's sample row as hostd sent it (DECISIONS
+I-446). `guest_fields`: the guest-reported part (agents, process names)
+was refused and the row was stored with the host-measured fields only, so
+metering is intact. `insert`: nothing was stored for that guest's minute,
+which the rollup records as a gap.
+
+1. Loki `{component="api"} | json | event="samples_fail"` gives the host,
+   the project and the Postgres error (an SQLSTATE such as 22021 is a
+   value Postgres refused).
+2. `guest_fields` from one project only: hostd and the api both clean these
+   fields, so a value that still fails is a cleaning gap to fix in
+   `internal/hostd/guest/guestinput.go` and `internal/api/meter`.
+3. `insert` across many projects: Postgres itself (partitions, disk,
+   connections); see the api's other errors at the same time.
+
+## HostReportsRefused
+
+The api dropped a host's report (DECISIONS I-447). `foreign_guest`: an
+event, a `Hello` entry or a sample named a guest whose project is placed on
+another host or on none. `bad_snapshot`: a `snapshot_done` path outside the
+project's prefix. hostd sends neither.
+
+1. Loki `{component="api"} | json | event="foreign_guest"` gives `host_id`
+   and `guest_id`; `repose-admin projects list --host <host>` and the
+   project's `host_id` show where the api thinks it is.
+2. One line right after a failed placement or a move is a late report from
+   the old host for a guest it has just let go; nothing to do.
+3. A steady stream from one host is a host to take out of placement
+   (`repose-admin hosts drain`) and look at, starting with its hostd
+   version and `journalctl -u hostd`.
+
 ## MinerStopped
 
 The api stopped a guest because its process sample named a cryptocurrency

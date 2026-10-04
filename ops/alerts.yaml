@@ -251,6 +251,33 @@ groups:
           description: "{{ $value }} machine(s) stopped in the last hour, reason {{ $labels.reason }}. `repose-admin billing show <handle>` shows the account; nothing is deleted for 30 days."
           runbook: "docs/ops/RUNBOOK.md#billingstopped"
 
+      - alert: SamplesFailing
+        # The api stores each guest's sample rows apart (I-446). A guest
+        # whose rows were refused is stored with the host-measured fields
+        # only (reason guest_fields); insert means nothing was stored for
+        # it, so its minute is a billing gap.
+        expr: sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0
+        for: 0m
+        labels:
+          severity: warn
+        annotations:
+          summary: "guest samples were not stored as sent ({{ $labels.reason }})"
+          description: "{{ $value }} guest sample(s) in 15 minutes. Loki `{component=\"api\"} | json | event=\"samples_fail\"` names the host, the project and the Postgres error."
+          runbook: "docs/ops/RUNBOOK.md#samplesfailing"
+
+      - alert: HostReportsRefused
+        # A host reported a guest of a project placed elsewhere, or a
+        # snapshot outside the project's prefix (I-447). hostd never does
+        # either, so this is a bug in a reconcile or a host to look at.
+        expr: sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest|bad_snapshot"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: warn
+        annotations:
+          summary: "the api dropped host reports ({{ $labels.reason }})"
+          description: "{{ $value }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+          runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
+
   # Anti-abuse (DECISIONS I-238..I-240). Nothing here pages: the guest is
   # already blocked or stopped when these fire, and what remains is a
   # human decision about the account (`repose-admin users suspend`).

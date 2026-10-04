@@ -36,7 +36,7 @@ five trust boundaries are rows 1, 2, 4 and 3 here in that order; its
 fifth, **operator to tenant data**, has no mechanism to describe and is
 under "Not mitigated in the first release" instead, which is what
 `ARCHITECTURE.md` itself says of it ("Recorded, not mitigated, until
-per-project LUKS"). Rows 5 to 10 are boundaries this document adds because
+per-project LUKS"). Rows 5 to 11 are boundaries this document adds because
 they stop an actor the component map does not draw.
 
 1. **KVM between guest and host.** Cloud Hypervisor on KVM, launched by
@@ -118,6 +118,24 @@ they stop an actor the component map does not draw.
     ignores proxy settings, and follows no redirect; a literal such
     address or `localhost` is refused when the URL is saved (I-444).
     Stops: a user using the api as a probe into the platform's network.
+11. **Guest-sent data is bounded at hostd and again at the api** (I-445..
+    I-447). Root in a guest can replace guestd, so every notification and
+    sample reply is treated as written by the tenant. hostd forwards agent
+    events, questions and warnings only with kinds, ids and states from
+    fixed sets, names and text cut to their caps as clean UTF-8, a warning
+    detail it writes itself, and at most a burst of 30 then one every 2
+    seconds per guest; guest-raised events wait for their ack in a list of
+    their own, so they never evict or delay the host's own events. The api
+    cleans the same fields again, counts warnings under a fixed set of
+    label values, keeps at most 600 guest-raised events per project an
+    hour, stores each guest's sample rows apart from its neighbours', acts
+    on a question id only inside the sending guest's project, and takes a
+    host's events, Hello entries and samples only for guests of projects
+    placed on that host. Stops: a tenant growing the api's memory or
+    metrics, writing its own text into platform logs, flooding the host's
+    stream, zeroing a neighbour's metering, or closing another tenant's
+    question; and a compromised host changing the state of, or notifying
+    for, another host's projects.
 
 ## Non-negotiables
 

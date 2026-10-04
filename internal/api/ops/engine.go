@@ -521,7 +521,15 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 			continue
 		}
 		known[gid] = true
-		p, err := store.GetProjectByGuest(ctx, e.pool, gid)
+		// A host's word counts only for its own guests (I-447).
+		p, err := store.GetProjectOnHost(ctx, e.pool, gid, hostID)
+		if errors.Is(err, store.ErrOtherHost) {
+			if e.m != nil {
+				e.m.HostReportsRefused.WithLabelValues("foreign_guest").Inc()
+			}
+			e.log.Warn("host reports a guest placed elsewhere", "event", "foreign_guest", "host_id", hostID.String(), "guest_id", g.GuestId)
+			continue
+		}
 		if err != nil {
 			e.log.Warn("host reports a guest the api does not know", "event", "reconcile_orphan", "host_id", hostID.String(), "guest_id", g.GuestId, "state", g.State)
 			continue

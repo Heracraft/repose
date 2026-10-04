@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -250,4 +251,76 @@ func TestHeartbeatAheadOfEveryResult(t *testing.T) {
 	if got := strings.Join(stub.order, ","); got != "hb,result,hb,result" {
 		t.Fatalf("order %s, want a heartbeat before each result", got)
 	}
+}
+
+// TestGuestEventsCannotEvictOrBlockHostEvents: guest-raised events wait in
+// their own capped list. A flood while the api is away never blocks the
+// caller, drops only older guest events, and leaves the host's own events
+// in place; all of what is kept is delivered after the reconnect.
+func TestGuestEventsCannotEvictOrBlockHostEvents(t *testing.T) {
+	ln := bufconn.Listen(1 << 20)
+	stub := newStub()
+	stub.toSend = make(chan *hostdv1.ApiMessage, 4096)
+	gs := grpc.NewServer()
+	hostdv1.RegisterHostServiceServer(gs, stub)
+	defer gs.Stop()
+
+	host := &hostStub{}
+	s := New(Config{HeartbeatInterval: time.Hour, BackoffBase: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}, bufDialer{ln}, host, nil, nil)
+	host.s = s
+
+	s.Event(&hostdv1.Event{EventId: "host-1", Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{State: "stopped"}}})
+	const flood = MaxGuestEvents + 3000
+	done := make(chan int)
+	go func() {
+		evicted := 0
+		for i := 0; i < flood; i++ {
+			if !s.GuestEvent(&hostdv1.Event{EventId: fmt.Sprintf("guest-%d", i), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{Kind: "agent_message"}}}) {
+				evicted++
+			}
+		}
+		done <- evicted
+	}()
+	var evicted int
+	select {
+	case evicted = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("GuestEvent blocked with no session")
+	}
+	if evicted != flood-MaxGuestEvents {
+		t.Fatalf("evicted %d, want %d", evicted, flood-MaxGuestEvents)
+	}
+	s.mu.Lock()
+	_, hostKept := s.events["host-1"]
+	pending := len(s.events)
+	s.mu.Unlock()
+	if !hostKept || pending != MaxGuestEvents+1 {
+		t.Fatalf("host event kept %v, pending %d", hostKept, pending)
+	}
+
+	go func() { _ = gs.Serve(ln) }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx)
+	waitFor(t, "every kept event acked", func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.events) == 0 })
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	seen := map[string]int{}
+	for _, e := range stub.events {
+		seen[e.EventId]++
+	}
+	if seen["host-1"] != 1 || seen["guest-0"] != 0 || seen[fmt.Sprintf("guest-%d", flood-1)] != 1 || len(seen) != MaxGuestEvents+1 {
+		t.Fatalf("delivered %d distinct events (host-1 %d, guest-0 %d)", len(seen), seen["host-1"], seen["guest-0"])
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("%s delivered %d times", id, n)
+		}
+	}
+
+	// On a live session a guest event goes out without a reconnect.
+	s.GuestEvent(&hostdv1.Event{EventId: "guest-live", Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{Kind: "completed"}}})
+	stub.mu.Unlock()
+	waitFor(t, "live guest event", func() bool { stub.mu.Lock(); defer stub.mu.Unlock(); return len(stub.events) == MaxGuestEvents+2 })
+	stub.mu.Lock()
 }

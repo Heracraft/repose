@@ -38,6 +38,16 @@ framing; hostd picks by flag.
 | `Question` | question_id (UUIDv7, chosen by guestd), agent, tmux_window, text (1 KB), options (0 to 3, 64 bytes each), timeout_s, state (`""` open, else `cancelled\|expired` when the asker gave up or timed out) | `repose-ask` through the hook socket. Sent when the ask opens, again for every open question on each new hostd connection (the api ignores a repeat), and once more when guestd closes it itself. Open questions live in `/run/repose/questions/<id>.json` (root, 0600) so a guestd restart keeps them (DECISIONS I-244) |
 | `Warning` | kind, detail | kinds: `disk_high` (over 90 percent), `inotify_exhausted`, `docker_down`, `freeze_timeout`, `store_path_missing` (a path in the running system is absent from the share, which means the host GC'd it), `oom` (the kernel killed a process for memory; detail carries the process name), `tmux_down` (no tmux server for `dev`). Each kind is sent at most once per 10 minutes. See DECISIONS I-11 and I-29 |
 
+hostd treats every notification as written by whoever is root in the guest
+(DECISIONS I-445): `AgentEvent`, `Question` and `Warning` pass a per-guest
+budget of 30 at once and one every 2 s after, and are bounded to the kinds,
+states and sizes above before they become api events
+(`docs/interfaces/grpc-hostd.md`, "Guest-raised events"). A `Warning`'s
+detail is not forwarded as sent: hostd keeps the numbers of `disk_high` and
+`inotify_exhausted` in the shape guestd writes them and the process name of
+`oom`, and drops the rest. The same holds for a `SampleResult`: its agent
+list, process list and process names are capped and cleaned (I-446).
+
 ## Hook socket
 
 Agents (via their wrappers) POST JSON to the Unix socket

@@ -262,6 +262,10 @@ func (c Config) Defaults() Config {
 type Emitter interface {
 	Result(res *hostdv1.Result)
 	Event(ev *hostdv1.Event)
+	// GuestEvent is Event for one a guest's notification raised: it never
+	// blocks, and reports false when an older guest event was dropped for
+	// it (I-445).
+	GuestEvent(ev *hostdv1.Event) bool
 	Samples(s *hostdv1.Samples)
 	BuildLog(commandID string, seq uint64, line string)
 }
@@ -533,6 +537,17 @@ var GuestStates = []string{
 }
 
 func (m *Manager) emitEvent(ev any) {
+	m.d.Emit.Event(m.newEvent(ev))
+}
+
+// emitGuestEvent emits an event a guest's notification raised.
+func (m *Manager) emitGuestEvent(ev any) {
+	if !m.d.Emit.GuestEvent(m.newEvent(ev)) {
+		m.notifyDropped("queue_full")
+	}
+}
+
+func (m *Manager) newEvent(ev any) *hostdv1.Event {
 	e := &hostdv1.Event{EventId: uuid.Must(uuid.NewV7()).String(), Ts: m.d.Now().Unix()}
 	switch v := ev.(type) {
 	case *hostdv1.Event_GuestStateChanged:
@@ -546,7 +561,14 @@ func (m *Manager) emitEvent(ev any) {
 	case *hostdv1.Event_AgentQuestion:
 		e.Ev = v
 	}
-	m.d.Emit.Event(e)
+	return e
+}
+
+// notifyDropped counts a guest notification hostd did not forward.
+func (m *Manager) notifyDropped(reason string) {
+	if m.d.Metrics != nil {
+		m.d.Metrics.GuestNotifyDropped.WithLabelValues(reason).Inc()
+	}
 }
 
 // Warn emits a host_warning event.

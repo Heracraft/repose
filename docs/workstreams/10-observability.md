@@ -128,7 +128,9 @@ Families:
   `repose_host_guest_net_bytes_total{direction}`,
   `repose_host_egress_blocked_total{reason}` and
   `repose_host_egress_blocked_guests{reason}` (reason `smtp`, `stratum`,
-  `flows`; I-238..I-240).
+  `flows`; I-238..I-240),
+  `repose_host_guest_notify_dropped_total{reason}` (guest notifications
+  not forwarded: `rate_limited`, `invalid`, `queue_full`; I-445).
 - API: `repose_api_requests_total{route,method,status}`,
   `repose_api_request_duration_seconds{route}`,
   `repose_api_hosts{state}`, `repose_api_projects{state,class}`,
@@ -147,7 +149,11 @@ Families:
   `repose_api_seats_total`, `repose_api_seats_held`,
   `repose_api_waitlist_waiting`, `repose_api_waitlist_joined_total`,
   `repose_api_waitlist_invited_total`, `repose_api_waitlist_converted_total`,
-  `repose_api_waitlist_expired_total` (I-269, I-290).
+  `repose_api_waitlist_expired_total` (I-269, I-290),
+  `repose_api_host_reports_refused_total{reason}` (`foreign_guest`,
+  `project_cap`, `bad_snapshot`; I-445, I-447),
+  `repose_api_samples_failed_total{reason}` (`guest_fields`, `insert`;
+  I-446).
 - Gateway: `repose_gateway_sessions` (gauge), `repose_gateway_sessions_total`,
   `repose_gateway_auth_fail_total{reason}`, `repose_gateway_dial_fail_total`,
   `repose_gateway_route_duration_seconds`.
@@ -203,6 +209,8 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |
 | `BillingStopped` | `sum by (reason) (increase(repose_api_billing_stops_total[1h])) > 0` | info |
 | `EgressBlocked` | `repose_host_egress_blocked_guests > 0` for 2m (I-238..I-240) | warn |
+| `SamplesFailing` | `sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0` (I-446) | warn |
+| `HostReportsRefused` | `sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest\|bad_snapshot"}[15m])) > 0` (I-447) | warn |
 | `MinerStopped` | `sum by (kind) (increase(repose_api_abuse_stops_total[15m])) > 0` (I-239) | warn |
 | `BusyUnattended` | `max(repose_api_abuse_busy_unattended_projects) > 0` for 15m (I-239) | warn |
 

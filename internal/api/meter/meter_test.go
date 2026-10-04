@@ -2,12 +2,14 @@ package meter_test
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/heracraft/repose/internal/api/meter"
 	"github.com/heracraft/repose/internal/api/metrics"
@@ -20,6 +22,10 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
+// testHost is the host every seeded project is placed on; samples count
+// only from the host a project is on.
+var testHost = uuid.MustParse("01920000-0000-7000-8000-0000000000aa")
+
 func seed(t *testing.T, pool *db.Pool, class string, created time.Time) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
@@ -29,7 +35,10 @@ func seed(t *testing.T, pool *db.Pool, class string, created time.Time) (uuid.UU
 	if _, err := pool.Exec(ctx, "insert into users (id, handle, created_at, billing_anchor) values ($1, $2, $3, $3)", uid, "u"+uid.String()[24:], created); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, guest_id, created_at) values ($1, $2, 'todo', $3, $4, 'running', $5, $6, $7)", pid, uid, "s"+pid.String()[24:], class, int64(40)<<30, gid, created); err != nil {
+	if _, err := pool.Exec(ctx, "insert into hosts (id, name, state) values ($1, $2, 'ready') on conflict do nothing", testHost, "meter-test-host"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, guest_id, created_at, host_id) values ($1, $2, 'todo', $3, $4, 'running', $5, $6, $7, $8)", pid, uid, "s"+pid.String()[24:], class, int64(40)<<30, gid, created, testHost); err != nil {
 		t.Fatal(err)
 	}
 	return pid, gid
@@ -47,7 +56,7 @@ func TestIngestAndSyntheticDayRollup(t *testing.T) {
 	pid, gid := seed(t, pool, "large", day.Add(-time.Hour))
 	ing := meter.New(pool, m, log)
 	ing.SetNow(func() time.Time { return day })
-	hostID := store.NewID()
+	hostID := testHost
 	egressPerMinute := int64(3<<30) / 600 // 3 GB spread over the 600 running minutes
 	for minute := 0; minute < 24*60; minute++ {
 		ts := day.Add(time.Duration(minute) * time.Minute)
@@ -145,5 +154,55 @@ func TestIngestAndSyntheticDayRollup(t *testing.T) {
 	}
 	if n, _ := r2.Due(ctx); n != 0 {
 		t.Fatalf("second due rolled %d", n)
+	}
+}
+
+// TestOneGuestsSampleCannotSinkTheHostsBatch: guest-written names Postgres
+// would refuse are stored cleaned; a row that still fails costs only its
+// own guest; a guest of a project on another host is not stored at all.
+func TestOneGuestsSampleCannotSinkTheHostsBatch(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	m := metrics.NewNop()
+	ing := meter.New(pool, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now().UTC().Truncate(time.Second)
+	ing.SetNow(func() time.Time { return now })
+	pidA, gidA := seed(t, pool, "large", now.Add(-time.Hour))
+	pidB, gidB := seed(t, pool, "large", now.Add(-time.Hour))
+	pidC, gidC := seed(t, pool, "large", now.Add(-time.Hour))
+	pidD, gidD := seed(t, pool, "large", now.Add(-time.Hour))
+	if _, err := pool.Exec(ctx, "update projects set host_id = null where id = $1", pidD); err != nil {
+		t.Fatal(err)
+	}
+	ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: now.Unix(), Guests: []*hostdv1.GuestSample{
+		{GuestId: gidA.String(), State: "running", Class: "large", NetTxBytesDelta: 100,
+			Signals: &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{{Agent: "cl\x00aude", TmuxWindow: "w\x00", State: "idle"}}},
+			Procs:   []*hostdv1.ProcSample{{Comm: "xm\x00rig", CpuNsDelta: 1}}},
+		// A field no cleaning covers fails this guest's insert only.
+		{GuestId: gidB.String(), State: "running", Class: "lar\x00ge", NetTxBytesDelta: 200},
+		{GuestId: gidC.String(), State: "running", Class: "large", NetTxBytesDelta: 300},
+		{GuestId: gidD.String(), State: "running", Class: "large", NetTxBytesDelta: 400},
+	}})
+	tx := func(pid uuid.UUID) int64 {
+		var n int64 = -1
+		_ = pool.QueryRow(ctx, "select net_tx from meter_samples where project_id = $1", pid).Scan(&n)
+		return n
+	}
+	if tx(pidA) != 100 || tx(pidC) != 300 {
+		t.Fatalf("clean guests lost their rows: A %d, C %d", tx(pidA), tx(pidC))
+	}
+	if tx(pidB) != -1 || tx(pidD) != -1 {
+		t.Fatalf("rows that should not be stored: B %d, D %d", tx(pidB), tx(pidD))
+	}
+	var comm string
+	_ = pool.QueryRow(ctx, "select comm from proc_samples where project_id = $1", pidA).Scan(&comm)
+	if comm != "xmrig" {
+		t.Fatalf("comm %q", comm)
+	}
+	if got := testutil.ToFloat64(m.SamplesFailed.WithLabelValues("insert")); got != 1 {
+		t.Fatalf("insert failures %v", got)
+	}
+	if got := testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("foreign_guest")); got != 1 {
+		t.Fatalf("foreign guests %v", got)
 	}
 }

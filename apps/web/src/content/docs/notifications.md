@@ -134,6 +134,8 @@ Messages and questions are capped at 1 KB and count toward the project's 30 noti
 
 Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications an hour; past that, one message says they're paused until the next hour.
 
+Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
+
 ## Check what happened
 
 ```

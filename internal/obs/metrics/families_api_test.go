@@ -56,6 +56,9 @@ func TestAPIFamily(t *testing.T) {
 		"repose_api_abuse_stops_total":              {"kind"},
 		"repose_api_abuse_held_projects":            nil,
 		"repose_api_abuse_busy_unattended_projects": nil,
+		// I-445..I-447: what the api dropped or could not store from hosts.
+		"repose_api_host_reports_refused_total": {"reason"},
+		"repose_api_samples_failed_total":       {"reason"},
 	}
 
 	fams, err := m.Registry().Gather()

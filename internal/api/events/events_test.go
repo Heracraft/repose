@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/metrics"
@@ -21,24 +24,29 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
-func seed(t *testing.T, pool *db.Pool) (uuid.UUID, uuid.UUID) {
+// seedOn makes a user and a running project placed on a host, and returns
+// the project, guest and host ids.
+func seedOn(t *testing.T, pool *db.Pool) (uuid.UUID, uuid.UUID, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	uid, pid, gid := store.NewID(), store.NewID(), store.NewID()
+	uid, pid, gid, hid := store.NewID(), store.NewID(), store.NewID(), store.NewID()
+	if _, err := pool.Exec(ctx, "insert into hosts (id, name, state) values ($1, $2, 'ready')", hid, "h-"+hid.String()); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, "insert into users (id, handle, email, ntfy_url) values ($1, $2, 'e@example.com', 'https://ntfy.example/t')", uid, "u"+uid.String()[24:]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, guest_id, guest_ip) values ($1, $2, 'todo', 'todo', 'large', 'running', 1, $3, '10.64.4.9')", pid, uid, gid); err != nil {
+	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, guest_id, guest_ip, host_id) values ($1, $2, 'todo', 'todo', 'large', 'running', 1, $3, '10.64.4.9', $4)", pid, uid, gid, hid); err != nil {
 		t.Fatal(err)
 	}
-	return pid, gid
+	return pid, gid, hid
 }
 
 func TestDedupeOutboxAndRateCap(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	pid, gid := seed(t, pool)
+	pid, gid, host := seedOn(t, pool)
 	now := time.Now()
 	// Claude's Stop and agent_completed within a minute collapse to one
 	// event with both summaries.
@@ -70,8 +78,8 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 	// The hostd event path: same event id twice is one row; a state change
 	// updates the project when no op is open.
 	ev := &hostdv1.Event{EventId: "ev-1", Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "codex", Kind: "error", Summary: "exit 1"}}}
-	first := ing.OnEvent(ctx, uuid.Nil, ev)
-	second := ing.OnEvent(ctx, uuid.Nil, ev)
+	first := ing.OnEvent(ctx, host, ev)
+	second := ing.OnEvent(ctx, host, ev)
 	if !first || !second {
 		t.Fatal("events not acked")
 	}
@@ -80,14 +88,14 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 		t.Fatalf("duplicate host event stored %d times", n)
 	}
 	st := &hostdv1.Event{EventId: "ev-2", Ts: now.Unix(), Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: gid.String(), State: "stopped", Reason: "hypervisor exited"}}}
-	ing.OnEvent(ctx, uuid.Nil, st)
+	ing.OnEvent(ctx, host, st)
 	p, _ := store.GetProject(ctx, pool, pid)
 	if p.State != "stopped" {
 		t.Fatalf("state after host event: %s", p.State)
 	}
 	// Two state changes in the same second both land (no dedupe on them).
 	st2 := &hostdv1.Event{EventId: "ev-3", Ts: now.Unix(), Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: gid.String(), State: "running"}}}
-	ing.OnEvent(ctx, uuid.Nil, st2)
+	ing.OnEvent(ctx, host, st2)
 	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'guest_state_changed'").Scan(&n)
 	if n != 2 {
 		t.Fatalf("state change events %d", n)
@@ -96,16 +104,17 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 	// not the build's old error.
 	_, _ = pool.Exec(ctx, "update projects set last_error = 'build_failed: nixpkgs has no package \"x\"' where id = $1", pid)
 	st3 := &hostdv1.Event{EventId: "ev-3b", Ts: now.Unix(), Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: gid.String(), State: "error", Reason: "hypervisor exited 0"}}}
-	ing.OnEvent(ctx, uuid.Nil, st3)
+	ing.OnEvent(ctx, host, st3)
 	p, _ = store.GetProject(ctx, pool, pid)
 	if p.State != "error" || p.LastError == nil || *p.LastError != "internal: the environment stopped unexpectedly (hypervisor exited 0)" {
 		t.Fatalf("after a guest error: state %s, last_error %v", p.State, derefStr(p.LastError))
 	}
 	// snapshot_done inserts a row once.
-	sd := &hostdv1.Event{EventId: "ev-4", Ts: now.Unix(), Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: gid.String(), BlobPath: "u/p/1.img.zst", Bytes: 5}}}
-	ing.OnEvent(ctx, uuid.Nil, sd)
-	ing.OnEvent(ctx, uuid.Nil, sd)
-	_ = pool.QueryRow(ctx, "select count(*) from snapshots where blob_path = 'u/p/1.img.zst'").Scan(&n)
+	blob := p.UserID.String() + "/" + pid.String() + "/1.img.zst"
+	sd := &hostdv1.Event{EventId: "ev-4", Ts: now.Unix(), Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: gid.String(), BlobPath: blob, Bytes: 5}}}
+	ing.OnEvent(ctx, host, sd)
+	ing.OnEvent(ctx, host, sd)
+	_ = pool.QueryRow(ctx, "select count(*) from snapshots where blob_path = $1", blob).Scan(&n)
 	if n != 1 {
 		t.Fatalf("snapshot rows %d", n)
 	}
@@ -204,11 +213,11 @@ func TestAgentMessagesAreNotCollapsedAndShareTheCap(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	pid, gid := seed(t, pool)
+	pid, gid, host := seedOn(t, pool)
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		ev := &hostdv1.Event{EventId: fmt.Sprint("msg-", i), Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "shell", Kind: "agent_message", Summary: fmt.Sprint("step ", i)}}}
-		if !ing.OnEvent(ctx, uuid.Nil, ev) {
+		if !ing.OnEvent(ctx, host, ev) {
 			t.Fatal("not acked")
 		}
 	}
@@ -246,7 +255,7 @@ func TestGuestCannotSendPlatformKinds(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	pid, gid := seed(t, pool)
+	pid, gid, host := seedOn(t, pool)
 	now := time.Now()
 	for _, kind := range []string{"billing_stopped", "abuse_stopped", "notifications_paused", "destroy_failed", "temp_destroyed", "agent_question", "welcome", "guest_state_changed"} {
 		if _, err := ing.FromEdge(ctx, "10.64.4.9", "claude", kind, "x"); !errors.Is(err, events.ErrNotGuestKind) {
@@ -255,7 +264,7 @@ func TestGuestCannotSendPlatformKinds(t *testing.T) {
 	}
 	for i := 0; i < 60; i++ {
 		ev := &hostdv1.Event{EventId: fmt.Sprint("plat-", i), Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "claude\r\nBcc: x", Kind: "notifications_paused", Summary: "x"}}}
-		if !ing.OnEvent(ctx, uuid.Nil, ev) {
+		if !ing.OnEvent(ctx, host, ev) {
 			t.Fatal("not acked")
 		}
 	}
@@ -283,5 +292,113 @@ func TestGuestCannotSendPlatformKinds(t *testing.T) {
 	}
 	if got := events.GuestAgent("codex"); got != "codex" {
 		t.Fatalf("GuestAgent(codex) = %q", got)
+	}
+}
+
+// TestHostReportsCountOnlyForItsOwnGuests: a host reporting a guest of a
+// project placed on another host changes nothing (state, agent events,
+// snapshots, questions), and the drop is counted.
+func TestHostReportsCountOnlyForItsOwnGuests(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	m := metrics.NewNop()
+	ing := events.New(pool, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, _ := seedOn(t, pool)
+	other := store.NewID()
+	p, _ := store.GetProject(ctx, pool, pid)
+	now := time.Now()
+	for i, ev := range []*hostdv1.Event{
+		{Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: gid.String(), State: "error"}}},
+		{Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "claude", Kind: "needs_input", Summary: "spoof"}}},
+		{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: gid.String(), BlobPath: p.UserID.String() + "/" + pid.String() + "/x.img.zst", Bytes: 1}}},
+	} {
+		ev.EventId, ev.Ts = fmt.Sprintf("foreign-%d", i), now.Unix()
+		if !ing.OnEvent(ctx, other, ev) {
+			t.Fatalf("event %d not acked", i)
+		}
+	}
+	var n int
+	_ = pool.QueryRow(ctx, "select (select count(*) from events where project_id = $1) + (select count(*) from snapshots where project_id = $1)", pid).Scan(&n)
+	p2, _ := store.GetProject(ctx, pool, pid)
+	if n != 0 || p2.State != "running" {
+		t.Fatalf("foreign host changed the project: %d rows, state %s", n, p2.State)
+	}
+	if got := testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("foreign_guest")); got != 3 {
+		t.Fatalf("foreign_guest refusals %v", got)
+	}
+}
+
+// TestGuestKindsTextAndCaps: a guest-raised event cannot carry a platform
+// kind, text with a NUL is stored cleaned, a snapshot outside the
+// project's prefix is refused, and past the hourly cap nothing is stored.
+func TestGuestKindsTextAndCaps(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	m := metrics.NewNop()
+	ing := events.New(pool, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, host := seedOn(t, pool)
+	now := time.Now()
+	agentEv := func(id, kind, agent, summary string) *hostdv1.Event {
+		return &hostdv1.Event{EventId: id, Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: agent, Kind: kind, Summary: summary, TmuxWindow: strings.Repeat("w", 1000)}}}
+	}
+	if !ing.OnEvent(ctx, host, agentEv("k1", "billing_stopped", "claude", "pay up")) {
+		t.Fatal("not acked")
+	}
+	if !ing.OnEvent(ctx, host, agentEv("k2", "agent_message", "sh\x00ell", "hi\x00there")) {
+		t.Fatal("NUL text not acked")
+	}
+	var kind, agent, window, summary string
+	_ = pool.QueryRow(ctx, "select kind from events where host_event_id = 'k1'").Scan(&kind)
+	if kind != "error" {
+		t.Fatalf("platform kind from a guest stored as %q", kind)
+	}
+	if err := pool.QueryRow(ctx, "select agent, tmux_window, summary from events where host_event_id = 'k2'").Scan(&agent, &window, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if agent != "shell" || summary != "hithere" || len(window) != events.MaxWindow {
+		t.Fatalf("stored %q %d-byte window %q", agent, len(window), summary)
+	}
+
+	bad := &hostdv1.Event{EventId: "snap-bad", Ts: now.Unix(), Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: gid.String(), BlobPath: store.NewID().String() + "/" + store.NewID().String() + "/x.img.zst"}}}
+	ing.OnEvent(ctx, host, bad)
+	var n int
+	_ = pool.QueryRow(ctx, "select count(*) from snapshots where project_id = $1", pid).Scan(&n)
+	if n != 0 || testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("bad_snapshot")) != 1 {
+		t.Fatalf("snapshot outside the prefix: %d rows", n)
+	}
+
+	if _, err := pool.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source)
+		select gen_random_uuid(), $1, $2, $3, 'agent_message', 'x', 'host' from generate_series(1, $4)`, pid, now, now.Unix(), events.GuestEventsPerHour); err != nil {
+		t.Fatal(err)
+	}
+	ing.OnEvent(ctx, host, agentEv("k3", "agent_message", "shell", "one too many"))
+	_ = pool.QueryRow(ctx, "select count(*) from events where host_event_id = 'k3'").Scan(&n)
+	if n != 0 || testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("project_cap")) != 1 {
+		t.Fatalf("past the cap: stored %d", n)
+	}
+}
+
+// TestHostWarningKindsAreAFixedSet: kinds outside the known set share one
+// series, and the logged detail is one capped line.
+func TestHostWarningKindsAreAFixedSet(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	m := metrics.NewNop()
+	var logBuf strings.Builder
+	ing := events.New(pool, m, slog.New(slog.NewTextHandler(&logBuf, nil)))
+	for i := 0; i < 500; i++ {
+		ing.OnEvent(ctx, store.NewID(), &hostdv1.Event{EventId: fmt.Sprintf("w%d", i), Ev: &hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: fmt.Sprintf("kind-%d", i), Detail: "line one\nline two" + strings.Repeat("x", 5000)}}})
+	}
+	ing.OnEvent(ctx, store.NewID(), &hostdv1.Event{EventId: "w-pool", Ev: &hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: "pool_high", Detail: "91% of the thin pool is used"}}})
+	if n := testutil.CollectAndCount(m.HostWarningsTotal); n != 2 {
+		t.Fatalf("%d warning series, want 2 (other, pool_high)", n)
+	}
+	if got := testutil.ToFloat64(m.HostWarningsTotal.WithLabelValues("other")); got != 500 {
+		t.Fatalf("other %v", got)
+	}
+	for _, line := range strings.Split(logBuf.String(), "\n") {
+		if len(line) > events.MaxWarningDetail+300 {
+			t.Fatalf("log line of %d bytes", len(line))
+		}
 	}
 }
