@@ -42,7 +42,7 @@ const execDevshell = "/etc/repose/devshell.sh"
 // a note on stderr, when it is not there yet), load the environment, then
 // exec the command, each argument quoted so the guest's shell passes it
 // through unchanged, as docker exec does. A shell pipeline is `sh -c`'s job.
-func execScript(slug string, argv []string) string {
+func execScript(slug, extra string, argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
 		quoted[i] = shQuote(a)
@@ -55,7 +55,7 @@ func execScript(slug string, argv []string) string {
 [ -r /etc/profile.d/repose.sh ] && . /etc/profile.d/repose.sh
 if [ -r %[2]s ]; then . %[2]s; REPOSE_DEVSHELL_QUIET=1 _repose_devshell %[3]s; unset -f _repose_devshell _repose_devshell_done
 elif command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
-exec %[4]s`, checkoutVar(slug), execDevshell, shQuote(name), strings.Join(quoted, " "))
+exec %[4]s`, checkoutVar(slug, extra), execDevshell, shQuote(name), strings.Join(quoted, " "))
 }
 
 // execSSHArgs are ssh's arguments for opts on target.
@@ -188,7 +188,7 @@ func ExecCmd(ctx context.Context, e *Env, opts ExecOptions, stdin io.Reader) err
 	if err != nil {
 		return err
 	}
-	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScript(project.Slug, opts.Command))...)
+	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScript(project.Slug, target.Checkout, opts.Command))...)
 	c.Stdout, c.Stderr = e.Out, e.ErrOut
 	if opts.Interactive || opts.TTY {
 		c.Stdin = stdin
@@ -213,8 +213,8 @@ func ExecCmd(ctx context.Context, e *Env, opts ExecOptions, stdin io.Reader) err
 
 // sshShellScript is `repose ssh`'s remote command: the user's login shell,
 // interactive, in the checkout (home when there is none yet).
-func sshShellScript(slug string) string {
-	return checkoutVar(slug) + `cd "$repose_co"; exec "${SHELL:-bash}" -l`
+func sshShellScript(slug, extra string) string {
+	return checkoutVar(slug, extra) + `cd "$repose_co"; exec "${SHELL:-bash}" -l`
 }
 
 func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -247,5 +247,5 @@ func SSHCmd(ctx context.Context, e *Env, projectArg string) error {
 	if err != nil {
 		return err
 	}
-	return execReplaceSSH(target, []string{"-t"}, sshShellScript(project.Slug))
+	return execReplaceSSH(target, []string{"-t"}, sshShellScript(project.Slug, target.Checkout))
 }

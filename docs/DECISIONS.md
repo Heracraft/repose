@@ -12354,3 +12354,43 @@ the port and logs `listener disabled: certificate does not load`, and
 `serveHTTP` closes its listener when serving ends in an error. An
 inherited socket for a listener that does not open is closed with the
 other unused ones. Test: `TestTLSListenerWithoutCertificateStaysClosed`.
+
+**I-480. One machine holds several checkouts: `repose run --on PROJECT`.**
+(multi-checkout, 2026-10-04; extends I-368, I-253) Until now the CLI
+treated a machine and a checkout as one thing: every `repose run` in a new
+repository made a new project. On the flat plans a project costs running
+memory, not a slot, but a Solo user with agents in three repositories at
+once still needed three machines, although a small guest carries three
+agents that spend most of their time waiting on the model API. The owner
+chose (2026-10-04) to keep "project" meaning the machine and let a second
+folder join one: `repose run --on PROJECT` in that folder claims
+`~/<folder>` on the machine (the name made safe as for I-368, else
+`<folder>-2`, ..., skipping the checkout, its worktrees, names already
+taken and non-empty directories), lists it in `~/.repose/checkouts`,
+syncs into it with the folder's own remote, and records the folder under
+a new `checkouts` key of `projects.json`, never in `by_dir`, so a CLI
+from before this entry makes the folder a machine of its own instead of
+syncing it over the checkout. Resolution reads `checkouts` first;
+`PROJECT:CHECKOUT` names one from anywhere. The CLI carries the checkout
+name on its ssh target, so sync, exec, ssh, cp, code, the git remote,
+the drop handler and agent windows all work in it. Agent windows there
+are `<checkout>/<agent>` (`:` would be read by tmux as the session
+separator in a target), and an attach with no window opens the
+checkout's most recently used window, else a new shell window
+`<checkout>`. The early and boot probes, which read the machine's own
+checkout, are skipped for such a folder, and the attach fast path takes
+the slow path. Shared on purpose and documented: secrets and logins,
+the machine's `repose.nix`, ports, disk, snapshots, undo and destroy.
+Known gap: the `.env` carry keeps one marker and one paths file per
+machine, so runs from two folders by turns resend each folder's set, and
+the git carry writes one flattened config per machine, so the identity
+is the one of the folder that ran last.
+guestd and `repose-checkout` are unchanged and know only the checkout.
+The flag name was chosen over a `repose checkout` noun (cli-surface
+rule: no new top-level command when a flag of an existing one does).
+Fixed on the way: the drop handler looked for laptop files in
+`~/<slug>`, which is the checkout only on machines from before I-368;
+it now applies the shared rule. Tests: `TestRunOnAddsAnotherCheckout`,
+`TestRunOnRefusals`, `TestClaimCheckoutNames`,
+`TestProjectsCacheCheckoutsRoundTrip`, `TestWindowLabel`. Proposal:
+`docs/proposals/2026-10-04-several-checkouts.md`.

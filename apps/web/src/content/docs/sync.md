@@ -26,6 +26,8 @@ A machine with no checkout, one made with `repose run --no-sync` or from a direc
 
 Later runs, from any folder or laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
 
+A second repository can live on the same machine in a checkout of its own: run `repose run --on PROJECT` in its folder. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).
+
 ## What travels
 
 - **Commits.** Your current branch, including commits you haven't pushed. They go straight from your laptop, so private repositories work with no setup on the machine.

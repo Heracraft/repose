@@ -329,6 +329,17 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 // requireProject resolves the current project and reports the exact
 // not-found/no-remote errors of §5.3 for every command that is not `run`.
 func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, error) {
+	res, err := requireProjectRes(ctx, e, projectArg)
+	if err != nil {
+		return nil, err
+	}
+	return res.Project, nil
+}
+
+// requireProjectRes is requireProject with the rest of the resolution:
+// the machine's other checkout this directory is, or PROJECT:CHECKOUT
+// names (DECISIONS I-480).
+func requireProjectRes(ctx context.Context, e *Env, projectArg string) (*ResolveResult, error) {
 	res, err := resolveProject(ctx, e.Client, e.Dir, e.Cwd, e.resolveArg(projectArg), &e.Cache, defaultResolveDeps())
 	if err != nil {
 		return nil, err
@@ -336,7 +347,7 @@ func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, e
 	if res.Project == nil {
 		return nil, errNoProjectFoundFor(res.Remote, e.Command)
 	}
-	return res.Project, nil
+	return res, nil
 }
 
 // requireRunningProject is requireProject plus the "guest not running"

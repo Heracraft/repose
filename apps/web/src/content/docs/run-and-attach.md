@@ -54,6 +54,31 @@ The machine's checkout needs at least one commit; otherwise `--worktree` is refu
 
 Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
 
+## Several repositories on one machine
+
+One machine can hold more than one repository. In a second folder, `--on` adds it to a machine you already have, beside that machine's own checkout:
+
+```
+~/code/api $ repose run --on todo-app
+Connected to todo-app (small)
+Added api to todo-app as ~/api.
+Synced: 3 untracked
+```
+
+The folder gets its own checkout, `~/api`, named after the folder like the first one (`~/api-2` if the machine already has an `api`). It doesn't count as another project, so it uses none of your plan's running memory beyond what the agents in it use. Your laptop remembers the folder: from then on a plain `repose run`, `attach`, `sync`, `exec`, `ssh`, `cp :PATH` or `code` in `~/code/api` works in `~/api`, and `git fetch repose` there brings back that checkout's commits.
+
+Agent windows in the added checkout are named after it, `api/claude`, then `api/claude-2`, so `repose ps` shows which tree each agent works in. `repose attach` in the folder opens the last of its windows you used, or a new shell window `api` in `~/api`. From anywhere else, `repose attach todo-app:api` does the same. `--worktree` works too: its worktrees are `~/api-worktree-1` and so on.
+
+The checkouts share one machine, so they share these:
+
+- Secrets, tool logins and settings. Every checkout sees the machine's secrets.
+- Your git identity. If your laptop picks a different email per folder (an `includeIf` for work repositories), the machine has the one from the folder you ran in last.
+- The machine's configuration. A `repose.nix` is applied to the whole machine; a `flake.nix` or `.envrc` dev shell loads per folder, as usual.
+- Ports. Two dev servers on port 3000 collide; give one another port.
+- Disk, snapshots and undo. `repose undo` and a restore roll back every checkout, and `repose destroy` deletes them all.
+
+The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with `--temp`, `--name`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. To remove an added checkout, delete its folder on the machine and its line in `~/.repose/checkouts`; on your laptop, the folder's entry under `checkouts` in `~/.config/repose/projects.json`.
+
 ## Detach and come back
 
 Press `Ctrl-b`, let go, then `d`. You're back on your laptop and everything on the machine keeps running. Closing the terminal does the same.

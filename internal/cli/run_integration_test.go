@@ -567,7 +567,7 @@ func TestRunWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runSSH(ctx, f.target, probeScript(testSlug, ""), nil)
+	out, err := runSSH(ctx, f.target, probeScript(testSlug, "", ""), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

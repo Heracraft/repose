@@ -30,6 +30,23 @@ session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
 to `tmux attach`, so new windows open there.
 
+### Other checkouts
+
+A machine can hold other checkouts beside the checkout (DECISIONS
+I-480): folders `repose run --on` added, each a directory of
+`/home/dev` listed by name, one per line, in
+`/home/dev/.repose/checkouts`. The checkout itself is never listed, and
+"the checkout" everywhere else in this document (guestd, the tmux
+session's default directory, `repose-checkout`, the login profile) still
+means the one the rule above finds. Only the CLI makes another checkout:
+it picks the laptop folder's safe name, else `<name>-2`, `<name>-3`, ...,
+skipping the checkout, its `-worktree-N` directories, names already
+listed and non-empty directories, makes the directory and appends the
+name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
+of the rule. Agent windows there are `<name>/<agent>` and
+`<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
+the attach opens is `<name>`. guestd reads none of this.
+
 ## Filesystem
 
 | Path | What |

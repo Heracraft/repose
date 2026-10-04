@@ -13,6 +13,7 @@ The user can also work in this checkout from their laptop without attaching: in 
 Before you tell the user to run a `repose` command, read its page: https://repose.herakraft.co/llms.txt lists every docs page as plain markdown. The docs describe the latest release. `~/.repose/cli-version` holds the version on the user's laptop as of their last `repose run` or `repose attach`; when it is older, a command may not work as the docs show, so tell them to update by running the install command again. <!-- /docs/cli -->
 You are `dev`, with passwordless `sudo`. The checkout is under `/home/dev`, and everything in `/home/dev` survives a stop. <!-- /docs/machine -->
 The checkout is named after the folder on the user's laptop it came from, not after the project, and `repose-checkout` prints its path; before the first sync there is none and work happens in `/home/dev`. <!-- /docs/sync#where-the-checkout-is --> <!-- needs: repose-checkout -->
+The user may have added other repositories to this machine as folders beside it, listed in `~/.repose/checkouts`; each is a separate project of theirs. Work in the folder you were started in, and leave the others alone unless the user asks. <!-- /docs/run-and-attach#several-repositories-on-one-machine -->
 
 ## Servers and ports
 
