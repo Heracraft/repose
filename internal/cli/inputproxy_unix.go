@@ -90,7 +90,7 @@ func proxySession(cmd *exec.Cmd, ptmx *os.File, stdin io.Reader, stdout io.Write
 		}
 	}()
 
-	sc := &inputScanner{isFile: localRegularFile}
+	sc := &inputScanner{isFile: localDropFile}
 	deliver := func(acts []inputAction) {
 		for _, a := range acts {
 			var b []byte

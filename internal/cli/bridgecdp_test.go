@@ -247,6 +247,18 @@ func TestBridgeRefusesWhatReachesPastTheBrowser(t *testing.T) {
 		// Two spellings of one key: the front decides on what it decoded
 		// and forwards that, so Chrome can't read a different method.
 		`{"id":13,"method":"Runtime.evaluate","method":"Browser.close"}`,
+		// Bodies, and other sites' stored data, stay in Chrome.
+		`{"id":14,"method":"Network.getResponseBody","params":{"requestId":"1"},"sessionId":"S"}`,
+		`{"id":15,"method":"Network.getRequestPostData","params":{"requestId":"1"},"sessionId":"S"}`,
+		`{"id":16,"method":"Fetch.getResponseBody","params":{"requestId":"i"},"sessionId":"S"}`,
+		`{"id":17,"method":"Network.loadNetworkResource","params":{"frameId":"F","url":"https://other.test/","options":{"disableCache":true,"includeCredentials":true}},"sessionId":"S"}`,
+		`{"id":18,"method":"Fetch.takeResponseBodyAsStream","params":{"requestId":"i"},"sessionId":"S"}`,
+		`{"id":19,"method":"Page.getResourceContent","params":{"frameId":"F","url":"https://example.com/api"},"sessionId":"S"}`,
+		`{"id":20,"method":"Audits.getEncodedResponse","params":{"requestId":"1","encoding":"webp"},"sessionId":"S"}`,
+		`{"id":21,"method":"DOMStorage.getDOMStorageItems","params":{"storageId":{"securityOrigin":"https://mail.example","isLocalStorage":true}}}`,
+		`{"id":22,"method":"CacheStorage.requestCachedResponse","params":{"cacheId":"c","requestURL":"https://mail.example/"}}`,
+		`{"id":23,"method":"IndexedDB.requestData","params":{"securityOrigin":"https://mail.example","databaseName":"d","objectStoreName":"o","indexName":"","skipCount":0,"pageSize":10}}`,
+		`{"id":24,"method":"Network.getResponseBodyForInterception","params":{"interceptionId":"x"},"sessionId":"S"}`,
 	}
 	for i, s := range refused {
 		cl.send(s)
@@ -256,11 +268,14 @@ func TestBridgeRefusesWhatReachesPastTheBrowser(t *testing.T) {
 		}
 	}
 	allowed := []string{
-		`{"id":20,"method":"Page.navigate","params":{"url":"https://example.com/"},"sessionId":"S"}`,
-		`{"id":21,"method":"Target.createTarget","params":{"url":"about:blank"}}`,
-		`{"id":22,"method":"Target.attachToTarget","params":{"targetId":"T","flatten":true}}`,
-		`{"id":23,"method":"Target.setAutoAttach","params":{"autoAttach":false}}`,
-		`{"id":24,"method":"Input.dispatchDragEvent","params":{"type":"drop","x":1,"y":1,"data":{"items":[],"dragOperationsMask":1}}}`,
+		`{"id":40,"method":"Page.navigate","params":{"url":"https://example.com/"},"sessionId":"S"}`,
+		`{"id":41,"method":"Target.createTarget","params":{"url":"about:blank"}}`,
+		`{"id":42,"method":"Target.attachToTarget","params":{"targetId":"T","flatten":true}}`,
+		`{"id":43,"method":"Target.setAutoAttach","params":{"autoAttach":false}}`,
+		`{"id":44,"method":"Input.dispatchDragEvent","params":{"type":"drop","x":1,"y":1,"data":{"items":[],"dragOperationsMask":1}}}`,
+		// IO.read stays: Playwright's PDFs come through it, and no
+		// stream of a body can be opened.
+		`{"id":45,"method":"IO.read","params":{"handle":"h"}}`,
 	}
 	for _, s := range allowed {
 		cl.send(s)
@@ -270,7 +285,7 @@ func TestBridgeRefusesWhatReachesPastTheBrowser(t *testing.T) {
 	}
 	// Playwright sets a download folder on the machine whenever it
 	// connects: answered as done, never passed.
-	cl.send(`{"id":30,"method":"Browser.setDownloadBehavior","params":{"behavior":"allowAndName","downloadPath":"/home/me/.config/autostart"}}`)
+	cl.send(`{"id":50,"method":"Browser.setDownloadBehavior","params":{"behavior":"allowAndName","downloadPath":"/home/me/.config/autostart"}}`)
 	if m := cl.recv(); m == nil || m["error"] != nil || m["result"] == nil {
 		t.Errorf("setDownloadBehavior: got %v", m)
 	}
@@ -280,15 +295,21 @@ func TestBridgeRefusesWhatReachesPastTheBrowser(t *testing.T) {
 	for m := range f.got {
 		methods = append(methods, m["method"].(string))
 	}
-	if got := strings.Join(methods, " "); got != "Page.navigate Target.createTarget Target.attachToTarget Target.setAutoAttach Input.dispatchDragEvent" {
+	if got := strings.Join(methods, " "); got != "Page.navigate Target.createTarget Target.attachToTarget Target.setAutoAttach Input.dispatchDragEvent IO.read" {
 		t.Errorf("Chrome got %s", got)
 	}
 }
 
-// Cookie values never reach the tools in network events.
-func TestBridgeScrubsCookiesFromEvents(t *testing.T) {
+// Cookie values, credential headers and request bodies never reach the
+// tools in network events.
+func TestBridgeScrubsCredentialsFromEvents(t *testing.T) {
 	f := newFakeCDP(t, func(m map[string]any) []string {
 		return []string{
+			`{"method":"Network.requestWillBeSent","params":{"requestId":"2","request":{"url":"https://example.com/token","method":"POST","headers":{"Authorization":"Bearer SECRET5","Accept":"*/*"},"hasPostData":true,"postData":"refresh_token=SECRET6","postDataEntries":[{"bytes":"cmVmcmVzaF90b2tlbj1TRUNSRVQ2"}]}},"sessionId":"S"}`,
+			`{"method":"Network.requestWillBeSentExtraInfo","params":{"requestId":"2","headers":{"authorization":"Basic SECRET7","X-Api-Key":"SECRET8","proxy-authorization":"Negotiate SECRET9"}},"sessionId":"S"}`,
+			`{"method":"Fetch.requestPaused","params":{"requestId":"j","request":{"url":"https://example.com/","headers":{"X-Amz-Security-Token":"SECRET10"},"postData":"password=SECRET11"}},"sessionId":"S"}`,
+			`{"method":"Network.responseReceived","params":{"requestId":"2","response":{"status":200,"requestHeadersText":"GET / HTTP/1.1\r\nAuthorization: Bearer SECRET12\r\nAccept: */*\r\n\r\n"}},"sessionId":"S"}`,
+			`{"method":"Network.requestIntercepted","params":{"interceptionId":"x","request":{"url":"https://example.com/","headers":{"Authorization":"Bearer SECRET13"}}},"sessionId":"S"}`,
 			`{"method":"Network.requestWillBeSentExtraInfo","params":{"requestId":"1","headers":{"Cookie":"sid=SECRET","Accept":"*/*"},"associatedCookies":[{"blockedReasons":[],"cookie":{"name":"sid","value":"SECRET"}}]},"sessionId":"S"}`,
 			`{"method":"Network.responseReceivedExtraInfo","params":{"requestId":"1","headers":{"set-cookie":"sid=SECRET2","content-type":"text/html"},"blockedCookies":[],"headersText":"HTTP/1.1 200 OK\r\nSet-Cookie: sid=SECRET3\r\nContent-Type: text/html\r\n\r\n"},"sessionId":"S"}`,
 			`{"method":"Fetch.requestPaused","params":{"requestId":"i","responseHeaders":[{"name":"Set-Cookie","value":"sid=SECRET4"},{"name":"Content-Type","value":"text/html"}]},"sessionId":"S"}`,
@@ -299,7 +320,7 @@ func TestBridgeScrubsCookiesFromEvents(t *testing.T) {
 	cl := dialFront(t, front, "/devtools/browser/abc")
 	cl.send(`{"id":1,"method":"Network.enable","sessionId":"S"}`)
 	var all []string
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 9; i++ {
 		m := cl.recv()
 		if m == nil {
 			t.Fatalf("event %d missing", i)
@@ -308,10 +329,41 @@ func TestBridgeScrubsCookiesFromEvents(t *testing.T) {
 		all = append(all, string(b))
 	}
 	s := strings.Join(all, "\n")
-	if strings.Contains(s, "SECRET") || strings.Contains(strings.ToLower(s), "cookie") {
-		t.Errorf("cookies reached the tool:\n%s", s)
+	if l := strings.ToLower(s); strings.Contains(s, "SECRET") || strings.Contains(l, "cookie") || strings.Contains(l, "authorization") || strings.Contains(s, `"postData"`) || strings.Contains(s, "postDataEntries") {
+		t.Errorf("credentials reached the tool:\n%s", s)
 	}
-	for _, want := range []string{`"Accept":"*/*"`, `"content-type":"text/html"`, `Content-Type: text/html`, `"name":"Content-Type"`, `"dataLength":5`} {
+	for _, want := range []string{`"hasPostData":true`, `Accept: */*`, `"url":"https://example.com/token"`, `"Accept":"*/*"`, `"content-type":"text/html"`, `Content-Type: text/html`, `"name":"Content-Type"`, `"dataLength":5`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("lost %s:\n%s", want, s)
+		}
+	}
+}
+
+// Chrome writes a whole Set-Cookie line into an issue about a cookie it
+// rejected; the tools get the issue without it.
+func TestBridgeScrubsRawCookieLineFromAudits(t *testing.T) {
+	f := newFakeCDP(t, func(m map[string]any) []string {
+		return []string{
+			`{"method":"Audits.issueAdded","params":{"issue":{"code":"CookieIssue","details":{"cookieIssueDetails":{"rawCookieLine":"sid=SECRET; Domain=b\u00fccher.example; HttpOnly","cookieWarningReasons":["WarnDomainNonASCII"],"operation":"SetCookie","request":{"requestId":"1","url":"https://example.com/"}}}}},"sessionId":"S"}`,
+		}
+	})
+	front := startTestFront(t, f.addr, nil, nil)
+	cl := dialFront(t, front, "/devtools/browser/abc")
+	cl.send(`{"id":1,"method":"Audits.enable","sessionId":"S"}`)
+	var all []string
+	for i := 0; i < 1; i++ {
+		m := cl.recv()
+		if m == nil {
+			t.Fatalf("message %d missing", i)
+		}
+		b, _ := json.Marshal(m)
+		all = append(all, string(b))
+	}
+	s := strings.Join(all, "\n")
+	if strings.Contains(s, "SECRET") || strings.Contains(s, "rawCookieLine") {
+		t.Errorf("a cookie line reached the tool:\n%s", s)
+	}
+	for _, want := range []string{`"WarnDomainNonASCII"`, `"url":"https://example.com/"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("lost %s:\n%s", want, s)
 		}

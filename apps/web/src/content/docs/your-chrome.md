@@ -110,7 +110,11 @@ While the bridge is open, the agents can do in your Chrome what the browser tool
 
 Whatever you pass, the bridge never lets them:
 
-- read your cookies out of Chrome, or clear them. Pages use your cookies as usual, which is the point; the tools can't copy them somewhere to use after the bridge closes. A page's own JavaScript can still read what that page can: cookies not marked HttpOnly, and local storage. Keep a bridge to sites you'd let the agent act on.
+- read your cookies out of Chrome, or clear them. Pages use your cookies as usual, which is the point; the tools can't copy them somewhere to use after the bridge closes.
+- see your sign-in headers or the content of network traffic. The tools see which requests a page makes and their status, but not `Authorization` or API-key headers, and not the request or response bodies. A tool that asks for a response body is told to read the page instead.
+- read data that sites keep in your Chrome (local storage, databases, offline caches) except through a page of that site.
+
+A page's own JavaScript can still read what that page can: cookies not marked HttpOnly, local storage, and what it fetches from its own site. The agents can run JavaScript in a page, so keep a bridge to sites you'd let the agent act on.
 - open `file://` pages, Chrome's own pages (`chrome://settings`, passwords, extensions) or your extensions' pages and background workers;
 - upload files from your laptop, drag files into a page, or pick where downloads are saved. Downloads go where Chrome puts them;
 - grant a site permissions (clipboard, camera, microphone, location), turn off certificate checks, or close Chrome.

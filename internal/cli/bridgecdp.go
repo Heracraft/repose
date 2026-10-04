@@ -358,7 +358,25 @@ var alwaysRefused = map[string]string{
 	"Storage.getCookies":                  "the bridge doesn't hand out your cookies; pages still use them",
 	"Network.clearBrowserCookies":         "the bridge doesn't clear your cookies",
 	"Storage.clearCookies":                "the bridge doesn't clear your cookies",
+	// Bodies of requests and responses can carry what a login hands out
+	// (tokens, session ids), including bodies a page's own JavaScript may
+	// not read (another site's, hidden by CORS). The tools read pages,
+	// not traffic.
+	"Network.getResponseBody":                         bodyRefusal,
+	"Network.getRequestPostData":                      bodyRefusal,
+	"Network.getResponseBodyForInterception":          bodyRefusal,
+	"Network.takeResponseBodyForInterceptionAsStream": bodyRefusal,
+	"Network.searchInResponseBody":                    bodyRefusal,
+	"Network.streamResourceContent":                   bodyRefusal,
+	"Network.loadNetworkResource":                     bodyRefusal,
+	"Fetch.getResponseBody":                           bodyRefusal,
+	"Fetch.takeResponseBodyAsStream":                  bodyRefusal,
+	"Page.getResourceContent":                         bodyRefusal,
+	"Page.searchInResource":                           bodyRefusal,
+	"Audits.getEncodedResponse":                       bodyRefusal,
 }
+
+const bodyRefusal = "the bridge doesn't hand out request or response bodies; read the page instead"
 
 // quietlyIgnored are answered as done without reaching Chrome. Playwright
 // sets the download folder whenever it connects, to a folder on the
@@ -374,6 +392,11 @@ var quietlyIgnored = map[string]bool{
 var refusedDomains = map[string]string{
 	"Extensions": "the bridge doesn't reach your extensions",
 	"Tethering":  "the bridge doesn't open ports on the laptop",
+	// These read what any site stored in your Chrome, not only the page's
+	// own: another site's local storage, databases and cached responses.
+	"DOMStorage":   "the bridge doesn't read sites' stored data; a page can still read its own",
+	"IndexedDB":    "the bridge doesn't read sites' stored data; a page can still read its own",
+	"CacheStorage": "the bridge doesn't read sites' stored data; a page can still read its own",
 }
 
 // refusal is why a command from a tool is refused, or "". m is the whole
@@ -548,8 +571,8 @@ func (c *cdpConn) inject(sid, method string, params any) {
 	_ = c.toChrome.write(encodeWSFrame(wsOpText, b, true))
 }
 
-// filteredEvents are the events fromChrome decodes; everything else
-// passes as Chrome sent it.
+// filteredEvents are the events fromChrome decodes, with every event of
+// filteredDomains; everything else passes as Chrome sent it.
 var filteredEvents = map[string]bool{
 	"Target.targetCreated":                       true,
 	"Target.targetInfoChanged":                   true,
@@ -565,6 +588,15 @@ var filteredEvents = map[string]bool{
 	"Network.webSocketHandshakeResponseReceived": true,
 	"Fetch.requestPaused":                        true,
 	"Fetch.authRequired":                         true,
+}
+
+// filteredDomains are the domains whose events carry requests and
+// responses, and so may carry credentials.
+var filteredDomains = map[string]bool{"Network": true, "Fetch": true, "Audits": true}
+
+func filteredEvent(method string) bool {
+	domain, _, _ := strings.Cut(method, ".")
+	return filteredEvents[method] || filteredDomains[domain]
 }
 
 // cdpPeek reads the id or the method from the front of a message as
@@ -600,7 +632,7 @@ func (c *cdpConn) fromChrome(payload []byte) (out []byte, keep bool) {
 			if !interesting {
 				return nil, true
 			}
-		} else if !filteredEvents[method] {
+		} else if !filteredEvent(method) {
 			return nil, true
 		}
 	}
@@ -714,12 +746,17 @@ func (c *cdpConn) filterEvent(method, sid string, m map[string]json.RawMessage) 
 		}
 		return nil, true
 	}
-	// Network and Fetch events: no cookies.
+	// Network, Fetch and Audits events: no credentials.
 	var params any
 	if err := json.Unmarshal(m["params"], &params); err != nil {
 		return nil, true
 	}
-	params, changed := scrubCookies(params)
+	var changed bool
+	if strings.HasPrefix(method, "Audits.") {
+		params, changed = scrubKeys(params, auditKeys)
+	} else {
+		params, changed = scrubCredentials(params)
+	}
 	if !changed {
 		return nil, true
 	}
@@ -728,20 +765,45 @@ func (c *cdpConn) filterEvent(method, sid string, m map[string]json.RawMessage) 
 	return b, true
 }
 
-// cookieKeys are the fields of network events that carry cookie values.
-var cookieKeys = map[string]bool{"associatedCookies": true, "blockedCookies": true, "exemptedCookies": true}
+// credentialHeaders are the headers removed from what the tools are
+// sent: cookies, and the ones that carry a login or a key. Chrome still
+// sends and receives them; only the copy for the tools loses them.
+var credentialHeaders = map[string]bool{
+	"cookie":               true,
+	"set-cookie":           true,
+	"set-cookie2":          true,
+	"authorization":        true,
+	"proxy-authorization":  true,
+	"x-api-key":            true,
+	"x-auth-token":         true,
+	"x-access-token":       true,
+	"x-amz-security-token": true,
+	"x-goog-api-key":       true,
+	"x-vault-token":        true,
+	"private-token":        true,
+}
 
-// scrubCookies removes Cookie and Set-Cookie headers, and the cookie
-// lists, from a decoded event: the value to send, and whether anything
-// was removed.
-func scrubCookies(v any) (any, bool) {
+// credentialKeys are the fields of network and fetch events that carry
+// cookie values or a request body (a login form, a token exchange).
+var credentialKeys = map[string]bool{
+	"associatedCookies": true, "blockedCookies": true, "exemptedCookies": true,
+	"postData": true, "postDataEntries": true,
+}
+
+// auditKeys are the fields of Audits events that carry a cookie value:
+// Chrome puts a whole Set-Cookie line there for a cookie it rejected.
+var auditKeys = map[string]bool{"rawCookieLine": true}
+
+// scrubCredentials removes credential headers, the header text lines
+// that carry them, the cookie lists and request bodies from a decoded
+// event: the value to send, and whether anything was removed.
+func scrubCredentials(v any) (any, bool) {
 	changed := false
 	switch t := v.(type) {
 	case map[string]any:
 		for k, x := range t {
-			lk := strings.ToLower(k)
 			switch {
-			case lk == "cookie" || lk == "set-cookie" || cookieKeys[k]:
+			case credentialHeaders[strings.ToLower(k)] || credentialKeys[k]:
 				delete(t, k)
 				changed = true
 			case k == "headersText" || k == "requestHeadersText":
@@ -752,7 +814,7 @@ func scrubCookies(v any) (any, bool) {
 					}
 				}
 			default:
-				if nx, ch := scrubCookies(x); ch {
+				if nx, ch := scrubCredentials(x); ch {
 					t[k] = nx
 					changed = true
 				}
@@ -763,14 +825,12 @@ func scrubCookies(v any) (any, bool) {
 		kept := make([]any, 0, len(t))
 		for _, x := range t {
 			if h, ok := x.(map[string]any); ok {
-				if n, ok := h["name"].(string); ok {
-					if ln := strings.ToLower(n); ln == "cookie" || ln == "set-cookie" {
-						changed = true
-						continue
-					}
+				if n, ok := h["name"].(string); ok && credentialHeaders[strings.ToLower(n)] {
+					changed = true
+					continue
 				}
 			}
-			nx, ch := scrubCookies(x)
+			nx, ch := scrubCredentials(x)
 			changed = changed || ch
 			kept = append(kept, nx)
 		}
@@ -779,12 +839,37 @@ func scrubCookies(v any) (any, bool) {
 	return v, false
 }
 
+// scrubKeys removes every field named in keys, at any depth.
+func scrubKeys(v any, keys map[string]bool) (any, bool) {
+	changed := false
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			if keys[k] {
+				delete(t, k)
+				changed = true
+			} else if nx, ch := scrubKeys(x, keys); ch {
+				t[k] = nx
+				changed = true
+			}
+		}
+	case []any:
+		for i, x := range t {
+			if nx, ch := scrubKeys(x, keys); ch {
+				t[i] = nx
+				changed = true
+			}
+		}
+	}
+	return v, changed
+}
+
 func scrubHeaderText(s string) string {
 	lines := strings.SplitAfter(s, "\n")
 	out := lines[:0]
 	for _, l := range lines {
 		k, _, _ := strings.Cut(l, ":")
-		if lk := strings.ToLower(strings.TrimSpace(k)); lk == "cookie" || lk == "set-cookie" {
+		if credentialHeaders[strings.ToLower(strings.TrimSpace(k))] {
 			continue
 		}
 		out = append(out, l)

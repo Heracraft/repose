@@ -239,7 +239,9 @@ command runs. Three parts, none of which the agent sees:
    chrome-devtools-mcp (`--browserUrl`) discover the websocket and
    Chrome's own server does not answer it. The browser's websocket goes
    to Chrome message by message through the bridge's policy (I-311:
-   refusals, hidden targets, no cookies, the navigation log); every
+   refusals, hidden targets, no cookies, the navigation log; I-467: no
+   credential headers, request or response bodies, or other sites'
+   stored data); every
    other request, the other `/json` endpoints and per-page websockets
    included, is 404. It counts the upgrades: each is an MCP server
    attaching, and the CLI says so. With `--allow`, a second CDP
@@ -276,7 +278,7 @@ loopback to loopback at both ends. What the user lends: while the bridge
 is up, any process on the guest can drive that Chrome; Chrome's own
 per-connection dialog is the check on that, `--allow` narrows it to the
 sites named, and the docs say both. What never passes, and the gaps
-`--allow` leaves, are in I-311 and the user page.
+`--allow` leaves, are in I-311, I-467 and the user page.
 
 Behaviour that must hold (guest-desktop VM test, `TestBridgeEndToEnd`):
 
@@ -298,6 +300,10 @@ Behaviour that must hold (guest-desktop VM test, `TestBridgeEndToEnd`):
   loads in the agents' tab, whether by navigate, script, redirect, popup,
   form or frame; the user's tab stays hidden and free; both MCP servers
   work through the front.
+- Against a real Chromium (`TestBridgeCredentialsAgainstChromium`): a
+  page's request carries its Authorization header to the server, and the
+  tool watching the network sees neither that header, the request body,
+  nor a rejected Set-Cookie line; a body read is refused (I-467).
 
 ## Depends on
 

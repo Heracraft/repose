@@ -127,7 +127,8 @@ Claude Code shows an image as `[Image #1]`; add your words and press Enter. Othe
 - Drop several files at once to paste several paths.
 - Up to 20 files and 20 MB per file. A bigger drop pastes your laptop's path unchanged, and the tmux status line says why; use [`repose cp`](/docs/sync#single-files) for large files.
 - Only you and the machine's `dev` user can read the copies. Copies older than a day, and all but the newest 50, are deleted at the next copy.
-- A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a copied path works too. Paths under system folders such as `/etc`, `/usr` and `/nix` are pasted as they are, and so are hidden files and anything in a hidden folder such as `~/.ssh`: those are never copied.
+- A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a copied path works too. Paths under system folders such as `/etc`, `/usr` and `/nix` are pasted as they are, and so are hidden files, anything in a hidden folder such as `~/.ssh`, and files named like a private key (`id_ed25519`, `.pem`, `.p12`, `.pfx`, `.ppk`, `.kdbx` and similar): those are never copied. A link counts as the file it points to, so a link to a file in `~/.ssh` isn't copied either.
+- Every copy is named on the tmux status line, for example `copied report.pdf to the machine`. If an agent asks you to paste a path, that line tells you what left your laptop.
 
 Any terminal that types a dropped file's path works: plain, quoted, with backslashes before spaces, or as a `file://` address.
 

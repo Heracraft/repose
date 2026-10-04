@@ -63,6 +63,9 @@ func TestInputProxyDropReachesTheSession(t *testing.T) {
 	screen := &syncBuffer{}
 	h := newDropHandler(f.target, testSlug, f.local)
 	h.clip = clip
+	notices := &syncBuffer{}
+	tmuxNotify := h.notify
+	h.notify = func(msg string) { notices.Write([]byte(msg + "\n")); tmuxNotify(msg) }
 	done := make(chan error, 1)
 	go func() { done <- proxySession(cmd, ptmx, stdinR, screen, h, func() {}) }()
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = stdinW.Close() })
@@ -104,6 +107,30 @@ func TestInputProxyDropReachesTheSession(t *testing.T) {
 	want := "^[[200~" + files[0] + " ^[[201~after"
 	if !strings.Contains(strings.ReplaceAll(pane, "\n", ""), want) {
 		t.Fatalf("pane does not show %q:\n%s", want, pane)
+	}
+	if !strings.Contains(notices.String(), "copied Screen Shot 1.png to the machine") {
+		t.Fatalf("the copy was not named on the status line: %q", notices.String())
+	}
+
+	// A plain name that links to a hidden file is not a drop: its path
+	// is typed as it is, and nothing is copied.
+	if err := os.MkdirAll(filepath.Join(laptop, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(laptop, ".ssh", "id_ed25519"), []byte("KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(laptop, "notes.txt")
+	if err := os.Symlink(filepath.Join(laptop, ".ssh", "id_ed25519"), notes); err != nil {
+		t.Fatal(err)
+	}
+	typeIn("\x1b[200~" + notes + "\x1b[201~&")
+	pane = waitPane(t, f, "agent", "~&")
+	if !strings.Contains(strings.ReplaceAll(pane, "\n", ""), "^[[200~"+notes+"^[[201~&") {
+		t.Fatalf("pane does not show the link's own path:\n%s", pane)
+	}
+	if all, _ := filepath.Glob(filepath.Join(dir, "*")); len(all) != 1 {
+		t.Fatalf("a link to a hidden file was copied: %v", all)
 	}
 
 	// A file of the checkout: its path in the guest's checkout, nothing copied.
@@ -204,4 +231,10 @@ func TestProxyExitStatus(t *testing.T) {
 		}
 	}
 
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

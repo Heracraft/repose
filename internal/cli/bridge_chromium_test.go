@@ -133,6 +133,15 @@ func testChromium(t *testing.T) (chrome laptopChrome, hits *hitLog, ok, other fu
 		case "/redirect":
 			http.Redirect(w, r, "http://other.test:"+port+"/landing", http.StatusFound)
 			return
+		case "/creds":
+			_, _ = fmt.Fprint(w, `<html><body>creds<script>fetch("/api", {method: "POST", headers: {"Authorization": "Bearer SECRET-A", "X-Api-Key": "SECRET-K"}, body: "refresh_token=SECRET-B"})</script></body></html>`)
+			return
+		case "/api":
+			hits.add("auth:" + r.Header.Get("Authorization"))
+			w.Header().Set("Set-Cookie", "sid=SECRET-C; Domain=b\xc3\xbccher.test; Path=/; HttpOnly")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"refresh_token":"SECRET-D"}`)
+			return
 		case "/framed":
 			_, _ = fmt.Fprintf(w, `<html><body>framed<iframe src="http://other.test:%s/frame"></iframe></body></html>`, port)
 			return
@@ -281,6 +290,56 @@ func TestBridgeAgainstChromium(t *testing.T) {
 	t.Logf("navigation log:\n%s", all)
 	if strings.Contains(all, "SECRET") || !strings.Contains(all, "ok.test:"+port+"/start") || !strings.Contains(all, "blocked  other.test:"+port+"/script") {
 		t.Errorf("log:\n%s", all)
+	}
+}
+
+// What Chrome sends and receives for a page keeps its credentials; the
+// tool watching the network through the front never sees them, and
+// can't ask for a body.
+func TestBridgeCredentialsAgainstChromium(t *testing.T) {
+	chrome, hits, ok, _, _ := testChromium(t)
+	front, err := startCDPFront(chrome, newBridgePolicy(nil, nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer front.Close()
+	fc := dialFront(t, front, chrome.Path)
+	tool := newRawCDP(t, fc.c, fc.br)
+	tid := resultOf(t, tool.call("", "Target.createTarget", map[string]any{"url": "about:blank"}))["targetId"].(string)
+	sid := resultOf(t, tool.call("", "Target.attachToTarget", map[string]any{"targetId": tid, "flatten": true}))["sessionId"].(string)
+	for _, m := range []string{"Page.enable", "Network.enable", "Audits.enable"} {
+		resultOf(t, tool.call(sid, m, map[string]any{}))
+	}
+	resultOf(t, tool.call(sid, "Page.navigate", map[string]any{"url": ok("/creds")}))
+	time.Sleep(2 * time.Second)
+	if !hits.has("auth:Bearer SECRET-A") {
+		t.Fatal("the page's request never reached the server with its Authorization header")
+	}
+	var events []string
+	var apiRequest string
+	for drained := false; !drained; {
+		select {
+		case e := <-tool.events:
+			b, _ := json.Marshal(e)
+			events = append(events, string(b))
+			if p, _ := e["params"].(map[string]any); p != nil && e["method"] == "Network.requestWillBeSent" {
+				if r, _ := p["request"].(map[string]any); r != nil && strings.HasSuffix(r["url"].(string), "/api") {
+					apiRequest, _ = p["requestId"].(string)
+				}
+			}
+		default:
+			drained = true
+		}
+	}
+	all := strings.Join(events, "\n")
+	if apiRequest == "" || !strings.Contains(all, "Network.responseReceivedExtraInfo") {
+		t.Fatalf("the tool never saw the request and its response:\n%s", all)
+	}
+	if strings.Contains(all, "SECRET") {
+		t.Errorf("a credential reached the tool:\n%s", all)
+	}
+	if m := tool.call(sid, "Network.getResponseBody", map[string]any{"requestId": apiRequest}); !strings.HasPrefix(errMessage(m), "repose browser bridge: ") {
+		t.Errorf("getResponseBody: %v", m)
 	}
 }
 

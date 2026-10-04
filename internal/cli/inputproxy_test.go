@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,6 +28,10 @@ var scanFiles = fakeFiles(
 	"/etc/hosts",
 	"/Users/me/.ssh/id_ed25519",
 	"/Users/me/.env",
+	"/Users/me/Downloads/server.pem",
+	"/Users/me/Downloads/id_ed25519",
+	"/Users/me/Downloads/id_ed25519.pub",
+	"/Users/me/Downloads/cert.P12",
 )
 
 // render is what the proxy would write for acts, with a stand-in for
@@ -73,6 +79,11 @@ func TestInputScannerTable(t *testing.T) {
 		{"paste of a file in a hidden dir", bp("/Users/me/.ssh/id_ed25519"), bp("/Users/me/.ssh/id_ed25519")},
 		{"paste of a hidden file", bp("/Users/me/.env"), bp("/Users/me/.env")},
 		{"plain hidden file", "/Users/me/.env", "/Users/me/.env"},
+		{"paste of a pem file", bp("/Users/me/Downloads/server.pem"), bp("/Users/me/Downloads/server.pem")},
+		{"paste of an ssh key", bp("/Users/me/Downloads/id_ed25519"), bp("/Users/me/Downloads/id_ed25519")},
+		{"paste of a key store, upper case", bp("/Users/me/Downloads/cert.P12"), bp("/Users/me/Downloads/cert.P12")},
+		{"a key among pictures", bp("/tmp/x.png /Users/me/Downloads/server.pem"), bp("/tmp/x.png /Users/me/Downloads/server.pem")},
+		{"paste of a public key", bp("/Users/me/Downloads/id_ed25519.pub"), `<drop ["/Users/me/Downloads/id_ed25519.pub"]>`},
 		{"one path", bp("/Users/me/Desktop/shot.png"), `<drop ["/Users/me/Desktop/shot.png"]>`},
 		{"Terminal.app escaped, trailing space", bp(`/Users/me/Desktop/Screen\ Shot\ 2026-09-26\ at\ 10.00.00.png `), `<drop ["/Users/me/Desktop/Screen Shot 2026-09-26 at 10.00.00.png"] >`},
 		{"escaped parens", bp(`/Users/me/notes\ \(1\).txt`), `<drop ["/Users/me/notes (1).txt"]>`},
@@ -247,5 +258,57 @@ func TestDropGuestName(t *testing.T) {
 	long := strings.Repeat("a", 200) + ".png"
 	if got := dropGuestName(ts, 0, long); !strings.HasSuffix(got, ".png") || len(got) > len(pasteGuestDir)+120 {
 		t.Errorf("long name = %q", got)
+	}
+}
+
+// A drop is judged by the file it would read, after every link: a plain
+// name that leads to a key, a hidden file or a system file is not a drop.
+func TestDropFileFollowsLinks(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel string) string {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	link := func(target, rel string) string {
+		p := filepath.Join(dir, rel)
+		if err := os.Symlink(target, p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	key := write(".ssh/id_ed25519")
+	shot := write("Pictures/shot.png")
+	if err := os.Mkdir(filepath.Join(dir, "links"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path string
+		want string // "" for not a drop
+	}{
+		{shot, shot},
+		{link(shot, "links/shot.png"), shot},
+		{key, ""},
+		{link(key, "links/notes.txt"), ""},
+		{link(filepath.Join(dir, ".ssh"), "links/keys") + "/id_ed25519", ""},
+		{link("/etc/hosts", "links/hosts.txt"), ""},
+		{write("Downloads/server.pem"), ""},
+		{link(filepath.Join(dir, "Downloads/server.pem"), "links/server.txt"), ""},
+		{filepath.Join(dir, "Pictures"), ""},
+		{filepath.Join(dir, "missing.png"), ""},
+	}
+	for _, c := range cases {
+		got, ok := dropFile(c.path)
+		if ok != (c.want != "") || got != c.want {
+			t.Errorf("dropFile(%s) = %q, %v; want %q", c.path, got, ok, c.want)
+		}
+		if localDropFile(c.path) != ok {
+			t.Errorf("localDropFile(%s) disagrees with dropFile", c.path)
+		}
 	}
 }

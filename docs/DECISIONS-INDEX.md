@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-461 entries.
+463 entries.
 
 ## Scope
 
@@ -360,7 +360,7 @@ pointer, not a summary.
 - **I-277** `repose secrets import` sets every NAME=VALUE of a .env file — 2026-09-26; L7153
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7180
 - **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; L7243
-- **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; L7262
+- **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; amended by I-468; L7262
 - **I-278** One Claude login per user: the login share — 2026-09-26; L7361
 - **I-283** No auto-mode offer on a machine in bypass mode — 2026-09-27; L7446
 - **I-284** The nothing-new check trusts the commits the last sync recorded, not the guest's ref tips — 2026-09-27; L7474
@@ -397,7 +397,7 @@ pointer, not a summary.
 - **I-326** Config builds: two derivations at a time, and two reads in parallel — L8345
 - **I-327** The "Config" docs page is "Installing software" — L8364
 - **I-310** `repose browser [PROJECT]` is the machine's own browser, on its desktop; `repose browser bridge` stays the laptop's Chrome; `repose open --desktop` stays as the same command — 2026-09-28; L8372
-- **I-311** The bridge enforces what the agents may do in the laptop's Chrome itself, at the CDP layer: always-on refusals, and `--allow HOST` enforced by a CDP connection of the bridge's own — 2026-09-28; L8394
+- **I-311** The bridge enforces what the agents may do in the laptop's Chrome itself, at the CDP layer: always-on refusals, and `--allow HOST` enforced by a CDP connection of the bridge's own — 2026-09-28; amended by I-467; L8394
 - **I-312** The bridge needs a running machine and does not start one; there is no detached bridge — 2026-09-28; L8478
 - **I-313** Closing a bridge is one ssh, bounded at 4 s, and never waits for a tmux client — 2026-09-28; L8490
 - **I-314** The bridge prints a navigation log on the user's own terminal: time, host and path, `blocked` or not, never a query or fragment, and nothing is stored — 2026-09-28; L8506
@@ -493,3 +493,5 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11033
+- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11071

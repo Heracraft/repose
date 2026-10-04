@@ -334,11 +334,49 @@ func dropPath(w string) (string, bool) {
 	}
 	// A hidden file, or one in a hidden directory (~/.ssh, ~/.aws), is
 	// never a drop: pasting "the path an agent asked for" must not carry
-	// a key to the machine.
-	if strings.Contains(w, "/.") {
+	// a key to the machine. Nor is a file named like a key.
+	if strings.Contains(w, "/.") || keyFileName(filepath.Base(w)) {
 		return "", false
 	}
 	return w, true
+}
+
+// keyExts are the extensions of private keys and key stores.
+var keyExts = map[string]bool{
+	".pem": true, ".p12": true, ".pfx": true, ".p8": true, ".ppk": true,
+	".jks": true, ".keystore": true, ".kdbx": true, ".keychain": true, ".keychain-db": true,
+}
+
+// keyFileName is a file name that holds a private key or a key store:
+// an SSH key (id_ed25519, not id_ed25519.pub) or one of keyExts.
+func keyFileName(name string) bool {
+	n := strings.ToLower(name)
+	for _, k := range []string{"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"} {
+		if strings.HasPrefix(n, k) && !strings.HasSuffix(n, ".pub") {
+			return true
+		}
+	}
+	return keyExts[filepath.Ext(n)]
+}
+
+// dropFile is what a dropped path names, once every symlink in it is
+// followed: the file that would be read. ok is false when that file
+// would not be a drop by its own path (hidden, under a system
+// directory, named like a key) or is not a regular file, so a plain
+// link to ~/.ssh/id_ed25519 is never read.
+func dropFile(p string) (string, bool) {
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", false
+	}
+	if _, ok := dropPath(real); !ok {
+		return "", false
+	}
+	fi, err := os.Stat(real)
+	if err != nil || !fi.Mode().IsRegular() {
+		return "", false
+	}
+	return real, true
 }
 
 // shellWords splits s the way a POSIX shell splits words, with quotes and
@@ -396,10 +434,10 @@ func shellWords(s string) ([]string, bool) {
 	return words, true
 }
 
-// localRegularFile is the scanner's isFile outside tests.
-func localRegularFile(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.Mode().IsRegular()
+// localDropFile is the scanner's isFile outside tests.
+func localDropFile(p string) bool {
+	_, ok := dropFile(p)
+	return ok
 }
 
 // shellEscapePath backslash-escapes p the way Terminal.app does a dropped
@@ -484,9 +522,17 @@ func (h *dropHandler) files(a inputAction) []byte {
 		h.notify(fmt.Sprintf("%d files dropped; up to %d are copied to the machine at once. Nothing was copied.", len(a.files), dropMaxFiles))
 		return a.raw
 	}
+	// What is read is what the paths name now, checked again: a link
+	// changed since the scan reads nothing it would not have then.
+	real := make([]string, len(a.files))
 	sizes := make([]int64, len(a.files))
 	for i, f := range a.files {
-		fi, err := os.Stat(f)
+		r, ok := dropFile(f)
+		if !ok {
+			return a.raw
+		}
+		real[i] = r
+		fi, err := os.Stat(r)
 		if err != nil {
 			return a.raw
 		}
@@ -502,27 +548,45 @@ func (h *dropHandler) files(a inputAction) []byte {
 	stop := h.slowNotice("copying to the machine…")
 	defer stop()
 	stamp := h.now().UTC()
+	var copied []string
 	for i, f := range a.files {
 		if guest[i] != "" {
 			continue
 		}
 		name := dropGuestName(stamp, i, filepath.Base(f))
-		if err := h.upload(ctx, f, name); err != nil {
+		if err := h.upload(ctx, real[i], name); err != nil {
 			h.notify(err.Error())
 			return a.raw
 		}
 		guest[i] = name
+		copied = append(copied, filepath.Base(f))
+	}
+	// Name what left the laptop, so a path pasted because an agent asked
+	// for it is never copied unseen.
+	if len(copied) > 0 {
+		h.notify(copiedNotice(copied))
 	}
 	return bracketed(guest, a.trail)
 }
 
-// upload copies one local file to guestPath.
+// copiedNotice names the files a drop copied to the machine.
+func copiedNotice(names []string) string {
+	if len(names) > 3 {
+		return fmt.Sprintf("copied %s and %d more files to the machine", strings.Join(names[:2], ", "), len(names)-2)
+	}
+	return "copied " + strings.Join(names, ", ") + " to the machine"
+}
+
+// upload copies one local regular file to guestPath.
 func (h *dropHandler) upload(ctx context.Context, local, guestPath string) error {
 	f, err := os.Open(local)
 	if err != nil {
 		return fmt.Errorf("could not read %s", filepath.Base(local))
 	}
 	defer func() { _ = f.Close() }()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return fmt.Errorf("could not read %s", filepath.Base(local))
+	}
 	return h.save(ctx, f, guestPath)
 }
 
