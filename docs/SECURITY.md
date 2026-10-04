@@ -338,7 +338,7 @@ Written down so nobody believes otherwise.
 - **One Blob identity for every host** (review M-3). Each host can read
   and delete every tenant's snapshots fleet-wide. Per-host containers or
   api-issued SAS tokens close it. Since I-462 it can no longer get a
-  changed snapshot restored (boundary 9), except one taken before I-462.
+  changed snapshot restored (boundary 12), except one taken before I-462.
 - **Hosts registered before I-139 trust no Host CA until their first
   rotate** (review M-1, closed in code 2026-09-21 by I-139:
   `RegisterResponse.host_ca_pub`). host-01 is one of them; the runbook's
