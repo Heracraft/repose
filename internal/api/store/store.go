@@ -111,6 +111,7 @@ type Host struct {
 	RunningGuests      int           `db:"running_guests"`
 	LastHeartbeatAt    *time.Time    `db:"last_heartbeat_at"`
 	CertSerial         *string       `db:"cert_serial"`
+	PrevCertSerial     *string       `db:"prev_cert_serial"`
 	CertExpiresAt      *time.Time    `db:"cert_expires_at"`
 	NixosSystem        *string       `db:"nixos_system"`
 	CHVersion          *string       `db:"ch_version"`
@@ -121,7 +122,7 @@ type Host struct {
 	UpdatedAt          time.Time     `db:"updated_at"`
 }
 
-const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, load1, running_guests, last_heartbeat_at, cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
+const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
 
 // Op is an ops row.
 type Op struct {

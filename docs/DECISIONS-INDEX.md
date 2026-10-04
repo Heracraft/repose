@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-461 entries.
+464 entries.
 
 ## Scope
 
@@ -493,3 +493,6 @@ pointer, not a summary.
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L10964
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L10985
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
+- **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11033
+- **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11062
+- **I-433** A named secret's ciphertext is bound to its project as well as its name — 2026-10-03; L11091

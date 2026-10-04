@@ -24,7 +24,7 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
               mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,
               wg_pubkey text, wg_ip inet, state text,  -- registering|ready|draining|unreachable|retired|lost
               draining bool, free_mem_bytes bigint, pool_free_bytes bigint, load1 float, running_guests int,
-              last_heartbeat_at, cert_serial text, cert_expires_at,
+              last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
 

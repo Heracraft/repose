@@ -89,6 +89,7 @@ once, in this order (DECISIONS I-92):
    gateway.key -subj /CN=gateway -out gateway.csr`, then `repose-admin ca
    sign-client --name gateway --csr /dev/stdin < gateway.csr >
    gateway.crt` (the CSR is public; pipe it through `docker exec -i`).
+   The name must be `gateway`: `/internal` admits no other CN (I-431).
 5. `ssh_host_ed25519_key` (`ssh-keygen -t ed25519 -N ''`) and its
    certificate `ssh_host_ed25519_key-cert.pub` from `repose-admin ca
    sign-host --principal ssh.repose.herakraft.co,<edge ip> --pubkey
@@ -149,7 +150,7 @@ copy-paste version):
 | Force a snapshot | `repose-admin projects snapshot <id>` |
 | Restore a snapshot | `repose-admin projects restore <id> --snapshot <sid> [--to host-NN]` |
 | Revoke all certs for a user | `repose-admin certs revoke --user <handle>` |
-| Rotate a host's mTLS cert | `repose-admin hosts rotate-cert host-NN` |
+| Rotate a host's mTLS cert | `repose-admin hosts rotate-cert host-NN` (the old certificate works until the new one connects; refused for a `lost` or `retired` host, I-432) |
 | Rotate the Key Vault wrapping key | `az keyvault key rotate` then `repose-admin secrets rewrap` |
 | Query audit log | `repose-admin audit --user <handle> --since 24h` |
 | See the seats and the waitlist | `repose-admin seats` (total, held, free, waiting, source), `repose-admin waitlist list` (position, handle, joined, invited, hold, converted, expired, by) |
@@ -235,7 +236,9 @@ No heartbeat for 90 seconds.
 2. If the VM is up: `ssh root@10.255.0.<host>`, `systemctl status hostd`,
    `journalctl -u hostd -n 200`. A `stream_disconnect` loop with TLS errors
    means the host cert expired: `repose-admin hosts rotate-cert` from the
-   api side writes a new one via the edge jump.
+   api side writes a new one via the edge jump. `PermissionDenied` with
+   "not the host's current one" in hostd's log means the host holds a
+   certificate the api has superseded (I-432); the same command fixes it.
 3. If the VM is gone: "Host loss" below.
 4. Guests keep running through an api outage; the only thing lost is
    metering samples for the window, which the rollup marks as `gap` rather
@@ -1163,7 +1166,9 @@ A host is gone (Azure repair, disk lost, or a deliberate retirement without
 drain).
 
 1. `repose-admin hosts mark-lost host-NN`: every project on it goes to
-   `error` with reason `host_lost`, tenants get an email.
+   `error` with reason `host_lost`, tenants get an email. Its certificate
+   stops working at once (I-432); if the machine comes back, it joins
+   again with `hosts add --name host-NN --reissue`.
 2. For each project: `repose-admin projects restore <id> --latest --to
    <other host>`. Data since the last snapshot (up to 24 hours, or since
    the last `stop`) is lost; the email says so. Tenants' git remotes hold

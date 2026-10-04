@@ -24,6 +24,11 @@ import (
 // rotates five days before expiry.
 const HostCertValidity = 30 * 24 * time.Hour
 
+// GatewayClientName is the CN of the gateway's client certificate, the
+// one identity the /internal listener admits (DECISIONS I-431). Host
+// certificates carry a host id there and are refused.
+const GatewayClientName = "gateway"
+
 // CA is the authority.
 type CA struct {
 	Cert    *x509.Certificate
@@ -214,4 +219,22 @@ func (c *CA) ClientTLS(name string) (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	return tls.X509KeyPair(cert, key)
+}
+
+// RequireClientName returns a copy of cfg that demands a client
+// certificate verified against cfg.ClientCAs whose leaf CN is name; any
+// other identity from the same CA fails the handshake.
+func RequireClientName(cfg *tls.Config, name string) *tls.Config {
+	out := cfg.Clone()
+	out.ClientAuth = tls.RequireAndVerifyClientCert
+	out.VerifyConnection = func(cs tls.ConnectionState) error {
+		if len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) == 0 {
+			return errors.New("pki: no verified client certificate")
+		}
+		if cn := cs.VerifiedChains[0][0].Subject.CommonName; cn != name {
+			return fmt.Errorf("pki: client %q is not %q", cn, name)
+		}
+		return nil
+	}
+	return out
 }

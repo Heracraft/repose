@@ -11029,3 +11029,88 @@ Test: docs.spec.ts "an experimental page says so under its title".
 Checked at 1440 and 390, light and dark. *Rejected:* moving the five
 packages to devDependencies (adapter-node bundles those; it fixes today's
 five and not the next one added to dependencies).
+
+**I-431. The api's `/internal` listener admits only the gateway's certificate.** (security release, 2026-10-03)
+One X.509 CA signs the hosts' client certificates (CN = host id) and the
+gateway's (CN `gateway`), and the `/internal` listener on 8444 accepted any
+client certificate that CA had signed. A host's certificate therefore worked
+as the gateway's, and `/internal` includes routes that only the gateway may
+call, among them the one that issues short-lived user certificates for a
+project. The listener's TLS configuration now requires a verified client
+certificate whose CN is exactly `gateway` (`pki.RequireClientName`,
+`pki.GatewayClientName`); any other identity, a host's included, fails the
+TLS handshake, so no `/internal` handler runs for it. Test:
+`internal/api/http` `TestInternalAdmitsOnlyTheGateway` (a host's
+certificate, none, and two near-miss names fail on every `/internal` route;
+the gateway's reaches `/internal/ca`).
+
+The change is immediate, with no release accepting the old shape: the old
+shape is "any certificate from the host CA", and accepting it for a release
+keeps the hole open for that release. The edge needs nothing new. Its
+certificate was always made with `repose-admin ca sign-client --name
+gateway` (RUNBOOK "Edge", step 4, I-92), and `sign-client` sets the CN from
+`--name` whatever the CSR says. An edge whose `gateway.crt` carries another
+CN loses `/internal` (route lookups, revocations, wgsync) until it is
+signed again with `--name gateway`; check with `openssl x509 -noout
+-subject -in /var/lib/repose/edge/gateway.crt` before the api deploys.
+*Rejected:* a separate CA for the gateway (a new key to hold in the
+platform secrets, a new `api-ca.pem` on the edge and an edge switch, for no
+more than the CN check gives while only an operator can sign a client
+certificate with a chosen name); a per-handler check (a route added later
+without it would reopen the hole).
+
+**I-432. A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts.** (security release, 2026-10-03)
+`Rotate` and `Session` checked only that the CN named an existing host
+row, so a machine marked `lost` or `retired` kept a working identity and
+could rotate itself a fresh certificate before each one expired;
+`hosts.cert_serial` was written and never compared. Now `Rotate`, `Session`
+and every heartbeat on an open stream run one check (`admit` in
+`internal/api/hostmgr`): a host in state `lost` or `retired` is refused,
+and the presented certificate's serial must be the row's `cert_serial` or
+its new `prev_cert_serial` (migration 0012). `Rotate` moves the presented
+serial to `prev_cert_serial` and records the new one, guarded by the state
+in the same `UPDATE`; the first stream opened with the new certificate
+clears `prev_cert_serial`. The window exists because hostd writes the new
+files after `Rotate` answers; a host whose write failed keeps working on
+the old certificate and rotates again. Refusals are `PermissionDenied`;
+an open stream ends at its next heartbeat. `hosts mark-lost` and `hosts
+retire` clear both serials, `hosts rotate-cert` keeps the old serial as
+the previous one (the operator installs the new files afterwards) and
+refuses a lost or retired host, and `Register` clears `prev_cert_serial`.
+A re-imaged machine joins again through `hosts add --name <n> --reissue`.
+Tests: `internal/api/hostmgr` `TestHostCertificateSerialIsEnforced`,
+`TestLostAndRetiredHostsAreRefused` (lost and retired, an open stream
+included); `internal/admin` `TestAdminSurface` checks mark-lost clears
+the serials and rotate-cert refuses. Hosts registered or rotated through
+the api always had their serial recorded, so a running host is admitted
+after the deploy; one that is not shows `PermissionDenied` in hostd's log
+and `hosts rotate-cert` recovers it. *Rejected:* a CRL for the host CA
+(every verifier would need it fetched and fresh, where the api already
+holds the row it needs).
+
+**I-433. A named secret's ciphertext is bound to its project as well as its name.** (security release, 2026-10-03)
+AES-GCM's additional data was the name alone, and every row carries its
+own wrapped data key, so a row copied by a database write into another
+project under the same name decrypted there and reached that project's
+guest; that included the platform's CA keys under the platform
+pseudo-project. The additional data is now `repose-secret-v2`, a zero
+byte, the project id, a zero byte and the name (`secrets.Seal`,
+`secrets.Open` take the project id). Rows sealed before this still open
+under the name alone, for this release only: the api's start runs
+`Store.Reseal`, which seals each such row again for the project it sits
+in (retrying every minute while Key Vault is unreachable; idempotent, the
+`UPDATE` matches the old ciphertext). A legacy row outside the platform
+pseudo-project whose data key is one of the platform's is refused on read
+and left alone by `Reseal`, so platform material copied into a project
+before the deploy is not sealed into it. `repose fork` no longer copies
+ciphertext in SQL: `Store.CopyNamed` opens each named secret and seals it
+for the new project in the fork's transaction, under the same wrapped
+key, which makes a fork depend on Key Vault (as `secrets set` always did).
+The release after this one removes the name-only read path; by then every
+api start has resealed what was there. Tests: `internal/api/secrets`
+`TestCiphertextIsBoundToItsProject`, `TestResealLegacyRows`, and the
+`TestRoundTripAndAAD` project check; `internal/api/http` `TestFork` opens
+the copied secret in the fork. *Rejected:* a column recording the
+additional-data version (a database writer sets it as easily as the
+ciphertext; a failed tag check under the new data says the same thing for
+free).

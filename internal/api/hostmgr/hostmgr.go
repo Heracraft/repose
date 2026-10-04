@@ -213,20 +213,57 @@ func wgKeypair() (priv, pub string, err error) {
 
 // --- RPCs ---------------------------------------------------------------
 
-func hostIDFromPeer(ctx context.Context) (uuid.UUID, bool) {
+// hostFromPeer is the host id (the verified leaf's CN) and the serial of
+// the certificate the peer presented.
+func hostFromPeer(ctx context.Context) (uuid.UUID, string, bool) {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
-		return uuid.Nil, false
+		return uuid.Nil, "", false
 	}
 	ti, ok := p.AuthInfo.(credentials.TLSInfo)
 	if !ok || len(ti.State.VerifiedChains) == 0 || len(ti.State.VerifiedChains[0]) == 0 {
-		return uuid.Nil, false
+		return uuid.Nil, "", false
 	}
-	id, err := uuid.Parse(ti.State.VerifiedChains[0][0].Subject.CommonName)
+	leaf := ti.State.VerifiedChains[0][0]
+	id, err := uuid.Parse(leaf.Subject.CommonName)
+	if err != nil || leaf.SerialNumber == nil {
+		return uuid.Nil, "", false
+	}
+	return id, leaf.SerialNumber.String(), true
+}
+
+// admit is the check behind Rotate, Session and every heartbeat (DECISIONS
+// I-432): a host marked lost or retired is refused, and so is any
+// certificate other than the host's current one or the one the last
+// rotate replaced (kept until the host connects with the new one).
+func admit(state string, certSerial, prevCertSerial *string, serial string) error {
+	if state == "lost" || state == "retired" {
+		return status.Error(codes.PermissionDenied, "host is "+state)
+	}
+	if certSerial != nil && *certSerial == serial {
+		return nil
+	}
+	if prevCertSerial != nil && *prevCertSerial == serial {
+		return nil
+	}
+	return status.Error(codes.PermissionDenied, "certificate is not the host's current one")
+}
+
+// authHost resolves and admits the calling host.
+func (s *Server) authHost(ctx context.Context, rpc string) (*store.Host, string, error) {
+	hostID, serial, ok := hostFromPeer(ctx)
+	if !ok {
+		return nil, "", status.Error(codes.Unauthenticated, "client certificate required")
+	}
+	h, err := store.GetHost(ctx, s.pool, hostID)
 	if err != nil {
-		return uuid.Nil, false
+		return nil, "", status.Error(codes.PermissionDenied, "unknown host")
 	}
-	return id, true
+	if err := admit(h.State, h.CertSerial, h.PrevCertSerial, serial); err != nil {
+		s.log.Warn("host refused", "event", rpc, "host_id", hostID.String(), "state", h.State, "code", status.Code(err).String())
+		return nil, "", err
+	}
+	return h, serial, nil
 }
 
 // Register implements the unary registration: one token, one host.
@@ -287,7 +324,7 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 		}
 		if _, err := tx.Exec(ctx, `update hosts set registered_at = now(), join_token_hash = null, guest_cidr = $2, wg_ip = $3, wg_pubkey = $4,
 			hostname = $5, sku = coalesce(nullif($6, ''), sku), mem_bytes = $7, vcpus = $8, pool_bytes = $9, nixos_system = $10, ch_version = $11,
-			cert_serial = $12, cert_expires_at = $13, state = 'registering' where id = $1`,
+			cert_serial = $12, prev_cert_serial = null, cert_expires_at = $13, state = 'registering' where id = $1`,
 			h.ID, cidr, wgIP, wgPub, nilIfEmpty(info.Hostname), info.Sku, int64(info.MemBytes), int32(info.Vcpus), int64(info.PoolBytes), nilIfEmpty(info.NixosSystem), nilIfEmpty(info.ChVersion),
 			serial, time.Now().Add(pki.HostCertValidity)); err != nil {
 			return err
@@ -327,20 +364,22 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 
 // Rotate reissues the certificate of the authenticated host.
 func (s *Server) Rotate(ctx context.Context, req *hostdv1.RegisterRequest) (*hostdv1.RegisterResponse, error) {
-	hostID, ok := hostIDFromPeer(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "client certificate required")
-	}
-	h, err := store.GetHost(ctx, s.pool, hostID)
+	h, presented, err := s.authHost(ctx, "rotate")
 	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, "unknown host")
+		return nil, err
 	}
 	certPEM, keyPEM, serial, err := s.ca.IssueClient(h.ID.String(), pki.HostCertValidity)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "issue failed")
 	}
-	if _, err := s.pool.Exec(ctx, "update hosts set cert_serial = $2, cert_expires_at = $3 where id = $1", h.ID, serial, time.Now().Add(pki.HostCertValidity)); err != nil {
+	// The presented certificate stays valid until the host connects with
+	// the new one; the state guard closes the race with mark-lost.
+	tag, err := s.pool.Exec(ctx, "update hosts set cert_serial = $2, prev_cert_serial = $4, cert_expires_at = $3 where id = $1 and state not in ('lost', 'retired')", h.ID, serial, time.Now().Add(pki.HostCertValidity), presented)
+	if err != nil {
 		return nil, status.Error(codes.Internal, "rotate failed")
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, status.Error(codes.PermissionDenied, "host is no longer active")
 	}
 	s.log.Info("certificate rotated", "event", "rotate", "host_id", h.ID.String())
 	resp := &hostdv1.RegisterResponse{HostId: h.ID.String(), ClientCert: certPEM, ClientKey: keyPEM, HostCaPub: s.hostCAPubLine()}
@@ -361,12 +400,16 @@ var sessionSeq uint64
 // Session is the long-lived stream.
 func (s *Server) Session(stream hostdv1.HostService_SessionServer) error {
 	ctx := stream.Context()
-	hostID, ok := hostIDFromPeer(ctx)
-	if !ok {
-		return status.Error(codes.Unauthenticated, "client certificate required")
+	h, serial, err := s.authHost(ctx, "stream_connect")
+	if err != nil {
+		return err
 	}
-	if _, err := store.GetHost(ctx, s.pool, hostID); err != nil {
-		return status.Error(codes.PermissionDenied, "unknown host")
+	hostID := h.ID
+	if h.PrevCertSerial != nil && h.CertSerial != nil && *h.CertSerial == serial {
+		// The rotated certificate reached the host; the old one is done.
+		if _, err := s.pool.Exec(ctx, "update hosts set prev_cert_serial = null where id = $1 and cert_serial = $2", hostID, serial); err != nil {
+			s.log.Error("clear previous certificate failed", "event", "stream_connect", "host_id", hostID.String(), "err", err.Error())
+		}
 	}
 	log := s.log.With("host_id", hostID.String())
 	s.mu.Lock()
@@ -401,7 +444,11 @@ func (s *Server) Session(stream hostdv1.HostService_SessionServer) error {
 		case *hostdv1.HostMessage_Hello:
 			s.onHello(ctx, hostID, m.Hello)
 		case *hostdv1.HostMessage_Heartbeat:
-			s.onHeartbeat(ctx, hostID, m.Heartbeat)
+			// A host marked lost or retired, or whose certificate was
+			// superseded, loses an open stream at its next heartbeat.
+			if err := s.onHeartbeat(ctx, hostID, serial, m.Heartbeat); err != nil {
+				return err
+			}
 		case *hostdv1.HostMessage_Result:
 			if s.handlers.Result != nil {
 				s.handlers.Result(ctx, hostID, m.Result)
@@ -444,13 +491,22 @@ func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 	}
 }
 
-func (s *Server) onHeartbeat(ctx context.Context, hostID uuid.UUID, hb *hostdv1.Heartbeat) {
-	if _, err := s.pool.Exec(ctx, `update hosts set free_mem_bytes = $2, pool_free_bytes = $3, load1 = $4, running_guests = $5, draining = $6,
+func (s *Server) onHeartbeat(ctx context.Context, hostID uuid.UUID, serial string, hb *hostdv1.Heartbeat) error {
+	var state string
+	var certSerial, prevCertSerial *string
+	err := s.pool.QueryRow(ctx, `update hosts set free_mem_bytes = $2, pool_free_bytes = $3, load1 = $4, running_guests = $5, draining = $6,
 		state = case when state = 'unreachable' then 'ready' when $6 and state = 'ready' then 'draining' when not $6 and state = 'draining' then 'ready' else state end,
-		last_heartbeat_at = now() where id = $1`,
-		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining); err != nil {
+		last_heartbeat_at = now() where id = $1 returning state, cert_serial, prev_cert_serial`,
+		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining).Scan(&state, &certSerial, &prevCertSerial)
+	if err != nil {
 		s.log.Error("heartbeat update failed", "event", "heartbeat", "host_id", hostID.String(), "err", err.Error())
+		return nil
 	}
+	if err := admit(state, certSerial, prevCertSerial, serial); err != nil {
+		s.log.Warn("host refused", "event", "heartbeat", "host_id", hostID.String(), "state", state, "code", status.Code(err).String())
+		return err
+	}
+	return nil
 }
 
 func (s *Server) sendTo(sess *session, m *hostdv1.ApiMessage) error {

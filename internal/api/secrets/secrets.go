@@ -12,6 +12,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -156,14 +157,25 @@ func (s *Store) userDEK(ctx context.Context, tx pgx.Tx, userID string) (dek, wra
 	return dek, wrapped, version, nil
 }
 
-// Seal encrypts value under dek with the name as additional authenticated
-// data, so a ciphertext cannot be moved between names.
-func Seal(dek []byte, name string, value []byte) ([]byte, error) {
+// aad is what a ciphertext is bound to: its project and its name
+// (DECISIONS I-433), so a row moved to another project or renamed does not
+// decrypt. Rows sealed before it are bound to the name alone; open still
+// accepts those and Reseal rewrites them.
+func aad(projectID, name string) []byte {
+	return []byte("repose-secret-v2\x00" + projectID + "\x00" + name)
+}
+
+func gcmFor(dek []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(dek)
 	if err != nil {
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
+	return cipher.NewGCM(block)
+}
+
+// Seal encrypts value under dek, bound to the project and the name.
+func Seal(dek []byte, projectID, name string, value []byte) ([]byte, error) {
+	gcm, err := gcmFor(dek)
 	if err != nil {
 		return nil, err
 	}
@@ -171,23 +183,34 @@ func Seal(dek []byte, name string, value []byte) ([]byte, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return append(nonce, gcm.Seal(nil, nonce, value, []byte(name))...), nil
+	return append(nonce, gcm.Seal(nil, nonce, value, aad(projectID, name))...), nil
 }
 
 // Open reverses Seal.
-func Open(dek []byte, name string, ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(dek)
+func Open(dek []byte, projectID, name string, ciphertext []byte) ([]byte, error) {
+	v, _, err := open(dek, projectID, name, ciphertext)
+	return v, err
+}
+
+// open reverses Seal, and reports legacy when the ciphertext is bound to
+// the name alone (sealed before I-433).
+func open(dek []byte, projectID, name string, ciphertext []byte) (value []byte, legacy bool, err error) {
+	gcm, err := gcmFor(dek)
 	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(ciphertext) < gcm.NonceSize() {
-		return nil, errors.New("ciphertext too short")
+		return nil, false, errors.New("ciphertext too short")
 	}
-	return gcm.Open(nil, ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():], []byte(name))
+	nonce, sealed := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	if v, err := gcm.Open(nil, nonce, sealed, aad(projectID, name)); err == nil {
+		return v, false, nil
+	}
+	v, err := gcm.Open(nil, nonce, sealed, []byte(name))
+	if err != nil {
+		return nil, false, err
+	}
+	return v, true, nil
 }
 
 // Put stores or replaces a secret.
@@ -206,7 +229,7 @@ func (s *Store) Put(ctx context.Context, userID, projectID, name string, value [
 		if err != nil {
 			return err
 		}
-		ct, err := Seal(dek, name, value)
+		ct, err := Seal(dek, projectID, name, value)
 		if err != nil {
 			return err
 		}
@@ -230,7 +253,7 @@ func (s *Store) PutReserved(ctx context.Context, userID, projectID, name string,
 		if err != nil {
 			return err
 		}
-		ct, err := Seal(dek, name, value)
+		ct, err := Seal(dek, projectID, name, value)
 		if err != nil {
 			return err
 		}
@@ -298,13 +321,171 @@ func (s *Store) DecryptForGuest(ctx context.Context, projectID string) ([]NamedV
 		if err != nil {
 			return nil, err
 		}
-		v, err := Open(dek, r.name, r.ct)
+		v, legacy, err := open(dek, projectID, r.name, r.ct)
+		if err == nil && legacy {
+			err = s.refusePlatformDEK(ctx, projectID, dek)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("secret %s: %w", r.name, err)
 		}
 		out = append(out, NamedValue{Name: r.name, Value: v})
 	}
 	return out, nil
+}
+
+// ErrPlatformKey is a row outside the platform pseudo-project under the
+// platform's data key: platform material copied into a project.
+var ErrPlatformKey = errors.New("ciphertext is under the platform data key")
+
+// refusePlatformDEK fails when dek is one of the platform's data keys and
+// projectID is not the platform's. Only a row bound to its name alone
+// needs it; a row bound to its project cannot open anywhere else.
+func (s *Store) refusePlatformDEK(ctx context.Context, projectID string, dek []byte) error {
+	if s.isPlatform(projectID) {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, "select distinct dek_wrapped, kv_key_version from secrets where project_id = $1", PlatformProjectID)
+	if err != nil {
+		return err
+	}
+	type wrappedKey struct {
+		wrapped []byte
+		version string
+	}
+	var keys []wrappedKey
+	for rows.Next() {
+		var k wrappedKey
+		if err := rows.Scan(&k.wrapped, &k.version); err != nil {
+			rows.Close()
+			return err
+		}
+		keys = append(keys, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range keys {
+		pk, err := s.unwrap(ctx, k.wrapped, k.version)
+		if err != nil {
+			return err
+		}
+		if subtle.ConstantTimeCompare(pk, dek) == 1 {
+			return ErrPlatformKey
+		}
+	}
+	return nil
+}
+
+// Reseal rewrites every row still bound to its name alone so it is bound
+// to its project as well, and returns how many it rewrote. A row under the
+// platform's data key outside the platform project is left alone and
+// counted in refused. The api runs it at start (I-433); it is idempotent.
+func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
+	rows, err := s.pool.Query(ctx, "select id, project_id, name, ciphertext, dek_wrapped, kv_key_version from secrets")
+	if err != nil {
+		return 0, 0, err
+	}
+	type row struct {
+		id            uuid.UUID
+		project, name string
+		ct, wrapped   []byte
+		version       string
+	}
+	var rs []row
+	for rows.Next() {
+		var r row
+		var pid uuid.UUID
+		if err := rows.Scan(&r.id, &pid, &r.name, &r.ct, &r.wrapped, &r.version); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		r.project = pid.String()
+		rs = append(rs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	for _, r := range rs {
+		dek, err := s.unwrap(ctx, r.wrapped, r.version)
+		if err != nil {
+			return resealed, refused, err
+		}
+		v, legacy, err := open(dek, r.project, r.name, r.ct)
+		if err != nil || !legacy {
+			if err != nil {
+				refused++
+			}
+			continue
+		}
+		if err := s.refusePlatformDEK(ctx, r.project, dek); err != nil {
+			if errors.Is(err, ErrPlatformKey) {
+				refused++
+				continue
+			}
+			return resealed, refused, err
+		}
+		ct, err := Seal(dek, r.project, r.name, v)
+		if err != nil {
+			return resealed, refused, err
+		}
+		tag, err := s.pool.Exec(ctx, "update secrets set ciphertext = $1 where id = $2 and ciphertext = $3", ct, r.id, r.ct)
+		if err != nil {
+			return resealed, refused, err
+		}
+		resealed += int(tag.RowsAffected())
+	}
+	return resealed, refused, nil
+}
+
+// CopyNamed copies a project's named secrets (not its sshd material) to
+// another project of the same user inside tx: each value is opened and
+// sealed again for the new project under the same data key (I-433).
+func (s *Store) CopyNamed(ctx context.Context, tx pgx.Tx, fromProjectID, toProjectID string) error {
+	rows, err := tx.Query(ctx, `select name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1 and name ~ '^[A-Z][A-Z0-9_]{0,63}$' order by name`, fromProjectID)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		name, version string
+		ct, wrapped   []byte
+	}
+	var rs []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.name, &r.ct, &r.wrapped, &r.version); err != nil {
+			rows.Close()
+			return err
+		}
+		rs = append(rs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range rs {
+		dek, err := s.unwrap(ctx, r.wrapped, r.version)
+		if err != nil {
+			return err
+		}
+		v, legacy, err := open(dek, fromProjectID, r.name, r.ct)
+		if err == nil && legacy {
+			err = s.refusePlatformDEK(ctx, fromProjectID, dek)
+		}
+		if err != nil {
+			return fmt.Errorf("secret %s: %w", r.name, err)
+		}
+		ct, err := Seal(dek, toProjectID, r.name, v)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version) values ($1, $2, $3, $4, $5, $6)`,
+			uuid.Must(uuid.NewV7()), toProjectID, r.name, ct, r.wrapped, r.version); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Rewrap re-wraps every row's DEK under the Key Vault key's current

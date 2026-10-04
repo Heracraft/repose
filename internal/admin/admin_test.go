@@ -389,6 +389,14 @@ func TestAdminSurface(t *testing.T) {
 	if _, err := run(t, e, "hosts", "mark-lost", "host-02"); err != nil {
 		t.Fatal(err)
 	}
+	// A lost host keeps no certificate serial the api would admit, and
+	// rotate-cert refuses it (I-432).
+	if lost, err := store.GetHostByName(ctx, h.Pool, "host-02"); err != nil || lost.CertSerial != nil || lost.PrevCertSerial != nil {
+		t.Fatalf("host-02 after mark-lost: %+v %v", lost, err)
+	}
+	if _, err := run(t, e, "hosts", "rotate-cert", "host-02"); err == nil || !strings.Contains(err.Error(), "--reissue") {
+		t.Fatalf("rotate-cert on a lost host: %v", err)
+	}
 	if _, err := run(t, e, "nope"); err == nil || !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("unknown command: %v", err)
 	}

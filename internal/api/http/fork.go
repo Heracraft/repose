@@ -145,13 +145,11 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			// The named secrets come along: the same ciphertext under the
-			// same user key, bound to the same names, in the same table.
-			// The guest's own sshd material (lowercase names) does not;
-			// every guest gets its own (I-3).
-			if _, err := tx.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version)
-				select gen_random_uuid(), $2, name, ciphertext, dek_wrapped, kv_key_version from secrets
-				where project_id = $1 and name ~ '^[A-Z][A-Z0-9_]{0,63}$'`, src.ID, id); err != nil {
+			// The named secrets come along under the same user key, sealed
+			// again for the new project (a ciphertext is bound to its
+			// project, I-433). The guest's own sshd material (lowercase
+			// names) does not; every guest gets its own (I-3).
+			if err := s.d.Secrets.CopyNamed(ctx, tx, src.ID.String(), id.String()); err != nil {
 				return err
 			}
 			out = append(out, forkedProject{ProjectID: id, Name: name, Slug: Slug(name), Class: class, OpID: opID})

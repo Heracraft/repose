@@ -72,14 +72,23 @@ they stop an actor the component map does not draw.
    certificate opening another project; a stolen laptop after 24 hours or
    after `repose logout` from another device.
 4. **mTLS per host** with the host id as CN; every command checked against
-   the stream's identity. Stops: a compromised host acting on another
-   host's guests.
+   the stream's identity. The api admits only the serial it last issued to
+   that host (and the one a rotate replaced, until the new certificate
+   connects), and refuses a host marked `lost` or `retired` on Rotate, on
+   Session and at the next heartbeat of an open stream (I-432). The
+   `/internal` listener admits only the gateway's certificate (CN
+   `gateway`); a host certificate from the same CA fails its handshake
+   (I-431). Stops: a compromised host acting on another host's guests or
+   as the gateway; a lost or retired host's certificate outliving it.
 5. **JWT scoping**: every api query is scoped by the `sub` in the token;
    cross-user lookups return 404. Stops: enumeration.
 6. **Envelope encryption for named secrets**: Postgres holds ciphertext and
    a wrapped DEK; Key Vault holds the wrapping key; the api can wrap and
-   unwrap but not export. Stops: a Postgres dump (including the R2 backups)
-   revealing secrets.
+   unwrap but not export. Each ciphertext is bound to its project id and
+   name, so a row copied into another project does not decrypt there
+   (I-433). Stops: a Postgres dump (including the R2 backups) revealing
+   secrets; a database write moving one project's secrets, or the
+   platform's CA keys, into another project's guest.
 7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, egress shaping,
    thin-volume size, build time and closure caps. Stops: a tenant degrading
    neighbours.

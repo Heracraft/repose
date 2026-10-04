@@ -211,11 +211,13 @@ Rules that must hold:
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
 - Secrets are per project. The same name in two projects is two secrets.
-  `repose fork` copies the source's rows (ciphertext, wrapped key, name)
-  into each copy in the same transaction that creates it, which is the
-  same home under the same user key (DECISIONS I-254); a later change in
-  one project does not reach the others. Copying between arbitrary
-  projects is a later feature.
+  Each ciphertext is bound to its project id and its name (AES-GCM
+  additional data, DECISIONS I-433), so a row moved to another project or
+  renamed does not decrypt. `repose fork` copies the source's values into
+  each copy in the same transaction that creates it, opened and sealed
+  again for the copy under the same user key and wrapped key, which is the
+  same home (DECISIONS I-254); a later change in one project does not
+  reach the others. Copying between arbitrary projects is a later feature.
 - Secrets appear in no log, no build log, no event summary, no error
   message. Build logs are scanned for every current secret value of that
   project before storage and matching substrings are replaced with
