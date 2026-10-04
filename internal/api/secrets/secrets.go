@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sync"
 	"time"
@@ -159,17 +160,11 @@ func (s *Store) userDEK(ctx context.Context, tx pgx.Tx, userID string) (dek, wra
 
 // aad is the additional data that binds a ciphertext to its project and
 // its name (DECISIONS I-433), so a row moved to another project or renamed
-// does not decrypt. Rows sealed the older way are bound to the name alone;
-// open accepts both.
+// does not decrypt. Rows sealed before I-474 are bound to the name alone;
+// open still accepts them for one release, and Reseal rewrites them.
 func aad(projectID, name string) []byte {
 	return []byte("repose-secret-v2\x00" + projectID + "\x00" + name)
 }
-
-// sealBound turns on writing the project-bound form. It is off for one
-// release (I-433): an api image from before it cannot open that form, and
-// a rolling deploy or a rollback runs one. The release after turns it on
-// and runs Reseal.
-const sealBound = false
 
 func gcmFor(dek []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(dek)
@@ -191,28 +186,21 @@ func seal(dek, additional, value []byte) ([]byte, error) {
 	return append(nonce, gcm.Seal(nil, nonce, value, additional)...), nil
 }
 
-// Seal encrypts value under dek in the form this release writes: bound to
-// the name, and to the project as well once sealBound is on.
+// Seal encrypts value under dek bound to the project and the name. Every
+// write uses this form since I-474 (step 2 of I-433).
 func Seal(dek []byte, projectID, name string, value []byte) ([]byte, error) {
-	if sealBound {
-		return SealBound(dek, projectID, name, value)
-	}
-	return seal(dek, []byte(name), value)
-}
-
-// SealBound encrypts value bound to the project and the name, whatever
-// sealBound says (Reseal, tests).
-func SealBound(dek []byte, projectID, name string, value []byte) ([]byte, error) {
 	return seal(dek, aad(projectID, name), value)
 }
 
-// Open reverses Seal.
+// Open reverses Seal. It also opens a row bound to its name alone, which
+// an api from before I-474 wrote; the release after I-474 removes that
+// path (step 3 of I-433).
 func Open(dek []byte, projectID, name string, ciphertext []byte) ([]byte, error) {
 	v, _, err := open(dek, projectID, name, ciphertext)
 	return v, err
 }
 
-// open reverses Seal and SealBound, and reports legacy when the
+// open reverses Seal, and reports legacy when the
 // ciphertext is bound to the name alone.
 func open(dek []byte, projectID, name string, ciphertext []byte) (value []byte, legacy bool, err error) {
 	gcm, err := gcmFor(dek)
@@ -397,16 +385,42 @@ func (s *Store) refusePlatformDEK(ctx context.Context, projectID string, dek []b
 	return nil
 }
 
+// ResealResult counts what one Reseal pass did with the rows it read.
+type ResealResult struct {
+	// Resealed is how many rows the pass rewrote in the project-bound form.
+	Resealed int
+	// Refused is how many rows it left as they are on purpose: a name-only
+	// row under the platform's data key outside the platform project, and
+	// a row that opens in neither form.
+	Refused int
+	// Failed is how many rows it skipped because Key Vault would not
+	// unwrap their data key. Their form is unknown.
+	Failed int
+}
+
+// resealUnwrapStreak is how many distinct data keys in a row may fail to
+// unwrap before Reseal gives up the pass as a Key Vault outage instead of
+// skipping one bad row.
+const resealUnwrapStreak = 3
+
 // Reseal rewrites every row still bound to its name alone so it is bound
-// to its project as well, and returns how many it rewrote. A row under the
-// platform's data key outside the platform project is left alone and
-// counted in refused. Idempotent. Nothing calls it in this release: an
-// older api image cannot open what it writes; the next release runs it at
-// start with sealBound on (I-433).
-func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
-	rows, err := s.pool.Query(ctx, "select id, project_id, name, ciphertext, dek_wrapped, kv_key_version from secrets")
+// to its project as well. A row whose data key Key Vault will not unwrap
+// (a disabled key version, a corrupt dek_wrapped) is skipped and counted
+// in Failed, so one bad row does not stop the pass. The pass fails with
+// ErrKeyServiceUnavailable when Key Vault does not answer CurrentVersion,
+// or when resealUnwrapStreak distinct data keys in a row fail to unwrap.
+// Idempotent, and safe to run from several processes at once: each UPDATE
+// matches the ciphertext it read, so a row another process (or a Put)
+// rewrote in the meantime is left as that process wrote it. ResealLoop
+// runs it at api start (I-474).
+func (s *Store) Reseal(ctx context.Context) (ResealResult, error) {
+	var res ResealResult
+	if _, err := s.kv.CurrentVersion(ctx); err != nil {
+		return res, kvErr(err)
+	}
+	rows, err := s.pool.Query(ctx, "select id, project_id, name, ciphertext, dek_wrapped, kv_key_version from secrets order by id")
 	if err != nil {
-		return 0, 0, err
+		return res, err
 	}
 	type row struct {
 		id            uuid.UUID
@@ -420,45 +434,153 @@ func (s *Store) Reseal(ctx context.Context) (resealed, refused int, err error) {
 		var pid uuid.UUID
 		if err := rows.Scan(&r.id, &pid, &r.name, &r.ct, &r.wrapped, &r.version); err != nil {
 			rows.Close()
-			return 0, 0, err
+			return res, err
 		}
 		r.project = pid.String()
 		rs = append(rs, r)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, 0, err
+		return res, err
 	}
+	bad := map[string]bool{}
+	streak := 0
 	for _, r := range rs {
+		k := cacheKey(r.wrapped, r.version)
+		if bad[k] {
+			res.Failed++
+			continue
+		}
 		dek, err := s.unwrap(ctx, r.wrapped, r.version)
 		if err != nil {
-			return resealed, refused, err
+			if ctx.Err() != nil {
+				return res, ctx.Err()
+			}
+			bad[k] = true
+			res.Failed++
+			if streak++; streak >= resealUnwrapStreak {
+				return res, err
+			}
+			continue
 		}
+		streak = 0
 		v, legacy, err := open(dek, r.project, r.name, r.ct)
 		if err != nil || !legacy {
 			if err != nil {
-				refused++
+				res.Refused++
 			}
 			continue
 		}
 		if err := s.refusePlatformDEK(ctx, r.project, dek); err != nil {
 			if errors.Is(err, ErrPlatformKey) {
-				refused++
+				res.Refused++
 				continue
 			}
-			return resealed, refused, err
+			return res, err
 		}
-		ct, err := SealBound(dek, r.project, r.name, v)
+		ct, err := Seal(dek, r.project, r.name, v)
 		if err != nil {
-			return resealed, refused, err
+			return res, err
 		}
 		tag, err := s.pool.Exec(ctx, "update secrets set ciphertext = $1 where id = $2 and ciphertext = $3", ct, r.id, r.ct)
 		if err != nil {
-			return resealed, refused, err
+			return res, err
 		}
-		resealed += int(tag.RowsAffected())
+		res.Resealed += int(tag.RowsAffected())
 	}
-	return resealed, refused, nil
+	return res, nil
+}
+
+// ResealOptions tunes ResealLoop; zero values take the defaults.
+type ResealOptions struct {
+	// Retry is the first wait after a failed pass (Key Vault or Postgres
+	// unreachable, or another process holding the lock); it doubles up to
+	// MaxRetry. Default 5 seconds.
+	Retry time.Duration
+	// MaxRetry caps the wait between failed passes. Default 5 minutes.
+	MaxRetry time.Duration
+	// Again is the wait between successful passes. Default 15 minutes.
+	Again time.Duration
+}
+
+// ResealLoop runs Reseal until name-only rows are gone, and returns when
+// ctx ends or they are. The api runs it in the background at start, so
+// startup never waits on Key Vault (I-474). A pass that fails is retried
+// with backoff. Passes take the LockSecretsReseal advisory lock so the api
+// and api-grpc containers, and the old and new container of a rolling
+// deploy, do not unwrap the same keys at once; the row-level guard in
+// Reseal is what keeps a row whole if two passes overlap anyway. The loop
+// makes a second pass after Again, because the container a rolling deploy
+// replaces still writes name-only rows until it stops. It ends at the
+// first pass from the second on that reseals nothing: with the
+// secrets_name_only_none log line when no row was skipped (from then on no
+// row needs the name-only read path, which step 3 of I-433 removes), or
+// with secrets_reseal_incomplete when the same number of rows failed to
+// unwrap as in the pass before, so a row Key Vault will not unwrap does
+// not keep the loop going for good. Logs carry counts, an error code and
+// the error text, never a name, a project or a value.
+func (s *Store) ResealLoop(ctx context.Context, log *slog.Logger, opt ResealOptions) {
+	if opt.Retry <= 0 {
+		opt.Retry = 5 * time.Second
+	}
+	if opt.MaxRetry <= 0 {
+		opt.MaxRetry = 5 * time.Minute
+	}
+	if opt.Again <= 0 {
+		opt.Again = 15 * time.Minute
+	}
+	backoff := opt.Retry
+	fail := func() time.Duration {
+		w := backoff
+		backoff = min(backoff*2, opt.MaxRetry)
+		return w
+	}
+	var wait time.Duration
+	passes, lastFailed := 0, -1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		release, ok, err := db.TryLock(ctx, s.pool, db.LockSecretsReseal)
+		if err != nil || !ok {
+			if err != nil && ctx.Err() == nil {
+				log.Warn("secrets reseal: lock unavailable", "event", "secrets_reseal_fail", "code", "db", "err", err.Error())
+			}
+			wait = fail()
+			continue
+		}
+		res, err := s.Reseal(ctx)
+		release()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			code := "db"
+			if errors.Is(err, ErrKeyServiceUnavailable) {
+				code = "key_service_unavailable"
+			}
+			log.Warn("secrets reseal failed; retrying", "event", "secrets_reseal_fail", "code", code, "resealed", res.Resealed, "refused", res.Refused, "failed", res.Failed, "err", err.Error())
+			wait = fail()
+			continue
+		}
+		backoff = opt.Retry
+		passes++
+		log.Info("secret rows resealed", "event", "secrets_reseal", "resealed", res.Resealed, "refused", res.Refused, "failed", res.Failed, "pass", passes)
+		if passes >= 2 && res.Resealed == 0 {
+			if res.Failed == 0 {
+				log.Info("no name-only secret rows remain; step 3 of I-433 can remove the name-only read path", "event", "secrets_name_only_none", "refused", res.Refused)
+				return
+			}
+			if res.Failed == lastFailed {
+				log.Warn("secret rows left unread: Key Vault would not unwrap their data key; step 3 of I-433 must wait", "event", "secrets_reseal_incomplete", "failed", res.Failed, "refused", res.Refused)
+				return
+			}
+		}
+		lastFailed = res.Failed
+		wait = opt.Again
+	}
 }
 
 // CopyNamed copies a project's named secrets (not its sshd material) to

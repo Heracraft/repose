@@ -5,11 +5,18 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/db/testdb"
@@ -66,20 +73,21 @@ func TestRoundTripAndAAD(t *testing.T) {
 	if _, err := secrets.Open(dek, pid, "OTHER", ct); err == nil {
 		t.Fatal("ciphertext decrypted under another name")
 	}
-	// The project-bound form (written from the release after I-433) does
-	// not open under another project or another name.
-	bound, err := secrets.SealBound(dek, pid, "DATABASE_URL", []byte("postgres://secret"))
-	if err != nil {
-		t.Fatal(err)
+	// Put writes the project-bound form (I-474): it does not open under
+	// another project or in the name-only form an older api read.
+	if _, err := secrets.Open(dek, uuid.NewString(), "DATABASE_URL", ct); err == nil {
+		t.Fatal("ciphertext decrypted under another project")
 	}
-	if _, err := secrets.Open(dek, uuid.NewString(), "DATABASE_URL", bound); err == nil {
-		t.Fatal("bound ciphertext decrypted under another project")
+	if _, err := nameOnlyOpen(dek, "DATABASE_URL", ct); err == nil {
+		t.Fatal("Put wrote the name-only form")
 	}
-	if _, err := secrets.Open(dek, pid, "OTHER", bound); err == nil {
-		t.Fatal("bound ciphertext decrypted under another name")
+	// The name-only form still opens under its own name for this release.
+	legacy := nameOnlySeal(t, dek, "DATABASE_URL", []byte("postgres://secret"))
+	if v, err := secrets.Open(dek, pid, "DATABASE_URL", legacy); err != nil || string(v) != "postgres://secret" {
+		t.Fatalf("name-only row under its own name: %v %q", err, v)
 	}
-	if v, err := secrets.Open(dek, pid, "DATABASE_URL", bound); err != nil || string(v) != "postgres://secret" {
-		t.Fatalf("bound ciphertext under its own project: %v %q", err, v)
+	if _, err := secrets.Open(dek, pid, "OTHER", legacy); err == nil {
+		t.Fatal("name-only ciphertext decrypted under another name")
 	}
 	if v, err := secrets.Open(dek, pid, "DATABASE_URL", ct); err != nil || string(v) != "postgres://secret" {
 		t.Fatalf("open under own name: %v %q", err, v)
@@ -238,22 +246,67 @@ func copyRows(t *testing.T, pool *dbPool, from, to string) {
 	}
 }
 
-// What this release binds (I-433): a row in the name-only form under the
-// platform's data key does not open outside the platform project, and a
-// project-bound row does not open in another project. A name-only user
-// row still does, until the release that writes the bound form.
-func TestCiphertextIsBoundToItsProject(t *testing.T) {
-	pool := testdb.Open(t)
-	s := secrets.New(pool, kv.New())
+// legacyPut stores name with value in the name-only form an api from
+// before I-474 wrote: a Put for the user's data key, then the ciphertext
+// replaced with one whose additional data is the name alone.
+func legacyPut(t *testing.T, s *secrets.Store, fk *kv.Fake, pool *dbPool, userID, projectID, name, value string) {
+	t.Helper()
 	ctx := context.Background()
-	platformProject(t, pool)
-	if err := s.PutPlatform(ctx, "SSH_USER_CA", []byte("ca private key")); err != nil {
+	if err := s.Put(ctx, userID, projectID, name, []byte(value)); err != nil {
 		t.Fatal(err)
 	}
+	var wrapped []byte
+	var version string
+	if err := pool.QueryRow(ctx, "select dek_wrapped, kv_key_version from secrets where project_id = $1 and name = $2", projectID, name).Scan(&wrapped, &version); err != nil {
+		t.Fatal(err)
+	}
+	dek, err := fk.Unwrap(ctx, wrapped, version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "update secrets set ciphertext = $1 where project_id = $2 and name = $3", nameOnlySeal(t, dek, name, []byte(value)), projectID, name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rowForm opens one row with its own data key and reports whether it is
+// in the project-bound form.
+func rowForm(t *testing.T, fk *kv.Fake, pool *dbPool, projectID, name string) (value string, bound bool) {
+	t.Helper()
+	ctx := context.Background()
+	var ct, wrapped []byte
+	var version string
+	if err := pool.QueryRow(ctx, "select ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1 and name = $2", projectID, name).Scan(&ct, &wrapped, &version); err != nil {
+		t.Fatal(err)
+	}
+	dek, err := fk.Unwrap(ctx, wrapped, version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := secrets.Open(dek, projectID, name, ct)
+	if err != nil {
+		t.Fatalf("%s/%s does not open in its own project: %v", projectID, name, err)
+	}
+	_, nameOnlyErr := nameOnlyOpen(dek, name, ct)
+	return string(v), nameOnlyErr != nil
+}
+
+// I-433 and I-474: a row Put writes does not open in another project; a
+// name-only row, which an older api wrote, does until Reseal binds it; a
+// name-only row under the platform's data key does not open outside the
+// platform project, before or after Reseal.
+func TestCiphertextIsBoundToItsProject(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	platformProject(t, pool)
+	legacyPut(t, s, fk, pool, secrets.PlatformUserID, secrets.PlatformProjectID, "SSH_USER_CA", "ca private key")
 	uid, victim := newProject(t, s, pool)
 	if err := s.Put(ctx, uid, victim, "AWS_SECRET", []byte("victim value")); err != nil {
 		t.Fatal(err)
 	}
+	legacyPut(t, s, fk, pool, uid, victim, "OLD_TOKEN", "old value")
 
 	_, platformCopy := newProject(t, s, pool)
 	copyRows(t, pool, secrets.PlatformProjectID, platformCopy)
@@ -261,82 +314,440 @@ func TestCiphertextIsBoundToItsProject(t *testing.T) {
 		t.Fatalf("platform row in a user project: %v", err)
 	}
 
-	_, nameOnly := newProject(t, s, pool)
-	copyRows(t, pool, victim, nameOnly)
-	if vals, err := s.DecryptForGuest(ctx, nameOnly); err != nil || len(vals) != 1 {
-		t.Fatalf("name-only rows are not bound to a project in this release: %+v %v", vals, err)
+	// Before Reseal: the bound row does not open in the copy, the
+	// name-only row still does.
+	_, before := newProject(t, s, pool)
+	copyRows(t, pool, victim, before)
+	if _, err := s.DecryptForGuest(ctx, before); err == nil {
+		t.Fatal("a copied project decrypted with a bound row in it")
 	}
-
-	if _, _, err := s.Reseal(ctx); err != nil {
+	if _, err := pool.Exec(ctx, "delete from secrets where project_id = $1 and name = 'AWS_SECRET'", before); err != nil {
 		t.Fatal(err)
 	}
-	_, boundCopy := newProject(t, s, pool)
-	copyRows(t, pool, victim, boundCopy)
-	if vals, err := s.DecryptForGuest(ctx, boundCopy); err == nil {
-		t.Fatalf("a bound row decrypted in another project: %d values", len(vals))
+	if vals, err := s.DecryptForGuest(ctx, before); err != nil || len(vals) != 1 {
+		t.Fatalf("a name-only row opens anywhere until Reseal: %+v %v", vals, err)
 	}
-	if vals, err := s.DecryptForGuest(ctx, victim); err != nil || len(vals) != 1 || string(vals[0].Value) != "victim value" {
+	if _, err := pool.Exec(ctx, "delete from secrets where project_id = $1", before); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Reseal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, after := newProject(t, s, pool)
+	copyRows(t, pool, victim, after)
+	if vals, err := s.DecryptForGuest(ctx, after); err == nil {
+		t.Fatalf("a resealed row decrypted in another project: %d values", len(vals))
+	}
+	if vals, err := s.DecryptForGuest(ctx, victim); err != nil || len(vals) != 2 || string(vals[0].Value) != "victim value" || string(vals[1].Value) != "old value" {
 		t.Fatalf("own project after reseal: %+v %v", vals, err)
+	}
+	if _, err := s.DecryptForGuest(ctx, platformCopy); !errors.Is(err, secrets.ErrPlatformKey) {
+		t.Fatalf("platform row in a user project after reseal: %v", err)
 	}
 	if v, err := s.GetPlatform(ctx, "SSH_USER_CA"); err != nil || string(v) != "ca private key" {
 		t.Fatalf("platform: %q %v", v, err)
 	}
 }
 
-// This release writes the name-only form an older api can open; Reseal,
-// for the next release, binds those rows to their project and leaves a
-// platform-key row outside the platform project alone.
+// Reseal binds the name-only rows an older api wrote, platform rows
+// included, leaves a platform-key row outside the platform project alone,
+// and a second run changes nothing.
 func TestResealLegacyRows(t *testing.T) {
 	pool := testdb.Open(t)
 	fk := kv.New()
 	s := secrets.New(pool, fk)
 	ctx := context.Background()
 	platformProject(t, pool)
-	if err := s.PutPlatform(ctx, "SSH_USER_CA", []byte("ca private key")); err != nil {
-		t.Fatal(err)
-	}
+	legacyPut(t, s, fk, pool, secrets.PlatformUserID, secrets.PlatformProjectID, "SSH_USER_CA", "ca private key")
 	uid, pid := newProject(t, s, pool)
-	if err := s.Put(ctx, uid, pid, "TOKEN", []byte("v")); err != nil {
+	legacyPut(t, s, fk, pool, uid, pid, "TOKEN", "v")
+	if err := s.Put(ctx, uid, pid, "NEW", []byte("n")); err != nil {
 		t.Fatal(err)
 	}
-	rowDEK := func() (ct, dek []byte) {
-		var wrapped []byte
-		var version string
-		if err := pool.QueryRow(ctx, "select ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1", pid).Scan(&ct, &wrapped, &version); err != nil {
-			t.Fatal(err)
-		}
-		dek, err := fk.Unwrap(ctx, wrapped, version)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return ct, dek
-	}
-	ct, dek := rowDEK()
-	if v, err := nameOnlyOpen(dek, "TOKEN", ct); err != nil || string(v) != "v" {
-		t.Fatalf("Put did not write the form an older api opens: %v", err)
+	if _, bound := rowForm(t, fk, pool, pid, "TOKEN"); bound {
+		t.Fatal("legacyPut wrote the bound form")
 	}
 	_, other := newProject(t, s, pool)
 	copyRows(t, pool, secrets.PlatformProjectID, other)
-	resealed, refused, err := s.Reseal(ctx)
-	if err != nil || resealed != 2 || refused != 1 {
-		t.Fatalf("reseal: %d resealed, %d refused, %v", resealed, refused, err)
+	res, err := s.Reseal(ctx)
+	if err != nil || res != (secrets.ResealResult{Resealed: 2, Refused: 1}) {
+		t.Fatalf("reseal: %+v %v", res, err)
 	}
-	if again, _, err := s.Reseal(ctx); err != nil || again != 0 {
-		t.Fatalf("second reseal: %d %v", again, err)
+	var before []byte
+	if err := pool.QueryRow(ctx, "select ciphertext from secrets where project_id = $1 and name = 'TOKEN'", pid).Scan(&before); err != nil {
+		t.Fatal(err)
 	}
-	ct, dek = rowDEK()
-	if _, err := secrets.Open(dek, uuid.NewString(), "TOKEN", ct); err == nil {
-		t.Fatal("a resealed row opens under another project")
+	if again, err := s.Reseal(ctx); err != nil || again != (secrets.ResealResult{Refused: 1}) {
+		t.Fatalf("second reseal: %+v %v", again, err)
 	}
-	if v, err := secrets.Open(dek, pid, "TOKEN", ct); err != nil || string(v) != "v" {
-		t.Fatalf("resealed row under its project: %q %v", v, err)
+	var after []byte
+	if err := pool.QueryRow(ctx, "select ciphertext from secrets where project_id = $1 and name = 'TOKEN'", pid).Scan(&after); err != nil {
+		t.Fatal(err)
 	}
-	if v, err := s.GetPlatform(ctx, "SSH_USER_CA"); err != nil || string(v) != "ca private key" {
-		t.Fatalf("platform after reseal: %q %v", v, err)
+	if !bytes.Equal(before, after) {
+		t.Fatal("a second reseal rewrote a bound row")
+	}
+	for _, n := range []string{"TOKEN", "NEW"} {
+		if _, bound := rowForm(t, fk, pool, pid, n); !bound {
+			t.Fatalf("%s is still name-only", n)
+		}
+	}
+	if v, bound := rowForm(t, fk, pool, secrets.PlatformProjectID, "SSH_USER_CA"); !bound || v != "ca private key" {
+		t.Fatalf("platform row: %q bound=%v", v, bound)
+	}
+	if _, err := s.DecryptForGuest(ctx, other); !errors.Is(err, secrets.ErrPlatformKey) {
+		t.Fatalf("platform copy after reseal: %v", err)
 	}
 }
 
-// nameOnlyOpen is how an api image from before I-433 opens a row.
+// Two passes at once, as the api and api-grpc containers (or the old and
+// new container of a rolling deploy) run them: every row ends bound and
+// opens in its own project with its own value, and each row is counted
+// once between the two.
+func TestConcurrentResealKeepsEveryRow(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	type key struct{ project, name string }
+	want := map[key]string{}
+	for p := 0; p < 4; p++ {
+		uid, pid := newProject(t, s, pool)
+		for i := 0; i < 15; i++ {
+			name := fmt.Sprintf("K%02d", i)
+			value := fmt.Sprintf("value-%d-%d", p, i)
+			legacyPut(t, s, fk, pool, uid, pid, name, value)
+			want[key{pid, name}] = value
+		}
+	}
+	var wg sync.WaitGroup
+	results := make([]secrets.ResealResult, 3)
+	errs := make([]error, 3)
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = secrets.New(pool, fk).Reseal(ctx)
+		}(i)
+	}
+	wg.Wait()
+	total := 0
+	for i, r := range results {
+		if errs[i] != nil {
+			t.Fatalf("pass %d: %v", i, errs[i])
+		}
+		if r.Refused != 0 || r.Failed != 0 {
+			t.Fatalf("pass %d: %+v", i, r)
+		}
+		total += r.Resealed
+	}
+	if total != len(want) {
+		t.Fatalf("passes resealed %d rows between them, want %d", total, len(want))
+	}
+	for k, v := range want {
+		got, bound := rowForm(t, fk, pool, k.project, k.name)
+		if !bound || got != v {
+			t.Fatalf("%v: %q bound=%v, want %q", k, got, bound, v)
+		}
+	}
+	if again, err := s.Reseal(ctx); err != nil || again.Resealed != 0 {
+		t.Fatalf("after the concurrent passes: %+v %v", again, err)
+	}
+}
+
+// A fork copies a bound row and a name-only row; both arrive bound to the
+// fork and open there, and the fork's rows do not open back in the source.
+func TestCopyNamedBindsToTheFork(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	uid, src := newProject(t, s, pool)
+	if err := s.Put(ctx, uid, src, "BOUND", []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+	legacyPut(t, s, fk, pool, uid, src, "LEGACY", "l")
+	fork := uuid.Must(uuid.NewV7()).String()
+	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values ($1, $2, 'f', $3, 'large', 'stopped', 1)", fork, uid, "f-"+uuid.NewString()[:8]); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CopyNamed(ctx, tx, src, fork); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range map[string]string{"BOUND": "b", "LEGACY": "l"} {
+		if v, bound := rowForm(t, fk, pool, fork, n); !bound || v != want {
+			t.Fatalf("fork %s: %q bound=%v", n, v, bound)
+		}
+	}
+	_, back := newProject(t, s, pool)
+	copyRows(t, pool, fork, back)
+	if _, err := s.DecryptForGuest(ctx, back); err == nil {
+		t.Fatal("the fork's rows opened in another project")
+	}
+	// Put on the fork after the copy replaces only the fork's value.
+	if err := s.Put(ctx, uid, fork, "BOUND", []byte("changed")); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := rowForm(t, fk, pool, src, "BOUND"); v != "b" {
+		t.Fatalf("source changed with the fork: %q", v)
+	}
+}
+
+// hookKV runs hook on the first Unwrap, which Reseal calls after it has
+// read the rows and before it writes them.
+type hookKV struct {
+	*kv.Fake
+	once sync.Once
+	hook func()
+}
+
+func (h *hookKV) Unwrap(ctx context.Context, wrapped []byte, version string) ([]byte, error) {
+	h.once.Do(h.hook)
+	return h.Fake.Unwrap(ctx, wrapped, version)
+}
+
+// A Put that lands between Reseal's read and its write is kept: the
+// UPDATE matches the ciphertext Reseal read, so it changes nothing.
+func TestResealDoesNotOverwriteANewerPut(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	uid, pid := newProject(t, s, pool)
+	legacyPut(t, s, fk, pool, uid, pid, "A", "old")
+	hk := &hookKV{Fake: fk, hook: func() {
+		if err := s.Put(ctx, uid, pid, "A", []byte("new")); err != nil {
+			t.Error(err)
+		}
+	}}
+	res, err := secrets.New(pool, hk).Reseal(ctx)
+	if err != nil || res.Resealed != 0 {
+		t.Fatalf("reseal after a concurrent put: %+v %v", res, err)
+	}
+	if v, bound := rowForm(t, fk, pool, pid, "A"); !bound || v != "new" {
+		t.Fatalf("got %q bound=%v, want the newer put", v, bound)
+	}
+}
+
+// ResealLoop at start with Key Vault down: it retries, does nothing to the
+// rows while the vault is down, and binds them once it answers.
+func TestResealLoopRetriesWhileKeyVaultIsDown(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	seed := secrets.New(pool, fk)
+	uid, pid := newProject(t, seed, pool)
+	legacyPut(t, seed, fk, pool, uid, pid, "A", "a")
+	fk.SetDown(true)
+	var logs syncBuffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		secrets.New(pool, fk).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, MaxRetry: 50 * time.Millisecond, Again: time.Second})
+		close(done)
+	}()
+	waitLog(t, &logs, "key_service_unavailable")
+	fk.SetDown(false)
+	if _, bound := rowForm(t, fk, pool, pid, "A"); bound {
+		t.Fatal("row resealed while Key Vault was down")
+	}
+	// The container a rolling deploy replaces writes a name-only row after
+	// the new one's first pass; the second pass binds it.
+	waitLog(t, &logs, "pass=1")
+	legacyPut(t, seed, fk, pool, uid, pid, "B", "b")
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("loop did not finish: %s", logs.String())
+	}
+	for n, want := range map[string]string{"A": "a", "B": "b"} {
+		if v, bound := rowForm(t, fk, pool, pid, n); !bound || v != want {
+			t.Fatalf("%s after the loop: %q bound=%v", n, v, bound)
+		}
+	}
+	out := logs.String()
+	var passes []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "event=secrets_reseal ") || strings.Contains(l, "event=secrets_name_only_none") {
+			passes = append(passes, l)
+		}
+	}
+	want := []string{"resealed=1 refused=0 failed=0 pass=1", "resealed=1 refused=0 failed=0 pass=2", "resealed=0 refused=0 failed=0 pass=3", "event=secrets_name_only_none"}
+	if len(passes) != len(want) {
+		t.Fatalf("got passes %q, want %q", passes, want)
+	}
+	for i, w := range want {
+		if !strings.Contains(passes[i], w) {
+			t.Fatalf("line %d is %q, want %q", i, passes[i], w)
+		}
+	}
+	if strings.Contains(out, "secrets_reseal_incomplete") {
+		t.Fatalf("incomplete logged with every row bound:\n%s", out)
+	}
+	if strings.Contains(out, "\"A\"") || strings.Contains(out, "name=A") || strings.Contains(out, "=a ") {
+		t.Fatalf("log carries a name or value:\n%s", out)
+	}
+}
+
+// waitLog waits up to 10 seconds for want to appear in logs.
+func waitLog(t *testing.T, logs *syncBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(logs.String(), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("log lacks %q:\n%s", want, logs.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// badKeyRow writes a name-only row for a new user and project, then points
+// its data key at a key version the vault does not have, as a disabled or
+// purged Key Vault key version would leave it.
+func badKeyRow(t *testing.T, s *secrets.Store, fk *kv.Fake, pool *dbPool) (projectID string) {
+	t.Helper()
+	uid, pid := newProject(t, s, pool)
+	legacyPut(t, s, fk, pool, uid, pid, "LOST", "l")
+	if _, err := pool.Exec(context.Background(), "update secrets set kv_key_version = 'gone' where project_id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
+// A row whose data key does not unwrap is skipped and counted in Failed;
+// the rows after it are still resealed. Several distinct keys failing in a
+// row is taken as Key Vault being down, and the pass fails.
+func TestResealSkipsARowKeyVaultWillNotUnwrap(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	ctx := context.Background()
+	badKeyRow(t, s, fk, pool)
+	uid, pid := newProject(t, s, pool)
+	for _, n := range []string{"A", "B"} {
+		legacyPut(t, s, fk, pool, uid, pid, n, strings.ToLower(n))
+	}
+	res, err := s.Reseal(ctx)
+	if err != nil || res != (secrets.ResealResult{Resealed: 2, Failed: 1}) {
+		t.Fatalf("reseal with one bad row: %+v %v", res, err)
+	}
+	for _, n := range []string{"A", "B"} {
+		if v, bound := rowForm(t, fk, pool, pid, n); !bound || v != strings.ToLower(n) {
+			t.Fatalf("%s: %q bound=%v", n, v, bound)
+		}
+	}
+	if _, err := pool.Exec(ctx, "delete from secrets where project_id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	badKeyRow(t, s, fk, pool)
+	badKeyRow(t, s, fk, pool)
+	if res, err := secrets.New(pool, fk).Reseal(ctx); !errors.Is(err, secrets.ErrKeyServiceUnavailable) || res.Failed != 3 {
+		t.Fatalf("three bad keys in a row: %+v %v", res, err)
+	}
+	fk.SetDown(true)
+	if _, err := secrets.New(pool, fk).Reseal(ctx); !errors.Is(err, secrets.ErrKeyServiceUnavailable) {
+		t.Fatalf("vault down: %v", err)
+	}
+}
+
+// ResealLoop with a row Key Vault will not unwrap: it binds the others,
+// then stops with secrets_reseal_incomplete once a second pass fails on
+// the same rows, and never claims secrets_name_only_none.
+func TestResealLoopStopsOnARowThatNeverUnwraps(t *testing.T) {
+	pool := testdb.Open(t)
+	fk := kv.New()
+	s := secrets.New(pool, fk)
+	badKeyRow(t, s, fk, pool)
+	uid, pid := newProject(t, s, pool)
+	legacyPut(t, s, fk, pool, uid, pid, "A", "a")
+	var logs syncBuffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	secrets.New(pool, fk).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, Again: 50 * time.Millisecond})
+	if ctx.Err() != nil {
+		t.Fatalf("loop did not finish: %s", logs.String())
+	}
+	if v, bound := rowForm(t, fk, pool, pid, "A"); !bound || v != "a" {
+		t.Fatalf("good row: %q bound=%v", v, bound)
+	}
+	out := logs.String()
+	for _, w := range []string{"resealed=1 refused=0 failed=1 pass=1", "resealed=0 refused=0 failed=1 pass=2", "event=secrets_reseal_incomplete failed=1"} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("log lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "secrets_name_only_none") || strings.Contains(out, "secrets_reseal_fail") {
+		t.Fatalf("a bad row was reported as done or as an outage:\n%s", out)
+	}
+}
+
+// Postgres unreachable at start: the lock cannot be taken, and the failed
+// pass is logged with code=db.
+func TestResealLoopLogsDBCodeWhenPostgresIsDown(t *testing.T) {
+	pool, err := pgxpool.New(context.Background(), "postgres://nobody@127.0.0.1:1/none?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	var logs syncBuffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		secrets.New(pool, kv.New()).ResealLoop(ctx, log, secrets.ResealOptions{Retry: 20 * time.Millisecond, MaxRetry: 50 * time.Millisecond})
+		close(done)
+	}()
+	waitLog(t, &logs, "event=secrets_reseal_fail code=db err=")
+	cancel()
+	<-done
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
+// nameOnlySeal is how an api from before I-474 sealed a row.
+func nameOnlySeal(t *testing.T, dek []byte, name string, value []byte) []byte {
+	t.Helper()
+	block, err := aes.NewCipher(dek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatal(err)
+	}
+	return append(nonce, gcm.Seal(nil, nonce, value, []byte(name))...)
+}
+
+// nameOnlyOpen is how an api from before I-433 opens a row.
 func nameOnlyOpen(dek []byte, name string, ct []byte) ([]byte, error) {
 	block, err := aes.NewCipher(dek)
 	if err != nil {

@@ -50,6 +50,14 @@ func (f *Fake) BumpVersion() string {
 	return v
 }
 
+// SetDown sets Down under the lock, for a test that flips it while another
+// goroutine calls the vault.
+func (f *Fake) SetDown(down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Down = down
+}
+
 // Counts returns how many wrap and unwrap calls were made.
 func (f *Fake) Counts() (wraps, unwraps int) {
 	f.mu.Lock()

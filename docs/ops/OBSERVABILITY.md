@@ -69,6 +69,27 @@ through the list. The api logs `waitlist_join` (user_id, position),
 `waitlist_invite` (count) and `waitlist_expire` (count), never an email
 address. `repose-admin seats` and `repose-admin waitlist list` name them.
 
+Named secrets: at start every api process rewrites the secret rows still
+bound to their name alone in the project-bound form (DECISIONS I-474) and
+logs `secrets_reseal` (resealed, refused, failed, pass) after each pass,
+`secrets_reseal_fail` (code, err; and resealed, refused, failed when the
+pass got as far as the rows) before a retry, and at the end one of two
+lines. `secrets_name_only_none` (refused): a pass at least 15 minutes
+after start found no row left to rewrite and none it could not read,
+which is the signal that step 3 of I-433 (dropping the name-only read
+path) can ship. `secrets_reseal_incomplete` (failed, refused, warn): two
+passes in a row skipped the same number of rows because Key Vault would
+not unwrap their data key (a disabled or purged key version, a corrupt
+`dek_wrapped`); step 3 waits until those rows are repaired or deleted and
+an api restart logs `secrets_name_only_none`. `code` is
+`key_service_unavailable` when Key Vault does not answer
+`CurrentVersion` or three distinct data keys in a row fail to unwrap, and
+`db` when Postgres fails, including when the pass cannot take its lock.
+`refused` counts rows left as they are: name-only rows under the
+platform's data key outside the platform project, and rows that open in
+neither form. `failed` counts rows skipped because their data key did not
+unwrap. No line carries a name, a project or a value.
+
 ## Looking for abuse
 
 Grafana "Abuse": fleet-wide top `comm` by CPU over 24 hours, top projects
