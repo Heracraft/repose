@@ -33,3 +33,8 @@ checksum:
 
 changelog:
   disable: true
+
+# A draft: release.yml's sign job signs checksums.txt and publishes it
+# (DECISIONS I-430), so no unsigned release is ever "latest".
+release:
+  draft: true

@@ -142,6 +142,33 @@ else integrated with it.
    push of its own. Tell each agent whose branch shipped; it may then
    delete its worktree, or the owner does.
 
+## The release signing key
+
+A `v*` tag runs `release.yml`: GoReleaser uploads a draft, and the `sign`
+job signs `checksums.txt`, attests the archives and publishes the draft
+(DECISIONS I-430). A tag whose `sign` job fails leaves a draft that
+install.sh never sees; fix the cause and re-run the job from the Actions
+page. Notes are added after the tag as before (`gh release edit`).
+
+The private key is `REPOSE_RELEASE_SIGNING_KEY`, a secret of the GitHub
+environment `release`, which only `v*` tags may deploy to. The public half
+is `RELEASE_PUBKEY` in `install.sh`; `sign` refuses to publish when the two
+do not match. Nobody else keeps a copy of the private key.
+
+To rotate it (a suspected leak, or a person who held it leaving):
+
+```
+openssl ecparam -name prime256v1 -genkey -noout -out key.pem
+openssl ec -in key.pem -pubout                # paste into RELEASE_PUBKEY
+gh secret set REPOSE_RELEASE_SIGNING_KEY --env release < key.pem
+rm key.pem
+```
+
+Ship the new `install.sh` (a web deploy) before the next tag. Releases
+signed with the old key then fail to verify; add their `checksums.txt`
+hashes to `pinned_checksums` in `install.sh` in the same change, the way
+v0.1.0 to v0.1.27 are pinned.
+
 ## Where the queue lives
 
 In the repository's common git directory (`.git/release-queue/`), shared by
