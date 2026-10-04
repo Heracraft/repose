@@ -124,7 +124,7 @@ in-process `ssh.NewServer` standing in for a guest sshd.
   project id) is stored in `Permissions.Extensions` for the connection.
 - Host key: `ssh.NewCertSigner(hostCert, hostKey)`.
 - Limits (DECISIONS I-435): before the handshake, 4 connections in the
-  handshake per source (an IPv6 source by its /64) and 64 in all, checked
+  handshake per source (an IPv6 source by its /64) and 512 in all, checked
   before any SSH byte is sent; 10 s to authenticate; `MaxAuthTries 3`.
   After authentication, 200 relays in all and 32 per user. The edge's
   nftables admits 64 open and 20 new connections a second per source on

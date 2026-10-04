@@ -590,9 +590,17 @@ func TestConnectionCapAndPerSourceAuthLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c2.Close() }()
-	_, banner, err := h.dial(h.login, cert)
-	if err == nil || banner != MsgBusy {
-		t.Fatalf("third connection: err=%v banner=%q", err, banner)
+	h.waitOpen(t, 2)
+	// The relay slot is taken after the handshake (I-435): the third
+	// connection authenticates and each session it opens is told why.
+	c3, _, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, status := run(t, c3, "echo no")
+	_ = c3.Close()
+	if status != 255 || !strings.Contains(stderr, MsgBusy) {
+		t.Fatalf("third connection: status %d stderr %q", status, stderr)
 	}
 	if v := counterValue(t, h.metrics.AuthFailTotal.WithLabelValues(ResultBusy)); v != 1 {
 		t.Fatalf("auth_total{result=busy} %v", v)

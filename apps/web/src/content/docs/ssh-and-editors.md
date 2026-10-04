@@ -67,7 +67,7 @@ Gateway uses its own SSH client instead of your `ssh`, so it can't renew the cer
 - When both are in place, it returns at once. It reads a few files and makes no network call.
 - When the certificate has less than 12 hours left (they last 24 hours) or the project is new to this laptop, it gets a new certificate and writes the project's entry, then ssh goes on with them.
 
-A connection ends when the certificate it logged in with expires, so one that `ssh` opens lasts at least 12 hours. Editors reconnect on their own, and the reconnect renews the certificate.
+A connection ends when the certificate it logged in with expires. Commands share one connection per machine; when a new certificate is issued, that shared connection stops taking new commands (the ones already on it carry on), and the next command opens a fresh one with the new certificate. So an `ssh` you start keeps its connection for at least 12 hours. Editors reconnect on their own, and the reconnect renews the certificate.
 
 It never asks you anything, so an editor can't hang on it. The entries themselves are in `~/.ssh/repose/hosts`, one per project.
 

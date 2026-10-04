@@ -378,7 +378,7 @@ Written down so nobody believes otherwise.
   and in all, separately from authenticated relays, and the edge's
   nftables caps open and new connections per source on 22 (I-435), so one
   address cannot fill the gateway. A distributed flood can still fill the
-  64 handshake slots and delay logins; there is no upstream DDoS
+  512 handshake slots and delay logins; there is no upstream DDoS
   protection beyond what Azure gives a public IP.
 - **Supply chain of the agent overlay.** Agents are repackaged from
   upstream binary releases with pinned hashes; there is no independent

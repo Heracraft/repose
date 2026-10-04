@@ -357,6 +357,12 @@ func TestEnsureCertReusesValidCertificate(t *testing.T) {
 	defer fake.Close()
 	fake.Fail("POST /certs", "internal")
 	client := newClient(fake.URL()+"/v1", staticToken("tok"))
+	// A reused certificate leaves a running master alone.
+	if err := os.WriteFile(filepath.Join(sd, "cm-0123abcd"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer func(prev func(context.Context, string, string)) { muxStop = prev }(muxStop)
+	muxStop = func(_ context.Context, _, alias string) { t.Errorf("master for %s stopped on reuse", alias) }
 
 	res, err := ensureCert(context.Background(), client, certParams{Handle: "heracraft", Projects: testProjects()}, nil)
 	if err != nil {
@@ -415,8 +421,19 @@ func TestEnsureCertReissuesWhenProjectAdded(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sd, "id_ed25519-cert.pub"), []byte(oldLine), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A master left from the old certificate is asked to stop for every
+	// project (I-436), so later commands start one with the new certificate.
+	if err := os.WriteFile(filepath.Join(sd, "cm-0123abcd"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stopped []string
+	defer func(prev func(context.Context, string, string)) { muxStop = prev }(muxStop)
+	muxStop = func(_ context.Context, _, alias string) { stopped = append(stopped, alias) }
 
 	res, err := ensureCert(ctx, client, certParams{Handle: "heracraft", Projects: projects}, nil)
+	if got := strings.Join(stopped, ","); got != p1.Slug+".repose,"+p2.Slug+".repose" {
+		t.Fatalf("masters stopped: %q", got)
+	}
 	if err != nil {
 		t.Fatalf("ensureCert: %v", err)
 	}

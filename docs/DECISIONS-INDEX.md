@@ -510,21 +510,21 @@ pointer, not a summary.
 - **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11387
 - **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; L11404
 - **I-435** The gateway bounds unauthenticated connections separately from relays — 2026-10-03; L11424
-- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11456
-- **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11479
-- **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11499
-- **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11511
-- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; L11543
-- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11571
-- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11590
-- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11610
-- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11630
-- **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11656
-- **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11673
-- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11706
-- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11741
-- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11786
-- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11808
-- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11828
-- **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11838
-- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11876
+- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11461
+- **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11495
+- **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11515
+- **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11527
+- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; L11559
+- **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11587
+- **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11606
+- **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11626
+- **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11646
+- **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11672
+- **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11689
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11722
+- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11757
+- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11802
+- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11824
+- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11844
+- **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11854
+- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11892

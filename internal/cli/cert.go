@@ -221,7 +221,39 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 	if err != nil {
 		return nil, err
 	}
+	stopMasters(ctx, sd, params.Projects)
 	return &certResult{Path: certPath, AliasProblem: problem}, nil
+}
+
+// stopMasters asks each multiplexing master still running with the old
+// certificate to stop taking new sessions (`ssh -O stop`). The gateway
+// ends a connection when the certificate it logged in with expires
+// (I-436), so a command sent over an old master could be cut long before
+// the new certificate's 12 hours. Sessions already on the old master keep
+// running; the next ssh starts a new master with the new certificate.
+// Nothing runs when no control socket exists, the common case.
+func stopMasters(ctx context.Context, sd string, projects []Project) {
+	if goos() == "windows" {
+		return
+	}
+	if socks, _ := filepath.Glob(filepath.Join(sd, "cm-*")); len(socks) == 0 { // a bad pattern is impossible; no match is no master
+		return
+	}
+	for _, p := range projects {
+		muxStop(ctx, sd, p.Slug+".repose")
+	}
+}
+
+// muxStop runs `ssh -O stop` for one alias, best effort; tests replace it.
+var muxStop = func(ctx context.Context, sd, alias string) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ssh", "-F", filepath.Join(sd, "config"), "-O", "stop", alias)
+	// The config's Match line would run ssh-prepare again; this is a local
+	// control request, so mark it prepared.
+	cmd.Env = append(os.Environ(), envSSHPrepared+"=1")
+	cmd.WaitDelay = time.Second
+	_ = cmd.Run() // no master for this alias is the common case; ssh says so on stderr, which is discarded
 }
 
 // writeSSHFiles writes known_hosts (when the host CA is known), the Host
