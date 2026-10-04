@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-497 entries.
+502 entries.
 
 ## Scope
 
@@ -529,3 +529,8 @@ pointer, not a summary.
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11884
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11927
 - **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L11957
+- **I-469** A dropped attach attaches again, and `repose open` reconnects — 2026-10-04; L12024
+- **I-470** systemd holds the gateway's SSH socket — 2026-10-04; L12058
+- **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12079
+- **I-472** An edge switch leaves the network up — 2026-10-04; L12129
+- **I-473** One edge for now; the way to two is written down — 2026-10-04; L12151

@@ -67,7 +67,7 @@ func TestInputProxyDropReachesTheSession(t *testing.T) {
 	tmuxNotify := h.notify
 	h.notify = func(msg string) { _, _ = notices.Write([]byte(msg + "\n")); tmuxNotify(msg) }
 	done := make(chan error, 1)
-	go func() { done <- proxySession(cmd, ptmx, stdinR, screen, h, func() {}) }()
+	go func() { done <- proxySession(cmd, ptmx, readInput(stdinR), screen, h) }()
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = stdinW.Close() })
 
 	for i := 0; ; i++ {

@@ -49,7 +49,7 @@ reaches. Go packages count through `go list -deps`: a change to
 | `cli` | `cmd/repose` and what it imports | a `v*` tag (`release.yml`) | same |
 | `base` | `nix/guest/`, `cmd/guestd`, `cmd/repose-hook`, shared nix files | `repose-admin base publish --rev <sha on main>` | same |
 | `host` | `nix/hosts/`, `cmd/hostd`, shared nix files | a switch of each host | the owner, or the conductor when the owner says so for that release |
-| `edge` | `nix/edge/`, `cmd/gateway`, shared nix files | a switch of the edge | the owner (drops live sessions for about a second) |
+| `edge` | `nix/edge/`, `cmd/gateway`, shared nix files | a switch of the edge (RUNBOOK "Switch the edge") | the owner (open sessions stay since I-471; the first switch onto it drops them once) |
 | `infra` | `infra/` | `tofu apply` | the owner |
 | `none` | docs outside `apps/web`, ops notes, tests | nothing | |
 
