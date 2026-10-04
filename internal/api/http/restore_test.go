@@ -181,6 +181,31 @@ func TestFailedInPlaceRestoreReleasesTheGuest(t *testing.T) {
 	}
 	sid := snaps.list[0].(map[string]any)["id"].(string)
 
+	// A restore that fails in destroy_guest leaves the old guest and its
+	// volume as they were: start is not refused.
+	e.h.Fake.SetFail("DestroyGuest", "internal")
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"start": false})
+	if r.status != 202 {
+		t.Fatalf("restore: %d %s", r.status, r.raw)
+	}
+	if op := e.waitOp(t, r); op.State != "error" {
+		t.Fatalf("restore op with the host failing its destroy: %s", op.State)
+	}
+	e.h.Fake.SetFail("DestroyGuest", "")
+	if p := e.h.Project(uuid.MustParse(pid)); p.GuestIP == nil || p.GuestID == nil {
+		t.Fatalf("a restore that failed in destroy_guest dropped the guest: %+v", p)
+	}
+	if st := e.do(t, tok, "POST", "/projects/"+pid+"/start", nil); st.status != 202 {
+		t.Fatalf("start after a restore that failed in destroy_guest: %d %s", st.status, st.raw)
+	} else if op := e.waitOp(t, st); op.State != "done" {
+		t.Fatalf("start op: %+v", op.Error)
+	}
+	if r := e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil); r.status != 202 {
+		t.Fatalf("stop: %d %s", r.status, r.raw)
+	} else if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("stop op: %+v", op.Error)
+	}
+
 	oldGuest := *e.h.Project(uuid.MustParse(pid)).GuestID
 	e.h.Fake.SetFail("Restore", "internal")
 	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"start": false})

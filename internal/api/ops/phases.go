@@ -116,25 +116,46 @@ func PlanRestore(p *store.Project, hasClosure, start bool) []string {
 }
 
 // UnfinishedRestore reports whether the project's newest create or
-// restore is a restore that failed before its guest was ready, which
-// leaves the project with no usable volume (DECISIONS I-461). A restore
-// that failed only in its start_guest phase restored the volume, and a
-// later create or restore supersedes it.
+// restore is a restore that failed in its build or restore phase, which
+// leaves the project with no usable volume (DECISIONS I-461): the old
+// guest was destroyed first, or there was none (a restore as a new
+// project). A restore that failed in destroy_guest left the old guest and
+// its volume as they were, one that failed in start_guest restored the
+// volume, and a later create or restore supersedes it.
 func UnfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID) (bool, error) {
+	u, err := unfinishedRestore(ctx, q, projectID)
+	return u.unfinished, err
+}
+
+// restoreFailure is what a project's newest failed restore says.
+type restoreFailure struct {
+	unfinished bool
+	// destroyedOld: the op's destroy_guest phase finished before the
+	// failure, so the guest the project named then is gone and the host
+	// has released its address.
+	destroyedOld bool
+}
+
+func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID) (restoreFailure, error) {
 	var kind, state string
 	var step int
 	var params map[string]any
 	err := q.QueryRow(ctx, `select kind, state, step, params from ops where project_id = $1 and kind in ('create', 'restore') order by created_at desc limit 1`, projectID).Scan(&kind, &state, &step, &params)
 	if db.IsNoRows(err) {
-		return false, nil
+		return restoreFailure{}, nil
 	}
 	if err != nil {
-		return false, err
+		return restoreFailure{}, err
 	}
 	if kind != KindRestore || state != "error" {
-		return false, nil
+		return restoreFailure{}, nil
 	}
-	return currentPhase(&store.Op{Step: step, Params: params}) != PhaseStartGuest, nil
+	op := &store.Op{Step: step, Params: params}
+	ph := currentPhase(op)
+	if ph != PhaseBuild && ph != PhaseRestore {
+		return restoreFailure{}, nil
+	}
+	return restoreFailure{unfinished: true, destroyedOld: slices.Contains(phases(op)[:step], PhaseDestroyGuest)}, nil
 }
 
 // PlanBuild builds and, when the guest runs, applies.

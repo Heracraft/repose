@@ -521,10 +521,10 @@ pointer, not a summary.
 - **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11646
 - **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11672
 - **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11689
-- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11722
-- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11757
-- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11802
-- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11824
-- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11844
-- **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11854
-- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11892
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11727
+- **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11762
+- **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11807
+- **I-465** dumpe2fs and e2fsck run in a sandboxed transient unit — 2026-10-03; L11829
+- **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11849
+- **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11859
+- **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11897

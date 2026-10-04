@@ -510,9 +510,10 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
 	}
-	// A restore that failed before its guest was ready leaves the project
-	// with no usable volume: the old one was destroyed first, the new one
-	// is incomplete. A start would boot an empty or half-written volume,
+	// A restore that failed in its build or restore phase leaves the
+	// project with no usable volume: the old one was destroyed first, the
+	// new one is incomplete (one that failed in destroy_guest left the old
+	// guest as it was and is not refused). A start would boot an empty or half-written volume,
 	// so the way back is another restore (DECISIONS I-461).
 	if p.State == "error" {
 		unfinished, err := ops.UnfinishedRestore(r.Context(), s.d.Pool, p.ID)

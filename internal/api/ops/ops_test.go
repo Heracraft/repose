@@ -593,31 +593,64 @@ func TestRestoreFailingAfterDestroyReleasesTheGuest(t *testing.T) {
 	}
 }
 
-// I-461: a project in error whose guest the host does not report (left
-// by an in-place restore that failed before the fix) lets go of its
-// address on Hello; a project whose guest the host has keeps it.
+// I-461: a project in error whose guest the host does not report lets go
+// of its address on Hello only when its newest restore finished
+// destroy_guest and failed after it (rows left before the fix). A Hello
+// that leaves a guest out for any other reason (a partial Hello, a hostd
+// that lost its state while the guest runs) releases nothing, and neither
+// does a restore that failed in destroy_guest, which left the old guest.
 func TestHelloReleasesAddressOfAMissingGuest(t *testing.T) {
 	h := apitest.New(t, apitest.Options{})
 	u := h.NewUser("hedy")
+	// Created in this order so stale is the last one OnHello reaches
+	// (it walks a host's projects by created_at): once stale is released,
+	// the others have been looked at.
 	kept := h.CreateRunning(u, "kept")
+	unreported := h.CreateRunning(u, "unreported")
+	destroyFailed := h.CreateRunning(u, "destroy-failed")
 	stale := h.CreateRunning(u, "stale")
-	keptIP := h.Project(kept.ID).GuestIP
-	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error', guest_id = $2 where id = $1", stale.ID, store.NewID()); err != nil {
-		t.Fatal(err)
+	ipOf := map[uuid.UUID]string{}
+	for _, p := range []*store.Project{kept, stale, unreported, destroyFailed} {
+		ipOf[p.ID] = h.Project(p.ID).GuestIP.String()
+		if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error' where id = $1", p.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error' where id = $1", kept.ID); err != nil {
-		t.Fatal(err)
+	// Guests the host will not report.
+	for _, p := range []*store.Project{stale, unreported, destroyFailed} {
+		if _, err := h.Pool.Exec(h.Ctx, "update projects set guest_id = $2 where id = $1", p.ID, store.NewID()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failedRestore := func(p *store.Project, step int) {
+		t.Helper()
+		params := `{"phases": ["destroy_guest", "build", "restore", "start_guest"]}`
+		if _, err := h.Pool.Exec(h.Ctx, "insert into ops (id, project_id, kind, state, step, params) values ($1, $2, 'restore', 'error', $3, $4::jsonb)", store.NewID(), p.ID, step, params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failedRestore(stale, 1)         // failed in build, after the destroy
+	failedRestore(destroyFailed, 0) // failed in destroy_guest
+	if un, err := ops.UnfinishedRestore(h.Ctx, h.Pool, destroyFailed.ID); err != nil || un {
+		t.Fatalf("a restore that failed in destroy_guest is unfinished: %v %v", un, err)
+	}
+	if un, err := ops.UnfinishedRestore(h.Ctx, h.Pool, stale.ID); err != nil || !un {
+		t.Fatalf("a restore that failed after its destroy is not unfinished: %v %v", un, err)
 	}
 	h.ReconnectHost(t)
-	h.WaitFor("missing guest's address released", func() bool {
+	h.WaitFor("destroyed guest's address released", func() bool {
 		p := h.Project(stale.ID)
 		return p.GuestIP == nil && p.VsockCID == nil
 	})
 	if p := h.Project(stale.ID); p.GuestID == nil || p.State != "error" {
 		t.Fatalf("the stale project lost its guest id or state: %+v", p)
 	}
-	if p := h.Project(kept.ID); p.GuestIP == nil || *p.GuestIP != *keptIP {
-		t.Fatalf("a project whose guest the host has lost its address: %+v", p)
+	// The others keep their addresses.
+	for _, p := range []*store.Project{kept, unreported, destroyFailed} {
+		got := h.Project(p.ID)
+		if got.GuestIP == nil || got.VsockCID == nil || got.GuestIP.String() != ipOf[p.ID] {
+			t.Fatalf("%s lost its address on Hello: %+v", p.Slug, got)
+		}
 	}
 }
 

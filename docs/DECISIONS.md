@@ -11700,17 +11700,22 @@ guest. Now:
   restore replaces was never recorded, after a restore that failed before
   hostd wrote its state) counts as done, so the restore can be run again.
 - On Hello, a project in `error` whose guest the host does not report,
-  with no open op, lets go of its address (rows left before this fix).
-  Its guest id stays.
+  with no open op, lets go of its address (rows left before this fix)
+  only when its newest restore finished destroy_guest and failed after
+  it. A Hello that leaves out a guest that still exists (a partial Hello,
+  a hostd that lost its state) releases nothing on its own, since a
+  start would not get the address back. Its guest id stays.
 - hostd removes the volume of a restore that failed, and a restore run
   again on the same guest id starts on a fresh volume, so no half-written
   volume is left to boot.
 - `POST /projects/:id/start` on a project whose newest create or restore
-  is a restore that failed before its guest was ready answers
+  is a restore that failed in its build or restore phase (after the old
+  guest was destroyed, or with none, as a new project) answers
   `409 conflict` with `detail.reason = "restore_unfinished"`, naming the
   restore. Before, a start of such a project either failed at the host
-  or would have booted an empty volume. A restore that failed only in
-  its start phase restored the volume and is not refused.
+  or would have booted an empty volume. A restore that failed in
+  destroy_guest left the old guest and its volume, and one that failed in
+  its start phase restored the volume; neither is refused.
 
 Tests: `TestFailedInPlaceRestoreReleasesTheGuest`,
 `TestRestoreFailingAfterDestroyReleasesTheGuest`,
@@ -11740,7 +11745,7 @@ version, replacing `Exists`) and a version argument on `Download`.
 Compatibility, for one release: a `Restore` without `sha256` (an older
 api, or a snapshot row from before this entry) restores unchecked, and an
 older hostd ignores the field; a result without `sha256` (an older hostd)
-writes a row with none. Rows from before 0012 have no digest and restore
+writes a row with none. Rows from before 0013 have no digest and restore
 unchecked until they expire; a project stopped for months keeps such a
 snapshot. The extra download costs about what the restore's own download
 does (eight parallel ranges took 1.4 s for a 902 MB snapshot on host-01,

@@ -160,8 +160,7 @@ they stop an actor the component map does not draw.
     writes. Stops: anyone who can write to the snapshot store, but not to
     Postgres (the shared Blob identity below, a leaked storage
     credential), putting altered bytes into a tenant's machine. Snapshots
-    taken before I-462 carry no digest and restore unchecked until they
-    expire, and a project stopped for months can keep one indefinitely.
+    taken before I-462 have no recorded digest and are not covered.
 13. **The CLI between a guest and the laptop.** What a guest can reach on
     the laptop goes through the CLI, which decides it there. The browser
     bridge (I-311, I-467) passes the agents' CDP to the user's Chrome
@@ -340,8 +339,8 @@ Written down so nobody believes otherwise.
   ruleset). One user per guest would close it.
 - **One Blob identity for every host** (review M-3). Each host can read
   and delete every tenant's snapshots fleet-wide. Per-host containers or
-  api-issued SAS tokens close it. Since I-462 it can no longer get a
-  changed snapshot restored (boundary 12), except one taken before I-462.
+  api-issued SAS tokens close it. Since I-462 a changed snapshot is not
+  restored (boundary 12); snapshots taken before I-462 are not covered.
 - **Hosts registered before I-139 trust no Host CA until their first
   rotate** (review M-1, closed in code 2026-09-21 by I-139:
   `RegisterResponse.host_ca_pub`). host-01 is one of them; the runbook's
