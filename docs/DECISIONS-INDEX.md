@@ -495,6 +495,6 @@ pointer, not a summary.
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; L11033
 - **I-435** The gateway bounds unauthenticated connections separately from relays — 2026-10-03; L11053
-- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11085
-- **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11108
-- **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11128
+- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11090
+- **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11124
+- **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11144

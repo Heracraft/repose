@@ -11058,7 +11058,7 @@ idle connections from one address could hold every slot. Now:
 
 - The per-source check (4 connections in the handshake per address, an
   IPv6 source counted by its /64) and the ban run first, then a global
-  budget of 64 connections in the handshake. A connection over either is
+  budget of 512 connections in the handshake. A connection over either is
   sent one plain line (`repose gateway: too many authentication attempts
   from your address; try again later` or `repose gateway: gateway busy`)
   ahead of any SSH version string and closed, with no key exchange.
@@ -11066,11 +11066,15 @@ idle connections from one address could hold every slot. Now:
   `kex_exchange_identification: Connection closed by remote host`.
 - The handshake and authentication must finish within 10 seconds (was
   30).
-- A relay slot (200) is taken only once authentication succeeds, with a
-  per-user share of 32 relays keyed on the user id in the certificate's
-  `key_id`. Over the share the banner is `too many open connections for
-  your account; close some and try again`, result `busy`; the CLI counts
-  it among the refusals a new certificate cannot fix.
+- A relay slot (200) is taken only once the handshake has finished, once
+  per connection, with a per-user share of 32 relays keyed on the user id
+  in the `key_id` of the certificate that signed. ssh asks the gateway
+  about each key a client offers before any signature, so the gateway
+  keeps what it decided per certificate and uses only the one that
+  signed. With no slot, every session the client opens gets `gateway
+  busy` or `too many open connections for your account; close some and
+  try again` on stderr with exit status 255, result `busy`; the CLI counts
+  both among the refusals a new certificate cannot fix.
 - The edge's nftables admits at most 64 open connections and 20 new ones
   a second (burst 40) per source address on tcp/22.
 
@@ -11079,6 +11083,7 @@ These replace the limits line of `06-gateway-edge.md` §5.2. Tests:
 address hold at most 4 handshake slots and no relay slot; a client from
 a second address connects and runs a command), `TestPreAuthGlobalCap`,
 `TestAuthDeadline`, `TestPerUserRelayCap`,
+`TestKeyQueriesTakeNoRelaySlot`,
 `TestConnectionCapAndPerSourceAuthLimit`; the edge ruleset passes
 `nft -c`.
 
@@ -11097,13 +11102,24 @@ first, then the client's. `session_close` log lines carry `reason`
 
 So that a connection the CLI opens is not cut short soon after it
 starts, the CLI now reuses a certificate on disk only while it has 12
-hours left (was 30 minutes): a new connection lasts at least 12 hours,
-and certificates are issued about twice a day instead of once. Editors
+hours left (was 30 minutes), and certificates are issued about twice a
+day instead of once. A command multiplexed over a `ControlMaster` would
+still ride the certificate that master logged in with, so after issuing
+a certificate the CLI runs `ssh -O stop` for each project's alias when a
+control socket exists: the old master takes no new sessions (those on it
+carry on) and the next command starts a master with the new
+certificate. A command therefore keeps its connection for at least 12
+hours. Checked with OpenSSH 10.5 against a local sshd: after `-O stop`
+the socket is gone, a running session finishes, and the next ssh is a
+new master. Test: `TestEnsureCertReissuesWhenProjectAdded` (both
+aliases stopped), `TestEnsureCertReusesValidCertificate` (none on
+reuse). Editors
 over Remote-SSH reconnect on their own, and the reconnect runs
 `repose ssh-prepare`, which renews the certificate. Tests:
 `TestRevocationEndsOpenRelays` (push and api refresh each end their
 relay; a relay on another certificate keeps running),
-`TestCertExpiryEndsOpenRelay`, `TestCertUsableFor`.
+`TestCertExpiryEndsOpenRelay`, `TestCertUsableFor`. Old CLIs keep the
+30-minute margin and no stop, so their connections can be cut sooner.
 
 **I-437. The gateway answers a login under another user's handle the same way whether or not the project exists.**
 (security release, 2026-10-03) The gateway looked up the route for

@@ -318,17 +318,12 @@ func (g *Gateway) Open() int { return g.conns.open() }
 
 // connState is what authentication decides for one connection.
 type connState struct {
-	// set by the public key callback on success
-	route       *Route
-	slug        string
-	handle      string
-	serial      uint64
-	keyID       string
-	validBefore time.Time // zero for a certificate without expiry
-	// relay and user are the slots taken on success; HandleConn releases
-	// them when the connection ends.
-	relay bool
-	user  string
+	// accepted holds what the public key callback decided for each
+	// certificate it accepted, by serial. ssh calls the callback for every
+	// key the client asks about, and a query without a signature is not an
+	// authentication, so nothing here is used until the handshake says
+	// which certificate signed (I-435).
+	accepted map[uint64]*authRecord
 	// the last failure, for the log line
 	result string
 	// told is the last banner sent on this connection. ssh offers the
@@ -340,6 +335,20 @@ type connState struct {
 	// neither is the same banner twice (I-189).
 	told string
 }
+
+// authRecord is one accepted certificate's route and identity.
+type authRecord struct {
+	route       *Route
+	slug        string
+	handle      string
+	serial      uint64
+	user        string
+	validBefore time.Time // zero for a certificate without expiry
+}
+
+// maxAcceptedKeys bounds the certificates one connection may have
+// accepted while it authenticates.
+const maxAcceptedKeys = 8
 
 // HandleConn runs one connection: limits, SSH handshake with certificate
 // authentication, then the relay.
@@ -363,15 +372,7 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 		g.refuseEarly(ctx, c, ResultBusy, MsgBusy, prefix)
 		return
 	}
-	st := &connState{}
-	defer func() {
-		if st.relay {
-			g.conns.release()
-		}
-		if st.user != "" {
-			g.users.release(st.user)
-		}
-	}()
+	st := &connState{accepted: map[uint64]*authRecord{}}
 
 	_ = c.SetDeadline(time.Now().Add(g.cfg.AuthTimeout)) // a conn that cannot take a deadline fails the handshake instead
 	sconn, chans, reqs, err := ssh.NewServerConn(c, g.serverConfig(ctx, st))
@@ -391,21 +392,59 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 		return
 	}
 	_ = c.SetDeadline(time.Time{}) // same conn as above; a failure here surfaces on the next read
+	// The certificate that signed is the one in the permissions ssh
+	// returns; the records of keys only asked about are dropped.
+	rec := st.accepted[permSerial(sconn.Permissions)]
+	if rec == nil {
+		_ = sconn.Close() // cannot happen: every accepted key has a record
+		return
+	}
 	sess := &session{
 		gw:        g,
 		conn:      sconn,
 		chans:     chans,
 		reqs:      reqs,
-		route:     st.route,
-		slug:      st.slug,
-		handle:    st.handle,
-		serial:    st.serial,
-		validTo:   st.validBefore,
+		route:     rec.route,
+		slug:      rec.slug,
+		handle:    rec.handle,
+		serial:    rec.serial,
+		validTo:   rec.validBefore,
 		id:        newSessionID(),
 		prefix:    prefix,
 		startedAt: g.cfg.Clock(),
+		log:       g.log,
 	}
+	// The relay budgets (I-435), taken once per connection, after the
+	// handshake. Over either, every session the client opens is told why
+	// on stderr with exit 255, as for a guest that cannot be reached.
+	if !g.conns.acquire() {
+		g.refuseRelay(ctx, sess, MsgBusy, prefix)
+		return
+	}
+	defer g.conns.release()
+	if !g.users.acquire(rec.user) {
+		g.refuseRelay(ctx, sess, MsgUserBusy, prefix)
+		return
+	}
+	defer g.users.release(rec.user)
 	sess.run(ctx)
+}
+
+// refuseRelay answers an authenticated connection that has no relay slot.
+func (g *Gateway) refuseRelay(ctx context.Context, sess *session, message, prefix string) {
+	g.cfg.Metrics.AuthFailTotal.WithLabelValues(ResultBusy).Inc()
+	g.log.Info("authentication failed", "event", "auth_fail", "reason", ResultBusy, "source_prefix", prefix)
+	sess.refuse(ctx, message)
+}
+
+// permSerial is the certificate serial authenticate put in the
+// permissions; 0 when there is none.
+func permSerial(p *ssh.Permissions) uint64 {
+	if p == nil {
+		return 0
+	}
+	n, _ := strconv.ParseUint(p.Extensions["repose-cert-serial"], 10, 64) // written by authenticate; 0 matches no record
+	return n
 }
 
 // refuseEarly answers a connection refused before its handshake: one line
@@ -536,20 +575,15 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	if err := checker.CheckCert(route.ProjectID, cert); err != nil {
 		return g.fail(st, ResultBadCA, MsgBadCA)
 	}
-	// The relay budgets (I-435): taken last, so a refused attempt holds
-	// neither, and once only, since ssh stops calling back after success.
-	if !g.conns.acquire() {
-		return g.fail(st, ResultBusy, MsgBusy)
+	if _, seen := st.accepted[cert.Serial]; !seen && len(st.accepted) >= maxAcceptedKeys {
+		return g.fail(st, ResultRateLimited, MsgRateLimited)
 	}
-	if !g.users.acquire(userID) {
-		g.conns.release()
-		return g.fail(st, ResultBusy, MsgUserBusy)
-	}
-	st.relay, st.user = true, userID
+	rec := &authRecord{route: route, slug: slug, handle: handle, serial: cert.Serial, user: userID}
 	if cert.ValidBefore != uint64(ssh.CertTimeInfinity) {
-		st.validBefore = time.Unix(int64(cert.ValidBefore), 0)
+		rec.validBefore = time.Unix(int64(cert.ValidBefore), 0)
 	}
-	st.route, st.slug, st.handle, st.serial, st.keyID, st.result = route, slug, handle, cert.Serial, cert.KeyId, ResultOK
+	st.accepted[cert.Serial] = rec
+	st.result = ResultOK
 	perms := &ssh.Permissions{
 		CriticalOptions: cert.CriticalOptions,
 		Extensions: map[string]string{

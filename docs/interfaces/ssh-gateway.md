@@ -31,7 +31,7 @@ Two CAs, both ed25519, private keys in the api's secret store:
 
 1. Accept the TCP connection. A source with 4 connections already in the
    handshake (an IPv6 source counted by its /64), a banned source, or a
-   gateway with 64 connections in the handshake gets one plain line
+   gateway with 512 connections in the handshake gets one plain line
    (`repose gateway: <message>`) before any SSH version string and is
    closed (DECISIONS I-435). Otherwise present the host certificate. The
    handshake and authentication must finish within 10 seconds.
@@ -54,10 +54,11 @@ Two CAs, both ed25519, private keys in the api's secret store:
    `certificate not valid for this project`. Every banner ends in a newline,
    and a connection shows one: the plain key ssh offers after a refused
    certificate gets no second "certificate required" banner (I-189).
-   An accepted connection takes one of 200 relay slots and one of the
-   user's 32 (keyed on the `key_id` user id); over either the banner is
-   `gateway busy` or `too many open connections for your account; close
-   some and try again`.
+   Once the handshake finishes, the connection takes one of 200 relay
+   slots and one of the user's 32 (keyed on the `key_id` user id of the
+   certificate that signed); without one, each session the client opens
+   gets `gateway busy` or `too many open connections for your account;
+   close some and try again` on stderr and exit status 255.
 4. Terminate the client's SSH session at the gateway, then open a second
    SSH session to `guest_ip:22` over WireGuard and relay channels between
    the two (session, `direct-tcpip` for `-L`, `forwarded-tcpip` for `-R`,
@@ -145,7 +146,9 @@ the project's block and the certificate on disk carries the id in the
 block's `# project` line with 12 hours left (30 minutes before I-436); else it takes
 `~/.ssh/repose/.prepare.lock`, lists the account's projects and runs the
 same certificate issue as `repose run`, which rewrites `hosts` for every
-project. It never prompts: not logged in, an unknown project, or an api
+project and, when a control socket exists, runs `ssh -O stop` for each
+project's alias so no command rides a master opened with the previous
+certificate (I-436). It never prompts: not logged in, an unknown project, or an api
 it cannot reach within 10 s is one line on stderr and a failed ssh
 (unless the certificate on disk is still valid, which is then used). It
 does not start a stopped machine; the gateway's banner says how. The

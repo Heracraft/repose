@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -218,22 +219,105 @@ func TestPerUserRelayCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, banner, err := h.dial(h.login, cert)
-	if err == nil || banner != MsgUserBusy {
-		t.Fatalf("second relay of one user: err=%v banner=%q", err, banner)
+	h.waitOpen(t, 1)
+	c2, _, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, status := run(t, c2, "echo no")
+	_ = c2.Close()
+	if status != 255 || !strings.Contains(stderr, MsgUserBusy) {
+		t.Fatalf("second relay of one user: status %d stderr %q", status, stderr)
 	}
 	_ = c1.Close()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		c, _, err := h.dial(h.login, cert)
-		if err == nil {
-			_ = c.Close()
-			break
-		}
+	h.waitOpen(t, 0)
+	c, _, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if out, _, _ := run(t, c, "echo again"); out != "again\n" {
+		t.Fatalf("slot not released after the first relay closed: %q", out)
+	}
+}
+
+// waitOpen waits until n relay slots are held.
+func (h *harness) waitOpen(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for h.gw.Open() != n {
 		if time.Now().After(deadline) {
-			t.Fatalf("slot not released after the first relay closed: %v", err)
+			t.Fatalf("relay slots held: %d, want %d", h.gw.Open(), n)
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// queryMeta is the ConnMetadata of a connection still authenticating.
+type queryMeta struct{ user string }
+
+func (m queryMeta) User() string          { return m.user }
+func (m queryMeta) SessionID() []byte     { return []byte("s") }
+func (m queryMeta) ClientVersion() []byte { return []byte("SSH-2.0-test") }
+func (m queryMeta) ServerVersion() []byte { return []byte("SSH-2.0-gw") }
+func (m queryMeta) RemoteAddr() net.Addr  { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 3), Port: 1} }
+func (m queryMeta) LocalAddr() net.Addr   { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 22} }
+
+// ssh calls the public key callback for every key a client asks about,
+// and a query without a signature is not an authentication: however many
+// accepted queries a connection makes, it holds no relay or per-user slot
+// until its handshake finishes, and then one of each (I-435).
+func TestKeyQueriesTakeNoRelaySlot(t *testing.T) {
+	h := newHarness(t, harnessOpts{maxConns: 3})
+	var certs []ssh.Signer
+	for range 2 {
+		_, k := genKey(t)
+		certs = append(certs, h.userCert(t, k, []string{h.project.ID}, time.Hour))
+	}
+	st := &connState{accepted: map[uint64]*authRecord{}}
+	cb := h.gw.serverConfig(context.Background(), st).PublicKeyCallback
+	for i := range 20 {
+		if _, err := cb(queryMeta{h.login}, certs[i%2].PublicKey()); err != nil {
+			t.Fatalf("query %d refused: %v", i, err)
+		}
+	}
+	if n := h.gw.Open(); n != 0 {
+		t.Fatalf("20 accepted key queries hold %d relay slots", n)
+	}
+	if len(st.accepted) != 2 {
+		t.Fatalf("records for %d certificates, want 2", len(st.accepted))
+	}
+	// More distinct certificates than maxAcceptedKeys on one connection
+	// are refused.
+	for i := range maxAcceptedKeys {
+		_, k := genKey(t)
+		_, err := cb(queryMeta{h.login}, h.userCert(t, k, []string{h.project.ID}, time.Hour).PublicKey())
+		if i < maxAcceptedKeys-2 && err != nil {
+			t.Fatalf("certificate %d refused: %v", i, err)
+		}
+		if i == maxAcceptedKeys-1 && err == nil {
+			t.Fatal("more than maxAcceptedKeys certificates accepted on one connection")
+		}
+	}
+	// A client offering both keys authenticates with the first, holds one
+	// relay and one user slot, and gives both back.
+	for n := range 3 {
+		c, banner, err := h.dial(h.login, certs[n%2])
+		if err != nil {
+			t.Fatalf("dial %d: %v (banner %q)", n, err, banner)
+		}
+		if out, _, status := run(t, c, "echo ok"); out != "ok\n" || status != 0 {
+			t.Fatalf("dial %d: %q %d", n, out, status)
+		}
+		h.waitOpen(t, 1)
+		_ = c.Close()
+		h.waitOpen(t, 0)
+	}
+	h.gw.users.mu.Lock()
+	held := len(h.gw.users.n)
+	h.gw.users.mu.Unlock()
+	if held != 0 {
+		t.Fatalf("per-user slots held after every connection closed: %d", held)
 	}
 }
 

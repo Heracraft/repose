@@ -22,7 +22,7 @@ import (
 const (
 	DefaultMaxConns        = 200
 	DefaultMaxConnsPerUser = 32
-	DefaultMaxPreAuth      = 64
+	DefaultMaxPreAuth      = 512
 	DefaultMaxAuthPerIP    = 4
 	DefaultAuthTimeout     = 10 * time.Second
 	DefaultMaxAuthTries    = 3
