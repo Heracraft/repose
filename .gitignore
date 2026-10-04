@@ -14,6 +14,8 @@ coverage
 # misc
 .DS_Store
 *.pem
+#obsidian
+**/.obsidian/**
 
 # debug
 npm-debug.log*
@@ -70,3 +72,6 @@ ops/checks/out/
 # Sub-agent worktrees (Claude Code)
 .claude/worktrees/
 __pycache__/
+
+
+
