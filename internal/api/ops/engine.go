@@ -552,14 +552,17 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 				_ = store.SetProjectState(ctx, e.pool, p.ID, "error") // best effort; the next start re-creates
 			}
 		}
-		// A project in error whose guest the host no longer has (an
-		// in-place restore that failed before I-461 left these) holds an
-		// address the host has released and may give the next guest. It
-		// lets go of it; its guest id stays for the operator to see.
+		// A project left holding the address of a guest a failed in-place
+		// restore destroyed (rows from before I-461) lets go of it. Hello
+		// alone is not the evidence, since a partial Hello or a hostd that
+		// lost its state would also leave a live guest out: the project's
+		// newest restore must have finished its destroy_guest phase and
+		// failed after it, which is also what makes start refuse it.
 		if p.GuestID != nil && !known[*p.GuestID] && p.State == "error" && p.GuestIP != nil {
 			open, _ := store.OpenOpsForProject(ctx, e.pool, p.ID)
-			if len(open) == 0 {
-				e.log.Warn("releasing the address of a guest the host no longer has", "event", "reconcile_missing", "project_id", p.ID.String())
+			rf, err := unfinishedRestore(ctx, e.pool, p.ID)
+			if len(open) == 0 && err == nil && rf.destroyedOld {
+				e.log.Warn("releasing the address of a guest a failed restore destroyed", "event", "reconcile_missing", "project_id", p.ID.String())
 				_, _ = e.pool.Exec(ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1 and guest_id = $2 and state = 'error'", p.ID, *p.GuestID) // best effort; the next Hello tries again
 			}
 		}

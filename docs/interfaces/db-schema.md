@@ -69,7 +69,7 @@ certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp te
 snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes bigint,
               reason text,  -- scheduled|stop|manual
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
-              sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0012 (I-462)
+              sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
 
 events       (id pk, project_id fk null, user_id fk null,  -- one of them is set (0007, I-269):
               -- user_id alone for an account event (waitlist_invited, the plan emails of I-291)
@@ -181,7 +181,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus` and `0012_snapshot_sha256` create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial` and `0013_snapshot_sha256` create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

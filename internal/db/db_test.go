@@ -30,21 +30,21 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0012 (snapshot digests) is the newest: snapshots.sha256 goes, and
+	// 0013 (snapshot digests) is the newest: snapshots.sha256 goes, and
 	// 0011's plan check still allows 'plus'.
 	var def string
 	if err := pool.QueryRow(ctx, "select pg_get_constraintdef(oid) from pg_constraint where conname = 'subscriptions_plan_check'").Scan(&def); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check forgot plus after down 1 (0012 reverted, 0011 kept): %s", def)
+		t.Fatalf("subscriptions_plan_check forgot plus after down 1 (0013 reverted, 0011 kept): %s", def)
 	}
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'snapshots' and column_name = 'sha256'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("snapshots.sha256 is still there after down 1 (0012)")
+		t.Fatal("snapshots.sha256 is still there after down 1 (0013)")
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {

@@ -1480,8 +1480,10 @@ restore succeeds.
 ## api: project in error after a failed restore
 
 `start` answers `409 conflict` `restore_unfinished` (DECISIONS I-461):
-the project's newest restore failed before its guest was ready, the old
-volume is gone and the new one was removed. The user, or an operator with
+the project's newest restore failed in its build or restore phase, after
+the old guest was destroyed; the old volume is gone and the new one was
+removed. A restore that failed in destroy_guest is not refused: the old
+guest is intact. The user, or an operator with
 `repose-admin projects restore`, runs the restore again; the op's `error` says why
 the first one failed. hostd removing the failed restore's volume and the
 api clearing the old guest's address are both automatic.

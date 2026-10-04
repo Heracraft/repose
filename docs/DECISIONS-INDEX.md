@@ -495,4 +495,4 @@ pointer, not a summary.
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11005
 - **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11033
 - **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11050
-- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11083
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11088
