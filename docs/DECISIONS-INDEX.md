@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-506 entries.
+508 entries.
 
 ## Scope
 
@@ -538,3 +538,5 @@ pointer, not a summary.
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12297
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
+- **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12358
+- **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12398

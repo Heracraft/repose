@@ -61,7 +61,7 @@ Every email comes as HTML with a plain-text version, so a client that shows no H
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`.
+Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`.
 
 ## Emails about your account
 

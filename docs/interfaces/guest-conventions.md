@@ -145,7 +145,9 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
      unless a `notify` key exists.
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
-     absent (never overwritten).
+     absent, and replaced only while its sha256 is one an earlier base
+     installed (I-481); the `repose-agent-hooks` user unit also runs this
+     at login, for an OpenCode 2 started outside the wrapper.
    - `gemini`, `pi`: no hook (guestd's pane-idle heuristic reports for
      them); the machine guide is linked in as an extension (I-243):
      `~/.gemini/extensions/repose-machine-guide` →
@@ -188,7 +190,7 @@ never blocks an agent. Mapping:
 | claude | `Notification` with `notification_type` in `permission_prompt`, `agent_needs_input` (`idle_prompt` is no event since DECISIONS I-418) | `needs_input` | `message` |
 | claude | `StopFailure` | `error` | `error` or `message` |
 | codex | `type=agent-turn-complete` | `completed` | `last-assistant-message` |
-| opencode | plugin sends `{agent, kind, summary}` already mapped: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input` | | |
+| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input` | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
 Anything else is dropped silently. `window` is the tmux window name of the
