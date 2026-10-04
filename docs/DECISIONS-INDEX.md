@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-506 entries.
+507 entries.
 
 ## Scope
 
@@ -538,3 +538,4 @@ pointer, not a summary.
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12297
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
+- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; L12358

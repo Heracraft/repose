@@ -84,6 +84,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
 
+**`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place; you don't need to do anything. Until then, start it with `codex --no-daemon`.
+
 **An agent seems stuck.** Attach and look; it's usually waiting on a permission prompt. See [Let it run without asking](/docs/agents#let-it-run-without-asking).
 
 ## Ports

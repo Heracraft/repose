@@ -12354,3 +12354,41 @@ the port and logs `listener disabled: certificate does not load`, and
 `serveHTTP` closes its listener when serving ends in an error. An
 inherited socket for a listener that does not open is closed with the
 other unused ones. Test: `TestTLSListenerWithoutCertificateStaysClosed`.
+
+**I-487. The guest's Codex is a complete Codex package.** (2026-10-04)
+On base 2026.10.04.1, on a new project and on kanali, `codex` stopped at
+"this CLI has no complete local package; install a packaged Codex CLI or
+use the standalone installer". `codex exec` and `codex --version` still
+ran, which is why the bump check (`--version`) passed. Codex 0.157.1's
+interactive `codex` starts a background app-server daemon (feature
+`daemon_auto_start`; upstream seems to have turned it on for this version
+after release, since I-426's own test on 2026-10-03 reached the TUI).
+`codex app-server daemon start` copies the package holding the running
+executable into `~/.codex/packages/app-server-daemon` and refuses unless
+that package has `codex-package.json`, `bin/codex`,
+`bin/codex-code-mode-host`, `codex-path/rg` and `codex-resources/bwrap`,
+with the running executable as the manifest's entrypoint. `codex.nix`
+installed the binary alone and wrapped it with makeBinaryWrapper, so the
+executable was `bin/.codex-wrapped` with no manifest beside it. The
+package is now laid out the way upstream's `codex-package-<target>`
+asset is: the manifest (written from `versions.json`), the real binary at
+`bin/codex` with no wrapper, the code-mode host, and copies of nixpkgs's
+`rg` and `bwrap` (the daemon refuses a link out of the package; Codex puts
+`codex-path` on its own PATH, so the PATH wrapper is gone). The voice host
+and bundled zsh of the full asset are left out: the daemon does not need
+them. The derivation's install check runs `codex app-server daemon start`
+with a scratch `CODEX_HOME` and fails the build unless it reports
+`started`; with `bwrap` left out it fails with "local Codex package is
+missing codex-resources/bwrap", so a later layout change upstream breaks
+the bump instead of reaching guests. Users need do nothing: the next base
+update switches the package in place; until then `codex --no-daemon`
+starts the TUI (troubleshooting page). Known consequences, from upstream
+and not changed here: the daemon's copy costs about 370 MB in
+`~/.codex/packages` per Codex version, and the daemon starts an updater
+(`codex app-server daemon pid-update-loop`) that follows upstream's
+production channel, so the daemon that runs turns can move past the
+version `versions.json` pins. Whether to pin it (for example with
+`features.daemon_auto_start = false` in `/etc/codex/config.toml`) is open
+for the owner. Checked on kanali: the built package's TUI in tmux reached
+the sign-in screen with a scratch `CODEX_HOME` where the old package
+printed the error; `codex exec` ran `cat f.txt` and answered with its word.
