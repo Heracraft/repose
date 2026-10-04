@@ -12340,3 +12340,17 @@ needs a reboot that cannot wait for a quiet hour, uptime is promised in
 the terms, or one edge's relays near 200 (`repose_gateway_sessions`).
 Until then a kernel update on the edge is announced and done at a quiet
 hour (RUNBOOK "Switch the edge").
+
+**I-479. A TLS side listener opens only once its certificate loads.**
+(gateway-tls-listener, 2026-10-04; fixes I-470) Moving the gateway's
+listeners into `listenerSet` replaced `ListenAndServeTLS`, which closes
+its listener when the certificate fails to load, with a listen followed
+by `ServeTLS`, which returns on that failure and leaves the listener
+open. On the edge, where the preview stub's wildcard certificate is not
+placed yet, 443 then held every client until it timed out, where before
+it refused at once; seen after the switch of 2026-10-04 20:51Z (`curl`
+to 443 timed out). `tlsListener` now loads the key pair before it opens
+the port and logs `listener disabled: certificate does not load`, and
+`serveHTTP` closes its listener when serving ends in an error. An
+inherited socket for a listener that does not open is closed with the
+other unused ones. Test: `TestTLSListenerWithoutCertificateStaysClosed`.
