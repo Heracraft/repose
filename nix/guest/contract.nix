@@ -83,7 +83,7 @@ let
     else
       let bad = lib.filter (p: !(lib.elem p allowlist)) r.paths; in
       if bad == [ ] then null
-      else "repose.system: option '${builtins.head bad}' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: ${lib.concatStringsSep ", " allowlist})";
+      else "repose.system: option '${builtins.head bad}' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: ${lib.concatStringsSep ", " allowlist})";
 
   refusals = lib.filter (r: r != null) (map refusal hm.repose.system);
 

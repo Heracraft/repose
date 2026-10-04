@@ -161,7 +161,9 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    when it was never allowed on this guest, leaving it out when denied),
    else a `flake.nix` that mentions `devShell` below `$HOME`, loaded
    through a generated `~/.cache/repose/devshell/<hash>/.envrc` holding
-   `use flake <dir>`, else nothing. A failed load prints a `repose:` line
+   `use flake <dir>` (plus `--reference-lock-file` and `--output-lock-file`
+   naming `flake.lock` in that directory when `<dir>` has no `flake.lock`,
+   so Nix never writes one into the checkout, I-483), else nothing. A failed load prints a `repose:` line
    and the agent starts without it. While it loads inside tmux, the pane
    option `@repose-devshell` is `loading`; `repose run` waits (up to 30
    minutes) while it is set before typing the prompt. The option is new;

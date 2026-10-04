@@ -9,7 +9,9 @@
 #                                           allowed, one denied is left out
 #   else flake.nix naming a devShell        that dev shell, through a
 #                                           generated .envrc (`use flake`)
-#                                           under ~/.cache/repose/devshell
+#                                           under ~/.cache/repose/devshell,
+#                                           with its flake.lock there when
+#                                           the checkout has none
 #   else                                    nothing
 #
 # A load that fails prints why and the agent starts without it. While a
@@ -26,7 +28,7 @@
 # messages are held back and shown only when the load fails, and the
 # "loading" line appears only once a load has taken 2 seconds.
 _repose_devshell() {
-  local agent=$1 status rc allowed dir label d root shadow want out loaded quiet= errf= timer=
+  local agent=$1 status rc allowed dir label d root shadow lockargs want out loaded quiet= errf= timer=
   [ "${REPOSE_DEVSHELL_QUIET:-}" = 1 ] && quiet=1
 
   # Where the NixOS module puts the direnvrc that loads nix-direnv; a
@@ -71,8 +73,16 @@ _repose_devshell() {
     [ -n "$root" ] || return 0
     grep -q devShell "$root/flake.nix" 2>/dev/null || return 0
     shadow=${XDG_CACHE_HOME:-$HOME/.cache}/repose/devshell/$(printf '%s' "$root" | @coreutils@/bin/sha256sum | @coreutils@/bin/cut -c1-16)
+    # A flake with no flake.lock gets one written next to the generated
+    # .envrc, not into the checkout, where it would block the user's next
+    # `repose sync` as an uncommitted change (DECISIONS I-483). Once the
+    # repository commits its own lock, that one is used.
+    lockargs=
+    if [ ! -e "$root/flake.lock" ]; then
+      lockargs=" --reference-lock-file $(printf '%q' "$shadow/flake.lock") --output-lock-file $(printf '%q' "$shadow/flake.lock")"
+    fi
     want="# Written by the repose agent wrapper for $root, which has a flake.nix and no .envrc (DECISIONS I-259).
-use flake $(printf '%q' "$root")"
+use flake $(printf '%q' "$root")$lockargs"
     if [ "$(@coreutils@/bin/cat "$shadow/.envrc" 2>/dev/null)" != "$want" ]; then
       @coreutils@/bin/mkdir -p "$shadow" && printf '%s\n' "$want" >"$shadow/.envrc" || return 0
     fi

@@ -96,4 +96,4 @@ error:
 
        error:
        Failed assertions:
-       - repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: services.postgresql, services.redis, services.mysql, services.memcached, services.rabbitmq, services.meilisearch, services.nats)
+       - repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: services.postgresql, services.redis, services.mysql, services.memcached, services.rabbitmq, services.meilisearch, services.nats)

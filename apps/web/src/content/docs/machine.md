@@ -73,14 +73,22 @@ repose scan
 
 ## Projects with a flake.nix
 
-Agents start in the project's dev environment, so they and every command they run see the tools and variables it provides. This holds for every window, `--worktree` ones included:
+Agents start in the project's dev environment, so they and every command they run see the tools and variables it provides. This holds for every window, `--worktree` ones included, and for `repose exec`:
 
 - With an `.envrc`, agents get what it sets. The first time an agent starts in a checkout, repose runs `direnv allow` for its `.envrc`, and again after the file changes; the agent's window says so. If you ran `direnv deny` on it, agents start without it.
-- With a `flake.nix` that defines a dev shell and no `.envrc`, agents start in that dev shell. Nothing is written to the checkout.
+- With a `flake.nix` that defines a dev shell and no `.envrc`, agents start in that dev shell. Nothing is written to the checkout: if the repository has no `flake.lock`, the one Nix makes is kept on the machine, outside the checkout.
 
-The first load builds the dev shell and can take minutes. `repose run` shows `Loading the project's dev shell` meanwhile and sends your prompt once the agent is up. If the dev shell fails to load, the agent starts without it and its window shows the error first.
+The first load builds the dev shell. A few packages from a nixpkgs the machine hasn't fetched yet take 20 to 40 seconds; anything nixpkgs has to compile takes longer. Later loads reuse it and take under a second, until `flake.nix` or `flake.lock` changes. `repose run` shows `Loading the project's dev shell` meanwhile and sends your prompt once the agent is up. If the dev shell fails to load, the agent starts without it and its window shows the error first.
 
-In your own shells, direnv is set up: put `use flake` in the repository's `.envrc`, run `direnv allow` once on the machine, and the flake's dev shell loads when you `cd` into the checkout. To keep agents out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
+Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
+
+Three things trip up a first flake:
+
+- **Commit `flake.nix`.** Nix only sees files git tracks. An untracked `flake.nix` still reaches the machine, then fails to load with `Path 'flake.nix' in the repository ... is not tracked by Git`.
+- **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it, and your next `repose sync` stops with `The machine has uncommitted changes your laptop doesn't have`, naming `flake.lock`. Run `nix flake lock` on your laptop and commit the file. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
+- **Define the dev shell for `x86_64-linux`.** The machine is x86-64 Linux whatever your laptop is. A flake written on a Mac with only `devShells.aarch64-darwin` fails with `does not provide attribute 'devShells.x86_64-linux.default'`. Name both systems, or use `flake-utils.lib.eachDefaultSystem`.
+
+In your own shells (`repose ssh`, `ssh todo-app.repose`, an editor's terminal, a tmux window you open), a `flake.nix` alone loads nothing. Put `use flake` in the repository's `.envrc` and the dev shell loads when you `cd` into the checkout, once the `.envrc` is allowed: repose allows it the first time an agent or `repose exec` starts there, or you run `direnv allow`. direnv keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`. To keep agents out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
 
 ## Ports
 

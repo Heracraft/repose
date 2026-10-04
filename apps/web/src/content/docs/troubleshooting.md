@@ -49,6 +49,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`The machine has uncommitted changes your laptop doesn't have`.** Something on the machine, usually an agent, changed files since your last sync, and your laptop has new work that would write over them. `repose attach` to look, or run `repose sync --stash-remote` to keep them in `git stash` or `repose sync --discard-remote` to drop them. `repose run` never syncs over a machine that already has your checkout, so it attaches either way. See [Sync](/docs/sync#when-the-machine-has-changes-of-its-own).
 
+**The same message names only `flake.lock`.** The repository has an `.envrc` with `use flake` and no `flake.lock`, so the machine wrote one the first time it loaded the dev shell. Commit one: [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix) says how, with or without Nix on your laptop. Until then, `repose sync --discard-remote` is safe; the next load writes the file again.
+
 **`git fetch repose` fails.** With ``todo-app is stopped; run `repose start todo-app` ``, the machine is stopped: start it and fetch again. With `Permission denied`, see the `ssh todo-app.repose` entry above; anything that works for `ssh` works for the fetch. With `does not appear to be a git repository`, the machine has no checkout yet: `repose run` makes one. If `git remote` doesn't list `repose` at all, run `repose run` or `repose attach` in the checkout, or see [Getting work back](/docs/sync#getting-work-back) for a remote of that name you already had.
 
 **`git push repose` fails with `this remote is fetch-only`.** The remote only brings work back. `repose sync` sends your work to the machine.
@@ -62,6 +64,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 ## On the machine
 
 **A command isn't found.** The machine prints the nixpkgs package that has it and the two ways to add it. If it says the tool `is still being installed`, it's one of your laptop's tools arriving in the background; try again shortly.
+
+**A tool from the project's `flake.nix` is missing.** In an agent's window or `repose exec`, the dev shell failed to load, and the error is printed above the agent's first screen or the command's output: an untracked `flake.nix`, or a dev shell only for macOS, are the usual causes. In your own shell, a `flake.nix` loads only through an `.envrc` with `use flake`. See [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix).
 
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 

@@ -12354,3 +12354,39 @@ the port and logs `listener disabled: certificate does not load`, and
 `serveHTTP` closes its listener when serving ends in an error. An
 inherited socket for a listener that does not open is closed with the
 other unused ones. Test: `TestTLSListenerWithoutCertificateStaysClosed`.
+
+**I-483. A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so.**
+(flake-devx, 2026-10-04; amends I-259's "nothing is written to the
+checkout") A live test of a project with a `flake.nix` at its root, on a
+temporary project on the 2026.10.04.1 base, found three things the docs
+and messages got wrong. First, with no `flake.lock` in the repository,
+the first dev shell load writes one into the checkout and stages it
+(`git status`: `A flake.lock`), because `use flake` locks unlocked
+inputs; the next `repose sync` from the laptop then stops on "uncommitted
+changes ... flake.lock". The doc's "Nothing is written to the checkout"
+held only for a repository that commits its lock. The code now keeps the
+promise: for a flake with no `.envrc` and no `flake.lock`, the generated
+`.envrc` in the shadow directory says `use flake ROOT
+--reference-lock-file SHADOW/flake.lock --output-lock-file
+SHADOW/flake.lock`, so Nix reads and writes its lock there; once the
+repository has its own `flake.lock` the arguments go and that lock is
+used. Checked on a guest by sourcing the changed devshell.sh with the
+base's store paths: checkout clean after the first load, second load
+from cache, the switch to a committed lock reloads. A user's own `.envrc`
+with `use flake` still writes the lock into the checkout; that is
+direnv's and nix-direnv's behaviour, and the docs say so. The docs now
+also say to commit `flake.nix` (Nix ignores untracked files, and sync
+carries them anyway) and `flake.lock`, to define the shell for
+`x86_64-linux`, and that a flake's `nixosConfigurations` and the like are
+not read. Second, `repose config apply
+flake.nix` reached home-manager as options and failed with `option
+'description' does not exist in a fragment` plus a did-you-mean about
+`home-manager.users.dev.xsession`. `MapEvalError` now answers an unknown
+top-level `description`, `inputs`, `outputs` or `nixConfig` with "this
+file is a Nix flake; `repose config apply` takes a home-manager module
+such as repose.nix ..." and drops the did-you-mean. Third, the
+unknown-option hint and the `repose.system` refusal named `repose config
+menu`, a command the CLI has never had; they now name `home.packages`,
+`repose config add` and `repose.system` (hostd) and `repose config add`
+or the dashboard's Config menu (the base's contract.nix, next base).
+Test: the `flake.stderr` fixture, captured from the live apply.

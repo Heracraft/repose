@@ -1636,7 +1636,12 @@ in
           assert "repose: loading the dev shell from /home/dev/todo-app/flake.nix" in pane, pane
           # The generated .envrc lives outside the checkout, which stays clean.
           guest.succeed("test ! -e /home/dev/todo-app/.envrc && test ! -e /home/dev/todo-app/.direnv")
-          assert "use flake /home/dev/todo-app" in dev("cat ~/.cache/repose/devshell/*/.envrc")
+          shadow_envrc = dev("cat ~/.cache/repose/devshell/*/.envrc")
+          assert "use flake /home/dev/todo-app" in shadow_envrc
+          # No flake.lock in the repository: Nix's lock goes next to the
+          # generated .envrc, never into the checkout (I-483).
+          assert "--output-lock-file /home/dev/.cache/repose/devshell/" in shadow_envrc, shadow_envrc
+          guest.succeed("test ! -e /home/dev/todo-app/flake.lock")
           assert dev("cd ~/todo-app && git status --porcelain").strip() == ""
 
       # I-275: `repose exec todo-app -- sh -c '...'` sends this command line
