@@ -89,7 +89,8 @@ attrset`. It is applied to user `dev`. It may:
   composer applies to the guest's `pkgs` before evaluating anything;
 - fetch sources with `pkgs.fetchFromGitHub`, `pkgs.fetchurl` and friends
   (fixed-output derivations with a hash: these run in the build sandbox
-  with network, which is Nix's normal model);
+  with network, which is Nix's normal model, and on a host reach the
+  public internet only, DECISIONS I-439);
 - call `pkgs.writeShellScriptBin`, `pkgs.buildNpmPackage`, `pkgs.
   buildGoModule`, `pkgs.rustPlatform.buildRustPackage`, any nixpkgs builder.
 

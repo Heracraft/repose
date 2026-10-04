@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-471 entries.
+473 entries.
 
 ## Scope
 
@@ -503,3 +503,5 @@ pointer, not a summary.
 - **I-442** The unsubscribe link confirms before it acts, and expires — 2026-10-04; L11216
 - **I-443** An unknown JWT key id fetches the JWKS at most once per 30 seconds — 2026-10-04; L11230
 - **I-444** The ntfy sender reaches public addresses only and follows no redirect — 2026-10-04; L11243
+- **I-439** Tenant builds on a host reach the public internet only — 2026-10-03; L11259
+- **I-440** Build log redaction matches multi-line and encoded values, and covers a failed build's error — 2026-10-03; L11296

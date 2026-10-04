@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/api/buildlog"
 	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
@@ -446,8 +447,12 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 			continue
 		}
 		redact = append(redact, string(v.Value))
-		if len(v.Value) >= 4 && strings.Contains(rev.Fragment, string(v.Value)) {
-			return nil, uuid.Nil, false, &opError{code: "invalid", msg: "fragment contains the value of secret " + v.Name}
+		// The same strings the log redaction looks for, so a key pasted
+		// one line at a time, or base64-encoded, is refused too.
+		for _, n := range buildlog.Needles([]string{string(v.Value)}) {
+			if strings.Contains(rev.Fragment, n) {
+				return nil, uuid.Nil, false, &opError{code: "invalid", msg: "fragment contains the value of secret " + v.Name}
+			}
 		}
 	}
 	e.logs.SetRedactions(op.ID, redact)

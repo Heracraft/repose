@@ -11256,3 +11256,57 @@ when dialled. A self-hosted ntfy on a private network was never
 reachable from the api and is now refused plainly. Test:
 `TestNtfyDefaultClientRefusesNonPublic`, `TestPatchMeNtfyNullClears`.
 docs/SECURITY.md boundary 10.
+**I-439. Tenant builds on a host reach the public internet only.**
+(security review, 2026-10-03) hostd evaluates a project's fragment as the
+build user and nix-daemon builds it as `nixbld` users. Nix gives a
+fixed-output derivation network access by running its builder in the
+host's network namespace; every other derivation gets a namespace with
+only `lo` (checked on a repose guest with Nix 2.34.8). The host's nftables
+filtered forwarded guest traffic only and its `output` chain accepted
+everything, so builds were not held to the network boundary guests are.
+
+The `inet repose` `output` chain now sends sockets whose group is `nixbld`
+(`config.ids.gids.nixbld`, the group nix-daemon runs every builder under)
+and sockets of the build user (`repose.host.buildUser`, which runs the
+fragment's eval and so its fetches) to a new chain `build_out`. It accepts
+DNS to the resolved stub at 127.0.0.53 (the sandbox copies the host's
+resolv.conf, which names the stub; resolved forwards as its own user),
+then drops anything leaving on `lo`, IMDS, the wire server, `0/8`, `10/8`,
+`100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, multicast
+and reserved, the IPv6 loopback, ULA, link-local and multicast ranges, and
+anything not leaving on the provider NIC. Root, hostd, the daemon's own
+substitution and operators are untouched. Ordinary derivations need no
+rule (their namespace has no route out), and eval-time fetches run as the
+build user and are covered by the same match. An assertion refuses
+`nix.settings.auto-allocate-uids`, under which builders would not carry
+the `nixbld` group. NixOS checks the ruleset in a sandbox without the
+build user, so `preCheckRuleset` swaps its name for `nobody` there.
+
+Checked: on a repose guest the same two chains (the build user stood in
+by `nobody`) turned the fixed-output builder's loopback and VNet requests
+from reached to dropped, kept https to cache.nixos.org and DNS working,
+and left root and `dev` reaching the same listener; the host-network VM
+test gains the subtest; host-01's toplevel evaluates and its ruleset
+passes `nft --check`. *Rejected:* moving nix-daemon into its own network
+namespace now (its substitution, hostd's store queries and operators'
+copies all go through it, and it needs a veth, NAT and the same drops
+anyway), and an exception for Azure DNS at 168.63.129.16 (builders resolve
+through the stub, so they never need it).
+
+**I-440. Build log redaction matches multi-line and encoded values, and covers a failed build's error.**
+(security review, 2026-10-03) The api redacted a project's secret values
+from build log lines by whole-value substring, one line at a time, so a
+value of several lines (a PEM key) never matched and its lines were stored
+as written; its base64 form passed too, the error a failed build stores
+(with the builder's log tail) was not scanned, and the fragment check
+looked for the whole value only. `buildlog.Needles` now gives, per value of
+4 bytes or more: the value, its standard and URL-safe base64, and each
+trimmed line of a multi-line value except PEM armour lines, longest first
+so a whole value is replaced before a line of it. The log store, the
+failed-op error (`ops.error` and the project's `last_error`) and the
+fragment refusal all use it. Values under 4 bytes stay unmatched and
+docs/features/secrets.md and the user docs now say so. Tests:
+`TestRedactionOfMultiLineAndEncodedValues`, and
+`TestRestoreOntoHostAndSecretValueInFragmentRefused` extended (one line of
+a key in a fragment refused; a failed build's message stored redacted);
+both new checks fail on the old code.

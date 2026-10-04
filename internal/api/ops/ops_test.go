@@ -3,7 +3,9 @@ package ops_test
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,6 +359,43 @@ func TestRestoreOntoHostAndSecretValueInFragmentRefused(t *testing.T) {
 	}
 	if len(h.Fake.Commands()) != before {
 		t.Fatal("a Build was sent despite the secret in the fragment")
+	}
+	// A multi-line value is refused one line at a time too: a fragment
+	// carries a key's body lines without the value ever appearing whole.
+	pem := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\nAAAAMwAAAAtzc2gtZWQyNTUxOQAAACDPLANTEDKEY\n-----END OPENSSH PRIVATE KEY-----\n"
+	if err := h.Secrets.Put(h.Ctx, u.ID.String(), pid.String(), "DEPLOY_KEY", []byte(pem)); err != nil {
+		t.Fatal(err)
+	}
+	rid = store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, `{ home.file.k.text = "AAAAMwAAAAtzc2gtZWQyNTUxOQAAACDPLANTEDKEY"; }`); err != nil {
+		t.Fatal(err)
+	}
+	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(true)}))
+	if op.State != "error" || op.Error["code"] != "invalid" || !strings.Contains(fmt.Sprint(op.Error["message"]), "DEPLOY_KEY") {
+		t.Fatalf("fragment with one line of a multi-line secret: %+v", op.Error)
+	}
+	if len(h.Fake.Commands()) != before {
+		t.Fatal("a Build was sent despite a line of the secret in the fragment")
+	}
+	// A failed build's message (the builder's log tail) is stored with the
+	// values redacted, like the log lines.
+	h.Fake.SetFail("Build", "build_failed")
+	h.Fake.SetFailMessage("Build", "builder for x.drv failed:\nTOKEN=sk-verysecret\nAAAAMwAAAAtzc2gtZWQyNTUxOQAAACDPLANTEDKEY")
+	defer h.Fake.SetFail("Build", "")
+	rid = store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, `{ }`); err != nil {
+		t.Fatal(err)
+	}
+	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(true)}))
+	if op.State != "error" {
+		t.Fatalf("failing build: %+v", op)
+	}
+	var stored string
+	if err := h.Pool.QueryRow(h.Ctx, "select error::text || coalesce((select last_error from projects where id = $2), '') from ops where id = $1", op.ID, pid).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored, "sk-verysecret") || strings.Contains(stored, "PLANTEDKEY") || !strings.Contains(stored, "[redacted]") {
+		t.Fatalf("failed build stored %q", stored)
 	}
 }
 

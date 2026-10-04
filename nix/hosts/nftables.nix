@@ -33,6 +33,15 @@
 #              not in hostd's rule, so a guest hostd has not (yet) given a
 #              rule is still blocked.
 #   nat        masquerade guest traffic leaving on the provider NIC.
+#   output     policy accept for the host's own traffic, except the Nix build
+#              accounts (the daemon's nixbld group, whose fixed-output
+#              builders share the host's network namespace, and the build
+#              user hostd evaluates fragments as), which go to build_out.
+#   build_out  the build accounts reach the public internet on the provider
+#              NIC and the resolved stub for DNS; IMDS, the wire server,
+#              every private, loopback and link-local address, the mesh, the
+#              guest bridge and the host's own services are dropped
+#              (DECISIONS I-439).
 #
 # bridge repose
 #   forward    policy drop: no frame is ever switched between two guests.
@@ -58,6 +67,7 @@ let
     smtp_drop = "";
     stratum_drop = "";
     flows_drop = "";
+    build_out = "";
   };
   bridgeChains = {
     forward = "type filter hook forward priority filter; policy drop;";
@@ -71,6 +81,9 @@ let
   flushes = family: name: chains:
     lib.concatStringsSep "\n" (map (c: "flush chain ${family} ${name} ${c}") (lib.attrNames chains));
   ports = l: lib.concatMapStringsSep ", " toString l;
+  # The daemon runs every builder as a member of this group, so one match
+  # covers all nixbld users however many there are (I-439).
+  nixbldGid = config.ids.gids.nixbld;
 in
 {
   options.repose.host.guestEgress = {
@@ -94,10 +107,22 @@ in
     };
   };
 
+  config.assertions = [{
+    # With auto-allocate-uids the daemon runs builders under a uid range of
+    # its own and not the nixbld group, and build_out would match nothing.
+    assertion = !(config.nix.settings.auto-allocate-uids or false);
+    message = "repose hosts match Nix builders by the nixbld group in nftables (DECISIONS I-439); nix.settings.auto-allocate-uids would let them past build_out.";
+  }];
+
   config.networking.nftables = {
     enable = true;
     flushRuleset = false;
     checkRuleset = true;
+    # The check runs in a build sandbox without the build user; nobody
+    # stands in for it there. The loaded ruleset resolves the real name.
+    preCheckRuleset = ''
+      sed -i 's/meta skuid "${cfg.buildUser}"/meta skuid "nobody"/' ruleset.conf
+    '';
 
     # Applied before the ruleset on every start and reload, and on stop.
     extraDeletions = ''
@@ -229,6 +254,26 @@ in
 
         chain output {
           type filter hook output priority filter; policy accept;
+          # Tenant fragments are evaluated as the build user and built by
+          # nix-daemon as nixbld users. A fixed-output builder runs in the
+          # host's network namespace, so without this it could reach
+          # everything the host can (DECISIONS I-439).
+          meta skgid ${toString nixbldGid} jump build_out
+          meta skuid "${cfg.buildUser}" jump build_out
+        }
+
+        chain build_out {
+          # DNS through systemd-resolved's stub, which /etc/resolv.conf
+          # names and the sandbox copies in; resolved itself asks Azure.
+          ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 accept
+          # The host's own services: caches, exporters, hostd, anything on lo.
+          oifname "lo" counter drop
+          # IMDS (managed-identity tokens), the wire server, guests, the
+          # VNet, the mesh, CGNAT, link-local, and the reserved ranges.
+          ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } counter drop
+          ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } counter drop
+          # wg0, br-guests and anything else that is not the internet.
+          oifname != "${uplink}" counter drop
         }
       }
 
