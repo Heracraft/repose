@@ -12354,3 +12354,54 @@ the port and logs `listener disabled: certificate does not load`, and
 `serveHTTP` closes its listener when serving ends in an error. An
 inherited socket for a listener that does not open is closed with the
 other unused ones. Test: `TestTLSListenerWithoutCertificateStaysClosed`.
+
+**I-486. The CLI marks the folder it starts Claude Code in as trusted.**
+(claude-trust, 2026-10-04; found by the flake-in-root test session,
+`reports/Flake in root DevX.md` item 4) On a new checkout, Claude Code
+2.1.283 opens with "Quick safety check: Is this a project you created or
+one you trust?", cursor on "No, exit". `repose run "prompt"` waited for
+the pane to settle, typed the prompt and Enter into that dialog, and
+Claude Code quit while `run` printed `Ready`; seen twice on flk-devx,
+reproduced here with a scratch `HOME`. The flag that skips it is
+`projects["<folder>"].hasTrustDialogAccepted` in `~/.claude.json`, keyed
+by the resolved path (checked on 2.1.283: set it and the dialog is gone).
+Now `startAgentWindow` puts `claudeTrustScript` in front of claude's
+`tmux new-window`, in the same SSH command: it resolves the window's
+folder with `pwd -P` and sets the flag with jq when it is not already
+true, replacing a false that an earlier refusal left, keeping every other
+key, atomically, and never touching a file that is not valid JSON. Only
+folders repose starts an agent in get it (the checkout, `--worktree`
+directories, and with I-480 another checkout, since the script takes the
+folder the window is given). A user who types `claude` in another folder
+still sees Claude Code's own dialog. The laptop's `~/.claude.json` is
+never carried (I-196), so no laptop trust reaches the guest and the carry
+cannot undo this write; repose-agent-setup's edits of the same file keep
+`projects`. As defence in depth, `waitPaneIdle` looks for the dialog's
+lines in the settled capture (and at its deadline) and returns
+`agentDialogError` instead of typing; `run` then says the prompt was not
+typed and attaches, or with `--no-attach` exits 1 naming `repose
+attach`. I-283 turned down matching a dialog's text; this match is
+narrower than what it turned down, since it never presses a key, and when
+a Claude Code release rewords the dialog it misses and the CLI behaves
+as before, which the pre-trust should make rare. A CLI change, so it reaches every base at
+once. Race: a Claude Code already running in another window can rewrite
+`~/.claude.json` between jq's read and the rename; the same window
+exists for repose-agent-setup's writes at each start, and the dialog
+check covers a lost flag. Tests: `TestClaudeTrustScript`,
+`TestAgentWindowCommandTrustsOnlyForClaude`,
+`TestPromptNotTypedIntoTrustDialog`, `TestPaneShowsDialog`. Live on
+production with a CLI built from the branch (2026-10-04): v0.1.29 on a
+new temporary machine printed `Ready` with no claude window left; the
+branch CLI on a new machine left the flag true for the checkout and the
+worktree, and the prompt sat in Claude Code's input; with jq hidden and
+the checkout's entry removed, it exited 1 with the window still on the
+dialog. Seen on the way: Claude Code 2.1.283 did not ask in a
+`--worktree` directory whose own entry was missing while the checkout
+was trusted, so a worktree seems to inherit the repository's trust; the
+flag is written for it anyway.
+*Rejected:* setting the flag in repose-agent-setup from the wrapper
+(it reaches machines only with a new base, and the wrapper cannot tell a
+folder `run` chose from one the user changed into); trusting `/home/dev`
+as a parent (trusts every folder on the machine); answering the dialog
+with keys (its wording has changed between releases, and on 2.1.283 the
+cursor starts on "No, exit", so a key sent blind can quit Claude Code).
