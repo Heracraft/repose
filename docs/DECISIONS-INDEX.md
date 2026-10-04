@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-467 entries.
+471 entries.
 
 ## Scope
 
@@ -134,7 +134,7 @@ pointer, not a summary.
 - **I-46** The agent overlay is built from upstream release binaries pinned in `versions.json` and cached on Cachix — L940
 - **I-47** Base bumps are a planner and a runner in `internal/basebump` over two interfaces the api implements — L962
 - **I-48** virtiofsd's sandbox is `namespace`, and hostd attaches taps with exactly the host-conventions sequence — 2026-09-20; L976
-- **I-49** The tmux-idle heuristic never reads pane content, and its metrics carry the `repose_api_*` prefix, not `repose_notify_*` — amended by I-59; L1018
+- **I-49** The tmux-idle heuristic never reads pane content, and its metrics carry the `repose_api_*` prefix, not `repose_notify_*` — amended by I-59; partly amended by I-442; L1018
 - **I-50** Gemini CLI and pi both gained hook mechanisms since 5.3's "at time of writing" rows were written; Gemini CLI itself stopped serving individual-tier requests on 2026-06-18 — 2026-09-20; L1075
 - **I-51** `guest@<id>` runs Cloud Hypervisor as the `hostd` user inside a systemd sandbox; hostd itself stays root — 2026-09-20; L1122
 - **I-52** The `obs` package fixes what §5 left to call sites, and its component and label lists are wider than §5's by two and three — L1164
@@ -499,3 +499,7 @@ pointer, not a summary.
 - **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11112
 - **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11141
 - **I-433** A named secret's ciphertext is bound to its project as well as its name — 2026-10-03; L11170
+- **I-441** Guests report guest kinds only; platform kinds come from the api — 2026-10-04; L11196
+- **I-442** The unsubscribe link confirms before it acts, and expires — 2026-10-04; L11216
+- **I-443** An unknown JWT key id fetches the JWKS at most once per 30 seconds — 2026-10-04; L11230
+- **I-444** The ntfy sender reaches public addresses only and follows no redirect — 2026-10-04; L11243

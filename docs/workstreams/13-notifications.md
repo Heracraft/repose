@@ -177,7 +177,9 @@ see the dashboard" message is sent.
   as `html` and `text` in one Resend call. Agent emails carry the title,
   the summary, the `repose attach` row, the project button and (when an
   `Unsubscriber` is configured) an unsubscribe line pointing at `GET
-  /v1/notify/unsubscribe?token=` — a non-expiring, HMAC-signed user id,
+  /v1/notify/unsubscribe?token=` (a confirmation page; the POST it makes,
+  or a mail client's RFC 8058 one-click POST, turns email off), an
+  HMAC-signed user id with a 90-day expiry (I-442),
   checked with no database round trip and no `Authorization` header, keyed
   by a secret auto-provisioned into the platform pseudo-project the first
   time the api starts (DECISIONS I-49; same home as the CA material,

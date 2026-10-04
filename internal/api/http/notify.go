@@ -1,26 +1,36 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+	"time"
+
+	"github.com/heracraft/repose/internal/api/notify"
 )
 
-// unsubscribe serves the one-click link an email carries
-// (13-notifications.md §5.6): no bearer token, no session, just the signed
-// token naming the user. A worn or forged token gets a plain 400; there is
-// nothing here worth an attacker probing for, so the message says why
-// without echoing the token back.
-func (s *Server) unsubscribe(w http.ResponseWriter, r *http.Request) error {
-	if s.d.Unsub == nil {
-		return errf("internal", "unsubscribe is not configured")
+// unsubscribeGet is the link an email carries (13-notifications.md §5.6;
+// DECISIONS I-442). It changes nothing: it shows a page whose button POSTs
+// the same token, so a mail scanner or link preview that fetches the link
+// does not turn the user's email off. No bearer token, no session, just the
+// signed token naming the user.
+func (s *Server) unsubscribeGet(w http.ResponseWriter, r *http.Request) error {
+	token, ok := s.unsubToken(w, r)
+	if !ok {
+		return nil
 	}
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		return errf("invalid", "token is required")
+	return s.writeReplyPage(w, http.StatusOK, replyView{Title: "Unsubscribe from repose email notifications?", Token: token, Unsubscribe: true,
+		Note: "Account and billing email still arrive. You can turn notifications back on from the dashboard's notification settings."})
+}
+
+// unsubscribePost turns email notifications off: the confirmation page's
+// button, or a mail client's one-click unsubscribe (RFC 8058), which POSTs
+// List-Unsubscribe=One-Click to the link with the token in its query.
+func (s *Server) unsubscribePost(w http.ResponseWriter, r *http.Request) error {
+	token, ok := s.unsubToken(w, r)
+	if !ok {
+		return nil
 	}
-	userID, err := s.d.Unsub.Verify(token)
-	if err != nil {
-		return errf("invalid", "this unsubscribe link is invalid or has expired")
-	}
+	userID, _ := s.d.Unsub.Verify(token, time.Now()) // unsubToken checked it
 	if _, err := s.d.Pool.Exec(r.Context(), "update users set notify_email = false where id = $1", userID); err != nil {
 		return err
 	}
@@ -31,8 +41,31 @@ func (s *Server) unsubscribe(w http.ResponseWriter, r *http.Request) error {
 		"delete from events_outbox where channel = 'email' and event_id in (select e.id from events e join projects p on p.id = e.project_id where p.user_id = $1)", userID); err != nil {
 		return err
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("You have been unsubscribed from repose email notifications. You can turn them back on any time from the dashboard's notification settings.\n"))
-	return nil
+	return s.writeReplyPage(w, http.StatusOK, replyView{Title: "You have been unsubscribed",
+		Note: "repose no longer sends you agent notification email. You can turn it back on any time from the dashboard's notification settings."})
+}
+
+// unsubToken reads and verifies the token from the query or the form. A
+// worn or forged token gets a plain page saying why, without echoing the
+// token back.
+func (s *Server) unsubToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if s.d.Unsub == nil {
+		_ = s.writeReplyPage(w, http.StatusServiceUnavailable, replyView{Title: "Unsubscribe is not available", Note: "Turn email off from the dashboard's notification settings."})
+		return "", false
+	}
+	token := r.FormValue("token")
+	if token == "" {
+		_ = s.writeReplyPage(w, http.StatusBadRequest, replyView{Title: "This link is not valid", Note: "Turn email off from the dashboard's notification settings."})
+		return "", false
+	}
+	_, err := s.d.Unsub.Verify(token, time.Now())
+	if errors.Is(err, notify.ErrUnsubExpired) {
+		_ = s.writeReplyPage(w, http.StatusGone, replyView{Title: "This link has expired", Note: "Turn email off from the dashboard's notification settings."})
+		return "", false
+	}
+	if err != nil {
+		_ = s.writeReplyPage(w, http.StatusBadRequest, replyView{Title: "This link is not valid", Note: "Turn email off from the dashboard's notification settings."})
+		return "", false
+	}
+	return token, true
 }

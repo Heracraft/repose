@@ -464,6 +464,7 @@ func (f *Fake) register() {
 	f.handle("DELETE /v1/me", f.deleteMe)
 	f.handle("POST /v1/me/notify-test", f.notifyTest)
 	f.handle("GET /v1/notify/unsubscribe", f.notifyUnsubscribe)
+	f.handle("POST /v1/notify/unsubscribe", f.notifyUnsubscribe)
 	// Projects.
 	f.handle("GET /v1/projects", f.listProjects)
 	f.handle("POST /v1/projects", f.createProject)

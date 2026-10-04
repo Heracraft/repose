@@ -11193,3 +11193,66 @@ the copied secret in the fork. *Rejected:* a column recording the
 additional-data version (a database writer sets it as easily as the
 ciphertext; a failed tag check under the new data says the same thing for
 free).
+**I-441. Guests report guest kinds only; platform kinds come from the api.**
+(security release, 2026-10-04) `notifyKinds` held the guest kinds and the
+platform kinds in one map, and both guest paths (an `AgentEvent` over
+vsock, and the edge's `POST /hooks` forwarded to `/internal/events`)
+accepted any kind in it, with the agent name passed through as given. A
+tenant's own code could therefore make the api send its owner mail with a
+platform subject and template, and `notifications_paused`, which skips the
+dedupe and the hourly cap, could be reached from a guest. Now
+`events.GuestKinds` (`completed`, `needs_input`, `error`, `agent_message`)
+is the set a guest may report: `FromEdge` refuses any other kind with
+`400 invalid`, a vsock `AgentEvent` with any other kind is stored as
+`error` (as an unknown kind already was), and an agent name outside
+guestd's five and `shell` is stored as no agent on both paths and on
+questions. The edge hook ingest refuses the same kinds and agents before
+forwarding. Platform producers keep the full set through `Platform` and
+`Insert`. No transition window: no guestd or wrapper ever sent a
+platform kind, so the old shape had no legitimate sender.
+Tests: `TestGuestCannotSendPlatformKinds`,
+`TestHookIngestBodyCapAndValidation`. docs/SECURITY.md boundary 9.
+
+**I-442. The unsubscribe link confirms before it acts, and expires.**
+(security release, 2026-10-04; amends I-49's non-expiring token) A GET of
+`/v1/notify/unsubscribe` turned email off, so a mail scanner or link
+preview that fetched the link did it for the user, and the token (an
+HMAC of the user id) worked forever. GET now shows a page whose button
+POSTs; `POST /v1/notify/unsubscribe` acts, and is also the target of the
+RFC 8058 one-click headers (`List-Unsubscribe`, `List-Unsubscribe-Post`)
+every agent email now carries. New tokens sign the user id and an expiry
+90 days after the send (`notify.UnsubTTL`), under their own MAC domain;
+an expired one gets `410`. The first shape (id alone) still verifies
+until the release after next, so links in mail already sent keep
+working, and they too now act only on POST. *Rejected:* a nonce stored
+per link (a table for a link the dashboard setting makes redundant).
+
+**I-443. An unknown JWT key id fetches the JWKS at most once per 30 seconds.**
+(security release, 2026-10-04) The verifier refetched Logto's JWKS for
+every token whose `kid` it had not cached, and the key lookup runs before
+the signature is checked, so any request with a fresh `kid` made the api
+fetch. Fetches now go one at a time and at most once per
+`auth.MinRefreshInterval` (30 s) after the last attempt, successful or
+not; inside it an unknown kid is `invalid token` with no fetch, and a
+failed fetch keeps serving cached keys up to 24 h as before. A key Logto
+rotates in is picked up at most 30 s after the previous fetch. The fetch
+runs detached from the request's context so one client giving up does
+not fail the requests queued behind it. Test:
+`TestUnknownKidDoesNotRefetchEachRequest`.
+
+**I-444. The ntfy sender reaches public addresses only and follows no redirect.**
+(security release, 2026-10-04) `ntfy_url` is the user's, and the api
+POSTed to it with a default client, from inside the platform's network.
+The default ntfy client (`notify.PublicClient`) checks the address it is
+about to dial, after resolution, and refuses loopback, private (the
+`10.255.0.0/16` mesh and the VNet included), link-local (IMDS),
+multicast, unspecified, CGNAT, other reserved ranges and the Azure wire
+server; it ignores proxy environment variables (the check would see the
+proxy) and refuses every redirect. Both refusals are permanent outbox
+failures. `PATCH /me` refuses an `ntfy_url` whose host is a literal such
+address or `localhost` with `400 invalid` ("ntfy_url must point at a
+public address"), so the mistake shows on save; a name is checked only
+when dialled. A self-hosted ntfy on a private network was never
+reachable from the api and is now refused plainly. Test:
+`TestNtfyDefaultClientRefusesNonPublic`, `TestPatchMeNtfyNullClears`.
+docs/SECURITY.md boundary 10.

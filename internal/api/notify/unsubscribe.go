@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -55,23 +57,38 @@ func LoadOrCreateUnsubscriber(ctx context.Context, sec PlatformSecrets) (*Unsubs
 	return &Unsubscriber{key: key}, nil
 }
 
-// Sign returns the token embedded in a `GET /notify/unsubscribe?token=` link.
-func (u *Unsubscriber) Sign(userID uuid.UUID) string {
-	return base64.RawURLEncoding.EncodeToString(userID[:]) + "." + base64.RawURLEncoding.EncodeToString(u.mac(userID))
+// UnsubTTL is how long an unsubscribe link works after the email that
+// carried it was sent. The dashboard's notification settings turn email
+// off at any time; the link is a shortcut.
+const UnsubTTL = 90 * 24 * time.Hour
+
+// unsubDomain separates the expiring unsubscribe MAC from the reply MAC and
+// from the first token shape, which MACed the bare user id.
+const unsubDomain = "repose-unsub-v2\x00"
+
+// ErrUnsubExpired is a well-signed unsubscribe token past its expiry.
+var ErrUnsubExpired = errors.New("unsubscribe: the link has expired")
+
+// Sign returns the token embedded in a `/notify/unsubscribe?token=` link:
+// the user id and the expiry, signed.
+func (u *Unsubscriber) Sign(userID uuid.UUID, expires time.Time) string {
+	payload := make([]byte, 16+8)
+	copy(payload, userID[:])
+	binary.BigEndian.PutUint64(payload[16:], uint64(expires.Unix()))
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(u.unsubMAC(payload))
 }
 
-// Verify recovers the user id from a token, or an error if it is malformed
-// or was not signed by this key.
-func (u *Unsubscriber) Verify(token string) (uuid.UUID, error) {
+// Verify recovers the user id from a token, or an error if it is
+// malformed, was not signed by this key, or is past its expiry
+// (ErrUnsubExpired). A token of the first shape (the user id alone, no
+// expiry), which emails sent before expiring links carry, is still
+// accepted for one release (DECISIONS I-442).
+func (u *Unsubscriber) Verify(token string, now time.Time) (uuid.UUID, error) {
 	idPart, sigPart, ok := strings.Cut(token, ".")
 	if !ok {
 		return uuid.Nil, errors.New("unsubscribe: malformed token")
 	}
-	idBytes, err := base64.RawURLEncoding.DecodeString(idPart)
-	if err != nil {
-		return uuid.Nil, errors.New("unsubscribe: malformed token")
-	}
-	id, err := uuid.FromBytes(idBytes)
+	payload, err := base64.RawURLEncoding.DecodeString(idPart)
 	if err != nil {
 		return uuid.Nil, errors.New("unsubscribe: malformed token")
 	}
@@ -79,13 +96,36 @@ func (u *Unsubscriber) Verify(token string) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, errors.New("unsubscribe: malformed token")
 	}
-	if !hmac.Equal(sig, u.mac(id)) {
-		return uuid.Nil, errors.New("unsubscribe: invalid token")
+	switch len(payload) {
+	case 16 + 8:
+		if !hmac.Equal(sig, u.unsubMAC(payload)) {
+			return uuid.Nil, errors.New("unsubscribe: invalid token")
+		}
+		id, _ := uuid.FromBytes(payload[:16])
+		if now.Unix() > int64(binary.BigEndian.Uint64(payload[16:])) {
+			return id, ErrUnsubExpired
+		}
+		return id, nil
+	case 16:
+		id, _ := uuid.FromBytes(payload)
+		if !hmac.Equal(sig, u.legacyMAC(id)) {
+			return uuid.Nil, errors.New("unsubscribe: invalid token")
+		}
+		return id, nil
 	}
-	return id, nil
+	return uuid.Nil, errors.New("unsubscribe: malformed token")
 }
 
-func (u *Unsubscriber) mac(id uuid.UUID) []byte {
+func (u *Unsubscriber) unsubMAC(payload []byte) []byte {
+	h := hmac.New(sha256.New, u.key)
+	h.Write([]byte(unsubDomain))
+	h.Write(payload)
+	return h.Sum(nil)
+}
+
+// legacyMAC is the first token shape's MAC, kept to verify links already
+// sent.
+func (u *Unsubscriber) legacyMAC(id uuid.UUID) []byte {
 	h := hmac.New(sha256.New, u.key)
 	h.Write(id[:])
 	return h.Sum(nil)
@@ -95,6 +135,9 @@ func (u *Unsubscriber) mac(id uuid.UUID) []byte {
 // api's own public origin (`API_RESOURCE`), not the dashboard's: the route
 // is served by the api, not the SPA, at the same /v1 prefix as every other
 // route (docs/interfaces/api.md).
-func (u *Unsubscriber) URL(base string, userID uuid.UUID) string {
-	return fmt.Sprintf("%s/v1/notify/unsubscribe?token=%s", strings.TrimRight(base, "/"), u.Sign(userID))
+// The link opens a confirmation page (GET) whose button, or a mail
+// client's one-click unsubscribe (RFC 8058), POSTs to the same URL; only
+// the POST changes anything. It expires UnsubTTL after now.
+func (u *Unsubscriber) URL(base string, userID uuid.UUID, now time.Time) string {
+	return fmt.Sprintf("%s/v1/notify/unsubscribe?token=%s", strings.TrimRight(base, "/"), u.Sign(userID, now.Add(UnsubTTL)))
 }

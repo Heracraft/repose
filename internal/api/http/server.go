@@ -60,7 +60,7 @@ type Deps struct {
 	Events   *events.Ingest
 	Outbox   *notify.Outbox
 	// Unsub verifies the email unsubscribe link (13-notifications.md §5.6);
-	// nil disables GET /notify/unsubscribe with a 500 rather than a panic.
+	// nil makes /notify/unsubscribe answer 503 rather than panic.
 	Unsub *notify.Unsubscriber
 	// Questions is repose-ask's store (DECISIONS I-245); nil answers the
 	// question routes with 500.
@@ -150,7 +150,8 @@ func New(d Deps) *Server {
 		general: ratelimit.New(lim.General), reads: ratelimit.New(lim.Reads), certs: ratelimit.New(lim.Certs), cfg: ratelimit.New(lim.Config), replies: ratelimit.New(ReplyLinkRate), sessions: newSessionTracker(d.Pool)}
 	s.registerUserRoutes()
 	s.registerInternalRoutes()
-	s.route(s.user, "GET /v1/notify/unsubscribe", s.unsubscribe)
+	s.route(s.user, "GET /v1/notify/unsubscribe", s.unsubscribeGet)
+	s.route(s.user, "POST /v1/notify/unsubscribe", s.unsubscribePost)
 	// Reply links carry their own signed token, like the unsubscribe link.
 	s.route(s.user, "GET /v1/questions/reply", s.replyGet)
 	s.route(s.user, "POST /v1/questions/reply", s.replyPost)

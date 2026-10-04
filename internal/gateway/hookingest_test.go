@@ -98,6 +98,15 @@ func TestHookIngestBodyCapAndValidation(t *testing.T) {
 	if rec := post(t, h, guestIP+":40000", `{"kind":""}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("empty kind = %d, want 400", rec.Code)
 	}
+	// Platform kinds come from the api, never from a guest.
+	for _, kind := range []string{"billing_stopped", "abuse_stopped", "notifications_paused", "agent_question", "agent.waiting"} {
+		if rec := post(t, h, guestIP+":40000", `{"agent":"claude","kind":"`+kind+`"}`); rec.Code != http.StatusBadRequest {
+			t.Fatalf("kind %s = %d, want 400", kind, rec.Code)
+		}
+	}
+	if rec := post(t, h, guestIP+":40000", `{"agent":"claude\r\nx","kind":"completed"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown agent = %d, want 400", rec.Code)
+	}
 	big := `{"kind":"completed","summary":"` + strings.Repeat("x", hookBodyCap*2) + `"}`
 	if rec := post(t, h, guestIP+":40000", big); rec.Code != http.StatusBadRequest {
 		t.Fatalf("oversized body = %d, want 400", rec.Code)

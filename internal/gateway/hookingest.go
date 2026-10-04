@@ -22,6 +22,15 @@ const (
 	hookRatePerSec = 10      // per source guest address
 )
 
+// hookKinds and hookAgents are what a guest may report on this path, the
+// same sets the api accepts from a guest (internal/api/events GuestKinds):
+// the platform's own kinds (billing, abuse, notifications_paused, ...) are
+// written by the api and never come from a guest.
+var (
+	hookKinds  = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+	hookAgents = map[string]bool{"claude": true, "opencode": true, "codex": true, "gemini": true, "pi": true, "shell": true}
+)
+
 // HookIngest is the HTTPS forwarder guests reach over WireGuard when guestd
 // is unavailable: it accepts POST /hooks from guest addresses, adds the
 // source ip, and forwards to the api's POST /internal/events (DECISIONS
@@ -91,9 +100,14 @@ func (h *HookIngest) postHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid hook body", http.StatusBadRequest)
 		return
 	}
-	if body.Kind == "" {
+	if !hookKinds[body.Kind] {
 		h.result(HookRejected)
-		http.Error(w, "kind is required", http.StatusBadRequest)
+		http.Error(w, "unknown kind", http.StatusBadRequest)
+		return
+	}
+	if body.Agent != "" && !hookAgents[body.Agent] {
+		h.result(HookRejected)
+		http.Error(w, "unknown agent", http.StatusBadRequest)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

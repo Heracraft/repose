@@ -228,7 +228,7 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		m.NtfyURL = *r.ntfy
 	}
 	if r.channel == "email" && o.Unsub != nil && !transactional(r.kind) {
-		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID)
+		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, time.Now())
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	err := s.Send(sctx, m)
@@ -367,7 +367,12 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	if err != nil {
 		return Permanent{fmt.Errorf("email: render %s: %w", m.Kind, err)}
 	}
-	payload, err := json.Marshal(map[string]any{"from": from, "to": []string{m.Email}, "subject": "[repose] " + r.Subject, "html": r.HTML, "text": r.Text})
+	body := map[string]any{"from": from, "to": []string{m.Email}, "subject": "[repose] " + r.Subject, "html": r.HTML, "text": r.Text}
+	if m.Unsubscribe != "" {
+		// RFC 8058 one-click: the mail client POSTs to the link itself.
+		body["headers"] = map[string]string{"List-Unsubscribe": "<" + m.Unsubscribe + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
@@ -430,11 +435,18 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 			req.Header.Set("Actions", a)
 		}
 	}
+	// The URL is the user's: the default client reaches public addresses
+	// only and follows no redirect (I-444).
 	client := n.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = ntfyClient()
 	}
 	resp, err := client.Do(req)
+	for _, refused := range []error{ErrNonPublicAddress, ErrRedirect} {
+		if errors.Is(err, refused) {
+			return Permanent{fmt.Errorf("ntfy: %w", refused)}
+		}
+	}
 	if err != nil {
 		return err
 	}

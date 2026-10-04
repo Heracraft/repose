@@ -48,7 +48,7 @@ func TestReplyTokenRoundTripExpiryAndDomain(t *testing.T) {
 	}
 	_ = p
 	// An unsubscribe token is not a reply token, though the key is shared.
-	if _, _, err := u.VerifyReply(u.Sign(id), time.Now()); err == nil {
+	if _, _, err := u.VerifyReply(u.Sign(id, exp), time.Now()); err == nil {
 		t.Fatal("an unsubscribe token verified as a reply")
 	}
 	if url := u.ReplyURL("https://api.test/", id, 1, exp, "email"); !strings.HasPrefix(url, "https://api.test/v1/questions/reply?token=") || !strings.HasSuffix(url, "&via=email") {
@@ -69,7 +69,7 @@ func TestNtfyQuestionHasButtons(t *testing.T) {
 	pid := uuid.New()
 	m := notify.Message{Kind: "agent_question", Agent: "codex", Project: "todo", Summary: "Ship it?", NtfyURL: srv.URL + "/t", Dashboard: "https://d", ProjectID: pid,
 		Question: &notify.QuestionLinks{ID: uuid.New(), Options: []string{"yes, ship", "nö"}, Replies: []string{"https://a/1", "https://a/2"}, Expires: time.Now().Add(time.Hour)}}
-	if err := (&notify.Ntfy{}).Send(context.Background(), m); err != nil {
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
 	if title != "todo: codex asks" || prio != "5" || click != "https://d/projects/"+pid.String() {
@@ -88,7 +88,7 @@ func TestNtfyQuestionHasButtons(t *testing.T) {
 		t.Fatalf("actions %v", acts)
 	}
 	m.Question.Options, m.Question.Replies = nil, nil
-	if err := (&notify.Ntfy{}).Send(context.Background(), m); err != nil {
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
 	_ = json.Unmarshal([]byte(actions), &acts)
@@ -96,7 +96,7 @@ func TestNtfyQuestionHasButtons(t *testing.T) {
 		t.Fatalf("free-text actions %v", acts)
 	}
 	// A message is a plain notification.
-	if err := (&notify.Ntfy{}).Send(context.Background(), notify.Message{Kind: "agent_message", Agent: "shell", Project: "todo", Summary: "deploy green", NtfyURL: srv.URL + "/t", Dashboard: "https://d"}); err != nil {
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), notify.Message{Kind: "agent_message", Agent: "shell", Project: "todo", Summary: "deploy green", NtfyURL: srv.URL + "/t", Dashboard: "https://d"}); err != nil {
 		t.Fatal(err)
 	}
 	if title != "todo: shell says" || prio != "3" || actions != "" {

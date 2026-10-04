@@ -154,6 +154,8 @@ button{font:inherit;padding:.5rem 1.1rem;border:1px solid #1c1917;background:#1c
 {{if .Question}}<p class="q">{{.Question}}</p>{{end}}
 {{if .Confirm}}<form method="post" action="/v1/questions/reply"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="via" value="{{.Via}}">
 <p><button type="submit">Answer “{{.Answer}}”</button></p></form>{{end}}
+{{if .Unsubscribe}}<form method="post" action="/v1/notify/unsubscribe"><input type="hidden" name="token" value="{{.Token}}">
+<p><button type="submit">Unsubscribe</button></p></form>{{end}}
 <p class="muted">{{.Note}}</p>
 </main></body></html>
 `))
@@ -161,6 +163,8 @@ button{font:inherit;padding:.5rem 1.1rem;border:1px solid #1c1917;background:#1c
 type replyView struct {
 	Title, Question, Answer, Token, Via, Note string
 	Confirm                                   bool
+	// Unsubscribe shows the unsubscribe page's button instead of an answer.
+	Unsubscribe bool
 }
 
 func (s *Server) writeReplyPage(w http.ResponseWriter, status int, v replyView) error {

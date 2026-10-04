@@ -45,7 +45,9 @@ Agents (via their wrappers) POST JSON to the Unix socket
 `{"agent":"claude","kind":"completed","summary":"...","window":"claude"}`.
 guestd relays as `AgentEvent`. `agent` must be one of the five the platform
 ships, `kind` one of `completed|needs_input|error`, and `summary` is truncated
-to 1 KB. `window` is optional: without it guestd resolves the calling process's
+to 1 KB. The api treats a guest's `AgentEvent` as guest-sourced whatever it
+says (DECISIONS I-441): a kind outside `completed|needs_input|error|agent_message`
+is stored as `error`, and an agent outside the five and `shell` as no agent. `window` is optional: without it guestd resolves the calling process's
 `$TMUX_PANE` through `SO_PEERCRED`, and failing that uses the agent name. The
 wrapper for each agent is in `guest-conventions.md`; the payload mapping per
 agent is `internal/guestd/hooks` with a recorded fixture per shape in its
