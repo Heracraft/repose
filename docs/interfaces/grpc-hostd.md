@@ -192,7 +192,9 @@ The api accepts an event in the old, unbounded shape for one release
 `agent_event` kind outside the four as `error`, cleans and cuts `agent`,
 `tmux_window` and `summary`, counts a `host_warning` kind outside the list
 above as `other` and logs at most 256 bytes of `detail` on one line, and
-stores at most 600 guest-raised events per project per hour.
+stores at most 600 guest-raised events per project per hour, counting
+these and the ones the edge's hook path (`POST /internal/events`) brings
+together.
 
 **Host scope** (DECISIONS I-447). An event, a `Hello` entry or a sample
 for a guest counts only when the guest's project is placed on the host

@@ -272,6 +272,11 @@ client may send the same request again after it. A held op read (`?wait`) is
 one GET however long it is held. Per gateway: unlimited on
 internal.
 
+Hook events on `POST /internal/events` count toward the project's 600
+guest-raised events an hour together with the ones hostd relays over vsock
+(DECISIONS I-445). Past the cap the answer is still 202, with a nil
+`event_id` and nothing stored.
+
 ## Fake
 
 `internal/fakes/api`: an `httptest.Server` implementing every route above

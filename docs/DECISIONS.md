@@ -11353,11 +11353,13 @@ longer accepted from a guest), text is cleaned of NUL and other control
 characters before insert (a NUL made an insert fail, which left the event
 unacked and resent on every reconnect), a warning kind outside the list
 counts as `other`, the logged detail is one line of 256 bytes, and a
-project stores at most 600 guest-raised events an hour
+project stores at most 600 guest-raised events an hour, counted over
+vsock and the edge's hook path together; past it an edge event is dropped
+like a vsock one (202 with a nil event id)
 (`repose_api_host_reports_refused_total{reason="project_cap"}`).
 Tests: guestinput_test.go (hostd), TestGuestEventsCannotEvictOrBlockHostEvents
 (stream), TestGuestKindsTextAndCaps and TestHostWarningKindsAreAFixedSet
-(api events). *Rejected:* a retention job deleting old events (events are
+(api events), TestEdgeHookPathSharesTheGuestCap. *Rejected:* a retention job deleting old events (events are
 the history `repose events` pages through, I-414; the hourly cap bounds
 growth, and how long to keep history is a product decision); a fixed list
 of agent names at hostd (a new agent would need a host release first).

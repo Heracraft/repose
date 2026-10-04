@@ -175,6 +175,14 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 	if n.Source == "" {
 		n.Source = "host"
 	}
+	// The edge's hook path is guest-raised too and shares the vsock
+	// path's hourly cap; past it the event is dropped, as on vsock.
+	if n.Source == "http" {
+		capped, err := i.overGuestCap(ctx, n.ProjectID)
+		if err != nil || capped {
+			return uuid.Nil, false, err
+		}
+	}
 	err = db.InTx(ctx, i.pool, func(tx db.Tx) error {
 		if notifyKinds[n.Kind] && n.Kind != "notifications_paused" && !noDedupe[n.Kind] {
 			// Collapse a repeat within the window, appending a new summary.
@@ -451,10 +459,12 @@ func (i *Ingest) projectOnHost(ctx context.Context, hostID uuid.UUID, guestID st
 }
 
 // overGuestCap reports whether the project already stored
-// GuestEventsPerHour guest-raised events in the last hour.
+// GuestEventsPerHour guest-raised events in the last hour, counting those
+// that came over vsock (source host) and over the edge's hook path
+// (source http) together.
 func (i *Ingest) overGuestCap(ctx context.Context, projectID uuid.UUID) (bool, error) {
 	var n int
-	err := i.pool.QueryRow(ctx, `select count(*) from (select 1 from events where project_id = $1 and ts > $2 and source = 'host'
+	err := i.pool.QueryRow(ctx, `select count(*) from (select 1 from events where project_id = $1 and ts > $2 and source in ('host', 'http')
 		and kind in ('completed','needs_input','error','agent_message','agent_question') limit $3) x`,
 		projectID, i.now().Add(-time.Hour), GuestEventsPerHour).Scan(&n)
 	if err != nil {
