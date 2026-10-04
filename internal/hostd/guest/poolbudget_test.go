@@ -7,7 +7,6 @@ import (
 	"github.com/heracraft/repose/internal/hostd/lvm"
 )
 
-const gid3 = "0192f0a3-3333-7000-8000-000000000003"
 
 // The host's thin volumes together cannot pass 1.5 times the pool, by
 // create or by resize (DECISIONS I-449). One volume has no bound of its

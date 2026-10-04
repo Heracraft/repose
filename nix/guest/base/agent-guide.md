@@ -84,5 +84,6 @@ The checkout is named after the folder on the user's laptop it came from, not af
 - Data this machine sends to the internet counts against the user's monthly egress allowance (250 GB on Solo, 500 GB on Plus, 1 TB on Pro); every GB past it costs them $0.05, and at four times the allowance their machines stop until the month turns. Incoming data is free, disk is a hard limit: don't download, serve or upload large files needlessly. <!-- /docs/limits#egress -->
 - Nothing on the internet can connect to this machine. Outbound traffic is allowed, up to 200 Mbit/s. <!-- /docs/limits#network --> <!-- /docs/machine#network -->
 - Outbound port 25 is blocked. Send mail through a provider's API or its submission port (587 or 465). <!-- /docs/limits#network -->
-- New outbound connections are limited to 200 a second, in bursts of up to 2000. <!-- /docs/limits#network -->
+- New outbound connections are limited to 200 a second, in bursts of up to 2000, with at most 16,384 open at once. <!-- /docs/limits#network -->
+- Disk reads and writes are rate-limited by size (small 2,000 operations a second and 80 MB/s, large 3,000 and 120 MB/s, xl 4,000 and 150 MB/s), so a slow build or test may be disk-bound. A disk resize can fail with "the host has no room for this project right now" even within the plan. <!-- /docs/limits#disk-and-console -->
 - Don't mine cryptocurrency, send bulk mail, or scan or flood other systems. A known miner gets the machine stopped. <!-- /docs/limits#what-isnt-allowed -->

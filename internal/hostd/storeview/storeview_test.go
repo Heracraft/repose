@@ -200,7 +200,7 @@ func TestVirtiofsdServesTheView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(sockDir)
+	defer func() { _ = os.RemoveAll(sockDir) }()
 	if err := os.Chmod(sockDir, 0o777); err != nil {
 		t.Fatal(err)
 	}

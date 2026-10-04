@@ -25,6 +25,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/register"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/stream"
 	"github.com/heracraft/repose/internal/hostd/systemd"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
@@ -121,7 +122,7 @@ func TestEndToEnd(t *testing.T) {
 	strm := stream.New(stream.Config{HeartbeatInterval: 50 * time.Millisecond, BackoffBase: 20 * time.Millisecond}, stream.GRPCDialer{Addr: addr, TLS: id.TLSConfig(roots, "127.0.0.1")}, lh, m, logger)
 	mgr, err := guest.New(guest.Config{HostID: id.Host.HostID, GuestsDir: filepath.Join(hdir, "guests"), GuestCIDR: id.Host.GuestCIDR, TotalMemBytes: 64 << 30, ReadyTimeout: 3 * time.Second, GuestdRetry: 30 * time.Millisecond, UnitPoll: 30 * time.Millisecond,
 		Lookup: func(string) (int, int, error) { return os.Getuid(), os.Getgid(), nil }},
-		guest.Deps{State: st, LVM: l, Net: hnet.NewFake(), Systemd: sd, CH: &ch.Fake{}, Nix: &nixbuild.Fake{Closure: closure, ClosureBytes: 1 << 30, Lines: []string{"evaluating", "building"}},
+		guest.Deps{State: st, LVM: l, Net: hnet.NewFake(), Systemd: sd, CH: &ch.Fake{}, View: storeview.NewFake(), Nix: &nixbuild.Fake{Closure: closure, ClosureBytes: 1 << 30, Lines: []string{"evaluating", "building"}},
 			Roots: gcroot.Roots{Dir: filepath.Join(hdir, "gcroots")}, Blob: snapshot.NewMemBlob(), Stream: &snapshot.FakeStreamer{LVM: l}, Emit: strm, Metrics: m, Log: logger,
 			Guestd: vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(sockDir, tg.GuestID+".sock") }}})
 	if err != nil {
