@@ -59,7 +59,7 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 | Codex CLI  | `~/.codex/auth.json`                                                          |
 | opencode   | `~/.local/share/opencode/auth.json`                                           |
 
-Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, run `gh auth setup-git` there once.
+Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, `gh auth login` is enough for HTTPS GitHub URLs; SSH URLs are rewritten to HTTPS only for a login copied from your laptop.
 
 Never copied: SSH private keys, Claude Code's login, Gemini's OAuth login, the Vercel CLI's login. See [Agents](/docs/agents#log-in) for the agents' logins.
 
@@ -137,7 +137,7 @@ Add the public key to that one repository as a deploy key with write access. It 
 
 ## Git and Claude Code settings
 
-Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager or editor the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Commits made on the machine are unsigned, since the signing key stays on your laptop.
+Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager, editor or diff filter the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Where neither sets a value, the machine's git starts new repositories on `main`, merges on `git pull`, and sets the upstream on the first `git push` of a branch. Commits made on the machine are unsigned, since the signing key stays on your laptop.
 
 Your Claude Code setup is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run. [Agents](/docs/agents#your-claude-code-setup-comes-along) has the details.
 

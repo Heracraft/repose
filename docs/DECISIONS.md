@@ -4345,6 +4345,17 @@ guest's PATH. `core.excludesFile` travels as its contents. Replaces the
 whole file (laptop keychains, 1Password signers and https-to-ssh rewrites
 break the guest); signing through the forwarded agent (gone when the
 laptop closes, which is when agents commit).
+*Amended 2026-10-05 (base-git-gpg, I-525):* every carried value git runs
+as a command is checked against the guest's PATH, not only `core.pager`
+and `core.editor`: also `sequence.editor`, `interactive.diffFilter`,
+`diff.external`, `diff.<driver>.textconv` and `.command`,
+`merge.<driver>.driver`, and `pager.<cmd>` when its value is not a git
+boolean. A laptop's `interactive.diffFilter = delta --color-only` with no
+delta on the machine made every `git add -p` fail ("mismatched output
+from interactive.diffFilter"). `filter.<x>.clean`/`.smudge` stay
+unchecked on purpose: with `filter.<x>.required` a missing filter fails
+the add, where dropping it would commit what git-crypt would have
+encrypted.
 
 **I-196. `run` and `attach` carry the laptop's Claude Code config, and
 merge `settings.json`.** Carried: `~/.claude/CLAUDE.md`, `settings.json`,
@@ -4632,6 +4643,11 @@ list of the paths the sync wrote (an agent's edit to one of them would
 look like the sync's); `git stash create` (it leaves untracked files
 out); keeping the fingerprint on the laptop (wrong after a run from a
 second laptop, as I-206 found for the carry markers).
+*Amended 2026-10-05 (base-git-gpg, I-525):* the guest has git-lfs now,
+so the sync's shell exports `GIT_LFS_SKIP_SMUDGE=1` before any git call:
+a sync's checkout leaves LFS files as pointer files and never downloads
+objects or waits on LFS credentials. `filter.lfs.required=false` stays,
+for guests on an older base and for a project that removes git-lfs.
 
 **I-211. The carry leaves every secret on the laptop, by key as well as
 by file.** (ws15-fixes, 2026-09-23; the conductor's review of workstream
@@ -13065,3 +13081,79 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-525. The base installs git-lfs with its filter in /etc/gitconfig.**
+(base-git-gpg, 2026-10-05; amends I-195 and I-210) A laptop that ran
+`git lfs install` carries `filter.lfs.clean`, `.smudge`, `.process` and
+`.required=true` in its global config (I-195), and the base had no
+git-lfs, so `git add .` in an LFS repository failed with "git-lfs:
+command not found ... clean filter 'lfs' failed" and a clone failed at
+checkout. The sync docs told users to `repose config add git-lfs`, which
+installs the binary without the filter config, so `git lfs pull` said
+"Git LFS is not installed for this repository" and a commit stored the
+raw file. `programs.git.lfs.enable` installs git-lfs and writes
+`[filter "lfs"]` to `/etc/gitconfig`; `git lfs pull` fetches a synced
+repository's objects with no other step. About 13.8 MiB of closure
+(git-lfs 13.5, pinentry-curses and libsecret for I-528 the rest),
+measured as the NAR sizes of the paths base 2026.10.05 lacks. The
+command-key check of I-195 is widened in the same change (see its
+amendment), and the sync sets `GIT_LFS_SKIP_SMUDGE=1` (I-210's
+amendment). *Rejected:* dropping a carried `filter.*.required` key so the
+add succeeds without the filter (for git-crypt that commits plaintext).
+
+**I-526. gh is the guest's credential helper for GitHub, by command
+name, in /etc/gitconfig.** (base-git-gpg, 2026-10-05) `features/secrets.md`
+told a user who logs in to gh on the machine to run `gh auth setup-git`.
+That writes `helper = !/nix/store/...-gh-2.100.0/bin/.gh-wrapped auth
+git-credential` for github.com and gist.github.com into `~/.gitconfig`:
+a path that a base update and the host's store GC remove, and that skips
+the wrapper's `GH_TELEMETRY`. The carry (I-247) wrote a helper for
+github.com only, so `git credential fill` for gist.github.com failed. The
+base now sets `credential."https://github.com".helper` and
+`credential."https://gist.github.com".helper` to `!gh auth
+git-credential` in `/etc/gitconfig`; with no gh login gh answers nothing
+and git prompts, so it is safe on every machine. The carry adds the gist
+helper beside its github.com one (hash part `gh-helper-3`), and keeps the
+two `url.insteadOf` rewrites conditional on a carried login: set
+system-wide they would send an SSH deploy key made on the machine (I-247)
+over HTTPS. The user unit `repose-gh-helper-cleanup` removes, at each
+login, the helpers for those two hosts in `~/.gitconfig` whose value
+matches `^!/nix/store/[^ ]*gh[^ ]* auth git-credential$`, with the empty
+`helper =` that `gh auth setup-git` writes before each; any other helper
+stays. The secrets page now says a `gh auth login` on the machine is
+enough for HTTPS URLs. *Rejected:* `url.insteadOf` in `/etc/gitconfig`
+(deploy keys); cleaning up from the carry (a user with no laptop gh login
+never gets that part).
+
+**I-527. git defaults for a fresh HOME, at system scope.** (base-git-gpg,
+2026-10-05) `/etc/gitconfig` was empty, so with no carried config `git
+init` made `master`, a divergent `git pull` stopped with "Need to specify
+how to reconcile divergent branches", and the first `git push` of a new
+branch failed for want of an upstream, each a stop for an agent working
+alone. The base sets `init.defaultBranch=main`, `pull.rebase=false` and
+`push.autoSetupRemote=true` in `/etc/gitconfig`, as `mkDefault`. System
+config is read before the global file and the carried file it includes
+(I-195), so any of these the laptop sets wins, and a key set by hand in
+`~/.gitconfig` wins over both. *Rejected:* `rerere`, `merge.conflictStyle
+zdiff3`, `fetch.prune`: preferences, which the laptop's config carries
+for the users who hold them.
+
+**I-528. gpg-agent's pinentry is pinentry-curses, set in
+/etc/gnupg/gpg-agent.conf.** (base-git-gpg, 2026-10-05) The base lists
+gnupg for commit signing, yet gnupg 2.4.9's built-in pinentry path
+(`<gnupg>/bin/pinentry`) does not exist and nothing provided one, so
+`echo test | gpg --symmetric` failed with "No pinentry" (exit 2) with or
+without a terminal. gpg-agent 2.4 reads `gpg-agent.conf` in its
+sysconfdir, `/etc/gnupg`, before the user's: on kanali (base 2026.10.05)
+the same command succeeded once a test pinentry was named there, inside
+a mount namespace with `/etc` overlaid, and failed without it.
+`/etc/gnupg/gpg-agent.conf` names `pinentry-curses`, and interactive
+bash exports `GPG_TTY=$(tty)` so it draws in the pane. A user's own
+`~/.gnupg/gpg-agent.conf` still applies on top. `gpgconf
+--list-components` keeps printing the compiled-in path, which the agent
+does not use once the file names another. Agents have no terminal; the
+machine guide tells them to pass `--batch --pinentry-mode loopback
+--passphrase-fd`, which needs no pinentry (`allow-loopback-pinentry` is
+gpg-agent's default since 2.1.12). *Rejected:* `programs.gnupg.agent`,
+which adds socket-activated user units for one config line.
+

@@ -16,6 +16,7 @@
     ./caches.nix
     ./tmux.nix
     ./tools.nix
+    ./git.nix
     ./devtools.nix
     ./tools-carry.nix
     ./compat.nix
