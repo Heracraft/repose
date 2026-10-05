@@ -185,7 +185,6 @@ func callName(fun ast.Expr) string {
 	return ""
 }
 
-
 func firstN(s string, n int) string {
 	if len(s) > n {
 		return s[:n]
