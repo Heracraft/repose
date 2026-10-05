@@ -39,6 +39,17 @@ let
     (refusal "nixos-option-in-fragment"
       { services.postgresql.enable = true; }
       "does not exist")
+    # home.sessionVariables reach NixOS (I-488); PATH and the loader's
+    # names do not, and PAM cannot hold a double quote.
+    (refusal "session-variable-path"
+      { home.sessionVariables.PATH = "$HOME/bin:$PATH"; }
+      "home.sessionVariables.PATH: not allowed in a fragment; add directories with home.sessionPath")
+    (refusal "session-variable-bash-env"
+      { home.sessionVariables.BASH_ENV = "/tmp/x"; }
+      "home.sessionVariables.BASH_ENV: not allowed in a fragment")
+    (refusal "session-variable-quote"
+      { home.sessionVariables.GREETING = "say \"hi\""; }
+      "home.sessionVariables.GREETING: a value may not contain a double quote")
     # The message itself is asserted by internal/menu's
     # TestRealNixMissingPackage (tryEval cannot see it).
     (refusal "menu-missing-package"

@@ -67,7 +67,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **A command isn't found.** The machine prints the nixpkgs package that has it and the two ways to add it. If it says the tool `is still being installed`, it's one of your laptop's tools arriving in the background; try again shortly.
 
-**A tool from the project's `flake.nix` is missing.** In an agent's window or `repose exec`, the dev shell failed to load, and the error is printed above the agent's first screen or the command's output: an untracked `flake.nix`, or a dev shell only for macOS, are the usual causes. In your own shell, a `flake.nix` loads only through an `.envrc` with `use flake`. See [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix).
+**A tool from the project's `flake.nix` is missing.** In an agent's window or `repose exec`, the dev shell failed to load, and the error is printed above the agent's first screen or the command's output: an untracked `flake.nix`, or a dev shell only for macOS, are the usual causes. In your own shell, the dev shell loads when you `cd` into the checkout; if you pressed Ctrl-C while it loaded, leave the folder and come back. An `.envrc` loads only once it is allowed (`direnv allow`). See [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix).
 
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-516 entries.
+517 entries.
 
 ## Scope
 
@@ -346,7 +346,7 @@ pointer, not a summary.
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; L6608
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; L6669
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6714
-- **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; L6740
+- **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; amended by I-488; L6740
 - **I-264** tmux passes modified keys, OSC 8 links and passthrough to the laptop's terminal — 2026-09-26; L6787
 - **I-265** Ruby and Java pins are installed like the Node pin; Rails' native gem libraries are in the base — 2026-09-26; L6821
 - **I-266** mosh is not offered — 2026-09-26; L6870
@@ -548,3 +548,4 @@ pointer, not a summary.
 - **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12664
 - **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12690
 - **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12740
+- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12772

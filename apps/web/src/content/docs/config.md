@@ -109,6 +109,8 @@ An example:
 }
 ```
 
+`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
+
 The file is a home-manager module, not a flake. A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 Once you edit the Nix by hand, the menu and `repose config add` are off for that project, because they can't read arbitrary Nix. Applying from the menu later replaces your file.
