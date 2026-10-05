@@ -101,7 +101,7 @@
 <div class="form-section" id="machine-nix">
 	<h2 class="text-xl font-semibold">machine.nix</h2>
 	<p class="mt-1 text-sm text-ink-muted">
-		A home-manager module every machine of your account gets, beside the project's own
+		A home-manager module every machine of your account gets, beside each project's own
 		configuration: packages, shell aliases, prompt, dotfiles. Your laptop keeps a copy at
 		<code class="font-mono">~/.config/repose/machine.nix</code>.
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->

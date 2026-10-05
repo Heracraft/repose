@@ -749,7 +749,7 @@ that file when it changed; ` + "`repose run --no-personal`" + ` keeps it off one
 	// globalEnv is env() with --global's refusal of a project argument.
 	globalEnv := func() (*Env, error) {
 		if global && g.project != "" {
-			return nil, cobraUsageError{fmt.Errorf("--global is your machine.nix on every machine; it takes no --project (%s)", g.project)}
+			return nil, cobraUsageError{fmt.Errorf("--global takes no --project (%s): machine.nix applies to every machine of your account", g.project)}
 		}
 		return env()
 	}
