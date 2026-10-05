@@ -119,7 +119,7 @@ What the file can't do: set NixOS system options other than the database service
 
 ## Your machine.nix
 
-`repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment, on each new machine without asking. It lives on your account, and on your laptop at `~/.config/repose/machine.nix`.
+`repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment, on each new machine. It lives on your account, and on your laptop at `~/.config/repose/machine.nix`.
 
 ```
 repose config --global add ripgrep fd  # add packages
@@ -152,7 +152,7 @@ It is a home-manager module with the same rules as a project's file (above). Bot
 config error: attribute 'ripgrepp' missing at machine.nix:3:21
 ```
 
-**When it applies.** A save rebuilds every machine of your account: a running one switches in place, a stopped one at its next start. A new machine, temporary ones included, gets it too. The machine never waits for it: when the server has not built that combination before, the machine starts with the project's configuration alone and switches to the one with your machine.nix as soon as it's built, usually within a minute. If machine.nix doesn't build, your machines keep what they had and you get a notification naming it.
+**When it applies.** A save rebuilds every machine of your account that has it on: a running one switches in place, a stopped one at its next start. A new machine, temporary ones included, gets it too. The machine never waits for it: when the server has not built that combination before, the machine starts with the project's configuration alone and switches to the one with your machine.nix as soon as it's built, usually within a minute. If machine.nix doesn't build, your machines keep what they had and you get a notification naming it.
 
 **From your laptop.** `repose run` pushes `~/.config/repose/machine.nix` when you changed it since its last push, in the background:
 

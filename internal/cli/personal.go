@@ -220,7 +220,7 @@ func personalWhere(ch []PersonalChange) string {
 // ---- repose config --global ----
 
 const machineNixTemplate = `# machine.nix: a home-manager module every repose machine of your account
-# gets, beside the project's own configuration.
+# gets, beside each project's own configuration.
 # https://repose.herakraft.co/docs/config#your-machine-nix
 { pkgs, ... }:
 {
@@ -585,5 +585,5 @@ func (e *Env) optOutPersonal(ctx context.Context, project *Project) {
 		return
 	}
 	project.PersonalOptOut = true
-	_, _ = fmt.Fprintf(e.ErrOut, "machine.nix is off for %s from now on (--no-personal); it switches without it in the background. The dashboard's machine.nix switch turns it back on.\n", project.Slug)
+	_, _ = fmt.Fprintf(e.ErrOut, "machine.nix is off for %s from now on (--no-personal); the machine switches without it in the background. The machine.nix switch on the project's Config page turns it back on.\n", project.Slug)
 }
