@@ -12406,9 +12406,12 @@ Enforced by `TestSuccessOutputNamesNoCommand`
 (`internal/cli/quiet_success_test.go`). It parses the CLI's sources and
 fails on any string that names a `repose` command unless the string is
 an argument of a failure call (`exitf`, `opFailed`, `withNext`,
-`Errorf`, `errors.New`, `e.warn`), written to stderr, cobra help or flag
-text, inside a known error builder, or listed in `quietAllowed` with its
-reason. An entry that no longer matches fails the test too. What it
+`Errorf`, `errors.New`), cobra help or flag text, inside a known error
+builder, or listed in `quietAllowed` with its reason. Stderr is not
+exempt: `run` and `attach` print notes there, and a trial merge of the
+queue on 2026-10-04 showed a success note on stderr ("Applying repose.nix
+... in the background. `repose config show --revisions` shows when it is
+done.") passing a first version of the test that exempted it. An entry that no longer matches fails the test too. What it
 cannot see: a command assembled at run time (the destroy lines built
 theirs with `restoreHint`), so a reviewer still reads every new success
 line (CHECKLIST, "For every change").
