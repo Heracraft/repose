@@ -58,7 +58,9 @@ stdenvNoCC.mkDerivation {
   # - `codex sandbox` runs a command the way an agent turn does, through
   #   the bundled bwrap, so a bwrap Codex rejects fails here. PATH holds
   #   coreutils only: a bwrap on PATH would be used instead and hide it
-  #   (I-495).
+  #   (I-495). A builder that forbids bwrap's namespaces (GitHub's
+  #   runners) passes once Codex has accepted the bwrap; a digest mismatch
+  #   always fails.
   # - `codex app-server daemon start` installs this package into a
   #   scratch CODEX_HOME and starts the app server, which fails on any
   #   missing piece of the layout (I-487). The updater it also starts is
@@ -71,8 +73,21 @@ stdenvNoCC.mkDerivation {
     $out/bin/codex --version
     export HOME=$(mktemp -d) CODEX_HOME=$(mktemp -d)
     echo sandboxed > probe.txt
-    got=$(env PATH=${coreutils}/bin $out/bin/codex sandbox cat probe.txt)
-    test "$got" = sandboxed
+    if got=$(env PATH=${coreutils}/bin $out/bin/codex sandbox cat probe.txt 2>sandbox.err); then
+      test "$got" = sandboxed
+    elif grep -q 'digest mismatch' sandbox.err; then
+      cat sandbox.err >&2
+      exit 1
+    elif grep -q '^bwrap: .*Operation not permitted' sandbox.err; then
+      # Codex accepted the bundled bwrap; this builder forbids what bwrap
+      # then sets up (GitHub's runners refuse its loopback address). The
+      # digest is what I-495 fixed, and it passed.
+      echo "codex sandbox: bwrap accepted, namespaces not permitted here:" >&2
+      cat sandbox.err >&2
+    else
+      cat sandbox.err >&2
+      exit 1
+    fi
     $out/bin/codex app-server daemon start | tee start.json
     grep -q '"status":"started"' start.json
     $out/bin/codex app-server daemon stop || true
