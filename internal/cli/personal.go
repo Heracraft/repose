@@ -463,7 +463,7 @@ func pushPersonal(ctx context.Context, e *Env, text string, base *string, localP
 		return nil
 	}
 	if len(res.Projects) == 0 {
-		_, _ = fmt.Fprintln(e.Out, "Saved machine.nix to your account. Every new machine gets it.")
+		_, _ = fmt.Fprintln(e.Out, "Saved machine.nix to your account.")
 		return nil
 	}
 	// Follow one build: a running machine's when there is one.

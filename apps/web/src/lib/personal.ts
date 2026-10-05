@@ -7,7 +7,7 @@ function join(names: string[]): string {
 	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** "blog switches in place, docs at its next start." The CLI says the same (rebuildWhat). */
+/** "blog switches in place, docs at its next start."; "" when no machine is rebuilt. The CLI says the same (rebuildWhat). */
 export function rebuildSummary(changes: PersonalChange[]): string {
 	const running = changes.filter((c) => c.running).map((c) => c.slug);
 	const stopped = changes.filter((c) => !c.running).map((c) => c.slug);
@@ -20,7 +20,7 @@ export function rebuildSummary(changes: PersonalChange[]): string {
 		if (running.length > 0) parts.push(`${join(stopped)} ${when}`);
 		else parts.push(`${join(stopped)} ${stopped.length === 1 ? 'switches' : 'switch'} ${when}`);
 	}
-	if (parts.length === 0) return 'Every new machine gets it.';
+	if (parts.length === 0) return '';
 	return `${parts.join(', ')}.`;
 }
 

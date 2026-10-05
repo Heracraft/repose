@@ -10,7 +10,7 @@ const ch = (slug: string, running: boolean) => ({
 
 describe('rebuildSummary', () => {
 	it('names running and stopped machines the way the CLI does', () => {
-		expect(rebuildSummary([])).toBe('Every new machine gets it.');
+		expect(rebuildSummary([])).toBe('');
 		expect(rebuildSummary([ch('blog', true)])).toBe('blog switches in place.');
 		expect(rebuildSummary([ch('blog', true), ch('api', true), ch('docs', false)])).toBe(
 			'blog and api switch in place, docs at its next start.'

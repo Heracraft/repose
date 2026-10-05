@@ -77,9 +77,9 @@
 			if (res.unchanged) {
 				saved = 'Nothing changed.';
 			} else if (res.fragment === '') {
-				saved = `Removed. ${rebuildSummary(res.projects)}`;
+				saved = `Removed. ${rebuildSummary(res.projects)}`.trim();
 			} else {
-				saved = `Saved. ${rebuildSummary(res.projects)}`;
+				saved = `Saved. ${rebuildSummary(res.projects)}`.trim();
 			}
 			toast.success('machine.nix saved.');
 		} catch (err) {

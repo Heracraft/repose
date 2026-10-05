@@ -438,9 +438,10 @@
 					Use your machine.nix on this machine
 				</label>
 				<p class="mt-1 text-sm text-ink-muted">
-					Your account's machine.nix goes on every machine beside this configuration.
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-					<a class="link" href={resolve('/account') + '#machine-nix'}>Edit it on your account</a>.
+					<a class="link" href={resolve('/account') + '#machine-nix'}
+						>Edit machine.nix on your account</a
+					>
 				</p>
 			</div>
 
