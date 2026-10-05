@@ -12402,7 +12402,7 @@ root `repose.nix` of the project's own checkout (`checkoutOwnsProject`,
 or, on a temporary machine, which has no remote, the checkout the run
 just synced into it) as the project's fragment
 through the existing `PUT /projects/{id}/config`, does not wait for the
-build, and prints one line naming the revision. The api skips only a
+build, and prints one line naming the revision (no command in it, I-484). The api skips only a
 fragment that is already applied, so the CLI keeps
 `~/.config/repose/repo-config.json`, per project the file's SHA-256 and
 the revision it made: the same file is not sent again while that

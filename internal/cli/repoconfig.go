@@ -77,7 +77,7 @@ func (e *Env) applyRepoConfig(ctx context.Context, project *Project, root string
 	if opID == "" {
 		return
 	}
-	_, _ = fmt.Fprintf(e.ErrOut, "Applying %s (revision %s) in the background. `repose config show --revisions` shows when it is done.\n", repoConfigName, shortRev(revisionID))
+	_, _ = fmt.Fprintf(e.ErrOut, "Applying %s (revision %s) in the background.\n", repoConfigName, shortRev(revisionID))
 }
 
 // lastRepoConfigStands reports whether the revision the same file made

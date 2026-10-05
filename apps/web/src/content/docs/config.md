@@ -75,10 +75,10 @@ repose config apply           # ./repose.nix, or else apply it again
 Commit the file as `repose.nix` at the root of your repository and you don't need to apply it yourself. `repose run` and `repose sync` send it whenever it changed since they last did, including the run that creates the machine, and the build goes on while you work:
 
 ```text
-Applying repose.nix (revision 4f1c2a9e) in the background. `repose config show --revisions` shows when it is done.
+Applying repose.nix (revision 4f1c2a9e) in the background.
 ```
 
-An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
+`repose config show --revisions` shows when it's applied. An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
 
 `repose config apply` with no file and no `./repose.nix` switches the running machine to the project's configuration again: the active revision, or a newer one that built but wasn't applied because its switch failed. Use it when the machine seems to be missing something the configuration has.
 
