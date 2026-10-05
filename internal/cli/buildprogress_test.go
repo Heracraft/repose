@@ -133,7 +133,7 @@ func TestConfigOpInterrupted(t *testing.T) {
 	if exitCode(err) != ExitInterrupted {
 		t.Fatalf("err %v", err)
 	}
-	if !strings.Contains(errOut.buf.String(), "Interrupted. The build keeps going on the machine; `repose config show --revisions` shows when it lands.") {
+	if !strings.Contains(errOut.buf.String(), "Interrupted. The build keeps going on the machine.") {
 		t.Fatalf("stderr %q", errOut.buf.String())
 	}
 }

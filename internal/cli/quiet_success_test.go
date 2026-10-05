@@ -35,13 +35,18 @@ var quietAllowed = map[string]string{
 	"secrets.go:SecretsListCmd:Copied from this laptop at each repose r":      "names when, not what to type",
 	"scan.go:printScan:\n%d to check in the guest; each one it l":             "names when, not what to type",
 	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal, w":      "says what reply can't do",
+	"cert.go:refreshSSHAccess:Could not renew your SSH certificate for":       "a failure",
+	"fork.go:ForkCmd:Could not start the agent in %s: %s. `re":                "a failure",
+	"login.go:setUpPlainSSH:warning: could not write ~/.ssh/repose/c":         "a failure",
+	"run.go:failedStart:Fix it with `repose config edit --projec":             "a failure: the config did not build",
+	"temp.go:tempSessionEnded:Could not destroy %s (%s). It goes at it":       "a failure",
+	"run.go:runRun:Another %s window is open; two agents sh":                  "a warning: two agents are about to edit one tree",
 }
 
 // quietFailureCalls are the calls whose string arguments are a failure or
 // a refusal, where the next command belongs (I-153).
 var quietFailureCalls = map[string]bool{
 	"exitf": true, "opFailed": true, "withNext": true, "Errorf": true, "New": true,
-	"warn": true,
 }
 
 // quietFailureFuncs are functions whose every string is a failure, a
@@ -49,6 +54,7 @@ var quietFailureCalls = map[string]bool{
 var quietFailureFuncs = map[string]bool{
 	"notRunningMessage": true, "nextAfterFailedStart": true, "again": true,
 	"waitForSSH": true, "briefErr": true, "Error": true, "ReadPNG": true,
+	"exitCodeFor": true, // the login and rate-limit refusals
 	"applyScript": true, // a shell script run on the guest, not output
 }
 
@@ -69,8 +75,9 @@ func namesCommand(s string, commands map[string]bool) bool {
 // TestSuccessOutputNamesNoCommand holds what a command prints when it
 // worked, and what a listing prints, to what happened (DECISIONS I-484).
 // A string naming a `repose ...` command fails here unless it is an
-// argument of a failure call (quietFailureCalls), written to stderr, cobra
-// help text, or in quietAllowed with why. The next command belongs on
+// argument of a failure call (quietFailureCalls), cobra help text, or in
+// quietAllowed with why. Stderr is not exempt: run and attach print notes
+// there too, and a note for something that worked is held to the same rule. The next command belongs on
 // failures and refusals, where the user is stuck (I-153); on a success
 // line it is a lesson the user did not ask for, printed every time.
 func TestSuccessOutputNamesNoCommand(t *testing.T) {
@@ -149,9 +156,6 @@ func onFailurePath(stack []ast.Node) bool {
 		case *ast.CallExpr:
 			name := callName(v.Fun)
 			if quietFailureCalls[name] {
-				return true
-			}
-			if strings.HasPrefix(name, "Fprint") && len(v.Args) > 0 && isStderr(v.Args[0]) {
 				return true
 			}
 		case *ast.KeyValueExpr:

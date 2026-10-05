@@ -539,4 +539,4 @@ pointer, not a summary.
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12320
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12345
 - **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; L12359
-- **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12421
+- **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12424

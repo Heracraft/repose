@@ -161,7 +161,7 @@ func waitConfigOp(ctx context.Context, e *Env, project *Project, opID string) (*
 	if err != nil {
 		pr.Fail()
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			_, _ = fmt.Fprintln(e.ErrOut, "Interrupted. The build keeps going on the machine; `repose config show --revisions` shows when it lands.")
+			_, _ = fmt.Fprintln(e.ErrOut, "Interrupted. The build keeps going on the machine.")
 			return nil, pr, silent(ExitInterrupted)
 		}
 		return nil, pr, err
