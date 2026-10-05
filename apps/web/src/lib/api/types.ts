@@ -144,6 +144,8 @@ export interface Plan {
 	/** The introductory price a month and for how many months; 0 for none (I-497). */
 	intro_price_cents?: number;
 	intro_months?: number;
+	/** The egress allowance a month while the introductory offer runs; 0 keeps egress_gb (I-497). */
+	intro_egress_gb?: number;
 }
 
 export interface Seats {

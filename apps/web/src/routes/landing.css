@@ -552,6 +552,7 @@
 	margin-top: 0.5rem;
 	font-size: 0.875rem;
 	color: var(--ink-muted);
+	text-wrap: balance;
 }
 .cta-row {
 	display: flex;

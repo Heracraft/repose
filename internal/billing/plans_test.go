@@ -55,6 +55,11 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 	} else if m, _ := strconv.Atoi(intro[2]); m != billing.Solo.IntroMonths {
 		t.Errorf("PRICING.md's introductory months %s; plans.go has %d", intro[2], billing.Solo.IntroMonths)
 	}
+	if m := regexp.MustCompile(`introductory offer also has less egress: (\d+) GB`).FindStringSubmatch(doc); m == nil {
+		t.Errorf("PRICING.md no longer states the introductory egress allowance")
+	} else if n, _ := strconv.Atoi(m[1]); n != billing.Solo.IntroEgressGB {
+		t.Errorf("PRICING.md's introductory egress %s GB; plans.go has %d", m[1], billing.Solo.IntroEgressGB)
+	}
 	if billing.Plus.HasIntro() || billing.Pro.HasIntro() {
 		t.Errorf("only Solo has an introductory price")
 	}

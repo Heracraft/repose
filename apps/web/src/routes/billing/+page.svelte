@@ -291,8 +291,8 @@
 					</p>
 				</div>
 				{#if intro(p)}
-					<p class="mt-1 text-right text-sm text-ink-muted" data-testid="intro-{p.id}">
-						For {p.intro_months} months, then {price(p.price_cents)}
+					<p class="mt-1 text-right text-sm text-balance text-ink-muted" data-testid="intro-{p.id}">
+						For {p.intro_months} months, then {price(p.price_cents)} and {allowance(p.egress_gb)} egress
 					</p>
 				{/if}
 				<dl class="mt-4 space-y-1.5 text-sm tabular-nums">
@@ -306,7 +306,7 @@
 					</div>
 					<div class="flex justify-between gap-4">
 						<dt class="whitespace-nowrap text-ink-muted">Egress a month</dt>
-						<dd>{allowance(p.egress_gb)}</dd>
+						<dd>{allowance(intro(p) && p.intro_egress_gb ? p.intro_egress_gb : p.egress_gb)}</dd>
 					</div>
 					<div class="flex justify-between gap-4">
 						<dt class="whitespace-nowrap text-ink-muted">Projects</dt>

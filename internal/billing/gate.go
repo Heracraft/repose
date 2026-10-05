@@ -119,11 +119,11 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 		}
 		return r, nil
 	}
-	plan := sub.PlanOrSolo()
+	period := sub.Period(g.Now())
+	plan := sub.PlanFor(period.Start)
 	if sub.Status == StatusPastDue || u.BillingStatus == "past_due" {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
-	period := sub.Period(g.Now())
 	egress, err := PeriodEgress(ctx, g.pool, u.ID, period)
 	if err != nil {
 		return nil, err
@@ -205,10 +205,11 @@ type Limits struct {
 	Plan     *Plan
 }
 
-// LimitsFor computes a user's limits from their live subscription.
+// LimitsFor computes a user's limits from their live subscription, with
+// the egress allowance of the current period (DECISIONS I-497).
 func LimitsFor(u *store.User, sub *Sub) Limits {
 	if sub != nil && sub.Live() {
-		p := sub.PlanOrSolo()
+		p := sub.PlanFor(sub.Period(time.Now()).Start)
 		xl := 0
 		if p.AllowsXL() {
 			xl = 1

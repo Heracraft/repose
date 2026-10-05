@@ -28,15 +28,18 @@ type Plan struct {
 	// IntroCents and IntroMonths are the introductory price: a first
 	// subscription pays IntroCents for its first IntroMonths charges after
 	// the trial, then PriceCents. Zero is no introductory price. Paddle
-	// charges it as a recurring discount (DECISIONS I-497).
-	IntroCents  int64
-	IntroMonths int
+	// charges it as a recurring discount (DECISIONS I-497). IntroEgressGB
+	// is the egress allowance a period has while the offer runs; zero
+	// keeps EgressGB.
+	IntroCents    int64
+	IntroMonths   int
+	IntroEgressGB int
 }
 
 // The three plans (DECISIONS I-362), and Solo's introductory price
 // (DECISIONS I-497).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroCents: 2000, IntroMonths: 3}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroCents: 2000, IntroMonths: 3, IntroEgressGB: 100}
 	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25}
 	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50}
 )

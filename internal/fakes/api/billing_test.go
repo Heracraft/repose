@@ -177,7 +177,7 @@ func TestBillingWaitlist(t *testing.T) {
 	// Invited: the hold is the user's seat.
 	f.SetWaitlist(1, time.Now().Add(70*time.Hour))
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
-	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":2900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"project_limit":10,"intro_price_cents":2000,"intro_months":3,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
+	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":2900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"project_limit":10,"intro_price_cents":2000,"intro_months":3,"intro_egress_gb":100,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
 		t.Fatalf("invited billing: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "solo"})
@@ -443,7 +443,18 @@ func TestBillingGates(t *testing.T) {
 		t.Fatalf("disk_limit detail: %s", r.body)
 	}
 
-	// egress_limit: four times the allowance stops everything.
+	// egress_limit: four times the allowance stops everything. During
+	// Solo's introductory offer the allowance is 100 GB (I-497).
+	f.SetEgress(400)
+	r = call(t, f, "POST", "/v1/projects/"+id+"/start", tok, nil)
+	wantErr(t, r, 402, "payment_required")
+	if d = detailOf(t, r); d["reason"] != "egress_limit" || d["limit_gb"] != float64(400) {
+		t.Fatalf("egress_limit during the offer: %s", r.body)
+	}
+	used := true
+	if err := f.SetBillingState(BillingState{IntroUsed: &used}); err != nil {
+		t.Fatal(err)
+	}
 	f.SetEgress(1000)
 	r = call(t, f, "POST", "/v1/projects/"+id+"/start", tok, nil)
 	wantErr(t, r, 402, "payment_required")

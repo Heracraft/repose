@@ -74,10 +74,10 @@ func Explain(ctx context.Context, pool *db.Pool, projectID uuid.UUID, hour time.
 			return e, err
 		}
 	}
-	e.Plan = sub.PlanOrSolo()
 	if !e.Found {
 		e.Period = sub.Period(e.Hour)
 	}
+	e.Plan = sub.PlanFor(e.Period.Start)
 	if e.PeriodEgress, err = PeriodEgress(ctx, pool, userID, e.Period); err != nil {
 		return e, err
 	}

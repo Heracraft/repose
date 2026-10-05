@@ -30,15 +30,15 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0016 (the subscription's discount, I-497) is the newest: its two
-	// columns go, and 0015 (the personal layer, I-490), 0014 (CPU
+	// 0016 (the subscription's introductory offer, I-497) is the newest:
+	// its two columns go, and 0015 (the personal layer, I-490), 0014 (CPU
 	// pressure, I-493), 0013 (snapshots.sha256) and 0012 stay.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name in ('discount_id', 'discount_ends_at')").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name in ('intro', 'intro_until')").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("%d discount columns left after down 1 (0016)", n)
+		t.Fatalf("%d intro columns left after down 1 (0016)", n)
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)

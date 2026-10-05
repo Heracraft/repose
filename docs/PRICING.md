@@ -26,6 +26,12 @@ who had any subscription before, or who checks out Plus or Pro, pays the
 table's price. An upgrade from Solo during the three months ends the
 introductory price, since the discount applies only to Solo's price
 (DECISIONS I-497).
+The introductory offer also has less egress: 100 GB of egress a period
+while it runs (the free week and the three $20 periods), then 250 GB. The
+$0.05 overage starts past 100 GB, and the stop at four times the allowance
+is at 400 GB. On Azure a GB of egress costs about $0.087, so 250 GB is
+$21.75, more than a $20 month; prod measured 28 GB for the whole fleet in
+two weeks, so the cut costs a typical user nothing.
 
 Three plans because one agent needs a `large`: a harness with its
 language servers, builds and browser fills 8 GB, and a smaller machine

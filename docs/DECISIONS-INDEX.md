@@ -555,4 +555,4 @@ pointer, not a summary.
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
-- **I-497** Solo costs $20 a month for its first three months, then $29, on an account's first subscription — 2026-10-05; L13069
+- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; L13069

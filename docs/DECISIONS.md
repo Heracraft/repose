@@ -13066,9 +13066,10 @@ removed). The other user units (`repose-tools-carry`,
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
 
-**I-497. Solo costs $20 a month for its first three months, then $29, on
-an account's first subscription.** (owner, 2026-10-05: "lets make the $20
-now $29 in 3 months a reality"; research in
+**I-497. Solo costs $20 a month with 100 GB of egress for its first three
+months, then $29 with 250 GB, on an account's first subscription.**
+(owner, 2026-10-05: "lets make the $20 now $29 in 3 months a reality",
+then "lets cut the egress donw too"; research in
 `proposals/2026-10-04-solo-at-20.md`, option A) Amends I-289 and I-362
 (the price table stands; this adds an introductory price). While Azure
 credit pays for the hosts, the price barely changes the burn, and $20 is
@@ -13093,20 +13094,34 @@ charges are the first three after the free week. Paddle applies a catalog
 discount to a checkout only when it is `enabled_for_checkout`; it has an
 auto-generated code that is never shown. Because the discount is
 restricted to Solo's price, an upgrade to Plus or Pro ends it.
-*Record.* Migration 0016 adds `subscriptions.discount_id` and
-`discount_ends_at`, which the webhook copies from the Paddle
-subscription's `discount`. `Sub.ChargeCents(discountIntro, at)` is the
-introductory price while that discount runs (or before Paddle fixes its
-end) and the plan's price otherwise; the `trial_ending` and
-`payment_failed` emails and `GET /billing` use it, so no email says $29
-before a $20 charge.
+*Record.* Migration 0016 adds `subscriptions.intro` and `intro_until`:
+the webhook sets `intro` when the Paddle subscription's `discount.id` is
+`PADDLE_DISCOUNT_INTRO` and copies its `ends_at`, so code that reads a
+subscription (the gate, the overage tick, `/me`, the admin explain) needs
+no Paddle configuration. `Sub.IntroAt(t)` is true while the offer covers
+`t` (or before Paddle fixes its end). `Sub.ChargeCents(t)` is the
+introductory price then and the plan's price otherwise; the
+`trial_ending` and `payment_failed` emails and `GET /billing` use it, so
+no email says $29 before a $20 charge.
+*Egress.* While the offer runs the allowance is `IntroEgressGB` (Solo:
+100 GB), then the plan's 250 GB. `Sub.PlanFor(periodStart)` is the plan
+with that allowance for a period, and every egress reading uses it: the
+overage line ($0.05 a GB past 100 GB), the hard stop (four times, 400
+GB) in the gate and the tick, `usage.egress_included_gb`, `/me`'s
+`limits.egress_gb`, `repose-admin billing show` and `explain`. A period
+belongs to the offer when it starts before `intro_until`, so the free
+week does too. Why: on Azure 250 GB of egress costs $21.75, more than a
+$20 month, so the worst case lost money on bandwidth alone; prod measured
+28 GB for the whole fleet in two weeks, so 100 GB costs a typical user
+nothing and caps that worst case at $8.70.
 *Contract, additive.* `GET /billing`: `plans[].intro_price_cents`,
-`plans[].intro_months`, `intro_eligible`, and on the subscription
+`plans[].intro_months`, `plans[].intro_egress_gb`, `intro_eligible`, and on the subscription
 `next_charge_cents` and `intro_until`. The dashboard's plan card shows
-$20 and "For 3 months, then $29" to an eligible account; a trial reads
+$20, "For 3 months, then $29 and 250 GB egress" and 100 GB of egress to
+an eligible account; a trial reads
 "Trial. First charge of $20 on DATE; $29 a month from DATE." and an
 active subscription inside the three months "Active. Renews DATE at $20;
-$29 a month from DATE." The landing's Solo card shows $20 with the same
+$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with the same
 line, and the user docs' pricing page carries the sentence under the
 table. The fake api models it, with `intro_used` to make a returning
 account.

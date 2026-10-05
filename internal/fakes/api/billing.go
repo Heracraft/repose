@@ -52,11 +52,12 @@ type PlanDef struct {
 	// none (DECISIONS I-497).
 	IntroPriceCents int64 `json:"intro_price_cents"`
 	IntroMonths     int   `json:"intro_months"`
+	IntroEgressGB   int   `json:"intro_egress_gb"`
 }
 
 // Plans is docs/PRICING.md's table.
 var Plans = []PlanDef{
-	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroPriceCents: 2000, IntroMonths: 3},
+	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroPriceCents: 2000, IntroMonths: 3, IntroEgressGB: 100},
 	{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25},
 	{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50},
 }
@@ -394,11 +395,28 @@ func (f *Fake) hasSubscription() bool {
 	return false
 }
 
+// currentPlan is the subscription's plan as it applies to this period:
+// with the introductory egress allowance while the offer runs (I-497).
 func (f *Fake) currentPlan() *PlanDef {
 	if !f.hasSubscription() {
 		return nil
 	}
-	return planByID(f.bill.plan)
+	p := planByID(f.bill.plan)
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	if f.introRuns(&cp) && cp.IntroEgressGB > 0 {
+		cp.EgressGB = cp.IntroEgressGB
+	}
+	return &cp
+}
+
+// introRuns reports whether the subscription is inside its introductory
+// offer: a plan with one, on an account that had no subscription before.
+// The fake's period always starts inside the offer's months.
+func (f *Fake) introRuns(p *PlanDef) bool {
+	return p.IntroMonths > 0 && !f.bill.introUsed
 }
 
 func (f *Fake) subscriptionEnd() time.Time {
@@ -618,7 +636,7 @@ func (f *Fake) subscriptionOf() *subscriptionView {
 	// introductory price for IntroMonths charges after the trial.
 	if v.NextBilledAt != nil {
 		cents := plan.PriceCents
-		if plan.IntroMonths > 0 && !f.bill.introUsed {
+		if f.introRuns(plan) {
 			start := f.bill.periodStart
 			if f.bill.trialEnd != nil {
 				start = *f.bill.trialEnd

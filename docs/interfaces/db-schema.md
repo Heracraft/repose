@@ -118,8 +118,8 @@ subscriptions (id text pk,  -- Paddle's subscription id (0008, I-289)
               cancel_at null,          -- a scheduled cancellation takes effect here
               scheduled_plan text null, -- a downgrade waiting for period_end
               overage_charged_for timestamptz null,  -- period_start of the last period whose egress line was sent
-              discount_id text null,   -- the subscription's recurring Paddle discount (0016, I-497)
-              discount_ends_at timestamptz null,  -- when Paddle says it ends; null until Paddle fixes it
+              intro boolean,           -- carries the introductory discount (0016, I-497)
+              intro_until timestamptz null,  -- when Paddle says it ends; null until Paddle fixes it
               created_at, updated_at)
 
 paddle_events (id text pk, type text, occurred_at, received_at, processed_at, error text)

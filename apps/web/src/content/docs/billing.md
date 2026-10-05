@@ -13,7 +13,7 @@ repose is a monthly plan. You choose one before your first machine starts, with 
 | Plus | $59     | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         | 25       |
 | Pro  | $99     | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           | 50       |
 
-\*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
+\*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. Until the $29 month starts, the egress allowance is 100 GB a month: $0.05 a GB is charged past 100 GB, and your machines stop at 400 GB. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
 
 Prices are in USD and exclude tax, which Paddle adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan says how much of that may run at the same time; projects cost nothing while stopped, and the month costs the same however many hours run.
 

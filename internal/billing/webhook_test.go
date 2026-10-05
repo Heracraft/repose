@@ -169,8 +169,14 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 	// The introductory discount is recorded with its end (DECISIONS I-497).
 	must("subscription.trialing", subData("sub_life", a, "pri_solo_test", "trialing", map[string]any{"discount": map[string]any{"id": "dsc_intro_test", "starts_at": "2026-10-08T00:00:00Z", "ends_at": "2027-01-08T00:00:00Z"}}))
 	sub, _ = billing.GetSubscription(ctx, pool, "sub_life")
-	if sub.DiscountID == nil || *sub.DiscountID != "dsc_intro_test" || sub.DiscountEndsAt == nil || !sub.DiscountEndsAt.Equal(time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("discount: %v %v", sub.DiscountID, sub.DiscountEndsAt)
+	if !sub.Intro || sub.IntroUntil == nil || !sub.IntroUntil.Equal(time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("intro: %v %v", sub.Intro, sub.IntroUntil)
+	}
+	// Another discount is not the introductory offer.
+	must("subscription.trialing", subData("sub_life", a, "pri_solo_test", "trialing", map[string]any{"discount": map[string]any{"id": "dsc_other", "ends_at": "2027-01-08T00:00:00Z"}}))
+	sub, _ = billing.GetSubscription(ctx, pool, "sub_life")
+	if sub.Intro || sub.IntroUntil != nil {
+		t.Fatalf("another discount marked the offer: %v %v", sub.Intro, sub.IntroUntil)
 	}
 	must("subscription.trialing", subData("sub_life", a, "pri_solo_test", "trialing", nil))
 	must("subscription.activated", subData("sub_life", a, "pri_solo_test", "active", map[string]any{"items": []any{map[string]any{"status": "active", "quantity": 1, "price": map[string]any{"id": "pri_solo_test"}}}}))

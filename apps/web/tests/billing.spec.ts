@@ -68,11 +68,13 @@ test('with no plan and seats free, the three plan cards are shown from GET /bill
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
 	await expect(solo.getByText('$20')).toBeVisible();
-	await expect(solo.getByTestId('intro-solo')).toHaveText('For 3 months, then $29');
+	await expect(solo.getByTestId('intro-solo')).toHaveText(
+		'For 3 months, then $29 and 250 GB egress'
+	);
 	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
 	await expect(solo.getByText('8 GB: one large, or two small')).toBeVisible();
-	await expect(solo.getByText('100 GB', { exact: true })).toBeVisible();
-	await expect(solo.getByText('250 GB', { exact: true })).toBeVisible();
+	// The introductory offer's egress allowance (I-497).
+	await expect(solo.getByText('100 GB', { exact: true })).toHaveCount(2);
 	await expect(solo.getByText('7 days free, card at checkout, cancel any time.')).toBeVisible();
 	const plus = page.getByTestId('plan-plus');
 	await expect(plus.getByRole('heading', { name: 'Plus' })).toBeVisible();
@@ -207,8 +209,9 @@ test('a trial shows the first charge date, the usage bars and the project count'
 	await expect(page.getByTestId('plan-status')).toContainText('; $29 a month from');
 	await expect(page.getByTestId('meter-disk-allocated')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
-	await expect(egress).toContainText('300 GB of 250 GB');
-	await expect(egress).toContainText('Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.');
+	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
+	await expect(egress).toContainText('300 GB of 100 GB');
+	await expect(egress).toContainText('Over by 200 GB: $10.00 on the next invoice at $0.05 a GB.');
 	await expect(page.getByTestId('projects-count')).toContainText('of 10');
 });
 
