@@ -72,6 +72,7 @@
         guestBase = self.nixosModules.guestBase;
         inherit guestd reposeHook;
         nixpkgsSource = nixpkgs.outPath;
+        homeManagerModule = home-manager.nixosModules.home-manager;
       };
 
       hostModules = [

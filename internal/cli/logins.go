@@ -183,7 +183,6 @@ func chooseList(ctx context.Context, e *Env, projectArg string) error {
 	}
 	_, _ = fmt.Fprintln(e.Out, loginsHeader(scope, own)+":")
 	writeLoginRows(e.Out, skip, found)
-	_, _ = fmt.Fprintln(e.Out, "Change them with `repose secrets choose --off NAME...` or `--on NAME...`.")
 	return nil
 }
 
@@ -629,7 +628,7 @@ func pickLoginsTTY(header string, items []loginItem, skip map[string]bool, found
 }
 
 // loginsLine is `run`'s note under "Credentials:": the logins left on
-// the laptop, or, before any choice, where to make one. It is said only
+// the laptop, once a choice was made (I-484: nothing before one). It is said only
 // when the logins' part went (copied names a login, not just "git", which
 // is named on every run), so it comes once per change, not every run.
 func loginsLine(copied []string, skip map[string]bool, chosen bool) string {
@@ -641,7 +640,7 @@ func loginsLine(copied []string, skip map[string]bool, chosen bool) string {
 		return ""
 	}
 	if !chosen {
-		return "Choose which logins are copied with `repose secrets choose`."
+		return ""
 	}
 	var off []string
 	for n := range skip {
@@ -651,5 +650,5 @@ func loginsLine(copied []string, skip map[string]bool, chosen bool) string {
 	if len(off) == 0 {
 		return ""
 	}
-	return "Left on your laptop (repose secrets choose): " + strings.Join(off, ", ") + "."
+	return "Left on your laptop: " + strings.Join(off, ", ") + "."
 }

@@ -78,9 +78,7 @@ func printQuestion(w io.Writer, q Question, now time.Time) {
 		_, _ = fmt.Fprintf(w, "  %s\n", line)
 	}
 	if len(q.Options) > 0 {
-		_, _ = fmt.Fprintf(w, "  answer: repose reply %s %s\n", q.Project, strings.Join(q.Options, "|"))
-	} else {
-		_, _ = fmt.Fprintf(w, "  answer: repose reply %s \"...\"\n", q.Project)
+		_, _ = fmt.Fprintf(w, "  options: %s\n", strings.Join(q.Options, "|"))
 	}
 }
 
@@ -144,7 +142,7 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 		}
 		for _, a := range p.Signals.Agents {
 			if a.State == "needs_input" {
-				waiting = append(waiting, fmt.Sprintf("  %s on %s: `repose attach %s`", a.Agent, p.Slug, p.Slug))
+				waiting = append(waiting, fmt.Sprintf("  %s on %s", a.Agent, p.Slug))
 			}
 		}
 	}

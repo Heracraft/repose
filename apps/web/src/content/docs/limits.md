@@ -15,7 +15,7 @@ Solo allows 10 projects, Plus 25 and Pro 50, running or stopped. Destroyed proje
 
 ## When repose is full
 
-Machines never share memory, so there's room for a fixed number of them. A seat is 8 GB of memory for running machines: Solo takes one, Plus two, Pro four. When no seat is free, choosing a plan puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page and the landing page show the seats left and the number waiting.
+A seat is 8 GB of memory for running machines: Solo takes one, Plus two, Pro four. When no seat is free, choosing a plan puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page and the landing page show the seats left and the number waiting.
 
 We let people in, in the order they joined, as seats free up or we add a server. You get one email when it's your turn, sent even if you've turned notification emails off, and the seat is held for you for 72 hours. Choose your plan within them; a hold that runs out moves you to the back of the queue, and the email says so.
 
@@ -26,16 +26,16 @@ Data your machines send to the internet is counted against the month's allowance
 ## Network
 
 - Outbound traffic is limited to 200 Mbit/s per machine. Downloads into the machine are limited to 1 Gbit/s; downloads from the npm and Docker Hub caches on the server aren't limited.
-- Outbound connections to port 25 are blocked, so a machine can't send mail directly. Use your email provider's API, or its submission port (587 or 465) with a login.
+- Outbound connections to port 25 are blocked. Use your email provider's API, or its submission port (587 or 465) with a login.
 - Outbound connections to the ports mining pools use (3333, 5555, 7777, 14433 and 14444) are blocked.
-- A machine can open 200 new outbound connections a second, in bursts of up to 2000, and hold 16,384 open at once. Connections to the caches count toward the 16,384 and have their own 200 a second. Installing packages, running test suites and crawling your own app stay well under both.
+- A machine can open 200 new outbound connections a second, in bursts of up to 2000, and hold 16,384 open at once. Connections to the caches count toward the 16,384 and have their own 200 a second.
 - Nothing on the internet can connect to the machine. Reach your own servers on it through [port forwarding](/docs/machine#ports).
 
 ## SSH connections
 
 - Your account can hold 32 SSH connections through the gateway at once, across all your projects. `repose` commands share one connection per command, and an editor opens a few.
 - One address can have 4 connections logging in at the same moment, 64 open and 20 new a second. Past that, a new connection is closed before it logs in.
-- A connection ends when the certificate it logged in with expires, or within 30 seconds of `repose logout` on any device. The CLI renews a certificate once it has less than 12 hours left, and then stops the shared connection your earlier commands used from taking new ones, so the next command logs in with the new certificate. A `repose` command or an `ssh` you start therefore keeps its connection for at least 12 hours. Editors reconnect by themselves, and `run` and `attach` attach again with a new certificate; the tmux session is where you left it.
+- A connection ends when the certificate it logged in with expires, or within 30 seconds of `repose logout` on any device. The CLI renews a certificate once it has less than 12 hours left, and then stops the shared connection your earlier commands used from taking new ones, so the next command logs in with the new certificate. A `repose` command or an `ssh` you start therefore keeps its connection for at least 12 hours. Editors reconnect by themselves, and `run` and `attach` attach again with a new certificate.
 - Updates to the SSH gateway leave open connections running. A restart of the gateway's server ends them; `run`, `attach`, `open` and editors reconnect on their own.
 
 ## Disk and console

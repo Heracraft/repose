@@ -5,17 +5,17 @@ section: Tutorials
 order: 23
 ---
 
-The workflow below is what a day with repose settles into once you stop treating the machine as a second laptop. It assumes you've read [Git with repose](/docs/tutorial-git).
+This page assumes you've read [Git with repose](/docs/tutorial-git).
 
-The idea: **a task is a branch**. Every agent gets its own worktree and branch on the machine, you never edit the machine's `main`, and your laptop is where branches get reviewed and merged. The machine is where the work happens; your laptop is where the decisions happen.
+The idea: **a task is a branch**. Every agent gets its own worktree and branch on the machine, you never edit the machine's `main`, and your laptop is where branches get reviewed and merged.
 
 ## 1. Sync once, in the morning
 
 ```
-repose run
+repose sync
 ```
 
-Your `main` goes up. From here on the machine's `main` is a base for branches, not a place anyone works.
+Your `main` goes up. From here on the machine's `main` is a base for branches.
 
 ## 2. One agent per task, each in a worktree
 
@@ -33,7 +33,7 @@ Worktree: ~/todo-app-worktree-2 on branch worktree-2
 Worktree: ~/todo-app-worktree-3 on branch worktree-3
 ```
 
-Three agents, three directories, three branches, no shared files. Worktrees are numbered from 1, skipping any number whose folder or branch is still there. The tmux windows keep the agents' names (`claude`, `claude-2`, `codex`), in the same order as the worktrees here. Detach and let them run. `repose ps` shows who's still busy:
+Worktrees are numbered from 1, skipping any number whose folder or branch is still there. The tmux windows keep the agents' names (`claude`, `claude-2`, `codex`), in the same order as the worktrees here. Detach and let them run. `repose ps` shows who's still busy:
 
 ```
 $ repose ps
@@ -55,7 +55,7 @@ $ git fetch repose
  * [new branch]  worktree-3  -> repose/worktree-3
 ```
 
-Review each branch the way you'd review a colleague's:
+Review each branch:
 
 ```
 git log --oneline main..repose/worktree-1
@@ -82,13 +82,13 @@ A branch that isn't good enough gets a second round: `repose attach`, switch to 
 
 ## 5. Send the merged result back up
 
-Your laptop's `main` now has two of the three branches merged. Send it to the machine:
+Send your laptop's `main` to the machine:
 
 ```
-repose run
+repose sync
 ```
 
-The machine's `main` catches up. The worktrees still have their branches, based on the old `main`; that's fine, they're finished. The third agent, still working, isn't touched: `repose run` never syncs a worktree.
+The worktrees keep their branches, based on the old `main`. The third agent, still working, isn't touched: `repose sync` never touches a worktree.
 
 ## 6. Tidy
 
@@ -104,8 +104,6 @@ On your laptop, `git branch -rd repose/worktree-1` drops the fetched copy. Workt
 ## The rules that make this work
 
 - **Agents commit.** Put it in the prompt: "commit as you go" or "commit when the tests pass". An uncommitted change on the machine is the one thing that can get in the way of a sync.
-- **Nobody works on the machine's `main`.** Then `repose run` is always safe, and a branch is always a clean diff against something you know.
-- **Review on the laptop, not on the machine.** `git diff main...branch` on a copy the agent can't touch is a review; reading the agent's own summary is not.
+- **Nobody works on the machine's `main`.** Then `repose sync` is always safe, and a branch is always a clean diff against something you know.
+- **Review on the laptop.** There `git diff main...branch` reads a copy the agent can't touch.
 - **Risky experiments get a fork.** `repose fork` copies the whole machine, worktrees, database and all, so an agent can try something destructive on the copy. [Projects and lifecycle](/docs/lifecycle#fork-a-project).
-
-When you have more than three or four agents going at once, the review step becomes the bottleneck. [Run a swarm](/docs/tutorial-conductor) is the next step: an agent that merges for you.

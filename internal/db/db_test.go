@@ -32,8 +32,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 	}
 	// 0015 (the personal layer, I-490) is the newest: personal_revisions
 	// and the config_revisions columns go, and 0013 (snapshots.sha256) and
-	// 0012 (hosts.prev_cert_serial) stay. 0014 is I-493's, on another
-	// branch.
+	// 0012 (hosts.prev_cert_serial) stay. 0014 (CPU pressure, I-493) stays.
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -46,6 +45,12 @@ func TestMigrateUpDownUp(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("%d personal columns left after down 1 (0015)", n)
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'meter_samples' and column_name in ('cpu_pressure_us', 'host_cpu_wait_us', 'mem_used')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatal("meter_samples pressure columns went with down 1 (0014 must stay)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'snapshots' and column_name = 'sha256'").Scan(&n); err != nil {
 		t.Fatal(err)

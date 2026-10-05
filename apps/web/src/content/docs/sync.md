@@ -7,8 +7,6 @@ order: 11
 
 The first `repose run` for a machine copies your checkout to it. After that, `repose run` attaches to the machine as it is, and your laptop's later work goes over only when you run `repose sync`. Nothing syncs continuously and nothing comes back on its own: the agent commits, and you fetch its commits with `git fetch repose`.
 
-An agent's uncommitted work on the machine can't block a `repose run`, and you choose when your laptop's work lands on top of it.
-
 `repose attach` and `repose run --no-sync` never touch the machine's checkout, not even on a new machine.
 
 ## Where the checkout is
@@ -26,11 +24,14 @@ A machine with no checkout, one made with `repose run --no-sync` or from a direc
 
 Later runs, from any folder or laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
 
+A second repository can live on the same machine in a checkout of its own: run `repose run --on PROJECT` in its folder. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).
+
 ## What travels
 
 - **Commits.** Your current branch, including commits you haven't pushed. They go straight from your laptop, so private repositories work with no setup on the machine.
 - **Uncommitted changes** to tracked files.
 - **Untracked files** that git isn't ignoring.
+- **`repose.nix`.** At the root of the repository, it's applied as the machine's configuration when it changed ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)).
 - **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each. If the machine's copy is newer, it's kept. Unlike [secrets](/docs/secrets), they are files on the machine's disk, so they are in snapshots. `repose secrets choose --off env` keeps them on your laptop ([Secrets](/docs/secrets#choose-what-is-copied)).
 
 Everything goes over your SSH connection. None of it is stored by repose.
@@ -57,7 +58,7 @@ Your tool logins, git identity and Claude Code settings are copied at every `rep
 ## What doesn't
 
 - Other gitignored files: build output, caches, local databases.
-- Dependency directories such as `node_modules`, `.venv`, `.next` and `.turbo`, even when they aren't ignored. The CLI names what it skipped. Install dependencies on the machine; they need Linux builds anyway.
+- Dependency directories such as `node_modules`, `.venv`, `.next` and `.turbo`, even when they aren't ignored. The CLI names what it skipped. Install dependencies on the machine.
 - Files over 100 MB, and untracked files past 500 MB in one sync.
 
 To leave out more, add gitignore-style patterns to `~/.config/repose/config.toml`:
@@ -77,7 +78,7 @@ Git LFS files arrive as their small pointer files, not their contents. Run `repo
 
 ## When the machine has changes of its own
 
-`repose sync` only copies your laptop's work onto the machine. It never restarts or rebuilds the machine.
+`repose sync` never restarts or rebuilds the machine.
 
 If the machine changed since your last sync (usually an agent's edits or commits) and your laptop has nothing new since then, there is nothing to copy, and the checkout is left as it is:
 
@@ -116,7 +117,7 @@ them. Nothing was changed. Pick one:
 
 Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
 
-If the agent committed on the branch and your laptop has new commits of its own, the sync checks out your laptop's commit detached and leaves the agent's branch where it is. Nothing is lost. `git fetch repose` brings the agent's branch to your laptop, where you merge or rebase it as you would any other.
+If the agent committed on the branch and your laptop has new commits of its own, the sync checks out your laptop's commit detached and leaves the agent's branch where it is. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
 
 ## Getting work back
 
@@ -149,7 +150,7 @@ The remote is for fetching. `git push repose` fails with `'this remote is fetch-
 
 Details:
 
-- `repose run` and `repose attach` add the remote when the checkout is the project's own, and say so the first time. They leave it alone after that. It lives in `.git/config`, which isn't committed, so nothing changes in your repository.
+- `repose run` and `repose attach` add the remote when the checkout is the project's own, and say so the first time. They leave it alone after that. It lives in `.git/config`.
 - If your checkout already has a remote named `repose` that points somewhere else, it's left alone, and the CLI says once how to add the machine under another name: `git remote add NAME todo-app.repose:~/todo-app`.
 - `repose rm` in the checkout removes the remote. Branches you already fetched stay as `repose/...` until you delete them with `git branch -rd`.
 - Copies made with [`repose fork`](/docs/lifecycle#fork-a-project) don't get a remote of their own. Add one by hand: `git remote add fork-2 todo-app-fork-2.repose:~/todo-app-fork-2`.
@@ -157,7 +158,7 @@ Details:
 
 ### Pushing from the machine
 
-The machine's checkout has the same `origin` as yours, so `git push` there works as it does locally. If you're logged in to the GitHub CLI (`gh`) on your laptop and the remote is on github.com, that login is copied and git on the machine pushes over HTTPS with it. For other git hosts, see [Secrets](/docs/secrets#other-git-hosts). This is the way when the work should land on GitHub anyway, for a pull request.
+The machine's checkout has the same `origin` as yours, so `git push` there works as it does locally. If you're logged in to the GitHub CLI (`gh`) on your laptop and the remote is on github.com, that login is copied and git on the machine pushes over HTTPS with it. For other git hosts, see [Secrets](/docs/secrets#other-git-hosts).
 
 ### Single files
 

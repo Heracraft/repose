@@ -30,6 +30,23 @@ session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
 to `tmux attach`, so new windows open there.
 
+### Other checkouts
+
+A machine can hold other checkouts beside the checkout (DECISIONS
+I-480): folders `repose run --on` added, each a directory of
+`/home/dev` listed by name, one per line, in
+`/home/dev/.repose/checkouts`. The checkout itself is never listed, and
+"the checkout" everywhere else in this document (guestd, the tmux
+session's default directory, `repose-checkout`, the login profile) still
+means the one the rule above finds. Only the CLI makes another checkout:
+it picks the laptop folder's safe name, else `<name>-2`, `<name>-3`, ...,
+skipping the checkout, its `-worktree-N` directories, names already
+listed and non-empty directories, makes the directory and appends the
+name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
+of the rule. Agent windows there are `<name>/<agent>` and
+`<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
+the attach opens is `<name>`. guestd reads none of this.
+
 ## Filesystem
 
 | Path | What |
@@ -102,6 +119,17 @@ to `tmux attach`, so new windows open there.
   "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> '<agent> ...'`
   then `tmux send-keys -t <slug>:<agent> '<prompt>' Enter` after the TUI is
   up (guestd waits for the pane to be idle 1 s).
+- Claude Code's folder trust (DECISIONS I-486): in the same SSH command,
+  before `tmux new-window` starts `claude` in a folder (the checkout, a
+  worktree, another checkout), the CLI sets
+  `projects["<folder, symlinks resolved>"].hasTrustDialogAccepted` to
+  `true` in `~/.claude.json` when it is not already `true`, keeping every
+  other key, writing atomically with mode 0600, and leaving a file that
+  is not valid JSON alone. It needs `jq` on the guest's PATH and is best
+  effort; the window starts either way. A pane that settles on Claude
+  Code's trust dialog anyway gets no prompt: `run` says so and attaches
+  (with `--no-attach`, exits 1). Nothing else writes that key, and the
+  laptop's `~/.claude.json` is never carried.
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
   history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga
@@ -145,7 +173,9 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
      unless a `notify` key exists.
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
-     absent (never overwritten).
+     absent, and replaced only while its sha256 is one an earlier base
+     installed (I-481); the `repose-agent-hooks` user unit also runs this
+     at login, for an OpenCode 2 started outside the wrapper.
    - `gemini`, `pi`: no hook (guestd's pane-idle heuristic reports for
      them); the machine guide is linked in as an extension (I-243):
      `~/.gemini/extensions/repose-machine-guide` →
@@ -172,7 +202,16 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    `_repose_devshell NAME`, which `repose exec` calls in the checkout
    before it execs the user's command, NAME being the command's name in
    the `repose:` messages. A base without the file gets `direnv export
-   bash` from the CLI instead.
+   bash` from the CLI instead. Every interactive bash also sources it and
+   redefines direnv's `_direnv_hook` to call `_repose_devshell_prompt`
+   (I-488): where direnv finds an `.envrc`, or no such `flake.nix` is
+   found, that is direnv's own export (nothing is allowed for the user,
+   a denied file stays out); otherwise it exports from the same generated
+   directory, printing `repose: loading the dev shell from <dir>/flake.nix`
+   when it enters one, so the user's shell gets the agent's dev shell and
+   leaving the folder unloads it. A cold load blocks the prompt; Ctrl-C
+   ends it and the shell stays without it until it leaves the folder or
+   `flake.nix` changes.
 4. Exec the real binary with `"$@"`.
 
 `repose-hook` takes the agent from `REPOSE_HOOK_AGENT` or `--agent`
@@ -190,7 +229,7 @@ never blocks an agent. Mapping:
 | claude | `Notification` with `notification_type` in `permission_prompt`, `agent_needs_input` (`idle_prompt` is no event since DECISIONS I-418) | `needs_input` | `message` |
 | claude | `StopFailure` | `error` | `error` or `message` |
 | codex | `type=agent-turn-complete` | `completed` | `last-assistant-message` |
-| opencode | plugin sends `{agent, kind, summary}` already mapped: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input` | | |
+| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input` | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
 Anything else is dropped silently. `window` is the tmux window name of the
@@ -389,6 +428,17 @@ stopped by guestd. `dev` cannot lower its own value, which is why root
 owns this. When the kernel does kill something, guestd's `oom` warning
 names it.
 
+## CPU weights (DECISIONS I-494)
+
+Each SSH connection (its sshd and the `tmux attach` client, a logind
+`session-N.scope`) and the tmux server (`repose-tmux-session.service` in
+`dev`'s user manager) run at `CPUWeight=1000`. Each pane is a
+`tmux-spawn-*.scope` of its own at the default 100, so with a build in
+every pane holding every vCPU, keystrokes and screen updates still get
+the CPU first. Nothing is capped: a weight only matters while the
+machine is full. A process that wants to stay out of the way can still
+use `nice`.
+
 ## Users and privileges
 
 `dev` uid 1000, gid 1000 (group `dev`), groups `wheel docker kvm`, `sudo`
@@ -426,6 +476,19 @@ directory to `LD_LIBRARY_PATH` for manylinux wheels and keeps its own
 path as `sys.executable` (I-228). `DISPLAY=:99` only while the X server
 socket `/tmp/.X11-unix/X99` exists (checked at every shell start); it
 exists while the agents' browser or the desktop viewer runs (I-246).
+The project fragment's `home.sessionVariables` and `home.sessionPath`
+(and those a home-manager module it enables sets) reach the same places
+as the static values: NixOS `environment.sessionVariables` (a fragment
+value over the base's, sessionPath entries first on `PATH`), plus
+`/etc/repose/session-vars.sh`, sourced by `/etc/profile.d/repose.sh`, so
+every agent wrapper and `repose exec` sets them with shell expansion,
+and dev's tmux server and user manager after a switch, with the names
+the new configuration dropped unset (`/etc/repose/session-vars.names`,
+last pushed set in `/run/repose-session-vars.names`). PAM expands only
+`$HOME` and `$USER` in them, so a user unit started at boot sees other
+`$NAME` references unexpanded. `PATH`, `BASH_ENV`, `ENV`,
+`REPOSE_ENV_GEN` and `REPOSE` as session variables, and a double quote
+in a value, fail evaluation with the reason (I-488).
 `BASH_ENV=/etc/repose/bash-env.sh` everywhere the static values reach,
 and in dev's tmux server and user manager after a base switch, so a
 non-interactive bash (each command an agent runs) loads the secrets guestd

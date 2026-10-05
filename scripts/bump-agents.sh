@@ -157,8 +157,11 @@ for c in "${changed[@]}"; do
   # The one place a downloaded binary runs. env -i: it sees no token or
   # other variable of the caller, only a scratch HOME and PATH.
   env -i HOME="$(mktemp -d)" PATH="$PATH" "$out/bin/$b" --version
+  # Codex's own install check already started its daemon from the built
+  # package, which needs the whole package layout (DECISIONS I-487).
   if [ "$a" = codex ]; then
     test -x "$out/bin/codex-code-mode-host"
+    test -f "$out/codex-package.json"
   fi
 done
 

@@ -19,7 +19,7 @@ Watching or taking over is one command:
 
 ```
 $ repose browser
-Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p (the view sleeps after 30 idle minutes; repose browser --stop ends it).
+Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p (the view sleeps after 30 idle minutes).
 ```
 
 The laptop's browser opens on that link and shows the agent's browser,

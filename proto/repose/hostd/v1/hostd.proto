@@ -271,6 +271,19 @@ message GuestSample {
   uint64 disk_used_bytes = 9;
   GuestSignals signals = 10;
   repeated ProcSample procs = 11;
+  // Microseconds since the last sample in which a task inside the guest
+  // was runnable and waited for a vCPU: the guest's /proc/pressure/cpu
+  // "some" total, moved on by hostd (DECISIONS I-493).
+  uint64 cpu_pressure_us_delta = 12;
+  // Microseconds since the last sample in which a thread of the guest's
+  // hypervisor unit was runnable and waited for a host CPU: the unit
+  // cgroup's cpu.pressure "some" total on the host, the guest's steal
+  // (DECISIONS I-493).
+  uint64 host_cpu_wait_us_delta = 13;
+  // Memory in use as the guest sees it, MemTotal less MemAvailable, at the
+  // sample (guest-written; mem_rss_bytes is what the host has backed,
+  // which never shrinks without a balloon). DECISIONS I-493.
+  uint64 guest_mem_used_bytes = 14;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

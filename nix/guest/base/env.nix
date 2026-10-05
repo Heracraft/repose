@@ -47,6 +47,13 @@ in
 
   environment.etc."profile.d/repose.sh".text = ''
     # repose guest profile: sourced by every shell (see nix/guest/base/env.nix).
+    # The configuration's home.sessionVariables and home.sessionPath
+    # (nix/guest/contract.nix, DECISIONS I-488), here as well as in PAM and
+    # /etc/set-environment so an agent started by a tmux server older than
+    # the configuration gets them, expanded by the shell.
+    if [ -r /etc/repose/session-vars.sh ]; then
+      . /etc/repose/session-vars.sh
+    fi
     if [ -r /etc/repose/env ]; then
       set -a
       . /etc/repose/env
@@ -81,24 +88,59 @@ in
   # -c` with the server's environment) and dev's user manager (what a user
   # unit starts with). Give both the new login PATH and BASH_ENV, so an
   # agent started after the switch gets current secrets in each command
-  # (I-475). Idempotent; nothing to do on first boot, when neither is
-  # running yet.
+  # (I-475), and the configuration's session variables, unsetting the
+  # ones the previous configuration had and this one dropped (I-488;
+  # /run/repose-session-vars.names keeps the names last pushed).
+  # Idempotent; nothing to push on first boot, when neither is running
+  # yet, but the names are recorded.
   system.activationScripts.repose-user-path = {
     deps = [ "etc" "users" ];
     text = ''
+      repose_old_names=$(${pkgs.coreutils}/bin/cat /run/repose-session-vars.names 2>/dev/null || true)
       if [ -S /tmp/tmux-1000/default ] || [ -S /run/user/1000/bus ]; then
         ${pkgs.util-linux}/bin/runuser -u dev -- ${pkgs.coreutils}/bin/env -i \
           HOME=/home/dev USER=dev LOGNAME=dev XDG_RUNTIME_DIR=/run/user/1000 \
+          REPOSE_OLD_NAMES="$repose_old_names" \
           ${pkgs.bash}/bin/bash -lc '
+            old=$REPOSE_OLD_NAMES
+            unset REPOSE_OLD_NAMES
+            new=
+            [ -r /etc/repose/session-vars.names ] && new=$(< /etc/repose/session-vars.names)
+            tmux_args=(set-environment -g PATH "$PATH" \; set-environment -g BASH_ENV "$BASH_ENV")
+            set_args=(PATH="$PATH" BASH_ENV="$BASH_ENV")
+            unset_args=()
+            kept=" "
+            for n in $new; do
+              kept="$kept$n "
+              tmux_args+=(\; set-environment -g "$n" "''${!n-}")
+              set_args+=("$n=''${!n-}")
+            done
+            for n in $old; do
+              case $kept in
+                *" $n "*) ;;
+                *)
+                  tmux_args+=(\; set-environment -g -u "$n")
+                  unset_args+=("$n")
+                  ;;
+              esac
+            done
             if [ -S /tmp/tmux-1000/default ]; then
-              ${pkgs.tmux}/bin/tmux -S /tmp/tmux-1000/default set-environment -g PATH "$PATH" \; \
-                set-environment -g BASH_ENV "$BASH_ENV" 2>/dev/null || true
+              ${pkgs.tmux}/bin/tmux -S /tmp/tmux-1000/default "''${tmux_args[@]}" 2>/dev/null || true
             fi
             if [ -S /run/user/1000/bus ]; then
-              ${pkgs.systemd}/bin/systemctl --user set-environment PATH="$PATH" BASH_ENV="$BASH_ENV" 2>/dev/null || true
+              ${pkgs.systemd}/bin/systemctl --user set-environment "''${set_args[@]}" 2>/dev/null || true
+              if [ "''${#unset_args[@]}" -gt 0 ]; then
+                ${pkgs.systemd}/bin/systemctl --user unset-environment "''${unset_args[@]}" 2>/dev/null || true
+              fi
             fi
           ' || true
       fi
+      if [ -r /etc/repose/session-vars.names ]; then
+        ${pkgs.coreutils}/bin/cp /etc/repose/session-vars.names /run/repose-session-vars.names || true
+      else
+        ${pkgs.coreutils}/bin/rm -f /run/repose-session-vars.names
+      fi
+      unset repose_old_names
     '';
   };
 

@@ -17,10 +17,61 @@ import (
 const levelNotice = obs.LevelNotice
 
 // sampleCursor is a running guest's last reading of its cumulative
-// counters: the hypervisor unit's CPU time and its tap's bytes.
+// counters: the hypervisor unit's CPU time and its tap's bytes, and the two
+// CPU pressure totals (DECISIONS I-493), each with its own seen flag since
+// either can be missing while the others read.
 type sampleCursor struct {
-	cpu, rx, tx uint64
-	seen        bool
+	cpu, rx, tx  uint64
+	seen         bool
+	pressure     uint64
+	pressureSeen bool
+	wait         uint64
+	waitSeen     bool
+}
+
+// maxPressureDelta bounds the guest-written pressure counter's move in one
+// sample. PSI cannot pass wall time and samples are a minute apart, so five
+// minutes is room for a late tick, and a guest that writes a huge total
+// moves nobody's chart past it (the bound of I-446 for this field).
+const maxPressureDelta = 300_000_000
+
+// maxGuestMem bounds the guest-written memory figure: no class comes near
+// a tebibyte, so a larger value is a guest's invention.
+const maxGuestMem = 1 << 40
+
+// advancePressure moves a guest's CPU pressure cursor to total, the
+// guest's /proc/pressure/cpu "some" total, and returns the bounded delta.
+// The first reading after hostd starts sets the baseline. A zero total is
+// a guest without PSI and leaves the cursor alone.
+func (m *Manager) advancePressure(guestID string, total uint64) uint64 {
+	if total == 0 {
+		return 0
+	}
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	cur := m.last[guestID]
+	var d uint64
+	if cur.pressureSeen {
+		d = min(counterDelta(cur.pressure, total), maxPressureDelta)
+	}
+	cur.pressure, cur.pressureSeen = total, true
+	m.last[guestID] = cur
+	return d
+}
+
+// advanceWait moves a guest's host CPU wait cursor to total, the
+// hypervisor unit cgroup's cpu.pressure "some" total, and returns the delta.
+func (m *Manager) advanceWait(guestID string, total uint64) uint64 {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	cur := m.last[guestID]
+	var d uint64
+	if cur.waitSeen {
+		d = counterDelta(cur.wait, total)
+	}
+	cur.wait, cur.waitSeen = total, true
+	m.last[guestID] = cur
+	return d
 }
 
 // counterDelta is how far a cumulative counter moved since prev. A reading
@@ -146,11 +197,16 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			gsm.DiskAllocBytes, gsm.DiskUsedBytes = size, used
 		}
 		if g.State == StateRunning {
-			if props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "CPUUsageNSec", "MemoryCurrent"); err == nil {
+			if props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "CPUUsageNSec", "MemoryCurrent", "ControlGroup"); err == nil {
 				cpu, _ := strconv.ParseUint(props["CPUUsageNSec"], 10, 64)
 				mem, _ := strconv.ParseUint(props["MemoryCurrent"], 10, 64)
 				gsm.MemRssBytes = mem
 				gsm.CpuNsDelta = m.advanceCPU(g.GuestID, cpu)
+				if cg := props["ControlGroup"]; cg != "" && m.d.CgroupCPUPressure != nil {
+					if total, err := m.d.CgroupCPUPressure(cg); err == nil {
+						gsm.HostCpuWaitUsDelta = m.advanceWait(g.GuestID, total)
+					}
+				}
 			}
 			if drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap); ok {
 				gsm.NetRxBytesDelta, gsm.NetTxBytesDelta = drx, dtx
@@ -164,6 +220,8 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					gsm.Signals = cleanSignals(sr.Signals)
 					gsm.Signals.GuestdOk = true
 					gsm.Procs = cleanProcs(sr.Procs)
+					gsm.CpuPressureUsDelta = m.advancePressure(g.GuestID, sr.GetCpuPressureUsTotal())
+					gsm.GuestMemUsedBytes = min(sr.GetMemUsedBytes(), maxGuestMem)
 				} else {
 					lost++
 				}

@@ -260,7 +260,5 @@ func writeForkSummary(e *Env, src *Project, res *ForkResult, took time.Duration)
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", f.Slug, state)
 	}
 	_ = tw.Flush()
-	first := res.Projects[0].Slug
-	_, _ = fmt.Fprintf(e.Out, "Each is its own machine, billed like any project; %s is unchanged and is still the one `repose run` uses in its checkout.\n", src.Slug)
-	_, _ = fmt.Fprintf(e.Out, "`repose attach %s` to get in; `repose rm %s` when you are done with one.\n", first, first)
+	_, _ = fmt.Fprintf(e.Out, "Each is its own machine, billed like any project; %s is unchanged and is still its checkout's project.\n", src.Slug)
 }

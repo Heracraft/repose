@@ -33,7 +33,8 @@ the environment with `repose-notify` and `repose-ask`, with your answers
 (each capped at 1 KB).
 
 **Metering.** Once a minute, for every environment: whether it is running,
-its size class, CPU time, memory in use, bytes sent and received, disk
+its size class, CPU time, memory in use, how long its processes waited
+for a CPU (inside the environment and on the server), bytes sent and received, disk
 allocated and used, the number of open SSH sessions and attached tmux
 clients, the number of Docker containers running, and which agents are
 running in which tmux windows and whether they are working, idle, or

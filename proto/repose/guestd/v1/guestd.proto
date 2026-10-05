@@ -71,6 +71,13 @@ message SampleResult {
   repose.hostd.v1.GuestSignals signals = 1;
   repeated repose.hostd.v1.ProcSample procs = 2;
   bool partial = 3;
+  // The guest's /proc/pressure/cpu "some" total in microseconds, a
+  // cumulative counter since boot; 0 when the kernel has no PSI. hostd
+  // turns it into GuestSample.cpu_pressure_us_delta (DECISIONS I-493).
+  uint64 cpu_pressure_us_total = 4;
+  // MemTotal less MemAvailable from the guest's /proc/meminfo, in bytes;
+  // 0 when it cannot be read (DECISIONS I-493).
+  uint64 mem_used_bytes = 5;
 }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 

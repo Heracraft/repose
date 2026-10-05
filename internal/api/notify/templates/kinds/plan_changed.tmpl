@@ -1,6 +1,4 @@
 {{define "heading"}}Your plan is {{if .P.Has "to_plan"}}{{.P.Plan "to_plan"}}{{else}}changing{{end}}{{end}}
-{{define "body"}}{{if and (.P.Has "from_plan") (.P.Has "to_plan")}}Your plan changes from {{.P.Plan "from_plan"}} to {{.P.Plan "to_plan"}}{{else}}Your plan changes{{end}}{{if .P.Has "effective_at"}} on {{.P.Date "effective_at"}}{{end}}. An upgrade takes effect at once and the difference is prorated. A downgrade takes effect at the next renewal.
-
-Your machines are untouched; what changes is the memory your running machines share, the disk and the egress.{{end}}
+{{define "body"}}{{if and (.P.Has "from_plan") (.P.Has "to_plan")}}Your plan changes from {{.P.Plan "from_plan"}} to {{.P.Plan "to_plan"}}{{else}}Your plan changes{{end}}{{if .P.Has "effective_at"}} on {{.P.Date "effective_at"}}{{end}}. An upgrade takes effect at once and the difference is prorated. A downgrade takes effect at the next renewal.{{end}}
 {{define "link_label"}}Your plan{{end}}
 {{define "link_url"}}{{.Billing}}{{end}}

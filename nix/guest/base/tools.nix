@@ -12,6 +12,25 @@ in
     enable = true;
     nix-direnv.enable = true;
   };
+  # The user's own shells (repose ssh, ssh <slug>.repose, the tmux shell
+  # window, an editor's terminal) load a checkout's flake dev shell as the
+  # agents do when the checkout has no .envrc: direnv's prompt hook is
+  # replaced by one that, there and only there, exports from the agent
+  # wrapper's generated .envrc (devshell.sh, DECISIONS I-488). After the
+  # direnv module's own init, which defines _direnv_hook; nothing changes
+  # where that init did not run.
+  programs.bash.interactiveShellInit = lib.mkAfter ''
+    if declare -F _direnv_hook >/dev/null && [ -r /etc/repose/devshell.sh ]; then
+      . /etc/repose/devshell.sh
+      _direnv_hook() {
+        local previous_exit_status=$?
+        trap -- ''' SIGINT
+        _repose_devshell_prompt
+        trap - SIGINT
+        return $previous_exit_status
+      }
+    fi
+  '';
   programs.starship.enable = true;
   programs.zoxide.enable = true;
   programs.git.enable = true;

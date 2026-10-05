@@ -66,7 +66,7 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	tty := writerIsTerminal(e.Out)
 	if tty {
 		if len(secrets) == 0 {
-			_, _ = fmt.Fprintf(e.Out, "Stored by repose for %s: none (repose secrets set NAME)\n", project.Slug)
+			_, _ = fmt.Fprintf(e.Out, "Stored by repose for %s: none\n", project.Slug)
 		} else {
 			_, _ = fmt.Fprintf(e.Out, "Stored by repose for %s:\n", project.Slug)
 		}
@@ -80,7 +80,7 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	}
 	if tty {
 		skip, _, _ := e.Cfg.loginSkip(project.Slug)
-		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run (repose secrets choose):")
+		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run:")
 		writeLoginRows(e.Out, skip, e.loginsFound())
 	}
 	return nil

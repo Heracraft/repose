@@ -20,6 +20,10 @@ import (
 // with -o overrides instead of the real gateway.
 type sshTarget struct {
 	Args []string // e.g. []string{"todo-app.repose"}
+	// Checkout is the machine's other checkout this command works in
+	// (`repose run --on`, DECISIONS I-480), "" for the checkout itself.
+	// Every guest script that finds the checkout takes it from here.
+	Checkout string
 }
 
 func hostTarget(slug string) sshTarget { return sshTarget{Args: []string{slug + ".repose"}} }

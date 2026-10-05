@@ -114,7 +114,24 @@ in
       # stop, not a failure.
       Restart = "no";
       KillMode = "control-group";
+      # The tmux server draws every pane, so it gets ten times a pane's
+      # share of CPU (each pane is its own tmux-spawn scope at the default
+      # 100): with a build on every core, what you type still shows at
+      # once (DECISIONS I-494).
+      CPUWeight = 1000;
     };
+  };
+
+  # Each SSH connection, with its sshd and the `tmux attach` client, is a
+  # logind session scope; the same weight keeps the keystrokes moving
+  # while user@1000.service's panes hold every core (DECISIONS I-494). A
+  # prefix drop-in, so it reaches the transient session-N.scope units.
+  systemd.units."session-.scope" = {
+    overrideStrategy = "asDropin";
+    text = ''
+      [Scope]
+      CPUWeight=1000
+    '';
   };
 
   systemd.user.paths.repose-tmux-session = {

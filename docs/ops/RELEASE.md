@@ -23,7 +23,10 @@ this file is the part between "a branch is done" and "it is live".
    ops/dev/release-queue add --live "repose start of a stopped e2e project: under 12 s"
    ```
 
-   `add` refuses a dirty tree, a branch with nothing main lacks, and a branch
+   `add` refuses a dirty tree, a branch whose CLI output or web text
+   fails the trust-the-reader guards (DECISIONS I-484, I-485; it runs
+   them for a branch that ships as `cli` or `web`), a branch with nothing
+   main lacks, and a branch
    that conflicts with main anywhere but `docs/DECISIONS-INDEX.md`. It
    records the commit, so later commits need another `add`; that works
    while the branch is in a cut too, and the conductor takes the new
@@ -40,7 +43,10 @@ was queued is marked; queue it again or the release takes the old commit.
 
 `add` reads the branch's diff against main and names the deploy targets it
 reaches. Go packages count through `go list -deps`: a change to
-`internal/obs` reaches every server binary but not the CLI.
+`internal/obs` reaches every server binary but not the CLI. A non-Go
+file under `cmd/` or `internal/` (an embedded email template, a
+migration) counts as a change to the nearest package above it, so an
+email edit ships as `api`.
 
 | Target | Reached by | Shipped by | Who may run it |
 |---|---|---|---|
@@ -91,7 +97,13 @@ Integrate whenever branches are queued; it needs no owner approval.
      `REPOSE_PROJECT REPOSE REPOSE_HOOK_AGENT` first, and keep `TMPDIR`
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit); `go test ./internal/cli
-     -run TestDocs`; the `docs/CHECKLIST.md` greps;
+     -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
+     `docs/CHECKLIST.md` greps. A batch that adds or changes CLI output:
+     read its success lines and listings as a user on the hundredth run
+     would, and send back any that teach a command (DECISIONS I-484);
+     the test misses commands assembled at run time. A batch that adds
+     or changes docs or copy: read the new paragraphs the same way and
+     send back help nobody asked for (I-485);
    - `web`: `pnpm --filter web exec vitest run`, `svelte-check`, `eslint .`,
      `build`, and the playwright suites (on a repose guest, set
      `PLAYWRIGHT_CHROMIUM_PATH` to the base's

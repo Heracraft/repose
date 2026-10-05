@@ -75,7 +75,7 @@ func BrowserCmd(ctx context.Context, e *Env, projectArg string, opts BrowserOpti
 		return err
 	}
 	u := browserURL(port, pw)
-	_, _ = fmt.Fprintf(e.Out, "Watching %s's browser at %s (the view sleeps after %d idle minutes; repose browser --stop ends it).\n", project.Slug, u, desktopIdleMinutes)
+	_, _ = fmt.Fprintf(e.Out, "Watching %s's browser at %s (the view sleeps after %d idle minutes).\n", project.Slug, u, desktopIdleMinutes)
 	if !opts.NoOpen {
 		_ = openBrowser(u)
 	}

@@ -425,8 +425,9 @@ func TestRmAndLsOfATemporaryProject(t *testing.T) {
 	}
 	var ls strings.Builder
 	writeProjectsTable(&ls, listed(t, e))
-	if !strings.Contains(ls.String(), "tmp-q7wd is temporary: destroyed in 3h. `repose keep tmp-q7wd` keeps it.") {
-		t.Fatalf("ls:\n%s", ls.String())
+	rows := strings.Split(strings.TrimSpace(ls.String()), "\n")
+	if len(rows) != 2 || !strings.HasSuffix(rows[0], "LEFT") || !strings.HasSuffix(rows[1], " 3h") {
+		t.Fatalf("ls (I-484: time left is the LEFT column, nothing under the table):\n%s", ls.String())
 	}
 	var asked string
 	confirm := func(prompt string) (bool, error) { asked = prompt; return true, nil }

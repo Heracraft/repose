@@ -2,7 +2,7 @@ Your plan ends on 27 October 2026 at 14:00 UTC
 
 Solo stays on until then, and your machines run until then. At that point they stop.
 
-Snapshots are kept 30 days after that, so you can pick up where you left off if you come back. Changed your mind? Resume the plan from your plan page before it ends.
+Snapshots are kept 30 days after that. You can resume the plan before it ends.
 
 Resume the plan: https://repose.herakraft.co/billing
 

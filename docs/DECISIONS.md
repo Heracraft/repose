@@ -8998,7 +8998,8 @@ It is temporary: no snapshot is kept and it cannot be restored. [y/N]` and
 prints no restore hint. The dashboard's project list shows a `temporary`
 badge after the name and the same "destroyed in 5h" under the state.
 `repose keep` on a project that is not temporary prints `NAME is not
-temporary.` and exits 0.
+temporary.` and exits 0. (`ls` and `status` changed with I-484: a `LEFT`
+column, and no keep hint.)
 
 **I-352. The session end destroys a temporary machine only when tmux says
 the session is gone.** (07, 2026-09-29; builds I-347.) After the attach
@@ -12515,3 +12516,504 @@ run, another branch). Left to the owner: whether `repose run` should
 take a way to turn the layer back on for one machine (for instance
 `--personal`), and whether `repose sync` should take `--no-personal`
 too.
+**I-480. One machine holds several checkouts: `repose run --on PROJECT`.**
+(multi-checkout, 2026-10-04; extends I-368, I-253) Until now the CLI
+treated a machine and a checkout as one thing: every `repose run` in a new
+repository made a new project. On the flat plans a project costs running
+memory, not a slot, but a Solo user with agents in three repositories at
+once still needed three machines, although a small guest carries three
+agents that spend most of their time waiting on the model API. The owner
+chose (2026-10-04) to keep "project" meaning the machine and let a second
+folder join one: `repose run --on PROJECT` in that folder claims
+`~/<folder>` on the machine (the name made safe as for I-368, else
+`<folder>-2`, ..., skipping the checkout, its worktrees, names already
+taken and non-empty directories), lists it in `~/.repose/checkouts`,
+syncs into it with the folder's own remote, and records the folder under
+a new `checkouts` key of `projects.json`, never in `by_dir`, so a CLI
+from before this entry makes the folder a machine of its own instead of
+syncing it over the checkout. Resolution reads `checkouts` first;
+`PROJECT:CHECKOUT` names one from anywhere. The CLI carries the checkout
+name on its ssh target, so sync, exec, ssh, cp, code, the git remote,
+the drop handler and agent windows all work in it. Agent windows there
+are `<checkout>/<agent>` (`:` would be read by tmux as the session
+separator in a target), and an attach with no window opens the
+checkout's most recently used window, else a new shell window
+`<checkout>`. The early and boot probes, which read the machine's own
+checkout, are skipped for such a folder, and the attach fast path takes
+the slow path. Shared on purpose and documented: secrets and logins,
+the machine's `repose.nix`, ports, disk, snapshots, undo and destroy.
+Known gap: the `.env` carry keeps one marker and one paths file per
+machine, so runs from two folders by turns resend each folder's set, and
+the git carry writes one flattened config per machine, so the identity
+is the one of the folder that ran last.
+guestd and `repose-checkout` are unchanged and know only the checkout.
+The flag name was chosen over a `repose checkout` noun (cli-surface
+rule: no new top-level command when a flag of an existing one does).
+Fixed on the way: the drop handler looked for laptop files in
+`~/<slug>`, which is the checkout only on machines from before I-368;
+it now applies the shared rule. Tests: `TestRunOnAddsAnotherCheckout`,
+`TestRunOnRefusals`, `TestClaimCheckoutNames`,
+`TestProjectsCacheCheckoutsRoundTrip`, `TestWindowLabel`. Proposal:
+`docs/proposals/2026-10-04-several-checkouts.md`.
+**I-484. A command that worked says what happened and stops; the next
+command is for failures and refusals.** (07, quiet-success, 2026-10-04;
+narrows I-153, replaces the `ls` and `status` lines of I-351)
+
+The problem. I-153 gave every error a next command: you are stuck, so the
+CLI tells you how to get unstuck. The same suffix then spread to output
+where nothing went wrong. By 2026-10-04 `start` ended with "`repose
+attach X` to get in", every `stop` with "`repose rm X` to stop that",
+`ls` printed a line per temporary machine under the table ("`repose keep
+X` keeps it"), `ls --destroyed` added two lines on how to read its own
+table, `fork` closed with a line of commands, `repose secrets` and `run`
+pointed at `repose secrets choose`, and a `run` in the home directory
+offered two ways to make other machines. The owner read `repose ls` with
+two temporary machines and called it "such handholding".
+
+The failure mode. Each hint looks harmless on the day it is written: one
+feature, one line, reviewed alone, and kind to a first-time user. The
+cost lands on you the hundredth time you run the command and read the
+same lesson, in output whose job is to show state. Listings collect the
+most, because each feature adds its own line under the same table, so
+the table you asked for arrives followed by text you didn't. Scripts
+that count or grep lines see the extra lines too. Review doesn't catch
+it, because a reviewer reads one diff, and in one diff the hint is a
+single friendly line.
+
+The rule. A success line or a listing says what happened, or what is,
+and stops. A next command goes where you are stuck: a failure, a
+refusal, a warning that your work did not go, or a change that does
+nothing until you act (a built kernel change waiting for a restart).
+Facts that matter stay, without the command: `Disk is still billed.`,
+`Its final snapshot is kept for 30 days.`, `Using boxd, the machine last
+made in this directory.` State that belongs to a row is a column: a
+temporary machine's time left is `ls`'s `LEFT` column, shown only while
+one is listed; `status` says `temporary: destroyed in 5h`. The docs
+teach the commands.
+
+Changed: `start`, `stop` (and already stopped), `rm` (both paths),
+`restore`, `snapshots restore`, `resize`, `fork`, `browser`, the idle
+lines in `ls`, `status`, `run` and `attach`, `ls --destroyed` and `--all`
+(no footer; the line for a name in use stays, since the plain `restore
+NAME` is wrong for that row), `questions` (`options: yes|no` in place of
+a `repose reply` line; a waiting terminal is `claude on todo-app`),
+`secrets` list, `run`'s logins line (nothing before a choice, `Left on
+your laptop: env, gh.` after), the home-directory `Using` line, and `ls`
+with no projects (`No projects yet.`).
+
+Enforced by `TestSuccessOutputNamesNoCommand`
+(`internal/cli/quiet_success_test.go`). It parses the CLI's sources and
+fails on any string that names a `repose` command unless the string is
+an argument of a failure call (`exitf`, `opFailed`, `withNext`,
+`Errorf`, `errors.New`), cobra help or flag text, inside a known error
+builder, or listed in `quietAllowed` with its reason. Stderr is not
+exempt: `run` and `attach` print notes there, and a trial merge of the
+queue on 2026-10-04 showed a success note on stderr ("Applying repose.nix
+... in the background. `repose config show --revisions` shows when it is
+done.") passing a first version of the test that exempted it. An entry that no longer matches fails the test too. What it
+cannot see: a command assembled at run time (the destroy lines built
+theirs with `restoreHint`), so a reviewer still reads every new success
+line (CHECKLIST, "For every change").
+
+Alternatives. An environment variable or flag that turns hints off:
+rejected, since the default is what everyone reads. Hints shown only
+the first time, remembered on the laptop as the idle note is: rejected
+for now; it adds state to deliver a lesson the docs already give.
+
+**I-485. Trust the reader: say what is true, where they look for it,
+once, and stop.** (all surfaces, quiet-success, 2026-10-04; generalizes
+I-484 and LANDING.md's "No hand-holding" of 2026-09-27)
+
+The pattern. Twice in a week the owner cut text for the same reason:
+the landing's explanatory captions and paragraphs (2026-09-27), and
+the CLI's next-command hints on success lines and listings (I-484).
+Both were written for an imagined beginner who is lost. The person who
+actually reads them is not lost: you have run `repose ls` many times,
+you came to a docs page for one answer, you looked at the landing to
+see what repose is. Each line was added on its own and looked helpful
+on its own. Together they cost every reader attention on every read,
+and they tell you the product doubts you can find your way.
+
+The rule. Help the reader asked for is welcome: `--help`, a docs page,
+a tutorial, an error (being stuck is asking). Help nobody asked for is
+cut. Say each fact once, on the page or in the line where the reader
+looks for it, and link to it from elsewhere.
+
+The test for any line, in any surface: picture the user on their
+fiftieth visit. If the line gives them nothing, cut it, unless it
+prevents a loss they cannot undo or unblocks them.
+
+By surface:
+
+- CLI output: I-484. A result line reports the result; a next command
+  goes on failures and refusals; per-row state is a column.
+- Docs: a page delivers what its title promises. No narrating what the
+  reader is about to see ("A tab opens and you're looking at..."), no
+  reassurance ("Nothing to type", "don't worry", "that's it"), no
+  "next, read X" endings, no restating the previous paragraph. A fact
+  lives on one page; other pages link to it. A tutorial walks through
+  steps because you opened it for that, and still skips what the screen
+  already shows.
+- Copy (landing, dashboard, emails): a heading is its title; one
+  sentence of fact; no instructions for reading the page, no "get
+  started in seconds", no next step in a success toast. An empty state
+  says so, and teaches how to add one only when the screen has no way
+  to (DESIGN-LANGUAGE.md "States"). An email the user did not ask for
+  states the fact, the date or amount, and the one action when they must
+  act. LANDING.md "Copy" has the landing's specifics.
+- Agent guide: the same, read by an agent: facts and commands it needs,
+  no encouragement.
+
+Enforced, for future text as much as today's, in three places:
+
+- Tests. `TestSuccessOutputNamesNoCommand` (I-484) and
+  `TestCLIReassures` in `internal/cli/quiet_success_test.go`; in
+  `apps/web`, `docs.test.ts` holds every docs page and `copy.test.ts`
+  every route, component and email template to the phrasings in
+  `src/lib/unasked.ts` (reassurance, narrating the screen, "next, read
+  X"). The Go list is the TypeScript list's twin; change both.
+- Gates. `just done-check`, which every workstream runs before it
+  reports, runs all four. `ops/dev/release-queue add` runs the CLI pair
+  on a branch that ships as `cli` and the web pair on one that ships as
+  `web`, and refuses to queue on a failure.
+- Instructions. CLAUDE.md "Trust the reader", the workstream preamble
+  (docs/workstreams/PROMPTS.md), CHECKLIST "For every change" and
+  RELEASE.md integrate step 4.
+
+A grep only catches phrasings; prose judgement stays with review.
+Alternatives: a style guide page of examples alone, rejected, since the
+two cuts this week both passed review that had LANDING's rule in hand;
+the tests stop the phrasings, and the rule in CLAUDE.md reaches the
+agents who write the text.
+**I-481. One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies.**
+(opencode-herdr, 2026-10-04) OpenCode 2 (2.0.22, 2026-10-02) ships on a
+channel of its own (`opencode.ai/v2/install`, npm `@opencode/cli`); the
+GitHub "latest" release and the default installer are still 1.18
+(1.18.34). Version 2 does not run version 1 plugins, drops
+`session.idle`/`session.error` from its event stream (a turn ends with
+`session.execution.succeeded` or `session.execution.failed`; checked by
+logging every event of a real 2.0.22 run), and runs plugins in a
+background service the repose wrapper never starts, so
+`REPOSE_HOOK_AGENT` is absent there and `repose-hook` refused the
+payload ("no agent given"). Decided: (1) the guest keeps 1.18 as
+`opencode` (bumped to 1.18.34, bug fixes only); a user may install
+OpenCode 2 beside it as `opencode2` (`/docs/agents#opencode-2`). (2)
+`opencode-plugin.js` default-exports `{id, server, setup}`, the shape
+OpenCode's migration guide gives for one package serving both (version
+1 reads `server` from 1.18.29 on, version 2 reads `setup`), maps V2's
+`session.execution.succeeded` (summary: the last `session.text.ended`
+text), `session.execution.failed` and `permission.asked`, and calls
+`repose-hook --agent opencode`; the shell shim takes `--agent` too.
+(3) `repose-agent-setup opencode` replaces `repose.js` when its sha256 is
+one an earlier base installed (`opencode_retired`, today the 2026-09-19
+file) and leaves any other file, so an existing guest gets the new
+plugin and a user's edit survives; until now an installed plugin was
+never replaced. (4) A user unit, `repose-agent-hooks`, runs that at
+login, so an OpenCode 2 that never went through the wrapper still finds
+the plugin. Alternatives: ship OpenCode 2 as the guest's `opencode`
+(breaks every version 1 plugin a user has, and its line is not the
+default upstream yet); ship both binaries (another 200 MB in every
+closure for a minority, and it updates daily); a second plugin file for
+version 2 (two files to keep in step, and version 1 would fail to load
+it). Login sync is unchanged: it copies `auth.json`, which version 2
+imports once into `opencode.db` and then stops writing, so logins made
+in OpenCode 2 on the laptop do not travel; the docs say so. Checked on
+temporary guest `oc-herdr`: 1.18.32 TUI under herdr sent needs_input
+and completed; `opencode2 run` through the service sent completed
+(summary 431 bytes) and needs_input for an `external_directory` ask.
+*Revisit when:* upstream makes 2.x the default channel, at which point
+the guest's `opencode` moves to it and the version 1 half of the plugin
+stays for one release.
+
+**I-482. herdr is documented, not packaged, and gets no boot unit.**
+(opencode-herdr, 2026-10-04; settles the herdr boot unit left open by
+the 2026-10-03 client report) The report proposed a guest user unit to
+start `herdr server` after `repose start`, because `herdr machine
+status` showed the machine as stopped. Tested again: an open herdr
+client re-runs `herdr remote-client-bridge` within about 30 seconds,
+which starts the server, restores `session.json` and resumed opencode
+with `--session <id>`. Only the status command, which never starts
+anything, reports "stopped" meanwhile. A unit would start a server
+nobody is watching and that herdr starts anyway. Packaging herdr in the
+base does not remove the install prompt either: herdr takes a remote
+binary only when its version matches the laptop's, and herdr ships
+several releases a week (nixpkgs 0.9.3, the guest's pinned nixpkgs 0.9.0). Decided: a
+tutorial, `/docs/tutorial-herdr`, with the limits it keeps (tmux-only
+`repose status` and `repose run`, the idle notice, the shared `Ctrl-b`,
+restore rolling back `~/.config/herdr`). The "Bad owner or permissions
+on /etc/ssh/ssh_config" failure happens only where the client is itself
+a guest (the store's files are owned by `nobody`); `[remote]
+manage_ssh_config = false` avoids it and was checked from kanali.
+*Revisit when:* herdr can run a matching server from a binary on PATH
+across versions, or users ask for `repose status` to see herdr panes.
+**I-487. The guest's Codex is a complete Codex package.** (2026-10-04)
+On base 2026.10.04.1, on a new project and on kanali, `codex` stopped at
+"this CLI has no complete local package; install a packaged Codex CLI or
+use the standalone installer". `codex exec` and `codex --version` still
+ran, which is why the bump check (`--version`) passed. Codex 0.157.1's
+interactive `codex` starts a background app-server daemon (feature
+`daemon_auto_start`; upstream seems to have turned it on for this version
+after release, since I-426's own test on 2026-10-03 reached the TUI).
+`codex app-server daemon start` copies the package holding the running
+executable into `~/.codex/packages/app-server-daemon` and refuses unless
+that package has `codex-package.json`, `bin/codex`,
+`bin/codex-code-mode-host`, `codex-path/rg` and `codex-resources/bwrap`,
+with the running executable as the manifest's entrypoint. `codex.nix`
+installed the binary alone and wrapped it with makeBinaryWrapper, so the
+executable was `bin/.codex-wrapped` with no manifest beside it. The
+package is now laid out the way upstream's `codex-package-<target>`
+asset is: the manifest (written from `versions.json`), the real binary at
+`bin/codex` with no wrapper, the code-mode host, and copies of nixpkgs's
+`rg` and `bwrap` (the daemon refuses a link out of the package; Codex puts
+`codex-path` on its own PATH, so the PATH wrapper is gone). The voice host
+and bundled zsh of the full asset are left out: the daemon does not need
+them. The derivation's install check runs `codex app-server daemon start`
+with a scratch `CODEX_HOME` and fails the build unless it reports
+`started`; with `bwrap` left out it fails with "local Codex package is
+missing codex-resources/bwrap", so a later layout change upstream breaks
+the bump instead of reaching guests. Users need do nothing: the next base
+update switches the package in place; until then `codex --no-daemon`
+starts the TUI (troubleshooting page). Known consequences, from upstream
+and not changed here: the daemon's copy costs about 370 MB in
+`~/.codex/packages` per Codex version, and the daemon starts an updater
+(`codex app-server daemon pid-update-loop`) that follows upstream's
+production channel, so the daemon that runs turns can move past the
+version `versions.json` pins. The owner chose (2026-10-04) to keep the
+daemon on, as upstream ships it: `codex agents`, `codex queue` and remote
+control work without a manual start, at the cost of the disk and the
+drift above. Pinning (`features.daemon_auto_start = false` in
+`/etc/codex/config.toml`) stays the way out if either becomes a problem. Checked on kanali: the built package's TUI in tmux reached
+the sign-in screen with a scratch `CODEX_HOME` where the old package
+printed the error; `codex exec` ran `cat f.txt` and answered with its word.
+
+**I-489. `run` and `sync` apply the checkout's `repose.nix` without being
+asked.** (machine-nix-repo, 2026-10-04; stage 1 of
+`docs/proposals/2026-10-04-your-machine-nix.md`) A `repose.nix` committed
+at a repository's root did nothing until the user ran `repose config
+apply`, so a new machine for that repository booted on the bare base. The
+owner chose (2026-10-04) that a project's `.nix` file configures its
+machines automatically. After a run's or sync's sync, the CLI sends the
+root `repose.nix` of the project's own checkout (`checkoutOwnsProject`,
+or, on a temporary machine, which has no remote, the checkout the run
+just synced into it) as the project's fragment
+through the existing `PUT /projects/{id}/config`, does not wait for the
+build, and prints one line naming the revision (no command in it, I-484). The api skips only a
+fragment that is already applied, so the CLI keeps
+`~/.config/repose/repo-config.json`, per project the file's SHA-256 and
+the revision it made: the same file is not sent again while that
+revision is building, built or applied, and after it failed the run
+names the error instead of building it again (`repose config apply`
+still retries on demand). A refusal from the api (`invalid`: syntax, a
+secret in the file) and a failed send are warnings; the run goes on. A
+run with `--no-sync`, or outside a repository, sends nothing, and another
+repository's `repose.nix` (another checkout of the machine, I-480, or a
+run by name from elsewhere) never replaces the machine's configuration.
+With the file in the repository, the file is the configuration: a menu
+or dashboard change is replaced the next time the file is sent, and the
+docs say so. Tests: `TestRunAppliesRepoConfig`,
+`TestRepoConfigOnlyFromTheProjectsCheckout`.
+**I-486. The CLI marks the folder it starts Claude Code in as trusted.**
+(claude-trust, 2026-10-04; found by the flake-in-root test session,
+`reports/Flake in root DevX.md` item 4) On a new checkout, Claude Code
+2.1.283 opens with "Quick safety check: Is this a project you created or
+one you trust?", cursor on "No, exit". `repose run "prompt"` waited for
+the pane to settle, typed the prompt and Enter into that dialog, and
+Claude Code quit while `run` printed `Ready`; seen twice on flk-devx,
+reproduced here with a scratch `HOME`. The flag that skips it is
+`projects["<folder>"].hasTrustDialogAccepted` in `~/.claude.json`, keyed
+by the resolved path (checked on 2.1.283: set it and the dialog is gone).
+Now `startAgentWindow` puts `claudeTrustScript` in front of claude's
+`tmux new-window`, in the same SSH command: it resolves the window's
+folder with `pwd -P` and sets the flag with jq when it is not already
+true, replacing a false that an earlier refusal left, keeping every other
+key, atomically, and never touching a file that is not valid JSON. Only
+folders repose starts an agent in get it (the checkout, `--worktree`
+directories, and with I-480 another checkout, since the script takes the
+folder the window is given). A user who types `claude` in another folder
+still sees Claude Code's own dialog. The laptop's `~/.claude.json` is
+never carried (I-196), so no laptop trust reaches the guest and the carry
+cannot undo this write; repose-agent-setup's edits of the same file keep
+`projects`. As defence in depth, `waitPaneIdle` looks for the dialog's
+lines in the settled capture (and at its deadline) and returns
+`agentDialogError` instead of typing; `run` then says the prompt was not
+typed and attaches, or with `--no-attach` exits 1 naming `repose
+attach`. I-283 turned down matching a dialog's text; this match is
+narrower than what it turned down, since it never presses a key, and when
+a Claude Code release rewords the dialog it misses and the CLI behaves
+as before, which the pre-trust should make rare. A CLI change, so it reaches every base at
+once. Race: a Claude Code already running in another window can rewrite
+`~/.claude.json` between jq's read and the rename; the same window
+exists for repose-agent-setup's writes at each start, and the dialog
+check covers a lost flag. Tests: `TestClaudeTrustScript`,
+`TestAgentWindowCommandTrustsOnlyForClaude`,
+`TestPromptNotTypedIntoTrustDialog`, `TestPaneShowsDialog`. Live on
+production with a CLI built from the branch (2026-10-04): v0.1.29 on a
+new temporary machine printed `Ready` with no claude window left; the
+branch CLI on a new machine left the flag true for the checkout and the
+worktree, and the prompt sat in Claude Code's input; with jq hidden and
+the checkout's entry removed, it exited 1 with the window still on the
+dialog. Seen on the way: Claude Code 2.1.283 did not ask in a
+`--worktree` directory whose own entry was missing while the checkout
+was trusted, so a worktree seems to inherit the repository's trust; the
+flag is written for it anyway.
+*Rejected:* setting the flag in repose-agent-setup from the wrapper
+(it reaches machines only with a new base, and the wrapper cannot tell a
+folder `run` chose from one the user changed into); trusting `/home/dev`
+as a parent (trusts every folder on the machine); answering the dialog
+with keys (its wording has changed between releases, and on 2.1.283 the
+cursor starts on "No, exit", so a key sent blind can quit Claude Code).
+**I-491. A kept ssh master is reused only after it answers, and an attach
+keeps the access token fresh.** (attach-check, 2026-10-04; amends I-223)
+The owner reported that reattaching after an hour or more took seconds.
+Two causes, read from the code. First, I-223's fast path took a master
+that answered `ssh -O check` as proof the guest answers, but the check
+asks only the master's local socket: after the laptop slept or changed
+networks the master process is still up with a dead TCP connection, so
+`attach` printed "Connected", opened its session on it and hung until
+ssh's keepalives gave up (`ServerAliveInterval 30`, count 3: up to 90
+seconds), then I-469's reattacher connected afresh. `masterAlive` now
+also runs `true` over the master within 2 seconds
+(`masterProbeTimeout`); on a timeout it sends `-O stop` (stop, not exit,
+so sessions already on a slow but healthy master, another terminal's
+attach, keep running) and the caller takes the cold path. This costs
+one multiplexed session (two round trips) on every warm `run` and
+`attach`, which I-223 had made free; a dead master costs 2 seconds
+instead of up to 90. Second, with no master left, the first api call
+refreshed an access token that had expired during the attach (Logto's
+default 1-hour lifetime; the configured value is not in this repository), a round trip to Logto before anything else. An
+attached `run` or `attach` now runs `KeepFresh`: once a minute, against
+the wall clock because a sleeping laptop stops timers, it refreshes the
+token when under 10 minutes remain, backing off to 15 minutes on
+failure, and ends on logout instead of writing the session back. Every
+refresh now holds `credentials.json.lock` and first takes a newer token
+another process wrote, or its rotated refresh token, so two attached
+terminals do not spend the same refresh token. Not changed:
+`ServerAliveCountMax` (a gateway interface change, left for later).
+Tests: `TestMasterAliveDeadConnection`, `TestMasterAliveHealthy`,
+`TestKeepFreshRefreshesBeforeExpiry`, `TestKeepFreshStopsAfterLogout`,
+`TestTokenSourceTakesAnotherProcessesRefresh`,
+`TestTokenSourceRefreshesWithRotatedToken`.
+
+**I-488. A fragment's session variables reach every process, and your own shells load the flake dev shell agents get.**
+(machine-nix-shell, 2026-10-04; stage 0 of
+`docs/proposals/2026-10-04-your-machine-nix.md`, items 2 and 3 of
+`docs/proposals/2026-10-04-flake-in-root.md`; amends I-259 for the
+user's shells) Two gaps found in the flake-in-root test. First,
+`home.sessionVariables` and `home.sessionPath` in `repose.nix` built and
+did nothing: home-manager writes them to `hm-session-vars.sh`, which only
+a shell home-manager manages sources, and nothing on the guest does. The
+`/docs/config` example and the menu's Java and .NET entries
+(`JAVA_HOME`, `DOTNET_CLI_TELEMETRY_OPTOUT`) rely on it. `contract.nix`
+now copies them, as evaluated (so a home-manager module the fragment
+enables counts too), into NixOS `environment.sessionVariables`: a
+fragment value at priority 90 wins over the base's own (`EDITOR`), and
+sessionPath entries go before the base's `PATH` with `mkBefore`. That
+reaches PAM and `/etc/set-environment`, as the base's variables do (SSH
+sessions, login and interactive shells, the user manager). Two more
+places cover what PAM and a stale tmux server miss. The values are also
+written to `/etc/repose/session-vars.sh` in home-manager's quoting,
+sourced by `/etc/profile.d/repose.sh`, which every agent wrapper and
+`repose exec` source: an agent started by a tmux server that predates an
+in-place apply gets them, and `$OTHER` references expand as in a shell
+(PAM expands only `$HOME` and `$USER`). And the activation script that
+already pushes `PATH` and `BASH_ENV` into a running tmux server and user
+manager pushes these names too, and unsets the ones the previous
+configuration had and this one dropped (`/run/repose-session-vars.names`).
+home-manager's own `LOCALE_ARCHIVE_2_27`, which names the archive NixOS
+already sets, stays out so an empty fragment changes nothing. `PATH`
+(use sessionPath), `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE` are
+refused, and so is a double quote in a value, which PAM cannot hold;
+each fails evaluation with the reason, which hostd shows as the first
+failed assertion. `home.sessionSearchVariables` other than `PATH` are
+not carried. Second, an agent in a checkout with a `flake.nix` and no
+`.envrc` had the flake's tools and the shell next to it did not. Every
+interactive bash now sources `/etc/repose/devshell.sh` and redefines
+direnv's `_direnv_hook` to call `_repose_devshell_prompt`. Where direnv
+finds an `.envrc` (here or above), or no `flake.nix` naming a dev shell
+lies between the folder and `$HOME`, it is direnv's export unchanged, so
+an `.envrc` still needs `direnv allow` in your shell and a denied one
+stays out. Otherwise it exports from the generated `.envrc` the agent
+wrapper uses, which the two share through `_repose_devshell_shadow`.
+Entering prints `repose: loading the dev shell from <dir>/flake.nix (the
+first load can take minutes; Ctrl-C skips it until you leave the
+folder)`; leaving unloads it, as direnv does. The rule is the agents', so
+it holds in any checkout or worktree under `$HOME`, `~/.repose/checkouts`
+included. On a cold load the prompt waits, as an agent does, rather than
+building in the background: the agent window or the plugin installer has
+usually built it within seconds of boot, a background build would race
+nix-direnv's cache, and knowing whether the cache is warm means reading
+nix-direnv's internals. Ctrl-C works because direnv's export handles
+SIGINT itself, and direnv records the interrupted load as loaded, so the
+prompt does not retry until the folder or `flake.nix` changes. A prompt
+inside a loaded checkout costs one direnv export, as before (19 ms
+measured on kanali); the root and generated directory are cached in two
+shell variables. Only bash: the guest's login shell. Checked on kanali
+with the loader's store paths substituted: cold load, Ctrl-C, re-entry,
+warm load, unload on `cd ..`, an `.envrc` blocked, allowed and denied,
+then removed. The `guest-devshell` VM test asserts the fragment variable
+in an SSH command, a login shell, an agent window and a bash its command
+runs, and the flake's tool in a tmux shell window plus its unload; it
+builds but was not run (the nested VM does not boot here).
+`fragment-contract` gains three refusals.
+**I-492. The project page shows the machine: its size spelled out, and
+charts of its minute samples over an hour, a day or a week.**
+(machine-monitor, 2026-10-04; amends the "Deferred" graphs of
+features/status-and-logs.md and DESIGN-LANGUAGE.md's "no chart
+component") A user saw a session lag for seconds while builds held every
+core and had only `htop` inside to look with; the dashboard said `large`
+and nothing about what that means. `GET /projects/:id/samples?window=`
+serves `meter_samples` and `proc_samples` for one project, bucketed to 60,
+300 or 3600 s so no window passes 288 points, CPU as a share of the
+row's own class, and the eight busiest process names. The data is the
+minute sampling the privacy policy already names and the platform
+already stores, so the feature adds no storage, no collector and no
+dependency: the cost is one indexed range scan per page view a minute,
+and an AWS host later adds nothing, since samples already travel hostd
+to api. The rule that request paths never read these tables gains this
+one exception (db-schema.md). The chart is `UsageChart.svelte`: one ink
+series per chart, small multiples rather than two scales on one axis.
+The cards carry figures and labels only; what each measure means is in
+`/docs/machine` (the owner cut the explanations and the table view from
+the first draft as hand-holding). *Rejected:* per-tenant Grafana or a second
+time-series store (the metric registry refuses `project_id` labels on
+purpose; tenant auth in front of Grafana; the owner's monitoring server
+becoming part of the product); a third-party monitoring service (a new
+processor in the privacy policy, a vendor bill per host, for data we
+hold). *Revisit when:* someone needs finer than a minute (I-494's live
+view) or longer than seven days.
+
+**I-493. Samples carry CPU pressure inside the guest, the host CPU wait
+of its hypervisor, and memory in use as the guest sees it.**
+(machine-monitor, 2026-10-04) CPU percentage says the cores were busy,
+not that anything waited; a laggy session is tasks waiting. guestd adds
+the `/proc/pressure/cpu` "some" total and MemTotal less MemAvailable to
+`SampleResult`; hostd turns the total into a delta per sample (capped at
+300 s, the I-446 bound for a guest-written counter) and adds the
+`cpu.pressure` "some" delta of the guest unit's cgroup on the host,
+which is the guest's steal: time its vCPU threads waited for a host CPU
+under the 2:1 oversubscription of R3-2. That one tells a user whether a
+slow minute was their own builds or the server. `mem_rss` stays the
+billing and capacity figure, but it is what the host backs and never
+falls without a balloon, so the chart draws the guest's own figure.
+Migration 0014 adds `cpu_pressure_us`, `host_cpu_wait_us` and `mem_used`
+(default 0); a row from an older guest has `mem_used` 0, and the route
+returns null pressure and memory for it rather than a false zero. The
+privacy policy's metering list names the wait time.
+
+**I-494. In the guest, SSH sessions and the tmux server run at ten
+times a pane's CPU weight; a live `repose status --watch` is documented,
+not built.** (machine-monitor, 2026-10-04) tmux already puts each pane
+in a `tmux-spawn-*.scope` of its own and its server in
+`repose-tmux-session.service`, and logind puts each SSH connection with
+its `tmux attach` client in a `session-N.scope`; the cpu controller is
+delegated to the user manager. `CPUWeight=1000` on the server unit and,
+by a `session-.scope` prefix drop-in, on every session scope, against
+100 per pane, gives the keystroke path the CPU first while builds hold
+every vCPU, and caps nothing when the machine is idle. *Rejected:*
+`nice` on builds (they are started by agents and users we do not
+control); `CPUQuota` on panes (it would slow a build on an idle
+machine). The live view would read `/proc` over the user's own SSH,
+store nothing and work when the api is down (I-200's pattern); it waits
+until someone needs detail finer than the dashboard's minute.
+*Revisit when:* a user asks for a live view, or the session still lags
+under load with these weights (then: `io.weight` on the same units).

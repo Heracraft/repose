@@ -31,7 +31,7 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 	if err := DestroyCmd(ctx, e, p.ID, true, false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "Destroying izma. Bring it back within 30 days with: repose restore izma\n" {
+	if got := out.String(); got != "Destroying izma. Its final snapshot is kept for 30 days.\n" {
 		t.Fatalf("destroy said %q", got)
 	}
 
@@ -40,8 +40,8 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "RESTORABLE UNTIL") ||
-		!strings.HasPrefix(lines[1], "izma ") || !strings.Contains(lines[2], "repose restore NAME") {
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "RESTORABLE UNTIL") ||
+		!strings.HasPrefix(lines[1], "izma ") {
 		t.Fatalf("projects --destroyed:\n%s", out.String())
 	}
 	out.Reset()
@@ -59,7 +59,7 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 	if err := RestoreCmd(ctx, e, "izma", "", "", nil); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if !strings.HasPrefix(out.String(), "Restored izma from its snapshot of ") || !strings.Contains(out.String(), "`repose attach izma`") {
+	if !strings.HasPrefix(out.String(), "Restored izma from its snapshot of ") || strings.Contains(out.String(), "`repose ") {
 		t.Fatalf("restore said %q", out.String())
 	}
 	back, err := findByIDOrSlug(ctx, e.Client, "izma")

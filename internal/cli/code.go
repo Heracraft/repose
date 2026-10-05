@@ -112,14 +112,20 @@ func installHint(ed editorSpec) string {
 // process: the project, which must be running (exit 5 otherwise; none of
 // them starts a machine), and a proved connection to it.
 func connectRunning(ctx context.Context, e *Env, projectArg string) (*Project, sshTarget, error) {
-	project, err := requireRunningProject(ctx, e, projectArg)
+	res, err := requireProjectRes(ctx, e, projectArg)
 	if err != nil {
 		return nil, sshTarget{}, err
+	}
+	project := res.Project
+	if project.State != "running" {
+		return nil, sshTarget{}, notRunningError(project)
 	}
 	target, err := connect(ctx, e, project)
 	if err != nil {
 		return nil, sshTarget{}, err
 	}
+	// A folder `repose run --on` added works in its own checkout (I-480).
+	target.Checkout = res.Checkout
 	return project, target, nil
 }
 

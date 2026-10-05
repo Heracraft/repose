@@ -7,7 +7,7 @@ order: 16
 
 ## Email
 
-Email is on from the start and goes to the address on your account. Each message about a machine has an unsubscribe link. It opens a page with an **Unsubscribe** button, so a mail scanner that follows links can't turn your email off, and it works for 90 days after the email was sent. Mail apps that show their own unsubscribe button use the same link. To switch it yourself:
+Email is on from the start and goes to the address on your account. Each message about a machine has an unsubscribe link. It opens a page with an **Unsubscribe** button and works for 90 days after the email was sent. Mail apps that show their own unsubscribe button use the same link. To switch it yourself:
 
 ```
 repose notify set --email off
@@ -58,15 +58,15 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `todo-app: claude asks`                 | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                        |
 | `todo-app: notifications paused`        | The project reached 30 notifications this hour.                                                                                                                             |
 
-Every email comes as HTML with a plain-text version, so a client that shows no HTML still reads it. There are no images and no tracking in any of them.
+Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`.
+Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`.
 
 ## Emails about your account
 
-Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, because each one answers something you did or tells you about a charge, and they have no unsubscribe link. Paddle, which handles the payments, sends its own receipts and its own note when a card is declined; ours are about your machines.
+Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, and they have no unsubscribe link. Paddle, which handles the payments, sends its own receipts and its own note when a card is declined; ours are about your machines.
 
 | Subject                                    | When                                                                                                                                                                 |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -84,14 +84,14 @@ Some emails are about your account rather than a machine. They are sent even whe
 
 ## Agents can message you and ask questions
 
-Two commands on every machine let an agent reach you directly, from any shell, including its own shell tool:
+Two commands on every machine let an agent reach you from any shell, including its own shell tool:
 
 ```
 repose-notify "Deploy to staging is green"
 repose-ask --options yes,no "Drop the legacy sessions table?"
 ```
 
-`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it, so the agent reads it like the output of any other command. You can run them yourself too, for example at the end of a long script.
+`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it. You can run them yourself too, for example at the end of a long script.
 
 You can answer a question in four places:
 
@@ -129,7 +129,7 @@ It exits with:
 | 5    | Cancelled: you dismissed it, the machine stopped, or it restarted.        |
 | 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.        |
 
-Messages and questions are capped at 1 KB and count toward the project's 30 notifications an hour. The text is shown to you and nobody else, and it isn't written to any log. It does pass through ntfy.sh or your email provider on its way to you.
+Messages and questions are capped at 1 KB and count toward the project's 30 notifications an hour. The text is shown to you and nobody else, and it isn't written to any log.
 
 ## Limits
 

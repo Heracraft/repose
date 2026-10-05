@@ -318,6 +318,10 @@ type Deps struct {
 	MemInfo func() (total, avail uint64, err error)
 	// Load1 returns the one-minute load average.
 	Load1 func() float64
+	// CgroupCPUPressure returns the cpu.pressure "some" total, in
+	// microseconds, of a cgroup named as systemd's ControlGroup property
+	// names it. Nil leaves the host CPU wait at zero (tests).
+	CgroupCPUPressure func(cgroup string) (uint64, error)
 	// StoreStat returns the host store filesystem's size and used bytes.
 	StoreStat func() (total, used uint64, err error)
 	// ConsoleStart begins console capture for a guest dir; the returned

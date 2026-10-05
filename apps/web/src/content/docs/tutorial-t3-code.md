@@ -6,7 +6,7 @@ order: 25
 status: experimental
 ---
 
-[T3 Code](https://github.com/pingdotgg/t3code) is an open-source app for running coding agents as threads, each with its diff and its own worktree. Its server can run on any Linux box, and a repose machine suits it: Claude Code is already logged in there, the threads keep going after you close the laptop, and a stop, start or restore keeps them. You need nothing from repose beyond SSH.
+[T3 Code](https://github.com/pingdotgg/t3code) is an open-source app for running coding agents as threads, each with its diff and its own worktree. On a repose machine Claude Code is already logged in, the threads keep going after you close the laptop, and a stop, start or restore keeps them. You need nothing from repose beyond SSH.
 
 ## Install the server
 
@@ -38,7 +38,7 @@ Pairing URL: http://localhost:3773/pair#token=...
 Expires: ...
 ```
 
-Open that URL on the laptop within 5 minutes. The note it prints about the URL being reachable only from the machine doesn't apply here, because `repose open` puts the same port on your laptop. The setup that follows finds Claude Code and Codex on the machine, logged in with the logins `repose run` copied and the Claude login you made on any of your machines. Add your checkout as a project (`/home/dev/todo-app`) and start a thread.
+Open that URL on the laptop within 5 minutes. The note it prints about the URL being reachable only from the machine doesn't apply here, because `repose open` puts the same port on your laptop. T3 Code uses the machine's Claude Code and Codex, with the logins `repose run` copied and the Claude login you made on any of your machines. Add your checkout as a project (`/home/dev/todo-app`) and start a thread.
 
 To reach it from your phone, use T3 Code's own T3 Connect or `t3 pair --tailscale`. repose has no public URL to offer.
 

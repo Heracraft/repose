@@ -326,6 +326,8 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl")
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name, created if there is none (a second machine for a checkout, or one for a directory with no git remote)")
+	cmd.Flags().StringVar(&opts.On, "on", "", "add this folder to PROJECT's machine as another checkout, beside its own")
+	_ = cmd.RegisterFlagCompletionFunc("on", completeProject(env))
 	addTempFlag(cmd, &tempRaw)
 	// Moved to `repose sync` (I-367); kept hidden for a release so a
 	// script that passes them hears where they went.
@@ -576,8 +578,7 @@ func newBrowserCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 in the background (port 6080, or the next free one) and opens the viewer
 page. The page shows the browser the agent drives, sized to your tab; click
 and type in it to log in, solve a captcha or approve a passkey. The
-password rides in the link after the #, so there is nothing to type. The
-view sleeps after 30 idle minutes; opening the page wakes it.`,
+password rides in the link after the #. The view sleeps after 30 idle minutes; opening the page wakes it.`,
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

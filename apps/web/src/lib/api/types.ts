@@ -324,6 +324,31 @@ export interface SecretMeta {
 	updated_at: string;
 }
 
+/** One bucket of GET /projects/:id/samples (api.md, I-492, I-493). */
+export interface SamplePoint {
+	ts: string;
+	/** Share of the class's vCPUs used, 0 to 1. */
+	cpu: number;
+	/** Memory in use as the guest sees it; null from a guest older than I-493. */
+	mem_used_bytes: number | null;
+	/** Share of the time a task in the guest waited for a vCPU; null as above. */
+	cpu_pressure: number | null;
+	/** Share of the time the machine waited for a host CPU. */
+	host_cpu_wait: number;
+	disk_used_bytes: number;
+}
+
+export type SampleWindow = '1h' | '24h' | '7d';
+
+export interface Samples {
+	window: SampleWindow;
+	step_s: number;
+	vcpus: number;
+	memory_bytes: number;
+	points: SamplePoint[];
+	procs: { comm: string; cpu_s: number; rss_max_bytes: number }[];
+}
+
 export interface Snapshot {
 	id: string;
 	created_at: string;

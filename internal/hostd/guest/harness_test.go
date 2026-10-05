@@ -2,12 +2,14 @@ package guest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,6 +112,7 @@ type harness struct {
 	mu      sync.Mutex
 	guestds map[string]*fakeguestd.Server
 	gopts   fakeguestd.Options
+	cgWait  atomic.Uint64 // every guest unit's cpu.pressure some total
 	noBoot  map[string]bool
 	cfg     Config
 }
@@ -213,6 +216,12 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 		Guestd:  vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") }},
 		MemInfo: func() (uint64, uint64, error) { return 64 << 30, 40 << 30, nil },
 		Load1:   func() float64 { return 0.5 },
+		CgroupCPUPressure: func(cg string) (uint64, error) {
+			if cg == "" {
+				return 0, errors.New("no cgroup")
+			}
+			return h.cgWait.Load(), nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

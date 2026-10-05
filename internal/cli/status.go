@@ -48,7 +48,7 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	if len(projects) == 0 {
-		_, _ = fmt.Fprintln(e.Out, "No projects yet. `repose run` in a git checkout creates one.")
+		_, _ = fmt.Fprintln(e.Out, "No projects yet.")
 		return nil
 	}
 	writeProjectsTable(e.Out, projects)
@@ -56,13 +56,28 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 }
 
 func writeProjectsTable(w io.Writer, projects []Project) {
+	now := time.Now()
+	// LEFT, a temporary machine's time left (I-347), is a column only
+	// while one of them is listed (I-484).
+	left := false
+	for i := range projects {
+		left = left || projects[i].ExpiresAt != nil
+	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH")
+	head := "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
+	if left {
+		head += "\tLEFT"
+	}
+	_, _ = fmt.Fprintln(tw, head)
 	for i := range projects {
 		p := &projects[i]
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			p.Slug, p.Class, p.State, orDash(uptime(p)), orDash(agentState(p)),
 			runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
+		if left {
+			row += "\t" + orDash(tempLeft(p, now))
+		}
+		_, _ = fmt.Fprintln(tw, row)
 	}
 	_ = tw.Flush()
 	for i := range projects {
@@ -70,12 +85,8 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 		if r := abuseStopReason(p); r != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, r)
 		}
-		if l := idleLine(p, time.Now()); l != "" {
+		if l := idleLine(p, now); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
-		}
-		if l := tempLine(p, time.Now(), true); l != "" {
-			// A temporary machine (I-347), and how long it has.
-			_, _ = fmt.Fprintln(w, l)
 		}
 		if p.State == "error" {
 			reason := projectReason(p)
@@ -106,7 +117,7 @@ func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, e
 	}
 	if t := tempWhen(p, time.Now()); t != "" {
 		// DECISIONS I-347: a temporary machine, and how long it has.
-		_, _ = fmt.Fprintf(w, "  temporary: %s; `repose keep %s` keeps it\n", t, p.Slug)
+		_, _ = fmt.Fprintf(w, "  temporary: %s\n", t)
 	}
 	if p.State == "error" {
 		reason := projectReason(p)

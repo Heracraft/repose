@@ -140,7 +140,9 @@ Samples { int64 ts; repeated GuestSample guests; HostSample host; }
 GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 mem_rss_bytes; uint64 net_tx_bytes_delta; uint64 net_rx_bytes_delta;
               uint64 disk_alloc_bytes; uint64 disk_used_bytes;
-              GuestSignals signals; repeated ProcSample procs; }
+              GuestSignals signals; repeated ProcSample procs;
+              uint64 cpu_pressure_us_delta; uint64 host_cpu_wait_us_delta;
+              uint64 guest_mem_used_bytes; }   // the last three: I-493
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|unknown
@@ -211,6 +213,18 @@ bytes without control characters, agent `state` one of `working`, `idle`,
 `needs_input`, `unknown`). The api stores each guest's rows in a batch of
 its own; when a guest's rows are refused it stores the host-measured
 fields alone, and counts it in `repose_api_samples_failed_total{reason}`.
+
+CPU pressure and guest memory (DECISIONS I-493).
+`cpu_pressure_us_delta` is how far the guest's `/proc/pressure/cpu`
+"some" total moved since the last sample (guest-written; hostd keeps the
+cursor and caps one move at 300 s). `host_cpu_wait_us_delta` is the same
+for the `cpu.pressure` of the guest's hypervisor unit cgroup on the host:
+time its vCPU threads waited for a host CPU (host-measured).
+`guest_mem_used_bytes` is MemTotal less MemAvailable in the guest
+(guest-written, capped at 1 TiB). The api stores them in `meter_samples`
+as `cpu_pressure_us`, `host_cpu_wait_us` and `mem_used`. A hostd older
+than I-493 sends zero for all three, which is the old shape and stays
+accepted.
 
 ## Idempotency and ordering
 

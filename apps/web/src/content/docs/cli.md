@@ -24,7 +24,7 @@ Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--ve
 
 ### `repose run [PROMPT]`
 
-Create or start this checkout's machine and attach. A new machine gets a copy of your checkout first; one that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. Your tool logins and settings are copied every time. With a prompt, start an agent and type the prompt into it. See [Run and attach](/docs/run-and-attach) and [Sync](/docs/sync).
+Create or start this checkout's machine and attach. A new machine gets a copy of your checkout first; one that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. Your tool logins and settings are copied every time, and a changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). With a prompt, start an agent and type the prompt into it. See [Run and attach](/docs/run-and-attach) and [Sync](/docs/sync).
 
 On your laptop, `run` changes one thing in the checkout: it adds a git remote named `repose` for the machine's checkout, so `git fetch repose` brings the agent's commits back. See [Getting work back](/docs/sync#getting-work-back).
 
@@ -36,6 +36,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                             |
 | `--size small\|large\|xl` | Size of a new project.                                                                                                                                            |
 | `--name NAME`             | The project called NAME, created if there is none: a second machine for this checkout, or a name other than the directory's for one with no remote.               |
+| `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). |
 | `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines). |
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                             |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                    |
@@ -43,7 +44,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 
 ### `repose attach [PROJECT]`
 
-Attach to the project's tmux session without syncing. In the project's checkout, it adds the `repose` git remote too if it's missing. `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
+Attach to the project's tmux session without syncing. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
 
 `run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
 
@@ -90,7 +91,7 @@ $ repose exec sh -c "npm run build && npm test"
 
 ### `repose ssh [PROJECT]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it. For one command, use `repose exec`.
+Open a shell on the machine in the checkout, outside tmux; `exit` ends it.
 
 ### `repose code [PROJECT]`
 
@@ -118,7 +119,7 @@ Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Work
 
 ### `repose browser [PROJECT]`
 
-Watch the agent's browser on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`; nothing to type. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. [Browser](/docs/machine#browser) has the details.
+Watch the agent's browser on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. [Browser](/docs/machine#browser) has the details.
 
 | Flag        | What it does                                       |
 | ----------- | -------------------------------------------------- |
@@ -209,7 +210,7 @@ Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another 
 
 ### `repose fork [PROJECT]`
 
-Snapshot the project now and start copies of it as new projects, each on its own machine, so several agents can try different approaches from the same starting point. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy counts toward your project limit and is billed like any project. If the copies would take you past the limit, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
+Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy counts toward your project limit and is billed like any project. If the copies would take you past the limit, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
 
 ### `repose resize [PROJECT] [DISK]`
 
@@ -227,7 +228,7 @@ Every event in the window, oldest first, one per line: time, agent, kind, summar
 
 ### `repose questions [PROJECT]`
 
-The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent, how long ago it asked, when it expires, the question and how to answer it. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer; `repose attach` takes you there. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent, how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer; `repose attach` takes you there. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
 
 ### `repose reply [PROJECT] [ANSWER...]`
 

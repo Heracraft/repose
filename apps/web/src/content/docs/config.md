@@ -8,7 +8,7 @@ order: 13
 There are two ways to install software on a project's machine:
 
 - **On the machine**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk. See [The machine](/docs/machine#installing-more).
-- **In the project's configuration**, with `repose config`. This page. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
+- **In the project's configuration**, with `repose config`. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
 
 ## Add a package
 
@@ -24,7 +24,7 @@ Applied revision 4f1c2a9e in 45s.
 
 Any package from nixpkgs works; search names at [search.nixos.org](https://search.nixos.org/packages). Nested names work too, such as `python312Packages.black`. A few names are menu entries that set up more than a package: `postgresql`, `redis` and the other databases also start the service.
 
-Each step shows a spinner and its time while it runs. The steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
+The build steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
 
 The build usually takes under a minute. It's switched into the running machine without a restart, so your agents keep running and new shells see the new packages. If the build fails, nothing changes:
 
@@ -44,7 +44,7 @@ repose config remove air
 
 If you press Ctrl-C while it builds, only the CLI stops. The build carries on and is applied when it finishes; `repose config show --revisions` shows when it has.
 
-A change to the kernel is built but not switched in, because that needs a restart. The CLI says so; the machine starts on it the next time it starts: `repose stop && repose start`.
+A change to the kernel is built but not switched in, because that needs a restart. The machine starts on it the next time it starts: `repose stop && repose start`.
 
 ## The menu
 
@@ -57,11 +57,11 @@ The dashboard's project **Config** page has the same list as a menu: tick an ent
 | Tools     | AWS CLI, OpenTofu, Kubernetes tools, Shell extras                                                 |
 | Deploy    | Wrangler, Supabase CLI, flyctl, Vercel CLI, portless, cloudflared                                 |
 
-Databases listen on localhost only. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work straight away.
+Databases listen on localhost only. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work.
 
 ## Write it in Nix
 
-Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module for the user `dev`. Nix is the language NixOS machines are configured in. You only need it for things the menu can't express, such as dotfiles or environment variables.
+Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module for the user `dev`. You only need it for things the menu can't express, such as dotfiles or environment variables.
 
 ```
 repose config show            # print it
@@ -69,6 +69,16 @@ repose config edit            # edit in $EDITOR, apply on save
 repose config apply ./repose.nix
 repose config apply           # ./repose.nix, or else apply it again
 ```
+
+### repose.nix in your repository
+
+Commit the file as `repose.nix` at the root of your repository and you don't need to apply it yourself. `repose run` and `repose sync` send it whenever it changed since they last did, including the run that creates the machine, and the build goes on while you work:
+
+```text
+Applying repose.nix (revision 4f1c2a9e) in the background.
+```
+
+`repose config show --revisions` shows when it's applied. An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
 
 `repose config apply` with no file and no `./repose.nix` switches the running machine to the project's configuration again: the active revision, or a newer one that built but wasn't applied because its switch failed. Use it when the machine seems to be missing something the configuration has.
 
@@ -98,6 +108,8 @@ An example:
   ];
 }
 ```
+
+`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
 
 The file is a home-manager module, not a flake. A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 

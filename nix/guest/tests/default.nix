@@ -4,7 +4,7 @@
 # overlay upper), so the overlay logic is tested without Cloud Hypervisor.
 # guestd is replaced by a fake that owns /run/repose/hooks.sock and records
 # every POST, because workstream 04's binary is not part of this base.
-{ pkgs, lib, baseVersion, guestBase, guestd, reposeHook, nixpkgsSource }:
+{ pkgs, lib, baseVersion, guestBase, guestd, reposeHook, nixpkgsSource, homeManagerModule }:
 let
   fakeGuestd = pkgs.writers.writePython3Bin "fake-guestd" { } ''
     import json
@@ -154,6 +154,10 @@ let
         echo "envrc=''${ENVRC_ONLY:-}"
         echo "project=''${REPOSE_PROJECT:-}"
         if command -v flake-tool >/dev/null 2>&1; then echo "tool=$(flake-tool)"; fi
+        # The fragment's session variable and path (I-488), in the agent
+        # and in a command it runs (a non-interactive bash).
+        echo "frag=''${REPOSE_FRAG_PROBE:-}"
+        echo "fragchild=$(bash -c 'echo "''${REPOSE_FRAG_PROBE:-}"; command -v frag-tool')"
         echo done
       } > "$out.tmp" 2>&1
       mv "$out.tmp" "$out"
@@ -422,7 +426,9 @@ in
           guest.succeed("sudo -u dev sh -c 'jq \".hasSeenAutoDefaultNudge=false\" ~/.claude.json > /tmp/cj && cat /tmp/cj > ~/.claude.json' && sudo -u dev repose-agent-setup claude")
           assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["hasSeenAutoDefaultNudge"] is False
           guest.succeed("sudo -u dev repose-agent-setup codex && grep -q 'notify = \\[\"repose-hook\"\\]' /home/dev/.codex/config.toml")
-          guest.succeed("sudo -u dev repose-agent-setup opencode && test -s /home/dev/.config/opencode/plugins/repose.js")
+          guest.succeed("sudo -u dev repose-agent-setup opencode && grep -q 'id: \"repose\"' /home/dev/.config/opencode/plugins/repose.js")
+          # I-481: a repose.js the user changed is kept.
+          guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
@@ -1579,9 +1585,28 @@ in
   # when denied, or the flake's dev shell when there is no .envrc. A
   # worktree window gets the same; a broken flake still starts the agent
   # with a message; a slow load marks the pane for `repose run`.
+  #
+  # I-488: the fragment's home.sessionVariables and home.sessionPath reach
+  # the agent, the commands it runs, an SSH command and an interactive
+  # shell; and the user's own shell in the checkout (the tmux shell window)
+  # loads the flake's dev shell the agent got.
   guest-devshell = mkTest "guest-devshell" {
     nodes.guest = { lib, ... }: {
-      imports = [ node ];
+      imports = [ node homeManagerModule ../contract.nix ];
+      home-manager.useGlobalPkgs = true;
+      home-manager.useUserPackages = true;
+      home-manager.users.dev = {
+        home.username = "dev";
+        home.homeDirectory = "/home/dev";
+        home.stateVersion = "26.11";
+      };
+      # contract.nix appends the fragment's overlays (none here) to
+      # nixpkgs.overlays, which the driver's shared, read-only pkgs refuse.
+      nixpkgs.overlays = lib.mkForce [ ];
+      repose.fragment = {
+        home.sessionVariables.REPOSE_FRAG_PROBE = "$HOME/frag";
+        home.sessionPath = [ "$HOME/frag-bin" ];
+      };
       environment.systemPackages = [ devshellProbeAgent ];
       virtualisation.additionalPaths = [ flakeTool pkgs.bash pkgs.coreutils ];
       nix.settings.sandbox = lib.mkForce false;
@@ -1624,6 +1649,14 @@ in
       dev("cp ${devshellFlake} ~/todo-app/flake.nix && chmod 644 ~/todo-app/flake.nix")
       git_repo("~/todo-app", "flake.nix")
 
+      dev("mkdir -p ~/frag-bin && printf '#!/bin/sh\\necho frag-tool-ok\\n' > ~/frag-bin/frag-tool && chmod +x ~/frag-bin/frag-tool")
+
+      with subtest("the fragment's session variables reach SSH commands and login shells"):
+          assert ssh("echo $REPOSE_FRAG_PROBE").strip() == "/home/dev/frag"
+          assert ssh("command -v frag-tool").strip() == "/home/dev/frag-bin/frag-tool"
+          assert dev("echo $REPOSE_FRAG_PROBE").strip() == "/home/dev/frag"
+          assert "REPOSE_FRAG_PROBE" in guest.succeed("cat /etc/repose/session-vars.names")
+
       with subtest("a flake without .envrc: the agent runs in its dev shell"):
           ssh("tmux new-window -t todo-app -n raw -c ~/todo-app -d 'sh -c \"echo flake=$REPOSE_FLAKE_PROBE; command -v flake-tool; echo done\" > /tmp/out-raw 2>&1'")
           raw = guest.wait_until_succeeds("grep -q done /tmp/out-raw && cat /tmp/out-raw", timeout=30)
@@ -1643,6 +1676,33 @@ in
           assert "--output-lock-file /home/dev/.cache/repose/devshell/" in shadow_envrc, shadow_envrc
           guest.succeed("test ! -e /home/dev/todo-app/flake.lock")
           assert dev("cd ~/todo-app && git status --porcelain").strip() == ""
+          # I-488: the agent window and the bash its commands run in have
+          # the fragment's variable, expanded, and its sessionPath.
+          assert "frag=/home/dev/frag\n" in out, out
+          assert "fragchild=/home/dev/frag\n/home/dev/frag-bin/frag-tool" in out, out
+
+      # I-488: the user's own interactive shell, here the tmux shell window
+      # opened in the checkout, loads the same dev shell from its cache,
+      # has the fragment's variable, and unloads the dev shell on leaving.
+      with subtest("an interactive shell in the checkout gets the flake's dev shell"):
+          ssh("tmux new-window -t todo-app -n mine -c ~/todo-app")
+          guest.wait_until_succeeds("sudo -H -u dev tmux capture-pane -p -t todo-app:mine | grep -q 'repose: loading the dev shell from /home/dev/todo-app/flake.nix'", timeout=60)
+          def in_shell(cmd, tag):
+              guest.succeed(f"rm -f /tmp/{tag}")
+              guest.succeed("sudo -H -u dev tmux send-keys -t todo-app:mine " + shlex.quote(f"{{ {cmd}; }} > /tmp/{tag}.tmp 2>&1; mv /tmp/{tag}.tmp /tmp/{tag}") + " Enter")
+              return guest.wait_until_succeeds(f"cat /tmp/{tag}", timeout=60)
+          got = in_shell("echo flake=$REPOSE_FLAKE_PROBE frag=$REPOSE_FRAG_PROBE; flake-tool; command -v frag-tool", "shell-in")
+          print("interactive shell in the checkout: " + got)
+          assert "flake=from-the-flake frag=/home/dev/frag" in got, got
+          assert "flake-tool-ok" in got and "/home/dev/frag-bin/frag-tool" in got, got
+          # Leaving the folder unloads it, as direnv does for an .envrc.
+          in_shell("cd /tmp", "shell-cd")
+          got = in_shell("echo flake=$REPOSE_FLAKE_PROBE frag=$REPOSE_FRAG_PROBE; command -v flake-tool || echo no-flake-tool", "shell-out")
+          print("after cd /tmp: " + got)
+          assert "flake= frag=/home/dev/frag" in got and "no-flake-tool" in got, got
+          pane = guest.succeed("sudo -H -u dev tmux capture-pane -p -J -t todo-app:mine")
+          assert "direnv: unloading" in pane, pane
+          guest.succeed("sudo -H -u dev tmux kill-window -t todo-app:mine")
 
       # I-275: `repose exec todo-app -- sh -c '...'` sends this command line
       # (internal/cli/testdata/exec-script.sh, which TestExecScriptGolden

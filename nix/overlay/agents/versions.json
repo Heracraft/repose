@@ -7,10 +7,10 @@
     }
   },
   "opencode": {
-    "version": "1.18.32",
+    "version": "1.18.34",
     "x86_64-linux": {
-      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.32/opencode-linux-x64.tar.gz",
-      "hash": "sha256-MEbgQE/cYPuAMH56R4JLoHR3NkF4pNCbqoVISW3W1Ds="
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-linux-x64.tar.gz",
+      "hash": "sha256-DyJHlkcibR0t2ZWV0gCC7nvaOHC2LcapC0Hvwacdfpo="
     }
   },
   "codex": {

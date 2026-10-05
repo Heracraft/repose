@@ -522,7 +522,7 @@ const dropMaxFiles = 20
 type dropHandler struct {
 	target  sshTarget
 	slug    string
-	repoDir string // the laptop checkout that is ~/<slug> on the machine; "" when there is none
+	repoDir string // the laptop checkout that is the machine's checkout (target.Checkout's, I-480); "" when there is none
 	clip    clipboardReader
 	// notify shows a message on the tmux status line, without blocking.
 	notify func(msg string)
@@ -676,7 +676,11 @@ func (h *dropHandler) checkoutPaths(ctx context.Context, files []string, sizes [
 		return guest
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "d=\"$HOME\"/%s\nprintf '%%s\\n' \"$d\"\n", shQuote(h.slug))
+	// The checkout by the rule every reader shares (I-368), not ~/<slug>,
+	// which is a machine's checkout only from before I-368.
+	b.WriteString(checkoutVar(h.slug, h.target.Checkout))
+	// With no checkout there is nothing to find: a path that never exists.
+	b.WriteString("d=$repose_co\n[ \"$d\" != \"$HOME\" ] || d=/nonexistent\nprintf '%s\\n' \"$d\"\n")
 	for _, rel := range rels {
 		if rel == "" {
 			b.WriteString("echo -\n")

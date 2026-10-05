@@ -10,6 +10,7 @@ import {
 	search,
 	slugify
 } from './docs';
+import { unaskedIn } from './unasked';
 
 // Every /docs link in the docs names a page that exists and, when it has a
 // #fragment, a heading on that page: a renamed heading otherwise breaks
@@ -45,6 +46,12 @@ describe('user docs', () => {
 
 	it('uses no em dashes', () => {
 		for (const d of DOCS) expect(d.body.includes('—'), d.slug).toBe(false);
+	});
+
+	// Help the reader asked for is welcome; help nobody asked for is cut
+	// (DECISIONS I-485). The phrasings a grep can catch are in unasked.ts.
+	it('asks nothing of the reader it did not ask for', () => {
+		expect(DOCS.flatMap((d) => unaskedIn(d.slug, d.body))).toEqual([]);
 	});
 
 	// Plans, not a card and not an hourly meter (DECISIONS I-289): the docs

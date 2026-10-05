@@ -187,6 +187,13 @@ Sequence and idempotency (from DESIGN §10):
    credential files still go (DECISIONS I-366).
 5. Start the agent window if a prompt was given, then attach.
 
+A connection kept from an earlier command (the ControlPersist master) is
+reused only after it runs `true` within 2 seconds; one that does not (its
+TCP connection died while the laptop slept or changed networks) is stopped
+and the command connects afresh (DECISIONS I-491). While attached, the CLI
+refreshes its access token 10 minutes before it expires, so the next
+command after a long attach does not wait on Logto (I-491).
+
 Running `repose run` twice in a row attaches twice and changes nothing else.
 A test asserts that the second run makes no `POST` to the API except the
 certificate refresh, if due.

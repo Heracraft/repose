@@ -74,7 +74,8 @@ func nextWindowName(agent string, taken func(string) bool) string {
 }
 
 // windowNameFor picks the agent's window name: the agent's own name, else
-// the lowest free "<agent>-N" (07-cli.md §5.5 step 7 and §6's "second
+// the lowest free "<agent>-N", each behind "<checkout>/" in another
+// checkout (windowLabel, I-480) (07-cli.md §5.5 step 7 and §6's "second
 // prompt while agent window exists", DECISIONS I-253). othersOpen says
 // another window of the same agent is open, which is what the
 // shared-working-tree warning is for.
@@ -83,7 +84,7 @@ func windowNameFor(ctx context.Context, t sshTarget, slug, agent string) (name s
 	if err != nil {
 		return "", false, err
 	}
-	name, othersOpen = pickWindow(agent, windows, nil)
+	name, othersOpen = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
 	return name, othersOpen, nil
 }
 
@@ -127,12 +128,11 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 // "~/<name>", a worktree's "~/<name>-worktree-<N>" (I-253), or "" to find
 // the checkout in the guest (checkoutVar, I-368). onLoading, when not nil, is
 // called once if the wrapper says it is loading the dev environment.
+// For claude, the same ssh first marks that folder trusted in
+// ~/.claude.json (claudeTrustScript, I-486), and a trust dialog that shows
+// anyway is never typed into: the error is an *agentDialogError.
 func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func()) error {
-	cmd := fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, dir, shQuote(binary))
-	if dir == "" {
-		cmd = checkoutVar(slug) + fmt.Sprintf(`tmux new-window -t %s -n %s -c "$repose_co" -d %s`, slug, windowName, shQuote(binary))
-	}
-	if _, err := runSSH(ctx, t, cmd, nil); err != nil {
+	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary), nil); err != nil {
 		return err
 	}
 	if attachOnly {
@@ -148,10 +148,78 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 	return err
 }
 
+// agentWindowCommand is the shell startAgentWindow runs to open the
+// window, with claude's trust flag set first.
+func agentWindowCommand(slug, extra, windowName, dir, binary string) string {
+	prefix, cdir := "", dir
+	if dir == "" {
+		prefix, cdir = checkoutVar(slug, extra), `"$repose_co"`
+	}
+	if binary == "claude" {
+		prefix += claudeTrustScript(cdir)
+	}
+	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, shQuote(binary))
+}
+
+// claudeTrustScript is shell, run before tmux starts claude in dir (a
+// shell word: "~/<name>..." or "$repose_co"), that sets
+// projects["<dir, symlinks resolved>"].hasTrustDialogAccepted to true in
+// ~/.claude.json, the flag Claude Code (2.1.283) reads to skip its "Is
+// this a project you trust?" dialog. That dialog's default is "No, exit",
+// so the prompt and Enter `repose run` types would quit Claude Code
+// (I-486). Only folders repose itself starts an agent in get here: the
+// checkout, a --worktree directory, another checkout. A false Claude Code
+// wrote after an earlier refusal is replaced, since this run is the user
+// asking for an agent there; every other key in the file is kept. The
+// file is written only when the flag is not already true, atomically, and
+// never when it is not valid JSON. Best effort: the window starts whatever
+// happens here, and waitPaneIdle catches a dialog that shows anyway.
+func claudeTrustScript(dir string) string {
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_cj="$HOME/.claude.json" && {
+  if [ ! -s "$repose_cj" ]; then
+    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq -n --arg p "$repose_tp" '{projects: {($p): {hasTrustDialogAccepted: true}}}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
+  elif jq -e --arg p "$repose_tp" '(.projects // {})[$p].hasTrustDialogAccepted != true' "$repose_cj" >/dev/null 2>&1; then
+    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" '.projects[$p].hasTrustDialogAccepted = true' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
+  fi
+  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
+}; } >/dev/null 2>&1 || true
+`, dir)
+}
+
+// agentDialogs are lines a Claude Code dialog shows that a typed prompt
+// must not answer: its folder trust dialog, in the wording of 2.1.283 and
+// of earlier releases. Matching them only stops the CLI from typing; it
+// never presses a key in the dialog (I-486, I-283's rejected answer).
+var agentDialogs = []string{
+	"Yes, I trust this folder",
+	"Is this a project you created or one you trust",
+	"Do you trust the files in this folder?",
+}
+
+// agentDialogError says the agent's pane settled on a dialog, so the
+// prompt was not typed.
+type agentDialogError struct{}
+
+func (*agentDialogError) Error() string {
+	return "Claude Code is asking whether you trust the folder it started in"
+}
+
+// paneShowsDialog reports whether capture holds one of agentDialogs.
+func paneShowsDialog(capture string) bool {
+	for _, d := range agentDialogs {
+		if strings.Contains(capture, d) {
+			return true
+		}
+	}
+	return false
+}
+
 // waitPaneIdle polls pane_current_command until it names binary and its
 // captured content has not changed for paneIdleWait. While the pane
 // carries devShellLoadingOption the agent has not started yet, and the
 // wait goes on past paneIdleTimeout, up to devShellLoadTimeout (I-259).
+// A pane that settles on a trust dialog (paneShowsDialog) returns an
+// *agentDialogError instead of nil, so nothing is typed into it (I-486).
 func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary string, onLoading func()) error {
 	start := time.Now()
 	deadline := start.Add(paneIdleTimeout)
@@ -182,6 +250,9 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 		} else if current == binary {
 			if string(capture) == lastCapture {
 				if !stableSince.IsZero() && time.Since(stableSince) >= paneIdleWait {
+					if paneShowsDialog(string(capture)) {
+						return &agentDialogError{}
+					}
 					return nil
 				}
 				if stableSince.IsZero() {
@@ -195,6 +266,9 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 		}
 		lastCapture = string(capture)
 		if time.Now().After(deadline) {
+			if paneShowsDialog(string(capture)) {
+				return &agentDialogError{}
+			}
 			return nil // best effort: send the prompt anyway rather than hang forever
 		}
 		select {
@@ -246,7 +320,7 @@ func worktreeBranch(n int) string { return fmt.Sprintf("worktree-%d", n) }
 // worktreeProbeScript reports, in one ssh, the session's windows, the
 // checkout's HEAD and whether it is dirty, and which worktree directories
 // and worktree-N branches already exist, so the number skips both.
-func worktreeProbeScript(slug string) string {
+func worktreeProbeScript(slug, extra string) string {
 	return fmt.Sprintf(`set -e
 tmux list-windows -t %[1]s -F '#window #{window_name}'
 %[2]s[ "$repose_co" != "$HOME" ] || { echo '#nogit'; exit 0; }
@@ -257,7 +331,7 @@ echo "#head $h"
 [ -z "$(git status --porcelain 2>/dev/null)" ] || echo '#dirty'
 git for-each-ref --format='#branch %%(refname:strip=2)' 'refs/heads/worktree-*'
 for p in "$repose_co"-worktree-*; do [ -e "$p" ] && echo "#dir ${p##*/}"; done
-true`, slug, checkoutVar(slug))
+true`, slug, checkoutVar(slug, extra))
 }
 
 // worktreeAddScript makes the worktree and copies into it the checkout's
@@ -284,7 +358,7 @@ true`, homeShell(wt.Checkout), shQuote(wt.Branch), wt.Dir, wt.Base)
 // reuses a worktree: a number whose directory or branch exists is skipped,
 // so each --worktree run starts fresh from HEAD.
 func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*agentWorktree, error) {
-	out, err := runSSH(ctx, t, worktreeProbeScript(slug), nil)
+	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout), nil)
 	if err != nil {
 		return nil, stepFailed("list the guest's tmux windows", err, "")
 	}
@@ -318,7 +392,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 			}
 		}
 	}
-	wt.Window, _ = pickWindow(agent, windows, nil)
+	wt.Window, _ = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
 	wt.N = nextWorktree(taken)
 	wt.Dir = worktreeDir(wt.Checkout, wt.N)
 	wt.Branch = worktreeBranch(wt.N)

@@ -38,7 +38,7 @@ func retryOnOpConflict(ctx context.Context, fn func() error) error {
 }
 
 // StartCmd implements `repose start [PROJECT]` (07-cli.md §5.6): start,
-// wait, say how to get in. Does not sync. A project in `error`, or
+// wait, say it is running. Does not sync. A project in `error`, or
 // running with a guestd that stopped answering, is restarted by the api
 // (I-157) and the progress line says so.
 func StartCmd(ctx context.Context, e *Env, projectArg string) error {
@@ -47,7 +47,7 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	if project.State == "running" && !guestdDead(project) {
-		_, _ = fmt.Fprintf(e.Out, "%s is already running. `repose attach %s` to get in.\n", project.Slug, project.Slug)
+		_, _ = fmt.Fprintf(e.Out, "%s is already running.\n", project.Slug)
 		return nil
 	}
 	pr := e.newProgress()
@@ -58,7 +58,7 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	pr.Fail()
-	_, _ = fmt.Fprintf(e.Out, "%s is running (%s), ready in %s. `repose attach %s` to get in.\n", project.Slug, project.Class, fmtElapsed(pr.Total()), project.Slug)
+	_, _ = fmt.Fprintf(e.Out, "%s is running (%s), ready in %s.\n", project.Slug, project.Class, fmtElapsed(pr.Total()))
 	return nil
 }
 
@@ -81,7 +81,7 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 		return err
 	}
 	if project.State == "stopped" {
-		_, _ = fmt.Fprintf(e.Out, "%s is already stopped. Disk is still billed; `repose rm %s` to stop that.\n", project.Slug, project.Slug)
+		_, _ = fmt.Fprintf(e.Out, "%s is already stopped. Disk is still billed.\n", project.Slug)
 		return nil
 	}
 	pr := e.newProgress()
@@ -120,9 +120,9 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 		}
 	}
 	if snapshot && snapID != "" {
-		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Snapshot %s (%s). Disk is still billed; `repose rm %s` to stop that.\n", p.Slug, fmtElapsed(pr.Total()), snapID, humanBytes(snapBytes), p.Slug)
+		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Snapshot %s (%s). Disk is still billed.\n", p.Slug, fmtElapsed(pr.Total()), snapID, humanBytes(snapBytes))
 	} else {
-		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Disk is still billed; `repose rm %s` to stop that.\n", p.Slug, fmtElapsed(pr.Total()), p.Slug)
+		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Disk is still billed.\n", p.Slug, fmtElapsed(pr.Total()))
 	}
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
@@ -199,7 +199,7 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 			_, _ = fmt.Fprintf(e.Out, "Destroying %s.\n", project.Slug)
 			return nil
 		}
-		_, _ = fmt.Fprintf(e.Out, "Destroying %s. Bring it back within 30 days with: %s\n", project.Slug, restoreHint(project.Slug))
+		_, _ = fmt.Fprintf(e.Out, "Destroying %s. Its final snapshot is kept for 30 days.\n", project.Slug)
 		return nil
 	}
 	pr.Phase("Destroying "+project.Slug, "")
@@ -250,14 +250,14 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 		_, _ = fmt.Fprintf(e.Out, "Destroyed %s in %s. It was temporary, so no snapshot was kept.\n", project.Slug, fmtElapsed(pr.Total()))
 		return nil
 	}
-	snapLine := fmt.Sprintf("Its final snapshot is kept for 30 days; `%s` brings it back.", restoreHint(project.Slug))
+	snapLine := "Its final snapshot is kept for 30 days."
 	if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
 		if latest := newestSnapshot(snaps); latest != nil {
 			until := latest.CreatedAt.AddDate(0, 0, 30)
 			if latest.ExpiresAt != nil {
 				until = *latest.ExpiresAt
 			}
-			snapLine = fmt.Sprintf("Its last snapshot is kept until %s; `%s` brings it back.", until.Local().Format("2006-01-02"), restoreHint(project.Slug))
+			snapLine = fmt.Sprintf("Its last snapshot is kept until %s.", until.Local().Format("2006-01-02"))
 		}
 	}
 	_, _ = fmt.Fprintf(e.Out, "Destroyed %s in %s. %s\n", project.Slug, fmtElapsed(pr.Total()), snapLine)
@@ -329,6 +329,17 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 // requireProject resolves the current project and reports the exact
 // not-found/no-remote errors of §5.3 for every command that is not `run`.
 func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, error) {
+	res, err := requireProjectRes(ctx, e, projectArg)
+	if err != nil {
+		return nil, err
+	}
+	return res.Project, nil
+}
+
+// requireProjectRes is requireProject with the rest of the resolution:
+// the machine's other checkout this directory is, or PROJECT:CHECKOUT
+// names (DECISIONS I-480).
+func requireProjectRes(ctx context.Context, e *Env, projectArg string) (*ResolveResult, error) {
 	res, err := resolveProject(ctx, e.Client, e.Dir, e.Cwd, e.resolveArg(projectArg), &e.Cache, defaultResolveDeps())
 	if err != nil {
 		return nil, err
@@ -336,7 +347,7 @@ func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, e
 	if res.Project == nil {
 		return nil, errNoProjectFoundFor(res.Remote, e.Command)
 	}
-	return res.Project, nil
+	return res, nil
 }
 
 // requireRunningProject is requireProject plus the "guest not running"
