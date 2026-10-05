@@ -23,6 +23,7 @@ import (
 
 	"github.com/heracraft/repose/internal/guestd/questions"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/multiplexer"
 	"golang.org/x/sys/unix"
 )
 
@@ -46,18 +47,24 @@ type Payload struct {
 }
 
 // Sink receives a validated hook event. window is the caller's tmux
-// window, or "" when the payload named none and the caller is not in a
-// tmux pane.
+// window or herdr agent key, or "" when the payload named none (or a herdr
+// pane no agent is in) and the caller is not in a tmux pane.
 type Sink func(agent, window, kind, summary string)
 
 // WindowResolver maps a tmux pane id to a window name.
 type WindowResolver func(ctx context.Context, pane string) (string, error)
+
+// HerdrResolver maps a herdr pane id (a hook's "herdr:<pane_id>" window,
+// DECISIONS I-506) to the agent key guestd reports; ok is false when no
+// agent is in that pane.
+type HerdrResolver func(ctx context.Context, paneID string) (key string, ok bool)
 
 // Server serves the hook socket.
 type Server struct {
 	path     string
 	sink     Sink
 	resolve  WindowResolver
+	herdr    HerdrResolver
 	log      *slog.Logger
 	gid      int
 	srv      *http.Server
@@ -84,6 +91,10 @@ func NewServer(path string, gid int, sink Sink, resolve WindowResolver, log *slo
 	}
 	return s
 }
+
+// SetHerdrResolver resolves "herdr:" windows; without it every such window
+// is unresolved.
+func (s *Server) SetHerdrResolver(r HerdrResolver) { s.herdr = r }
 
 // Listen creates the socket at 0660 root:dev.
 func (s *Server) Listen() error {
@@ -184,19 +195,40 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := truncate(p.Summary, SummaryCap)
-	window := p.Window
-	if window == "" {
-		// Empty when the caller is not in a tmux pane (a herdr pane, a
-		// script): the sink relays the event under the agent's name and
-		// leaves every tmux window's state alone, since a window named
-		// after the agent may be another agent entirely.
-		window = s.windowOfCaller(r)
-	}
+	// Empty when the caller is in no pane guestd can name (a script, a
+	// herdr pane no agent is in): the sink relays the event under the
+	// agent's name and leaves every window's state alone, since a window
+	// named after the agent may be another agent entirely.
+	window := s.windowOf(r, p.Window)
 
 	s.sink(p.Agent, window, p.Kind, summary)
 	s.log.Info("agent hook received",
 		"event", "agent_event", "agent", p.Agent, "kind", p.Kind, "summary_bytes", len(summary))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// windowOf is the window a hook, a notify or an ask is recorded under: a
+// "herdr:<pane_id>" window resolved to its agent's key ("" when no agent
+// is in that pane, I-506), another given window as is, and with none the
+// caller's tmux window.
+func (s *Server) windowOf(r *http.Request, given string) string {
+	if ref, ok := strings.CutPrefix(given, multiplexer.HerdrWindowPrefix); ok {
+		if s.herdr == nil {
+			return ""
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		key, ok := s.herdr(ctx, ref)
+		if !ok {
+			s.log.Debug("a hook's herdr pane has no agent", "event", "agent_event")
+			return ""
+		}
+		return key
+	}
+	if given != "" {
+		return given
+	}
+	return s.windowOfCaller(r)
 }
 
 // windowOfCaller finds the caller's tmux window from $TMUX_PANE in its

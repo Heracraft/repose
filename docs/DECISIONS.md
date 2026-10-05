@@ -13181,7 +13181,7 @@ unit is removed. Both units carry `ExecCondition=repose-multiplexer-is
 multiplexer or the other unit is active. A hand `systemctl --user start`
 of the wrong unit therefore starts nothing, and a machine switched while
 running keeps its old multiplexer until the stop. A base switch starts
-and stops no session unit (I-496).
+and stops no session unit (I-496). Built (mux-guestd): `ensureSession` in `internal/guestd/project`, `Handler.Multiplexer`; `TestSetupStartsTheSessionUnitProjectJSONNames`.
 
 **I-504. guestd reads herdr's agents from its socket, on every machine,
 by polling `agent.list`.** (multiplexer-spec, 2026-10-05; amends I-31,
@@ -13211,7 +13211,7 @@ state for two refreshes before going `unknown`, so a herdr restart that
 resumes its agents shows no flap. Events only was rejected: a missed
 subscription or `events_lost` leaves a wrong state until something else
 changes. `events.subscribe` may later wake the watcher early; the poll
-stays the truth.
+stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSixFields`, `TestHerdrAgentKeys`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
 
 **I-505. The herdr server and its agents get I-200's memory protection
 and run at nice -5.** (multiplexer-spec, 2026-10-05; owner decision 7;
@@ -13230,7 +13230,7 @@ answer for tmux, would raise every build too, because herdr's panes share
 the server's cgroup; wrapping each pane in its own scope would orphan
 panes when the server dies. The SSH `session-.scope` weight still covers
 the laptop's bridge. Closed by I-494's load test (keystroke echo with
-`stress-ng` on every core, before and after).
+`stress-ng` on every core, before and after). Built (mux-guestd): `herdrServers`, `herdrAgentPIDs` and `applyNice` in `internal/guestd/sample/oom.go`; `TestHerdrServerOOMAndNice` on a fixture, `TestHerdrLiveRenice` as root against herdr 0.9.3 (a pane shell forked after the renice inherited -5 and went back to 0). `node` is left out of the agent walk (I-535).
 
 **I-506. A hook's window may be `herdr:<pane_id>`, sent by repose-hook;
 a window that resolves to no pane changes no agent's state.**
@@ -13245,7 +13245,7 @@ environment, so guestd reads no new variable and the one exception in
 the herdr source to the agent's key and records the hook on it. One that
 resolves nowhere is relayed with the agent's name for display, and no
 state changes. A pane id longer than 58 bytes or holding a character
-outside `[A-Za-z0-9:_-]` is treated as unresolved.
+outside `[A-Za-z0-9:_-]` is treated as unresolved. Built (mux-guestd): `windowDefault` in `cmd/repose-hook`, `windowOf` in `internal/guestd/hooks`, `Watcher.ResolveHerdr`; `TestHookNamesTheHerdrPane`, `TestNotifyNamesTheHerdrPane`, `TestHerdrHookWindows`.
 
 **I-507. `herdr_down` joins the guest warning kinds.** (multiplexer-spec,
 2026-10-05; amends I-29) guestd sends `Warning{kind: "herdr_down"}` when
@@ -13322,3 +13322,21 @@ the proposal measures whether herdr's idle bridge cleanup closes bridges
 to machines nobody has selected, and how many ssh-prepare calls a bridge
 retrying against a stopped machine makes; a decision to discount bridges
 would be a new entry.
+
+**I-535. Under herdr, guestd protects the agents it can name by binary,
+and leaves `node` out.** (mux-guestd, 2026-10-05; amends I-505) I-505
+protects every process in the herdr server's tree whose name or
+executable is one of the five agents' binaries. Gemini CLI runs as
+`node` (I-46), and so does a dev server started in a shell pane; under
+tmux the window name tells them apart (a `node` counts only in a window
+named `gemini`), but under herdr guestd has no pane-to-process map,
+because the only herdr answer that carries pane pids, `pane.process_info`,
+also carries argv and cwd (R5-3). Protecting every shallowest `node` in
+the tree would put a vite or a test runner at -800, which is the
+opposite of I-200. So the herdr walk looks for `claude`, `opencode`,
+`codex`, `gemini` and `pi` (and nix's `.X-wrapped` names) only, and
+Gemini CLI under herdr runs at the kernel's default unless its process
+is named `gemini`. The herdr server itself is protected as I-505 says,
+and its pane shells and their children are set back to 0 when they hold
+a negative value. Revisit when herdr reports a pane's root pid in
+`agent.list` without argv or cwd.

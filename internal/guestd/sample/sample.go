@@ -87,5 +87,5 @@ func (h *Handler) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
 // WindowOfPane resolves a tmux pane id to its window name, for the hook socket
 // when a hook did not say which window it came from.
 func (h *Handler) WindowOfPane(ctx context.Context, pane string) (string, error) {
-	return h.watcher.tmux.windowOfPane(ctx, pane)
+	return h.watcher.WindowOfTmuxPane(ctx, pane)
 }

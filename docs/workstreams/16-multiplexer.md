@@ -196,7 +196,7 @@ read from herdr beyond the six fields.
 
 Checklist:
 
-- [ ] Tests against a fake herdr socket (a unix listener answering one
+- [x] Tests against a fake herdr socket (a unix listener answering one
       line per connection) replaying the live test: working then done
       gives AgentState working then idle and one `completed` for gemini;
       a sequence that moves twice between two polls gives one
@@ -204,20 +204,22 @@ Checklist:
       without a write; an EOF shorter than two refreshes emits no
       `unknown`; protocol 21 gives `herdr_down` and no agents; a reply
       over 1 MiB is dropped (test names and output).
-- [ ] The decoder struct has exactly the six fields (pasted), and a test
+- [x] The decoder struct has exactly the six fields (pasted), and a test
       feeds an `agent.list` reply with `title`, `terminal_title`, cwd-like
       tokens and `agent_session` and asserts none reach `AgentProc` or a
       log line.
-- [ ] Key rules: named agent, unnamed agent, other-checkout workspace,
+- [x] Key rules: named agent, unnamed agent, other-checkout workspace,
       a collision with a tmux window (`claude (herdr)`), a 70-byte key
       cut to 64 (tests).
-- [ ] `ensureSession` starts the herdr unit for `herdr`, the tmux unit
+- [x] `ensureSession` starts the herdr unit for `herdr`, the tmux unit
       for no key, `tmux` and `screen` (test with the runner fake).
-- [ ] A hook with `window: "herdr:w2:p1"` sets the resolved agent's
+- [x] A hook with `window: "herdr:w2:p1"` sets the resolved agent's
       state; `herdr:nope` and `herdr:` plus 60 bytes change nothing and
-      relay with an empty window (tests).
-- [ ] `TestStraceNeverOpensCmdlineOrEnviron` still green (output).
-- [ ] `go test` per package: `./internal/guestd/...`, `./cmd/repose-hook/...`.
+      relay with an empty window (tests). Built as a window-less hook
+      relays: the sink gets "", and `onHook` sends the agent's name as
+      `tmux_window` (I-499, I-506; vsock-guestd.md now says so).
+- [x] `TestStraceNeverOpensCmdlineOrEnviron` still green (output).
+- [x] `go test` per package: `./internal/guestd/...`, `./cmd/repose-hook/...`.
 - [ ] Live, with `mux-base` in the same base: `repose ls` AGENTS shows
       `claude working` during a prompt and `idle` after;
       `/proc/<claude>/oom_score_adj` is -800; every herdr server thread

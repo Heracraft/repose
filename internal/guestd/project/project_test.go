@@ -266,3 +266,50 @@ func TestRecordedCheckoutStaysInTheHome(t *testing.T) {
 		}
 	}
 }
+
+// ensureSession starts the unit of the multiplexer project_json names
+// (DECISIONS I-503): herdr's for "herdr", tmux's for no key, "tmux" and
+// anything else. Exactly one unit is started, and a restarted guestd
+// reads the same choice from the file.
+func TestSetupStartsTheSessionUnitProjectJSONNames(t *testing.T) {
+	for _, c := range []struct{ json, unit, mux string }{
+		{`{"slug":"todo-app","multiplexer":"herdr"}`, HerdrUnit, "herdr"},
+		{`{"slug":"todo-app"}`, TmuxUnit, "tmux"},
+		{`{"slug":"todo-app","multiplexer":"tmux"}`, TmuxUnit, "tmux"},
+		{`{"slug":"todo-app","multiplexer":"screen"}`, TmuxUnit, "tmux"},
+	} {
+		h, p, run := newHandler(t)
+		r := req()
+		r.ProjectJson = []byte(c.json)
+		if err := h.Setup(context.Background(), r); err != nil {
+			t.Fatalf("%s: setup: %v", c.json, err)
+		}
+		var started []string
+		for _, call := range run.Calls() {
+			if len(call.Argv) > 0 && call.Argv[0] == "systemctl" {
+				started = append(started, strings.Join(call.Argv, " "))
+			}
+		}
+		want := "systemctl --user -M dev@ start " + c.unit
+		if len(started) != 1 || started[0] != want {
+			t.Errorf("%s: systemctl calls = %q, want [%q]", c.json, started, want)
+		}
+		if h.Multiplexer() != c.mux {
+			t.Errorf("%s: Multiplexer() = %q, want %q", c.json, h.Multiplexer(), c.mux)
+		}
+		if fresh := New(p, sysdep.NewFakeRunner(), quietLog()); fresh.Multiplexer() != c.mux {
+			t.Errorf("%s: Multiplexer() after a restart = %q, want %q", c.json, fresh.Multiplexer(), c.mux)
+		}
+	}
+}
+
+func TestSetupReportsAFailedHerdrStart(t *testing.T) {
+	h, _, run := newHandler(t)
+	run.Match["start "+HerdrUnit] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("Failed to start")}
+	r := req()
+	r.ProjectJson = []byte(`{"slug":"todo-app","multiplexer":"herdr"}`)
+	err := h.Setup(context.Background(), r)
+	if err == nil || !strings.Contains(err.Error(), "herdr session unit") {
+		t.Fatalf("err = %v, want the herdr unit's failure", err)
+	}
+}

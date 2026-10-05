@@ -552,7 +552,8 @@ name or executable is the agent's binary), -800 for the herdr server (the
 process named `herdr` in `repose-herdr-server.service` whose parent is
 dev's `systemd --user`) and for each process in its tree whose name or
 executable is one of the five agents' binaries, the shallowest per
-branch (I-505), and 0 for any other `dev`
+branch (I-505; `node` is left out there, so Gemini CLI under herdr is
+protected only as a process named `gemini`, I-535), and 0 for any other `dev`
 process holding a negative value (it inherited the agent's or the tmux
 server's on fork: a dev server an agent started, a pane's shell). A
 positive value the user set is left alone, and nothing is ever killed or
