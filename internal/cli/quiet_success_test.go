@@ -185,15 +185,6 @@ func callName(fun ast.Expr) string {
 	return ""
 }
 
-func isStderr(x ast.Expr) bool {
-	switch v := x.(type) {
-	case *ast.SelectorExpr:
-		return v.Sel.Name == "ErrOut" || v.Sel.Name == "Stderr"
-	case *ast.Ident:
-		return v.Name == "stderr" || v.Name == "errOut"
-	}
-	return false
-}
 
 func firstN(s string, n int) string {
 	if len(s) > n {
