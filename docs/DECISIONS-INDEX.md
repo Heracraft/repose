@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-517 entries.
+520 entries.
 
 ## Scope
 
@@ -549,3 +549,6 @@ pointer, not a summary.
 - **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12690
 - **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12740
 - **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12772
+- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12833
+- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12860
+- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L12878

@@ -17,6 +17,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/psi"
 )
 
 // Budget is the deadline for one sample. Past it the result is returned with
@@ -70,11 +71,17 @@ func (h *Handler) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
 		partial = true
 	}
 
+	// A kernel without PSI has no file; the counter stays 0 and the
+	// dashboard shows no pressure line rather than a false zero being a
+	// reason to mark the sample partial.
+	pressure, _ := psi.ReadSomeTotal(h.paths.CPUPressure())
+	memUsed := memUsed(h.paths.MemInfo())
+
 	took := h.now().Sub(start)
 	h.log.Debug("sample taken",
 		"event", "sample", "duration_ms", took.Milliseconds(),
 		"procs", len(procs), "partial", partial)
-	return &guestdv1.SampleResult{Signals: signals, Procs: procs, Partial: partial}, nil
+	return &guestdv1.SampleResult{Signals: signals, Procs: procs, Partial: partial, CpuPressureUsTotal: pressure, MemUsedBytes: memUsed}, nil
 }
 
 // WindowOfPane resolves a tmux pane id to its window name, for the hook socket

@@ -95,6 +95,11 @@ const (
 	maxComm   = 16
 	maxAgent  = 32
 	maxWindow = 64
+	// maxPressureUs is an hour of CPU pressure in microseconds: more than
+	// one sample can hold (DECISIONS I-493).
+	maxPressureUs = 3_600_000_000
+	// maxMemUsed is a tebibyte, past any class.
+	maxMemUsed = 1 << 40
 )
 
 // OnSamples stores one Samples message. Rows are inserted with ON
@@ -147,11 +152,20 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		agents = append(agents, map[string]string{"agent": store.CleanText(a.Agent, maxAgent), "window": store.CleanText(a.TmuxWindow, maxWindow), "state": store.CleanText(a.State, maxAgent)})
 	}
 	aj, _ := json.Marshal(agents)
+	// The guest's CPU pressure is guest-written, so it goes with the other
+	// guest fields; the host CPU wait is host-measured (DECISIONS I-493).
+	// hostd already bounds the pressure delta; the clamp here keeps a
+	// value past int64 from refusing the row.
+	var pressure, memUsed int64
+	if guestFields {
+		pressure = int64(min(g.CpuPressureUsDelta, maxPressureUs))
+		memUsed = int64(min(g.GuestMemUsedBytes, maxMemUsed))
+	}
 	batch := &pgx.Batch{}
-	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) on conflict do nothing`,
+	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
-		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk)
+		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed)
 	if guestFields {
 		seen := map[string]bool{}
 		for _, p := range g.Procs {

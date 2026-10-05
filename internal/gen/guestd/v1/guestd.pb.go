@@ -1281,10 +1281,17 @@ func (x *GrowFsResult) GetNewBytes() uint64 {
 // partial is set when the sample deadline (1 s) expired and some signals are
 // missing rather than zero. See docs/interfaces/vsock-guestd.md.
 type SampleResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signals       *v1.GuestSignals       `protobuf:"bytes,1,opt,name=signals,proto3" json:"signals,omitempty"`
-	Procs         []*v1.ProcSample       `protobuf:"bytes,2,rep,name=procs,proto3" json:"procs,omitempty"`
-	Partial       bool                   `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Signals *v1.GuestSignals       `protobuf:"bytes,1,opt,name=signals,proto3" json:"signals,omitempty"`
+	Procs   []*v1.ProcSample       `protobuf:"bytes,2,rep,name=procs,proto3" json:"procs,omitempty"`
+	Partial bool                   `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`
+	// The guest's /proc/pressure/cpu "some" total in microseconds, a
+	// cumulative counter since boot; 0 when the kernel has no PSI. hostd
+	// turns it into GuestSample.cpu_pressure_us_delta (DECISIONS I-493).
+	CpuPressureUsTotal uint64 `protobuf:"varint,4,opt,name=cpu_pressure_us_total,json=cpuPressureUsTotal,proto3" json:"cpu_pressure_us_total,omitempty"`
+	// MemTotal less MemAvailable from the guest's /proc/meminfo, in bytes;
+	// 0 when it cannot be read (DECISIONS I-493).
+	MemUsedBytes  uint64 `protobuf:"varint,5,opt,name=mem_used_bytes,json=memUsedBytes,proto3" json:"mem_used_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1338,6 +1345,20 @@ func (x *SampleResult) GetPartial() bool {
 		return x.Partial
 	}
 	return false
+}
+
+func (x *SampleResult) GetCpuPressureUsTotal() uint64 {
+	if x != nil {
+		return x.CpuPressureUsTotal
+	}
+	return 0
+}
+
+func (x *SampleResult) GetMemUsedBytes() uint64 {
+	if x != nil {
+		return x.MemUsedBytes
+	}
+	return 0
 }
 
 type ExecResult struct {
@@ -2076,11 +2097,13 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\fneeds_reboot\x18\x02 \x01(\bR\vneedsReboot\x12\x16\n" +
 	"\x06output\x18\x03 \x01(\fR\x06output\"+\n" +
 	"\fGrowFsResult\x12\x1b\n" +
-	"\tnew_bytes\x18\x01 \x01(\x04R\bnewBytes\"\x94\x01\n" +
+	"\tnew_bytes\x18\x01 \x01(\x04R\bnewBytes\"\xed\x01\n" +
 	"\fSampleResult\x127\n" +
 	"\asignals\x18\x01 \x01(\v2\x1d.repose.hostd.v1.GuestSignalsR\asignals\x121\n" +
 	"\x05procs\x18\x02 \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\x12\x18\n" +
-	"\apartial\x18\x03 \x01(\bR\apartial\"Y\n" +
+	"\apartial\x18\x03 \x01(\bR\apartial\x121\n" +
+	"\x15cpu_pressure_us_total\x18\x04 \x01(\x04R\x12cpuPressureUsTotal\x12$\n" +
+	"\x0emem_used_bytes\x18\x05 \x01(\x04R\fmemUsedBytes\"Y\n" +
 	"\n" +
 	"ExecResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +

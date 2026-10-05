@@ -805,6 +805,53 @@ func (f *Fake) projectRoute(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
+// projectSamples is GET /projects/:id/samples (I-492): a deterministic
+// hour of a busy machine while it runs, so the dashboard's charts have
+// something to draw against the fake; none while it does not.
+func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	steps := map[string]int{"1h": 60, "24h": 300, "7d": 3600}
+	win := r.URL.Query().Get("window")
+	if win == "" {
+		win = "1h"
+	}
+	step, ok := steps[win]
+	if !ok {
+		return errf("invalid", "window must be 1h, 24h or 7d")
+	}
+	vcpus := map[string]int{"small": 2, "large": 4, "xl": 8}[p.Class]
+	mem := map[string]int64{"small": 4 << 30, "large": 8 << 30, "xl": 16 << 30}[p.Class]
+	points := []map[string]any{}
+	procs := []map[string]any{}
+	if p.State == "running" {
+		end := time.Now().UTC().Truncate(time.Duration(step) * time.Second)
+		for i := 59; i >= 0; i-- {
+			busy := 0.15
+			if i >= 10 && i < 25 {
+				busy = 1 // a build that held every core for a quarter of the window
+			}
+			var pressure any = 0.01
+			if busy == 1 {
+				pressure = 0.62
+			}
+			points = append(points, map[string]any{
+				"ts": end.Add(-time.Duration(i*step) * time.Second), "cpu": busy, "mem_used_bytes": mem * 45 / 100,
+				"cpu_pressure": pressure, "host_cpu_wait": 0.02, "disk_used_bytes": int64(6200) << 20,
+			})
+		}
+		procs = []map[string]any{
+			{"comm": "cc1plus", "cpu_s": 2710.4, "rss_max_bytes": int64(410) << 20},
+			{"comm": "node", "cpu_s": 640.2, "rss_max_bytes": int64(1200) << 20},
+			{"comm": "claude", "cpu_s": 95.0, "rss_max_bytes": int64(380) << 20},
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"window": win, "step_s": step, "vcpus": vcpus, "memory_bytes": mem, "points": points, "procs": procs})
+	return nil
+}
+
 // Config.
 
 func (p *project) revision(id string) *Revision {

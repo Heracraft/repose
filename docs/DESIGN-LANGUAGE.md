@@ -318,8 +318,14 @@ content edge, as on secrets, config revisions and snapshots.
 - `Meter.svelte`: one series as a thin bar on a `--control-edge` track,
   ink fill, amber past the limit with the word "over" in the reading and
   in `aria-valuetext`. Every limit on billing is a meter, the project
-  count included. Charts beyond a meter need a DECISIONS entry; there is
-  no chart component.
+  count included. Charts beyond a meter need a DECISIONS entry.
+- `UsageChart.svelte` (I-492): one measure over time as a 2px ink line
+  over a 12% ink area, dashed hairlines at the top and middle, the top's
+  value in `text-2xs` faint, "N hours ago" and "now" under it. One series
+  per chart, so no legend; the label and an "now X, peak Y" reading in
+  mono carry the numbers. Hover or the arrow keys show one point. A gap
+  is a time with no data. No explanation under a chart: what a measure
+  means is in the public docs.
 - A reading of a share is "X of Y" ("4 GB of 20 GB"), on a meter or in a
   card, never "X / Y".
 - `.codeblock`: a command block on a dashboard page, 13px mono on

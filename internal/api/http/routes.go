@@ -27,6 +27,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/ops/{op_id}/log", s.authed(s.opLog, true))
 	s.route(m, "POST /v1/projects/{id}/resize", a(s.resizeProject))
 	s.route(m, "GET /v1/projects/{id}/route", a(s.projectRoute))
+	s.route(m, "GET /v1/projects/{id}/samples", a(s.projectSamples))
 	// Config
 	s.route(m, "GET /v1/projects/{id}/config", a(s.getConfig))
 	s.route(m, "PUT /v1/projects/{id}/config", a(s.limited(s.cfg, s.putConfig)))

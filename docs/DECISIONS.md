@@ -12830,3 +12830,65 @@ in an SSH command, a login shell, an agent window and a bash its command
 runs, and the flake's tool in a tmux shell window plus its unload; it
 builds but was not run (the nested VM does not boot here).
 `fragment-contract` gains three refusals.
+**I-492. The project page shows the machine: its size spelled out, and
+charts of its minute samples over an hour, a day or a week.**
+(machine-monitor, 2026-10-04; amends the "Deferred" graphs of
+features/status-and-logs.md and DESIGN-LANGUAGE.md's "no chart
+component") A user saw a session lag for seconds while builds held every
+core and had only `htop` inside to look with; the dashboard said `large`
+and nothing about what that means. `GET /projects/:id/samples?window=`
+serves `meter_samples` and `proc_samples` for one project, bucketed to 60,
+300 or 3600 s so no window passes 288 points, CPU as a share of the
+row's own class, and the eight busiest process names. The data is the
+minute sampling the privacy policy already names and the platform
+already stores, so the feature adds no storage, no collector and no
+dependency: the cost is one indexed range scan per page view a minute,
+and an AWS host later adds nothing, since samples already travel hostd
+to api. The rule that request paths never read these tables gains this
+one exception (db-schema.md). The chart is `UsageChart.svelte`: one ink
+series per chart, small multiples rather than two scales on one axis.
+The cards carry figures and labels only; what each measure means is in
+`/docs/machine` (the owner cut the explanations and the table view from
+the first draft as hand-holding). *Rejected:* per-tenant Grafana or a second
+time-series store (the metric registry refuses `project_id` labels on
+purpose; tenant auth in front of Grafana; the owner's monitoring server
+becoming part of the product); a third-party monitoring service (a new
+processor in the privacy policy, a vendor bill per host, for data we
+hold). *Revisit when:* someone needs finer than a minute (I-494's live
+view) or longer than seven days.
+
+**I-493. Samples carry CPU pressure inside the guest, the host CPU wait
+of its hypervisor, and memory in use as the guest sees it.**
+(machine-monitor, 2026-10-04) CPU percentage says the cores were busy,
+not that anything waited; a laggy session is tasks waiting. guestd adds
+the `/proc/pressure/cpu` "some" total and MemTotal less MemAvailable to
+`SampleResult`; hostd turns the total into a delta per sample (capped at
+300 s, the I-446 bound for a guest-written counter) and adds the
+`cpu.pressure` "some" delta of the guest unit's cgroup on the host,
+which is the guest's steal: time its vCPU threads waited for a host CPU
+under the 2:1 oversubscription of R3-2. That one tells a user whether a
+slow minute was their own builds or the server. `mem_rss` stays the
+billing and capacity figure, but it is what the host backs and never
+falls without a balloon, so the chart draws the guest's own figure.
+Migration 0014 adds `cpu_pressure_us`, `host_cpu_wait_us` and `mem_used`
+(default 0); a row from an older guest has `mem_used` 0, and the route
+returns null pressure and memory for it rather than a false zero. The
+privacy policy's metering list names the wait time.
+
+**I-494. In the guest, SSH sessions and the tmux server run at ten
+times a pane's CPU weight; a live `repose status --watch` is documented,
+not built.** (machine-monitor, 2026-10-04) tmux already puts each pane
+in a `tmux-spawn-*.scope` of its own and its server in
+`repose-tmux-session.service`, and logind puts each SSH connection with
+its `tmux attach` client in a `session-N.scope`; the cpu controller is
+delegated to the user manager. `CPUWeight=1000` on the server unit and,
+by a `session-.scope` prefix drop-in, on every session scope, against
+100 per pane, gives the keystroke path the CPU first while builds hold
+every vCPU, and caps nothing when the machine is idle. *Rejected:*
+`nice` on builds (they are started by agents and users we do not
+control); `CPUQuota` on panes (it would slow a build on an idle
+machine). The live view would read `/proc` over the user's own SSH,
+store nothing and work when the api is down (I-200's pattern); it waits
+until someone needs detail finer than the dashboard's minute.
+*Revisit when:* a user asks for a live view, or the session still lags
+under load with these weights (then: `io.weight` on the same units).

@@ -7,9 +7,11 @@ package hostinfo
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,10 +22,29 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/shell"
+	"github.com/heracraft/repose/internal/psi"
 )
 
 // IMDSURL is Azure's instance metadata endpoint.
 const IMDSURL = "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text"
+
+// cgroupRoot is where the unified cgroup hierarchy is mounted.
+const cgroupRoot = "/sys/fs/cgroup"
+
+// CgroupCPUPressure returns the cpu.pressure "some" total, in microseconds,
+// of a cgroup as systemd's ControlGroup property names it
+// ("/system.slice/guest@g-x.service"): for a guest's hypervisor unit, the
+// time its vCPU threads waited for a host CPU (DECISIONS I-493).
+func CgroupCPUPressure(cgroup string) (uint64, error) {
+	return cgroupCPUPressureFrom(cgroupRoot, cgroup)
+}
+
+func cgroupCPUPressureFrom(root, cgroup string) (uint64, error) {
+	if !strings.HasPrefix(cgroup, "/") || strings.Contains(cgroup, "..") {
+		return 0, fmt.Errorf("hostinfo: cgroup %q is not an absolute path", cgroup)
+	}
+	return psi.ReadSomeTotal(filepath.Join(root, cgroup, "cpu.pressure"))
+}
 
 // MemInfo returns MemTotal and MemAvailable in bytes from /proc/meminfo.
 func MemInfo() (total, avail uint64, err error) {
