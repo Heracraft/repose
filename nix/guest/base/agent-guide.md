@@ -57,6 +57,7 @@ The user may have added other repositories to this machine as folders beside it,
 - When memory runs out, test runs and dev servers are killed before agents and tmux. `sudo dmesg | grep -i killed` shows what went. <!-- /docs/machine#memory-and-disk -->
 - `df -h /home/dev` shows free disk. The user can grow it with `repose resize 80G` (any size) on their laptop. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
+- The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every vCPU busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->
 
 ## Reaching the user
 
