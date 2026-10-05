@@ -123,6 +123,13 @@ for a in $agents; do
     tmp=$(mktemp)
     jq --arg u "$hurl" --arg h "$hhash" '.codex["code-mode-host"] = {url: $u, hash: $h}' "$versions" > "$tmp"
     mv "$tmp" "$versions"
+    # And its bundled bwrap, which it checks against a digest built into
+    # the binary, so it moves with the version too (DECISIONS I-495).
+    burl=${url/codex-x86_64/bwrap-x86_64}
+    bhash=$(nix store prefetch-file --json "$burl" | jq -r .hash)
+    tmp=$(mktemp)
+    jq --arg u "$burl" --arg h "$bhash" '.codex.bwrap = {url: $u, hash: $h}' "$versions" > "$tmp"
+    mv "$tmp" "$versions"
   fi
   changed+=("$a $new")
 done
