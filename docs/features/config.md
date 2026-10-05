@@ -135,7 +135,12 @@ A fragment may:
 - configure any `programs.*` and `services.*` home-manager module (user
   services, not system ones);
 - write dotfiles with `home.file` and `xdg.configFile`;
-- set `home.sessionVariables` and `home.sessionPath`;
+- set `home.sessionVariables` and `home.sessionPath`. They reach every
+  process (PAM, `/etc/set-environment`, agent wrappers, and dev's tmux
+  server and user manager after a switch), the fragment's value over the
+  base's and sessionPath first on `PATH`. `PATH`, `BASH_ENV`, `ENV`,
+  `REPOSE_ENV_GEN` and `REPOSE`, and a double quote in a value, are
+  refused (DECISIONS I-488);
 - apply overlays through `repose.overlays = [ (final: prev: { ... }) ]`.
   They are applied to the guest's `pkgs` before anything is evaluated,
   after the platform's own overlay. home-manager's `nixpkgs.overlays` is

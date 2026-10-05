@@ -12390,3 +12390,65 @@ menu`, a command the CLI has never had; they now name `home.packages`,
 `repose config add` and `repose.system` (hostd) and `repose config add`
 or the dashboard's Config menu (the base's contract.nix, next base).
 Test: the `flake.stderr` fixture, captured from the live apply.
+
+**I-488. A fragment's session variables reach every process, and your own shells load the flake dev shell agents get.**
+(machine-nix-shell, 2026-10-04; stage 0 of
+`docs/proposals/2026-10-04-your-machine-nix.md`, items 2 and 3 of
+`docs/proposals/2026-10-04-flake-in-root.md`; amends I-259 for the
+user's shells) Two gaps found in the flake-in-root test. First,
+`home.sessionVariables` and `home.sessionPath` in `repose.nix` built and
+did nothing: home-manager writes them to `hm-session-vars.sh`, which only
+a shell home-manager manages sources, and nothing on the guest does. The
+`/docs/config` example and the menu's Java and .NET entries
+(`JAVA_HOME`, `DOTNET_CLI_TELEMETRY_OPTOUT`) rely on it. `contract.nix`
+now copies them, as evaluated (so a home-manager module the fragment
+enables counts too), into NixOS `environment.sessionVariables`: a
+fragment value at priority 90 wins over the base's own (`EDITOR`), and
+sessionPath entries go before the base's `PATH` with `mkBefore`. That
+reaches PAM and `/etc/set-environment`, as the base's variables do (SSH
+sessions, login and interactive shells, the user manager). Two more
+places cover what PAM and a stale tmux server miss. The values are also
+written to `/etc/repose/session-vars.sh` in home-manager's quoting,
+sourced by `/etc/profile.d/repose.sh`, which every agent wrapper and
+`repose exec` source: an agent started by a tmux server that predates an
+in-place apply gets them, and `$OTHER` references expand as in a shell
+(PAM expands only `$HOME` and `$USER`). And the activation script that
+already pushes `PATH` and `BASH_ENV` into a running tmux server and user
+manager pushes these names too, and unsets the ones the previous
+configuration had and this one dropped (`/run/repose-session-vars.names`).
+home-manager's own `LOCALE_ARCHIVE_2_27`, which names the archive NixOS
+already sets, stays out so an empty fragment changes nothing. `PATH`
+(use sessionPath), `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE` are
+refused, and so is a double quote in a value, which PAM cannot hold;
+each fails evaluation with the reason, which hostd shows as the first
+failed assertion. `home.sessionSearchVariables` other than `PATH` are
+not carried. Second, an agent in a checkout with a `flake.nix` and no
+`.envrc` had the flake's tools and the shell next to it did not. Every
+interactive bash now sources `/etc/repose/devshell.sh` and redefines
+direnv's `_direnv_hook` to call `_repose_devshell_prompt`. Where direnv
+finds an `.envrc` (here or above), or no `flake.nix` naming a dev shell
+lies between the folder and `$HOME`, it is direnv's export unchanged, so
+an `.envrc` still needs `direnv allow` in your shell and a denied one
+stays out. Otherwise it exports from the generated `.envrc` the agent
+wrapper uses, which the two share through `_repose_devshell_shadow`.
+Entering prints `repose: loading the dev shell from <dir>/flake.nix (the
+first load can take minutes; Ctrl-C skips it until you leave the
+folder)`; leaving unloads it, as direnv does. The rule is the agents', so
+it holds in any checkout or worktree under `$HOME`, `~/.repose/checkouts`
+included. On a cold load the prompt waits, as an agent does, rather than
+building in the background: the agent window or the plugin installer has
+usually built it within seconds of boot, a background build would race
+nix-direnv's cache, and knowing whether the cache is warm means reading
+nix-direnv's internals. Ctrl-C works because direnv's export handles
+SIGINT itself, and direnv records the interrupted load as loaded, so the
+prompt does not retry until the folder or `flake.nix` changes. A prompt
+inside a loaded checkout costs one direnv export, as before (19 ms
+measured on kanali); the root and generated directory are cached in two
+shell variables. Only bash: the guest's login shell. Checked on kanali
+with the loader's store paths substituted: cold load, Ctrl-C, re-entry,
+warm load, unload on `cd ..`, an `.envrc` blocked, allowed and denied,
+then removed. The `guest-devshell` VM test asserts the fragment variable
+in an SSH command, a login shell, an agent window and a bash its command
+runs, and the flake's tool in a tmux shell window plus its unload; it
+builds but was not run (the nested VM does not boot here).
+`fragment-contract` gains three refusals.

@@ -88,7 +88,12 @@ Three things trip up a first flake:
 - **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it, and your next `repose sync` stops with `The machine has uncommitted changes your laptop doesn't have`, naming `flake.lock`. Run `nix flake lock` on your laptop and commit the file. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
 - **Define the dev shell for `x86_64-linux`.** The machine is x86-64 Linux whatever your laptop is. A flake written on a Mac with only `devShells.aarch64-darwin` fails with `does not provide attribute 'devShells.x86_64-linux.default'`. Name both systems, or use `flake-utils.lib.eachDefaultSystem`.
 
-In your own shells (`repose ssh`, `ssh todo-app.repose`, an editor's terminal, a tmux window you open), a `flake.nix` alone loads nothing. Put `use flake` in the repository's `.envrc` and the dev shell loads when you `cd` into the checkout, once the `.envrc` is allowed: repose allows it the first time an agent or `repose exec` starts there, or you run `direnv allow`. direnv keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`. To keep agents out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
+Your own shells get the same dev shell. In `repose ssh`, `ssh todo-app.repose`, an editor's terminal or a tmux window you open, bash loads it when you `cd` into the checkout and unloads it when you leave:
+
+- With a `flake.nix` and no `.envrc`, you get the dev shell the agents got, from the same cache, so a later load takes under a second. On entering, the shell prints `repose: loading the dev shell from ~/todo-app/flake.nix`. If nothing has built it yet, the prompt waits for the build. Press Ctrl-C to skip it; the shell then goes without it until you leave the folder and come back, or `flake.nix` changes.
+- With an `.envrc`, it loads once the file is allowed: repose allows it the first time an agent or `repose exec` starts there, or you run `direnv allow`. One you denied stays out. With `use flake` in it, direnv keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
+
+This works in any checkout or worktree in your home folder. To keep agents and your shells out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
 
 ## Ports
 

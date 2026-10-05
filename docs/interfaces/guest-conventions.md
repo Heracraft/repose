@@ -172,7 +172,16 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    `_repose_devshell NAME`, which `repose exec` calls in the checkout
    before it execs the user's command, NAME being the command's name in
    the `repose:` messages. A base without the file gets `direnv export
-   bash` from the CLI instead.
+   bash` from the CLI instead. Every interactive bash also sources it and
+   redefines direnv's `_direnv_hook` to call `_repose_devshell_prompt`
+   (I-488): where direnv finds an `.envrc`, or no such `flake.nix` is
+   found, that is direnv's own export (nothing is allowed for the user,
+   a denied file stays out); otherwise it exports from the same generated
+   directory, printing `repose: loading the dev shell from <dir>/flake.nix`
+   when it enters one, so the user's shell gets the agent's dev shell and
+   leaving the folder unloads it. A cold load blocks the prompt; Ctrl-C
+   ends it and the shell stays without it until it leaves the folder or
+   `flake.nix` changes.
 4. Exec the real binary with `"$@"`.
 
 `repose-hook` takes the agent from `REPOSE_HOOK_AGENT` or `--agent`
@@ -426,6 +435,19 @@ directory to `LD_LIBRARY_PATH` for manylinux wheels and keeps its own
 path as `sys.executable` (I-228). `DISPLAY=:99` only while the X server
 socket `/tmp/.X11-unix/X99` exists (checked at every shell start); it
 exists while the agents' browser or the desktop viewer runs (I-246).
+The project fragment's `home.sessionVariables` and `home.sessionPath`
+(and those a home-manager module it enables sets) reach the same places
+as the static values: NixOS `environment.sessionVariables` (a fragment
+value over the base's, sessionPath entries first on `PATH`), plus
+`/etc/repose/session-vars.sh`, sourced by `/etc/profile.d/repose.sh`, so
+every agent wrapper and `repose exec` sets them with shell expansion,
+and dev's tmux server and user manager after a switch, with the names
+the new configuration dropped unset (`/etc/repose/session-vars.names`,
+last pushed set in `/run/repose-session-vars.names`). PAM expands only
+`$HOME` and `$USER` in them, so a user unit started at boot sees other
+`$NAME` references unexpanded. `PATH`, `BASH_ENV`, `ENV`,
+`REPOSE_ENV_GEN` and `REPOSE` as session variables, and a double quote
+in a value, fail evaluation with the reason (I-488).
 `BASH_ENV=/etc/repose/bash-env.sh` everywhere the static values reach,
 and in dev's tmux server and user manager after a base switch, so a
 non-interactive bash (each command an agent runs) loads the secrets guestd
