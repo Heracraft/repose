@@ -25,7 +25,9 @@ const evalCacheVersion = "1"
 // evalKey is the hash of everything the evaluation reads: the base
 // checkout (a git revision, checked out once and never moved), the flake
 // the attribute is read from, the fragment and the base-version label,
-// the two files of the fragment directory.
+// the files of the fragment directory. The personal layer (I-490) is
+// hashed only when there is one, so a build without it keeps the key it
+// had before the layer existed.
 func (b *Real) evalKey(req Request) string {
 	h := sha256.New()
 	for _, part := range []string{evalCacheVersion, req.BaseRef, b.BaseSubdir, b.BaseScheme, b.EvalAttr, req.BaseVersion} {
@@ -33,6 +35,12 @@ func (b *Real) evalKey(req Request) string {
 		h.Write([]byte{0})
 	}
 	h.Write(req.Fragment)
+	if len(req.Personal) > 0 {
+		h.Write([]byte{0})
+		h.Write([]byte("personal.nix"))
+		h.Write([]byte{0})
+		h.Write(req.Personal)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

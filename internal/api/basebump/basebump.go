@@ -126,7 +126,11 @@ func (j *Job) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 		}
 		rid := store.NewID()
 		err = db.InTx(ctx, j.pool, func(tx db.Tx) error {
-			if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status) values ($1, $2, $3, $4, $5, 'building')", rid, pid, cur.Fragment, cur.Menu, latest.Version); err != nil {
+			// The applied revision's machine.nix rides along unchanged
+			// (I-490): a base update changes the base, and a broken
+			// personal file that never applied cannot hold a security
+			// base back. Personal changes reach projects on their own.
+			if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, 'building', $6, $7, $8)", rid, pid, cur.Fragment, cur.Menu, latest.Version, cur.Personal, cur.PersonalRevisionID, cur.PersonalOptOut); err != nil {
 				return err
 			}
 			_, err := j.engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Params: map[string]any{"base_bump": latest.Version}, Phases: ops.PlanBuild(p.State == "running")}, false)

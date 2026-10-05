@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -499,6 +500,11 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			if f.opts.BuildDelay > 0 {
 				time.Sleep(f.opts.BuildDelay / 3)
 			}
+		}
+		// A personal layer carrying "fake-eval-error" fails the way a
+		// broken machine.nix does on a real host (DECISIONS I-490).
+		if strings.Contains(string(c.Build.Personal), "fake-eval-error") {
+			return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: "eval_failed", Message: "attribute 'fake-eval-error' missing at machine.nix:1:3\n\nerror: attribute 'fake-eval-error' missing", PersonalLine: 1}}
 		}
 		closure := f.opts.FakeClosure
 		if c.Build.RevisionId != "" {

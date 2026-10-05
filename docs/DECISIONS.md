@@ -12391,6 +12391,131 @@ menu`, a command the CLI has never had; they now name `home.packages`,
 `repose config add` and `repose.system` (hostd) and `repose config add`
 or the dashboard's Config menu (the base's contract.nix, next base).
 Test: the `flake.stderr` fixture, captured from the live apply.
+
+**I-490. The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up.**
+(machine-nix-personal, 2026-10-04; stages 2 and 3 of
+`docs/proposals/2026-10-04-your-machine-nix.md`, with the owner's
+settlement of the same day: `repose config --global`, `repose run
+--no-personal` plus a dashboard switch, temporary machines included,
+stored on the account, applied automatically) An account has one
+machine.nix, a home-manager module for `dev` under the fragment contract.
+Each save is a row of `personal_revisions` (migration 0015; 0014 is
+I-493's); the newest row is current and an empty text means none. Every project revision
+records the personal text it was built with, the account revision it
+came from and whether the project had opted out
+(`config_revisions.personal`, `personal_revision_id`,
+`personal_opt_out`), so a rebuild, a restore or a fork reproduces it.
+`projects.personal_opt_out` is the opt-out.
+
+The wire and the flake. `Build` gains `personal` (field 7) and `Error`
+gains `personal_line` (field 4). hostd writes a non-empty personal text as
+`personal.nix` beside `fragment.nix`; the flake's `guestSystem` passes it
+as `personalPath` when the file exists, and `contract.nix` imports
+`repose.personal` into dev's home-manager configuration before the
+fragment, under the same rules (the `repose.system` allowlist, the
+`repose.overlays` pre-pass with the personal overlays first). Lists merge;
+two definitions of one single-valued option fail with home-manager's
+conflict, which `MapEvalError` summarises as `option 'X' is set in both
+machine.nix and the project's configuration; wrap the one that should
+win in lib.mkForce`. Every `personal.nix` in a message reads
+`machine.nix`, the name the user knows the file by. A base from before
+this entry would ignore the file, so hostd writes it only when the base's
+`nix/flake.nix` contains `personal.nix`, and otherwise says `this base
+predates machine.nix; building without it` in the build log; the next
+base update carries it. The eval cache key (I-405) adds the personal text
+only when there is one. No personal text is exactly the build before:
+`home-manager-generation.drv` for the documented example fragment is
+the same store path on this branch and on its parent
+(`qxx4vgpx...-home-manager-generation.drv` on both).
+
+Where a change goes. A save gives every live project of the account that
+has not opted out and is not `error` or `destroying` a revision with its
+current fragment and the new text, running projects first and at most
+50 per save (plans allow far fewer; a project past the bound gets it with
+its next change), each with a `build` op queued behind whatever the
+project is doing and planned as build plus apply: a running machine
+switches in place, a stopped one keeps the revision built for its next
+start (the pending-revision path, I-147). A personal build that has not
+started takes a newer text instead of a second op queueing behind it. A
+start of a stopped machine whose only open ops are personal builds is not
+refused: the builds not started are queued again behind the start, so the
+machine boots on what it has and switches once built. A project
+configuration change is not refused either (stage 1's run sends
+`repose.nix` seconds after its own machine.nix push, and a new machine's
+deferred build is still running then): a personal build not started is
+superseded, since the new revision carries the account's current text
+too, and one already building is queued behind. Ops queued in one
+transaction now get `clock_timestamp()` as `created_at` and the loop
+orders ties by id, because the start and the build queued after it shared
+`now()` and interleaved in the test. A project configuration change takes
+the account's current text; a base bump keeps the applied revision's, so a
+machine.nix that never built cannot hold a security base back. A failed
+personal build leaves the machine on its revision and records
+`personal_failed` (`machine.nix did not apply to SLUG, which keeps its
+current configuration: <error>`), which notifies. That answers the
+proposal's open question as it proposed. The secret refusal covers the
+text (`machine.nix contains the value of secret NAME`), at build time
+against the project's own secrets, as for a fragment.
+
+Never block. A new machine's first revision carries the account's text.
+At its build phase the api first asks whether the host already holds the
+combined closure (the I-160 query, now matching the personal text too);
+on a hit the machine boots on it with no build at all. On a miss the
+create is turned into a create on the project layer alone (a copy of the
+revision without the personal text, which for a new project is the
+default fragment and is nearly always on the host) and the combined
+revision's build and apply are queued behind the create once
+`create_guest` succeeds. The argument is in the numbers already
+measured: a create that reuses a closure reached `running` in 7 s on
+host-01 (StartGuest to running, r20261003-1), while a combination the
+host has not seen costs 16 s warm and 45 s cold (evaluate 7.9 s, fetch
+21 s, glue 12 s, switch 3 s, proposal "Build time"), unbounded for a
+package that builds from source. Building first on a miss would put that
+in front of the boot. An eval cache hit alone is not enough to build
+first: it saves the evaluation, not the fetch. The reusable closure is
+the one signal that the build costs nothing, so it is the one that skips
+the deferral. The cost of deferring is a first minute on the project
+layer; new shells see the personal packages after the switch.
+
+The CLI. `repose config --global show|edit|add|remove|apply` is one
+persistent flag on the existing noun and refuses `--project`. The laptop
+copy is `~/.config/repose/machine.nix`; `machine.nix.state` beside it
+records the account revision and the text's SHA-256 that the last push or
+pull left both sides on. `repose run` reads the account's copy beside its
+resolve and, when the laptop copy changed since the state, pushes it with
+`base_revision_id` set to the state's revision: before a create, so the
+new machine's first revision has it, or once an existing machine runs, so
+its build never holds up the start. An unchanged laptop copy takes a copy
+saved on the dashboard since; both changed is one refusal line naming
+`repose config --global apply` and `show`, and the run goes on. `PUT
+/me/config` refuses a stale `base_revision_id` with 409; the dashboard
+sends the revision its editor loaded. `add` and `remove` edit the file's
+`home.packages = with pkgs; [ ... ];` list and refuse a file without one.
+`repose run --no-personal` creates a machine opted out or opts an existing
+one out, for good; turning it back on is the dashboard's switch (a CLI way
+back is left to the owner, below). `logout --purge` keeps machine.nix,
+which is the user's file.
+
+Precedence (stage 3). With a machine.nix on the account and the machine
+not opted out, the tool carry leaves out the laptop's global tools; with
+a `repose.nix` at the checkout root it leaves out the commands the
+project's scripts run. The node, ruby and java pins still travel: they
+are declarations, not guesses. `repose scan` says which half it skipped
+and why, asking the account when logged in and going by the laptop copy,
+said so, when not.
+
+The dashboard: a machine.nix section on the Account page (editor, save
+with the loaded revision as the base, a conflict banner that offers to
+load the account's copy, the projects that opted out) and a switch on
+each project's Config page.
+
+Not done here: stage 4 (build on save with a GC root per account,
+rebuild ahead of a base publish), stage 5 (a first machine.nix written
+by `repose scan`), and stage 1 (`repose.nix` from the repository on
+run, another branch). Left to the owner: whether `repose run` should
+take a way to turn the layer back on for one machine (for instance
+`--personal`), and whether `repose sync` should take `--no-personal`
+too.
 **I-480. One machine holds several checkouts: `repose run --on PROJECT`.**
 (multi-checkout, 2026-10-04; extends I-368, I-253) Until now the CLI
 treated a machine and a checkout as one thing: every `repose run` in a new

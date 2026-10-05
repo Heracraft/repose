@@ -35,6 +35,9 @@ type RunOptions struct {
 	// Temp is --temp's lifetime, 0 without it: a new temporary project
 	// (DECISIONS I-347).
 	Temp time.Duration
+	// NoPersonal keeps the account's machine.nix off this machine, for
+	// good (--no-personal, DECISIONS I-490).
+	NoPersonal bool
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -110,6 +113,15 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	// beside the command and printed once connected.
 	idleNote := startIdleNote(ctx, e)
 
+	// The account's machine.nix, read beside the resolve; pushed before a
+	// create, so the new machine's first revision has it, or once an
+	// existing machine runs, so its build never holds up the start
+	// (DECISIONS I-490).
+	var personal *personalStep
+	if !attachOnly {
+		personal = e.startPersonal(ctx)
+	}
+
 	pr := e.newProgress()
 	defer pr.Fail() // clears a spinner line left by an early return
 
@@ -151,6 +163,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if attachOnly {
 			return errNoProjectFoundFor(res.Remote, e.Command)
 		}
+		personal.finish(ctx, e, opts.NoPersonal, nil)
 		project, err = createProjectForRun(ctx, e, res.CreateRemote(), opts, pr)
 		if err != nil {
 			return err
@@ -183,6 +196,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	early.settle(ctx, e, project, wasRunning)
 
 	endEnsure()
+	if !attachOnly {
+		personal.finish(ctx, e, opts.NoPersonal, project)
+		if opts.NoPersonal && !project.PersonalOptOut {
+			e.optOutPersonal(ctx, project)
+		}
+	}
 	tz := laptopTZ()
 	tzSaved := saveProjectTZ(ctx, e, project, tz)
 
@@ -277,7 +296,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot) // I-221, I-222
+			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
 			carryDone <- b
 		}()
 		waitEnv := func() []envFile {
@@ -1201,7 +1220,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if class == "" {
 		class = e.Cfg.DefaultClass
 	}
-	req := CreateProjectRequest{Name: name, RemoteURL: remote, Class: class, TZ: localTZ()}
+	req := CreateProjectRequest{Name: name, RemoteURL: remote, Class: class, TZ: localTZ(), PersonalOptOut: opts.NoPersonal}
 	if opts.Temp > 0 {
 		// Found by nothing and cached nowhere (I-351): its name is how
 		// every later command reaches it.
@@ -1456,7 +1475,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 	if strings.Contains(string(out), "#credsmissing") {
 		delete(markers, credsMarker)
 	}
-	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir)}
+	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {

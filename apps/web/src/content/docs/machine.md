@@ -65,7 +65,9 @@ Each comes from nixpkgs when nixpkgs has it, so its version can differ from your
 
 Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`.
 
-To see the list without installing anything:
+A `.nix` file takes precedence over this guesswork. With a [machine.nix](/docs/config#your-machine-nix) on your account, `run` leaves your laptop's global tools out: machine.nix says which tools you want on every machine. With a `repose.nix` at the checkout root, it leaves out the commands the project's scripts call, because `repose.nix` describes the project. The Node, Ruby and Java pins still apply. Logins, Claude Code settings and your git identity are copied either way.
+
+To see the list without installing anything, and which half a `.nix` file took over:
 
 ```
 repose scan

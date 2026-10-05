@@ -249,6 +249,28 @@ Base bumps (DECISIONS R4-5):
   pins the base; unticking it releases the project to the next rollout.
   The Config page shows the base the project is on.
 
+## The personal layer (DECISIONS I-490)
+
+- An account has one machine.nix, a home-manager module under the same
+  contract as a fragment, stored with revisions (`GET/PUT /me/config`).
+  Every machine of the account that has not opted out gets it beside the
+  project's fragment; temporary machines too.
+- A save rebuilds every such project: a running machine switches in
+  place, a stopped one keeps the revision built for its next start. A
+  failure leaves each machine on its revision and raises
+  `personal_failed`.
+- A new machine never waits for it: when the host holds no closure of the
+  combination, the machine is created on the project layer and the
+  combined revision is built and applied right after.
+- The CLI keeps `~/.config/repose/machine.nix` and pushes it on `run`
+  when it changed since its last push, refusing when the account's copy
+  changed since too; `repose config --global` shows, edits, adds,
+  removes and applies; `repose run --no-personal` and the Config page's
+  switch opt a machine out.
+- With a machine.nix on the account the tool carry skips the laptop's
+  global tools; with a `repose.nix` at the checkout root it skips the
+  scripts' commands.
+
 ## Depends on
 
 Workstreams 12 (evaluation, build, limits, errors), 03 (Build and

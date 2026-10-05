@@ -117,6 +117,57 @@ Once you edit the Nix by hand, the menu and `repose config add` are off for that
 
 What the file can't do: set NixOS system options other than the database services under `repose.system`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
 
+## Your machine.nix
+
+`repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment, on each new machine without asking. It lives on your account, and on your laptop at `~/.config/repose/machine.nix`.
+
+```
+repose config --global add ripgrep fd  # add packages
+repose config --global edit            # edit, push on save
+repose config --global show            # the account's copy
+repose config --global apply           # push the laptop's
+```
+
+An example:
+
+```nix
+{ pkgs, ... }:
+{
+  home.packages = with pkgs; [ ripgrep fd jq ];
+
+  home.shellAliases = {
+    gs = "git status --short";
+  };
+
+  programs.starship.enable = true;
+  xdg.configFile."starship.toml".text = ''
+    add_newline = false
+  '';
+}
+```
+
+It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. When both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
+
+```
+config error: attribute 'ripgrepp' missing at machine.nix:3:21
+```
+
+**When it applies.** A save rebuilds every machine of your account: a running one switches in place, a stopped one at its next start. A new machine, temporary ones included, gets it too. The machine never waits for it: when the server has not built that combination before, the machine starts with the project's configuration alone and switches to the one with your machine.nix as soon as it's built, usually within a minute. If machine.nix doesn't build, your machines keep what they had and you get a notification naming it.
+
+**From your laptop.** `repose run` pushes `~/.config/repose/machine.nix` when you changed it since its last push, in the background:
+
+```text
+Applying machine.nix (changed) to 3 machines in the background.
+```
+
+If you saved it on the dashboard since, the laptop's copy is brought up to date instead, when you haven't changed it. When both changed, `run` pushes nothing and says so in one line; `repose config --global apply` keeps the laptop's copy, `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
+
+**On the dashboard.** **Account** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
+
+**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with the switch on the project's Config page. An empty machine.nix removes it from every machine.
+
+**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the tools you installed globally on your laptop; your machine.nix says which tools you want. See [Your laptop's tools come along](/docs/machine#your-laptops-tools-come-along).
+
 ## Revisions and base updates
 
 Every change is saved as a revision. `repose config show --revisions` lists them with any errors, and the dashboard can re-apply an earlier one. `repose logs --kind build` shows the last build's log.

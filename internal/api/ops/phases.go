@@ -496,6 +496,12 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 			if strings.Contains(rev.Fragment, n) {
 				return nil, uuid.Nil, false, &opError{code: "invalid", msg: "fragment contains the value of secret " + v.Name}
 			}
+			// The personal layer is under the same rule (I-490): it is
+			// the account's, the secret is this project's, and the
+			// refusal names the file the user edits.
+			if rev.Personal != "" && strings.Contains(rev.Personal, n) {
+				return nil, uuid.Nil, false, &opError{code: "invalid", msg: PersonalName + " contains the value of secret " + v.Name}
+			}
 		}
 	}
 	e.logs.SetRedactions(op.ID, redact)
@@ -559,6 +565,22 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 		if reused {
 			return nil, uuid.Nil, true, nil
 		}
+		if rev.Personal != "" {
+			// Never block (DECISIONS I-490): the combined configuration
+			// is not on this host, so the machine is created on the
+			// project layer alone and the combined revision is built and
+			// applied in place once it runs.
+			if rev, err = e.deferPersonal(ctx, op, p, rev, version); err != nil {
+				return nil, uuid.Nil, false, err
+			}
+			reused, err := e.reuseBuild(ctx, p, rev, version, *hostID)
+			if err != nil {
+				return nil, uuid.Nil, false, err
+			}
+			if reused {
+				return nil, uuid.Nil, true, nil
+			}
+		}
 		if err := e.setState(ctx, p, "building"); err != nil {
 			return nil, uuid.Nil, false, err
 		}
@@ -574,12 +596,82 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 	l := e.cfg.Limits
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Build{Build: &hostdv1.Build{
 		ProjectId: p.ID.String(), RevisionId: rev.ID.String(), Fragment: []byte(rev.Fragment), BaseRef: ref, BaseVersion: version,
-		Limits: &hostdv1.Limits{EvalS: l.EvalS, BuildS: l.BuildS, Cores: l.Cores, ClosureBytes: l.ClosureBytes},
+		Personal: []byte(rev.Personal),
+		Limits:   &hostdv1.Limits{EvalS: l.EvalS, BuildS: l.BuildS, Cores: l.Cores, ClosureBytes: l.ClosureBytes},
 	}}}, *hostID, false, nil
 }
 
+// PersonalName is the personal layer's name in what users read: the file
+// is ~/.config/repose/machine.nix on the laptop (DECISIONS I-490).
+const PersonalName = "machine.nix"
+
+// deferPersonal turns a create whose combined configuration is not on the
+// host into a create on the project layer alone plus a build of the
+// combined revision once the guest runs (DECISIONS I-490). It records a
+// copy of rev without the personal layer, points the op and the project
+// at it, and remembers rev in the op's params; onResult enqueues rev's
+// build when create_guest succeeds. A re-sent build phase finds the op on
+// the copy, whose personal text is empty, and does not come back here.
+func (e *Engine) deferPersonal(ctx context.Context, op *store.Op, p *store.Project, rev *store.Revision, version string) (*store.Revision, error) {
+	baseID := store.NewID()
+	err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
+		if _, err := tx.Exec(ctx, `insert into config_revisions (id, project_id, fragment, menu, base_version, status, created_at)
+			values ($1, $2, $3, $4, coalesce($5, $6), 'building', (select created_at - interval '1 millisecond' from config_revisions where id = $7))`,
+			baseID, p.ID, rev.Fragment, rev.Menu, rev.BaseVersion, version, rev.ID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "update config_revisions set base_version = coalesce(base_version, $2) where id = $1", rev.ID, version); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update ops set revision_id = $2, params = params || jsonb_build_object('personal_revision', $3::text) where id = $1`, op.ID, baseID, rev.ID.String()); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, "update projects set config_revision_id = $2 where id = $1 and config_revision_id = $3", p.ID, baseID, rev.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	op.RevisionID = &baseID
+	op.Params["personal_revision"] = rev.ID.String()
+	if p.ConfigRevisionID != nil && *p.ConfigRevisionID == rev.ID {
+		p.ConfigRevisionID = &baseID
+	}
+	e.log.Info("personal layer deferred past create", "event", "personal_deferred", "project_id", p.ID.String(), "revision_id", rev.ID.String())
+	return store.GetRevision(ctx, e.pool, baseID)
+}
+
+// enqueuePersonalBuild queues the build and apply of a create's combined
+// revision behind the create (DECISIONS I-490), once: a result handled
+// twice finds the op already there.
+func (e *Engine) enqueuePersonalBuild(ctx context.Context, p *store.Project, rid uuid.UUID) error {
+	var n int
+	if err := e.pool.QueryRow(ctx, "select count(*) from ops where revision_id = $1", rid).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	// A personal change queued while the machine was being created read
+	// the account's text later than this revision did, so it wins.
+	if err := e.pool.QueryRow(ctx, "select count(*) from ops where project_id = $1 and kind = 'build' and params ? 'personal' and state in ('pending', 'running')", p.ID).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		_, err := e.pool.Exec(ctx, "update config_revisions set status = 'failed', error = 'superseded: a newer machine.nix change replaced it' where id = $1 and status = 'building'", rid)
+		return err
+	}
+	pid := p.ID
+	if _, err := e.Enqueue(ctx, e.pool, NewOp{Kind: KindBuild, ProjectID: &pid, RevisionID: &rid, Params: map[string]any{"personal": "create"}, Phases: PlanBuild(true)}, true); err != nil {
+		return err
+	}
+	e.Kick()
+	return nil
+}
+
 // reusableClosureSQL finds a closure already built on host $1 from the
-// same fragment ($2) on the same base version ($3): the applied revision of
+// same fragment ($2) and personal layer ($5) on the same base version
+// ($3): the applied revision of
 // another live project there whose guest exists. Those are the only inputs
 // of the system closure (the project id, name, class, address, tz and user
 // arrive at run time, I-34, I-43), and that guest's GC root holds the path
@@ -592,6 +684,7 @@ const reusableClosureSQL = `select r.system_closure, coalesce(r.closure_bytes, 0
 	  and q.state not in ('destroying', 'error')
 	  and r.status = 'applied' and r.system_closure is not null
 	  and r.fragment = $2 and coalesce(r.base_version, q.base_version) = $3
+	  and r.personal = $5
 	order by r.applied_at desc nulls last limit 1`
 
 // reuseBuild completes a create's build without a Build command when the
@@ -606,7 +699,7 @@ func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Re
 	}
 	var closure string
 	var bytes int64
-	err := e.pool.QueryRow(ctx, reusableClosureSQL, hostID, rev.Fragment, version, p.ID).Scan(&closure, &bytes)
+	err := e.pool.QueryRow(ctx, reusableClosureSQL, hostID, rev.Fragment, version, p.ID, rev.Personal).Scan(&closure, &bytes)
 	if db.IsNoRows(err) {
 		return false, nil
 	}
@@ -614,7 +707,7 @@ func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Re
 		return false, err
 	}
 	if _, err := e.pool.Exec(ctx, `update config_revisions set status = 'built', base_version = coalesce(base_version, $2),
-		system_closure = $3, closure_bytes = $4, kernel_changed = false, built_at = now(), error = null, fragment_line = null
+		system_closure = $3, closure_bytes = $4, kernel_changed = false, built_at = now(), error = null, fragment_line = null, personal_line = null
 		where id = $1`, rev.ID, version, closure, bytes); err != nil {
 		return false, err
 	}
@@ -877,7 +970,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if err != nil {
 			return err
 		}
-		_, err = e.pool.Exec(ctx, "update config_revisions set status = 'built', system_closure = $2, closure_bytes = $3, kernel_changed = $4, built_at = now(), error = null, fragment_line = null where id = $1",
+		_, err = e.pool.Exec(ctx, "update config_revisions set status = 'built', system_closure = $2, closure_bytes = $3, kernel_changed = $4, built_at = now(), error = null, fragment_line = null, personal_line = null where id = $1",
 			rev.ID, b.SystemClosure, int64(b.ClosureBytes), b.KernelChanged)
 		return err
 	case PhaseCreateGuest, PhaseRestore:
@@ -904,6 +997,13 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 			}
 			if err := e.setState(ctx, p, "running"); err != nil {
 				return err
+			}
+			if s, ok := op.Params["personal_revision"].(string); ok && s != "" {
+				if rid, err := uuid.Parse(s); err == nil {
+					if err := e.enqueuePersonalBuild(ctx, p, rid); err != nil {
+						return err
+					}
+				}
 			}
 		} else {
 			if _, err := e.pool.Exec(ctx, "update snapshots set restoring_op_id = null where restoring_op_id = $1", op.ID); err != nil {
@@ -1019,7 +1119,7 @@ func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Proj
 }
 
 // onFail applies the kind's failure policy to the project.
-func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, line int) {
+func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, line, personalLine int) {
 	if op.ProjectID == nil {
 		return
 	}
@@ -1032,11 +1132,14 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		if op.RevisionID != nil || p.ConfigRevisionID != nil {
 			rev, err := e.revisionFor(ctx, op, p)
 			if err == nil {
-				var l *int
+				var l, pl *int
 				if line > 0 {
 					l = &line
 				}
-				_, _ = e.pool.Exec(ctx, "update config_revisions set status = 'failed', error = $2, fragment_line = $3 where id = $1", rev.ID, code+": "+msg, l) // best effort; the op carries the error
+				if personalLine > 0 {
+					pl = &personalLine
+				}
+				_, _ = e.pool.Exec(ctx, "update config_revisions set status = 'failed', error = $2, fragment_line = $3, personal_line = $4 where id = $1", rev.ID, code+": "+msg, l, pl) // best effort; the op carries the error
 			}
 		}
 		if op.StartedAt != nil {
@@ -1045,6 +1148,15 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 	}
 	if phase == PhaseRestore {
 		_, _ = e.pool.Exec(ctx, "update snapshots set restoring_op_id = null where restoring_op_id = $1", op.ID) // release the expiry guard
+	}
+	if _, ok := op.Params["personal"].(string); ok && op.Kind == KindBuild && (phase == PhaseBuild || personalLine > 0) {
+		// A build the personal layer started (I-490): the machine keeps
+		// running what it has, and the user hears which file to fix.
+		first := msg
+		if i := strings.IndexByte(first, '\n'); i > 0 {
+			first = first[:i]
+		}
+		e.notifyPlatform(ctx, p.ID, "personal_failed", PersonalName+" did not apply to "+p.Slug+", which keeps its current configuration: "+first)
 	}
 	short := msg
 	if i := strings.IndexByte(short, '\n'); i > 0 {

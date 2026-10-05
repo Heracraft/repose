@@ -16,6 +16,8 @@ import type {
 	Me,
 	MenuSelection,
 	OpStatus,
+	PersonalConfig,
+	PutPersonalResult,
 	PlanId,
 	Project,
 	ProjectEvent,
@@ -114,13 +116,26 @@ export const patchMe = (body: {
 export const deleteMe = () => request<void>('/me', { method: 'DELETE' });
 export const notifyTest = () =>
 	request<{ email: 'ok' | 'error'; ntfy: 'ok' | 'error' }>('/me/notify-test', { method: 'POST' });
+/** The account's machine.nix (DECISIONS I-490). */
+export const getPersonal = () => request<PersonalConfig>('/me/config');
+/** Saves machine.nix; base is the revision the text started from, refused with conflict when the account has another. */
+export const putPersonal = (fragment: string, base: string | null) =>
+	request<PutPersonalResult>('/me/config', {
+		method: 'PUT',
+		body: { fragment, base_revision_id: base ?? '', source: 'dashboard' }
+	});
 
 // Projects.
 export const listProjects = () => request<Project[]>('/projects');
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 export const patchProject = (
 	id: string,
-	body: { class?: string; hold_base_updates?: boolean; agent_default?: string }
+	body: {
+		class?: string;
+		hold_base_updates?: boolean;
+		agent_default?: string;
+		personal_opt_out?: boolean;
+	}
 ) => request<Project>(`/projects/${id}`, { method: 'PATCH', body });
 export const destroyProject = (id: string) =>
 	request<{ op_id: string; state: string }>(`/projects/${id}`, { method: 'DELETE' });

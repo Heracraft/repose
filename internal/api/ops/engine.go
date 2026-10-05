@@ -169,7 +169,10 @@ func (e *Engine) Enqueue(ctx context.Context, q store.Querier, n NewOp, allowQue
 	}
 	params["phases"] = ph
 	id := store.NewID()
-	_, err := q.Exec(ctx, `insert into ops (id, project_id, host_id, kind, state, params, revision_id, snapshot_id, audit_id) values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)`,
+	// clock_timestamp, not now(): two ops queued in one transaction (a
+	// start and the personal build that follows it, I-490) get distinct,
+	// ordered times, and the loop runs a project's ops in that order.
+	_, err := q.Exec(ctx, `insert into ops (id, project_id, host_id, kind, state, params, revision_id, snapshot_id, audit_id, created_at) values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, clock_timestamp())`,
 		id, n.ProjectID, n.HostID, n.Kind, params, n.RevisionID, n.SnapshotID, n.AuditID)
 	if err != nil {
 		return uuid.Nil, err
@@ -274,7 +277,7 @@ func (e *Engine) loop(ctx context.Context) {
 // phase not yet sent; then applies timeouts. Exposed for tests.
 func (e *Engine) Tick(ctx context.Context) {
 	rows, err := e.pool.Query(ctx, `select distinct on (coalesce(project_id, id)) id from ops
-		where state in ('pending','running') order by coalesce(project_id, id), created_at`)
+		where state in ('pending','running') order by coalesce(project_id, id), created_at, id`)
 	if err != nil {
 		e.log.Error("ops query", "event", "ops_query_fail", "err", err.Error())
 		return
@@ -379,14 +382,14 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
 		}
 		if !res.Ok {
-			code, msg, line := "internal", "command failed", 0
+			code, msg, line, pline := "internal", "command failed", 0, 0
 			if res.Error != nil {
-				code, msg, line = res.Error.Code, res.Error.Message, int(res.Error.FragmentLine)
+				code, msg, line, pline = res.Error.Code, res.Error.Message, int(res.Error.FragmentLine), int(res.Error.PersonalLine)
 			}
 			if e.recoverFrom(ctx, op, code) {
 				return
 			}
-			e.failWithLine(ctx, op, code, msg, line)
+			e.failWithLines(ctx, op, code, msg, line, pline)
 			return
 		}
 		ph := currentPhase(op)
@@ -648,6 +651,12 @@ func (e *Engine) fail(ctx context.Context, op *store.Op, code, msg string) {
 }
 
 func (e *Engine) failWithLine(ctx context.Context, op *store.Op, code, msg string, line int) {
+	e.failWithLines(ctx, op, code, msg, line, 0)
+}
+
+// failWithLines is failWithLine with the line in the personal layer
+// (machine.nix, DECISIONS I-490) beside the fragment's.
+func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg string, line, personalLine int) {
 	if op.CommandID != nil {
 		e.logs.Unbind(op.CommandID.String())
 	}
@@ -666,11 +675,14 @@ func (e *Engine) failWithLine(ctx context.Context, op *store.Op, code, msg strin
 	if line > 0 {
 		errObj["fragment_line"] = line
 	}
+	if personalLine > 0 {
+		errObj["personal_line"] = personalLine
+	}
 	// Side effects first (project state, revision status), then the op row:
 	// clients poll the op row and read the project the moment it says
 	// error, so the reverse order let them see a failed op on a project
 	// still "creating" (CI, 2026-09-20).
-	e.onFail(ctx, op, code, msg, line)
+	e.onFail(ctx, op, code, msg, line, personalLine)
 	if _, err := e.pool.Exec(ctx, "update ops set state = 'error', error = $2, finished_at = now() where id = $1", op.ID, errObj); err != nil {
 		e.log.Error("op fail record", "event", "op_fail", "op_id", op.ID.String(), "err", err.Error())
 	}

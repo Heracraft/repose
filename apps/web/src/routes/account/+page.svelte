@@ -6,6 +6,7 @@
 	import { signOut } from '$lib/auth.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
+	import MachineNix from '$lib/components/MachineNix.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { Me } from '$lib/api/types';
 
@@ -69,6 +70,8 @@
 			</dl>
 
 			<button type="button" class="btn-ghost mt-4 -ml-2" onclick={() => signOut()}>Sign out</button>
+
+			<MachineNix />
 
 			<div class="form-section">
 				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>

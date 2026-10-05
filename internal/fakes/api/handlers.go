@@ -360,6 +360,8 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ           string `json:"tz"`
 		AgentDefault string `json:"agent_default"`
 		ExpiresIn    *int64 `json:"expires_in_s"`
+		// PersonalOptOut keeps machine.nix off (I-490).
+		PersonalOptOut bool `json:"personal_opt_out"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -391,6 +393,12 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.AgentDefault != "" {
 		p.AgentDefault = body.AgentDefault
+	}
+	p.PersonalOptOut = body.PersonalOptOut
+	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
+		if rev := p.revision(p.ConfigRevisionID); rev != nil {
+			rev.Personal, rev.personalText = true, cur.Fragment
+		}
 	}
 	if f.opts.CreateDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
@@ -435,6 +443,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ              *string `json:"tz"`
 		// Only null: `repose keep` (DECISIONS I-347).
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// machine.nix off or back on (I-490).
+		PersonalOptOut *bool `json:"personal_opt_out"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -470,6 +480,9 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.HoldBaseUpdates != nil {
 		p.HoldBaseUpdates = *body.HoldBaseUpdates
+	}
+	if body.PersonalOptOut != nil {
+		f.setPersonalOptOut(userFrom(r), p, *body.PersonalOptOut)
 	}
 	if body.AgentDefault != nil {
 		if *body.AgentDefault == "" {
@@ -872,7 +885,8 @@ func (f *Fake) getConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	if rev == nil {
 		return errf("internal", "current revision missing")
 	}
-	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion}
+	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion,
+		"personal": rev.personalText, "personal_revision_id": nil, "personal_opt_out": p.PersonalOptOut}
 	if len(rev.Menu) > 0 {
 		out["menu"] = rev.Menu
 	}

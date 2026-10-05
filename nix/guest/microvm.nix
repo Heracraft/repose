@@ -19,6 +19,7 @@
 #   share/repose/kernel, initrd, cmdline, base-version, class
 { nixpkgs, home-manager, microvm, system, overlay, self }:
 { fragmentModule ? { }
+, personalModule ? null   # the account's machine.nix (DECISIONS I-490)
 , extraModules ? [ ]
 , class ? "large"
 , baseVersion ? (self.shortRev or self.dirtyShortRev or "dirty")
@@ -69,6 +70,7 @@ let
         repose.class = class;
         repose.baseVersion = baseVersion;
         repose.fragment = fragmentModule;
+        repose.personal = personalModule;
         repose.prePassPkgs = prePassPkgs;
         # command-not-found's and nix-locate's prebuilt index (I-219).
         repose.nixIndexPackage = self.inputs.nix-index-database.packages.${system}.nix-index-with-small-db;

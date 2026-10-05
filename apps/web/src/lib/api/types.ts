@@ -218,6 +218,8 @@ export interface Project {
 	/** Set while the project is temporary (`repose run --temp`, I-347): it is
 	 * destroyed with no snapshot once this has passed. */
 	expires_at?: string;
+	/** The account's machine.nix is kept off this machine (I-490). */
+	personal_opt_out?: boolean;
 }
 
 /** GET /projects/destroyed (I-167): a destroyed project that can still be restored. */
@@ -265,6 +267,32 @@ export interface Config {
 	menu?: MenuSelection | null;
 	base_version: string;
 	applied_at?: string;
+	/** The machine.nix text the active revision carries, '' for none (I-490). */
+	personal?: string;
+}
+
+/** GET /me/config: the account's machine.nix (I-490). */
+export interface PersonalConfig {
+	revision_id: string | null;
+	fragment: string;
+	created_at: string | null;
+	source: 'cli' | 'dashboard' | null;
+	opted_out?: string[];
+}
+
+/** One project a machine.nix save reached. */
+export interface PersonalChange {
+	project_id: string;
+	slug: string;
+	revision_id: string;
+	op_id?: string;
+	merged?: boolean;
+	running: boolean;
+}
+
+export interface PutPersonalResult extends PersonalConfig {
+	projects: PersonalChange[];
+	unchanged?: boolean;
 }
 
 export interface Revision {

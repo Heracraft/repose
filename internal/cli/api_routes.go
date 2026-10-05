@@ -66,6 +66,9 @@ type CreateProjectRequest struct {
 	// ExpiresIn makes the project temporary (DECISIONS I-347); never sent
 	// with RemoteURL.
 	ExpiresIn int64 `json:"expires_in_s,omitempty"`
+	// PersonalOptOut keeps the account's machine.nix off the new machine
+	// (repose run --no-personal, DECISIONS I-490).
+	PersonalOptOut bool `json:"personal_opt_out,omitempty"`
 }
 
 func (c *Client) CreateProject(ctx context.Context, req CreateProjectRequest) (*Project, error) {
@@ -89,6 +92,9 @@ type PatchProjectRequest struct {
 	HoldBaseUpdates *bool   `json:"hold_base_updates,omitempty"`
 	AgentDefault    *string `json:"agent_default,omitempty"`
 	TZ              *string `json:"tz,omitempty"`
+	// PersonalOptOut turns machine.nix off (true) or on (false) for the
+	// project (DECISIONS I-490).
+	PersonalOptOut *bool `json:"personal_opt_out,omitempty"`
 }
 
 // KeepProject makes a temporary project a normal one: PATCH
@@ -395,4 +401,78 @@ func (c *Client) BillingPortal(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return r.URL, nil
+}
+
+// PersonalConfig is GET /me/config: the account's machine.nix
+// (DECISIONS I-490). RevisionID is nil when the account has none.
+type PersonalConfig struct {
+	RevisionID *string    `json:"revision_id"`
+	Fragment   string     `json:"fragment"`
+	CreatedAt  *time.Time `json:"created_at"`
+	Source     *string    `json:"source"`
+	OptedOut   []string   `json:"opted_out,omitempty"`
+}
+
+// Rev is the revision id, "" for none.
+func (p *PersonalConfig) Rev() string {
+	if p == nil || p.RevisionID == nil {
+		return ""
+	}
+	return *p.RevisionID
+}
+
+// PersonalChange is one project a machine.nix save reached.
+type PersonalChange struct {
+	ProjectID  string `json:"project_id"`
+	Slug       string `json:"slug"`
+	RevisionID string `json:"revision_id"`
+	OpID       string `json:"op_id,omitempty"`
+	Merged     bool   `json:"merged,omitempty"`
+	Running    bool   `json:"running"`
+}
+
+// PutPersonalResponse is PUT /me/config's answer.
+type PutPersonalResponse struct {
+	PersonalConfig
+	Projects  []PersonalChange `json:"projects"`
+	Unchanged bool             `json:"unchanged,omitempty"`
+}
+
+// PersonalRevision is one row of GET /me/config/revisions.
+type PersonalRevision struct {
+	RevisionID string    `json:"revision_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	Source     string    `json:"source"`
+	Bytes      int       `json:"bytes"`
+}
+
+func (c *Client) GetPersonal(ctx context.Context) (*PersonalConfig, error) {
+	var p PersonalConfig
+	if err := c.get(ctx, "/me/config", &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// PutPersonal saves fragment as the account's machine.nix. base, when
+// not nil, is the revision the text started from ("" for none): the api
+// refuses with conflict when the account's copy is another.
+func (c *Client) PutPersonal(ctx context.Context, fragment string, base *string) (*PutPersonalResponse, error) {
+	body := map[string]any{"fragment": fragment, "source": "cli"}
+	if base != nil {
+		body["base_revision_id"] = *base
+	}
+	var r PutPersonalResponse
+	if err := c.put(ctx, "/me/config", body, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) ListPersonal(ctx context.Context) ([]PersonalRevision, error) {
+	var rs []PersonalRevision
+	if err := c.get(ctx, "/me/config/revisions", &rs); err != nil {
+		return nil, err
+	}
+	return rs, nil
 }

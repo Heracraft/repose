@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-520 entries.
+521 entries.
 
 ## Scope
 
@@ -539,16 +539,17 @@ pointer, not a summary.
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12320
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12345
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12359
-- **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; L12394
-- **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; L12433
-- **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12498
-- **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12563
-- **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12603
-- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; L12624
-- **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12664
-- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12690
-- **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12740
-- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12772
-- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12833
-- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12860
-- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L12878
+- **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; L12395
+- **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; L12519
+- **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; L12558
+- **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12623
+- **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12688
+- **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12728
+- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; L12749
+- **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12789
+- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12815
+- **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12865
+- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12897
+- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12958
+- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12985
+- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003

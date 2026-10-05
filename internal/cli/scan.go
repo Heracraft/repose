@@ -3,7 +3,9 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -901,9 +904,18 @@ func splitSimple(line string) [][]string {
 
 // ---- repose scan ----
 
+// scanPersonal is what `repose scan` knows of the account's machine.nix
+// (DECISIONS I-490): whether there is one, and how it knows.
+type scanPersonal struct {
+	Has bool
+	// Why names the source: "your account has a machine.nix", or the
+	// laptop's copy when the account could not be asked.
+	Why string
+}
+
 // ScanCmd prints what `repose run` would install in a guest for this
 // laptop and the checkout at dir, and why. Nothing is installed.
-func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool) error {
+func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool, personal scanPersonal) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -914,17 +926,30 @@ func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool) error {
 	te := toolEnv{Home: homeDir, GOOS: goosForScan, Getenv: os.Getenv, LookPath: lookPathFast}
 	global := readGlobalTools(te)
 	sc := scanProject(abs)
+	prec := precedenceFor(personal.Has, abs)
 	if jsonOut {
-		return writeJSONOut(out, scanJSON(global, sc))
+		return writeJSONOut(out, scanJSON(global, sc, prec, personal))
 	}
-	printScan(out, abs, global, sc)
+	printScan(out, abs, global, sc, prec, personal)
 	return nil
+}
+
+// skipReasons are the lines `repose scan` gives for each half it leaves
+// to a .nix file.
+func skipReasons(prec toolPrecedence, personal scanPersonal) (laptop, project string) {
+	if prec.SkipGlobals {
+		laptop = personal.Why + ", which describes your tools, so none of these is installed"
+	}
+	if prec.SkipScripts {
+		project = "repose.nix at the checkout root describes this project's tools, so the commands its scripts run are not installed"
+	}
+	return laptop, project
 }
 
 // goosForScan is runtime.GOOS; a variable for tests.
 var goosForScan = runtime.GOOS
 
-func scanJSON(global []toolItem, sc *scanResult) any {
+func scanJSON(global []toolItem, sc *scanResult, prec toolPrecedence, personal scanPersonal) any {
 	type item struct {
 		Name    string   `json:"name"`
 		Bins    []string `json:"bins"`
@@ -947,13 +972,21 @@ func scanJSON(global []toolItem, sc *scanResult) any {
 		}
 		return v.Major
 	}
+	laptopWhy, projectWhy := skipReasons(prec, personal)
 	return map[string]any{"laptop": conv(global), "project": conv(sc.Candidates), "node": major(sc.Node),
-		"ruby": major(sc.Ruby), "java": major(sc.Java)}
+		"ruby": major(sc.Ruby), "java": major(sc.Java),
+		// What a .nix file takes over (I-490): "" when the half is
+		// installed as listed.
+		"skipped": map[string]string{"laptop": laptopWhy, "project": projectWhy}}
 }
 
-func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult) {
+func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, prec toolPrecedence, personal scanPersonal) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
+	laptopWhy, projectWhy := skipReasons(prec, personal)
 	p("Your laptop's tools (%d):\n", len(global))
+	if laptopWhy != "" {
+		p("  skipped: %s\n", laptopWhy)
+	}
 	if len(global) == 0 {
 		p("  none found\n")
 	}
@@ -965,6 +998,9 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult) {
 		p("  %-20s %-6s %s (commands: %s)\n", it.Name, it.Manager, v, strings.Join(it.Bins, ", "))
 	}
 	p("\nThis project (%s):\n", dir)
+	if projectWhy != "" {
+		p("  skipped: %s\n", projectWhy)
+	}
 	if len(sc.Candidates) == 0 {
 		p("  no commands to install\n")
 	}
@@ -994,7 +1030,16 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult) {
 			p("  not installed: %s\n", strings.Join(parts, ", "))
 		}
 	}
-	tc := newToolsCarry(global, sc)
+	carried, scanned := global, sc
+	if prec.SkipGlobals {
+		carried = nil
+	}
+	if prec.SkipScripts {
+		c := *sc
+		c.Candidates = nil
+		scanned = &c
+	}
+	tc := newToolsCarry(carried, scanned)
 	n := 0
 	if tc != nil {
 		n = len(tc.Wanted.Items)
@@ -1013,7 +1058,45 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult) {
 	}
 }
 
-func newScanCmd() *cobra.Command {
+// scanPersonalFor asks the account whether it has a machine.nix, which
+// takes the laptop's tools over (DECISIONS I-490). Logged out, or with
+// the api out of reach, the laptop's copy stands in, and the line says so.
+func scanPersonalFor(ctx context.Context, env func() (*Env, error), homeDir string) scanPersonal {
+	local := func(reason string) scanPersonal {
+		dir := os.Getenv(envXDGConfigHome)
+		if dir == "" {
+			dir = filepath.Join(homeDir, ".config")
+		}
+		b, err := os.ReadFile(filepath.Join(dir, "repose", machineNixFile))
+		if err != nil || strings.TrimSpace(string(b)) == "" {
+			return scanPersonal{}
+		}
+		return scanPersonal{Has: true, Why: "~/.config/repose/machine.nix exists (not checked against your account: " + reason + ")"}
+	}
+	if env == nil {
+		return local("not logged in")
+	}
+	e, err := env()
+	if err != nil || e.Client == nil {
+		return local("not logged in")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	acct, err := e.Client.GetPersonal(ctx)
+	if err != nil {
+		var ae *APIError
+		if errors.As(err, &ae) && ae.Status == 404 {
+			return scanPersonal{}
+		}
+		return local("the api did not answer")
+	}
+	if strings.TrimSpace(acct.Fragment) == "" {
+		return scanPersonal{}
+	}
+	return scanPersonal{Has: true, Why: "your account has a machine.nix"}
+}
+
+func newScanCmd(env func() (*Env, error)) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "scan [DIR]",
@@ -1024,7 +1107,12 @@ pipx), and the commands the checkout's scripts run that neither the guest
 base nor the project's own dependencies provide, and the node, ruby and
 java versions the checkout pins with the version the guest gets (the
 closest nixpkgs has when it lacks the pinned one). Nothing is installed and
-nothing leaves the laptop. DIR defaults to the current checkout.`,
+nothing leaves the laptop. DIR defaults to the current checkout.
+
+A .nix file takes precedence over the scan: with a machine.nix on your
+account (` + "`repose config --global`" + `) the laptop's tools are skipped, and with
+a repose.nix at the checkout root the scripts' commands are. The listing
+says which half was skipped and why.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return cobraUsageError{fmt.Errorf("repose scan takes at most one DIR, got %s", gotArgs(args))}
@@ -1043,7 +1131,7 @@ nothing leaves the laptop. DIR defaults to the current checkout.`,
 			if err != nil {
 				return err
 			}
-			return ScanCmd(cmd.OutOrStdout(), home, dir, jsonOut)
+			return ScanCmd(cmd.OutOrStdout(), home, dir, jsonOut, scanPersonalFor(cmd.Context(), env, home))
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON")
