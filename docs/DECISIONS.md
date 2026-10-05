@@ -13043,7 +13043,7 @@ or directory (os error 2)" is upstream's answer when no daemon is
 running (`codex exec` does not start one); after `daemon start` it
 prints `"status":"running"`. Users need do nothing: the next base update
 switches the package in place; until then a bwrap on PATH (`nix profile
-add nixpkgs#bubblewrap`) gets round it (troubleshooting page).
+add nixpkgs#bubblewrap`) gets round it (troubleshooting page). The sandboxed check failed on GitHub's runner (2026-10-05, run 37311472836) after Codex had accepted the bwrap: the runner refuses bwrap's loopback setup ("bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted"). The check now fails on a digest mismatch or any other error, and passes with that output printed when the only failure is bwrap being refused a namespace operation.
 
 **I-496. A base switch never restarts the tmux session unit.**
 (tmux-no-restart, 2026-10-05; fixes I-494) Base 2026.10.05 added
