@@ -2,8 +2,6 @@ Your plan is Pro
 
 Your plan changes from Solo to Pro on 27 September 2026 at 15:04 UTC. An upgrade takes effect at once and the difference is prorated. A downgrade takes effect at the next renewal.
 
-Your machines are untouched; what changes is the memory your running machines share, the disk and the egress.
-
 Your plan: https://repose.herakraft.co/billing
 
 --

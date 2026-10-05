@@ -1,7 +1,5 @@
 You're number 7 on the waitlist
 
-Every plan holds a seat: 8 GB of memory for running machines on our servers. Right now every seat is taken.
-
 We email you when a seat is yours. You then have 72 hours to choose a plan. If the hold runs out, the seat goes to the next person and you keep a place at the back of the list.
 
 Your place: https://repose.herakraft.co/billing

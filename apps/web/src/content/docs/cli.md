@@ -90,7 +90,7 @@ $ repose exec sh -c "npm run build && npm test"
 
 ### `repose ssh [PROJECT]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it. For one command, use `repose exec`.
+Open a shell on the machine in the checkout, outside tmux; `exit` ends it.
 
 ### `repose code [PROJECT]`
 
@@ -118,7 +118,7 @@ Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Work
 
 ### `repose browser [PROJECT]`
 
-Watch the agent's browser on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`; nothing to type. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. [Browser](/docs/machine#browser) has the details.
+Watch the agent's browser on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. [Browser](/docs/machine#browser) has the details.
 
 | Flag        | What it does                                       |
 | ----------- | -------------------------------------------------- |
@@ -209,7 +209,7 @@ Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another 
 
 ### `repose fork [PROJECT]`
 
-Snapshot the project now and start copies of it as new projects, each on its own machine, so several agents can try different approaches from the same starting point. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy counts toward your project limit and is billed like any project. If the copies would take you past the limit, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
+Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy counts toward your project limit and is billed like any project. If the copies would take you past the limit, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
 
 ### `repose resize [PROJECT] [DISK]`
 

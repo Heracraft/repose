@@ -12531,14 +12531,31 @@ By surface:
   already shows.
 - Copy (landing, dashboard, emails): a heading is its title; one
   sentence of fact; no instructions for reading the page, no "get
-  started in seconds". LANDING.md "Copy" has the landing's specifics.
+  started in seconds", no next step in a success toast. An empty state
+  says so, and teaches how to add one only when the screen has no way
+  to (DESIGN-LANGUAGE.md "States"). An email the user did not ask for
+  states the fact, the date or amount, and the one action when they must
+  act. LANDING.md "Copy" has the landing's specifics.
 - Agent guide: the same, read by an agent: facts and commands it needs,
   no encouragement.
 
-Enforced by `TestSuccessOutputNamesNoCommand` for the CLI and by the
-docs test `asks nothing of the reader it did not ask for`
-(`apps/web/src/lib/docs.test.ts`) for the phrasings a grep can catch.
-Prose judgement stays with review: CHECKLIST, "For every change".
+Enforced, for future text as much as today's, in three places:
+
+- Tests. `TestSuccessOutputNamesNoCommand` (I-484) and
+  `TestCLIReassures` in `internal/cli/quiet_success_test.go`; in
+  `apps/web`, `docs.test.ts` holds every docs page and `copy.test.ts`
+  every route, component and email template to the phrasings in
+  `src/lib/unasked.ts` (reassurance, narrating the screen, "next, read
+  X"). The Go list is the TypeScript list's twin; change both.
+- Gates. `just done-check`, which every workstream runs before it
+  reports, runs all four. `ops/dev/release-queue add` runs the CLI pair
+  on a branch that ships as `cli` and the web pair on one that ships as
+  `web`, and refuses to queue on a failure.
+- Instructions. CLAUDE.md "Trust the reader", the workstream preamble
+  (docs/workstreams/PROMPTS.md), CHECKLIST "For every change" and
+  RELEASE.md integrate step 4.
+
+A grep only catches phrasings; prose judgement stays with review.
 Alternatives: a style guide page of examples alone, rejected, since the
 two cuts this week both passed review that had LANDING's rule in hand;
 the tests stop the phrasings, and the rule in CLAUDE.md reaches the

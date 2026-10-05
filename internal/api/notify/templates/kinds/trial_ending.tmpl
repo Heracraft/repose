@@ -1,5 +1,5 @@
 {{define "heading"}}Your free week ends soon{{end}}
-{{define "body"}}{{if .P.Has "charge_at"}}On {{.P.Date "charge_at"}} we charge {{if .P.Has "amount_cents"}}{{.P.Money "amount_cents"}} {{end}}for {{.P.Plan "plan"}}, and the plan continues.{{else}}At the end of your free week we charge {{if .P.Has "amount_cents"}}{{.P.Money "amount_cents"}} {{end}}for {{.P.Plan "plan"}}, and the plan continues.{{end}} Nothing stops and nothing changes on your machines.
+{{define "body"}}{{if .P.Has "charge_at"}}On {{.P.Date "charge_at"}} we charge {{if .P.Has "amount_cents"}}{{.P.Money "amount_cents"}} {{end}}for {{.P.Plan "plan"}}, and the plan continues.{{else}}At the end of your free week we charge {{if .P.Has "amount_cents"}}{{.P.Money "amount_cents"}} {{end}}for {{.P.Plan "plan"}}, and the plan continues.{{end}}
 
 To cancel before then, open your plan page. The plan then ends with the free week: your machines stop and their snapshots are kept 30 days.{{end}}
 {{define "link_label"}}Your plan{{end}}

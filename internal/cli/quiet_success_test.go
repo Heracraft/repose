@@ -191,3 +191,38 @@ func firstN(s string, n int) string {
 	}
 	return s
 }
+
+// cliUnasked is the CLI's twin of apps/web/src/lib/unasked.ts: phrasings
+// of help nobody asked for (DECISIONS I-485).
+var cliUnasked = regexp.MustCompile(`(?i)\b(nothing to type|don'?t worry|no need to worry|that'?s it|that'?s all|you'?re all set|you can now|simply|just (run|type|open|click)|in other words|happy (coding|hacking))\b`)
+
+// TestCLIReassures fails on a CLI string that reassures or narrates
+// instead of stating what happened (DECISIONS I-485).
+func TestCLIReassures(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			if s, err := strconv.Unquote(lit.Value); err == nil {
+				if m := cliUnasked.FindString(s); m != "" {
+					t.Errorf("%s: %q says %q (DECISIONS I-485)", fset.Position(lit.Pos()), s, m)
+				}
+			}
+			return true
+		})
+	}
+}

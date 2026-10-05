@@ -130,9 +130,7 @@ test('choosing a plan opens the checkout and, once completed, the plan appears',
 	expect(opened).toMatch(/^txn_fake_/);
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $59 on');
 	await expect(page.getByTestId('meter-running-now')).toContainText('0 GB of 16 GB');
-	await expect(
-		page.getByText('No invoices yet. The first comes with the first charge.')
-	).toBeVisible();
+	await expect(page.getByText('No invoices yet.')).toBeVisible();
 });
 
 test('coming back on ?checkout=done waits for the plan', async ({ page }) => {

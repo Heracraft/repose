@@ -49,7 +49,7 @@ This confirms that the repose release workflow built the archive. It works for v
 repose login
 ```
 
-The CLI prints a link and a short code. Open the link in any browser, on any device: the page already has the code in it, so check it matches the one in your terminal, then sign in with your email or with GitHub. Because the browser doesn't have to be on the same computer, this also works over SSH.
+The CLI prints a link and a short code. Open the link in any browser, on any device: check the code on the page matches the one in your terminal, then sign in with your email or with GitHub. This works over SSH too.
 
 You stay logged in until you run `repose logout`.
 

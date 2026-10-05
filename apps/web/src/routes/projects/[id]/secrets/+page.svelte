@@ -143,12 +143,12 @@
 		error={loadError}
 	>
 		{#if secrets && secrets.length === 0}
-			<!-- The empty state (DESIGN-LANGUAGE.md "States"): an h2 that says
-			     so and how to get one there, the form below or the CLI. -->
+			<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
+			     to add one is right below, so the sentence is where a secret
+			     lands, not how to add one (I-485). -->
 			<h2 class="text-xl font-semibold">No secrets yet</h2>
 			<p class="mt-2 text-sm text-ink-muted">
-				Add one below, or run <code>repose secrets set NAME</code> on your laptop. The guest sees
-				each as an environment variable and a file in
+				The machine sees each as an environment variable and a file in
 				<code>/run/repose/secrets/</code>.
 			</p>
 		{:else if secrets}
