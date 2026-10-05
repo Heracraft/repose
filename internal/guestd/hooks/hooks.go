@@ -45,7 +45,9 @@ type Payload struct {
 	Window  string `json:"window,omitempty"`
 }
 
-// Sink receives a validated hook event.
+// Sink receives a validated hook event. window is the caller's tmux
+// window, or "" when the payload named none and the caller is not in a
+// tmux pane.
 type Sink func(agent, window, kind, summary string)
 
 // WindowResolver maps a tmux pane id to a window name.
@@ -184,13 +186,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	summary := truncate(p.Summary, SummaryCap)
 	window := p.Window
 	if window == "" {
+		// Empty when the caller is not in a tmux pane (a herdr pane, a
+		// script): the sink relays the event under the agent's name and
+		// leaves every tmux window's state alone, since a window named
+		// after the agent may be another agent entirely.
 		window = s.windowOfCaller(r)
-	}
-	if window == "" {
-		// Without a window the event is still worth relaying; the agent name
-		// is what the user sees, and Sample keys state on the window it does
-		// know about.
-		window = p.Agent
 	}
 
 	s.sink(p.Agent, window, p.Kind, summary)

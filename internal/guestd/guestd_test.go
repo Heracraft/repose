@@ -13,6 +13,7 @@ import (
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
+	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/obs"
 	"github.com/heracraft/repose/internal/vsockrpc"
@@ -60,7 +61,7 @@ func (h *harness) waitForNotify(t *testing.T, what string, pick func(*guestdv1.N
 	return nil
 }
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, setup ...func(*harness)) *harness {
 	t.Helper()
 	root := t.TempDir()
 	// A minimal guest: /proc/mounts, a current system, a store closure.
@@ -89,6 +90,9 @@ func newHarness(t *testing.T) *harness {
 		docker:  &sysdep.FakeDocker{Up: true, Containers: 1},
 	}
 	h.runner.Match["list-windows"] = sysdep.RunResult{}
+	for _, f := range setup {
+		f(h)
+	}
 
 	srv, err := New(Config{
 		Root:           root,
@@ -394,6 +398,64 @@ func TestHookRelaysAsAnAgentEvent(t *testing.T) {
 	if ev.GetTmuxWindow() != "claude" {
 		t.Fatalf("tmux_window = %q", ev.GetTmuxWindow())
 	}
+}
+
+// A hook from outside tmux (a herdr pane) is relayed under the agent's
+// name and never marks the tmux window that happens to carry that name;
+// the same hook from that window does.
+func TestHookOutsideTmuxLeavesTmuxWindowsAlone(t *testing.T) {
+	h := newHarness(t, func(h *harness) {
+		mustMkdir(t, filepath.Dir(h.paths.ProjectJSON()))
+		mustWrite(t, h.paths.ProjectJSON(), `{"slug":"todo-app"}`)
+		writeFakeProc(t, h.paths, 100, 1, "bash")
+		writeFakeProc(t, h.paths, 101, 100, "claude")
+		h.runner.Match["list-windows"] = sysdep.RunResult{Stdout: []byte("claude\t101\tclaude\t0\n")}
+	})
+	ctx := context.Background()
+	state := func() string {
+		t.Helper()
+		h.srv.watcher.Refresh(ctx)
+		sig, _ := h.srv.watcher.Signals()
+		for _, a := range sig.GetAgents() {
+			if a.GetTmuxWindow() == "claude" {
+				return a.GetState()
+			}
+		}
+		t.Fatalf("no claude window in %+v", sig.GetAgents())
+		return ""
+	}
+	if got := state(); got == sample.StateNeedsInput {
+		t.Fatalf("state before any hook = %q", got)
+	}
+
+	h.srv.onHook("claude", "", "needs_input", "Allow Bash?")
+	n := h.waitForNotify(t, "AgentEvent", func(n *guestdv1.Notify) bool { return n.GetAgentEvent() != nil })
+	if ev := n.GetAgentEvent(); ev.GetTmuxWindow() != "claude" || ev.GetKind() != "needs_input" {
+		t.Fatalf("event = %+v, want it relayed under the agent's name", ev)
+	}
+	if got := state(); got == sample.StateNeedsInput {
+		t.Fatalf("a hook with no tmux window set the tmux window claude to %q", got)
+	}
+
+	h.srv.onHook("claude", "claude", "needs_input", "Allow Bash?")
+	if got := state(); got != sample.StateNeedsInput {
+		t.Fatalf("a hook from the claude window left it %q, want needs_input", got)
+	}
+}
+
+// writeFakeProc writes the /proc/<pid>/stat and status the watcher reads.
+func writeFakeProc(t *testing.T, p sysdep.Paths, pid, ppid int, comm string) {
+	t.Helper()
+	dir := p.ProcPID(itoa(pid))
+	mustMkdir(t, dir)
+	fields := make([]string, 52)
+	for i := range fields {
+		fields[i] = "0"
+	}
+	fields[0] = itoa(ppid)
+	fields[10] = "10"
+	mustWrite(t, filepath.Join(dir, "stat"), itoa(pid)+" ("+comm+") S "+strings.Join(fields, " ")+"\n")
+	mustWrite(t, filepath.Join(dir, "status"), "Name:\t"+comm+"\nUid:\t1000\t1000\t1000\t1000\n")
 }
 
 func postHook(t *testing.T, socket, body string) {

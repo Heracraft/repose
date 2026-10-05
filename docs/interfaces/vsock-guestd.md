@@ -58,7 +58,9 @@ ships, `kind` one of `completed|needs_input|error`, and `summary` is truncated
 to 1 KB. The api treats a guest's `AgentEvent` as guest-sourced whatever it
 says (DECISIONS I-441): a kind outside `completed|needs_input|error|agent_message`
 is stored as `error`, and an agent outside the five and `shell` as no agent. `window` is optional: without it guestd resolves the calling process's
-`$TMUX_PANE` through `SO_PEERCRED`, and failing that uses the agent name. The
+`$TMUX_PANE` through `SO_PEERCRED`, and failing that relays the event under the
+agent name and changes no tmux window's agent state (a herdr pane is not the
+tmux window named after its agent). The
 wrapper for each agent is in `guest-conventions.md`; the payload mapping per
 agent is `internal/guestd/hooks` with a recorded fixture per shape in its
 `testdata/`.

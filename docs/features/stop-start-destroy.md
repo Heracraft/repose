@@ -78,8 +78,11 @@ Stop:
 - `stop` sends `StopGuest{snapshot_first: true, timeout_s: 60}`. guestd gets
   `Shutdown`; systemd in the guest stops services, which includes tmux and
   any agent in it. The agent is interrupted; a Claude session can be resumed
-  in the guest after `start` with `claude --resume`, and the CLI says so
-  when it detects an agent window was open. After 60 seconds without a
+  in the guest after `start` with `claude --resume`. The CLI's stop line is
+  followed by `Interrupted claude (working) and claude-2 (needs input).`
+  when the project's newest sample showed agents working or waiting; idle
+  agents are not named, and the line names no command (DECISIONS I-500,
+  I-484). After 60 seconds without a
   clean shutdown, hostd shuts the VM down through Cloud Hypervisor.
 - The snapshot happens after the guest is down, so it is clean, not merely
   crash-consistent. `--no-snapshot` skips it and prints that the newest

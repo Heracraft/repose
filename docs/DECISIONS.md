@@ -13065,3 +13065,45 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-499. The Claude settings merge unions hooks per event, and takes out
+the hooks the previous laptop file added.** (herdr-fixes, 2026-10-05;
+amends I-196) The merge used jq's `*`, which replaces arrays, so any
+`SessionStart` hook in the laptop's `~/.claude/settings.json` replaced
+the guest's whole `SessionStart` list on every `run` and `attach`.
+`herdr integration install claude` writes its resume hook there
+(`bash '/home/dev/.claude/hooks/herdr-agent-state.sh' session`), so a laptop with
+one `SessionStart` hook of its own left herdr unable to restore Claude
+after a stop. Each hook event that is a list on either side is now the
+guest's groups, then the laptop's; a group both sides hold identically is
+kept once, at the laptop's place, so a second run gives the same bytes.
+A plain union would keep every hook the laptop ever had: a hook edited
+or deleted on the laptop would stay in each guest beside its
+replacement. So the merge writes the hooks this laptop file added (after
+the repose-hook strip and the missing-command drop) to
+`~/.repose/claude-laptop-hooks.json`, and the next merge removes those
+from the guest's lists before the union. A group the guest had before
+the laptop also carried the same group goes with it when the laptop
+drops it; that needs identical JSON on both sides, and we accept it.
+The `commands` pass checks the unioned hooks, so a guest hook whose
+command is missing is dropped with a note as a laptop one is. Checked
+by `TestClaudeSettingsMergeKeepsGuestHooks` (herdr's hook and a laptop
+`SessionStart` hook, a laptop change, a laptop with no hooks) and the
+`hooks` golden, whose guest-only `Stop` entry is now kept.
+
+**I-500. `repose stop` names the agents it interrupted, without a resume
+command.** (herdr-fixes, 2026-10-05; narrows features/stop-start-destroy.md
+under I-484 and I-485) The stop spec said the CLI tells you a Claude
+session can be resumed with `claude --resume` when an agent window was
+open. Nothing printed it. I-484 later ruled that a success line says
+what happened and names no next command, and I-485 that a line the
+fiftieth-time reader gains nothing from goes; `claude --resume` is a
+lesson the docs already give (run-and-attach, "When the machine
+stops"), and with herdr the agents come back on their own. What the
+stop did is still news: it ended an agent in the middle of a turn, or
+one waiting for your answer. So after the stop line the CLI prints
+`Interrupted claude (working) and claude-2 (needs input).`, built from
+the signals of the project as `stop` read it before stopping. Idle
+agents lose nothing and are not named; no busy agent, no line. The
+sample can be up to a minute old, so the line is what the machine last
+reported. Checked by `TestStopNamesInterruptedAgents`.

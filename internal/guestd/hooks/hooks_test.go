@@ -146,16 +146,18 @@ func TestSummaryIsTruncatedAtTheCap(t *testing.T) {
 	}
 }
 
-func TestWindowFallsBackToTheAgentName(t *testing.T) {
-	// No window in the payload, and the resolver cannot find one: the event is
-	// still relayed, because a notification the user does not get is worse
-	// than one with a less precise window.
+func TestWindowIsEmptyOutsideTmux(t *testing.T) {
+	// No window in the payload, and the resolver cannot find one (a herdr
+	// pane, a script): the event still reaches the sink, because a
+	// notification the user does not get is worse than one with a less
+	// precise window, and the window stays empty so the sink does not take
+	// the agent's name for a tmux window.
 	_, rec, c := newHookServer(t, func(context.Context, string) (string, error) {
 		return "", os.ErrNotExist
 	})
 	post(t, c, `{"agent":"pi","kind":"needs_input","summary":"?"}`)
 	got := rec.all()
-	if len(got) != 1 || !strings.HasPrefix(got[0], "pi|pi|") {
+	if len(got) != 1 || !strings.HasPrefix(got[0], "pi||needs_input|") {
 		t.Fatalf("relayed = %v", got)
 	}
 }
