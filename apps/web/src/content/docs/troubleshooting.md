@@ -92,6 +92,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place. Until then, start it with `codex --no-daemon`.
 
+**`bundled bubblewrap digest mismatch` when Codex runs a command.** Base 2026.10.05 ships Codex with a sandbox helper it refuses. The next platform update fixes it in place. Until then, run `nix profile add nixpkgs#bubblewrap` on the machine; Codex uses that one instead.
+
 **An agent seems stuck.** Attach and look; it's usually waiting on a permission prompt. See [Let it run without asking](/docs/agents#let-it-run-without-asking).
 
 ## Ports

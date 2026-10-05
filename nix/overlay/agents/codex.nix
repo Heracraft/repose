@@ -9,13 +9,19 @@
 # ~/.codex/packages and refuses to start without every one of those files
 # ("this CLI has no complete local package", DECISIONS I-487). So bin/codex
 # is the real binary, never a wrapper script beside a renamed one, and rg
-# and bwrap are copies (the daemon rejects a link out of the package).
-# Codex puts codex-path on its PATH and finds bwrap in codex-resources
-# itself. codex-code-mode-host runs every shell command (I-426).
-{ lib, stdenvNoCC, fetchurl, bubblewrap, ripgrep, procps }:
+# is a copy (the daemon rejects a link out of the package). Codex puts
+# codex-path on its PATH. codex-code-mode-host runs every shell command
+# (I-426).
+#
+# bwrap is upstream's own release asset, byte for byte: with no bwrap on
+# PATH (a guest has none) Codex runs its bundled one only after checking
+# it against the sha256 compiled into the binary, and refuses any other
+# build ("bundled bubblewrap digest mismatch", DECISIONS I-495).
+{ lib, stdenvNoCC, fetchurl, ripgrep, procps, coreutils }:
 let
   v = (builtins.fromJSON (builtins.readFile ./versions.json)).codex;
   host = fetchurl { inherit (v.code-mode-host) url hash; };
+  bwrap = fetchurl { inherit (v.bwrap) url hash; };
   target = "x86_64-unknown-linux-musl";
   manifest = builtins.toJSON {
     layoutVersion = 1;
@@ -41,15 +47,22 @@ stdenvNoCC.mkDerivation {
     tar xzf ${host} codex-code-mode-host-${target}
     install -Dm755 codex-code-mode-host-${target} $out/bin/codex-code-mode-host
     install -Dm755 ${ripgrep}/bin/rg $out/codex-path/rg
-    install -Dm755 ${bubblewrap}/bin/bwrap $out/codex-resources/bwrap
+    tar xzf ${bwrap} bwrap-${target}
+    install -Dm755 bwrap-${target} $out/codex-resources/bwrap
     printf '%s\n' ${lib.escapeShellArg manifest} > $out/codex-package.json
     runHook postInstall
   '';
 
-  # The daemon's own check, run for real: with a scratch CODEX_HOME,
-  # `codex app-server daemon start` installs this package and starts the
-  # app server, which fails on any missing piece of the layout. It needs
-  # no network; the updater it also starts is stopped before it matters.
+  # Two of Codex's own checks, run for real, neither needing a login or
+  # the network:
+  # - `codex sandbox` runs a command the way an agent turn does, through
+  #   the bundled bwrap, so a bwrap Codex rejects fails here. PATH holds
+  #   coreutils only: a bwrap on PATH would be used instead and hide it
+  #   (I-495).
+  # - `codex app-server daemon start` installs this package into a
+  #   scratch CODEX_HOME and starts the app server, which fails on any
+  #   missing piece of the layout (I-487). The updater it also starts is
+  #   stopped before it matters.
   doInstallCheck = true;
   # The daemon records its app server's start time with ps.
   nativeInstallCheckInputs = [ procps ];
@@ -57,6 +70,9 @@ stdenvNoCC.mkDerivation {
     runHook preInstallCheck
     $out/bin/codex --version
     export HOME=$(mktemp -d) CODEX_HOME=$(mktemp -d)
+    echo sandboxed > probe.txt
+    got=$(env PATH=${coreutils}/bin $out/bin/codex sandbox cat probe.txt)
+    test "$got" = sandboxed
     $out/bin/codex app-server daemon start | tee start.json
     grep -q '"status":"started"' start.json
     $out/bin/codex app-server daemon stop || true

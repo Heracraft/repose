@@ -13017,3 +13017,30 @@ store nothing and work when the api is down (I-200's pattern); it waits
 until someone needs detail finer than the dashboard's minute.
 *Revisit when:* a user asks for a live view, or the session still lags
 under load with these weights (then: `io.weight` on the same units).
+
+**I-495. The guest's Codex ships upstream's own bwrap.** (2026-10-05)
+Amends I-487. On base 2026.10.05 every Codex command that runs in its
+sandbox failed with "bundled bubblewrap digest mismatch for
+.../codex-resources/bwrap: expected sha256:77360cb7..., got
+sha256:8fa81357..." (found by the release live check on e2e-rel1). Codex
+uses a `bwrap` on PATH when there is one; otherwise it runs
+`codex-resources/bwrap` only after checking it against a sha256 compiled
+into the binary, the digest of upstream's `bwrap-<target>` release asset.
+I-487 copied nixpkgs's bwrap there. A guest has no bwrap on PATH (the
+makeBinaryWrapper that added one went with I-487), so the check ran and
+refused it. I-487's own test on kanali passed because it ran from inside
+Claude Code, whose wrapper puts nixpkgs's bubblewrap on PATH, so Codex
+never looked at the bundled one. `codex.nix` now fetches the
+`bwrap-x86_64-unknown-linux-musl` asset at the Codex version, pinned in
+`versions.json` under `codex.bwrap` and moved by `scripts/bump-agents.sh`
+with the binary, and installs it unchanged (its sha256 is the expected
+77360cb7...). The install check also runs `codex sandbox cat probe.txt`
+with PATH set to coreutils alone, which goes through the bundled bwrap
+the way an agent turn does and needs no login; with nixpkgs's bwrap the
+build fails with the same digest error. `codex app-server daemon version`
+printing "failed to connect to .../app-server-control.sock: No such file
+or directory (os error 2)" is upstream's answer when no daemon is
+running (`codex exec` does not start one); after `daemon start` it
+prints `"status":"running"`. Users need do nothing: the next base update
+switches the package in place; until then a bwrap on PATH (`nix profile
+add nixpkgs#bubblewrap`) gets round it (troubleshooting page).
