@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-506 entries.
+508 entries.
 
 ## Scope
 
@@ -346,7 +346,7 @@ pointer, not a summary.
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; L6608
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; L6669
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6714
-- **I-259** Agents start in the checkout's dev environment — 2026-09-26; L6740
+- **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; L6740
 - **I-264** tmux passes modified keys, OSC 8 links and passthrough to the laptop's terminal — 2026-09-26; L6787
 - **I-265** Ruby and Java pins are installed like the Node pin; Rails' native gem libraries are in the base — 2026-09-26; L6821
 - **I-266** mosh is not offered — 2026-09-26; L6870
@@ -539,3 +539,4 @@ pointer, not a summary.
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12358
+- **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; L12394

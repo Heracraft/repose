@@ -210,7 +210,7 @@ func personalWhere(ch []PersonalChange) string {
 
 const machineNixTemplate = `# machine.nix: a home-manager module every repose machine of your account
 # gets, beside the project's own configuration.
-# https://repose.herakraft.co/docs/config#your-machinenix
+# https://repose.herakraft.co/docs/config#your-machine-nix
 { pkgs, ... }:
 {
   home.packages = with pkgs; [

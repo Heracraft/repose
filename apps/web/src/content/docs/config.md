@@ -110,10 +110,10 @@ What the file can't do: set NixOS system options other than the database service
 `repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment, on each new machine without asking. It lives on your account, and on your laptop at `~/.config/repose/machine.nix`.
 
 ```
-repose config --global add ripgrep fd    # start one, or add packages
-repose config --global edit              # edit the laptop's copy, push on save
-repose config --global show              # print the account's copy
-repose config --global apply             # push the laptop's copy
+repose config --global add ripgrep fd  # add packages
+repose config --global edit            # edit, push on save
+repose config --global show            # the account's copy
+repose config --global apply           # push the laptop's
 ```
 
 An example:
