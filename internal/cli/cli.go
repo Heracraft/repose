@@ -577,7 +577,7 @@ func newBrowserCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 in the background (port 6080, or the next free one) and opens the viewer
 page. The page shows the browser the agent drives, sized to your tab; click
 and type in it to log in, solve a captcha or approve a passkey. The
-password rides in the link after the #. The view sleeps after 30 idle minutes; opening the page wakes it.`,
+password is in the link after the #. The view sleeps after 30 idle minutes; opening the page wakes it.`,
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

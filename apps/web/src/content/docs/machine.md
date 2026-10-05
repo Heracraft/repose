@@ -82,7 +82,7 @@ The first load builds the dev shell. A few packages from a nixpkgs the machine h
 
 Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
 
-Three things trip up a first flake:
+Check three things in a first flake:
 
 - **Commit `flake.nix`.** Nix only sees files git tracks. An untracked `flake.nix` still reaches the machine, then fails to load with `Path 'flake.nix' in the repository ... is not tracked by Git`.
 - **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it, and your next `repose sync` stops with `The machine has uncommitted changes your laptop doesn't have`, naming `flake.lock`. Run `nix flake lock` on your laptop and commit the file. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
@@ -97,7 +97,7 @@ This works in any checkout or worktree in your home folder. To keep agents and y
 
 ## Ports
 
-While you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
+As long as you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
 
 ```text
 ⇄ localhost:5173 → :5173
@@ -176,11 +176,11 @@ The project's page in the dashboard has a **Machine** card with the size, its vC
 - **CPU**: the share of the machine's vCPUs in use.
 - **Memory**: memory in use as the machine sees it, of the size's memory.
 - **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU is at 100% means more work than vCPUs, for example several builds or test runs at once. Run fewer at a time, or give the machine more vCPUs with `repose resize --size`.
-- **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy. repose watches for that; you don't need to act.
+- **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy, and repose watches for that.
 
-Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. Repose records process names and numbers, never their arguments or anything you type; see the [privacy policy](/privacy).
+Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type; see the [privacy policy](/privacy).
 
-When every vCPU is busy, your SSH sessions and tmux get the CPU before the programs running in your panes, so what you type keeps showing up at once.
+Your SSH sessions and tmux get the CPU before the programs running in your panes when every vCPU is busy, so what you type keeps showing up at once.
 
 ## Changing the size
 

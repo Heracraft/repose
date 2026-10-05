@@ -7,7 +7,7 @@ order: 23
 
 This page assumes you've read [Git with repose](/docs/tutorial-git).
 
-The idea: **a task is a branch**. Every agent gets its own worktree and branch on the machine, you never edit the machine's `main`, and your laptop is where branches get reviewed and merged.
+**Each task is a branch.** Every agent gets its own worktree and branch on the machine, you never edit the machine's `main`, and your laptop is where branches get reviewed and merged.
 
 ## 1. Sync once, in the morning
 

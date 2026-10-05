@@ -36,7 +36,7 @@ Open `herdr` on the laptop. The machine is in the sidebar under its name. Start 
 
 ## After a stop and start
 
-`repose stop` ends every process on the machine, herdr's server included. After `repose start`, open `herdr` on the laptop. Within about 30 seconds it starts its server on the machine again, puts the workspaces and panes back, and resumes each agent that has an integration in the session it was in. Until a herdr window is open, `herdr machine status` reports the machine as stopped; that's expected. To bring it back from a script instead, run `herdr --remote todo-app.repose` once.
+`repose stop` ends every process on the machine, herdr's server included. After `repose start`, open `herdr` on the laptop. Within about 30 seconds it starts its server on the machine again, puts the workspaces and panes back, and resumes each agent that has an integration in the session it was in. Until a herdr window is open, `herdr machine status` reports the machine as stopped. To bring it back from a script instead, run `herdr --remote todo-app.repose` once.
 
 ## What changes on a repose machine
 

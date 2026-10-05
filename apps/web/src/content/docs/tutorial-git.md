@@ -71,7 +71,7 @@ Give the agent something to commit:
 repose run "add an MIT LICENSE file and commit it"
 ```
 
-When it's done (you get a notification), fetch:
+Fetch once it's done (you get a notification):
 
 ```
 $ git fetch repose
@@ -110,7 +110,7 @@ them. Nothing was changed. Pick one:
                                  then sync
 ```
 
-The exit code is 6, so a script notices. If the agent had committed instead of leaving the file dirty, there would be no conflict at all: the sync checks your laptop's commit out detached on the machine and leaves the agent's branch where it is, and `git fetch repose` brings that branch to you to merge like any other. So ask agents to commit.
+The exit code is 6, so a script notices. Ask agents to commit: had the agent committed instead of leaving the file dirty, there would be no conflict. The sync checks your laptop's commit out detached on the machine and leaves the agent's branch where it is, and `git fetch repose` brings that branch to you to merge like any other.
 
 ## Agents on their own branches
 

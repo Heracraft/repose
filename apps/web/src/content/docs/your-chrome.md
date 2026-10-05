@@ -5,7 +5,7 @@ section: Using repose
 order: 14.5
 ---
 
-Some jobs need the browser you already have: the admin tool behind your company's SSO, an account protected by a hardware key, a site where an extension does half the work. While it's open, the machine's two browser tools (`playwright` and `chrome-devtools`) drive your laptop's Chrome instead of the machine's own browser. Nothing on the machine changes and no agent restarts: the next browser call an agent makes lands in your Chrome, and the one after you close the bridge lands back on the machine.
+Some jobs need the browser you already have: the admin tool behind your company's SSO, an account protected by a hardware key, a site where an extension does half the work. With the bridge open, the machine's two browser tools (`playwright` and `chrome-devtools`) drive your laptop's Chrome instead of the machine's own browser. Agents keep running through the switch: the next browser call an agent makes lands in your Chrome, and the one after you close the bridge lands back on the machine.
 
 ## Once: turn Chrome's switch on
 
@@ -17,7 +17,7 @@ chrome://inspect/#remote-debugging
 
 It stays on until you turn it off. If you skip this step, the bridge opens the page for you and waits up to 5 minutes for you to turn it on.
 
-With the switch on, Chrome asks you to allow each connection to it: a dialog in the Chrome window, once for every browser tool that connects. While a connection is open, Chrome shows its "Chrome is being controlled by automated test software" bar.
+With the switch on, Chrome asks you to allow each connection to it: a dialog in the Chrome window, once for every browser tool that connects. Chrome shows its "Chrome is being controlled by automated test software" bar for as long as a connection is open.
 
 ## Bridge while you're attached
 
@@ -27,7 +27,7 @@ Add `--bridge` to `run` or `attach`:
 repose run --bridge "test the staging checkout in my Chrome"
 ```
 
-When the bridge is up, a message at the bottom of tmux says:
+Once the bridge is up, a message at the bottom of tmux says:
 
 ```text
 Your laptop's Chrome is bridged in:
@@ -106,7 +106,7 @@ Without an allowlist the browser tools usually watch every tab, so pages you loa
 
 ## What the agents can and can't do in your Chrome
 
-While the bridge is open, the agents can do in your Chrome what the browser tools can do anywhere: open pages, click, type, read what's on a page, take screenshots, run JavaScript in a page. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so an open bridge lends your browser to the whole machine.
+With the bridge open, the agents can do in your Chrome what the browser tools can do anywhere: open pages, click, type, read what's on a page, take screenshots, run JavaScript in a page. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so while a bridge is open, any program on the machine can drive your Chrome.
 
 Whatever you pass, the bridge never lets them:
 
