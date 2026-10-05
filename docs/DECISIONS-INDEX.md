@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-514 entries.
+515 entries.
 
 ## Scope
 
@@ -546,3 +546,4 @@ pointer, not a summary.
 - **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12603
 - **I-487** The guest's Codex is a complete Codex package — 2026-10-04; L12624
 - **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12664
+- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12690

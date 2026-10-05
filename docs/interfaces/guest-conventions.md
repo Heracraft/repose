@@ -119,6 +119,17 @@ the attach opens is `<name>`. guestd reads none of this.
   "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> '<agent> ...'`
   then `tmux send-keys -t <slug>:<agent> '<prompt>' Enter` after the TUI is
   up (guestd waits for the pane to be idle 1 s).
+- Claude Code's folder trust (DECISIONS I-486): in the same SSH command,
+  before `tmux new-window` starts `claude` in a folder (the checkout, a
+  worktree, another checkout), the CLI sets
+  `projects["<folder, symlinks resolved>"].hasTrustDialogAccepted` to
+  `true` in `~/.claude.json` when it is not already `true`, keeping every
+  other key, writing atomically with mode 0600, and leaving a file that
+  is not valid JSON alone. It needs `jq` on the guest's PATH and is best
+  effort; the window starts either way. A pane that settles on Claude
+  Code's trust dialog anyway gets no prompt: `run` says so and attaches
+  (with `--no-attach`, exits 1). Nothing else writes that key, and the
+  laptop's `~/.claude.json` is never carried.
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
   history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga

@@ -415,7 +415,17 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		if err := startAgentWindow(ctx, target, project.Slug, name, dir, agent, opts.Prompt, attachInstead, loadingDevShell); err != nil {
+		err := startAgentWindow(ctx, target, project.Slug, name, dir, agent, opts.Prompt, attachInstead, loadingDevShell)
+		var dialog *agentDialogError
+		if errors.As(err, &dialog) {
+			// The pre-trust did not take (I-486): the window is open
+			// on the dialog, and the prompt was not typed.
+			pr.Fail()
+			if opts.NoAttach {
+				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s window with `repose attach %s`, then type your prompt there.", dialog.Error(), name, project.Slug)
+			}
+			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the window that opens, then type your prompt there.\n", dialog.Error())
+		} else if err != nil {
 			return stepFailed("start "+agent+" in the guest", err, "")
 		}
 		pr.End()
