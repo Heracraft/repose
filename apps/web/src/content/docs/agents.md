@@ -52,6 +52,53 @@ sandbox_mode = "danger-full-access"
 
 For the others, see each agent's own documentation.
 
+## Web search
+
+| Agent       | Web search                                           |
+| ----------- | ---------------------------------------------------- |
+| Claude Code | Built in.                                            |
+| Codex CLI   | Built in, from a cache unless set otherwise (below). |
+| Gemini CLI  | Built in (Google Search).                            |
+| opencode    | Off unless you turn it on, below.                    |
+| pi          | None built in. It can still fetch pages with `curl`. |
+
+**Codex** searches a cache of pages by default, and live in `danger-full-access`. Set `web_search = "live"` in `~/.codex/config.toml` for live results, or `"disabled"` to turn it off.
+
+**opencode** offers its `websearch` tool only with its own Zen provider, or when `OPENCODE_ENABLE_EXA` is `1`. Set it once as a secret and every opencode on the machine can search, through Exa's public endpoint, with no key:
+
+```
+repose secrets set OPENCODE_ENABLE_EXA
+```
+
+Type `1` as the value. Each search sends the query to Exa. Store `EXA_API_KEY` too if you have an Exa account. An opencode that's already running needs a restart to pick it up.
+
+**OpenCode 2** asks which search provider to use the first time it searches, and a prompt sent with `opencode2 run` can't answer, so the search fails. Name one in `~/.config/opencode/opencode.json` on the machine. TinyFish works with no key:
+
+```json
+{
+	"websearch": { "provider": "tinyfish" }
+}
+```
+
+`exa`, `firecrawl`, `parallel` and `tavily` work too, each with its key stored as a secret (`EXA_API_KEY`, `FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`, `TAVILY_API_KEY`).
+
+## OpenCode 2
+
+The machine's `opencode` is version 1, the one opencode's installer still gives by default. OpenCode 2 comes from a separate channel, and you can install it on the machine next to version 1:
+
+```
+curl -fsSL https://opencode.ai/v2/install -o /tmp/oc2-install
+bash /tmp/oc2-install --no-modify-path
+ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
+```
+
+You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode` starts. Without it, the installer puts OpenCode 2 first on your `PATH` in `.bashrc`, so a plain `opencode` in a new shell is OpenCode 2, and it starts outside the project's dev environment.
+
+- **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and sends "finished", "needs input" and "error". If you edit the plugin, run `opencode2 service restart`.
+- **Logins.** The first time it runs, OpenCode 2 imports the opencode logins `repose run` copied. After that, run `opencode2 auth login` on the machine, or store the provider's API key as a secret.
+- **Its web app.** OpenCode 2 keeps sessions in a background service on the machine's `localhost:49374`. Run `opencode2 pair` on the machine for a one-time link, then open it on your laptop within 5 minutes. While you're attached, the port is already on your laptop; when you aren't, run `repose open 49374`.
+- **It's yours to update.** It isn't part of the platform: `opencode2 upgrade` updates it, and a restore takes it back with the rest of your home directory.
+
 ## Let it ask you
 
 Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. Add a line to the agent's instructions (`CLAUDE.md`, `AGENTS.md`) telling it to use them. The answer can come from ntfy, email, the dashboard or `repose reply` on your laptop; see [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
@@ -71,7 +118,7 @@ repose secrets set CLAUDE_CODE_OAUTH_TOKEN
 
 An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
-**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one.
+**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one. For opencode that's `~/.local/share/opencode/auth.json`, which OpenCode 2 reads once and then stops updating, so a login you make in OpenCode 2 on your laptop doesn't reach the machine ([OpenCode 2](#opencode-2)).
 
 **Gemini CLI.** Store `GEMINI_API_KEY` as a secret, or run `gemini` on the machine and log in there.
 

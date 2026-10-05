@@ -422,7 +422,9 @@ in
           guest.succeed("sudo -u dev sh -c 'jq \".hasSeenAutoDefaultNudge=false\" ~/.claude.json > /tmp/cj && cat /tmp/cj > ~/.claude.json' && sudo -u dev repose-agent-setup claude")
           assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["hasSeenAutoDefaultNudge"] is False
           guest.succeed("sudo -u dev repose-agent-setup codex && grep -q 'notify = \\[\"repose-hook\"\\]' /home/dev/.codex/config.toml")
-          guest.succeed("sudo -u dev repose-agent-setup opencode && test -s /home/dev/.config/opencode/plugins/repose.js")
+          guest.succeed("sudo -u dev repose-agent-setup opencode && grep -q 'id: \"repose\"' /home/dev/.config/opencode/plugins/repose.js")
+          # I-481: a repose.js the user changed is kept.
+          guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'

@@ -29,7 +29,11 @@
 #          takes that prompt the same way (I-306).
 # codex   ~/.codex/config.toml gains `notify = ["repose-hook"]` unless a
 #          `notify` key already exists.
-# opencode ~/.config/opencode/plugins/repose.js is installed if absent.
+# opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
+#          replaced while it is byte for byte one an earlier base installed
+#          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
+#          repose-agent-hooks user unit runs this at login too, so an
+#          OpenCode 2 the user installed reports without the wrapper.
 # gemini, pi: no hooks (guestd's pane-idle heuristic reports for them); the
 #          machine guide (DECISIONS I-243) is linked in as an extension:
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
@@ -167,11 +171,21 @@ writeShellApplication {
       link_owned "''${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/repose-machine-guide.js" /etc/repose/pi-extension.js
     }
 
+    # sha256 of every repose.js an earlier base installed. A file equal to
+    # one of them is the platform's and is replaced; anything else is the
+    # user's and stays (DECISIONS I-481).
+    opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49"
+
     setup_opencode() {
-      local dir="$HOME/.config/opencode/plugins"
+      local dir="$HOME/.config/opencode/plugins" have
       mkdir -p "$dir"
       if [ ! -e "$dir/repose.js" ]; then
         write_atomic "$dir/repose.js" 0644 < ${reposeOpencodePlugin}
+      elif [ -f "$dir/repose.js" ] && [ ! -L "$dir/repose.js" ]; then
+        have=$(sha256sum "$dir/repose.js" | cut -d' ' -f1)
+        case " $opencode_retired " in
+          *" $have "*) write_atomic "$dir/repose.js" 0644 < ${reposeOpencodePlugin} ;;
+        esac
       fi
     }
 

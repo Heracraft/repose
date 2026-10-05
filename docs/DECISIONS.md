@@ -12543,3 +12543,64 @@ Alternatives: a style guide page of examples alone, rejected, since the
 two cuts this week both passed review that had LANDING's rule in hand;
 the tests stop the phrasings, and the rule in CLAUDE.md reaches the
 agents who write the text.
+**I-481. One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies.**
+(opencode-herdr, 2026-10-04) OpenCode 2 (2.0.22, 2026-10-02) ships on a
+channel of its own (`opencode.ai/v2/install`, npm `@opencode/cli`); the
+GitHub "latest" release and the default installer are still 1.18
+(1.18.34). Version 2 does not run version 1 plugins, drops
+`session.idle`/`session.error` from its event stream (a turn ends with
+`session.execution.succeeded` or `session.execution.failed`; checked by
+logging every event of a real 2.0.22 run), and runs plugins in a
+background service the repose wrapper never starts, so
+`REPOSE_HOOK_AGENT` is absent there and `repose-hook` refused the
+payload ("no agent given"). Decided: (1) the guest keeps 1.18 as
+`opencode` (bumped to 1.18.34, bug fixes only); a user may install
+OpenCode 2 beside it as `opencode2` (`/docs/agents#opencode-2`). (2)
+`opencode-plugin.js` default-exports `{id, server, setup}`, the shape
+OpenCode's migration guide gives for one package serving both (version
+1 reads `server` from 1.18.29 on, version 2 reads `setup`), maps V2's
+`session.execution.succeeded` (summary: the last `session.text.ended`
+text), `session.execution.failed` and `permission.asked`, and calls
+`repose-hook --agent opencode`; the shell shim takes `--agent` too.
+(3) `repose-agent-setup opencode` replaces `repose.js` when its sha256 is
+one an earlier base installed (`opencode_retired`, today the 2026-09-19
+file) and leaves any other file, so an existing guest gets the new
+plugin and a user's edit survives; until now an installed plugin was
+never replaced. (4) A user unit, `repose-agent-hooks`, runs that at
+login, so an OpenCode 2 that never went through the wrapper still finds
+the plugin. Alternatives: ship OpenCode 2 as the guest's `opencode`
+(breaks every version 1 plugin a user has, and its line is not the
+default upstream yet); ship both binaries (another 200 MB in every
+closure for a minority, and it updates daily); a second plugin file for
+version 2 (two files to keep in step, and version 1 would fail to load
+it). Login sync is unchanged: it copies `auth.json`, which version 2
+imports once into `opencode.db` and then stops writing, so logins made
+in OpenCode 2 on the laptop do not travel; the docs say so. Checked on
+temporary guest `oc-herdr`: 1.18.32 TUI under herdr sent needs_input
+and completed; `opencode2 run` through the service sent completed
+(summary 431 bytes) and needs_input for an `external_directory` ask.
+*Revisit when:* upstream makes 2.x the default channel, at which point
+the guest's `opencode` moves to it and the version 1 half of the plugin
+stays for one release.
+
+**I-482. herdr is documented, not packaged, and gets no boot unit.**
+(opencode-herdr, 2026-10-04; settles the herdr boot unit left open by
+the 2026-10-03 client report) The report proposed a guest user unit to
+start `herdr server` after `repose start`, because `herdr machine
+status` showed the machine as stopped. Tested again: an open herdr
+client re-runs `herdr remote-client-bridge` within about 30 seconds,
+which starts the server, restores `session.json` and resumed opencode
+with `--session <id>`. Only the status command, which never starts
+anything, reports "stopped" meanwhile. A unit would start a server
+nobody is watching and that herdr starts anyway. Packaging herdr in the
+base does not remove the install prompt either: herdr takes a remote
+binary only when its version matches the laptop's, and herdr ships
+several releases a week (nixpkgs 0.9.3, the guest's pinned nixpkgs 0.9.0). Decided: a
+tutorial, `/docs/tutorial-herdr`, with the limits it keeps (tmux-only
+`repose status` and `repose run`, the idle notice, the shared `Ctrl-b`,
+restore rolling back `~/.config/herdr`). The "Bad owner or permissions
+on /etc/ssh/ssh_config" failure happens only where the client is itself
+a guest (the store's files are owned by `nobody`); `[remote]
+manage_ssh_config = false` avoids it and was checked from kanali.
+*Revisit when:* herdr can run a matching server from a binary on PATH
+across versions, or users ask for `repose status` to see herdr panes.
