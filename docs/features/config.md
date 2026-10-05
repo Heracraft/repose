@@ -135,7 +135,12 @@ A fragment may:
 - configure any `programs.*` and `services.*` home-manager module (user
   services, not system ones);
 - write dotfiles with `home.file` and `xdg.configFile`;
-- set `home.sessionVariables` and `home.sessionPath`;
+- set `home.sessionVariables` and `home.sessionPath`. They reach every
+  process (PAM, `/etc/set-environment`, agent wrappers, and dev's tmux
+  server and user manager after a switch), the fragment's value over the
+  base's and sessionPath first on `PATH`. `PATH`, `BASH_ENV`, `ENV`,
+  `REPOSE_ENV_GEN` and `REPOSE`, and a double quote in a value, are
+  refused (DECISIONS I-488);
 - apply overlays through `repose.overlays = [ (final: prev: { ... }) ]`.
   They are applied to the guest's `pkgs` before anything is evaluated,
   after the platform's own overlay. home-manager's `nixpkgs.overlays` is
@@ -173,8 +178,10 @@ A fragment may not:
 - import from derivation (`allow-import-from-derivation` is off);
 - set NixOS options: it is a home-manager module, so
   `services.postgresql.enable = true` at the top level fails with `option
-  'services.postgresql' does not exist in a fragment; system services come
-  from the menu or `repose config menu``, and `networking.*`, `users.*`,
+  'services.postgresql' does not exist in a fragment; a fragment is a
+  home-manager module: packages go in home.packages, databases come from
+  `repose config add` or repose.system`, a whole `flake.nix` fails with
+  `this file is a Nix flake; ...` (DECISIONS I-483), and `networking.*`, `users.*`,
   `boot.*`, `services.openssh` and `virtualisation.*` are outside the
   `repose.system` allowlist whatever the file says.
 
@@ -241,6 +248,28 @@ Base bumps (DECISIONS R4-5):
 - The dashboard's **Hold base updates** checkbox (`hold_base_updates`)
   pins the base; unticking it releases the project to the next rollout.
   The Config page shows the base the project is on.
+
+## The personal layer (DECISIONS I-490)
+
+- An account has one machine.nix, a home-manager module under the same
+  contract as a fragment, stored with revisions (`GET/PUT /me/config`).
+  Every machine of the account that has not opted out gets it beside the
+  project's fragment; temporary machines too.
+- A save rebuilds every such project: a running machine switches in
+  place, a stopped one keeps the revision built for its next start. A
+  failure leaves each machine on its revision and raises
+  `personal_failed`.
+- A new machine never waits for it: when the host holds no closure of the
+  combination, the machine is created on the project layer and the
+  combined revision is built and applied right after.
+- The CLI keeps `~/.config/repose/machine.nix` and pushes it on `run`
+  when it changed since its last push, refusing when the account's copy
+  changed since too; `repose config --global` shows, edits, adds,
+  removes and applies; `repose run --no-personal` and the Config page's
+  switch opt a machine out.
+- With a machine.nix on the account the tool carry skips the laptop's
+  global tools; with a `repose.nix` at the checkout root it skips the
+  scripts' commands.
 
 ## Depends on
 

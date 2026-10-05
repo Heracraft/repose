@@ -23,10 +23,10 @@ todo-app must be stopped before restoring over it: `repose stop todo-app` first,
 $ repose stop && repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 ...
 Restore over the current volume? Anything since the snapshot is lost. [y/N] y
-Restored todo-app. `repose start todo-app` boots it.
+Restored todo-app; it is stopped.
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as-new todo-app-yesterday
-Restored into a new project, todo-app-yesterday. `repose ls` lists it.
+Restored into a new project, todo-app-yesterday.
 ```
 
 Snapshot ids are UUIDv7 like every id (interfaces/README.md). TAKEN is

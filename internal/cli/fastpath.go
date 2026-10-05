@@ -18,9 +18,9 @@ import (
 // on most of them nothing changed since the last. When the files on disk
 // already cover the project, none of the api calls can change anything,
 // and when the multiplexed connection of an earlier command is still up
-// (ControlPersist), it is the proof: the gateway ends a client connection
-// as soon as its guest connection ends, so a live master means a guest
-// that answered on it.
+// (ControlPersist) and runs a command, it is the proof: the gateway ends a
+// client connection as soon as its guest connection ends, so a master
+// that answers means a guest that answered on it.
 
 // noFastPath turns the fast path off (REPOSE_NO_FASTPATH=1), for
 // measuring it against the slow one and as a way out if it misjudges.
@@ -88,16 +88,48 @@ func hostBlockHandle(cfg, slug string) (string, bool) {
 	return "", false
 }
 
-// masterAlive reports whether a ControlPersist master for t is up
-// (`ssh -O check`, local only: it asks the master's socket, not the
-// network).
+// masterProbeTimeout bounds masterAlive's round trip over a master. A
+// healthy one answers in two round trips; one whose connection died while
+// the laptop slept or changed networks never does.
+const masterProbeTimeout = 2 * time.Second
+
+// masterAlive reports whether a ControlPersist master for t is up and
+// still reaches its guest. `ssh -O check` asks only the master's local
+// socket, and a master whose TCP connection died while the laptop slept
+// or changed networks still answers it: a session opened on it hung until
+// ssh's keepalives gave up, up to 90 seconds, after "Connected" was
+// printed (I-491). So a master that answers the check also runs `true`
+// within masterProbeTimeout, and one that does not is told to stop and
+// reported as down, for the caller's cold path. Stop, not exit: sessions
+// already on the master keep running, so a slow but healthy master does
+// not cut another terminal's attach.
 func masterAlive(ctx context.Context, t sshTarget) bool {
 	if goos() == "windows" {
 		return false
 	}
+	if !sshControl(ctx, t, "check") {
+		return false
+	}
+	pctx, cancel := context.WithTimeout(ctx, masterProbeTimeout)
+	defer cancel()
+	started := time.Now()
+	cmd := exec.CommandContext(pctx, "ssh", append(append([]string{}, t.Args...), "true")...)
+	cmd.WaitDelay = time.Second
+	if err := cmd.Run(); err == nil {
+		timingf("connect: ssh master answered in %dms", time.Since(started).Milliseconds())
+		return true
+	}
+	timingf("connect: ssh master did not answer in %dms; stopped it", time.Since(started).Milliseconds())
+	sshControl(ctx, t, "stop")
+	return false
+}
+
+// sshControl sends a control command (`ssh -O <op>`) to t's master,
+// which answers locally, and reports whether it succeeded.
+func sshControl(ctx context.Context, t sshTarget, op string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	args := append([]string{"-O", "check"}, t.Args...)
+	args := append([]string{"-O", op}, t.Args...)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.WaitDelay = time.Second
 	return cmd.Run() == nil
@@ -154,6 +186,12 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 // remote, unless the directory is pinned to another one. nil when the
 // cache cannot say.
 func cachedGuess(e *Env, explicit string, deps resolveDeps) *Project {
+	// Another checkout of a machine (I-480) takes the slow path: the
+	// guess would be the machine's own checkout, and an early probe there
+	// would read and make the wrong tree.
+	if strings.Contains(explicit, ":") || (explicit == "" && e.extraCheckout() != nil) {
+		return nil
+	}
 	if explicit != "" {
 		for remote, c := range e.Cache.ByRemote {
 			if c.Slug == explicit || c.ProjectID == explicit {
@@ -180,7 +218,7 @@ func cachedGuess(e *Env, explicit string, deps resolveDeps) *Project {
 
 // warmTarget returns the ssh target for guess when the files on disk
 // cover it (covered), and whether a master for it is up (master): the
-// guest answered on a connection that is still open.
+// guest answers on a connection that is still open.
 func warmTarget(ctx context.Context, e *Env, guess *Project) (t sshTarget, covered, master bool) {
 	if guess == nil || e.TargetFor != nil || noFastPath() {
 		return sshTarget{}, false, false
@@ -201,7 +239,7 @@ func warmTarget(ctx context.Context, e *Env, guess *Project) (t sshTarget, cover
 }
 
 // attachFast is `repose attach` with no api call (I-223): the cache names
-// the project and a live master proves its guest is running, which is
+// the project and a master that answers proves its guest is running, which is
 // everything the attach needs. done is false when the full path must
 // run; it then has done nothing.
 func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done bool, err error) {
@@ -219,6 +257,7 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 		e.addReposeRemote(ctx, guess, target, nil) // I-272
 	}
 	startSessionHelper(e, helper)
+	defer e.keepTokenFresh()()
 	return true, attachTmux(target, guess.Slug, "", tz, helper.RepoDir, nil, renewFor(e, guess))
 }
 
@@ -280,7 +319,7 @@ func startEarlyProbe(ctx context.Context, e *Env, opts RunOptions) *earlyProbe {
 	ep.started = time.Now()
 	go func() {
 		defer close(ep.done)
-		ep.out, ep.err = runSSH(ctx, target, probeScript(guess.Slug, checkoutName(root)), nil)
+		ep.out, ep.err = runSSH(ctx, target, probeScript(guess.Slug, checkoutName(root), ""), nil)
 	}()
 	return ep
 }
@@ -345,7 +384,7 @@ func startBootProbe(ctx context.Context, e *Env, p *Project, withProbe bool) {
 	ep := &earlyProbe{id: p.ID, slug: p.Slug, target: target, cold: true, boot: true, usable: true, noProbe: !withProbe, done: make(chan struct{})}
 	script := "true"
 	if withProbe {
-		script = probeScript(p.Slug, checkoutName(gitRepoRoot(e.Cwd)))
+		script = probeScript(p.Slug, checkoutName(gitRepoRoot(e.Cwd)), "")
 	}
 	timingf("run: guest up; first connection started beside the project read")
 	go func() {

@@ -21,11 +21,13 @@ Pick a different agent for one prompt with `--agent`:
 repose run --agent codex "port the build scripts to bun"
 ```
 
-The agent is the normal interactive program, the same as running `claude` yourself, so its history and any questions it asks are on screen when you attach.
+The agent is the normal interactive program, the same as running `claude` yourself.
+
+Claude Code doesn't ask whether you trust the folder: `run` marks the folder it starts Claude Code in as trusted in `~/.claude.json` on the machine (the checkout, or the worktree with `--worktree`). If Claude Code asks anyway, `run` doesn't type your prompt into the question. It says so and attaches you to answer it; with `--no-attach` it exits with code 1. Running `claude` yourself in another folder on the machine still asks.
 
 If that agent already has a window, the new one is named `claude-2`, then `claude-3`, and so on, and the CLI warns that the agents share one working tree.
 
-Running `repose run` twice in a row is safe. Only the first run on a new machine copies your checkout; later ones attach to the machine as it is, and say so when your laptop has work to send with `repose sync`.
+Only the first run on a new machine copies your checkout; later ones attach to the machine as it is, and say so when your laptop has work to send with `repose sync`.
 
 If the agent exits before you're attached, its window closes with it. `run` then attaches you to the session and says `The claude window closed before the attach`; start the agent again there.
 
@@ -39,7 +41,7 @@ Worktree: ~/todo-app-worktree-1 on branch worktree-1
 Copied 1 .env file from ~/todo-app
 ```
 
-The worktree is a folder next to your checkout on the machine, numbered from 1: `~/todo-app-worktree-1`, then `~/todo-app-worktree-2`. Its branch has the same name, `worktree-1`, and starts at the checkout's last commit. Uncommitted changes in the checkout aren't in it. The agent's window is named like any other, `claude` or `claude-2`; the `Worktree:` line says which folder it works in.
+The worktree is a folder next to your checkout on the machine, numbered from 1: `~/todo-app-worktree-1`, then `~/todo-app-worktree-2`. Its branch has the same name, `worktree-1`, and starts at the checkout's last commit. Uncommitted changes in the checkout aren't in it. The agent's window is named like any other, `claude` or `claude-2`.
 
 In the worktree the agent has the whole repository at that commit, plus the checkout's gitignored `.env` and `.env.*` files as they are on the machine. `repose run` never syncs a worktree, and what the agent does there doesn't count as changes on the machine. Commit on the branch and merge or push it like any other. On your laptop, `git fetch repose` brings it as `repose/worktree-1` ([Getting work back](/docs/sync#getting-work-back)).
 
@@ -54,11 +56,38 @@ The machine's checkout needs at least one commit; otherwise `--worktree` is refu
 
 Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
 
+## Several repositories on one machine
+
+One machine can hold more than one repository. In a second folder, `--on` adds it to a machine you already have, beside that machine's own checkout:
+
+```
+~/code/api $ repose run --on todo-app
+Connected to todo-app (small)
+Added api to todo-app as ~/api.
+Synced: 3 untracked
+```
+
+The folder gets its own checkout, `~/api`, named after the folder like the first one (`~/api-2` if the machine already has an `api`). It doesn't count as another project, so it uses none of your plan's running memory beyond what the agents in it use. Your laptop remembers the folder: from then on a plain `repose run`, `attach`, `sync`, `exec`, `ssh`, `cp :PATH` or `code` in `~/code/api` works in `~/api`, and `git fetch repose` there brings back that checkout's commits.
+
+Agent windows in the added checkout are named after it, `api/claude`, then `api/claude-2`, so `repose ps` shows which tree each agent works in. `repose attach` in the folder opens the last of its windows you used, or a new shell window `api` in `~/api`. From anywhere else, `repose attach todo-app:api` does the same. `--worktree` works too: its worktrees are `~/api-worktree-1` and so on.
+
+The checkouts share one machine, so they share these:
+
+- Secrets, tool logins and settings. Every checkout sees the machine's secrets.
+- Your git identity. If your laptop picks a different email per folder (an `includeIf` for work repositories), the machine has the one from the folder you ran in last.
+- The machine's configuration. A `repose.nix` is applied to the whole machine; a `flake.nix` or `.envrc` dev shell loads per folder, as usual.
+- Ports. Two dev servers on port 3000 collide; give one another port.
+- Disk, snapshots and undo. `repose undo` and a restore roll back every checkout, and `repose destroy` deletes them all.
+
+The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with `--temp`, `--name`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. To remove an added checkout, delete its folder on the machine and its line in `~/.repose/checkouts`; on your laptop, the folder's entry under `checkouts` in `~/.config/repose/projects.json`.
+
 ## Detach and come back
 
-Press `Ctrl-b`, let go, then `d`. You're back on your laptop and everything on the machine keeps running. Closing the terminal does the same.
+Press `Ctrl-b`, let go, then `d`. Everything on the machine keeps running. Closing the terminal does the same.
 
-If Wi-Fi drops or the laptop sleeps while you're attached, `run` and `attach` say `lost the connection` and attach again by themselves once the machine answers, for up to 2 minutes, with the screen as you left it. `Ctrl-C` stops waiting. The machine keeps running either way.
+If Wi-Fi drops or the laptop sleeps while you're attached, `run` and `attach` say `lost the connection` and attach again by themselves once the machine answers, for up to 2 minutes, with the screen as you left it. `Ctrl-C` stops waiting.
+
+After the laptop sleeps or changes networks, a new `attach` spends up to 2 seconds checking whether the connection from your last command still answers, and opens a fresh one if it doesn't. repose keeps your login fresh while you're attached, so coming back after hours doesn't wait on a login refresh.
 
 To get back, from the checkout or from anywhere:
 
@@ -83,9 +112,9 @@ Each machine has one tmux session. Its first window, `shell`, opens in your chec
 | `c`     | New window with a shell.                        |
 | `[`     | Scroll back. Arrow keys or Page Up; `q` leaves. |
 
-tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. To scroll back through a window's output, use `Ctrl-b [`. If you want tmux's mouse mode instead (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
+tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. If you want tmux's mouse mode instead (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
 
-Shift+Enter starts a new line in Claude Code instead of sending the prompt, when your terminal reports modified keys to tmux (xterm's modifyOtherKeys; Ghostty, WezTerm, iTerm2 and xterm do, Apple's Terminal doesn't). If Shift+Enter still sends the prompt, type `\` and then Enter, or press Ctrl+J. Links an agent prints are clickable in terminals that support links (OSC 8), and a program in the window you're looking at can send escape sequences through tmux to your terminal.
+Shift+Enter starts a new line in Claude Code instead of sending the prompt, when your terminal reports modified keys to tmux (xterm's modifyOtherKeys; Ghostty, WezTerm, iTerm2 and xterm do, Apple's Terminal doesn't). If Shift+Enter still sends the prompt, type `\` and then Enter, or press Ctrl+J. Links an agent prints are clickable in terminals that support links (OSC 8), and a program in the current window can send escape sequences through tmux to your terminal.
 
 ## See what's running, run one command
 
@@ -109,7 +138,7 @@ $ repose exec todo-app git status --short
 $ repose exec -it psql
 ```
 
-A first word that names one of your projects picks that project; otherwise it is this checkout's. `repose exec -- COMMAND` runs a command that happens to share a project's name. Without `-i` it reads no input, and without `-t` it has no terminal; `-it` is for something interactive, like a REPL. In a script, `repose exec make check && echo passed` works as you'd expect, since the exit code is the command's.
+A first word that names one of your projects picks that project; otherwise it is this checkout's. `repose exec -- COMMAND` runs a command that happens to share a project's name. Without `-i` it reads no input, and without `-t` it has no terminal; `-it` is for something interactive, like a REPL.
 
 `repose ssh` opens a plain shell in the checkout instead of the tmux session, and `exit` closes it. Start long jobs in tmux (`repose attach`), where they outlive the connection.
 
@@ -123,7 +152,7 @@ While you're attached, drag a file onto the terminal, or press `Cmd+V` or `Ctrl+
 ❯ [Image #1] the button overlaps the footer on this screen
 ```
 
-Claude Code shows an image as `[Image #1]`; add your words and press Enter. Other agents, and the shell, get the path as text, and can open the file.
+Claude Code shows an image as `[Image #1]`. Other agents, and the shell, get the path as text.
 
 - A file from your checkout isn't copied. You get its path in the machine's checkout, such as `/home/dev/todo-app/docs/mockup.png`. If the machine's copy isn't there yet or differs in size, the file is copied like any other.
 - Drop several files at once to paste several paths.
@@ -136,7 +165,7 @@ Any terminal that types a dropped file's path works: plain, quoted, with backsla
 
 On macOS, Cmd+V and Ctrl+V both paste the image. A terminal sends nothing for Cmd+V when the clipboard holds only an image, so while you're attached repose adds a text version to such a clipboard: the path of a PNG copy in `~/Library/Caches/repose/clipboard/`. Cmd+V pastes that path, and it's copied to the machine like a dropped file. The image stays on the clipboard as well, so apps that take images still get it; a plain text field gets the path. When you detach, the text is taken off again unless you've copied something since. The last 20 copies are kept for a day. `REPOSE_CLIPBOARD_PATH=0` leaves your clipboard alone, and then only Ctrl+V pastes an image.
 
-Ctrl+V reads the clipboard with `pngpaste` if you have it, otherwise `osascript`. On Linux it uses `wl-paste` (from wl-clipboard) under Wayland and `xclip` under X11. With no image on the clipboard, Ctrl+V is an ordinary Ctrl+V, so vim and the shell behave as usual. With one, Ctrl+V pastes the image in every window.
+Ctrl+V reads the clipboard with `pngpaste` if you have it, otherwise `osascript`. On Linux it uses `wl-paste` (from wl-clipboard) under Wayland and `xclip` under X11. With no image on the clipboard, Ctrl+V is an ordinary Ctrl+V. With one, Ctrl+V pastes the image in every window.
 
 `REPOSE_INPUT_PROXY=0` turns this off: `run` and `attach` then hand your terminal straight to `ssh`, and a drop pastes your laptop's path. On Windows it's always off; copy the file with `repose cp FILE :/tmp/` and type its path.
 
@@ -178,7 +207,7 @@ repose code todo-app
 
 Plain `ssh` doesn't attach to tmux; run `tmux attach` for that. [SSH and editors](/docs/ssh-and-editors) has the rest: scp and rsync, git over SSH, each editor by hand, and what to do when a connection fails.
 
-mosh doesn't work: it needs a UDP connection straight to the machine, and the only way in is SSH through repose. A dropped connection loses nothing, since the agents keep running in tmux; `repose attach` gets you back.
+mosh doesn't work: it needs a UDP connection straight to the machine, and the only way in is SSH through repose.
 
 ## Time zone
 

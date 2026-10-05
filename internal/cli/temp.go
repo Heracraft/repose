@@ -112,19 +112,28 @@ func tempWhen(p *Project, now time.Time) string {
 	return "destroyed in " + timeLeft(left)
 }
 
-// tempLine is what run and attach print before they attach, and what
-// `repose ls` prints under its table: "tmp-k3f9 is temporary: destroyed
-// in 5h." with, when asked, how to keep it.
-func tempLine(p *Project, now time.Time, withKeep bool) string {
+// tempLeft is the LEFT cell of `repose ls`: "5h", "40m", or "up" once
+// the time has run out and the machine waits for nobody to be attached;
+// "" for a project that is not temporary.
+func tempLeft(p *Project, now time.Time) string {
+	if p == nil || p.ExpiresAt == nil {
+		return ""
+	}
+	left := p.ExpiresAt.Sub(now)
+	if left <= 0 {
+		return "up"
+	}
+	return timeLeft(left)
+}
+
+// tempLine is what run and attach print before they attach: "tmp-k3f9 is
+// temporary: destroyed in 5h."
+func tempLine(p *Project, now time.Time) string {
 	w := tempWhen(p, now)
 	if w == "" {
 		return ""
 	}
-	l := fmt.Sprintf("%s is temporary: %s.", p.Slug, w)
-	if withKeep {
-		l += fmt.Sprintf(" `repose keep %s` keeps it.", p.Slug)
-	}
-	return l
+	return fmt.Sprintf("%s is temporary: %s.", p.Slug, w)
 }
 
 // createdLabel is the create phase's done line.

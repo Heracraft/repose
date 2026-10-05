@@ -290,8 +290,8 @@ func (s *Server) restoreAsNew(ctx context.Context, u *store.User, src *store.Pro
 // with `detail.reason = "name_taken"`.
 func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, src *store.Project, snap *store.Snapshot, newID uuid.UUID, name, class string, remote *string, start bool, params map[string]any) (uuid.UUID, error) {
 	rid := store.NewID()
-	_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11)`,
-		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid)
+	_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11, $12)`,
+		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid, src.PersonalOptOut)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -310,8 +310,10 @@ func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, sr
 		if src.DestroyedAt != nil {
 			cur.SystemClosure, cur.ClosureBytes = nil, nil
 		}
-		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, system_closure, closure_bytes, kernel_changed, built_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())",
-			rid, newID, cur.Fragment, cur.Menu, cur.BaseVersion, revisionStatusForCopy(cur), cur.SystemClosure, cur.ClosureBytes, cur.KernelChanged); err != nil {
+		// The personal layer travels with the revision (I-490), so the
+		// copy is the configuration the snapshot ran.
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, system_closure, closure_bytes, kernel_changed, built_at, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12)",
+			rid, newID, cur.Fragment, cur.Menu, cur.BaseVersion, revisionStatusForCopy(cur), cur.SystemClosure, cur.ClosureBytes, cur.KernelChanged, cur.Personal, cur.PersonalRevisionID, cur.PersonalOptOut); err != nil {
 			return uuid.Nil, err
 		}
 	} else if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, newID, DefaultFragment); err != nil {

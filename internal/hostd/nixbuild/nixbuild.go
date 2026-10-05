@@ -44,7 +44,12 @@ type Request struct {
 	// BaseVersion is the label the closure is stamped with; written next
 	// to the fragment as `base-version` when set (DECISIONS I-118).
 	BaseVersion string
-	Limits      Limits
+	// Personal is the account's personal layer (machine.nix, DECISIONS
+	// I-490), written as personal.nix beside fragment.nix when the base's
+	// flake reads it. Empty writes nothing: the build is the one it was
+	// before the layer existed.
+	Personal []byte
+	Limits   Limits
 }
 
 // Result is a successful build.
@@ -404,11 +409,21 @@ func (b *Real) build(ctx context.Context, req Request, log func(string), useCach
 	if err := writeBaseVersion(dir, req.BaseVersion); err != nil {
 		return nil, err
 	}
-	if err := b.chownTree(dir); err != nil {
-		return nil, err
-	}
 	checkout, err := b.ensureBase(ctx, req.BaseRef, log)
 	if err != nil {
+		return nil, err
+	}
+	// The personal layer goes in only when the base's flake reads it; a
+	// base from before I-490 would ignore the file, so the build says so
+	// in its log instead of pretending it applied.
+	if len(req.Personal) > 0 && !b.basePersonal(checkout) {
+		log("this base predates machine.nix; building without it (the next base update includes it)")
+		req.Personal = nil
+	}
+	if err := writePersonal(dir, req.Personal); err != nil {
+		return nil, err
+	}
+	if err := b.chownTree(dir); err != nil {
 		return nil, err
 	}
 	allowed, err := AllowedURIs(filepath.Join(checkout, b.BaseSubdir, "flake.lock"))
@@ -734,6 +749,31 @@ func (f *Fake) PathExists(_ context.Context, path string) (bool, error) {
 }
 
 var baseVersionRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// writePersonal puts the personal layer next to fragment.nix as
+// personal.nix, which the flake imports into dev's home-manager
+// configuration beside the fragment (DECISIONS I-490). Empty removes a
+// stale file, so the flake sees no personal layer at all.
+func writePersonal(dir string, personal []byte) error {
+	path := filepath.Join(dir, "personal.nix")
+	if len(personal) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove personal.nix: %w", err)
+		}
+		return nil
+	}
+	if err := os.WriteFile(path, personal, 0o600); err != nil {
+		return fmt.Errorf("write personal.nix: %w", err)
+	}
+	return nil
+}
+
+// basePersonal reports whether the base checkout's flake reads
+// personal.nix: bases from before I-490 do not.
+func (b *Real) basePersonal(checkout string) bool {
+	raw, err := os.ReadFile(filepath.Join(checkout, b.BaseSubdir, "flake.nix"))
+	return err == nil && strings.Contains(string(raw), "personal.nix")
+}
 
 // writeBaseVersion puts the label next to fragment.nix as `base-version`
 // (one line), which the flake reads into repose.baseVersion; an empty

@@ -51,6 +51,9 @@ obs-dev-down:
 done-check paths="cmd internal":
     @echo "-- unhandled errors / panics --"; rg -n '_ = err|panic\(' {{paths}} || true
     @echo "-- leftovers --"; rg -n 'TODO|FIXME|XXX|not implemented' {{paths}} || true
+    @echo "-- help nobody asked for (DECISIONS I-484, I-485) --"
+    go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1
+    cd apps/web && pnpm exec vitest run src/lib/docs.test.ts src/lib/copy.test.ts
 
 # --- dashboard -------------------------------------------------------------
 

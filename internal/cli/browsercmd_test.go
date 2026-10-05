@@ -130,7 +130,7 @@ func TestBrowserCmdWatchesReusesAndStops(t *testing.T) {
 	}
 	line := strings.TrimSpace(out.String())
 	prefix := "Watching " + testSlug + "'s browser at http://localhost:"
-	if !strings.HasPrefix(line, prefix) || !strings.Contains(line, "/#p=s3cr3tpw (the view sleeps after 30 idle minutes; repose browser --stop ends it).") {
+	if !strings.HasPrefix(line, prefix) || !strings.Contains(line, "/#p=s3cr3tpw (the view sleeps after 30 idle minutes).") {
 		t.Fatalf("printed %q", line)
 	}
 	if strings.Contains(errOut.String(), "s3cr3tpw") {

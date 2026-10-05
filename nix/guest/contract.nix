@@ -23,8 +23,24 @@
 #     option named, so `services.openssh`, `networking.*`, `users.*` and
 #     `boot.*` cannot come from a tenant whatever produced the file.
 #
+#   home.sessionVariables = { NAME = "value"; };  home.sessionPath = [ ... ];
+#     home-manager writes these to hm-session-vars.sh, which only a shell
+#     home-manager manages sources; nothing on the guest does. They are
+#     carried to NixOS's environment.sessionVariables (PAM and
+#     /etc/set-environment, like the base's own, env.nix), with the
+#     fragment's value winning over the base's and sessionPath entries put
+#     ahead of PATH, and to /etc/repose/session-vars.sh, which
+#     /etc/profile.d/repose.sh sources, so an agent's wrapper sets them
+#     with shell expansion of $HOME or $OTHER, as home-manager would
+#     (DECISIONS I-488). PATH and the names the base's loader owns are
+#     refused with the reason.
+#
 # The fragment itself is `repose.fragment`; nix/guest/compose.nix and
-# nix/guest/microvm.nix set it. The values are read back from
+# nix/guest/microvm.nix set it. The account's personal layer
+# (`machine.nix`, DECISIONS I-490) is `repose.personal`: the same contract,
+# imported into the same home-manager configuration before the fragment,
+# so lists merge and two definitions of one single-valued option are an
+# error naming both files. Null (the default) imports nothing. The values are read back from
 # home-manager's evaluated configuration, which is the same shape
 # home-manager's own NixOS module uses for `users.users.<n>.packages`.
 { config, lib, ... }:
@@ -83,9 +99,56 @@ let
     else
       let bad = lib.filter (p: !(lib.elem p allowlist)) r.paths; in
       if bad == [ ] then null
-      else "repose.system: option '${builtins.head bad}' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: ${lib.concatStringsSep ", " allowlist})";
+      else "repose.system: option '${builtins.head bad}' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: ${lib.concatStringsSep ", " allowlist})";
 
   refusals = lib.filter (r: r != null) (map refusal hm.repose.system);
+
+  # home.sessionVariables and home.sessionPath (header; DECISIONS I-488).
+  # home-manager's own i18n module sets LOCALE_ARCHIVE_2_27 to the archive
+  # NixOS already names in LOCALE_ARCHIVE; that one stays out, so a guest
+  # whose fragment sets nothing has the environment it had before.
+  localeArchive = "${config.i18n.glibcLocales}/lib/locale/locale-archive";
+  sessionVars = lib.mapAttrs (_: toString) (lib.filterAttrs
+    (n: v: v != null && !(n == "LOCALE_ARCHIVE_2_27" && toString v == localeArchive))
+    hm.home.sessionVariables);
+  sessionPath = hm.home.sessionPath;
+  reservedVars = {
+    PATH = "add directories with home.sessionPath = [ ... ] instead";
+    BASH_ENV = "the guest's environment loader uses it";
+    ENV = "the guest's environment loader uses it";
+    REPOSE_ENV_GEN = "the guest's environment loader uses it";
+    REPOSE = "the guest sets it";
+  };
+  sessionRefusals =
+    lib.mapAttrsToList (n: _: "home.sessionVariables.${n}: not allowed in a fragment; ${reservedVars.${n}}")
+      (lib.filterAttrs (n: _: reservedVars ? ${n}) sessionVars)
+    ++ lib.mapAttrsToList (n: _: "home.sessionVariables: '${n}' is not a valid variable name (letters, digits and _, not starting with a digit)")
+      (lib.filterAttrs (n: _: builtins.match "[A-Za-z_][A-Za-z0-9_]*" n == null) sessionVars)
+    ++ lib.mapAttrsToList (n: _: "home.sessionVariables.${n}: a value may not contain a double quote (\")")
+      (lib.filterAttrs (_: v: lib.hasInfix "\"" v) sessionVars)
+    ++ map (p: "home.sessionPath: '${p}' may not contain a double quote (\")")
+      (lib.filter (p: lib.hasInfix "\"" p) sessionPath);
+  carriedVars = lib.filterAttrs (n: _: !(reservedVars ? ${n})) sessionVars;
+
+  # Sourced by /etc/profile.d/repose.sh (env.nix): every login and
+  # interactive shell, and every agent wrapper, whose tmux server may have
+  # started before this configuration was applied. Same quoting as
+  # home-manager's hm-session-vars.sh, so `$HOME/x` expands. A sessionPath
+  # entry already on PATH stays where it is; one missing is put first.
+  sessionVarsScript = ''
+    # repose: home.sessionVariables and home.sessionPath from this machine's
+    # configuration (nix/guest/contract.nix, DECISIONS I-488). Generated.
+  '' + lib.concatStrings (lib.mapAttrsToList (n: v: "export ${n}=\"${v}\"\n") carriedVars)
+  + lib.optionalString (sessionPath != [ ]) ''
+    for __repose_sv_p in ${lib.concatMapStringsSep " " (p: "\"${p}\"") (lib.reverseList sessionPath)}; do
+      case ":''${PATH-}:" in
+        *":$__repose_sv_p:"*) ;;
+        *) PATH="$__repose_sv_p''${PATH:+:$PATH}" ;;
+      esac
+    done
+    unset __repose_sv_p
+    export PATH
+  '';
 
   # The allowlisted option paths, each defined statically as the merge of
   # what every entry says for it. An entry outside the list never reaches
@@ -101,13 +164,16 @@ let
   # options above declare them.
   fragmentModule = config.repose.fragment;
 
+  # The account's personal layer, or null.
+  personalModule = config.repose.personal;
+
   # The pre-pass for repose.overlays (see the header). A function fragment
   # gets exactly the arguments it names; anything but lib and pkgs is a
   # throw with the rule in it, so a fragment that computes its overlays
   # from config fails with that sentence rather than with a recursion.
-  prePassValue =
+  prePass = m:
     let
-      f = if builtins.isPath fragmentModule || builtins.isString fragmentModule then import fragmentModule else fragmentModule;
+      f = if builtins.isPath m || builtins.isString m then import m else m;
       arg = name:
         if name == "lib" then lib
         else if name == "pkgs" then config.repose.prePassPkgs
@@ -119,6 +185,10 @@ let
     in
     if config.repose.prePassPkgs == null && builtins.isFunction f then [ ]
     else if r.success then r.value else [ ];
+
+  # Personal overlays first, then the project's.
+  prePassValue =
+    (if personalModule != null then prePass personalModule else [ ]) ++ prePass fragmentModule;
 in
 {
   options.repose.prePassPkgs = lib.mkOption {
@@ -142,10 +212,34 @@ in
     '';
   };
 
+  options.repose.personal = lib.mkOption {
+    type = lib.types.nullOr lib.types.deferredModule;
+    default = null;
+    description = ''
+      The account's personal home-manager layer (machine.nix), applied to
+      user dev before the fragment under the same contract. The flake's
+      guestSystem points it at "''${fragment}/personal.nix" when hostd wrote
+      one (DECISIONS I-490); null imports nothing.
+    '';
+  };
+
   config = {
     home-manager.users.dev = {
-      imports = [ fragmentOptions fragmentModule ];
+      imports = [ fragmentOptions ] ++ lib.optional (personalModule != null) personalModule ++ [ fragmentModule ];
     };
+
+    # The fragment's session variables over the base's (env.nix sets its
+    # own at the default priority), its sessionPath ahead of the base's
+    # PATH entries (header; DECISIONS I-488).
+    environment.sessionVariables =
+      lib.mapAttrs (_: v: lib.mkOverride 90 v) carriedVars
+      // { PATH = lib.mkBefore sessionPath; };
+    environment.etc."repose/session-vars.sh".text = sessionVarsScript;
+    # The names, one per line, for env.nix's activation script, which
+    # gives a running tmux server and user manager the new values and
+    # unsets the names a new configuration dropped.
+    environment.etc."repose/session-vars.names".text =
+      lib.concatMapStrings (n: "${n}\n") (builtins.attrNames carriedVars);
 
     # Platform overlay first (the base adds it), then the fragment's.
     nixpkgs.overlays = lib.mkAfter prePassValue;
@@ -158,6 +252,10 @@ in
       {
         assertion = refusals == [ ];
         message = lib.concatStringsSep "\n" refusals;
+      }
+      {
+        assertion = sessionRefusals == [ ];
+        message = lib.concatStringsSep "\n" sessionRefusals;
       }
     ];
   } // allowed;

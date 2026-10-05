@@ -80,6 +80,9 @@ type Project struct {
 	// session and no agent working (DECISIONS I-262). Absent from older
 	// apis, which the CLI treats as "not idle".
 	Idle *ProjectIdle `json:"idle,omitempty"`
+	// PersonalOptOut is set when the project keeps the account's
+	// machine.nix off (DECISIONS I-490). Absent from older apis.
+	PersonalOptOut bool `json:"personal_opt_out,omitempty"`
 	// ExpiresAt is set while the project is temporary (DECISIONS I-347):
 	// the api destroys it, with no snapshot, once this has passed. Absent
 	// from older apis and on every normal project.
@@ -193,13 +196,18 @@ type Revision struct {
 	Status         string    `json:"status"`
 	Error          string    `json:"error,omitempty"`
 	FragmentLine   *int      `json:"fragment_line,omitempty"`
+	PersonalLine   *int      `json:"personal_line,omitempty"`
+	Personal       bool      `json:"personal,omitempty"`
 	KernelChanged  bool      `json:"kernel_changed,omitempty"`
 	RebootRequired bool      `json:"reboot_required,omitempty"`
 }
 
 type ConfigResponse struct {
-	RevisionID  string     `json:"revision_id"`
-	Fragment    string     `json:"fragment"`
+	RevisionID string `json:"revision_id"`
+	Fragment   string `json:"fragment"`
+	// Personal is the machine.nix text the active revision carries,
+	// "" for none or from an older api (DECISIONS I-490).
+	Personal    string     `json:"personal,omitempty"`
 	Menu        any        `json:"menu,omitempty"`
 	BaseVersion string     `json:"base_version"`
 	AppliedAt   *time.Time `json:"applied_at,omitempty"`

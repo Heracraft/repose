@@ -38,6 +38,7 @@ var guidePages = []string{"machine", "agents", "limits"}
 var guideSkippedSections = map[string]string{
 	"agents#let-it-run-without-asking":              "the user's own permission settings, not something the machine offers",
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
+	"agents#opencode-2":                             "a tool the user installs and runs, not one the machine has (I-481)",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
 	"limits#ssh-connections":                        "the gateway limits connections from laptops into machines; an agent on the machine makes none",

@@ -5,7 +5,7 @@ section: Using repose
 order: 14.5
 ---
 
-Some jobs need the browser you already have: the admin tool behind your company's SSO, an account protected by a hardware key, a site where an extension does half the work. Logging in to all of that on the machine is the wrong answer. The bridge is the right one. While it's open, the machine's two browser tools (`playwright` and `chrome-devtools`) drive your laptop's Chrome instead of the machine's own browser. Nothing on the machine changes and no agent restarts: the next browser call an agent makes lands in your Chrome, and the one after you close the bridge lands back on the machine.
+Some jobs need the browser you already have: the admin tool behind your company's SSO, an account protected by a hardware key, a site where an extension does half the work. With the bridge open, the machine's two browser tools (`playwright` and `chrome-devtools`) drive your laptop's Chrome instead of the machine's own browser. Agents keep running through the switch: the next browser call an agent makes lands in your Chrome, and the one after you close the bridge lands back on the machine.
 
 ## Once: turn Chrome's switch on
 
@@ -17,24 +17,24 @@ chrome://inspect/#remote-debugging
 
 It stays on until you turn it off. If you skip this step, the bridge opens the page for you and waits up to 5 minutes for you to turn it on.
 
-With the switch on, Chrome asks you to allow each connection to it: a dialog in the Chrome window, once for every browser tool that connects. Allow the ones you're expecting. While a connection is open, Chrome shows its "Chrome is being controlled by automated test software" bar.
+With the switch on, Chrome asks you to allow each connection to it: a dialog in the Chrome window, once for every browser tool that connects. Chrome shows its "Chrome is being controlled by automated test software" bar for as long as a connection is open.
 
 ## Bridge while you're attached
 
-The simplest way is one terminal. Add `--bridge` to `run` or `attach`:
+Add `--bridge` to `run` or `attach`:
 
 ```
 repose run --bridge "test the staging checkout in my Chrome"
 ```
 
-You're attached as usual. When the bridge is up, a message at the bottom of tmux says:
+Once the bridge is up, a message at the bottom of tmux says:
 
 ```text
 Your laptop's Chrome is bridged in:
 the browser tools on this machine drive it now.
 ```
 
-The bridge lasts exactly as long as you're attached. Detach, or close the terminal, and it closes with the attach; the agent keeps working on the machine's own browser. `repose attach --bridge` bridges into a session that's already running.
+The bridge lasts as long as you're attached. Detach, or close the terminal, and it closes with the attach; the agent keeps working on the machine's own browser. `repose attach --bridge` bridges into a session that's already running.
 
 ## Bridge from a second terminal
 
@@ -60,9 +60,9 @@ The agents on todo-app are back on the machine's browser.
 
 The tabs the agents opened stay in your Chrome for you to close.
 
-There is no way to leave a bridge running in the background, on purpose: a bridge you can't see is one you forget is open. Either you're attached with `--bridge`, or a terminal shows `repose browser bridge` running.
+There is no way to leave a bridge running in the background: either you're attached with `--bridge`, or a terminal shows `repose browser bridge` running.
 
-The bridge needs the machine running; it doesn't start it. On a stopped machine it says so and exits: `repose start` (or `repose run`) first.
+The bridge needs the machine running; it doesn't start it. On a stopped machine it says so and exits.
 
 ## Keep the agents to some sites
 
@@ -91,7 +91,7 @@ repose run --bridge-allow github.com \
 
 With an allowlist:
 
-- The agents see only the tabs that are on those sites, and the blank tabs they open themselves. Your other tabs (mail, bank, chat) don't exist as far as they can tell.
+- The agents see only the tabs that are on those sites, and the blank tabs they open themselves.
 - In the tabs they can see, a page from any other site fails with `ERR_BLOCKED_BY_CLIENT`, however it was started: a tool's navigation, a click, a script, a redirect, a form, a popup, a frame inside an allowed page. The agent is told the site isn't on the allowlist and to ask you, and the bridge terminal prints a `blocked` line.
 - Your own tabs are not affected. A tab you open on an allowed site while the bridge is open becomes one the agents can see, though.
 - Chrome asks you once more, at the start: the bridge makes a connection of its own to Chrome, which is what stops the pages. If that connection ends (Chrome quits, or you turn remote debugging off), the bridge closes too, rather than carry on without the list.
@@ -106,11 +106,11 @@ Without an allowlist the browser tools usually watch every tab, so pages you loa
 
 ## What the agents can and can't do in your Chrome
 
-While the bridge is open, the agents can do in your Chrome what the browser tools can do anywhere: open pages, click, type, read what's on a page, take screenshots, run JavaScript in a page. They're logged in wherever you are. This isn't limited to one agent: anything running on the machine can reach the browser tools' endpoint, so treat an open bridge as lending your browser to the whole machine.
+With the bridge open, the agents can do in your Chrome what the browser tools can do anywhere: open pages, click, type, read what's on a page, take screenshots, run JavaScript in a page. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so while a bridge is open, any program on the machine can drive your Chrome.
 
 Whatever you pass, the bridge never lets them:
 
-- read your cookies out of Chrome, or clear them. Pages use your cookies as usual, which is the point; the tools can't copy them somewhere to use after the bridge closes.
+- read your cookies out of Chrome, or clear them. Pages use your cookies as usual; the tools can't copy them somewhere to use after the bridge closes.
 - see your sign-in headers or what goes over the network. The tools see which requests a page makes, their addresses and their status. They don't see `Authorization` or API-key headers, request or response bodies, WebSocket messages or server-sent events. A tool that asks for a response body is told to read the page instead.
 - read data that sites keep in your Chrome (local storage, databases, offline caches) except through a page of that site;
 - open `file://` pages, Chrome's own pages (`chrome://settings`, passwords, extensions) or your extensions' pages and background workers;
@@ -152,5 +152,3 @@ repose browser bridge --cdp http://127.0.0.1:9222
 ```
 
 That gives the agents a browser of their own on your laptop, with a separate profile you log in to once. `--allow` works the same way there.
-
-The [CLI reference](/docs/cli#repose-browser-bridge-project) lists every flag.

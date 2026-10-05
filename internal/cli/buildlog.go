@@ -130,7 +130,7 @@ func urlEscape(s string) string {
 	return s
 }
 
-var fragmentRefRe = regexp.MustCompile(`fragment\.nix:(\d+)(?::(\d+))?`)
+var fragmentRefRe = regexp.MustCompile(`(fragment|machine)\.nix:(\d+)(?::(\d+))?`)
 
 // buildErrorPrefix is the CLI prefix nix-build-contract.md "What the user
 // reads" gives each code: config errors and the api's own refusal of a
@@ -159,7 +159,13 @@ func RenderBuildError(w io.Writer, code, message, localFragmentPath string, frag
 	if base == "" || base == "." {
 		base = "repose.nix"
 	}
-	display := strings.ReplaceAll(message, "fragment.nix", base)
+	// machine.nix is the personal layer's own name (DECISIONS I-490): a
+	// project's fragment.nix in a message about it is the project's
+	// configuration, not the file being pushed.
+	display := message
+	if base != "machine.nix" {
+		display = strings.ReplaceAll(message, "fragment.nix", base)
+	}
 	_, _ = fmt.Fprintf(w, "%s%s\n", buildErrorPrefix(code), firstLine(display)) // best effort: w is the user's terminal
 	// The contract's message is a summary line, a blank line, then the
 	// verbatim block (Nix's output, or the ten largest paths of a closure
@@ -177,12 +183,26 @@ func RenderBuildError(w io.Writer, code, message, localFragmentPath string, frag
 	if m == nil {
 		return
 	}
-	line, _ := strconv.Atoi(m[1])
+	file := m[1] + ".nix"
+	line, _ := strconv.Atoi(m[2])
 	col := 0
-	if m[2] != "" {
-		col, _ = strconv.Atoi(m[2])
+	if m[3] != "" {
+		col, _ = strconv.Atoi(m[3])
 	}
-	_, _ = fmt.Fprintf(w, "   at %s:%d", base, line)
+	label := base
+	if file == "machine.nix" || base == "machine.nix" {
+		label = file
+		if file == "fragment.nix" {
+			label = "the project's configuration (fragment.nix)"
+		}
+		// The local copy is shown only when it is the file the error is
+		// in: a machine.nix error under `repose config apply` points at
+		// a file that is not repose.nix.
+		if (file == "machine.nix") != (base == "machine.nix") {
+			fragmentSource = nil
+		}
+	}
+	_, _ = fmt.Fprintf(w, "   at %s:%d", label, line)
 	if col > 0 {
 		_, _ = fmt.Fprintf(w, ":%d", col)
 	}

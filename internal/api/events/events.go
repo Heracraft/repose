@@ -38,6 +38,9 @@ var notifyKinds = map[string]bool{
 	// A temporary machine an hour from its end, and its end (internal/api/
 	// temp, DECISIONS I-347).
 	"temp_expiring": true, "temp_destroyed": true,
+	// The account's machine.nix did not build or apply on a project
+	// (DECISIONS I-490).
+	"personal_failed": true,
 }
 
 // GuestKinds are the notifying kinds a guest may report, over vsock or the

@@ -1423,7 +1423,12 @@ type Build struct {
 	// (/etc/repose/base-version, the NixOS label); empty keeps the
 	// flake's own stamp, which under hostd's --override-input is "dirty"
 	// (DECISIONS I-118).
-	BaseVersion   string `protobuf:"bytes,6,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
+	BaseVersion string `protobuf:"bytes,6,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
+	// The account's personal layer (machine.nix, DECISIONS I-490): a
+	// home-manager module hostd writes as personal.nix beside fragment.nix.
+	// Empty means none, and the build is exactly what it was before the
+	// field existed; a hostd that predates it ignores it.
+	Personal      []byte `protobuf:"bytes,7,opt,name=personal,proto3" json:"personal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1498,6 +1503,13 @@ func (x *Build) GetBaseVersion() string {
 		return x.BaseVersion
 	}
 	return ""
+}
+
+func (x *Build) GetPersonal() []byte {
+	if x != nil {
+		return x.Personal
+	}
+	return nil
 }
 
 type ApplyConfig struct {
@@ -2355,10 +2367,13 @@ func (*Command_Drain) isCommand_Cmd() {}
 func (*Command_AnswerQuestion) isCommand_Cmd() {}
 
 type Error struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // see docs/interfaces/grpc-hostd.md
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	FragmentLine  int32                  `protobuf:"varint,3,opt,name=fragment_line,json=fragmentLine,proto3" json:"fragment_line,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Code         string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // see docs/interfaces/grpc-hostd.md
+	Message      string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	FragmentLine int32                  `protobuf:"varint,3,opt,name=fragment_line,json=fragmentLine,proto3" json:"fragment_line,omitempty"`
+	// The line in the personal layer (personal.nix, machine.nix to the
+	// user) when the error is located there; 0 otherwise (DECISIONS I-490).
+	PersonalLine  int32 `protobuf:"varint,4,opt,name=personal_line,json=personalLine,proto3" json:"personal_line,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2410,6 +2425,13 @@ func (x *Error) GetMessage() string {
 func (x *Error) GetFragmentLine() int32 {
 	if x != nil {
 		return x.FragmentLine
+	}
+	return 0
+}
+
+func (x *Error) GetPersonalLine() int32 {
+	if x != nil {
+		return x.PersonalLine
 	}
 	return 0
 }
@@ -3213,8 +3235,21 @@ type GuestSample struct {
 	DiskUsedBytes   uint64                 `protobuf:"varint,9,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
 	Signals         *GuestSignals          `protobuf:"bytes,10,opt,name=signals,proto3" json:"signals,omitempty"`
 	Procs           []*ProcSample          `protobuf:"bytes,11,rep,name=procs,proto3" json:"procs,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Microseconds since the last sample in which a task inside the guest
+	// was runnable and waited for a vCPU: the guest's /proc/pressure/cpu
+	// "some" total, moved on by hostd (DECISIONS I-493).
+	CpuPressureUsDelta uint64 `protobuf:"varint,12,opt,name=cpu_pressure_us_delta,json=cpuPressureUsDelta,proto3" json:"cpu_pressure_us_delta,omitempty"`
+	// Microseconds since the last sample in which a thread of the guest's
+	// hypervisor unit was runnable and waited for a host CPU: the unit
+	// cgroup's cpu.pressure "some" total on the host, the guest's steal
+	// (DECISIONS I-493).
+	HostCpuWaitUsDelta uint64 `protobuf:"varint,13,opt,name=host_cpu_wait_us_delta,json=hostCpuWaitUsDelta,proto3" json:"host_cpu_wait_us_delta,omitempty"`
+	// Memory in use as the guest sees it, MemTotal less MemAvailable, at the
+	// sample (guest-written; mem_rss_bytes is what the host has backed,
+	// which never shrinks without a balloon). DECISIONS I-493.
+	GuestMemUsedBytes uint64 `protobuf:"varint,14,opt,name=guest_mem_used_bytes,json=guestMemUsedBytes,proto3" json:"guest_mem_used_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GuestSample) Reset() {
@@ -3322,6 +3357,27 @@ func (x *GuestSample) GetProcs() []*ProcSample {
 		return x.Procs
 	}
 	return nil
+}
+
+func (x *GuestSample) GetCpuPressureUsDelta() uint64 {
+	if x != nil {
+		return x.CpuPressureUsDelta
+	}
+	return 0
+}
+
+func (x *GuestSample) GetHostCpuWaitUsDelta() uint64 {
+	if x != nil {
+		return x.HostCpuWaitUsDelta
+	}
+	return 0
+}
+
+func (x *GuestSample) GetGuestMemUsedBytes() uint64 {
+	if x != nil {
+		return x.GuestMemUsedBytes
+	}
+	return 0
 }
 
 type HostSample struct {
@@ -4197,7 +4253,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"keepVolume\"F\n" +
 	"\fResizeVolume\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1b\n" +
-	"\tnew_bytes\x18\x02 \x01(\x04R\bnewBytes\"\xd2\x01\n" +
+	"\tnew_bytes\x18\x02 \x01(\x04R\bnewBytes\"\xee\x01\n" +
 	"\x05Build\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
@@ -4206,7 +4262,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\bfragment\x18\x03 \x01(\fR\bfragment\x12\x19\n" +
 	"\bbase_ref\x18\x04 \x01(\tR\abaseRef\x12/\n" +
 	"\x06limits\x18\x05 \x01(\v2\x17.repose.hostd.v1.LimitsR\x06limits\x12!\n" +
-	"\fbase_version\x18\x06 \x01(\tR\vbaseVersion\"r\n" +
+	"\fbase_version\x18\x06 \x01(\tR\vbaseVersion\x12\x1a\n" +
+	"\bpersonal\x18\a \x01(\fR\bpersonal\"r\n" +
 	"\vApplyConfig\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12%\n" +
 	"\x0esystem_closure\x18\x02 \x01(\tR\rsystemClosure\x12!\n" +
@@ -4282,11 +4339,12 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04exec\x18\x15 \x01(\v2\x15.repose.hostd.v1.ExecH\x00R\x04exec\x12.\n" +
 	"\x05drain\x18\x16 \x01(\v2\x16.repose.hostd.v1.DrainH\x00R\x05drain\x12J\n" +
 	"\x0fanswer_question\x18\x17 \x01(\v2\x1f.repose.hostd.v1.AnswerQuestionH\x00R\x0eanswerQuestionB\x05\n" +
-	"\x03cmd\"Z\n" +
+	"\x03cmd\"\x7f\n" +
 	"\x05Error\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12#\n" +
-	"\rfragment_line\x18\x03 \x01(\x05R\ffragmentLine\"\xba\x03\n" +
+	"\rfragment_line\x18\x03 \x01(\x05R\ffragmentLine\x12#\n" +
+	"\rpersonal_line\x18\x04 \x01(\x05R\fpersonalLine\"\xba\x03\n" +
 	"\x06Result\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x0e\n" +
@@ -4349,7 +4407,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\ftmux_clients\x18\x02 \x01(\rR\vtmuxClients\x122\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
-	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xb2\x03\n" +
+	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xca\x04\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -4363,7 +4421,10 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x0fdisk_used_bytes\x18\t \x01(\x04R\rdiskUsedBytes\x127\n" +
 	"\asignals\x18\n" +
 	" \x01(\v2\x1d.repose.hostd.v1.GuestSignalsR\asignals\x121\n" +
-	"\x05procs\x18\v \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\"\x81\x01\n" +
+	"\x05procs\x18\v \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\x121\n" +
+	"\x15cpu_pressure_us_delta\x18\f \x01(\x04R\x12cpuPressureUsDelta\x122\n" +
+	"\x16host_cpu_wait_us_delta\x18\r \x01(\x04R\x12hostCpuWaitUsDelta\x12/\n" +
+	"\x14guest_mem_used_bytes\x18\x0e \x01(\x04R\x11guestMemUsedBytes\"\x81\x01\n" +
 	"\n" +
 	"HostSample\x12\x19\n" +
 	"\bmem_free\x18\x01 \x01(\x04R\amemFree\x12\x1b\n" +

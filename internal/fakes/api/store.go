@@ -45,6 +45,8 @@ type Project struct {
 	Idle *Idle `json:"idle,omitempty"`
 	// ExpiresAt is set on a temporary project (DECISIONS I-347).
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// PersonalOptOut keeps the account's machine.nix off (I-490).
+	PersonalOptOut bool `json:"personal_opt_out"`
 }
 
 // Idle is Project.idle.
@@ -118,6 +120,9 @@ type Revision struct {
 	Menu        json.RawMessage `json:"-"`
 	BaseVersion string          `json:"-"`
 	AppliedAt   *time.Time      `json:"-"`
+	// Personal says the revision carries machine.nix (I-490).
+	Personal     bool   `json:"personal"`
+	personalText string // what GET /config returns as personal
 }
 
 // CatalogItem is one row of GET /catalog. Kind and Options were added to
@@ -186,6 +191,8 @@ type userRec struct {
 	NotifyEmail bool
 	NtfyURL     string
 	Cancelling  bool
+	// personal is the account's machine.nix saves, oldest first (I-490).
+	personal []*personalRev
 }
 
 type project struct {

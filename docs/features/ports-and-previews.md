@@ -30,7 +30,7 @@ http://localhost:3000 → todo-app:3000 (Ctrl-C to stop)
 
 ```
 $ repose browser
-Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p (the view sleeps after 30 idle minutes; repose browser --stop ends it).
+Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p (the view sleeps after 30 idle minutes).
 ```
 
 (browser.md covers the desktop.)

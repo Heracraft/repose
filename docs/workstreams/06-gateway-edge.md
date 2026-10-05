@@ -431,11 +431,20 @@ except keys and certificates, which are not changed by deploys.
       listens on 22, dhcpcd's `ExecStart` has `--persistent`;
       switch-to-configuration-ng reloads `X-ReloadIfChanged` units.
       — closed 2026-10-04 (edge-zero-downtime)
-- [ ] On the production edge, a switch with a session attached keeps it,
+- [x] On the production edge, a switch with a session attached keeps it,
       and `wg show wg0 peers` is unchanged. Evidence: a `repose attach`
       that keeps echoing across a second switch after the first one onto
       I-471 (RUNBOOK "Switch the edge"), and the journal's `handed over`
-      line. — waits on: the owner's edge switch
+      line. — closed 2026-10-04: first switch to 703a866 at 20:51Z failed
+      the gateway reload as expected, then `systemctl stop gateway &&
+      systemctl start gateway-ssh.socket gateway` (port 22 held by systemd
+      and the gateway, Type=notify, control.sock present; wg0 kept its 4
+      peers). Second switch to 15a0e5c at 21:01Z: dry-activate listed only
+      `gateway` to reload; journal `handed over` pid 173756, old `draining`
+      `relays` 2; peers diff empty. A v0.1.29 `repose attach` on throwaway
+      e2e-handover took `after` after `before` on the same ssh master
+      (pid 1793085) with no reconnect; a new connection worked; 443 then
+      refused (I-479).
 
 ### Real-edge evidence (M2, 2026-09-20/21)
 

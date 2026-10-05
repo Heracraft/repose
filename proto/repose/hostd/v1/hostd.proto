@@ -161,6 +161,11 @@ message Build {
   // flake's own stamp, which under hostd's --override-input is "dirty"
   // (DECISIONS I-118).
   string base_version = 6;
+  // The account's personal layer (machine.nix, DECISIONS I-490): a
+  // home-manager module hostd writes as personal.nix beside fragment.nix.
+  // Empty means none, and the build is exactly what it was before the
+  // field existed; a hostd that predates it ignores it.
+  bytes personal = 7;
 }
 message ApplyConfig { string guest_id = 1; string system_closure = 2; bool force_reboot = 3; }
 message Snapshot { string guest_id = 1; string reason = 2; }
@@ -218,6 +223,9 @@ message Error {
   string code = 1;      // see docs/interfaces/grpc-hostd.md
   string message = 2;
   int32 fragment_line = 3;
+  // The line in the personal layer (personal.nix, machine.nix to the
+  // user) when the error is located there; 0 otherwise (DECISIONS I-490).
+  int32 personal_line = 4;
 }
 
 message Result {
@@ -263,6 +271,19 @@ message GuestSample {
   uint64 disk_used_bytes = 9;
   GuestSignals signals = 10;
   repeated ProcSample procs = 11;
+  // Microseconds since the last sample in which a task inside the guest
+  // was runnable and waited for a vCPU: the guest's /proc/pressure/cpu
+  // "some" total, moved on by hostd (DECISIONS I-493).
+  uint64 cpu_pressure_us_delta = 12;
+  // Microseconds since the last sample in which a thread of the guest's
+  // hypervisor unit was runnable and waited for a host CPU: the unit
+  // cgroup's cpu.pressure "some" total on the host, the guest's steal
+  // (DECISIONS I-493).
+  uint64 host_cpu_wait_us_delta = 13;
+  // Memory in use as the guest sees it, MemTotal less MemAvailable, at the
+  // sample (guest-written; mem_rss_bytes is what the host has backed,
+  // which never shrinks without a balloon). DECISIONS I-493.
+  uint64 guest_mem_used_bytes = 14;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

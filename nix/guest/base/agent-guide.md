@@ -13,6 +13,7 @@ The user can also work in this checkout from their laptop without attaching: in 
 Before you tell the user to run a `repose` command, read its page: https://repose.herakraft.co/llms.txt lists every docs page as plain markdown. The docs describe the latest release. `~/.repose/cli-version` holds the version on the user's laptop as of their last `repose run` or `repose attach`; when it is older, a command may not work as the docs show, so tell them to update by running the install command again. <!-- /docs/cli -->
 You are `dev`, with passwordless `sudo`. The checkout is under `/home/dev`, and everything in `/home/dev` survives a stop. <!-- /docs/machine -->
 The checkout is named after the folder on the user's laptop it came from, not after the project, and `repose-checkout` prints its path; before the first sync there is none and work happens in `/home/dev`. <!-- /docs/sync#where-the-checkout-is --> <!-- needs: repose-checkout -->
+The user may have added other repositories to this machine as folders beside it, listed in `~/.repose/checkouts`; each is a separate project of theirs. Work in the folder you were started in, and leave the others alone unless the user asks. <!-- /docs/run-and-attach#several-repositories-on-one-machine -->
 
 ## Servers and ports
 
@@ -27,6 +28,7 @@ The checkout is named after the folder on the user's laptop it came from, not af
 - Programs built for other Linux systems (prebuilt binaries, Prisma engines, Python wheels, `curl | sh` installers) run as they would on Ubuntu. <!-- /docs/machine#whats-installed -->
 - Install a missing tool now with `nix profile add nixpkgs#NAME`. Typing a missing command prints the package that has it. `npm i -g`, `go install` and `uv tool install` work too. All of these stay on this machine's disk. <!-- /docs/machine#installing-more -->
 - Installs made here are not part of the project's configuration. To keep a package on every rebuild, tell the user to run `repose config add NAME` on their laptop. <!-- /docs/config#add-a-package -->
+- A tool the user wants on every machine of their account, with their shell aliases and dotfiles, belongs in their machine.nix: `repose config --global add NAME` on their laptop. <!-- /docs/config#your-machine-nix -->
 - Tools the user has on their laptop are installed in the background after each `repose run`. If one is missing right after a start, check `~/.repose/tools-install.log` before installing it yourself. <!-- /docs/machine#your-laptops-tools-come-along -->
 - npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. Leave the two lines repose added to `~/.npmrc` in place. <!-- /docs/machine#network -->
 - You started inside the project's dev environment: its `.envrc`, or its flake's dev shell when it has a `flake.nix` and no `.envrc`. If a tool the flake provides is missing, the load failed or the `.envrc` is denied; the top of your tmux window says which. <!-- /docs/machine#projects-with-a-flake-nix -->
@@ -56,10 +58,11 @@ The checkout is named after the folder on the user's laptop it came from, not af
 - When memory runs out, test runs and dev servers are killed before agents and tmux. `sudo dmesg | grep -i killed` shows what went. <!-- /docs/machine#memory-and-disk -->
 - `df -h /home/dev` shows free disk. The user can grow it with `repose resize 80G` (any size) on their laptop. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
+- The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every vCPU busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->
 
 ## Reaching the user
 
-- The user is notified when you finish or wait for input. You don't have to do anything for that. <!-- /docs/notifications#what-youll-get -->
+- The user is notified when you finish or wait for input. <!-- /docs/notifications#what-youll-get -->
 - To tell the user something while they're away, run `repose-notify "MESSAGE"`. It reaches their phone or email. <!-- /docs/notifications#agents-can-message-you-and-ask-questions --> <!-- needs: repose-notify -->
 - When you're blocked on a decision only the user can make, run `repose-ask --options yes,no "QUESTION"` (or without `--options` for a free answer). It waits up to 30 minutes (`--timeout`) and prints their answer; exit 3 means no answer came, 4 that they have no notifications set up. Don't ask what you can decide yourself. <!-- /docs/agents#let-it-ask-you --> <!-- needs: repose-ask -->
 
@@ -75,6 +78,7 @@ The checkout is named after the folder on the user's laptop it came from, not af
 - Claude Code (`claude`), Codex (`codex`), opencode (`opencode`), Gemini CLI (`gemini`) and pi (`pi`) are installed. <!-- /docs/agents -->
 - If an agent says it isn't logged in, ask the user to log it in on this machine; logins are never copied here for Claude Code. <!-- /docs/agents#log-in -->
 - `~/.claude/CLAUDE.md`, settings and skills are copied from the user's laptop at each `repose run`, so lasting changes to them belong on the laptop. <!-- /docs/agents#your-claude-code-setup-comes-along -->
+- Claude Code, Codex and Gemini CLI can search the web. opencode can only when $OPENCODE_ENABLE_EXA is 1, which the user turns on with `repose secrets set OPENCODE_ENABLE_EXA` on their laptop; pi has no search tool, so fetch pages with `curl`. <!-- /docs/agents#web-search -->
 - MCP servers that need the laptop (Apple Notes, Xcode, Claude in Chrome) don't work here. HTTP servers and `npx` servers do; put their tokens in secrets and refer to them as `${NAME}`. <!-- /docs/agents#mcp-servers -->
 - Files and images the user drops or pastes into the terminal are copied to `/tmp/repose-paste/`, and the file's path there is pasted into your prompt; a file from the checkout arrives as its path in the checkout instead. Claude Code attaches images; other agents can open the file. Copies are deleted after a day. Hidden files, private keys and system files are never copied: you get the laptop's path as text, and you can't open it. Don't ask the user to paste such a file. <!-- /docs/run-and-attach#drop-a-file-or-paste-an-image -->
 

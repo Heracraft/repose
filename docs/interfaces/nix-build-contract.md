@@ -19,7 +19,9 @@ inputs.fragment = { url = "path:./guest/fragment-placeholder"; flake = false; };
 outputs = { self, nixpkgs, home-manager, microvm, fragment, ... }: {
   # A NixOS system: base module + home-manager fragment at
   # "${fragment}/fragment.nix" applied to user dev (nix/guest/compose.nix,
-  # nix/guest/contract.nix). Only config.system.build.toplevel is required.
+  # nix/guest/contract.nix), with the account's personal layer at
+  # "${fragment}/personal.nix" imported before it when the file exists
+  # (DECISIONS I-490). Only config.system.build.toplevel is required.
   guestSystem = <nixosSystem>;
 };
 ```
@@ -28,9 +30,10 @@ The placeholder input exists so the lock file is valid; hostd always
 overrides it. The system closure is independent of the guest's class and
 address (DECISIONS I-34, I-43), so one `Build` per revision serves the
 project's guest wherever it runs. The only inputs are the fragment's text,
-the `base_ref` and the `base_version` label, which is why the api sends no
-`Build` for a create whose fragment and published base match a closure
-already applied on the chosen host (DECISIONS I-160). A change that lets
+the personal layer's text (empty when there is none, I-490), the
+`base_ref` and the `base_version` label, which is why the api sends no
+`Build` for a create whose fragment, personal layer and published base
+match a closure already applied on the chosen host (DECISIONS I-160). A change that lets
 anything else into the closure (the project id, the class, a timestamp)
 breaks that reuse and needs a new decision.
 
@@ -41,7 +44,14 @@ L, in order:
 
 1. Writes F to `/var/lib/repose/builds/R/fragment.nix` (0600), and the
    `Build`'s `base_version` label, when given, to `base-version` beside it
-   (one line; DECISIONS I-118), then hands the directory to the build user
+   (one line; DECISIONS I-118). A non-empty `personal` P goes to
+   `personal.nix` beside them (0600, DECISIONS I-490) when the base's
+   `nix/flake.nix` contains the string `personal.nix`; a base from before
+   I-490 would ignore the file, so hostd writes none and prints `this base
+   predates machine.nix; building without it (the next base update
+   includes it)` in the build log. An empty P removes any `personal.nix`,
+   and the build is exactly the one a hostd without the field runs. Then
+   hostd hands the directory to the build user
    (`--build-user`, `nixbuild` on a host; the builds directory is 0711 so
    that user reaches its own directory and nothing else). The flake's
    `guestSystem` stamps `repose.baseVersion` (`/etc/repose/base-version`,
@@ -80,13 +90,21 @@ L, in order:
    `timeout` exiting 124, or the scope's `RuntimeMaxSec` killing the
    command after the cap, is `eval_failed` "evaluation exceeded <eval_s>
    s". Any other failure is `eval_failed` with a summary line (below),
-   `fragment_line` from the first `fragment.nix:L:C` after the final
-   `error:` line, else the last one in the trace, and the verbatim stderr
-   (last 32 KB) after a blank line.
+   the line from the first `fragment.nix:L:C` or `personal.nix:L:C` after
+   the final `error:` line, else the last one in the trace, and the
+   verbatim stderr (last 32 KB) after a blank line. A line in
+   `fragment.nix` is `fragment_line`; a line in `personal.nix` is
+   `personal_line` (I-490), and every `personal.nix` in the summary and
+   the verbatim output reads `machine.nix`, the name the user knows the
+   file by. When both files define one single-valued option the summary
+   is `option '<path>' is set in both machine.nix and the project's
+   configuration; wrap the one that should win in lib.mkForce`.
    Before evaluating, hostd looks the inputs up in its eval cache
    (`/var/lib/repose/builds/.evalcache/<key>`, DECISIONS I-405). The key
    is a SHA-256 over B, the flake's subdirectory and scheme, the eval
-   attribute, the `base_version` label and F, which with `pure-eval`,
+   attribute, the `base_version` label, F and, when one was written, P
+   (an empty P adds nothing, so a build without a personal layer keeps
+   the key I-405 gave it), which with `pure-eval`,
    `restrict-eval` and no import-from-derivation is all the evaluation
    reads. A hit whose `.drv` is still in the store (`nix path-info`)
    skips the `nix eval` above and goes on to step 4 with that derivation;
@@ -143,8 +161,9 @@ then the verbatim block; the dashboard shows the same.
 | `eval_failed` | `config error: ` | `access to absolute path '/etc/passwd' is forbidden in pure evaluation mode (use '--impure' to override) at fragment.nix:1:37; a fragment may only read files it carries` |
 | `eval_failed` | `config error: ` | `<nixpkgs> is not available at fragment.nix:1:44; use the pkgs argument, which is the platform's pinned nixpkgs` |
 | `eval_failed` | `config error: ` | `import-from-derivation is not allowed at fragment.nix:1:37; a fragment cannot import a file that a build produces` |
-| `eval_failed` | `config error: ` | `option 'services.postgresql' does not exist in a fragment; system services come from the menu or `repose config menu`` |
-| `eval_failed` | `config error: ` | `repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: ...)` |
+| `eval_failed` | `config error: ` | `option 'services.postgresql' does not exist in a fragment; a fragment is a home-manager module: packages go in home.packages, databases come from `repose config add` or repose.system` |
+| `eval_failed` | `config error: ` | `this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.herakraft.co/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout` (the unknown option is `description`, `inputs`, `outputs` or `nixConfig`; no did-you-mean, DECISIONS I-483) |
+| `eval_failed` | `config error: ` | `repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: ...)` |
 | `eval_failed` | `config error: ` | `nixpkgs has no package "no-such-package"; search https://search.nixos.org/packages at fragment.nix:11:23` (a menu `{package}` item nixpkgs lacks, thrown by the generated fragment; `repose config add` drops the ` at fragment.nix:…` part and the verbatim block, DECISIONS I-220) |
 | `eval_failed` | `config error: ` | `nixpkgs attribute "python312Packages" is not a package; search https://search.nixos.org/packages at fragment.nix:13:10` |
 | `eval_failed` | `config error: ` | `evaluation exceeded 60 s` |
@@ -171,7 +190,10 @@ command line must be in `boot.kernelParams`; hostd appends `init=`,
 Real Nix output for the error mapping lives in
 `internal/hostd/nixbuild/testdata/*.stderr`, produced by exactly the eval
 command above against the platform flake (`TestMapEvalErrorFixtures`
-pins the summary line and `fragment_line` of each). `realnix_test.go` runs
+pins the summary line and `fragment_line` of each; `personal-*.stderr`
+were captured with a `personal.nix` beside the fragment and
+`TestMapEvalErrorPersonal` pins their `machine.nix` summaries and
+`personal_line`). `realnix_test.go` runs
 the whole pipeline against `testdata/miniflake` (the same `fragment` input
 and `guestSystem` output, nixpkgs at the platform's locked revision, no
 home-manager) when `REPOSE_NIX_TESTS=1`: the five canonical cases with the

@@ -13,6 +13,7 @@
 		opLogUrl,
 		getOp
 	} from '$lib/api/client';
+	import { toast } from 'svelte-sonner';
 	import { toastApiError } from '$lib/api/toast';
 	import { dateTime } from '$lib/format';
 	import {
@@ -43,6 +44,7 @@
 	/** The revision a Re-apply was sent for, until its build starts. */
 	let reapplying = $state<string | undefined>(undefined);
 	let holdSaving = $state(false);
+	let personalSaving = $state(false);
 
 	// Menu tab state.
 	let selectedPackages = $state<Set<string>>(new Set());
@@ -217,6 +219,28 @@
 		activeTab = 'nix';
 	}
 
+	// The machine.nix switch (DECISIONS I-490) follows the project like the
+	// hold flag; a change rebuilds the machine with or without the layer.
+	async function togglePersonal(box: HTMLInputElement) {
+		if (!project) return;
+		const on = box.checked;
+		personalSaving = true;
+		try {
+			project = await patchProject(id, { personal_opt_out: !on });
+			toast.success(
+				on
+					? 'machine.nix is on for this machine; it switches in the background.'
+					: 'machine.nix is off for this machine; it switches in the background.'
+			);
+			revisions = await listRevisions(id);
+		} catch (err) {
+			box.checked = !project.personal_opt_out;
+			toastApiError(err, 'Could not change the machine.nix switch.');
+		} finally {
+			personalSaving = false;
+		}
+	}
+
 	// The checkbox follows the project, not the click: on a refusal it is
 	// put back to what the server holds, so it never shows a hold that
 	// was not saved.
@@ -341,9 +365,6 @@
 					{#if extraPackages.length}
 						<div class="form-section">
 							<h2 class="text-xl font-semibold">Extra packages</h2>
-							<p class="mt-1 text-sm text-ink-muted">
-								Added from nixpkgs with <code>repose config add</code>.
-							</p>
 							<ul class="mt-2">
 								{#each extraPackages as pkg (pkg)}
 									<li class="check-list-row">
@@ -404,6 +425,25 @@
 					{/if}
 				</div>
 			{/if}
+
+			<div class="form-section">
+				<h2 class="text-xl font-semibold">machine.nix</h2>
+				<label class="check-row mt-2">
+					<input
+						type="checkbox"
+						checked={!project.personal_opt_out}
+						disabled={personalSaving}
+						onchange={(e) => void togglePersonal(e.currentTarget)}
+					/>
+					Use your machine.nix on this machine
+				</label>
+				<p class="mt-1 text-sm text-ink-muted">
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
+					<a class="link" href={resolve('/account') + '#machine-nix'}
+						>Edit machine.nix on your account</a
+					>
+				</p>
+			</div>
 
 			<div class="form-section">
 				<h2 class="text-xl font-semibold">Base updates</h2>

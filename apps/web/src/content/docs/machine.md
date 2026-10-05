@@ -28,7 +28,7 @@ Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma'
 
 ## Installing more
 
-Install on the machine the way you would anywhere. The result stays on the machine's disk and is on your `PATH`:
+Installs stay on the machine's disk and on your `PATH`:
 
 ```
 npm i -g tsx
@@ -61,11 +61,13 @@ The last line only appears when other packages have a command by that name. Inst
 Installing 2 of your tools in the background: air, portless
 ```
 
-Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. Nothing waits for these. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`.
+Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`.
 
 Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`.
 
-To see the list without installing anything:
+A `.nix` file takes precedence over this guesswork. With a [machine.nix](/docs/config#your-machine-nix) on your account, `run` leaves your laptop's global tools out: machine.nix says which tools you want on every machine. With a `repose.nix` at the checkout root, it leaves out the commands the project's scripts call, because `repose.nix` describes the project. The Node, Ruby and Java pins still apply. Logins, Claude Code settings and your git identity are copied either way.
+
+To see the list without installing anything, and which half a `.nix` file took over:
 
 ```
 repose scan
@@ -73,18 +75,31 @@ repose scan
 
 ## Projects with a flake.nix
 
-Agents start in the project's dev environment, so they and every command they run see the tools and variables it provides. This holds for every window, `--worktree` ones included:
+Agents start in the project's dev environment, so they and every command they run see the tools and variables it provides. This holds for every window, `--worktree` ones included, and for `repose exec`:
 
 - With an `.envrc`, agents get what it sets. The first time an agent starts in a checkout, repose runs `direnv allow` for its `.envrc`, and again after the file changes; the agent's window says so. If you ran `direnv deny` on it, agents start without it.
-- With a `flake.nix` that defines a dev shell and no `.envrc`, agents start in that dev shell. Nothing is written to the checkout.
+- With a `flake.nix` that defines a dev shell and no `.envrc`, agents start in that dev shell. Nothing is written to the checkout: if the repository has no `flake.lock`, the one Nix makes is kept on the machine, outside the checkout.
 
-The first load builds the dev shell and can take minutes. `repose run` shows `Loading the project's dev shell` meanwhile and sends your prompt once the agent is up. If the dev shell fails to load, the agent starts without it and its window shows the error first.
+The first load builds the dev shell. A few packages from a nixpkgs the machine hasn't fetched yet take 20 to 40 seconds; anything nixpkgs has to compile takes longer. Later loads reuse it and take under a second, until `flake.nix` or `flake.lock` changes. `repose run` shows `Loading the project's dev shell` meanwhile and sends your prompt once the agent is up. If the dev shell fails to load, the agent starts without it and its window shows the error first.
 
-In your own shells, direnv is set up: put `use flake` in the repository's `.envrc`, run `direnv allow` once on the machine, and the flake's dev shell loads when you `cd` into the checkout. To keep agents out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
+Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
+
+Check three things in a first flake:
+
+- **Commit `flake.nix`.** Nix only sees files git tracks. An untracked `flake.nix` still reaches the machine, then fails to load with `Path 'flake.nix' in the repository ... is not tracked by Git`.
+- **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it, and your next `repose sync` stops with `The machine has uncommitted changes your laptop doesn't have`, naming `flake.lock`. Run `nix flake lock` on your laptop and commit the file. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
+- **Define the dev shell for `x86_64-linux`.** The machine is x86-64 Linux whatever your laptop is. A flake written on a Mac with only `devShells.aarch64-darwin` fails with `does not provide attribute 'devShells.x86_64-linux.default'`. Name both systems, or use `flake-utils.lib.eachDefaultSystem`.
+
+Your own shells get the same dev shell. In `repose ssh`, `ssh todo-app.repose`, an editor's terminal or a tmux window you open, bash loads it when you `cd` into the checkout and unloads it when you leave:
+
+- With a `flake.nix` and no `.envrc`, you get the dev shell the agents got, from the same cache, so a later load takes under a second. On entering, the shell prints `repose: loading the dev shell from ~/todo-app/flake.nix`. If nothing has built it yet, the prompt waits for the build. Press Ctrl-C to skip it; the shell then goes without it until you leave the folder and come back, or `flake.nix` changes.
+- With an `.envrc`, it loads once the file is allowed: repose allows it the first time an agent or `repose exec` starts there, or you run `direnv allow`. One you denied stays out. With `use flake` in it, direnv keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
+
+This works in any checkout or worktree in your home folder. To keep agents and your shells out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
 
 ## Ports
 
-While you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. Start `pnpm dev` on the machine and open `http://localhost:5173` on your laptop. tmux shows each new forward:
+As long as you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
 
 ```text
 ⇄ localhost:5173 → :5173
@@ -122,18 +137,17 @@ repose run "screenshot each signup step with playwright"
 
 Playwright test suites run without `npx playwright install`.
 
-To watch the browser or use it yourself (a captcha, a passkey), one command:
+To watch the browser or use it yourself (a captcha, a passkey):
 
 ```
 $ repose browser
 Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
-(the view sleeps after 30 idle minutes;
-repose browser --stop ends it).
+(the view sleeps after 30 idle minutes).
 ```
 
-Your browser opens on that link and shows the agent's browser, live, at the size of your tab (make the tab bigger and the machine's screen grows with it). Nothing to type: the password is the part of the link after `#`, which your browser reads and never sends anywhere. Click and type in the page to solve a captcha, log in or approve a passkey; the agent's browser tools use whatever you logged into. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.
+Your browser opens on that link and shows the agent's browser, live, at the size of your tab. The password is the part of the link after `#`, which your browser reads and never sends anywhere. The agent's browser tools use whatever you log into there. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.
 
-The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-open` to print the link without opening a browser, and `repose browser --stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. The view sleeps after 30 minutes with nobody watching; opening the page again wakes it. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it.
+The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-open` to print the link without opening a browser, and `repose browser --stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. Opening the page again wakes a sleeping view. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it.
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page. `repose open --desktop` is the old name of the command and still works.
 
@@ -157,10 +171,23 @@ When a machine runs out of memory, something is killed. Your agents and tmux are
 
 Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 
+## Seeing what the machine is doing
+
+The project's page in the dashboard has a **Machine** card with the size, its vCPUs and memory, and a **Usage** card with four charts over the last hour, day or week:
+
+- **CPU**: the share of the machine's vCPUs in use.
+- **Memory**: memory in use as the machine sees it, of the size's memory.
+- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU is at 100% means more work than vCPUs, for example several builds or test runs at once. Run fewer at a time, or give the machine more vCPUs with `repose resize --size`.
+- **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy, and repose watches for that.
+
+Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type; see the [privacy policy](/privacy).
+
+Your SSH sessions and tmux get the CPU before the programs running in your panes when every vCPU is busy, so what you type keeps showing up at once.
+
 ## Changing the size
 
 A project's size is chosen when it's created (`repose run --size`, default `large`) and can be changed later with `repose resize --size small|large|xl`. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.
 
 The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it (taking a snapshot), changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. Asking for the size a project already has does nothing.
 
-It prints what the new size gives and costs, for example `xl: 8 vCPU, 16 GB memory, $0.28 an hour up to $199 a month`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).
+It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).

@@ -13,7 +13,6 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/menu"
-	"github.com/heracraft/repose/internal/obs"
 )
 
 func revisionJSON(rev *store.Revision) map[string]any {
@@ -24,6 +23,15 @@ func revisionJSON(rev *store.Revision) map[string]any {
 	}
 	if rev.FragmentLine != nil {
 		out["fragment_line"] = *rev.FragmentLine
+	}
+	// The personal layer it was built with (I-490).
+	out["personal"] = rev.Personal != ""
+	out["personal_opt_out"] = rev.PersonalOptOut
+	if rev.PersonalRevisionID != nil {
+		out["personal_revision_id"] = *rev.PersonalRevisionID
+	}
+	if rev.PersonalLine != nil {
+		out["personal_line"] = *rev.PersonalLine
 	}
 	return out
 }
@@ -44,7 +52,10 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion, "applied_at": rev.AppliedAt, "status": rev.Status}
+	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion, "applied_at": rev.AppliedAt, "status": rev.Status,
+		// The personal layer the active revision carries (I-490): its
+		// text, the account revision it came from, and the opt-out.
+		"personal": rev.Personal, "personal_revision_id": rev.PersonalRevisionID, "personal_opt_out": p.PersonalOptOut}
 	if rev.Menu != nil {
 		out["menu"] = rev.Menu["selection"]
 	}
@@ -100,26 +111,14 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	if len(fragment) > config.MaxFragmentBytes {
 		return errf("invalid", "fragment exceeds 256 KB")
 	}
-	if s.d.Parser != nil {
-		if err := s.d.Parser.Check(ctx, fragment); err != nil {
-			var pe *config.ParseError
-			switch {
-			case errors.As(err, &pe):
-				detail := map[string]any{}
-				if pe.Line > 0 {
-					detail["fragment_line"] = pe.Line
-				}
-				return withDetail(errf("invalid", "%s", config.Fmt(pe)), detail)
-			case errors.Is(err, config.ErrParserUnavailable):
-				obs.Logger(ctx, s.d.Log).Warn("fragment parse check skipped", "event", "config_parse_unavailable")
-			case errors.Is(err, config.ErrTooLarge):
-				return errf("invalid", "fragment exceeds 256 KB")
-			default:
-				return err
-			}
-		}
+	if err := s.checkFragment(ctx, fragment, "fragment.nix"); err != nil {
+		return err
 	}
-	if strings.TrimSpace(fragment) == strings.TrimSpace(cur.Fragment) && cur.Status == "applied" {
+	layer, err := store.PersonalFor(ctx, s.d.Pool, p)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(fragment) == strings.TrimSpace(cur.Fragment) && cur.Personal == layer.Text && cur.Status == "applied" {
 		writeJSON(w, http.StatusOK, map[string]any{"revision_id": cur.ID, "op_id": "", "unchanged": true, "message": "configuration unchanged; " + cur.ID.String()[:8] + " is still active"})
 		return nil
 	}
@@ -127,12 +126,22 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	var opID uuid.UUID
 	pid := p.ID
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
-		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status) values ($1, $2, $3, $4, $5, 'building')", rid, pid, fragment, menuJSON, p.BaseVersion); err != nil {
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, 'building', $6, $7, $8)", rid, pid, fragment, menuJSON, p.BaseVersion, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
-		var err error
-		opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(p.State == "running")}, false)
-		return err
+		// A personal build queued by a machine.nix save (I-490) does not
+		// refuse the change: this revision carries the account's current
+		// machine.nix too, so one not started yet is superseded, and one
+		// already building is queued behind.
+		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(ctx, tx, pid, "config")
+		if err != nil {
+			return err
+		}
+		opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(p.State == "running")}, ok)
+		if err != nil {
+			return err
+		}
+		return s.d.Engine.SupersedePersonalBuilds(ctx, tx, yielded, rid)
 	})
 	if err != nil {
 		if errors.Is(err, ops.ErrOpInProgress) {

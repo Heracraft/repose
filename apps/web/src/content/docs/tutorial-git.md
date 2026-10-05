@@ -5,11 +5,11 @@ section: Tutorials
 order: 20
 ---
 
-You have a checkout on your laptop. The agent works in a copy of it on the machine. Git is the only thing that moves work between the two, and it moves it in two different ways: your side goes up with `repose run`, the agent's side comes back with `git fetch`. Twenty minutes with a scratch repository makes the whole thing obvious.
+You have a checkout on your laptop. The agent works in a copy of it on the machine. Git is the only thing that moves work between the two, and it moves it in two different ways: your side goes up with `repose run`, the agent's side comes back with `git fetch`.
 
 ## Start with something small
 
-Any repository with a commit will do. A throwaway one is best for a first run:
+Any repository with a commit will do:
 
 ```
 mkdir hello && cd hello && git init -q
@@ -17,7 +17,7 @@ echo '# hello' > README.md && git add -A && git commit -qm init
 repose run --name hello
 ```
 
-`--name` is only needed because this repository has no remote yet. The machine is created, your commit goes up, and you land in a tmux session in `~/hello` on the machine. Look around, then detach with `Ctrl-b` `d`.
+`--name` is only needed because this repository has no remote yet. You land in a tmux session in `~/hello` on the machine. Detach with `Ctrl-b` `d`.
 
 ## What went up
 
@@ -30,7 +30,7 @@ The first `repose run` copied the state of your checkout:
 
 It doesn't copy build output, `node_modules` or anything else gitignored, and it never watches your files afterwards. Later runs attach to the machine as it is. Change something on your laptop and it stays there until you run `repose sync`. [Sync](/docs/sync) has the full list and the size limits.
 
-Try it. On your laptop:
+On your laptop:
 
 ```
 echo 'hello from the laptop' > note.txt
@@ -52,11 +52,11 @@ repose sync
 Synced: 0 modified, 1 untracked
 ```
 
-On the machine, `note.txt` is there, untracked, exactly as on your laptop. Neither command restarts or rebuilds the machine.
+Neither command restarts or rebuilds the machine.
 
 ## What comes back
 
-Nothing comes back on its own. The agent commits, and you fetch. The first `repose run` added a git remote called `repose` to your checkout, pointing at the machine's copy over the same SSH connection everything else uses:
+The agent commits, and you fetch. The first `repose run` added a git remote called `repose` to your checkout, pointing at the machine's copy over the same SSH connection everything else uses:
 
 ```
 $ git remote -v
@@ -71,7 +71,7 @@ Give the agent something to commit:
 repose run "add an MIT LICENSE file and commit it"
 ```
 
-When it's done (you get a notification, or watch it in tmux), fetch:
+Fetch once it's done (you get a notification):
 
 ```
 $ git fetch repose
@@ -110,9 +110,7 @@ them. Nothing was changed. Pick one:
                                  then sync
 ```
 
-Nothing happened, and the exit code is 6, so a script notices. The three options are the whole story: look first, keep the machine's changes in a stash there, or drop them. If the agent had committed instead of leaving the file dirty, there would be no conflict at all: the sync checks your laptop's commit out detached on the machine and leaves the agent's branch where it is, and `git fetch repose` brings that branch to you to merge like any other.
-
-The lesson for prompts: ask agents to commit. A committed change is never in the way.
+The exit code is 6, so a script notices. Ask agents to commit: had the agent committed instead of leaving the file dirty, there would be no conflict. The sync checks your laptop's commit out detached on the machine and leaves the agent's branch where it is, and `git fetch repose` brings that branch to you to merge like any other.
 
 ## Agents on their own branches
 
@@ -131,11 +129,9 @@ git log --oneline main..repose/worktree-1
 git merge repose/worktree-1
 ```
 
-[A git workflow for several agents](/docs/tutorial-git-workflow) builds on this.
-
 ## Pushing from the machine
 
-The machine's checkout has the same `origin` as yours. If you're logged in to the GitHub CLI on your laptop, that login is copied, and `git push` on the machine works over HTTPS. So "open a pull request when the tests pass" is a reasonable thing to put in a prompt, and the agent can do it with `gh pr create`. Your SSH keys never go to the machine; [Secrets and security](/docs/secrets#other-git-hosts) covers other hosts.
+The machine's checkout has the same `origin` as yours. If you're logged in to the GitHub CLI on your laptop, that login is copied, and `git push` on the machine works over HTTPS, so an agent can open a pull request with `gh pr create`. Your SSH keys never go to the machine; [Secrets and security](/docs/secrets#other-git-hosts) covers other hosts.
 
 ## Git and snapshots
 

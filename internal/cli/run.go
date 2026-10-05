@@ -29,9 +29,15 @@ type RunOptions struct {
 	Bridge      bool     // the laptop's Chrome is bridged in beside the attach (I-296)
 	BridgeAllow []string // --bridge-allow: the bridge's allowlist (I-311)
 	ProjectArg  string
+	// On is --on: this folder joins that machine as another checkout
+	// beside its own (DECISIONS I-480).
+	On string
 	// Temp is --temp's lifetime, 0 without it: a new temporary project
 	// (DECISIONS I-347).
 	Temp time.Duration
+	// NoPersonal keeps the account's machine.nix off this machine, for
+	// good (--no-personal, DECISIONS I-490).
+	NoPersonal bool
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -82,22 +88,39 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if opts.Temp > 0 && opts.ProjectArg != "" {
 			return exitf(ExitUsage, "--temp always creates a new machine; it cannot be used with --project (%s).", opts.ProjectArg)
 		}
+		if opts.On != "" && (opts.Temp > 0 || opts.Name != "" || opts.ProjectArg != "" || opts.Size != "") {
+			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with --temp, --name, --project or --size.")
+		}
 		if opts.Name != "" && opts.ProjectArg != "" && opts.Name != opts.ProjectArg {
 			return exitf(ExitUsage, "--name %s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
 		}
-		if opts.Temp == 0 && opts.Name == "" {
+		if opts.Temp == 0 && opts.Name == "" && opts.On == "" {
 			// A guess from the cache: the checkout's project. --name and
 			// --temp name another, and the probe (which creates the
 			// checkout's directory) must not touch this one.
 			early = startEarlyProbe(ctx, e, opts)
 		}
 		e.early = early
-		e.guestUp = func(p *Project) { startBootProbe(ctx, e, p, !opts.NoSync && gitRepoRoot(e.Cwd) != "") }
+		// The boot probe reads the machine's own checkout, never another
+		// one (I-480).
+		ownCheckout := opts.On == "" && e.extraCheckout() == nil
+		e.guestUp = func(p *Project) {
+			startBootProbe(ctx, e, p, ownCheckout && !opts.NoSync && gitRepoRoot(e.Cwd) != "")
+		}
 	}
 
 	// Other projects left running with nobody on them (I-262), read
 	// beside the command and printed once connected.
 	idleNote := startIdleNote(ctx, e)
+
+	// The account's machine.nix, read beside the resolve; pushed before a
+	// create, so the new machine's first revision has it, or once an
+	// existing machine runs, so its build never holds up the start
+	// (DECISIONS I-490).
+	var personal *personalStep
+	if !attachOnly {
+		personal = e.startPersonal(ctx)
+	}
 
 	pr := e.newProgress()
 	defer pr.Fail() // clears a spinner line left by an early return
@@ -140,6 +163,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if attachOnly {
 			return errNoProjectFoundFor(res.Remote, e.Command)
 		}
+		personal.finish(ctx, e, opts.NoPersonal, nil)
 		project, err = createProjectForRun(ctx, e, res.CreateRemote(), opts, pr)
 		if err != nil {
 			return err
@@ -172,6 +196,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	early.settle(ctx, e, project, wasRunning)
 
 	endEnsure()
+	if !attachOnly {
+		personal.finish(ctx, e, opts.NoPersonal, project)
+		if opts.NoPersonal && !project.PersonalOptOut {
+			e.optOutPersonal(ctx, project)
+		}
+	}
 	tz := laptopTZ()
 	tzSaved := saveProjectTZ(ctx, e, project, tz)
 
@@ -185,9 +215,26 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	pr.End()
 	_, _ = fmt.Fprintf(e.Out, "Connected to %s (%s)\n", project.Slug, project.Class)
 	idleNote(project.ID)
+	// Another checkout of the machine (I-480): the folder's, or the one
+	// PROJECT:CHECKOUT names. --on the first time makes it.
+	target.Checkout = res.Checkout
+	if !attachOnly && opts.On != "" && res.Checkout == "" {
+		name, err := e.addCheckout(ctx, target, project)
+		if err != nil {
+			return err
+		}
+		target.Checkout = name
+	}
 
 	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow}
-	if root := gitRepoRoot(e.Cwd); root != "" && res.Remote != "" && res.Remote == project.RemoteURL {
+	// This folder's checkout on the machine: the machine's own (the same
+	// remote), or another one the folder is (I-480), not one that
+	// PROJECT:CHECKOUT named from elsewhere.
+	folderIsCheckout := res.Remote != "" && res.Remote == project.RemoteURL
+	if target.Checkout != "" {
+		folderIsCheckout = !strings.Contains(e.resolveArg(opts.ProjectArg), ":")
+	}
+	if root := gitRepoRoot(e.Cwd); root != "" && folderIsCheckout {
 		// The git carry needs the project's own checkout: its includeIf
 		// rules and identity are what the guest should get, and a run
 		// from anywhere else would carry some other repository's.
@@ -202,9 +249,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		e.addReposeRemote(ctx, project, target, nil) // I-272
 		startSessionHelper(e, helper)
 		tzSaved()
-		if l := tempLine(project, time.Now(), false); l != "" {
+		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
+		defer e.keepTokenFresh()()
 		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach, renewFor(e, project))
 	}
 
@@ -248,7 +296,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot) // I-221, I-222
+			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
 			carryDone <- b
 		}()
 		waitEnv := func() []envFile {
@@ -258,9 +306,15 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 			return b.envs
 		}
+		// Another checkout has the folder's own remote, not the machine's
+		// (I-480).
+		remoteURL := project.RemoteURL
+		if target.Checkout != "" {
+			remoteURL = res.Remote
+		}
 		summary, err := syncGuest(ctx, target, repoRoot, project.Slug, SyncOptions{
 			StashRemote: opts.StashRemote, DiscardRemote: opts.DiscardRemote, FirstOnly: !opts.Sync,
-			Exclude: e.Cfg.SyncExclude, NoRemote: project.RemoteURL == "", RemoteURL: project.RemoteURL,
+			Exclude: e.Cfg.SyncExclude, NoRemote: remoteURL == "", RemoteURL: remoteURL,
 			EnvLater: waitEnv,
 			EnvOff:   skip[envLogin],
 			Probe:    early.forProject(),
@@ -281,7 +335,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 					}
 				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
-					RemoteURL: project.RemoteURL,
+					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
 						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
@@ -321,6 +375,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	// The machine has its checkout now: point this checkout's `repose`
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
+	// The checkout's repose.nix is the machine's configuration (I-489).
+	if !skipSync && !opts.NoSync {
+		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
+	}
 
 	window := ""
 	if opts.Prompt != "" {
@@ -377,7 +435,17 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		if err := startAgentWindow(ctx, target, project.Slug, name, dir, agent, opts.Prompt, attachInstead, loadingDevShell); err != nil {
+		err := startAgentWindow(ctx, target, project.Slug, name, dir, agent, opts.Prompt, attachInstead, loadingDevShell)
+		var dialog *agentDialogError
+		if errors.As(err, &dialog) {
+			// The pre-trust did not take (I-486): the window is open
+			// on the dialog, and the prompt was not typed.
+			pr.Fail()
+			if opts.NoAttach {
+				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s window with `repose attach %s`, then type your prompt there.", dialog.Error(), name, project.Slug)
+			}
+			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the window that opens, then type your prompt there.\n", dialog.Error())
+		} else if err != nil {
 			return stepFailed("start "+agent+" in the guest", err, "")
 		}
 		pr.End()
@@ -387,7 +455,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	}
 
 	_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
-	if l := tempLine(project, time.Now(), false); l != "" {
+	if l := tempLine(project, time.Now()); l != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, l)
 	}
 	tzSaved()
@@ -395,6 +463,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		return nil
 	}
 	startSessionHelper(e, helper)
+	defer e.keepTokenFresh()()
 	return attachTmux(target, project.Slug, window, tz, helper.RepoDir, afterAttach, renewFor(e, project))
 }
 
@@ -641,11 +710,11 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), ren
 			extra = append(extra, "-o", "SendEnv=TZ")
 		}
 	}
-	remote := attachCommand(slug, window)
+	remote := attachCommand(slug, t.Checkout, window)
 	if inputProxyEnabled() {
 		args := append(append(append([]string{}, extra...), t.Args...), remote)
 		re := newReattacher(t, slug, renew)
-		re.args = append(append(append([]string{}, extra...), t.Args...), attachCommand(slug, ""))
+		re.args = append(append(append([]string{}, extra...), t.Args...), attachCommand(slug, t.Checkout, ""))
 		if handled, err := runInputProxy(args, newDropHandler(t, slug, repoDir), re); handled {
 			if after != nil {
 				after()
@@ -667,8 +736,20 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), ren
 // Every attach sets the session's working directory to the checkout
 // (`-c`), so a window opened with Ctrl-b c starts there even when the
 // session began in the home directory before the first sync (I-368).
-func attachCommand(slug, window string) string {
-	co := checkoutVar(slug)
+//
+// In another checkout (extra, I-480) an attach with no window opens the
+// checkout's own: the one of its windows ("<checkout>" or
+// "<checkout>/...") used last, else a new shell window "<checkout>"
+// there. A checkout the machine does not have is refused, exit 2.
+func attachCommand(slug, extra, window string) string {
+	co := checkoutVar(slug, extra)
+	if window == "" && extra != "" {
+		missing := fmt.Sprintf("%s has no checkout %s. `repose run --on %s` in its folder adds it.", slug, extra, slug)
+		return co + fmt.Sprintf(`[ -d "$repose_co" ] || { printf '%%s\n' %[3]s >&2; exit 2; }
+repose_w=$(tmux list-windows -t %[1]s -F '#{window_activity} #{window_name}' 2>/dev/null | while read -r a n; do case $n in %[2]s|%[2]s/*) printf '%%s %%s\n' "$a" "$n" ;; esac; done | sort -n | tail -n 1 | cut -d' ' -f2-)
+if [ -z "$repose_w" ]; then repose_w=%[2]s; tmux new-window -d -t %[1]s -n "$repose_w" -c "$repose_co"; fi
+exec tmux attach -t %[1]s:"$repose_w" -c "$repose_co"`, shQuote(slug), shQuote(windowPrefix(extra)), shQuote(missing))
+	}
 	if window == "" {
 		return co + fmt.Sprintf(`exec tmux attach -t %s -c "$repose_co"`, shQuote(slug))
 	}
@@ -719,6 +800,22 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		case <-time.After(sshRetryInterval):
 		}
 	}
+}
+
+// keepTokenFresh keeps the access token fresh while an attach runs
+// (I-491) and returns the function that stops it. A token source that
+// cannot refresh (tests, not logged in) makes it a no-op.
+func (e *Env) keepTokenFresh() func() {
+	if e.Client == nil {
+		return func() {}
+	}
+	kf, ok := e.Client.Tokens.(interface{ KeepFresh(context.Context) })
+	if !ok {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go kf.KeepFresh(ctx)
+	return cancel
 }
 
 // renewFor is a dropped attach's certificate renewal (I-469): connect's
@@ -1123,7 +1220,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if class == "" {
 		class = e.Cfg.DefaultClass
 	}
-	req := CreateProjectRequest{Name: name, RemoteURL: remote, Class: class, TZ: localTZ()}
+	req := CreateProjectRequest{Name: name, RemoteURL: remote, Class: class, TZ: localTZ(), PersonalOptOut: opts.NoPersonal}
 	if opts.Temp > 0 {
 		// Found by nothing and cached nowhere (I-351): its name is how
 		// every later command reaches it.
@@ -1365,7 +1462,7 @@ func tzFromLocaltime(path string) string {
 // It returns the machine's checkout name, which the markers' ssh reads
 // on the way (I-368), or nil when that ssh failed.
 func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Project, repoDir, tz string) *string {
-	out, err := runSSH(ctx, t, checkoutVar(project.Slug)+checkoutReport+markerScript()+credsMissingScript(), nil)
+	out, err := runSSH(ctx, t, checkoutVar(project.Slug, t.Checkout)+checkoutReport+markerScript()+credsMissingScript(), nil)
 	if err != nil {
 		e.warn("Could not copy your tool logins to the guest (%s).", oneLine(err.Error()))
 		return nil
@@ -1378,7 +1475,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 	if strings.Contains(string(out), "#credsmissing") {
 		delete(markers, credsMarker)
 	}
-	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir)}
+	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {

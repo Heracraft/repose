@@ -250,10 +250,11 @@ func TestDocsNameEveryCommandAndFlag(t *testing.T) {
 				missing = append(missing, path+" -"+f.Shorthand+": short flag not documented with its command")
 			}
 		})
-		// A parent's persistent flags other than root's (none today) would
-		// be checked on the parent.
+		// A parent's persistent flags other than root's (`repose config
+		// --global`, DECISIONS I-490) are checked on the parent.
 		if c != root {
 			c.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+				flagOf["--"+f.Name] = true
 				if !allTokens["--"+f.Name] {
 					missing = append(missing, path+" --"+f.Name+": persistent flag not documented")
 				}

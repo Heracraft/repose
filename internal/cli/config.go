@@ -174,6 +174,12 @@ func deleteCredentials(dir string) error {
 type ProjectsCache struct {
 	ByRemote map[string]CachedProject `json:"-"` // top-level keys, merged into MarshalJSON
 	ByDir    map[string]string        `json:"by_dir"`
+	// Checkouts maps a laptop folder `repose run --on` added to a machine
+	// to that machine and the checkout's name there (DECISIONS I-480).
+	// Such a folder is never in ByDir: a CLI from before I-480 does not
+	// read this key, finds nothing for the folder, and makes it a machine
+	// of its own instead of syncing it over the machine's checkout.
+	Checkouts map[string]CachedCheckout `json:"checkouts,omitempty"`
 
 	// base is the file as this process loaded it. A save applies only what
 	// this process changed since (added, updated, removed) to the file as it
@@ -181,6 +187,12 @@ type ProjectsCache struct {
 	// different directories merge instead of the last writer erasing the
 	// others' entries.
 	base *ProjectsCache
+}
+
+// CachedCheckout is one entry of ProjectsCache.Checkouts.
+type CachedCheckout struct {
+	ProjectID string `json:"project_id"`
+	Name      string `json:"checkout"`
 }
 
 // CachedProject is one entry of ProjectsCache.ByRemote.
@@ -191,13 +203,16 @@ type CachedProject struct {
 }
 
 func newProjectsCache() ProjectsCache {
-	return ProjectsCache{ByRemote: map[string]CachedProject{}, ByDir: map[string]string{}}
+	return ProjectsCache{ByRemote: map[string]CachedProject{}, ByDir: map[string]string{}, Checkouts: map[string]CachedCheckout{}}
 }
 
 func projectsPath(dir string) string { return filepath.Join(dir, "projects.json") }
 
 func (c ProjectsCache) MarshalJSON() ([]byte, error) {
 	m := map[string]any{"by_dir": c.ByDir}
+	if len(c.Checkouts) > 0 {
+		m["checkouts"] = c.Checkouts
+	}
 	for k, v := range c.ByRemote {
 		m[k] = v
 	}
@@ -214,6 +229,16 @@ func (c *ProjectsCache) UnmarshalJSON(b []byte) error {
 		if k == "by_dir" {
 			if err := json.Unmarshal(v, &c.ByDir); err != nil {
 				return err
+			}
+			continue
+		}
+		if k == "checkouts" {
+			// A CLI from before I-480 reads this key as a remote and writes
+			// it back as one ({"project_id": "", ...}); that, or anything
+			// else unreadable, is no checkouts rather than an unreadable
+			// cache.
+			if err := json.Unmarshal(v, &c.Checkouts); err != nil || c.Checkouts == nil {
+				c.Checkouts = map[string]CachedCheckout{}
 			}
 			continue
 		}
@@ -251,6 +276,9 @@ func (c ProjectsCache) clone() ProjectsCache {
 	for k, v := range c.ByDir {
 		out.ByDir[k] = v
 	}
+	for k, v := range c.Checkouts {
+		out.Checkouts[k] = v
+	}
 	return out
 }
 
@@ -278,6 +306,16 @@ func (c ProjectsCache) mergeInto(disk ProjectsCache) ProjectsCache {
 	for k := range base.ByDir {
 		if _, ok := c.ByDir[k]; !ok {
 			delete(disk.ByDir, k)
+		}
+	}
+	for k, v := range c.Checkouts {
+		if old, ok := base.Checkouts[k]; !ok || old != v {
+			disk.Checkouts[k] = v
+		}
+	}
+	for k := range base.Checkouts {
+		if _, ok := c.Checkouts[k]; !ok {
+			delete(disk.Checkouts, k)
 		}
 	}
 	return disk

@@ -116,10 +116,7 @@
 {#if destroyed.length > 0}
 	<section class="mt-16" aria-labelledby="recently-destroyed">
 		<h2 id="recently-destroyed" class="text-xl font-semibold">Recently destroyed</h2>
-		<p class="mt-1 text-sm text-ink-muted">
-			Each keeps its last snapshot for 30 days. Restore it here or with
-			<code>repose restore NAME</code>.
-		</p>
+		<p class="mt-1 text-sm text-ink-muted">Each keeps its last snapshot for 30 days.</p>
 		<ul class="mt-4 border-t border-rule-strong">
 			{#each visible as d (d.id)}
 				<li class="row" data-testid="destroyed-row">

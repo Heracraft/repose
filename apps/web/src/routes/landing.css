@@ -209,6 +209,15 @@
 .hero-grid {
 	padding-block: clamp(2.75rem, 5.5vw, 4.5rem) clamp(2.5rem, 5vw, 4rem);
 }
+/* Who the page is for, above the headline: the page's label style. */
+.eyebrow {
+	margin-bottom: 1.25rem;
+	font-family: var(--font-mono);
+	font-size: 0.6875rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
 .hero-h {
 	font-family: var(--font-display);
 	font-size: clamp(2.75rem, 6.6vw, 5.25rem);
@@ -217,7 +226,7 @@
 	letter-spacing: -0.025em;
 	text-wrap: balance;
 	/* A word wider than the screen breaks rather than pushing the page
-	   sideways: "permissions" does at 320 under WCAG 1.4.12's letter
+	   sideways: "environment," does at 320 under WCAG 1.4.12's letter
 	   spacing. At the page's own spacing nothing breaks. */
 	overflow-wrap: break-word;
 	color: var(--ink);
@@ -225,7 +234,7 @@
 .hero-h .line {
 	display: block;
 }
-/* One thick blue bar under "full permissions", drawn in on load. Inline,
+/* One thick blue bar under "replicated", drawn in on load. Inline,
    so each part keeps its bar if it wraps on a phone. */
 .hero-h .bar {
 	padding-bottom: 0.08em;

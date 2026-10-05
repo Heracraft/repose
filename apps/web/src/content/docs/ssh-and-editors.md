@@ -7,7 +7,7 @@ order: 10.5
 
 ## Every project is an SSH host
 
-Once you've run `repose login`, each of your projects is an SSH host called `<project>.repose`. Anything that uses your `ssh` can reach it: projects you created on another laptop, and projects you've never run from this one, included. You don't need a `repose` command first.
+Once you've run `repose login`, each of your projects is an SSH host called `<project>.repose`. Anything that uses your `ssh` can reach it: projects you created on another laptop, and projects you've never run from this one, included.
 
 ```
 ssh todo-app.repose
@@ -26,7 +26,7 @@ git clone todo-app.repose:todo-app todo-app-from-machine
 git ls-remote todo-app.repose:todo-app
 ```
 
-In a checkout you've used `repose run` in, you don't need these: the `repose` remote already points at the machine, and `git fetch repose` brings the agent's commits ([Getting work back](/docs/sync#getting-work-back)). To run one command, `repose exec npm test` is shorter than `ssh` with a `cd` ([See what's running, run one command](/docs/run-and-attach#see-whats-running-run-one-command)).
+In a checkout you've used `repose run` in, you don't need these: the `repose` remote already points at the machine, and `git fetch repose` brings the agent's commits ([Getting work back](/docs/sync#getting-work-back)).
 
 ## VS Code and Cursor
 
@@ -46,7 +46,7 @@ To connect by hand, install the **Remote - SSH** extension (Cursor has its own),
 code --remote ssh-remote+todo-app.repose /home/dev/todo-app
 ```
 
-No VS Code settings are needed. If `code` isn't found on a Mac, run **Shell Command: Install 'code' command in PATH** in VS Code; `repose code` also finds VS Code, Cursor and Zed in `/Applications` and `~/Applications` without it.
+If `code` isn't found on a Mac, run **Shell Command: Install 'code' command in PATH** in VS Code; `repose code` also finds VS Code, Cursor and Zed in `/Applications` and `~/Applications` without it.
 
 ## Zed
 
@@ -67,11 +67,11 @@ Gateway uses its own SSH client instead of your `ssh`, so it can't renew the cer
 - When both are in place, it returns at once. It reads a few files and makes no network call.
 - When the certificate has less than 12 hours left (they last 24 hours) or the project is new to this laptop, it gets a new certificate and writes the project's entry, then ssh goes on with them.
 
-A connection ends when the certificate it logged in with expires. Commands share one connection per machine; when a new certificate is issued, that shared connection stops taking new commands (the ones already on it carry on), and the next command opens a fresh one with the new certificate. So an `ssh` you start keeps its connection for at least 12 hours. Editors reconnect on their own, and the reconnect renews the certificate.
+A connection ends when the certificate it logged in with expires, so an `ssh` you start keeps its connection for at least 12 hours ([SSH connections](/docs/limits#ssh-connections)). Editors reconnect on their own, and the reconnect renews the certificate.
 
 It never asks you anything, so an editor can't hang on it. The entries themselves are in `~/.ssh/repose/hosts`, one per project.
 
-Connecting never starts a stopped machine. An editor that reconnects in the background would otherwise start a machine you stopped on purpose. `repose start todo-app` starts it, and so does `repose run` in its checkout.
+Connecting never starts a stopped machine. `repose start todo-app` starts it, and so does `repose run` in its checkout.
 
 ## When it doesn't connect
 
@@ -89,7 +89,7 @@ Connecting never starts a stopped machine. An editor that reconnects in the back
 
 Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refused. Nothing running there, an agent or a package's install script, can use your keys, even while you're attached.
 
-Pushes to GitHub still work. When your `gh` login is copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. For other git hosts, see [Other git hosts](/docs/secrets#other-git-hosts).
+With your `gh` login copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. For other git hosts, see [Other git hosts](/docs/secrets#other-git-hosts).
 
 ## Windows
 

@@ -187,10 +187,16 @@ const drainFloor = 2 * time.Second
 
 // tlsListener is the listener for a TLS side server, or false (logged)
 // when its certificate is not there yet: the relay runs before workstream
-// 11 has placed the certs.
+// 11 has placed the certs. The certificate is loaded before the port is
+// opened: a port open with nothing serving it holds clients until they
+// time out, where a closed one refuses them at once (I-479).
 func tlsListener(ls *listenerSet, log *slog.Logger, name, addr, certFile, keyFile string) (net.Listener, bool) {
 	if certFile == "" || keyFile == "" {
 		log.Warn("listener disabled: no certificate", "event", "listen", "listener", name)
+		return nil, false
+	}
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		log.Warn("listener disabled: certificate does not load", "event", "listen", "listener", name, "err", err.Error())
 		return nil, false
 	}
 	ln, err := ls.listen(name, addr)
@@ -248,6 +254,9 @@ func serveHTTP(ctx context.Context, log *slog.Logger, name string, ln net.Listen
 		err = srv.Serve(ln)
 	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// ServeTLS returns before serving when the certificate fails, and
+		// leaves the listener open; close it so the port refuses.
+		_ = ln.Close()
 		log.Error("listener stopped", "event", "route_fail", "reason", name, "err", err.Error())
 	}
 }

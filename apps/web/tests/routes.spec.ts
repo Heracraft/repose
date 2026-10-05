@@ -28,8 +28,9 @@ test('/projects/[id] renders the project detail cards', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
 	await expect(page.getByText('Connect')).toBeVisible();
 	await expect(page.getByText('Signals')).toBeVisible();
-	await expect(page.getByText('Plan', { exact: true })).toBeVisible();
-	await expect(page.getByText('Disk')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Machine' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Usage' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Disk' })).toBeVisible();
 	await expect(page.getByText('Events')).toBeVisible();
 	await expect(page.getByText('Snapshots', { exact: true })).toBeVisible();
 	await expect(page.getByText('Last build')).toBeVisible();

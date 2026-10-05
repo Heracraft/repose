@@ -74,7 +74,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "xl" || got.State != "stopped" {
 			t.Fatalf("after: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "from large to xl: 8 vCPU, 16 GB memory; needs the Plus plan") || !strings.Contains(out.String(), "`repose start todo-app`") {
+		if !strings.Contains(out.String(), "from large to xl: 8 vCPU, 16 GB memory; needs the Plus plan. It starts at the new size.\n") || strings.Contains(out.String(), "`repose ") {
 			t.Fatalf("output %q", out.String())
 		}
 	})

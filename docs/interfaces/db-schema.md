@@ -36,6 +36,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               tz text, host_unreachable bool, last_error text,
               started_at, stopped_at, destroyed_at,
               expires_at null,  -- a temporary project's end (0010, I-347)
+              personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null)
 
@@ -45,7 +46,12 @@ config_revisions (id pk, project_id fk, fragment text, menu jsonb null,
               base_version text, status text,  -- building|built|applied|failed
               system_closure text null, closure_bytes bigint null,
               kernel_changed bool, reboot_required bool,
-              error text null, fragment_line int null, built_at, applied_at)
+              error text null, fragment_line int null, built_at, applied_at,
+              personal text,  -- the machine.nix text it is built with, '' for none (0015, I-490)
+              personal_revision_id fk null, personal_opt_out bool, personal_line int null)
+
+personal_revisions (id pk, user_id fk, fragment text,  -- one save of an account's machine.nix (0015, I-490);
+              source text, created_at)                  -- the newest row is current, '' means none; source cli|dashboard
 
 ops          (id pk, project_id fk null, kind text, state text,  -- pending|running|done|error
               step int, command_id uuid unique, host_id fk,
@@ -86,6 +92,7 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
               cpu_ns bigint, mem_rss bigint, net_tx bigint, net_rx bigint,
               disk_alloc bigint, disk_used bigint, ssh_sessions int,
               tmux_clients int, agents jsonb, docker_containers int, guestd_ok bool,
+              cpu_pressure_us bigint, host_cpu_wait_us bigint, mem_used bigint,  -- 0014, I-493; 0 before it
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
@@ -190,7 +197,9 @@ Rules:
 - No `delete` of `projects` rows; `destroyed_at` is set and the row stays for
   usage history. `users.deleted_at` likewise.
 - `meter_samples` and `proc_samples` are append-only and never joined to
-  from request paths; the hourly rollup reads them once. Both are partitioned
+  from request paths; the hourly rollup reads them once. The one request
+  path that reads them is `GET /projects/:id/samples` (I-492): one
+  project, at most seven days, a range scan on each primary key. Both are partitioned
   by month: the api creates the current and next month's partitions at start
   and in its daily job, which also drops the ones past retention and logs
   `partition_drop_fail` with `repose_api_partition_drop_fail_total` when it

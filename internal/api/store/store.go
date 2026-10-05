@@ -85,9 +85,12 @@ type Project struct {
 	// ExpiresAt is set on a temporary project (0010, DECISIONS I-347):
 	// the reaper destroys it, with no snapshot, once this has passed.
 	ExpiresAt *time.Time `db:"expires_at"`
+	// PersonalOptOut keeps the account's personal layer off this
+	// project's machine (0015, DECISIONS I-490).
+	PersonalOptOut bool `db:"personal_opt_out"`
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out`
 
 // Host is a hosts row.
 type Host struct {
@@ -168,9 +171,65 @@ type Revision struct {
 	AppliedAt      *time.Time     `db:"applied_at"`
 	CreatedAt      time.Time      `db:"created_at"`
 	UpdatedAt      time.Time      `db:"updated_at"`
+	// The personal layer this revision is built with (0015, DECISIONS
+	// I-490): its text ('' for none), the account revision it came from,
+	// whether the project had opted out, and an error's line in it.
+	Personal           string     `db:"personal"`
+	PersonalRevisionID *uuid.UUID `db:"personal_revision_id"`
+	PersonalOptOut     bool       `db:"personal_opt_out"`
+	PersonalLine       *int       `db:"personal_line"`
 }
 
-const revisionCols = `id, project_id, fragment, menu, base_version, status, system_closure, closure_bytes, kernel_changed, reboot_required, error, fragment_line, built_at, applied_at, created_at, updated_at`
+const revisionCols = `id, project_id, fragment, menu, base_version, status, system_closure, closure_bytes, kernel_changed, reboot_required, error, fragment_line, built_at, applied_at, created_at, updated_at, personal, personal_revision_id, personal_opt_out, personal_line`
+
+// PersonalRevision is a personal_revisions row: one save of an account's
+// machine.nix (DECISIONS I-490).
+type PersonalRevision struct {
+	ID        uuid.UUID `db:"id"`
+	UserID    uuid.UUID `db:"user_id"`
+	Fragment  string    `db:"fragment"`
+	Source    string    `db:"source"`
+	CreatedAt time.Time `db:"created_at"`
+}
+
+const personalCols = `id, user_id, fragment, source, created_at`
+
+// CurrentPersonal is the account's newest personal revision, or
+// db.ErrNotFound when it has never saved one.
+func CurrentPersonal(ctx context.Context, q Querier, userID uuid.UUID) (*PersonalRevision, error) {
+	return one[PersonalRevision](ctx, q, "select "+personalCols+" from personal_revisions where user_id = $1 order by created_at desc, id desc limit 1", userID)
+}
+
+// ListPersonal lists an account's personal revisions, newest first.
+func ListPersonal(ctx context.Context, q Querier, userID uuid.UUID, limit int) ([]PersonalRevision, error) {
+	return many[PersonalRevision](ctx, q, "select "+personalCols+" from personal_revisions where user_id = $1 order by created_at desc, id desc limit $2", userID, limit)
+}
+
+// PersonalLayer is what a new project revision records about the
+// personal layer.
+type PersonalLayer struct {
+	Text       string
+	RevisionID *uuid.UUID
+	OptOut     bool
+}
+
+// PersonalFor is the personal layer a new revision of p gets now: the
+// account's current text, or none when p has opted out or the account
+// has none.
+func PersonalFor(ctx context.Context, q Querier, p *Project) (PersonalLayer, error) {
+	if p.PersonalOptOut {
+		return PersonalLayer{OptOut: true}, nil
+	}
+	cur, err := CurrentPersonal(ctx, q, p.UserID)
+	if errors.Is(err, db.ErrNotFound) {
+		return PersonalLayer{}, nil
+	}
+	if err != nil {
+		return PersonalLayer{}, err
+	}
+	id := cur.ID
+	return PersonalLayer{Text: cur.Fragment, RevisionID: &id}, nil
+}
 
 // Snapshot is a snapshots row.
 type Snapshot struct {

@@ -122,6 +122,9 @@ create table if not exists meter_samples (
   agents jsonb,
   docker_containers int,
   guestd_ok bool,
+  cpu_pressure_us bigint,
+  host_cpu_wait_us bigint,
+  mem_used bigint,
   primary key (project_id, ts)
 ) partition by range (ts);
 

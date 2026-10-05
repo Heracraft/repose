@@ -13,6 +13,11 @@ writeShellApplication {
     set +e
     sock="''${REPOSE_HOOKS_SOCKET:-/run/repose/hooks.sock}"
     agent="''${REPOSE_HOOK_AGENT:-claude}"
+    # --agent NAME, as the Go binary takes it (the opencode plugin passes it).
+    if [ "''${1:-}" = "--agent" ] && [ "$#" -ge 2 ]; then
+      agent="$2"
+      shift 2
+    fi
 
     if [ "$#" -ge 1 ] && [ -n "$1" ]; then
       payload="$1"

@@ -9,7 +9,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Logging in and connecting
 
-**``Not logged in. Run `repose login`.``** Your login expired or you logged out. Run `repose login`.
+**``Not logged in. Run `repose login`.``** Your login expired or you logged out.
 
 **`No repose project for github.com/you/app`** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 
@@ -24,6 +24,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 **Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there. `run` and `attach` do this for you.
 
 **`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. The machine is still running. `run` and `attach` attach again as soon as it answers.
+
+**`attach` takes more than a few seconds to come back.** After the laptop slept or changed networks, `attach` needs up to 2 seconds to find that the old connection is dead, then a normal connect. If it takes longer, run `REPOSE_TIMING=1 repose attach`; it prints how long each step took.
 
 **``repose: could not reach todo-app for 2 minutes. `repose attach todo-app` attaches again once it answers.``** The connection didn't come back within 2 minutes. Check your network, then run `repose attach todo-app`. `repose status todo-app` shows whether the machine is running.
 
@@ -49,6 +51,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`The machine has uncommitted changes your laptop doesn't have`.** Something on the machine, usually an agent, changed files since your last sync, and your laptop has new work that would write over them. `repose attach` to look, or run `repose sync --stash-remote` to keep them in `git stash` or `repose sync --discard-remote` to drop them. `repose run` never syncs over a machine that already has your checkout, so it attaches either way. See [Sync](/docs/sync#when-the-machine-has-changes-of-its-own).
 
+**The same message names only `flake.lock`.** The repository has an `.envrc` with `use flake` and no `flake.lock`, so the machine wrote one the first time it loaded the dev shell. Commit one: [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix) says how, with or without Nix on your laptop. Until then, `repose sync --discard-remote` is safe; the next load writes the file again.
+
 **`git fetch repose` fails.** With ``todo-app is stopped; run `repose start todo-app` ``, the machine is stopped: start it and fetch again. With `Permission denied`, see the `ssh todo-app.repose` entry above; anything that works for `ssh` works for the fetch. With `does not appear to be a git repository`, the machine has no checkout yet: `repose run` makes one. If `git remote` doesn't list `repose` at all, run `repose run` or `repose attach` in the checkout, or see [Getting work back](/docs/sync#getting-work-back) for a remote of that name you already had.
 
 **`git push repose` fails with `this remote is fetch-only`.** The remote only brings work back. `repose sync` sends your work to the machine.
@@ -62,6 +66,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 ## On the machine
 
 **A command isn't found.** The machine prints the nixpkgs package that has it and the two ways to add it. If it says the tool `is still being installed`, it's one of your laptop's tools arriving in the background; try again shortly.
+
+**A tool from the project's `flake.nix` is missing.** In an agent's window or `repose exec`, the dev shell failed to load, and the error is printed above the agent's first screen or the command's output: an untracked `flake.nix`, or a dev shell only for macOS, are the usual causes. In your own shell, the dev shell loads when you `cd` into the checkout; if you pressed Ctrl-C while it loaded, leave the folder and come back. An `.envrc` loads only once it is allowed (`direnv allow`). See [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix).
 
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 
@@ -83,6 +89,10 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 - Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_INPUT_PROXY=0` and Windows paste the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
+
+**`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place. Until then, start it with `codex --no-daemon`.
+
+**`bundled bubblewrap digest mismatch` when Codex runs a command.** Base 2026.10.05 ships Codex with a sandbox helper it refuses. The next platform update fixes it in place. Until then, run `nix profile add nixpkgs#bubblewrap` on the machine; Codex uses that one instead.
 
 **An agent seems stuck.** Attach and look; it's usually waiting on a permission prompt. See [Let it run without asking](/docs/agents#let-it-run-without-asking).
 

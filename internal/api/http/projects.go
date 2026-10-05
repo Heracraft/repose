@@ -113,6 +113,7 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		"created_at": p.CreatedAt, "started_at": p.StartedAt, "cost_today_cents": 0, "cost_month_cents": 0,
 		"running_seconds_today": x.runningToday, "running_seconds_month": x.runningMonth,
 		"last_snapshot_at": x.lastSnapshot, "host_unreachable": p.HostUnreachable, "last_error": p.LastError, "tz": p.TZ,
+		"personal_opt_out": p.PersonalOptOut,
 	}
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
@@ -212,6 +213,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		Agent     *string `json:"agent_default"`
 		// ExpiresIn makes the project temporary (DECISIONS I-347).
 		ExpiresIn *int64 `json:"expires_in_s"`
+		// PersonalOptOut keeps the account's machine.nix off this
+		// machine (repose run --no-personal, DECISIONS I-490).
+		PersonalOptOut bool `json:"personal_opt_out"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -280,8 +284,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt)
+		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -292,7 +296,16 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
-		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, DefaultFragment); err != nil {
+		// The first revision carries the account's machine.nix (I-490);
+		// a create the host has no closure for comes up on the project
+		// layer first and applies this one right after (deferPersonal).
+		layer := store.PersonalLayer{OptOut: body.PersonalOptOut}
+		if !body.PersonalOptOut {
+			if layer, err = store.PersonalFor(ctx, tx, &store.Project{UserID: u.ID}); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, 'building', $4, $5, $6)", rid, pid, DefaultFragment, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
 		if opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}, false); err != nil {
@@ -349,6 +362,9 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		// project a normal one (DECISIONS I-347). Raw, so an absent field
 		// and an explicit null differ.
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// PersonalOptOut turns the account's machine.nix off (true) or
+		// back on (false) for this machine, with a rebuild (I-490).
+		PersonalOptOut *bool `json:"personal_opt_out"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -396,6 +412,11 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	if body.TZ != nil {
 		if _, err := s.d.Pool.Exec(ctx, "update projects set tz = $2 where id = $1", p.ID, *body.TZ); err != nil {
+			return err
+		}
+	}
+	if body.PersonalOptOut != nil {
+		if err := s.setPersonalOptOut(ctx, p, *body.PersonalOptOut); err != nil {
 			return err
 		}
 	}
@@ -571,10 +592,24 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 	if restart {
 		n.Phases, n.Params = ops.PlanRestart(pending), ops.RestartParams()
 	}
-	id, err := s.enqueue(r.Context(), n, false)
+	var id uuid.UUID
+	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
+		// A personal change queued a build for this stopped machine
+		// (I-490): the start goes first, on what the machine has, and the
+		// build follows it and switches in place.
+		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(r.Context(), tx, pid, "start")
+		if err != nil {
+			return err
+		}
+		if id, err = s.d.Engine.Enqueue(r.Context(), tx, n, ok); err != nil {
+			return err
+		}
+		return s.d.Engine.RequeuePersonalBuilds(r.Context(), tx, pid, yielded)
+	})
 	if err != nil {
 		return err
 	}
+	s.d.Engine.Kick()
 	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "restart": restart})
 	return nil
 }

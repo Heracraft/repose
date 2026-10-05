@@ -360,6 +360,8 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ           string `json:"tz"`
 		AgentDefault string `json:"agent_default"`
 		ExpiresIn    *int64 `json:"expires_in_s"`
+		// PersonalOptOut keeps machine.nix off (I-490).
+		PersonalOptOut bool `json:"personal_opt_out"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -391,6 +393,12 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.AgentDefault != "" {
 		p.AgentDefault = body.AgentDefault
+	}
+	p.PersonalOptOut = body.PersonalOptOut
+	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
+		if rev := p.revision(p.ConfigRevisionID); rev != nil {
+			rev.Personal, rev.personalText = true, cur.Fragment
+		}
 	}
 	if f.opts.CreateDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
@@ -435,6 +443,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ              *string `json:"tz"`
 		// Only null: `repose keep` (DECISIONS I-347).
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// machine.nix off or back on (I-490).
+		PersonalOptOut *bool `json:"personal_opt_out"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -470,6 +480,9 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.HoldBaseUpdates != nil {
 		p.HoldBaseUpdates = *body.HoldBaseUpdates
+	}
+	if body.PersonalOptOut != nil {
+		f.setPersonalOptOut(userFrom(r), p, *body.PersonalOptOut)
 	}
 	if body.AgentDefault != nil {
 		if *body.AgentDefault == "" {
@@ -805,6 +818,53 @@ func (f *Fake) projectRoute(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
+// projectSamples is GET /projects/:id/samples (I-492): a deterministic
+// hour of a busy machine while it runs, so the dashboard's charts have
+// something to draw against the fake; none while it does not.
+func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	steps := map[string]int{"1h": 60, "24h": 300, "7d": 3600}
+	win := r.URL.Query().Get("window")
+	if win == "" {
+		win = "1h"
+	}
+	step, ok := steps[win]
+	if !ok {
+		return errf("invalid", "window must be 1h, 24h or 7d")
+	}
+	vcpus := map[string]int{"small": 2, "large": 4, "xl": 8}[p.Class]
+	mem := map[string]int64{"small": 4 << 30, "large": 8 << 30, "xl": 16 << 30}[p.Class]
+	points := []map[string]any{}
+	procs := []map[string]any{}
+	if p.State == "running" {
+		end := time.Now().UTC().Truncate(time.Duration(step) * time.Second)
+		for i := 59; i >= 0; i-- {
+			busy := 0.15
+			if i >= 10 && i < 25 {
+				busy = 1 // a build that held every core for a quarter of the window
+			}
+			var pressure any = 0.01
+			if busy == 1 {
+				pressure = 0.62
+			}
+			points = append(points, map[string]any{
+				"ts": end.Add(-time.Duration(i*step) * time.Second), "cpu": busy, "mem_used_bytes": mem * 45 / 100,
+				"cpu_pressure": pressure, "host_cpu_wait": 0.02, "disk_used_bytes": int64(6200) << 20,
+			})
+		}
+		procs = []map[string]any{
+			{"comm": "cc1plus", "cpu_s": 2710.4, "rss_max_bytes": int64(410) << 20},
+			{"comm": "node", "cpu_s": 640.2, "rss_max_bytes": int64(1200) << 20},
+			{"comm": "claude", "cpu_s": 95.0, "rss_max_bytes": int64(380) << 20},
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"window": win, "step_s": step, "vcpus": vcpus, "memory_bytes": mem, "points": points, "procs": procs})
+	return nil
+}
+
 // Config.
 
 func (p *project) revision(id string) *Revision {
@@ -825,7 +885,8 @@ func (f *Fake) getConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	if rev == nil {
 		return errf("internal", "current revision missing")
 	}
-	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion}
+	out := map[string]any{"revision_id": rev.ID, "fragment": rev.Fragment, "base_version": rev.BaseVersion,
+		"personal": rev.personalText, "personal_revision_id": nil, "personal_opt_out": p.PersonalOptOut}
 	if len(rev.Menu) > 0 {
 		out["menu"] = rev.Menu
 	}

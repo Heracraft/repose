@@ -59,6 +59,16 @@ var locRe = regexp.MustCompile(`fragment\.nix:(\d+):(\d+)`)
 // Check validates size and syntax. A syntax error comes back as
 // *ParseError with the line; ErrParserUnavailable when Nix is missing.
 func (p *Parser) Check(ctx context.Context, fragment string) error {
+	return p.CheckNamed(ctx, fragment, "fragment.nix")
+}
+
+// PersonalName is the file name a personal layer's errors carry
+// (DECISIONS I-490): machine.nix, the name users know it by.
+const PersonalName = "machine.nix"
+
+// CheckNamed is Check with the file written, and every location
+// reported, as name ("fragment.nix" or PersonalName).
+func (p *Parser) CheckNamed(ctx context.Context, fragment, name string) error {
 	if len(fragment) > MaxFragmentBytes {
 		return ErrTooLarge
 	}
@@ -70,7 +80,7 @@ func (p *Parser) Check(ctx context.Context, fragment string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }() // temp dir; nothing to report
-	path := filepath.Join(dir, "fragment.nix")
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(fragment), 0o600); err != nil {
 		return err
 	}
@@ -85,6 +95,12 @@ func (p *Parser) Check(ctx context.Context, fragment string) error {
 		msg := strings.TrimSpace(stderr.String())
 		if ctx.Err() != nil {
 			return &ParseError{Message: "parse check timed out"}
+		}
+		if name != "fragment.nix" {
+			// One code path for the summary: the temporary file's name
+			// becomes fragment.nix, is summarised, and comes back as name.
+			msg = strings.ReplaceAll(msg, name, "fragment.nix")
+			return &ParseError{Message: strings.ReplaceAll(summarise(msg), "fragment.nix", name), Line: lineOf(msg)}
 		}
 		return &ParseError{Message: summarise(msg), Line: lineOf(msg)}
 	}

@@ -13,7 +13,7 @@ Value for STRIPE_SECRET_KEY: ********************************
 Set STRIPE_SECRET_KEY (pushed to running guest)
 ```
 
-Each character you type or paste shows as `*`, so you can see the value arrived without it appearing on screen. Backspace and Ctrl-U work as usual.
+Each character you type or paste shows as `*`.
 
 Or read the value from a file or from your laptop's environment:
 
@@ -30,7 +30,7 @@ Set 3 on todo-app from .env.local (pushed to the running machine):
 DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 ```
 
-Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it without the values touching your disk. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
+Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 
@@ -59,11 +59,11 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 | Codex CLI  | `~/.codex/auth.json`                                                          |
 | opencode   | `~/.local/share/opencode/auth.json`                                           |
 
-Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. An agent can push to an SSH remote without any change to it. If you log in to `gh` on the machine instead, run `gh auth setup-git` there once.
+Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, run `gh auth setup-git` there once.
 
 Never copied: SSH private keys, Claude Code's login, Gemini's OAuth login, the Vercel CLI's login. See [Agents](/docs/agents#log-in) for the agents' logins.
 
-The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project, not just this one. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, either log in there:
+The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, either log in there:
 
 ```
 vercel login
@@ -99,9 +99,9 @@ repose secrets choose --off gh env
 repose secrets choose --on env
 ```
 
-The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip = [...]` under `[logins]`, and applies to every project. `--project NAME` gives one project its own list, saved under `[projects.NAME.logins]`, and `repose secrets choose --reset --project NAME` sends it back to the shared list. repose never sees the list: like the logins themselves, it stays between your laptop and the machine.
+The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip = [...]` under `[logins]`, and applies to every project. `--project NAME` gives one project its own list, saved under `[projects.NAME.logins]`, and `repose secrets choose --reset --project NAME` sends it back to the shared list. repose never sees the list.
 
-The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. Snapshots taken before then still hold the copy; to be sure it is gone, revoke that token where you created it.
+The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. Snapshots taken before then still hold the copy; revoke that token where you created it.
 
 Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a token as described below.
 
@@ -123,7 +123,7 @@ git config --global credential.https://gitlab.com.helper \
 git config --global url.https://gitlab.com/.insteadOf git@gitlab.com:
 ```
 
-Bitbucket takes your username and an app password or access token in the same place. The token is in memory on the machine only, like every secret.
+Bitbucket takes your username and an app password or access token in the same place.
 
 **A deploy key made on the machine.** On the machine:
 

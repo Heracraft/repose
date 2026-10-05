@@ -114,6 +114,7 @@ type Error struct {
 	Code         string
 	Message      string
 	FragmentLine int32
+	PersonalLine int32 // the line in personal.nix (machine.nix), DECISIONS I-490
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -317,6 +318,10 @@ type Deps struct {
 	MemInfo func() (total, avail uint64, err error)
 	// Load1 returns the one-minute load average.
 	Load1 func() float64
+	// CgroupCPUPressure returns the cpu.pressure "some" total, in
+	// microseconds, of a cgroup named as systemd's ControlGroup property
+	// names it. Nil leaves the host CPU wait at zero (tests).
+	CgroupCPUPressure func(cgroup string) (uint64, error)
 	// StoreStat returns the host store filesystem's size and used bytes.
 	StoreStat func() (total, used uint64, err error)
 	// ConsoleStart begins console capture for a guest dir; the returned
@@ -1096,5 +1101,5 @@ func payloadOrErr(id string, err *Error, set func(*hostdv1.Result)) *hostdv1.Res
 }
 
 func errResult(id string, e *Error) *hostdv1.Result {
-	return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: e.Code, Message: e.Message, FragmentLine: e.FragmentLine}}
+	return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: e.Code, Message: e.Message, FragmentLine: e.FragmentLine, PersonalLine: e.PersonalLine}}
 }

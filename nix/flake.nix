@@ -72,6 +72,7 @@
         guestBase = self.nixosModules.guestBase;
         inherit guestd reposeHook;
         nixpkgsSource = nixpkgs.outPath;
+        homeManagerModule = home-manager.nixosModules.home-manager;
       };
 
       hostModules = [
@@ -136,11 +137,19 @@
       };
 
       # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md):
-      # the base plus the fragment at "${fragment}/fragment.nix" applied to
+      # the base plus the fragment at "${fragment}/fragment.nix" (and the
+      # personal layer at "${fragment}/personal.nix" when present) applied to
       # dev. `config.system.build.toplevel` is the system closure; the class
       # is not baked in (DECISIONS I-34, I-43).
       guestSystem = (composeGuest {
         fragmentPath = "${fragment}/fragment.nix";
+        # The account's personal layer, when hostd wrote one beside the
+        # fragment (Build.personal, DECISIONS I-490). hostd looks for the
+        # string personal.nix in this file to know a base reads it.
+        personalPath =
+          if builtins.pathExists "${fragment}/personal.nix"
+          then "${fragment}/personal.nix"
+          else null;
         inherit guestd;
         # The label hostd writes next to the fragment (Build.base_version,
         # DECISIONS I-118): under `--override-input fragment` this flake
@@ -193,6 +202,13 @@
             exit 1
           fi
           echo "$size" > $out
+        '';
+        # A base switch must never restart the tmux session unit: that ends
+        # every agent on a running guest (DECISIONS I-496).
+        guest-session-survives-switch = pkgs.runCommand "guest-session-survives-switch" { } ''
+          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/user/repose-tmux-session.service
+          grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
+          touch $out
         '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a

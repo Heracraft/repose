@@ -3,6 +3,8 @@ package sample
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -127,5 +129,73 @@ func TestSampleIsUnder20Milliseconds(t *testing.T) {
 	}
 	if avg > budget {
 		t.Fatalf("a sample took %v, over the %v budget (20 ms in docs/workstreams/04-guestd.md, 5x under -race)", avg, budget)
+	}
+}
+
+func TestSampleCarriesCPUPressure(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{{pid: 100, ppid: 1, comm: "node", ticks: 5}})
+	run.Match["list-windows"] = tmuxOutput()
+	w.Refresh(context.Background())
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+
+	// No PSI in the kernel: the counter is 0 and the sample is not partial.
+	res, err := h.Sample(context.Background())
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if res.GetCpuPressureUsTotal() != 0 || res.GetPartial() {
+		t.Fatalf("without PSI: pressure %d partial %v", res.GetCpuPressureUsTotal(), res.GetPartial())
+	}
+
+	p := w.paths.CPUPressure()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("some avg10=1.00 avg60=0.50 avg300=0.10 total=1234567\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = h.Sample(context.Background())
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if got := res.GetCpuPressureUsTotal(); got != 1234567 {
+		t.Fatalf("cpu_pressure_us_total = %d, want 1234567", got)
+	}
+}
+
+func TestSampleCarriesGuestMemoryUsed(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{{pid: 100, ppid: 1, comm: "node", ticks: 5}})
+	run.Match["list-windows"] = tmuxOutput()
+	w.Refresh(context.Background())
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+	if err := os.WriteFile(w.paths.MemInfo(), []byte("MemTotal:        8000000 kB\nMemFree:          100000 kB\nMemAvailable:    6000000 kB\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.Sample(context.Background())
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if got, want := res.GetMemUsedBytes(), uint64(2000000)<<10; got != want {
+		t.Fatalf("mem_used_bytes = %d, want %d", got, want)
+	}
+}
+
+func TestMemUsed(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "meminfo")
+	for in, want := range map[string]uint64{
+		"MemTotal: 100 kB\nMemAvailable: 40 kB\n": 60 << 10,
+		"MemTotal: 100 kB\n":                      0,
+		"MemTotal: 10 kB\nMemAvailable: 40 kB\n":  0,
+		"":                                        0,
+	} {
+		if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := memUsed(p); got != want {
+			t.Errorf("memUsed(%q) = %d, want %d", in, got, want)
+		}
+	}
+	if got := memUsed(filepath.Join(t.TempDir(), "missing")); got != 0 {
+		t.Errorf("missing file gave %d", got)
 	}
 }

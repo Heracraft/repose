@@ -48,7 +48,7 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		return nil
 	}
 	if len(snaps) == 0 {
-		_, _ = fmt.Fprintf(e.Out, "%s has no snapshots yet. `repose snapshots create --project %s` takes one.\n", project.Slug, project.Slug)
+		_, _ = fmt.Fprintf(e.Out, "%s has no snapshots yet.\n", project.Slug)
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
@@ -136,9 +136,9 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	}
 	if asNew != "" {
 		refreshSSHAccess(ctx, e, asNew)
-		_, _ = fmt.Fprintf(e.Out, "Restored into a new project, %s. `repose ls` lists it.\n", asNew)
+		_, _ = fmt.Fprintf(e.Out, "Restored into a new project, %s.\n", asNew)
 		return nil
 	}
-	_, _ = fmt.Fprintf(e.Out, "Restored %s. `repose start %s` boots it.\n", project.Slug, project.Slug)
+	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is stopped.\n", project.Slug)
 	return nil
 }

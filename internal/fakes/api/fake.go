@@ -463,6 +463,9 @@ func (f *Fake) register() {
 	f.handle("PATCH /v1/me", f.patchMe)
 	f.handle("DELETE /v1/me", f.deleteMe)
 	f.handle("POST /v1/me/notify-test", f.notifyTest)
+	f.handle("GET /v1/me/config", f.getPersonal)
+	f.handle("PUT /v1/me/config", f.putPersonal)
+	f.handle("GET /v1/me/config/revisions", f.listPersonal)
 	f.handle("GET /v1/notify/unsubscribe", f.notifyUnsubscribe)
 	f.handle("POST /v1/notify/unsubscribe", f.notifyUnsubscribe)
 	// Projects.
@@ -479,6 +482,7 @@ func (f *Fake) register() {
 	f.handle(logPattern, f.opLog)
 	f.handle("POST /v1/projects/{id}/resize", f.resizeProject)
 	f.handle("GET /v1/projects/{id}/route", f.projectRoute)
+	f.handle("GET /v1/projects/{id}/samples", f.projectSamples)
 	// Config.
 	f.handle("GET /v1/projects/{id}/config", f.getConfig)
 	f.handle("PUT /v1/projects/{id}/config", f.putConfig)

@@ -16,6 +16,8 @@
 { mkGuestRunner }:
 { fragment ? null          # a home-manager module value (attrset or function)
 , fragmentPath ? null      # or the path of a file holding one
+, personal ? null          # the account's personal layer (machine.nix, I-490)
+, personalPath ? null      # or the path of a file holding it
 , class ? "large"
 , baseVersion ? null
 , guestd ? null
@@ -29,8 +31,14 @@ let
     if fragmentPath != null then fragmentPath
     else if fragment != null then fragment
     else { };
+  # Same rule for the personal layer; null when there is none, so a guest
+  # without one evaluates exactly as before the layer existed.
+  pers =
+    if personalPath != null then personalPath
+    else personal;
 in
 mkGuestRunner ({
   fragmentModule = frag;
+  personalModule = pers;
   inherit class extraModules guestd hook;
 } // (if baseVersion != null then { inherit baseVersion; } else { }))

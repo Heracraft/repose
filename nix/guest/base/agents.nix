@@ -59,6 +59,25 @@ in
       pkgs.repose-agent-setup
     ];
 
+    # The opencode plugin at login, not only when the wrapped `opencode`
+    # first runs: an OpenCode 2 the user installed (DECISIONS I-481) runs
+    # its background service outside the wrapper and would otherwise never
+    # get the plugin, nor the replacement of one an earlier base installed.
+    systemd.user.services.repose-agent-hooks = {
+      description = "repose: install the opencode plugin";
+      wantedBy = [ "default.target" ];
+      unitConfig.ConditionUser = "dev";
+      # Outside default.target's ordering, like repose-npm-registry: the
+      # project's tmux session waits for default.target (DECISIONS I-231).
+      unitConfig.DefaultDependencies = false;
+      conflicts = [ "shutdown.target" ];
+      before = [ "shutdown.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.repose-agent-setup}/bin/repose-agent-setup opencode";
+      };
+    };
+
     environment.etc."repose/claude-settings.json".text = builtins.toJSON claudeSettings;
 
     # The agent wrappers' dev environment loader, at a path `repose exec`

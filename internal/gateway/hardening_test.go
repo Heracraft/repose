@@ -206,6 +206,12 @@ func TestAuthDeadline(t *testing.T) {
 			break
 		}
 	}
+	// The client sees the close before the server's connection goroutine
+	// has released its slot, so the count is read until it settles.
+	deadline := time.Now().Add(2 * time.Second)
+	for h.gw.preAuth.open() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if n := h.gw.preAuth.open(); n != 0 {
 		t.Fatalf("pre-auth slots held after the deadline: %d", n)
 	}

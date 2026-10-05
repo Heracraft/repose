@@ -439,10 +439,11 @@ measures them):
 
 - `stop [PROJECT]`: `POST /stop {snapshot: !--no-snapshot}`, phase on the
   op, then `Stopped <slug> in <time>. Snapshot <id> (1.2 GB). Disk is
-  still billed; \`repose rm <slug>\` to stop that.` Already stopped:
-  says so, exit 0.
+  still billed.` Already stopped: says so, exit 0. Success lines say what
+  happened and stop; a next command is for failures and refusals
+  (DECISIONS I-484).
 - `start [PROJECT]`: `POST /start`, wait, print `<slug> is running
-  (<class>), ready in <time>. \`repose attach <slug>\` to get in.` Does not
+  (<class>), ready in <time>.` Does not
   sync. When the api answers `restart: true` (a project in `error`, or a
   running one whose guestd stopped answering, I-157) the phase reads
   `Restarting <slug> (its agent stopped answering)`. Already running and
@@ -450,15 +451,14 @@ measures them):
 - `destroy [PROJECT]`: asks `Destroy <slug>? A final snapshot is kept for
   30 days. [y/N]` unless `--yes`/`-y` (no terminal and no `--yes`: exit 2).
   Then `DELETE /projects/:id` → `202 {op_id}` (api.md, I-156) and, by
-  default, returns at once (DECISIONS I-166): `Destroying <slug>. Bring it
-  back within 30 days with: repose restore <slug>`. The project reads
+  default, returns at once (DECISIONS I-166): `Destroying <slug>. Its final
+  snapshot is kept for 30 days.` The project reads
   `destroying` in `repose ls` from then on; a destroy that fails
   shows there as `error` with the reason and `repose rm <slug>` as
   the retry, in `repose status`, and as a `destroy_failed` notification
   (I-165). `--wait` keeps the old behaviour for scripts: wait on the op,
   then on `GET` answering 404, and only then print `Destroyed <slug> in
-  <time>. Its last snapshot is kept until <date>; \`repose restore
-  <slug>\` brings it back.`; an op in `error` prints `Could not destroy
+  <time>. Its last snapshot is kept until <date>.`; an op in `error` prints `Could not destroy
   <slug>: <reason> (<code>). <slug> is still there, <state>. \`repose
   destroy <slug>\` tries again.` and exits 1. An api that answers without
   an op id is waited on by polling the project (DECISIONS I-153).
@@ -466,8 +466,7 @@ measures them):
   /projects/restore {slug (or project_id when NAME is an id), name?,
   snapshot_id?}`, then waits with the phases of a create (building,
   restoring, booting) and prints `Restored <slug> from its snapshot of
-  <time> in <elapsed>; it is running (<class>). \`repose attach <slug>\`
-  to get in.` NAME is resolved by the api: the live project with that
+  <time> in <elapsed>; it is running (<class>).` NAME is resolved by the api: the live project with that
   slug, else the destroyed ones, newest snapshot first. A name in use
   (`409` with `detail.reason = "name_taken"`) asks for another name on a
   terminal (empty cancels) and otherwise exits 2 naming `--as`; nothing to
@@ -493,8 +492,10 @@ todo-app   large   running   2h14m   claude: working   today $0.31   month $12.4
 A project in `error` gets an `error: <reason>` line under the first.
 `repose ls` prints a table with a header row (`PROJECT CLASS STATE
 UP AGENTS TODAY MONTH`, `-` where a column does not apply, uptime only
-while running), then one line per project in `error` with its reason and
-the command that fixes it; with no projects it says how to create one.
+while running, and `LEFT`, a temporary machine's time left, only while
+one is listed), then one line per project in `error` with its reason and
+the command that fixes it; with no projects it says `No projects yet.`
+(I-484).
 `--json` is the api's list, unchanged (DECISIONS I-153).
 `repose ls --destroyed` lists `GET /projects/destroyed` one row per
 name, the one `repose restore NAME` restores (that name's newest
@@ -549,7 +550,7 @@ its port and pid in `~/.config/repose/browser-forwards/<slug>.json`; a
 recorded forward whose port answers `GET /healthz` with `repose desktop
 viewer ok` is reused. Print `Watching <slug>'s browser at
 http://localhost:<local>/#p=<password> (the view sleeps after 30 idle
-minutes; repose browser --stop ends it).` and open the URL unless
+minutes).` and open the URL unless
 `--no-open`. `--stop`: `desktop stop` in the guest when it runs, kill the
 recorded forward (only while its port still answers as our viewer), forget
 it. `repose open --desktop [--stop] [--no-browser]` is the same command

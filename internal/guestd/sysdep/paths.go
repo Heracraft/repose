@@ -117,6 +117,13 @@ func (p Paths) Proc() string { return p.join("proc") }
 // ProcPID is /proc/<pid>.
 func (p Paths) ProcPID(pid string) string { return p.join("proc", pid) }
 
+// CPUPressure is /proc/pressure/cpu, the guest's CPU pressure stall
+// information (DECISIONS I-493).
+func (p Paths) CPUPressure() string { return p.join("proc", "pressure", "cpu") }
+
+// MemInfo is /proc/meminfo.
+func (p Paths) MemInfo() string { return p.join("proc", "meminfo") }
+
 // Mounts is /proc/mounts, read to find the root block device.
 func (p Paths) Mounts() string { return p.join("proc", "mounts") }
 

@@ -259,11 +259,6 @@
 			<code class="codeblock mt-2 block px-3 py-2"
 				>curl -fsSL https://repose.herakraft.co/install.sh | sh</code
 			>
-			<p class="mt-3 text-sm text-ink-muted">
-				The CLI writes <code class="font-mono">~/.ssh/repose/config</code> and includes it from your
-				main SSH config, so <code class="font-mono">ssh &lt;slug&gt;.repose</code> works once you've
-				run <code class="font-mono">repose login</code>.
-			</p>
 		</div>
 	</LoadState>
 </PageShell>

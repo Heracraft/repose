@@ -22,7 +22,7 @@ AGENTS lists each agent in the machine's tmux session with its state: `working`,
 
 `repose ls -q` prints only the names, for scripts: `repose ls -q | xargs -n1 repose stop` stops everything.
 
-A machine runs until you stop it; repose never stops one for being idle. It does tell you when one is, see [Idle machines](#idle-machines). For one project in detail, including which processes are listening on ports:
+For one project in detail, including which processes are listening on ports:
 
 ```
 repose status todo-app
@@ -36,26 +36,25 @@ The dashboard's project page shows the state, agents, SSH sessions and cost, plu
 ```
 $ repose stop todo-app
 Stopped todo-app in 38s. Snapshot 0192… (2.1 GB).
-Disk is still billed; `repose rm todo-app` to stop that.
+Disk is still billed.
 
 $ repose start todo-app
 todo-app is running (large), ready in 9s.
-`repose attach todo-app` to get in.
 ```
 
-Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk. `repose run` in the checkout starts a stopped machine too.
+Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose run` in the checkout starts a stopped machine too.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
 ## Idle machines
 
-A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine, because an agent's long job can look the same from outside. It tells you instead:
+A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine; it tells you instead:
 
 ```
 $ repose ls
 PROJECT    CLASS  STATE    UP      AGENTS
 todo-app   large  running  31h02m  claude: idle
-todo-app: idle 26h, still running; `repose stop todo-app` stops it
+todo-app: running for 26h with nobody attached
 ```
 
 - `repose status` shows the same line, and the dashboard's project list shows the idle time under the state.
@@ -99,8 +98,7 @@ If a restore over a project fails, the old disk is already gone, so the project 
 ```
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app.
-Bring it back within 30 days with: repose restore todo-app
+Destroying todo-app. Its final snapshot is kept for 30 days.
 ```
 
 This deletes the machine and its disk and stops all charges for the project. It stops counting toward your [project limit](/docs/limits#projects) at once, while it's still `destroying`. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
@@ -122,8 +120,7 @@ To throw a machine away and start again from your checkout, destroy it and run a
 
 ```
 $ repose rm -y
-Destroying todo-app.
-Bring it back within 30 days with: repose restore todo-app
+Destroying todo-app. Its final snapshot is kept for 30 days.
 $ repose run
 ✓ Destroyed the old todo-app  14s
 ✓ Created todo-app (large)  0.4s
@@ -140,9 +137,9 @@ For an experiment that shouldn't touch your main project, create another one by 
 repose run --name todo-app-experiment
 ```
 
-It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. Running the same command again in the checkout attaches to `todo-app-experiment` again, and `repose attach todo-app-experiment` gets you back onto it from anywhere. This is also how to run several agents on one repository without them sharing a working tree.
+It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. This is also how to run several agents on one repository without them sharing a working tree.
 
-`--name` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. It never lands on a project with another name. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
+`--name` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
 
 The second machine has no git remote of its own, and your checkout's `repose` remote stays pointed at the original. To bring its work back, add a remote for it:
 
@@ -152,11 +149,11 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as your home directory, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` For a machine you won't want tomorrow, use `--temp` instead.
+In a directory with no git remote, such as your home directory, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.`
 
 ## Temporary machines
 
-For a test or a spike that nobody will want the next day, `--temp` makes a new machine that is destroyed after 24 hours, with no snapshot:
+`--temp` makes a new machine that is destroyed after 24 hours, with no snapshot:
 
 ```
 $ cd ~/code/todo-app
@@ -175,7 +172,7 @@ Not a git repository, so nothing was synced.
 - `--temp` always makes a new machine, named `tmp-` and four letters unless you pass `--name`. It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
 - `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours. It's counted from when the machine was made.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
-- `run`, `attach`, `repose ls` and `repose status` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` The dashboard shows it as temporary.
+- `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
@@ -204,7 +201,7 @@ from its snapshot of 2026-09-25 14:02 in 48s:
   todo-app-fork-3  running (large)
 ```
 
-`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`, so paths inside the project keep working. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
+`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run --project todo-app-fork-2 "..."`, which leaves the copy's checkout as it is.
 
