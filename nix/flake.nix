@@ -203,6 +203,13 @@
           fi
           echo "$size" > $out
         '';
+        # A base switch must never restart the tmux session unit: that ends
+        # every agent on a running guest (DECISIONS I-496).
+        guest-session-survives-switch = pkgs.runCommand "guest-session-survives-switch" { } ''
+          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/user/repose-tmux-session.service
+          grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
+          touch $out
+        '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.
