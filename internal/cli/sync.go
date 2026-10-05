@@ -260,8 +260,8 @@ type guestProbe struct {
 	// envCarried: an earlier carry wrote .env files here (its marker, or
 	// #envmissing for a set the probe no longer trusts).
 	envCarried bool
-	tips      []string // every commit a ref (or HEAD) in the guest points at
-	hasOrigin bool
+	tips       []string // every commit a ref (or HEAD) in the guest points at
+	hasOrigin  bool
 	// subTips are the commits every ref (or HEAD) of each checked-out
 	// submodule in the guest points at, by path (I-263).
 	subTips map[string][]string
@@ -352,7 +352,7 @@ repose_synced=$(git rev-parse --git-path repose-synced)
 // commits the guest has refs to, and whether it has an origin. One ssh.
 // probeScript is the sync's first ssh. It finds the checkout (checkoutVar)
 // and, on a machine with none, makes it at ~/<want> (I-368) and says so.
-func probeScript(slug, want string) string {
+func probeScript(slug, want, extra string) string {
 	return fmt.Sprintf(`set -e
 %s%s%scd "$repose_co"
 [ -d .git ] || git init -q
@@ -373,7 +373,7 @@ git rev-parse -q --verify HEAD || true
 [ -f "$repose_synced-key" ] && tail -n +2 "$repose_synced-key" | { repose_n=0; while IFS=' ' read -r c p; do repose_n=1; if [ -n "$p" ]; then git -C "$p" cat-file -e "$c^{commit}" 2>/dev/null || exit 1; else git cat-file -e "$c^{commit}" 2>/dev/null || exit 1; fi; done; [ "$repose_n" = 1 ]; } && echo '#synchas'
 echo '#origin'
 git remote get-url origin >/dev/null 2>&1 && echo yes || true
-%s%s`, checkoutVar(slug), checkoutCreate(slug, want), checkoutReport, syncedFP, envPathsCheck, credsMissingScript(), markerScript())
+%s%s`, checkoutVar(slug, extra), checkoutCreate(slug, want, extra), checkoutReport, syncedFP, envPathsCheck, credsMissingScript(), markerScript())
 }
 
 // credsMissingScript prints `#credsmissing` when a login file the last
@@ -516,7 +516,7 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		out, err = opts.Probe()
 	}
 	if opts.Probe == nil || err != nil {
-		out, err = runSSH(ctx, t, probeScript(slug, checkoutName(localRepoDir)), nil)
+		out, err = runSSH(ctx, t, probeScript(slug, checkoutName(localRepoDir), t.Checkout), nil)
 	}
 	if err != nil {
 		return nil, stepFailed("read the guest's checkout", err, "")

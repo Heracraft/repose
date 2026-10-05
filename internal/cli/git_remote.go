@@ -146,7 +146,15 @@ func (e *Env) checkoutOwnsProject(root string, p *Project) bool {
 // fetch (I-368).
 func (e *Env) addReposeRemote(ctx context.Context, p *Project, t sshTarget, checkout *string) {
 	root := gitRepoRoot(e.Cwd)
-	if !e.checkoutOwnsProject(root, p) {
+	if t.Checkout != "" {
+		// Another checkout of the machine (I-480): the folder's remote
+		// points at it when the folder is that checkout.
+		co := e.extraCheckout()
+		if root == "" || co == nil || co.ProjectID != p.ID || co.Name != t.Checkout {
+			return
+		}
+		checkout = &t.Checkout
+	} else if !e.checkoutOwnsProject(root, p) {
 		return
 	}
 	if checkout == nil {

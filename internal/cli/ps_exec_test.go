@@ -158,7 +158,7 @@ func TestExecRunsInTheCheckout(t *testing.T) {
 // test guest-devshell runs over ssh, to what `repose exec todo-app -- sh
 // -c '...'` sends. -update rewrites it.
 func TestExecScriptGolden(t *testing.T) {
-	got := execScript("todo-app", []string{"sh", "-c", `echo "flake=$REPOSE_FLAKE_PROBE project=$REPOSE_PROJECT pwd=$PWD"; flake-tool`}) + "\n"
+	got := execScript("todo-app", "", []string{"sh", "-c", `echo "flake=$REPOSE_FLAKE_PROBE project=$REPOSE_PROJECT pwd=$PWD"; flake-tool`}) + "\n"
 	const path = "testdata/exec-script.sh"
 	if *updateGolden {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {

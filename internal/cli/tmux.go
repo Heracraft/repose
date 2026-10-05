@@ -74,7 +74,8 @@ func nextWindowName(agent string, taken func(string) bool) string {
 }
 
 // windowNameFor picks the agent's window name: the agent's own name, else
-// the lowest free "<agent>-N" (07-cli.md §5.5 step 7 and §6's "second
+// the lowest free "<agent>-N", each behind "<checkout>/" in another
+// checkout (windowLabel, I-480) (07-cli.md §5.5 step 7 and §6's "second
 // prompt while agent window exists", DECISIONS I-253). othersOpen says
 // another window of the same agent is open, which is what the
 // shared-working-tree warning is for.
@@ -83,7 +84,7 @@ func windowNameFor(ctx context.Context, t sshTarget, slug, agent string) (name s
 	if err != nil {
 		return "", false, err
 	}
-	name, othersOpen = pickWindow(agent, windows, nil)
+	name, othersOpen = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
 	return name, othersOpen, nil
 }
 
@@ -130,7 +131,7 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func()) error {
 	cmd := fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, dir, shQuote(binary))
 	if dir == "" {
-		cmd = checkoutVar(slug) + fmt.Sprintf(`tmux new-window -t %s -n %s -c "$repose_co" -d %s`, slug, windowName, shQuote(binary))
+		cmd = checkoutVar(slug, t.Checkout) + fmt.Sprintf(`tmux new-window -t %s -n %s -c "$repose_co" -d %s`, slug, windowName, shQuote(binary))
 	}
 	if _, err := runSSH(ctx, t, cmd, nil); err != nil {
 		return err
@@ -246,7 +247,7 @@ func worktreeBranch(n int) string { return fmt.Sprintf("worktree-%d", n) }
 // worktreeProbeScript reports, in one ssh, the session's windows, the
 // checkout's HEAD and whether it is dirty, and which worktree directories
 // and worktree-N branches already exist, so the number skips both.
-func worktreeProbeScript(slug string) string {
+func worktreeProbeScript(slug, extra string) string {
 	return fmt.Sprintf(`set -e
 tmux list-windows -t %[1]s -F '#window #{window_name}'
 %[2]s[ "$repose_co" != "$HOME" ] || { echo '#nogit'; exit 0; }
@@ -257,7 +258,7 @@ echo "#head $h"
 [ -z "$(git status --porcelain 2>/dev/null)" ] || echo '#dirty'
 git for-each-ref --format='#branch %%(refname:strip=2)' 'refs/heads/worktree-*'
 for p in "$repose_co"-worktree-*; do [ -e "$p" ] && echo "#dir ${p##*/}"; done
-true`, slug, checkoutVar(slug))
+true`, slug, checkoutVar(slug, extra))
 }
 
 // worktreeAddScript makes the worktree and copies into it the checkout's
@@ -284,7 +285,7 @@ true`, homeShell(wt.Checkout), shQuote(wt.Branch), wt.Dir, wt.Base)
 // reuses a worktree: a number whose directory or branch exists is skipped,
 // so each --worktree run starts fresh from HEAD.
 func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*agentWorktree, error) {
-	out, err := runSSH(ctx, t, worktreeProbeScript(slug), nil)
+	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout), nil)
 	if err != nil {
 		return nil, stepFailed("list the guest's tmux windows", err, "")
 	}
@@ -318,7 +319,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 			}
 		}
 	}
-	wt.Window, _ = pickWindow(agent, windows, nil)
+	wt.Window, _ = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
 	wt.N = nextWorktree(taken)
 	wt.Dir = worktreeDir(wt.Checkout, wt.N)
 	wt.Branch = worktreeBranch(wt.N)

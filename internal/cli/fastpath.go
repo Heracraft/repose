@@ -154,6 +154,12 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 // remote, unless the directory is pinned to another one. nil when the
 // cache cannot say.
 func cachedGuess(e *Env, explicit string, deps resolveDeps) *Project {
+	// Another checkout of a machine (I-480) takes the slow path: the
+	// guess would be the machine's own checkout, and an early probe there
+	// would read and make the wrong tree.
+	if strings.Contains(explicit, ":") || (explicit == "" && e.extraCheckout() != nil) {
+		return nil
+	}
 	if explicit != "" {
 		for remote, c := range e.Cache.ByRemote {
 			if c.Slug == explicit || c.ProjectID == explicit {
@@ -280,7 +286,7 @@ func startEarlyProbe(ctx context.Context, e *Env, opts RunOptions) *earlyProbe {
 	ep.started = time.Now()
 	go func() {
 		defer close(ep.done)
-		ep.out, ep.err = runSSH(ctx, target, probeScript(guess.Slug, checkoutName(root)), nil)
+		ep.out, ep.err = runSSH(ctx, target, probeScript(guess.Slug, checkoutName(root), ""), nil)
 	}()
 	return ep
 }
@@ -345,7 +351,7 @@ func startBootProbe(ctx context.Context, e *Env, p *Project, withProbe bool) {
 	ep := &earlyProbe{id: p.ID, slug: p.Slug, target: target, cold: true, boot: true, usable: true, noProbe: !withProbe, done: make(chan struct{})}
 	script := "true"
 	if withProbe {
-		script = probeScript(p.Slug, checkoutName(gitRepoRoot(e.Cwd)))
+		script = probeScript(p.Slug, checkoutName(gitRepoRoot(e.Cwd)), "")
 	}
 	timingf("run: guest up; first connection started beside the project read")
 	go func() {

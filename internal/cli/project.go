@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -26,6 +28,10 @@ type ResolveResult struct {
 	// repository whose remote another project has (DECISIONS I-348), like
 	// a fork's copies (I-254).
 	NoRemote bool
+	// Checkout is the machine's other checkout cwd is, or PROJECT:CHECKOUT
+	// named (`repose run --on`, DECISIONS I-480); "" for the checkout
+	// itself.
+	Checkout string
 }
 
 // CreateRemote is the remote_url a project created from this result
@@ -56,6 +62,8 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 		return resolveProject(ctx, e.Client, e.Dir, e.Cwd, explicit, &e.Cache, deps)
 	case opts.Temp > 0:
 		return &ResolveResult{Remote: deps.RemoteFor(e.Cwd), NoRemote: true}, nil
+	case opts.On != "":
+		return resolveOn(ctx, e, opts.On, deps)
 	case opts.Name != "":
 		remote := deps.RemoteFor(e.Cwd)
 		p, err := findByName(ctx, e.Client, opts.Name)
@@ -85,6 +93,68 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 		e.warn("Using %s, the machine last made in this directory. `repose run --name NEW` makes another; `repose run --temp` makes a throwaway one.", res.Project.Slug)
 	}
 	return res, nil
+}
+
+// resolveOn is resolveForRun for `repose run --on PROJECT` (I-480): the
+// machine must exist, and this folder must not be its checkout or
+// another machine's. A folder that joined before gets its checkout back;
+// a new one gets Checkout "", and the run claims a name once connected.
+func resolveOn(ctx context.Context, e *Env, on string, deps resolveDeps) (*ResolveResult, error) {
+	p, err := findByIDOrSlug(ctx, e.Client, on)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, exitf(ExitProjectNotFound, "No repose project is called %s. `repose ls` lists yours.", on)
+	}
+	remote := deps.RemoteFor(e.Cwd)
+	key := dirKey(e.Cwd, deps)
+	if co := e.extraCheckout(); co != nil {
+		if co.ProjectID != p.ID {
+			return nil, exitf(ExitUsage, "This folder is already a checkout on another machine. Run `repose run` here to use it there.")
+		}
+		return &ResolveResult{Project: p, Remote: remote, Checkout: co.Name}, nil
+	}
+	if (remote != "" && remote == p.RemoteURL) || (p.RemoteURL == "" && e.Cache.ByDir[key] == p.ID) {
+		return nil, exitf(ExitUsage, "This folder is %s's own checkout already. Run `repose run` here without --on.", p.Slug)
+	}
+	return &ResolveResult{Project: p, Remote: remote}, nil
+}
+
+// addCheckout makes this folder another checkout of project's machine
+// (`repose run --on`, I-480): it claims a name there and remembers the
+// folder in the cache. It returns the name.
+func (e *Env) addCheckout(ctx context.Context, t sshTarget, project *Project) (string, error) {
+	root := syncRoot(e.Cwd)
+	want := checkoutName(root)
+	if want == "" {
+		want = "checkout"
+	}
+	name, err := claimCheckout(ctx, t, project.Slug, want)
+	if err != nil {
+		return "", err
+	}
+	if e.Cache.Checkouts == nil {
+		e.Cache.Checkouts = map[string]CachedCheckout{}
+	}
+	e.Cache.Checkouts[dirKey(e.Cwd, defaultResolveDeps())] = CachedCheckout{ProjectID: project.ID, Name: name}
+	if err := e.saveCache(); err != nil {
+		e.warn("Could not save the folder's place in %s (%s); the next run here needs --on again.", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+	_, _ = fmt.Fprintf(e.Out, "Added %s to %s as %s.\n", filepath.Base(root), project.Slug, tildePath(name))
+	return name, nil
+}
+
+// extraCheckout is the cache's entry for cwd when `repose run --on`
+// added this folder to a machine (I-480), nil otherwise.
+func (e *Env) extraCheckout() *CachedCheckout {
+	deps := defaultResolveDeps()
+	for _, k := range uniqueStrings(dirKey(e.Cwd, deps), e.Cwd) {
+		if co, ok := e.Cache.Checkouts[k]; ok {
+			return &co
+		}
+	}
+	return nil
 }
 
 // slugOf is the api's slug for a project name (internal/api/http Slug):
@@ -151,6 +221,10 @@ func dirKey(cwd string, deps resolveDeps) string {
 // `repose run` in one repository to another repository's guest.
 func resolveProject(ctx context.Context, client *Client, dir, cwd, explicit string, cache *ProjectsCache, deps resolveDeps) (*ResolveResult, error) {
 	if explicit != "" {
+		explicit, checkout, hasCheckout := strings.Cut(explicit, ":")
+		if hasCheckout && (checkout == "" || dirProjectName(checkout) != checkout) {
+			return nil, exitf(ExitUsage, "%s:%s does not name a checkout. PROJECT:CHECKOUT takes the checkout's folder name on the machine, as `repose ps` shows it before the /.", explicit, checkout)
+		}
 		p, err := findByIDOrSlug(ctx, client, explicit)
 		if err != nil {
 			return nil, err
@@ -158,11 +232,29 @@ func resolveProject(ctx context.Context, client *Client, dir, cwd, explicit stri
 		if p == nil {
 			return nil, exitf(ExitProjectNotFound, "No repose project is called %s. `repose ls` lists yours.", explicit)
 		}
-		return &ResolveResult{Project: p}, nil
+		return &ResolveResult{Project: p, Checkout: checkout}, nil
 	}
 
 	remote := deps.RemoteFor(cwd)
 	key := dirKey(cwd, deps)
+	// A folder added to another machine with `repose run --on` (I-480).
+	// It has a remote of its own, which is not the project's, so the
+	// by_dir rule below would refuse it.
+	for _, k := range uniqueStrings(key, cwd) {
+		co, ok := cache.Checkouts[k]
+		if !ok {
+			continue
+		}
+		p, err := client.GetProject(ctx, co.ProjectID)
+		if err == nil {
+			return &ResolveResult{Project: p, Remote: remote, Checkout: co.Name}, nil
+		}
+		if !isNotFound(err) {
+			return nil, err
+		}
+		delete(cache.Checkouts, k)
+		_ = saveProjectsCache(dir, *cache)
+	}
 	for _, k := range uniqueStrings(key, cwd) {
 		id, ok := cache.ByDir[k]
 		if !ok {

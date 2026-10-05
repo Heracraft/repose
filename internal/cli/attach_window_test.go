@@ -44,7 +44,7 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ window, want string }{{"editor", "editor"}, {"claude", ""}} {
-		remote := "TERM=xterm-256color script -qfc " + shQuote(attachCommand(testSlug, tc.window)) + " /dev/null"
+		remote := "TERM=xterm-256color script -qfc " + shQuote(attachCommand(testSlug, "", tc.window)) + " /dev/null"
 		cmd := exec.Command("ssh", append(append([]string{"-t"}, f.target.Args...), remote)...)
 		ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 160})
 		if err != nil {
