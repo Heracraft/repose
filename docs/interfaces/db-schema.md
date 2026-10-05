@@ -36,7 +36,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               tz text, host_unreachable bool, last_error text,
               started_at, stopped_at, destroyed_at,
               expires_at null,  -- a temporary project's end (0010, I-347)
-              personal_opt_out bool,  -- machine.nix kept off this project (0014, I-490)
+              personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null)
 
@@ -47,10 +47,10 @@ config_revisions (id pk, project_id fk, fragment text, menu jsonb null,
               system_closure text null, closure_bytes bigint null,
               kernel_changed bool, reboot_required bool,
               error text null, fragment_line int null, built_at, applied_at,
-              personal text,  -- the machine.nix text it is built with, '' for none (0014, I-490)
+              personal text,  -- the machine.nix text it is built with, '' for none (0015, I-490)
               personal_revision_id fk null, personal_opt_out bool, personal_line int null)
 
-personal_revisions (id pk, user_id fk, fragment text,  -- one save of an account's machine.nix (0014, I-490);
+personal_revisions (id pk, user_id fk, fragment text,  -- one save of an account's machine.nix (0015, I-490);
               source text, created_at)                  -- the newest row is current, '' means none; source cli|dashboard
 
 ops          (id pk, project_id fk null, kind text, state text,  -- pending|running|done|error

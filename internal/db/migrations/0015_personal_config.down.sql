@@ -1,4 +1,4 @@
--- Reverts 0014: no personal layer.
+-- Reverts 0015: no personal layer.
 alter table config_revisions drop column personal_line;
 alter table config_revisions drop column personal_opt_out;
 alter table config_revisions drop column personal_revision_id;

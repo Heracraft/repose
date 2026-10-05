@@ -86,7 +86,7 @@ type Project struct {
 	// the reaper destroys it, with no snapshot, once this has passed.
 	ExpiresAt *time.Time `db:"expires_at"`
 	// PersonalOptOut keeps the account's personal layer off this
-	// project's machine (0014, DECISIONS I-490).
+	// project's machine (0015, DECISIONS I-490).
 	PersonalOptOut bool `db:"personal_opt_out"`
 }
 
@@ -171,7 +171,7 @@ type Revision struct {
 	AppliedAt      *time.Time     `db:"applied_at"`
 	CreatedAt      time.Time      `db:"created_at"`
 	UpdatedAt      time.Time      `db:"updated_at"`
-	// The personal layer this revision is built with (0014, DECISIONS
+	// The personal layer this revision is built with (0015, DECISIONS
 	// I-490): its text ('' for none), the account revision it came from,
 	// whether the project had opted out, and an error's line in it.
 	Personal           string     `db:"personal"`

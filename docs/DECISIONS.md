@@ -12398,8 +12398,8 @@ settlement of the same day: `repose config --global`, `repose run
 --no-personal` plus a dashboard switch, temporary machines included,
 stored on the account, applied automatically) An account has one
 machine.nix, a home-manager module for `dev` under the fragment contract.
-Each save is a row of `personal_revisions` (migration 0014); the newest
-row is current and an empty text means none. Every project revision
+Each save is a row of `personal_revisions` (migration 0015; 0014 is
+I-493's); the newest row is current and an empty text means none. Every project revision
 records the personal text it was built with, the account revision it
 came from and whether the project had opted out
 (`config_revisions.personal`, `personal_revision_id`,
