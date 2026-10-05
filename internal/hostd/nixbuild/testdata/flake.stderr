@@ -1,0 +1,221 @@
+warning: not writing modified lock file of flake 'git+file:///var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc?dir=nix':
+• Updated input 'fragment':
+    'path:./guest/fragment-placeholder'
+  → 'path:/var/lib/repose/builds/01a108c3-3e9c-73a5-9b5e-a4083c63b0b3?lastModified=1791148375&narHash=sha256-RRqZ/86kb8u1A9HVBYb3rQJZiMFNJ04WfyIJFH8dMtA%3D' (2026-10-04)
+error:
+       … from call site
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/flake.nix:142:22:
+          141|       # is not baked in (DECISIONS I-34, I-43).
+          142|       guestSystem = (composeGuest {
+             |                      ^
+          143|         fragmentPath = "${fragment}/flake.nix";
+
+       … while calling anonymous lambda
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/guest/compose.nix:17:1:
+           16| { mkGuestRunner }:
+           17| { fragment ? null          # a home-manager module value (attrset or function)
+             | ^
+           18| , fragmentPath ? null      # or the path of a file holding one
+
+       … from call site
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/guest/compose.nix:33:1:
+           32| in
+           33| mkGuestRunner ({
+             | ^
+           34|   fragmentModule = frag;
+
+       … while calling anonymous lambda
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/guest/microvm.nix:21:1:
+           20| { nixpkgs, home-manager, microvm, system, overlay, self }:
+           21| { fragmentModule ? { }
+             | ^
+           22| , extraModules ? [ ]
+
+       … while evaluating the attribute 'pkgs'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/nixos/lib/eval-config.nix:112:44:
+          111|     // {
+          112|       inherit (configuration._module.args) pkgs;
+             |                                            ^
+          113|       inherit lib;
+
+       … while evaluating the attribute '_module.args'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:405:9:
+          404|         config = checked (removeAttrs config [ "_module" ]);
+          405|         _module = checked (config._module);
+             |         ^
+          406|         inherit (doCollect { }) graph;
+
+       … while calling the 'seq' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:405:19:
+          404|         config = checked (removeAttrs config [ "_module" ]);
+          405|         _module = checked (config._module);
+             |                   ^
+          406|         inherit (doCollect { }) graph;
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:307:9:
+          306|       checkUnmatched =
+          307|         if config._module.check && config._module.freeformType == null && merged.unmatchedDefns != [ ] then
+             |         ^
+          308|           let
+
+       … in the right operand of the AND (&&) operator
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:307:72:
+          306|       checkUnmatched =
+          307|         if config._module.check && config._module.freeformType == null && merged.unmatchedDefns != [ ] then
+             |                                                                        ^
+          308|           let
+
+       … while evaluating the attribute 'unmatchedDefns'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:981:7:
+          980|       # Transforms unmatchedDefnsByName into a list of definitions
+          981|       unmatchedDefns =
+             |       ^
+          982|         if configs == [ ] then
+
+       … while calling the 'concatLists' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:987:11:
+          986|         else
+          987|           concatLists (
+             |           ^
+          988|             mapAttrsToList (
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:989:21:
+          988|             mapAttrsToList (
+          989|               name: defs:
+             |                     ^
+          990|               map (
+
+       … while calling the 'map' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:990:15:
+          989|               name: defs:
+          990|               map (
+             |               ^
+          991|                 def:
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:973:22:
+          972|         # Propagate all unmatched definitions from nested option sets
+          973|         mapAttrs (n: v: v.unmatchedDefns) resultsByName
+             |                      ^
+          974|         # Plus the definitions for the current prefix that don't have a matching option
+
+       (6 duplicate frames omitted)
+
+       … while evaluating a branch condition
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:982:9:
+          981|       unmatchedDefns =
+          982|         if configs == [ ] then
+             |         ^
+          983|           # When no config values exist, there can be no unmatched config, so
+
+       … while calling the 'concatLists' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:965:36:
+          964|         else
+          965|           mergeModules' loc decls (pushedDownDefinitionsByName.${name} or [ ])
+             |                                    ^
+          966|       ) declsByName;
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:852:16:
+          851|           mapAttrs (
+          852|             n: value:
+             |                ^
+          853|             map (config: {
+
+       … while calling the 'map' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:853:13:
+          852|             n: value:
+          853|             map (config: {
+             |             ^
+          854|               inherit (module) file;
+
+       … from call site
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:856:17:
+          855|               inherit config;
+          856|             }) (pushDownProperties value)
+             |                 ^
+          857|           ) module.config
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1379:5:
+         1378|     in
+         1379|     cfg:
+             |     ^
+         1380|     if cfg ? _type then
+
+       … while calling the 'concatMap' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1384:9:
+         1383|       else if cfg._type == "merge" then
+         1384|         concatMap pushDownProperties cfg.contents
+             |         ^
+         1385|       else if cfg._type == "override" then
+
+       … while evaluating the attribute 'contents'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1590:13:
+         1589|     _type = "merge";
+         1590|     inherit contents;
+             |             ^
+         1591|   };
+
+       … while calling the 'map' builtin
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/guest/contract.nix:96:45:
+           95|       let parts = lib.splitString "." p; in
+           96|       lib.setAttrByPath parts (lib.mkMerge (map (m: lib.attrByPath parts { } m) hm.repose.system)))
+             |                                             ^
+           97|     allowlist);
+
+       … from call site
+         at /var/lib/repose/base/703a8663129d7b429d63b4f2b901e5bea3101dfc/nix/guest/contract.nix:33:8:
+           32|   allowlist = (builtins.fromJSON (builtins.readFile ./system-allowlist.json)).allowed;
+           33|   hm = config.home-manager.users.dev;
+             |        ^
+           34|
+
+       … while calling anonymous lambda
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1029:18:
+         1028|             value = mapAttrs (
+         1029|               n: v:
+             |                  ^
+         1030|               if lazy then
+
+       … while evaluating the attribute 'optionalValue.value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:1342:41:
+         1341|
+         1342|     optionalValue = if isDefined then { value = mergedValue; } else { };
+             |                                         ^
+         1343|   };
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/types.nix:1510:13:
+         1509|             headError = checkDefsForError check loc defs;
+         1510|             value = configuration.config;
+             |             ^
+         1511|             valueMeta = { inherit configuration; };
+
+       … while evaluating the attribute 'config'
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:404:9:
+          403|         options = checked options;
+          404|         config = checked (removeAttrs config [ "_module" ]);
+             |         ^
+          405|         _module = checked (config._module);
+
+       … while calling the 'seq' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:404:18:
+          403|         options = checked options;
+          404|         config = checked (removeAttrs config [ "_module" ]);
+             |                  ^
+          405|         _module = checked (config._module);
+
+       … while calling the 'throw' builtin
+         at «github:NixOS/nixpkgs/b1b875982b17dabde9b4a37f3e229e74913e6db3?narHash=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4%3D»/lib/modules.nix:376:13:
+          375|           else
+          376|             throw baseMsg
+             |             ^
+          377|         else
+
+       error: The option `home-manager.users.dev.description' does not exist. Definition values:
+       - In `/nix/store/z93dbvy13i1n7ylcmrjpsbn0pbi244sk-source/flake.nix': "tally dev environment"
+
+       Did you mean `home-manager.users.dev.assertions', `home-manager.users.dev.xsession' or `home-manager.users.dev.dconf'?

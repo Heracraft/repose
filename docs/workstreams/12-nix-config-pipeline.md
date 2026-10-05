@@ -188,7 +188,7 @@ the `Build` result and the api tells the CLI before `ApplyConfig`.
 |---|---|---|
 | `error: syntax error, unexpected ... at /var/lib/repose/builds/<rev>/fragment.nix:L:C` | `eval_failed` | L |
 | `error: attribute 'X' missing` with a trace line in `fragment.nix:L` | `eval_failed` | L |
-| `The option 'X' does not exist` with a definition location in `fragment.nix` | `eval_failed` | L, hint "system services come from the menu or `repose config menu`" |
+| `The option 'X' does not exist` with a definition location in `fragment.nix` | `eval_failed` | L, hint "a fragment is a home-manager module: packages go in home.packages, databases come from `repose config add` or repose.system" (I-483; was a `repose config menu` hint the CLI never had) |
 | `cannot fetch ... in pure evaluation mode` / `access to absolute path` | `eval_failed` | L, hint "use pkgs.fetchurl with a hash instead of builtins.fetch*" |
 | `RuntimeMaxSec` kill during eval | `eval_timeout` | none, message "evaluation exceeded 60 s" |
 | `error: builder for '/nix/store/...-X.drv' failed` | `build_failed` | none, message = last 200 lines of that builder's log via `nix log`, prefixed with the derivation name |

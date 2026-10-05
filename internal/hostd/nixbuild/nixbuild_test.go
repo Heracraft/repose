@@ -39,8 +39,9 @@ func TestMapEvalErrorFixtures(t *testing.T) {
 		{"abspath.stderr", "access to absolute path '/etc/passwd' is forbidden in pure evaluation mode (use '--impure' to override) at fragment.nix:1:37; a fragment may only read files it carries", 1},
 		{"nixpath.stderr", "<nixpkgs> is not available at fragment.nix:1:44; use the pkgs argument, which is the platform's pinned nixpkgs", 1},
 		{"ifd.stderr", "import-from-derivation is not allowed at fragment.nix:1:37; a fragment cannot import a file that a build produces", 1},
-		{"option.stderr", "option 'services.postgresql' does not exist in a fragment; system services come from the menu or `repose config menu`", 0},
-		{"assertion.stderr", "repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: services.postgresql, services.redis, services.mysql, services.memcached, services.rabbitmq, services.meilisearch, services.nats)", 0},
+		{"option.stderr", "option 'services.postgresql' does not exist in a fragment; a fragment is a home-manager module: packages go in home.packages, databases come from `repose config add` or repose.system", 0},
+		{"flake.stderr", "this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.herakraft.co/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout", 0},
+		{"assertion.stderr", "repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: services.postgresql, services.redis, services.mysql, services.memcached, services.rabbitmq, services.meilisearch, services.nats)", 0},
 		{"hmoverlays.stderr", "fragment: nixpkgs.overlays is ignored with useGlobalPkgs; use repose.overlays = [ ... ] instead", 0},
 	}
 	for _, c := range cases {

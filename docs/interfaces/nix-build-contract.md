@@ -143,8 +143,9 @@ then the verbatim block; the dashboard shows the same.
 | `eval_failed` | `config error: ` | `access to absolute path '/etc/passwd' is forbidden in pure evaluation mode (use '--impure' to override) at fragment.nix:1:37; a fragment may only read files it carries` |
 | `eval_failed` | `config error: ` | `<nixpkgs> is not available at fragment.nix:1:44; use the pkgs argument, which is the platform's pinned nixpkgs` |
 | `eval_failed` | `config error: ` | `import-from-derivation is not allowed at fragment.nix:1:37; a fragment cannot import a file that a build produces` |
-| `eval_failed` | `config error: ` | `option 'services.postgresql' does not exist in a fragment; system services come from the menu or `repose config menu`` |
-| `eval_failed` | `config error: ` | `repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from the menu or `repose config menu` (allowed: ...)` |
+| `eval_failed` | `config error: ` | `option 'services.postgresql' does not exist in a fragment; a fragment is a home-manager module: packages go in home.packages, databases come from `repose config add` or repose.system` |
+| `eval_failed` | `config error: ` | `this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.herakraft.co/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout` (the unknown option is `description`, `inputs`, `outputs` or `nixConfig`; no did-you-mean, DECISIONS I-483) |
+| `eval_failed` | `config error: ` | `repose.system: option 'networking.firewall' is not allowed in a fragment; system services come from `repose config add` or the dashboard's Config menu (allowed: ...)` |
 | `eval_failed` | `config error: ` | `nixpkgs has no package "no-such-package"; search https://search.nixos.org/packages at fragment.nix:11:23` (a menu `{package}` item nixpkgs lacks, thrown by the generated fragment; `repose config add` drops the ` at fragment.nix:…` part and the verbatim block, DECISIONS I-220) |
 | `eval_failed` | `config error: ` | `nixpkgs attribute "python312Packages" is not a package; search https://search.nixos.org/packages at fragment.nix:13:10` |
 | `eval_failed` | `config error: ` | `evaluation exceeded 60 s` |

@@ -173,8 +173,10 @@ A fragment may not:
 - import from derivation (`allow-import-from-derivation` is off);
 - set NixOS options: it is a home-manager module, so
   `services.postgresql.enable = true` at the top level fails with `option
-  'services.postgresql' does not exist in a fragment; system services come
-  from the menu or `repose config menu``, and `networking.*`, `users.*`,
+  'services.postgresql' does not exist in a fragment; a fragment is a
+  home-manager module: packages go in home.packages, databases come from
+  `repose config add` or repose.system`, a whole `flake.nix` fails with
+  `this file is a Nix flake; ...` (DECISIONS I-483), and `networking.*`, `users.*`,
   `boot.*`, `services.openssh` and `virtualisation.*` are outside the
   `repose.system` allowlist whatever the file says.
 

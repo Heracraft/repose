@@ -85,6 +85,19 @@ func fragmentLine(stderr string) (int32, string) {
 	return 0, ""
 }
 
+// optionHint follows an unknown-option summary. A fragment is a
+// home-manager module, so NixOS options such as environment.systemPackages
+// or services.* fail; it names where each goes instead (DECISIONS I-483:
+// the old hint named `repose config menu`, which the CLI has never had).
+const optionHint = "; a fragment is a home-manager module: packages go in home.packages, databases come from `repose config add` or repose.system"
+
+// flakeOutputs are the top-level attributes of a flake.nix. One of them
+// reported as an unknown option means the file applied is a flake.
+var flakeOutputs = map[string]bool{"description": true, "inputs": true, "outputs": true, "nixConfig": true}
+
+// flakeHint is the whole summary for a flake.nix applied as a fragment.
+const flakeHint = "this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.herakraft.co/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout"
+
 // MapEvalError turns `nix eval` stderr into an eval_failed Error.
 func MapEvalError(stderr string) *Error {
 	msg, _ := lastError(stderr)
@@ -113,11 +126,16 @@ func MapEvalError(stderr string) *Error {
 		summary = m[1] + " is not available" + at + "; use the pkgs argument, which is the platform's pinned nixpkgs"
 	case strings.Contains(msg, "allow-import-from-derivation"):
 		summary = "import-from-derivation is not allowed" + at + "; a fragment cannot import a file that a build produces"
+	case hmOptionRe.MatchString(msg) && flakeOutputs[hmOptionRe.FindStringSubmatch(msg)[1]]:
+		// A flake.nix applied as a fragment: its top-level attributes
+		// reach home-manager as options. The did-you-mean that follows is
+		// about home-manager and only misleads here (DECISIONS I-483).
+		return &Error{Code: "eval_failed", Message: compose(flakeHint, stderr), FragmentLine: line}
 	case hmOptionRe.MatchString(msg):
 		m := hmOptionRe.FindStringSubmatch(msg)
-		summary = "option '" + m[1] + "' does not exist in a fragment" + at + "; system services come from the menu or `repose config menu`"
+		summary = "option '" + m[1] + "' does not exist in a fragment" + at + optionHint
 	case strings.Contains(msg, "does not exist") && strings.Contains(msg, "The option"):
-		summary = msg + at + "; system services come from the menu or `repose config menu`"
+		summary = msg + at + optionHint
 	case strings.Contains(stderr, "Failed assertions:"):
 		// The fragment contract's own refusals (nix/guest/fragment.nix) and
 		// the base's assertions arrive as a list; the first is the summary.
