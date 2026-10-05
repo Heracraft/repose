@@ -13137,7 +13137,18 @@ restarts on failure (a restart resumes agents), keeps
 why). The guest seeds `~/.config/herdr/config.toml` when it is absent
 with login shells (herdr's Linux default is non-login, tmux's is login)
 and no update check. tmux stays in the base and stays the default. The
-contract is `interfaces/guest-conventions.md`, "herdr".
+contract is `interfaces/guest-conventions.md`, "herdr". Built
+(mux-base): `nix/overlay/agents/herdr.nix` with 0.9.3 pinned, its install
+check shared as `passthru.protocolCheck` and run by the flake check
+`herdr-protocol-check` against fake binaries (generation 2, protocol 21,
+no generation and unreadable output refused); `nix/guest/base/herdr.nix`
+(the unit, `repose-herdr-workspace`, the seeded config written by
+`ExecStartPre`), `nix/guest/base/multiplexer-is.nix` shared by both
+session units, `HERDR_AGENT` in `wrap.nix`, the integration step in
+`agent-setup.nix`, and `guest-session-survives-switch` reading both unit
+files' text (no guest build) and refusing a path unit. Versions.json uses
+the agents' `x86_64-linux.url` and `.hash` keys, which
+`bump-agents-pr.sh`'s shape check requires.
 
 **I-502. One multiplexer per project: chosen at create, changed with
 `--multiplexer`, applied at the next start.** (multiplexer-spec,
@@ -13268,7 +13279,12 @@ shell commands get current secrets, TZ and PATH. A program that is not
 bash, started from a pane opened before the change, keeps the
 environment the server started with. The CLI's TZ push on `run` and
 `attach` writes `/etc/repose/env` alone on herdr. `secrets.md` and
-guest-conventions say so.
+guest-conventions say so. Built (mux-base): the server unit reads
+`/etc/repose/env` (`EnvironmentFile`) and starts from `bash -l`, the
+seeded `shell_mode = "login"` makes each pane a login shell, and the
+post-switch push in `env.nix` leaves the herdr server alone. Checked on
+kanali with the unit's own commands: the pane's shell ran as `-bash`
+with `HERDR_ENV=1`, `REPOSE_PROJECT` and `TZ`.
 
 **I-509. On a herdr project, `run "prompt"`, attach, `ps`, `paste`,
 messages and the temporary session end go through herdr, and `run` in a

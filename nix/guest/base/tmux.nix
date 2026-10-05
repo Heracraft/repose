@@ -1,15 +1,25 @@
 # System tmux config and the per-project session unit.
 #
 # The session is created by a *user* unit of `dev`, not by guestd, so it
-# belongs to dev's tmux server and outlives guestd restarts. It waits (path
-# unit) for /home/dev/.repose/project.json, which guestd writes at
-# SetupProject, then creates the session named after the slug with window
-# `shell` in the checkout (repose-checkout: the laptop folder's name since
-# DECISIONS I-368, ~/<slug> on an older machine, the home directory when
-# the machine has none yet). Creating it twice is a no-op.
+# belongs to dev's tmux server and outlives guestd restarts. guestd starts
+# the unit at SetupProject, right after it writes this boot's
+# /home/dev/.repose/project.json, when that file names tmux (DECISIONS
+# I-503; herdr.nix has the other session unit). The unit creates the
+# session named after the slug with window `shell` in the checkout
+# (repose-checkout: the laptop folder's name since DECISIONS I-368,
+# ~/<slug> on an older machine, the home directory when the machine has
+# none yet). Creating it twice is a no-op.
+#
+# Until I-503 a path unit started it as soon as project.json existed,
+# which at boot is the previous boot's file: after a change of
+# multiplexer made while stopped, the old multiplexer would start before
+# SetupProject wrote the new one. The path unit is gone; a guestd from
+# before I-503 starts this unit by name, which the ExecCondition allows
+# for every tmux project.
 { config, lib, pkgs, ... }:
 let
   checkout = import ./checkout.nix { inherit pkgs; };
+  multiplexerIs = import ./multiplexer-is.nix { inherit pkgs; };
   tmuxSession = pkgs.writeShellApplication {
     name = "repose-tmux-session";
     runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash checkout ];
@@ -116,6 +126,9 @@ in
     restartIfChanged = false;
     serviceConfig = {
       Type = "forking";
+      # Skipped when project.json names herdr or the herdr server runs
+      # (DECISIONS I-503).
+      ExecCondition = "${multiplexerIs}/bin/repose-multiplexer-is tmux";
       ExecStart = "${tmuxSession}/bin/repose-tmux-session";
       # tmux server exits when the last session is killed; that is a clean
       # stop, not a failure.
@@ -139,15 +152,6 @@ in
       [Scope]
       CPUWeight=1000
     '';
-  };
-
-  systemd.user.paths.repose-tmux-session = {
-    description = "repose: start the project tmux session once project.json exists";
-    wantedBy = [ "default.target" ];
-    pathConfig = {
-      PathExists = "%h/.repose/project.json";
-      Unit = "repose-tmux-session.service";
-    };
   };
 
   systemd.tmpfiles.rules = [

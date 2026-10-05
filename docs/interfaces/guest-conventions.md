@@ -177,8 +177,10 @@ the attach opens is `<name>`. guestd reads none of this.
   The script exits 0 when `jq -r '.multiplexer // "tmux"'` on
   `~/.repose/project.json` (any value other than `herdr` read as `tmux`)
   equals its argument and the other unit is not active, and exits 1
-  otherwise, which systemd treats as a skipped start, not a failure. With
-  no `project.json` it exits 1 for both.
+  otherwise (2 for an argument other than `tmux` or `herdr`); systemd
+  treats an exit from 1 to 254 as a skipped start, which `systemctl
+  start` reports as success. With no `project.json` it exits 1 for
+  both.
 - Neither unit is wanted by `default.target` and no path unit exists:
   nothing starts a session before `SetupProject` writes this boot's file.
 - Both have `restartIfChanged = false` (I-496); `nix flake check`'s
@@ -195,7 +197,8 @@ project whose `project.json` names herdr runs its server.
 
 - **Package.** `herdr` from `nix/overlay/agents/herdr.nix`, upstream's
   static-pie x86-64 release pinned in `nix/overlay/agents/versions.json`
-  (`herdr.version`, `herdr.sha256`) and moved by `scripts/bump-agents.sh`.
+  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, the agents'
+  shape) and moved by `scripts/bump-agents.sh`.
   The derivation's install check runs `herdr status client --json` and
   fails unless `endpoint_protocol_generation == 1` and `protocol >= 22`.
   It is in `environment.systemPackages`, so
@@ -209,21 +212,25 @@ project whose `project.json` names herdr runs its server.
   no `CPUWeight` (I-505). On start herdr restores
   `~/.config/herdr/session.json` and resumes agents whose integration
   recorded a session, with no client attached.
-- **Workspace.** `ExecStartPost=repose-herdr-workspace`. The command, as
-  dev: when `herdr workspace list` (herdr prints its JSON answer) has no workspace whose label is
+- **Workspace.** `ExecStartPost=-repose-herdr-workspace` (a failure
+  never stops the server). The command, as dev: when `herdr workspace
+  list` (herdr prints its JSON answer) has no workspace whose label is
   the checkout's directory name (`basename "$(repose-checkout)"`; `home`
   when the machine has none), it runs `herdr workspace create --cwd
-  "$(repose-checkout)" --label <that name> --no-focus`. It waits up to
-  10 s for the socket, exits 0 when herdr is not running, and is safe to
-  run again. The CLI runs it after the first sync in place of the tmux
+  "$(repose-checkout)" --label <that name> --no-focus`. It exits 0 at
+  once when `repose-herdr-server.service` is neither active nor
+  activating, waits up to 10 s for herdr to answer (exit 0 when it never
+  does), exits 1 only when the create fails, and is safe to run again. The CLI runs it after the first sync in place of the tmux
   `respawn-pane` (see "The checkout"); on a base without it the CLI skips
   the step. Another checkout's workspace (I-480) is labelled with that
   checkout's name and is made by the CLI when it first opens a tab there.
-- **Seeded config.** When `~/.config/herdr/config.toml` is absent, the
-  base writes `[terminal]` `shell_mode = "login"` and `[update]`
-  `version_check = false`. A file that exists is never changed. `herdr
-  update` in a guest installs to `~/.local/bin`, which comes first on
-  PATH; the docs say the base's release is the supported one.
+- **Seeded config.** When `~/.config/herdr/config.toml` is absent (no
+  file and no link), the server unit's `ExecStartPre` writes `[terminal]`
+  `shell_mode = "login"` and `[update]` `version_check = false`, owned by
+  dev with mode 0644 (herdr edits the file itself after onboarding). A
+  file that exists is never changed. `herdr update` in a guest installs
+  to `~/.local/bin`, which comes first on PATH; the docs say the base's
+  release is the supported one.
 - **Socket use by guestd** (I-504). guestd, as root, connects to
   `/home/dev/.config/herdr/herdr.sock` once per 5 s refresh, and only
   after `stat` finds a socket there. herdr answers one request per
@@ -254,10 +261,11 @@ project whose `project.json` names herdr runs its server.
 - **Agent wrappers** export `HERDR_AGENT=<binary>` beside
   `REPOSE_HOOK_AGENT` (see "Agent wrappers"), so herdr detects the agent
   whatever its argv0. `repose-agent-setup <agent>` runs `herdr
-  integration install <agent>` for claude, codex, opencode and pi when
-  `HERDR_ENV=1` and the agent's integration is missing or listed by
-  `herdr integration status --outdated-only`; best effort, silent, never blocking the agent. The guest's
-  version of a hook replaces one the laptop carried.
+  integration install <agent>` with the base's herdr for claude, codex,
+  opencode and pi when `HERDR_ENV=1` and `herdr integration status` has
+  no `<agent>: current` line (not installed, outdated or needing
+  repair); best effort, silent, at most 10 s a step, never blocking the
+  agent. The guest's version of a hook replaces one the laptop carried.
 - **Hooks** (I-506). Inside a herdr pane `repose-hook`, `repose-notify`
   and `repose-ask` send `window: "herdr:<$HERDR_PANE_ID>"` when
   `REPOSE_AGENT_WINDOW` is empty, `$TMUX_PANE` is unset and

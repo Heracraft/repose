@@ -23,6 +23,9 @@ let
       . /etc/profile.d/repose.sh
     fi
     export REPOSE_HOOK_AGENT=${bin}
+    # herdr detects the agent in a pane from this, whatever the argv0
+    # (a wrapper, node for gemini); tmux ignores it (DECISIONS I-501).
+    export HERDR_AGENT=${bin}
     # Registration failures must never block an agent (a blocked agent is a
     # silently wasted night), so setup is best-effort.
     ${pkgs.repose-agent-setup}/bin/repose-agent-setup ${bin} || true

@@ -179,6 +179,7 @@
         codex = pkgs.reposeAgents.codex;
         gemini-cli = pkgs.reposeAgents.gemini-cli;
         pi-coding-agent = pkgs.reposeAgents.pi-coding-agent;
+        herdr = pkgs.reposeHerdr;
         playwright-mcp = pkgs.reposeMcp.playwright-mcp;
         chrome-devtools-mcp = pkgs.reposeMcp.chrome-devtools-mcp;
         default = self.packages.${system}.guest-runner;
@@ -203,13 +204,60 @@
           fi
           echo "$size" > $out
         '';
-        # A base switch must never restart the tmux session unit: that ends
-        # every agent on a running guest (DECISIONS I-496).
-        guest-session-survives-switch = pkgs.runCommand "guest-session-survives-switch" { } ''
-          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/user/repose-tmux-session.service
-          grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
-          touch $out
-        '';
+        # A base switch must never restart a session unit: the tmux or
+        # herdr unit's cgroup holds every pane, so a restart ends every
+        # agent on a running guest (DECISIONS I-496, I-503). It reads the
+        # unit files' text, so it builds no part of the guest system. No
+        # path unit may start a session before SetupProject writes this
+        # boot's project.json (I-503).
+        guest-session-survives-switch =
+          let
+            units = self.guestSystem.config.systemd.user.units;
+            unitFile = name: pkgs.writeText name (builtins.unsafeDiscardStringContext units.${name}.text);
+          in
+          pkgs.runCommand "guest-session-survives-switch" {
+            tmuxUnit = unitFile "repose-tmux-session.service";
+            herdrUnit = unitFile "repose-herdr-server.service";
+            userUnits = lib.concatStringsSep "\n" (builtins.attrNames units);
+          } ''
+            fail=0
+            for pair in "tmux:$tmuxUnit" "herdr:$herdrUnit"; do
+              m=''${pair%%:*} unit=''${pair#*:}
+              grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "the $m session unit lacks X-RestartIfChanged=false" >&2; fail=1; }
+              grep -q "^ExecCondition=.*/bin/repose-multiplexer-is $m\$" "$unit" || { echo "the $m session unit lacks ExecCondition=repose-multiplexer-is $m" >&2; fail=1; }
+              if grep -q '^WantedBy=' "$unit"; then echo "the $m session unit is wanted by a target" >&2; fail=1; fi
+            done
+            if printf '%s\n' "$userUnits" | grep -q '^repose-tmux-session\.path$\|^repose-herdr-server\.path$'; then
+              echo "a path unit starts a session unit" >&2; fail=1
+            fi
+            [ "$fail" = 0 ] || exit 1
+            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy; no path unit"
+            touch $out
+          '';
+        # The herdr package's install check refuses a release whose socket
+        # protocol guestd and a laptop herdr cannot speak (DECISIONS I-501):
+        # generation 2, protocol 21, and unreadable output each fail it,
+        # and generation 1 at protocol 22 passes.
+        herdr-protocol-check =
+          let
+            check = pkgs.reposeHerdr.protocolCheck;
+            fake = name: out: pkgs.writeShellScript "herdr-${name}" ''
+              if [ "$*" = "status client --json" ]; then echo '${out}'; else exit 64; fi
+            '';
+          in
+          pkgs.runCommand "herdr-protocol-check" { } ''
+            ok() { "${check}" "$1" || { echo "refused $2, which it must accept" >&2; exit 1; }; }
+            refused() {
+              if "${check}" "$1"; then echo "accepted $2, which it must refuse" >&2; exit 1; fi
+            }
+            ok ${fake "good" ''{"version":"0.9.3","protocol":22,"endpoint_protocol_generation":1}''} "generation 1, protocol 22"
+            ok ${fake "newer" ''{"version":"0.10.0","protocol":23,"endpoint_protocol_generation":1}''} "generation 1, protocol 23"
+            refused ${fake "gen2" ''{"version":"1.0.0","protocol":22,"endpoint_protocol_generation":2}''} "generation 2"
+            refused ${fake "old" ''{"version":"0.8.0","protocol":21,"endpoint_protocol_generation":1}''} "protocol 21"
+            refused ${fake "nogen" ''{"version":"0.7.0","protocol":22}''} "no generation"
+            refused ${fake "junk" "not json"} "unreadable output"
+            touch $out
+          '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.

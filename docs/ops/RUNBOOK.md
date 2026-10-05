@@ -1072,6 +1072,31 @@ desktop is off.
    it had no `DISPLAY` because it started before Xvnc. New shells export
    `DISPLAY=:99` while the X socket exists; open a new tmux window.
 
+## No session on a machine (tmux or herdr)
+
+`repose attach` finds no tmux session, or a herdr project's machine has
+no herdr server, after a start.
+
+1. In the guest, as dev: `jq .multiplexer ~/.repose/project.json` names
+   the multiplexer this boot chose (no key is tmux). `systemctl --user
+   status repose-tmux-session repose-herdr-server` shows which unit ran.
+   Nothing starts either unit but guestd's SetupProject (DECISIONS
+   I-503).
+2. `Skipped due to 'exec-condition'` on a unit means
+   `repose-multiplexer-is` refused it: the file names the other
+   multiplexer, or the other unit was already active. A change of
+   multiplexer applies at the next start (I-502), so a machine that
+   switched while running keeps the old unit until `repose stop` and
+   `repose start`. `repose-multiplexer-is tmux; echo $?` (or `herdr`)
+   gives the answer the unit got.
+3. herdr: `journalctl --user -u repose-herdr-server` and
+   `~/.config/herdr/herdr-server.log`. A server that started but has no
+   workspace in the checkout: run `repose-herdr-workspace` by hand. It
+   exits 0 without a word when the herdr unit is not active, and names
+   any other reason on stderr. A user's `herdr update` puts a newer
+   binary in `~/.local/bin`, which the unit then runs; removing it goes
+   back to the base's release.
+
 ## Prisma, Playwright or a Python wheel fails in a guest
 
 The base's compat layer (DECISIONS I-228, `nix/guest/base/compat.nix`).

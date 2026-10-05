@@ -31,7 +31,7 @@ The user may have added other repositories to this machine as folders beside it,
 - A tool the user wants on every machine of their account, with their shell aliases and dotfiles, belongs in their machine.nix: `repose config --global add NAME` on their laptop. <!-- /docs/config#your-machine-nix -->
 - Tools the user has on their laptop are installed in the background after each `repose run`. If one is missing right after a start, check `~/.repose/tools-install.log` before installing it yourself. <!-- /docs/machine#your-laptops-tools-come-along -->
 - npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. Leave the two lines repose added to `~/.npmrc` in place. <!-- /docs/machine#network -->
-- You started inside the project's dev environment: its `.envrc`, or its flake's dev shell when it has a `flake.nix` and no `.envrc`. If a tool the flake provides is missing, the load failed or the `.envrc` is denied; the top of your tmux window says which. <!-- /docs/machine#projects-with-a-flake-nix -->
+- You started inside the project's dev environment: its `.envrc`, or its flake's dev shell when it has a `flake.nix` and no `.envrc`. If a tool the flake provides is missing, the load failed or the `.envrc` is denied; the top of your tmux window or herdr pane says which. <!-- /docs/machine#projects-with-a-flake-nix -->
 
 ## Docker and databases
 
@@ -55,7 +55,7 @@ The user may have added other repositories to this machine as folders beside it,
 
 ## Memory and disk
 
-- When memory runs out, test runs and dev servers are killed before agents and tmux. `sudo dmesg | grep -i killed` shows what went. <!-- /docs/machine#memory-and-disk -->
+- When memory runs out, test runs and dev servers are killed before agents, tmux and herdr. `sudo dmesg | grep -i killed` shows what went. <!-- /docs/machine#memory-and-disk -->
 - `df -h /home/dev` shows free disk. The user can grow it with `repose resize 80G` (any size) on their laptop. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
 - The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every vCPU busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->

@@ -137,16 +137,16 @@ Contract it provides to the others: the unit names in
 
 Checklist:
 
-- [ ] Build log of `herdr.nix` with the install check passing, and the
+- [x] Build log of `herdr.nix` with the install check passing, and the
       same check failing against a fake binary that reports generation 2
       (both pasted).
-- [ ] `nix flake check` output with the extended
+- [x] `nix flake check` output with the extended
       `guest-session-survives-switch`, and the check failing with the
       herdr line removed. (On kanali: `nix build` of the check alone;
       never a full guest system build.)
-- [ ] `nix eval` of the guest config shows both units with their
+- [x] `nix eval` of the guest config shows both units with their
       `ExecCondition`, no path unit, `restartIfChanged = false` on both.
-- [ ] `repose-multiplexer-is` against four `project.json` files (no key,
+- [x] `repose-multiplexer-is` against four `project.json` files (no key,
       `tmux`, `herdr`, `screen`) and no file: exit codes pasted.
 - [ ] On a temporary machine (after the conductor deploys the branch's
       base, or with `nix copy` of the closure): `project.json`
