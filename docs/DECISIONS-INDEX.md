@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-506 entries.
+507 entries.
 
 ## Scope
 
@@ -307,7 +307,7 @@ pointer, not a summary.
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; L4958
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L4991
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5028
-- **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — L5059
+- **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5059
 - **I-224** The sync's writes are one ssh, and none when nothing changed — L5106
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — L5140
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5169
@@ -538,3 +538,4 @@ pointer, not a summary.
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12297
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
+- **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12358

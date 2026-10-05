@@ -25,6 +25,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. The machine is still running. `run` and `attach` attach again as soon as it answers.
 
+**`attach` takes more than a few seconds to come back.** After the laptop slept or changed networks, `attach` needs up to 2 seconds to find that the old connection is dead, then a normal connect. If it takes longer, run `REPOSE_TIMING=1 repose attach`; it prints how long each step took.
+
 **``repose: could not reach todo-app for 2 minutes. `repose attach todo-app` attaches again once it answers.``** The connection didn't come back within 2 minutes. Check your network, then run `repose attach todo-app`. `repose status todo-app` shows whether the machine is running.
 
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It shows the same error the editor got, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``; connecting never starts one.

@@ -205,6 +205,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if l := tempLine(project, time.Now(), false); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
+		defer e.keepTokenFresh()()
 		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach, renewFor(e, project))
 	}
 
@@ -395,6 +396,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		return nil
 	}
 	startSessionHelper(e, helper)
+	defer e.keepTokenFresh()()
 	return attachTmux(target, project.Slug, window, tz, helper.RepoDir, afterAttach, renewFor(e, project))
 }
 
@@ -719,6 +721,22 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		case <-time.After(sshRetryInterval):
 		}
 	}
+}
+
+// keepTokenFresh keeps the access token fresh while an attach runs
+// (I-491) and returns the function that stops it. A token source that
+// cannot refresh (tests, not logged in) makes it a no-op.
+func (e *Env) keepTokenFresh() func() {
+	if e.Client == nil {
+		return func() {}
+	}
+	kf, ok := e.Client.Tokens.(interface{ KeepFresh(context.Context) })
+	if !ok {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go kf.KeepFresh(ctx)
+	return cancel
 }
 
 // renewFor is a dropped attach's certificate renewal (I-469): connect's

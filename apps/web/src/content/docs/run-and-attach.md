@@ -60,6 +60,8 @@ Press `Ctrl-b`, let go, then `d`. You're back on your laptop and everything on t
 
 If Wi-Fi drops or the laptop sleeps while you're attached, `run` and `attach` say `lost the connection` and attach again by themselves once the machine answers, for up to 2 minutes, with the screen as you left it. `Ctrl-C` stops waiting. The machine keeps running either way.
 
+After the laptop sleeps or changes networks, a new `attach` spends up to 2 seconds checking whether the connection from your last command still answers, and opens a fresh one if it doesn't. While you're attached, repose keeps your login fresh, so coming back after hours doesn't wait on a login refresh.
+
 To get back, from the checkout or from anywhere:
 
 ```
