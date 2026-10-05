@@ -15,7 +15,7 @@ Solo allows 10 projects, Plus 25 and Pro 50, running or stopped. Destroyed proje
 
 ## When repose is full
 
-A seat is 8 GB of memory for running machines: Solo takes one, Plus two, Pro four. When no seat is free, choosing a plan puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page and the landing page show the seats left and the number waiting.
+A seat is 8 GB of memory for running machines: Solo takes one, Plus two, Pro four. If no seat is free, choosing a plan puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page and the landing page show the seats left and the number waiting.
 
 We let people in, in the order they joined, as seats free up or we add a server. You get one email when it's your turn, sent even if you've turned notification emails off, and the seat is held for you for 72 hours. Choose your plan within them; a hold that runs out moves you to the back of the queue, and the email says so.
 

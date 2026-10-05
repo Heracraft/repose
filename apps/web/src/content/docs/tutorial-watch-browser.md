@@ -40,7 +40,7 @@ Clicks in the view go to the agent's browser. Use it for the steps only a person
 - **A login.** Sign in to the site the agent needs. The session stays in the browser's profile, so the agent's next call is logged in, and so is the next agent tomorrow.
 - **A captcha, a passkey, a 2FA prompt.** Do it, then tell the agent to carry on.
 
-The agents' guide to the machine tells them to ask you to run `repose browser` when a page needs a human. When you get that message, run `repose browser`, log in, and reply.
+The agents' guide to the machine tells them to ask you to run `repose browser` when a page needs a human. If an agent asks, run `repose browser`, log in, and reply.
 
 ## Close it
 

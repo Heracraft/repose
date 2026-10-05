@@ -89,7 +89,7 @@ Connecting never starts a stopped machine. `repose start todo-app` starts it, an
 
 Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refused. Nothing running there, an agent or a package's install script, can use your keys, even while you're attached.
 
-When your `gh` login is copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. For other git hosts, see [Other git hosts](/docs/secrets#other-git-hosts).
+With your `gh` login copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. For other git hosts, see [Other git hosts](/docs/secrets#other-git-hosts).
 
 ## Windows
 
