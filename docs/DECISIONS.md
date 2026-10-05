@@ -13044,3 +13044,24 @@ running (`codex exec` does not start one); after `daemon start` it
 prints `"status":"running"`. Users need do nothing: the next base update
 switches the package in place; until then a bwrap on PATH (`nix profile
 add nixpkgs#bubblewrap`) gets round it (troubleshooting page).
+
+**I-496. A base switch never restarts the tmux session unit.**
+(tmux-no-restart, 2026-10-05; fixes I-494) Base 2026.10.05 added
+`CPUWeight = 1000` to the `repose-tmux-session` user unit (I-494). The
+switch at the 04:00 UTC sweep saw the unit change and restarted it, as
+`switch-to-configuration` does for any changed user unit without
+`X-RestartIfChanged=false`; with `KillMode=control-group` the stop ended
+the tmux server and every pane, so every agent and shell on the five
+guests on that base ended (kanali's journal, 04:00:11Z: "Stopping
+repose: project tmux session", then each "tmux child pane" scope).
+Earlier bases never changed this unit, which is why no weekly update had
+done it. The unit now sets `restartIfChanged = false`; a changed unit
+takes effect at the session's next start (a stop and start, or a
+restart of the machine). The switch reads the flag from the new unit, so
+the base that carries this fix does not restart the session either.
+Check `guest-session-survives-switch` fails the build when the built
+unit lacks `X-RestartIfChanged=false` (shown failing with the line
+removed). The other user units (`repose-tools-carry`,
+`repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
+no session. Not covered: a VM test that switches a running guest between
+two bases with a pane open; it needs the dev box.

@@ -107,6 +107,13 @@ in
     description = "repose: project tmux session";
     after = [ "default.target" ];
     unitConfig.ConditionPathExists = "%h/.repose/project.json";
+    # Never restarted by a switch: the unit's cgroup holds the tmux server
+    # and, through KillMode=control-group, every pane, so a restart ends
+    # every agent and shell on the machine. A base whose change touched
+    # this unit (CPUWeight, I-494) did that to every running guest at the
+    # 2026-10-05 04:00 sweep (DECISIONS I-496). A changed unit takes
+    # effect at the session's next start.
+    restartIfChanged = false;
     serviceConfig = {
       Type = "forking";
       ExecStart = "${tmuxSession}/bin/repose-tmux-session";
