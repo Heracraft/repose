@@ -116,18 +116,29 @@ func (e *Env) readPersonal(ctx context.Context) (*personalView, error) {
 	return v, nil
 }
 
-// conflictLine is the refusal when both copies changed.
-func (e *Env) personalConflictLine(acct *PersonalConfig) string {
+// personalConflict is the refusal when both copies changed: an error,
+// because it is one (the push did not happen), and its text names the two
+// ways out.
+type personalConflict struct {
+	acct *PersonalConfig
+	path string
+}
+
+func (c personalConflict) Error() string {
 	where := "elsewhere"
-	if acct != nil && acct.Source != nil && *acct.Source == "dashboard" {
+	if c.acct != nil && c.acct.Source != nil && *c.acct.Source == "dashboard" {
 		where = "on the dashboard"
 	}
 	when := ""
-	if acct != nil && acct.CreatedAt != nil {
-		when = " " + acct.CreatedAt.Local().Format("2006-01-02 15:04")
+	if c.acct != nil && c.acct.CreatedAt != nil {
+		when = " " + c.acct.CreatedAt.Local().Format("2006-01-02 15:04")
 	}
-	p := e.displayPath(e.machineNixPath())
-	return fmt.Sprintf("Not pushing %s: the copy on your account was saved %s%s, after this laptop's last push. `repose config --global apply` pushes the laptop's copy over it; `repose config --global show > %s` keeps the account's.", p, where, when, p)
+	return fmt.Sprintf("Not pushing %s: the copy on your account was saved %s%s, after this laptop's last push. `repose config --global apply` pushes the laptop's copy over it; `repose config --global show > %s` keeps the account's.", c.path, where, when, c.path)
+}
+
+// personalConflictLine is personalConflict's text.
+func (e *Env) personalConflictLine(acct *PersonalConfig) string {
+	return personalConflict{acct: acct, path: e.displayPath(e.machineNixPath())}.Error()
 }
 
 // personalSync is run's half (DECISIONS I-490): push the laptop's

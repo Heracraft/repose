@@ -254,7 +254,7 @@ func TestToolPrecedence(t *testing.T) {
 		t.Fatal("the node pin went with the scripts' commands")
 	}
 	var out bytes.Buffer
-	printScanWith(&out, repo, readGlobalTools(toolEnv{Home: home, GOOS: "linux", Getenv: func(string) string { return "" }, LookPath: lookPathFast}), scanProject(repo), prec, scanPersonal{Has: true, Why: "your account has a machine.nix"})
+	printScan(&out, repo, readGlobalTools(toolEnv{Home: home, GOOS: "linux", Getenv: func(string) string { return "" }, LookPath: lookPathFast}), scanProject(repo), prec, scanPersonal{Has: true, Why: "your account has a machine.nix"})
 	s := out.String()
 	if !strings.Contains(s, "  skipped: your account has a machine.nix, which describes your tools, so none of these is installed") ||
 		!strings.Contains(s, "  skipped: repose.nix at the checkout root describes this project's tools") {

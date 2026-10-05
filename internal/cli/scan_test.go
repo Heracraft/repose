@@ -15,7 +15,7 @@ func TestScanFixtures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sc := scanProject(filepath.Join("testdata", "scan", name))
 			var out bytes.Buffer
-			printScan(&out, name, nil, sc)
+			printScan(&out, name, nil, sc, toolPrecedence{}, scanPersonal{})
 			golden := filepath.Join("testdata", "scan", name+".golden")
 			if *updateGolden {
 				if err := os.WriteFile(golden, out.Bytes(), 0o644); err != nil {
@@ -32,7 +32,7 @@ func TestScanFixtures(t *testing.T) {
 			}
 			// Deterministic: a second scan is byte for byte the same.
 			var again bytes.Buffer
-			printScan(&again, name, nil, scanProject(filepath.Join("testdata", "scan", name)))
+			printScan(&again, name, nil, scanProject(filepath.Join("testdata", "scan", name)), toolPrecedence{}, scanPersonal{})
 			if !bytes.Equal(again.Bytes(), out.Bytes()) {
 				t.Fatal("two scans differ")
 			}

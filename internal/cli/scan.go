@@ -930,7 +930,7 @@ func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool, personal scanPers
 	if jsonOut {
 		return writeJSONOut(out, scanJSON(global, sc, prec, personal))
 	}
-	printScanWith(out, abs, global, sc, prec, personal)
+	printScan(out, abs, global, sc, prec, personal)
 	return nil
 }
 
@@ -980,11 +980,7 @@ func scanJSON(global []toolItem, sc *scanResult, prec toolPrecedence, personal s
 		"skipped": map[string]string{"laptop": laptopWhy, "project": projectWhy}}
 }
 
-func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult) {
-	printScanWith(out, dir, global, sc, toolPrecedence{}, scanPersonal{})
-}
-
-func printScanWith(out io.Writer, dir string, global []toolItem, sc *scanResult, prec toolPrecedence, personal scanPersonal) {
+func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, prec toolPrecedence, personal scanPersonal) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 	laptopWhy, projectWhy := skipReasons(prec, personal)
 	p("Your laptop's tools (%d):\n", len(global))
