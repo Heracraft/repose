@@ -12387,8 +12387,10 @@ and not changed here: the daemon's copy costs about 370 MB in
 `~/.codex/packages` per Codex version, and the daemon starts an updater
 (`codex app-server daemon pid-update-loop`) that follows upstream's
 production channel, so the daemon that runs turns can move past the
-version `versions.json` pins. Whether to pin it (for example with
-`features.daemon_auto_start = false` in `/etc/codex/config.toml`) is open
-for the owner. Checked on kanali: the built package's TUI in tmux reached
+version `versions.json` pins. The owner chose (2026-10-04) to keep the
+daemon on, as upstream ships it: `codex agents`, `codex queue` and remote
+control work without a manual start, at the cost of the disk and the
+drift above. Pinning (`features.daemon_auto_start = false` in
+`/etc/codex/config.toml`) stays the way out if either becomes a problem. Checked on kanali: the built package's TUI in tmux reached
 the sign-in screen with a scratch `CODEX_HOME` where the old package
 printed the error; `codex exec` ran `cat f.txt` and answered with its word.
