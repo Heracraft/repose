@@ -12737,3 +12737,34 @@ folder `run` chose from one the user changed into); trusting `/home/dev`
 as a parent (trusts every folder on the machine); answering the dialog
 with keys (its wording has changed between releases, and on 2.1.283 the
 cursor starts on "No, exit", so a key sent blind can quit Claude Code).
+**I-491. A kept ssh master is reused only after it answers, and an attach
+keeps the access token fresh.** (attach-check, 2026-10-04; amends I-223)
+The owner reported that reattaching after an hour or more took seconds.
+Two causes, read from the code. First, I-223's fast path took a master
+that answered `ssh -O check` as proof the guest answers, but the check
+asks only the master's local socket: after the laptop slept or changed
+networks the master process is still up with a dead TCP connection, so
+`attach` printed "Connected", opened its session on it and hung until
+ssh's keepalives gave up (`ServerAliveInterval 30`, count 3: up to 90
+seconds), then I-469's reattacher connected afresh. `masterAlive` now
+also runs `true` over the master within 2 seconds
+(`masterProbeTimeout`); on a timeout it sends `-O stop` (stop, not exit,
+so sessions already on a slow but healthy master, another terminal's
+attach, keep running) and the caller takes the cold path. This costs
+one multiplexed session (two round trips) on every warm `run` and
+`attach`, which I-223 had made free; a dead master costs 2 seconds
+instead of up to 90. Second, with no master left, the first api call
+refreshed an access token that had expired during the attach (Logto's
+default 1-hour lifetime; the configured value is not in this repository), a round trip to Logto before anything else. An
+attached `run` or `attach` now runs `KeepFresh`: once a minute, against
+the wall clock because a sleeping laptop stops timers, it refreshes the
+token when under 10 minutes remain, backing off to 15 minutes on
+failure, and ends on logout instead of writing the session back. Every
+refresh now holds `credentials.json.lock` and first takes a newer token
+another process wrote, or its rotated refresh token, so two attached
+terminals do not spend the same refresh token. Not changed:
+`ServerAliveCountMax` (a gateway interface change, left for later).
+Tests: `TestMasterAliveDeadConnection`, `TestMasterAliveHealthy`,
+`TestKeepFreshRefreshesBeforeExpiry`, `TestKeepFreshStopsAfterLogout`,
+`TestTokenSourceTakesAnotherProcessesRefresh`,
+`TestTokenSourceRefreshesWithRotatedToken`.

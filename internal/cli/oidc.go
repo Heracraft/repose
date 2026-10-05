@@ -327,6 +327,28 @@ func (s *oidcTokenSource) AccessToken(ctx context.Context, forceRefresh bool) (s
 	if !forceRefresh && s.creds.AccessToken != "" && time.Until(s.creds.ExpiresAt) > time.Minute {
 		return s.creds.AccessToken, nil
 	}
+	return s.refreshLocked(ctx, time.Minute)
+}
+
+// refreshLocked gets a new access token good for at least margin, under
+// the credentials file's lock, with s.mu held. Another repose process may
+// have refreshed first (an attach keeping its token fresh, I-491): its
+// access token is taken when it is not the one this process holds and
+// lasts margin, and otherwise its refresh token is, since Logto rotates
+// them and the one in memory may already be spent.
+func (s *oidcTokenSource) refreshLocked(ctx context.Context, margin time.Duration) (string, error) {
+	if unlock, err := lockFile(credentialsPath(s.dir) + ".lock"); err == nil {
+		defer unlock()
+	}
+	if disk, ok, err := loadCredentials(s.dir); err == nil && ok && disk.LogtoIssuer == s.creds.LogtoIssuer {
+		if disk.AccessToken != "" && disk.AccessToken != s.creds.AccessToken && time.Until(disk.ExpiresAt) > margin {
+			s.creds = disk
+			return s.creds.AccessToken, nil
+		}
+		if disk.RefreshToken != "" {
+			s.creds.RefreshToken = disk.RefreshToken
+		}
+	}
 	if s.creds.RefreshToken == "" {
 		return "", errors.New("not logged in")
 	}
@@ -350,4 +372,61 @@ func (s *oidcTokenSource) AccessToken(ctx context.Context, forceRefresh bool) (s
 		return "", err
 	}
 	return s.creds.AccessToken, nil
+}
+
+// tokenRefreshAhead is how long before its expiry KeepFresh replaces the
+// access token.
+const tokenRefreshAhead = 10 * time.Minute
+
+// keepFreshMaxBackoff caps the wait between failed background refreshes
+// (offline, Logto down, a revoked refresh token).
+const keepFreshMaxBackoff = 15 * time.Minute
+
+// keepFreshTick is how often KeepFresh looks at the expiry (a variable for
+// tests).
+var keepFreshTick = time.Minute
+
+// KeepFresh refreshes the access token in the background, tokenRefreshAhead
+// before it expires, until ctx ends (I-491). An attach runs it for as
+// long as it is attached, so the next command after a long attach finds a
+// token that still works and does not wait on Logto before its first api
+// call. It checks once a minute against the wall clock rather than
+// sleeping until the expiry, because a sleeping laptop stops the timers
+// and the clock keeps going. A logout (no credentials file) ends it, so
+// it never writes back a session the user ended.
+func (s *oidcTokenSource) KeepFresh(ctx context.Context) {
+	every := keepFreshTick
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	var notBefore time.Time
+	backoff := every
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		if time.Now().Before(notBefore) {
+			continue
+		}
+		s.mu.Lock()
+		if time.Until(s.creds.ExpiresAt) > tokenRefreshAhead {
+			s.mu.Unlock()
+			continue
+		}
+		if _, ok, err := loadCredentials(s.dir); err != nil || !ok {
+			s.mu.Unlock()
+			return
+		}
+		_, err := s.refreshLocked(ctx, tokenRefreshAhead)
+		s.mu.Unlock()
+		if err != nil {
+			timingf("token: background refresh failed; next try in %s", backoff)
+			notBefore = time.Now().Add(backoff)
+			backoff = min(2*backoff, keepFreshMaxBackoff)
+			continue
+		}
+		timingf("token: refreshed in the background")
+		backoff = every
+	}
 }
