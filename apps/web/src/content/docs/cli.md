@@ -39,6 +39,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines). |
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                             |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                    |
+| `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machinenix). |
 
 ### `repose attach [PROJECT]`
 
@@ -166,7 +167,7 @@ Copy the image on your clipboard to `/tmp/repose-paste/` on the machine and past
 
 ### `repose scan [DIR]`
 
-List the tools the next `repose run` would install on the machine, and why, and the Node, Ruby and Java versions the project pins with the version the machine gets (the closest nixpkgs has when it lacks the pinned one). Installs nothing. `--json` for JSON.
+List the tools the next `repose run` would install on the machine, and why, and the Node, Ruby and Java versions the project pins with the version the machine gets (the closest nixpkgs has when it lacks the pinned one). Installs nothing. `--json` for JSON. A `.nix` file takes precedence: with a machine.nix on your account your laptop's tools are skipped, and with a `repose.nix` at the checkout root the commands the scripts run are; the list says which half it skipped and why (`skipped` in the JSON). Logged out, it goes by `~/.config/repose/machine.nix` and says so.
 
 ## Projects
 
@@ -262,6 +263,8 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | `repose config edit`              | Edit in `$EDITOR`, apply on save.                                                          |
 | `repose config apply [PATH]`      | Apply a file. Default `./repose.nix`; with neither, apply the current configuration again. |
 
+With `--global`, the same commands act on your machine.nix instead of the project's file: a home-manager module every machine of your account gets, kept at `~/.config/repose/machine.nix` and on your account. `repose config --global add PACKAGE...` and `remove` edit its `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy (`--revisions` lists its saves), and `apply [PATH]` pushes a file (default `~/.config/repose/machine.nix`) over the account's copy; an empty file removes it. Each push rebuilds every machine that has not opted out: a running one switches in place, a stopped one at its next start. `--global` takes no `--project`. `repose run` pushes the file by itself when it changed since its last push, and refuses with one line when the account's copy changed since too. See [Your machine.nix](/docs/config#your-machinenix).
+
 ## Account
 
 | Command                             | What it does                                                                                                     |
@@ -333,12 +336,12 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 
 | Path                | What it holds                                                                                                                                                                                                                                                                                                          |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | Your login (mode 0600; on macOS the token is in the keychain), `config.toml`, and caches that are safe to delete.                                                                                                                                                                                                      |
+| `~/.config/repose/` | Your login (mode 0600; on macOS the token is in the keychain), `config.toml`, your `machine.nix` with `machine.nix.state` (what the last push left on both sides), and caches that are safe to delete.                                                                                                                  |
 | `~/.ssh/repose/`    | The CLI's own SSH key and 24-hour certificate, `hosts` with one `Host` block per project, and `config`, which has `ssh` run `repose ssh-prepare` before connecting to a `.repose` host, so the certificate is renewed and a new project's block written first ([SSH and editors](/docs/ssh-and-editors#how-it-works)). |
 | `~/.ssh/config`     | One added line: `Include ~/.ssh/repose/config`.                                                                                                                                                                                                                                                                        |
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                                                                                                 |
 
-`repose logout --purge` removes all of these but the `repose` remotes; `git remote remove repose` removes one.
+`repose logout --purge` removes all of these but the `repose` remotes and `machine.nix`, which is yours; `git remote remove repose` removes one remote.
 
 ## Exit codes
 

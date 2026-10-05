@@ -12,9 +12,23 @@ const includeComment = "# added by repose"
 
 // purgeCLIFiles removes everything repose owns on the laptop (07-cli.md
 // §8 "Rollback": `~/.config/repose/`, `~/.ssh/repose/` and the one
-// `Include` line).
+// `Include` line). machine.nix is the user's own file (DECISIONS I-490)
+// and stays, with the directory around it.
 func purgeCLIFiles(configDirPath, sshDirPath string) error {
-	if err := os.RemoveAll(configDirPath); err != nil {
+	if fi, err := os.Stat(filepath.Join(configDirPath, machineNixFile)); err == nil && fi.Mode().IsRegular() {
+		entries, err := os.ReadDir(configDirPath)
+		if err != nil {
+			return err
+		}
+		for _, en := range entries {
+			if en.Name() == machineNixFile {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(configDirPath, en.Name())); err != nil {
+				return err
+			}
+		}
+	} else if err := os.RemoveAll(configDirPath); err != nil {
 		return err
 	}
 	if err := os.RemoveAll(sshDirPath); err != nil {

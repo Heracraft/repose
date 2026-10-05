@@ -151,7 +151,7 @@ func newRootCmd(version string) *cobra.Command {
 		newBrowserCmd(env, g),
 		newCpCmd(env, g),
 		newPasteCmd(env, g),
-		newScanCmd(),
+		newScanCmd(env),
 		newSessionHelperCmd(),
 		newSSHPrepareCmd(env),
 		newCodeCmd(env, g),
@@ -335,6 +335,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVar(&opts.NoAttach, "no-attach", false, "do not attach after starting/sending the prompt")
+	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix (repose config --global) off this machine, from now on")
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, ~/<slug>-worktree-<N> on branch worktree-<N>")
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
@@ -733,16 +734,36 @@ func readSecretValue(name, fromFile string, fromEnv bool) ([]byte, error) {
 }
 
 func newConfigCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "config", Short: "Manage the machine's Nix configuration"}
+	root := &cobra.Command{Use: "config", Short: "Manage the machine's Nix configuration",
+		Long: `Manage the machine's Nix configuration.
+
+Without --global, each command acts on the project's configuration
+(repose.nix). With --global, it acts on your machine.nix instead: a
+home-manager module every machine of your account gets, kept at
+~/.config/repose/machine.nix and on your account. ` + "`repose run`" + ` pushes
+that file when it changed; ` + "`repose run --no-personal`" + ` keeps it off one machine.`,
+		Example: "  repose config --global add ripgrep fd\n  repose config --global edit\n  repose config --global show"}
+	var global bool
+	root.PersistentFlags().BoolVar(&global, "global", false, "act on your machine.nix, which every machine of your account gets")
+	// globalEnv is env() with --global's refusal of a project argument.
+	globalEnv := func() (*Env, error) {
+		if global && g.project != "" {
+			return nil, cobraUsageError{fmt.Errorf("--global is your machine.nix on every machine; it takes no --project (%s)", g.project)}
+		}
+		return env()
+	}
 	var showRevisions bool
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "Print the current fragment",
+		Short: "Print the current fragment (with --global, your machine.nix)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
+			e, err := globalEnv()
 			if err != nil {
 				return err
+			}
+			if global {
+				return GlobalShowCmd(cmd.Context(), e, showRevisions)
 			}
 			return ConfigShowCmd(cmd.Context(), e, g.project, showRevisions)
 		},
@@ -751,28 +772,34 @@ func newConfigCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 
 	edit := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit the fragment in $EDITOR",
+		Short: "Edit the fragment in $EDITOR (with --global, ~/.config/repose/machine.nix)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
+			e, err := globalEnv()
 			if err != nil {
 				return err
+			}
+			if global {
+				return GlobalEditCmd(cmd.Context(), e, openInEditor)
 			}
 			return ConfigEditCmd(cmd.Context(), e, g.project, openInEditor)
 		},
 	}
 	apply := &cobra.Command{
 		Use:   "apply [PATH]",
-		Short: "Apply a fragment file (default ./repose.nix; with neither, apply the current configuration again)",
+		Short: "Apply a fragment file (default ./repose.nix; with --global, push ~/.config/repose/machine.nix)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
+			e, err := globalEnv()
 			if err != nil {
 				return err
 			}
 			path := ""
 			if len(args) == 1 {
 				path = args[0]
+			}
+			if global {
+				return GlobalApplyCmd(cmd.Context(), e, path)
 			}
 			return ConfigApplyCmd(cmd.Context(), e, g.project, path)
 		},
@@ -788,13 +815,20 @@ is a nixpkgs attribute: gcc, air, nodejs_22, python312Packages.black,
 nodePackages.typescript. Find names at https://search.nixos.org/packages.
 
 A project whose fragment was edited by hand has no menu; add packages there
-with ` + "`repose config edit`" + `.`,
-		Example: "  repose config add gcc air\n  repose config add postgresql python312Packages.black",
+with ` + "`repose config edit`" + `.
+
+With --global, the names go into the home.packages list of your
+machine.nix, every machine of your account gets them, and catalog
+services are not available.`,
+		Example: "  repose config add gcc air\n  repose config add postgresql python312Packages.black\n  repose config --global add ripgrep",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
+			e, err := globalEnv()
 			if err != nil {
 				return err
+			}
+			if global {
+				return GlobalPackagesCmd(cmd.Context(), e, args, true)
 			}
 			return ConfigAddCmd(cmd.Context(), e, g.project, args)
 		},
@@ -803,12 +837,15 @@ with ` + "`repose config edit`" + `.`,
 		Use:     "remove <package>...",
 		Aliases: []string{"rm"},
 		Short:   "Remove packages added with config add",
-		Example: "  repose config remove air",
+		Example: "  repose config remove air\n  repose config --global remove ripgrep",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
+			e, err := globalEnv()
 			if err != nil {
 				return err
+			}
+			if global {
+				return GlobalPackagesCmd(cmd.Context(), e, args, false)
 			}
 			return ConfigRemoveCmd(cmd.Context(), e, g.project, args)
 		},

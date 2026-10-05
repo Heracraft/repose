@@ -664,15 +664,43 @@ func primaryFirst(bins []string, name string) []string {
 
 // ---- the part ----
 
+// toolPrecedence is what a .nix file already describes, so the scan
+// leaves it alone (DECISIONS I-490): with a machine.nix on the account
+// (and the machine not opted out) the laptop's global tools are not
+// carried; with a repose.nix at the checkout root the commands the
+// project's scripts run are not. The runtime pins (.nvmrc and the like)
+// are declarations, not guesses, and still travel.
+type toolPrecedence struct {
+	SkipGlobals bool
+	SkipScripts bool
+}
+
+// precedenceFor reads the checkout half: a repose.nix at its root.
+func precedenceFor(personal bool, repoDir string) toolPrecedence {
+	p := toolPrecedence{SkipGlobals: personal}
+	if repoDir != "" {
+		if fi, err := os.Stat(filepath.Join(repoDir, "repose.nix")); err == nil && fi.Mode().IsRegular() {
+			p.SkipScripts = true
+		}
+	}
+	return p
+}
+
 // buildToolsCarry reads the laptop's globals and scans the checkout
-// (repoDir may be "": globals only). It returns nil when there is
-// nothing to install.
-func buildToolsCarry(homeDir, repoDir string) *toolsCarry {
-	te := toolEnv{Home: homeDir, GOOS: runtime.GOOS, Getenv: os.Getenv, LookPath: lookPathFast}
-	items := readGlobalTools(te)
+// (repoDir may be "": globals only), each unless prec skips it. It
+// returns nil when there is nothing to install.
+func buildToolsCarry(homeDir, repoDir string, prec toolPrecedence) *toolsCarry {
+	var items []toolItem
+	if !prec.SkipGlobals {
+		te := toolEnv{Home: homeDir, GOOS: runtime.GOOS, Getenv: os.Getenv, LookPath: lookPathFast}
+		items = readGlobalTools(te)
+	}
 	var sc *scanResult
 	if repoDir != "" {
 		sc = scanProject(repoDir)
+		if prec.SkipScripts {
+			sc.Candidates = nil
+		}
 	}
 	return newToolsCarry(items, sc)
 }

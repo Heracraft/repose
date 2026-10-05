@@ -82,6 +82,10 @@ type Env struct {
 	// guestUp, when set, is called by ensureRunningFrom the moment an op that
 	// started the guest has finished, before anything else is read.
 	guestUp func(p *Project)
+	// personalOn is set by run when the account has a machine.nix and the
+	// machine has not opted out: the tool scan leaves the laptop's
+	// global tools to it (DECISIONS I-490).
+	personalOn bool
 }
 
 func (e *Env) target(slug string) sshTarget {
