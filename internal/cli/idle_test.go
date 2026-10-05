@@ -16,7 +16,7 @@ import (
 func TestIdleLineOnStatusAndProjects(t *testing.T) {
 	since := time.Now().Add(-26*time.Hour - 10*time.Minute)
 	p := &Project{Slug: "todo-app", Class: "large", State: "running", Idle: &ProjectIdle{Since: since, HourlyCents: 14}}
-	want := "running for 26h with nobody attached; `repose stop todo-app` stops it"
+	want := "running for 26h with nobody attached"
 	var b strings.Builder
 	writeStatusLines(&b, p, nil, nil, nil)
 	if !strings.Contains(b.String(), "\n  "+want+"\n") {
@@ -50,7 +50,7 @@ func TestIdleOthersNoteOncePerStretch(t *testing.T) {
 		{ID: "c", Slug: "busy", State: "running"},
 	}
 	got := idleOthersNote(dir, ps, "b", now)
-	if got != "Still running with nobody on it: api-v2 (idle 30h). `repose stop <project>` stops one." {
+	if got != "Still running with nobody on it: api-v2 (idle 30h)." {
 		t.Fatalf("first note: %q", got)
 	}
 	if got := idleOthersNote(dir, ps, "b", now); got != "" {
@@ -90,7 +90,7 @@ func TestStartIdleNoteReadsTheAPI(t *testing.T) {
 	note := startIdleNote(context.Background(), e)
 	time.Sleep(50 * time.Millisecond) // the list is asked for at the start of the command
 	note(here.ID)
-	if got := errOut.buf.String(); got != "Still running with nobody on it: api-v2 (idle 2d). `repose stop <project>` stops one.\n" {
+	if got := errOut.buf.String(); got != "Still running with nobody on it: api-v2 (idle 2d).\n" {
 		t.Fatalf("note: %q", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestRunMentionsOtherIdleProject(t *testing.T) {
 	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
 		t.Fatalf("runRun: %v", err)
 	}
-	if got := f.env.ErrOut.(*discardWriter).buf.String(); !strings.Contains(got, "Still running with nobody on it: forgotten (idle 27h). `repose stop <project>` stops one.") {
+	if got := f.env.ErrOut.(*discardWriter).buf.String(); !strings.Contains(got, "Still running with nobody on it: forgotten (idle 27h).") {
 		t.Fatalf("stderr: %s", got)
 	}
 }

@@ -45,12 +45,14 @@ func TestFork(t *testing.T) {
 		"Forked izma into 2 projects from its snapshot of ",
 		"  izma-fork-1  running (large)\n",
 		"  izma-fork-2  running (large)\n",
-		"izma is unchanged and is still the one `repose run` uses in its checkout",
-		"`repose attach izma-fork-1` to get in",
+		"izma is unchanged and is still its checkout's project.\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fork said:\n%s\nwant %q", got, want)
 		}
+	}
+	if strings.Contains(got, "`repose ") {
+		t.Fatalf("fork names a command after it worked (I-484):\n%s", got)
 	}
 	if len(agents) != 2 || agents[0] != (started{"izma-fork-1", "codex", "make the tests pass"}) || agents[1].slug != "izma-fork-2" {
 		t.Fatalf("agents started: %+v", agents)

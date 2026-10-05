@@ -59,7 +59,7 @@ Identity:
 - A plain `repose run` in a directory that is not a git repository and
   has a `by_dir` entry lands on that project, the last one `run` made
   there, and says so on stderr (`Using boxd, the machine last made in
-  this directory. ...`). `repose run --temp` there always makes a new
+  this directory.`). `repose run --temp` there always makes a new
   machine.
 - `repose run` in a directory with no remote, no `--name` and no
   `by_dir` entry creates a project named after the directory (the

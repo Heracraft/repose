@@ -13,30 +13,29 @@ and elapsed time on a terminal, or one line per phase elsewhere (I-154).
 ```
 $ repose stop todo-app
 Snapshotting and stopping todo-app...
-Stopped todo-app in 38s. Snapshot 0192… (2.1 GB). Disk is still billed; `repose rm todo-app` to stop that.
+Stopped todo-app in 38s. Snapshot 0192… (2.1 GB). Disk is still billed.
 
 $ repose stop --no-snapshot
-Stopped todo-app in 6.2s. Disk is still billed; `repose rm todo-app` to stop that.
+Stopped todo-app in 6.2s. Disk is still billed.
 
 $ repose start todo-app
 Starting todo-app...
-todo-app is running (large), ready in 4.1s. `repose attach todo-app` to get in.
+todo-app is running (large), ready in 4.1s.
 
 $ repose start age-calculator          # in `error`: the api restarts it (I-157)
 Restarting age-calculator (its agent stopped answering)...
-age-calculator is running (large), ready in 21s. `repose attach age-calculator` to get in.
+age-calculator is running (large), ready in 21s.
 
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app. Bring it back within 30 days with: repose restore todo-app
+Destroying todo-app. Its final snapshot is kept for 30 days.
 
 $ repose ls --destroyed
 PROJECT   CLASS  DESTROYED         SNAPSHOT          SIZE    RESTORABLE UNTIL
 todo-app  large  2026-09-23 02:23  2026-09-23 02:23  2.0 MB  2026-10-23
-`repose restore NAME` brings one back (`--as NEW-NAME` when the name is in use).
 
 $ repose restore todo-app
-Restored todo-app from its snapshot of 2026-09-23 02:23 in 31s; it is running (large). `repose attach todo-app` to get in.
+Restored todo-app from its snapshot of 2026-09-23 02:23 in 31s; it is running (large).
 ```
 
 The destroy returns as soon as the api has accepted it (DECISIONS
@@ -227,12 +226,10 @@ $ repose run --temp 3h --no-sync             # a shorter life
 ✓ Created tmp-q7wd (large, temporary: destroyed Sep 28 17:10)  4s
 
 $ repose ls
-PROJECT   CLASS  STATE    UP  AGENTS  TODAY  MONTH
-todo-app  large  running  3d  1       ...
-spike     large  running  2h  0       ...
-tmp-k3f9  large  running  1h  1       ...
-spike is temporary: destroyed in 22h. `repose keep spike` keeps it.
-tmp-k3f9 is temporary: destroyed in 23h. `repose keep tmp-k3f9` keeps it.
+PROJECT   CLASS  STATE    UP  AGENTS  TODAY  MONTH  LEFT
+todo-app  large  running  3d  1       ...    ...    -
+spike     large  running  2h  0       ...    ...    22h
+tmp-k3f9  large  running  1h  1       ...    ...    23h
 
 $ repose keep spike
 spike is no longer temporary.
@@ -289,8 +286,8 @@ Lifetime:
 
 - The project JSON carries `expires_at` while it is temporary. `run` and
   `attach` print `tmp-k3f9 is temporary: destroyed in 5h.` before they
-  attach; `ls` prints the line under the table as the idle line
-  does; `status` shows it; the dashboard shows a `temporary` badge after
+  attach; `ls` shows the time left in a `LEFT` column, there only
+  while a temporary machine is listed (I-484); `status` shows it; the dashboard shows a `temporary` badge after
   the name and "destroyed in 5h" under the state.
 - `repose keep NAME` sends `PATCH /projects/:id {expires_at: null}`. The
   project is a normal one from then on, still with no remote. `keep` on a

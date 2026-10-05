@@ -90,7 +90,7 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 		// A directory that is not a repository (the home directory, say)
 		// found its project through by_dir: the last one `run` made
 		// here. Say which, and how to get another (I-348, I-358).
-		e.warn("Using %s, the machine last made in this directory. `repose run --name NEW` makes another; `repose run --temp` makes a throwaway one.", res.Project.Slug)
+		e.warn("Using %s, the machine last made in this directory.", res.Project.Slug)
 	}
 	return res, nil
 }

@@ -227,7 +227,7 @@ Every event in the window, oldest first, one per line: time, agent, kind, summar
 
 ### `repose questions [PROJECT]`
 
-The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent, how long ago it asked, when it expires, the question and how to answer it. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer; `repose attach` takes you there. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent, how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer; `repose attach` takes you there. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
 
 ### `repose reply [PROJECT] [ANSWER...]`
 

@@ -8998,7 +8998,8 @@ It is temporary: no snapshot is kept and it cannot be restored. [y/N]` and
 prints no restore hint. The dashboard's project list shows a `temporary`
 badge after the name and the same "destroyed in 5h" under the state.
 `repose keep` on a project that is not temporary prints `NAME is not
-temporary.` and exits 0.
+temporary.` and exits 0. (`ls` and `status` changed with I-484: a `LEFT`
+column, and no keep hint.)
 
 **I-352. The session end destroys a temporary machine only when tmux says
 the session is gone.** (07, 2026-09-29; builds I-347.) After the attach
@@ -12429,3 +12430,116 @@ it now applies the shared rule. Tests: `TestRunOnAddsAnotherCheckout`,
 `TestRunOnRefusals`, `TestClaimCheckoutNames`,
 `TestProjectsCacheCheckoutsRoundTrip`, `TestWindowLabel`. Proposal:
 `docs/proposals/2026-10-04-several-checkouts.md`.
+**I-484. A command that worked says what happened and stops; the next
+command is for failures and refusals.** (07, quiet-success, 2026-10-04;
+narrows I-153, replaces the `ls` and `status` lines of I-351)
+
+The problem. I-153 gave every error a next command: you are stuck, so the
+CLI tells you how to get unstuck. The same suffix then spread to output
+where nothing went wrong. By 2026-10-04 `start` ended with "`repose
+attach X` to get in", every `stop` with "`repose rm X` to stop that",
+`ls` printed a line per temporary machine under the table ("`repose keep
+X` keeps it"), `ls --destroyed` added two lines on how to read its own
+table, `fork` closed with a line of commands, `repose secrets` and `run`
+pointed at `repose secrets choose`, and a `run` in the home directory
+offered two ways to make other machines. The owner read `repose ls` with
+two temporary machines and called it "such handholding".
+
+The failure mode. Each hint looks harmless on the day it is written: one
+feature, one line, reviewed alone, and kind to a first-time user. The
+cost lands on you the hundredth time you run the command and read the
+same lesson, in output whose job is to show state. Listings collect the
+most, because each feature adds its own line under the same table, so
+the table you asked for arrives followed by text you didn't. Scripts
+that count or grep lines see the extra lines too. Review doesn't catch
+it, because a reviewer reads one diff, and in one diff the hint is a
+single friendly line.
+
+The rule. A success line or a listing says what happened, or what is,
+and stops. A next command goes where you are stuck: a failure, a
+refusal, a warning that your work did not go, or a change that does
+nothing until you act (a built kernel change waiting for a restart).
+Facts that matter stay, without the command: `Disk is still billed.`,
+`Its final snapshot is kept for 30 days.`, `Using boxd, the machine last
+made in this directory.` State that belongs to a row is a column: a
+temporary machine's time left is `ls`'s `LEFT` column, shown only while
+one is listed; `status` says `temporary: destroyed in 5h`. The docs
+teach the commands.
+
+Changed: `start`, `stop` (and already stopped), `rm` (both paths),
+`restore`, `snapshots restore`, `resize`, `fork`, `browser`, the idle
+lines in `ls`, `status`, `run` and `attach`, `ls --destroyed` and `--all`
+(no footer; the line for a name in use stays, since the plain `restore
+NAME` is wrong for that row), `questions` (`options: yes|no` in place of
+a `repose reply` line; a waiting terminal is `claude on todo-app`),
+`secrets` list, `run`'s logins line (nothing before a choice, `Left on
+your laptop: env, gh.` after), the home-directory `Using` line, and `ls`
+with no projects (`No projects yet.`).
+
+Enforced by `TestSuccessOutputNamesNoCommand`
+(`internal/cli/quiet_success_test.go`). It parses the CLI's sources and
+fails on any string that names a `repose` command unless the string is
+an argument of a failure call (`exitf`, `opFailed`, `withNext`,
+`Errorf`, `errors.New`), cobra help or flag text, inside a known error
+builder, or listed in `quietAllowed` with its reason. Stderr is not
+exempt: `run` and `attach` print notes there, and a trial merge of the
+queue on 2026-10-04 showed a success note on stderr ("Applying repose.nix
+... in the background. `repose config show --revisions` shows when it is
+done.") passing a first version of the test that exempted it. An entry that no longer matches fails the test too. What it
+cannot see: a command assembled at run time (the destroy lines built
+theirs with `restoreHint`), so a reviewer still reads every new success
+line (CHECKLIST, "For every change").
+
+Alternatives. An environment variable or flag that turns hints off:
+rejected, since the default is what everyone reads. Hints shown only
+the first time, remembered on the laptop as the idle note is: rejected
+for now; it adds state to deliver a lesson the docs already give.
+
+**I-485. Trust the reader: say what is true, where they look for it,
+once, and stop.** (all surfaces, quiet-success, 2026-10-04; generalizes
+I-484 and LANDING.md's "No hand-holding" of 2026-09-27)
+
+The pattern. Twice in a week the owner cut text for the same reason:
+the landing's explanatory captions and paragraphs (2026-09-27), and
+the CLI's next-command hints on success lines and listings (I-484).
+Both were written for an imagined beginner who is lost. The person who
+actually reads them is not lost: you have run `repose ls` many times,
+you came to a docs page for one answer, you looked at the landing to
+see what repose is. Each line was added on its own and looked helpful
+on its own. Together they cost every reader attention on every read,
+and they tell you the product doubts you can find your way.
+
+The rule. Help the reader asked for is welcome: `--help`, a docs page,
+a tutorial, an error (being stuck is asking). Help nobody asked for is
+cut. Say each fact once, on the page or in the line where the reader
+looks for it, and link to it from elsewhere.
+
+The test for any line, in any surface: picture the user on their
+fiftieth visit. If the line gives them nothing, cut it, unless it
+prevents a loss they cannot undo or unblocks them.
+
+By surface:
+
+- CLI output: I-484. A result line reports the result; a next command
+  goes on failures and refusals; per-row state is a column.
+- Docs: a page delivers what its title promises. No narrating what the
+  reader is about to see ("A tab opens and you're looking at..."), no
+  reassurance ("Nothing to type", "don't worry", "that's it"), no
+  "next, read X" endings, no restating the previous paragraph. A fact
+  lives on one page; other pages link to it. A tutorial walks through
+  steps because you opened it for that, and still skips what the screen
+  already shows.
+- Copy (landing, dashboard, emails): a heading is its title; one
+  sentence of fact; no instructions for reading the page, no "get
+  started in seconds". LANDING.md "Copy" has the landing's specifics.
+- Agent guide: the same, read by an agent: facts and commands it needs,
+  no encouragement.
+
+Enforced by `TestSuccessOutputNamesNoCommand` for the CLI and by the
+docs test `asks nothing of the reader it did not ask for`
+(`apps/web/src/lib/docs.test.ts`) for the phrasings a grep can catch.
+Prose judgement stays with review: CHECKLIST, "For every change".
+Alternatives: a style guide page of examples alone, rejected, since the
+two cuts this week both passed review that had LANDING's rule in hand;
+the tests stop the phrasings, and the rule in CLAUDE.md reaches the
+agents who write the text.

@@ -49,6 +49,29 @@ written so they cannot happen quietly.
       page, and `go test ./internal/cli -run TestDocs` passes (it fails on a
       CLI command, flag, config.toml key, environment variable or exit code
       missing from, or left behind in, `cli.md`).
+- [ ] Text a user reads (docs, landing, dashboard, emails, agent guide)
+      gives only help the reader asked for (DECISIONS I-485): a page
+      delivers what its title promises; no reassurance, no narrating
+      what the screen shows, no "next, read X", no fact repeated on a
+      second page instead of linked. The failure this prevents: each
+      helpful line passes review alone, and together they make every
+      page longer for the reader who came for one answer. Evidence:
+      `pnpm --filter web exec vitest run src/lib/docs.test.ts` passes,
+      and each new or changed paragraph was read against the user on
+      their fiftieth visit, with what was cut named in the commit.
+- [ ] Output from a command that worked, and every listing, says what
+      happened or what is, and stops: no `repose ...` command to run next.
+      A next command goes only on a failure, a refusal, a warning that
+      work did not go, or a change that does nothing until the user acts
+      (DECISIONS I-484, narrowing I-153). The failure this prevents: each
+      feature adds one kind hint, reviewed alone it looks harmless, and
+      the user who runs the command for the hundredth time reads every
+      one of them under the table they asked for. State that belongs to a
+      row is a column, not a line under the table. Evidence: `go test
+      ./internal/cli -run TestSuccessOutputNamesNoCommand` passes, any new
+      `quietAllowed` entry carries a reason a reviewer agrees with, and
+      the new success lines are pasted in the commit message (the test
+      cannot see a command built at run time).
 - [ ] A CLI command that takes paths or several words behaves as the Unix
       tool it wraps or resembles would with what a shell hands it (a glob
       expands to many words; `cp`, `scp`, `rm` take several sources), and
