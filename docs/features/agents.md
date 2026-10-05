@@ -46,8 +46,8 @@ picks another for one prompt.
 | Claude Code | `claude` | `claude` | `Notification` and `Stop` hooks in `~/.claude/settings.json` run `repose-hook`: finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
 | opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 1 and OpenCode 2, I-481) sends finished (`session.idle`; V2 `session.execution.succeeded`), needs input (`permission.asked`), error (`session.error`; V2 `session.execution.failed`) | `~/.local/share/opencode/auth.json` synced from the laptop |
 | Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished only | `~/.codex/auth.json` synced from the laptop |
-| Gemini CLI | `gemini` | `gemini` | no hook; tmux pane-idle heuristic | `GEMINI_API_KEY` named secret, or log in on the machine |
-| pi | `pi` | `pi` | no hook; tmux pane-idle heuristic | provider API key as a named secret |
+| Gemini CLI | `gemini` | `gemini` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |
+| pi | `pi` | `pi` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | provider API key as a named secret |
 
 `repose-agent-setup` (`nix/overlay/agents/agent-setup.nix`) writes these
 entries each time the agent starts. It adds its entry only when none running

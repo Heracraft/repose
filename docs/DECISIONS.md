@@ -12746,6 +12746,10 @@ a guest (the store's files are owned by `nobody`); `[remote]
 manage_ssh_config = false` avoids it and was checked from kanali.
 *Revisit when:* herdr can run a matching server from a binary on PATH
 across versions, or users ask for `repose status` to see herdr panes.
+*Superseded by I-501 (2026-10-05): both premises failed the live test;
+herdr ships in the base, a boot unit starts it on projects that choose
+it, and guestd reads its socket.*
+
 **I-487. The guest's Codex is a complete Codex package.** (2026-10-04)
 On base 2026.10.04.1, on a new project and on kanali, `codex` stopped at
 "this CLI has no complete local package; install a packaged Codex CLI or
@@ -13107,3 +13111,214 @@ the signals of the project as `stop` read it before stopping. Idle
 agents lose nothing and are not named; no busy agent, no line. The
 sample can be up to a minute old, so the line is what the machine last
 reported. Checked by `TestStopNamesInterruptedAgents`.
+
+**I-501. herdr is a supported multiplexer: in the base at a pinned
+release, started by a boot unit on projects that choose it, read by
+guestd.** (multiplexer-spec, 2026-10-05; supersedes I-482; owner
+decision 1 of `proposals/2026-10-05-session-backends.md`) I-482 rested on
+two premises the live test on `herdr-live` disproved. Any herdr from
+0.9.0 accepts a remote of endpoint protocol generation 1, so the
+laptop's version need not match the guest's (a 0.9.3 laptop added a
+0.9.0 guest in 1.1 s with no install prompt). And the server resumes
+agents with no client attached: after a stop and a start, `herdr server`
+from a user unit restored two workspaces and ran `claude --resume <id>`
+before any client connected. Its "revisit when" is met.
+`nix/overlay/agents/herdr.nix` installs upstream's static-pie x86-64
+release, pinned in `versions.json` and moved by `scripts/bump-agents.sh`
+as the other agents are (R3-19). Its install check runs `herdr status
+client --json` and fails the build unless `endpoint_protocol_generation`
+is 1 and `protocol` is at least 22, so a bad bump fails before a guest
+gets it (the I-487 lesson). The package is in `environment.systemPackages`
+on every guest, which puts it at `/run/current-system/sw/bin/herdr`
+where a laptop herdr's remote discovery looks. The user unit
+`repose-herdr-server.service` runs `herdr server` from a login bash,
+restarts on failure (a restart resumes agents), keeps
+`restartIfChanged = false` (I-496) and sets no `CPUWeight` (I-505 says
+why). The guest seeds `~/.config/herdr/config.toml` when it is absent
+with login shells (herdr's Linux default is non-login, tmux's is login)
+and no update check. tmux stays in the base and stays the default. The
+contract is `interfaces/guest-conventions.md`, "herdr".
+
+**I-502. One multiplexer per project: chosen at create, changed with
+`--multiplexer`, applied at the next start.** (multiplexer-spec,
+2026-10-05; owner decisions 2 to 4) The word is `multiplexer`, values
+`tmux` and `herdr`, in every place: the column `projects.multiplexer`
+(migration 0017, default `tmux`), the api's `Project.multiplexer` and the
+POST and PATCH field, the `multiplexer` key of `project.json`, the
+`default_multiplexer` key of `config.toml` and `repose run
+--multiplexer`. The repository used the word nowhere before, so one grep
+finds every use; "session" already meant SSH sessions, the session
+helper and the tmux session. A new project takes `--multiplexer`, else
+`default_multiplexer`, else herdr when the CLI runs with `HERDR_ENV=1`
+(inside a laptop herdr pane, where tmux would sit nested in the user's
+herdr), else tmux. The `HERDR_ENV` pick skips a temporary machine, which
+never enters the herdr sidebar (I-510), and a request the base gate
+refuses, which falls back to tmux. `--multiplexer` on an existing project PATCHes it and
+the value sticks, as `--no-personal` does (I-490). The guest reads
+`project.json` at each start, so a change made while the machine runs
+takes effect at its next start, and the running multiplexer and its
+agents keep going until the stop. Starting the second server at once was
+rejected: two sets of panes and two resume paths for the hours until the
+stop. The api answers a request for `herdr` with `409 conflict`,
+`detail.reason = base_update_needed`, when the project's base (for a
+POST, the newest published base) is older than the first base with
+herdr; without the gate a held base (`hold_base_updates`) would start
+tmux with no word why. A request for `tmux` is never refused. Fork and
+restore as a new project copy the source's value. Old clients ignore the
+field; an absent field reads as tmux everywhere.
+
+**I-503. guestd starts the session unit `project.json` names, and the
+path unit goes.** (multiplexer-spec, 2026-10-05) The user path unit
+`repose-tmux-session.path` started tmux as soon as `project.json`
+existed, which at boot is the previous boot's file: after a switch made
+while stopped it would start the old multiplexer before `SetupProject`
+wrote the new file. guestd already started the tmux unit right after
+writing the file (I-231), so `SetupProject` now starts
+`repose-tmux-session.service` or `repose-herdr-server.service` by the
+file's `multiplexer` (absent or any other value: tmux), and the path
+unit is removed. Both units carry `ExecCondition=repose-multiplexer-is
+<name>`, which skips the start when the file names the other
+multiplexer or the other unit is active. A hand `systemctl --user start`
+of the wrong unit therefore starts nothing, and a machine switched while
+running keeps its old multiplexer until the stop. A base switch starts
+and stops no session unit (I-496).
+
+**I-504. guestd reads herdr's agents from its socket, on every machine,
+by polling `agent.list`.** (multiplexer-spec, 2026-10-05; amends I-31,
+I-49) Agent discovery goes through one source per multiplexer and the
+watcher takes the union of both, so a machine switched while running, or
+one where you started the other multiplexer by hand, still lists its
+agents; a source whose server is absent costs a `stat`. The herdr source
+dials `/home/dev/.config/herdr/herdr.sock` once per 5 s refresh (herdr
+answers one request per connection), refuses a peer whose `SO_PEERCRED`
+uid is not dev's (guestd is root and the path is dev's to replace), sends
+`ping` after any failed dial, `agent.list` on every refresh and
+`workspace.list` (decoded to `id` and `label`, to match checkout names)
+at most once a minute, and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
+keeps `pane_id`, `workspace_id`, `name`, `agent`, `agent_status` and
+`state_change_seq` and drops every other field, titles and the agent
+session among them; guestd never calls `session.snapshot` or
+`pane.process_info`, whose answers carry cwd, argv and cmdline (R5-3).
+States map `working` to working, `blocked` to needs_input, `idle` and
+`done` to idle, and `unknown` to unknown. A `state_change_seq` that moved
+while the status reads `idle` or `done` is a finished turn, even one
+shorter than a refresh; for gemini and pi, which have no hook, it raises
+the `completed` event (`<agent> went idle`) that I-49's heuristic raises
+under tmux, and for hooked agents it raises nothing, so no event arrives
+twice. A protocol below 22, or a refused dial for two refreshes on a
+herdr project, is `herdr_down` (I-507). After an EOF the panes keep their
+state for two refreshes before going `unknown`, so a herdr restart that
+resumes its agents shows no flap. Events only was rejected: a missed
+subscription or `events_lost` leaves a wrong state until something else
+changes. `events.subscribe` may later wake the watcher early; the poll
+stays the truth.
+
+**I-505. The herdr server and its agents get I-200's memory protection
+and run at nice -5.** (multiplexer-spec, 2026-10-05; owner decision 7;
+amends I-200, I-494) guestd's 5 s refresh sets `oom_score_adj` -800 on
+the herdr server (the `herdr` process in `repose-herdr-server.service`
+whose parent is dev's `systemd --user`) and on every agent process in
+its tree (the shallowest process whose name or executable is one of the
+five agents' binaries), as it does for the tmux server and agent
+windows; the live test found claude at 200 under herdr. Beside that
+write, guestd sets nice -5 on every thread in `/proc/<server>/task`
+(nice is per thread on Linux), and sets any other process in the
+server's tree found below 0 back to 0, since a pane forked from a
+reniced thread inherits -5 and a build in it would get the priority
+meant for the server. `CPUWeight=1000` on the unit, I-494's
+answer for tmux, would raise every build too, because herdr's panes share
+the server's cgroup; wrapping each pane in its own scope would orphan
+panes when the server dies. The SSH `session-.scope` weight still covers
+the laptop's bridge. Closed by I-494's load test (keystroke echo with
+`stress-ng` on every core, before and after).
+
+**I-506. A hook's window may be `herdr:<pane_id>`, sent by repose-hook;
+a window that resolves to no pane changes no agent's state.**
+(multiplexer-spec, 2026-10-05; amends I-244) Inside a herdr pane
+`$TMUX_PANE` is unset, and `herdr-fixes` (I-499's branch) made such a
+hook relay under the agent's name without touching a tmux window.
+`repose-hook`, `repose-notify` and `repose-ask` now send `window =
+"herdr:" + $HERDR_PANE_ID` when `REPOSE_AGENT_WINDOW` is empty,
+`$TMUX_PANE` is unset, and `HERDR_ENV=1`; they read their own
+environment, so guestd reads no new variable and the one exception in
+`SECURITY.md` stays as written. guestd resolves a `herdr:` window through
+the herdr source to the agent's key and records the hook on it. One that
+resolves nowhere is relayed with the agent's name for display, and no
+state changes. A pane id longer than 58 bytes or holding a character
+outside `[A-Za-z0-9:_-]` is treated as unresolved.
+
+**I-507. `herdr_down` joins the guest warning kinds.** (multiplexer-spec,
+2026-10-05; amends I-29) guestd sends `Warning{kind: "herdr_down"}` when
+`project.json` says herdr and the socket refused (or answered a protocol
+below 22) on two refreshes in a row, at most once per 10 minutes like
+every kind. `tmux_down` is sent only when the file says tmux or has no
+key. hostd and the api add the kind to their lists and ship before the
+base that sends it; an older hostd relays it as `guest_other`, which the
+api already stores. The detail is hostd's own `guest <id>`.
+
+**I-508. Under herdr, secrets, TZ and PATH reach panes through the
+login shell, `BASH_ENV` and the wrappers.** (multiplexer-spec,
+2026-10-05; amends I-475, I-476, I-488) herdr has no
+`set-environment`, so `WriteSecrets` pushes into tmux only when the tmux
+socket exists, and the post-switch push into dev's user manager reaches
+the herdr server at its next start. herdr panes start login shells
+(the seeded config), wrapped agents source `/etc/profile.d/repose.sh`
+(I-241) and each bash command reads `BASH_ENV` (I-475), so agents and
+shell commands get current secrets, TZ and PATH. A program that is not
+bash, started from a pane opened before the change, keeps the
+environment the server started with. The CLI's TZ push on `run` and
+`attach` writes `/etc/repose/env` alone on herdr. `secrets.md` and
+guest-conventions say so.
+
+**I-509. On a herdr project, `run "prompt"`, attach, `ps`, `paste`,
+messages and the temporary session end go through herdr, and `run` in a
+laptop herdr pane opens no client.** (multiplexer-spec, 2026-10-05;
+owner decision 6; amends R4-10, I-253, I-274, I-280, I-304, I-352,
+I-469, I-480) The CLI picks the backend from the running unit
+(`systemctl --user -q is-active repose-herdr-server` over the ssh master
+it holds), since the setting can differ from what runs until the next
+start. A prompt opens a tab in the checkout's workspace (created when
+missing; with `--worktree` the worktree is opened with `herdr worktree
+open`), starts the agent with `herdr agent start`, waits past herdr's
+300 s start cap with `herdr agent wait` up to the CLI's 30 minute
+dev-shell limit, and types with `herdr agent prompt`. A pane that
+settles on `blocked` gets no prompt (I-486's dialog error, naming the
+tab). Attach has three paths: in a laptop herdr pane (`HERDR_ENV=1`) the
+CLI prints `<slug> is in herdr's sidebar.` and stays in the foreground as
+the session helper (forwards, bridge, carry) until Ctrl-C; with herdr
+0.9.0 or newer on the laptop PATH it runs `herdr --remote <slug>.repose
+--session default` as its child, never through exec, so the helper lives
+as long as the client; otherwise `ssh -t <slug>.repose herdr` under the
+input proxy and the reattacher. `ps` lists herdr's agents (WORKSPACE,
+AGENT, NAME, STATE; no cwd, no title), `paste` sends the path with
+`herdr pane send-text` to the focused pane, messages use `herdr
+notification show repose --body`, and a temporary machine ends when its attach returns
+and herdr reports no panes. A client nested inside the user's herdr was
+rejected. A tmux project behaves as before.
+
+**I-510. The CLI keeps the laptop herdr's machine list for repose's
+machines.** (multiplexer-spec, 2026-10-05; owner decision 5) When `herdr`
+0.9.0 or newer is on the laptop PATH and `~/.ssh/config` includes
+repose's file, the CLI reconciles `herdr machine list --json` where it
+already holds the project list after writing the ssh files (`run`,
+`attach`, the certificate refresh), and on `rm`. It adds `herdr machine
+add <slug>.repose --label <slug> --remote-session default` for each
+running herdr project with no entry, in the background so `Ready in`
+does not move; removes each entry whose target is `<slug>.repose` and
+whose slug is no project of the account; and leaves every entry whose
+target is anything else. An entry made by hand or by the tutorial for
+`<slug>.repose` is repose's from then on. A disabled entry stays
+disabled, a stopped machine's entry stays, and a temporary machine is
+never added. Registration behind a config key was rejected: the sidebar
+is where a herdr user looks for the machine.
+
+**I-511. A laptop herdr's SSH bridge counts as someone at the machine.**
+(multiplexer-spec, 2026-10-05; owner decision 8) A laptop herdr keeps an
+SSH bridge to each machine in its sidebar, and each SSH session counts in
+`ssh_sessions`, which the idle notice (I-262), the temporary machine's
+expiry wait (I-350) and the miner check read. It counts as a `tmux
+attach` left open counts today; nothing in the api changes. Stage 5 of
+the proposal measures whether herdr's idle bridge cleanup closes bridges
+to machines nobody has selected, and how many ssh-prepare calls a bridge
+retrying against a stopped machine makes; a decision to discount bridges
+would be a new entry.

@@ -53,14 +53,18 @@ Events (see agents.md for how each agent produces them):
   miner was running; the summary says which process and, on the third
   stop in 24 hours, that the project cannot start until reviewed),
   `idle_running` (DECISIONS I-262: a running guest with no SSH session,
-  no tmux client and no working agent for 24 hours; once per idle
+  no tmux client and no working agent for 24 hours (a laptop herdr's
+  bridge is an SSH session, I-511); once per idle
   stretch, title `<project>: idle, still billing`, never a stop),
   `temp_expiring` and `temp_destroyed` (DECISIONS I-347: a temporary
   machine an hour before its end, titled `<project>: destroyed in an
   hour`, and its end, `<project>: temporary machine destroyed`), and
   the agent-sent `agent_message` and `agent_question` (DECISIONS I-244,
   below). Each carries the agent name (agent kinds only), the
-  tmux window, a summary of at most 1 KB, and a timestamp.
+  tmux window or herdr agent key (I-504), a summary of at most 1 KB, and
+  a timestamp. On a herdr project, herdr's `blocked` sets gemini's and
+  pi's state to needs input without a notification; their finished turns
+  notify as `completed`.
 - The summary is what the agent's hook provided, truncated. It may include
   the agent's own last message. It never includes the prompt the user typed
   or terminal contents beyond what the hook payload carries.

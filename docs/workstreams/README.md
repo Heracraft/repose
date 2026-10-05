@@ -26,6 +26,7 @@ it must handle, and a checklist that is its definition of done. Read
 | 13 | [notifications](13-notifications.md) | M3 | event shapes | `api`, `vsock-guestd` (Event) |
 | 14 | [security](14-security.md) | all | `../SECURITY.md` | everything |
 | 15 | [dev-ergonomics](15-dev-ergonomics.md) | post-M5 | (changes `guest-conventions`, `cli-config`, `host-conventions` per I-195..I-205) | `api`, `ssh-gateway`, `guest-conventions` |
+| 16 | [multiplexer](16-multiplexer.md) | post-M5 | (changes `guest-conventions`, `vsock-guestd`, `grpc-hostd`, `api`, `db-schema`, `cli-config` per I-501..I-511) | the same |
 
 ## Dependency graph
 

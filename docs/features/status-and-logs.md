@@ -24,6 +24,12 @@ todo-app   large  running   2h14m   claude: working      today $0.31   month $18
 (`internal/cli/status.go`. A project the platform stopped for mining, or
 in `error`, gets one more line saying why and what to run.)
 
+On a herdr project (DECISIONS I-509) the header reads `todo-app   large
+herdr   running ...` and the sessions line is `sessions 1   docker 0`:
+herdr's clients arrive over SSH and are in `sessions`. The `herdr` word
+is what runs now, read from the guest; a project switched while running
+shows its old multiplexer until its next start.
+
 ```
 $ repose logs                    # console, last 200 lines, follow with -f
 $ repose logs --kind build       # the last build's output

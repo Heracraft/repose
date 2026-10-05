@@ -146,6 +146,8 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|unknown
+// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
+// tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
 ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only; never argv
 HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_running; }
 ```
@@ -154,7 +156,7 @@ HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_runn
 `guest_state_changed {guest_id, state, reason}`, `agent_event {guest_id,
 agent, kind (completed|needs_input|error|agent_message), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
-I-121)}`,
+I-121; a tmux window name or a herdr agent key since I-504)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
 KB), options, timeout_s, state}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement
@@ -165,8 +167,10 @@ percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
 `guestd_lost` (no vsock for 60 s), `freeze_timeout`, and the guest kinds
 hostd relays from guestd's `Warning` (`disk_high`, `inotify_exhausted`,
-`docker_down`, `store_path_missing`, `oom`, `tmux_down`; any other guest
-kind is sent as `guest_other`); `operator_login
+`docker_down`, `store_path_missing`, `oom`, `tmux_down`, `herdr_down`
+(I-507; hostd and the api take it in the release before any base sends
+it, and an older hostd sends it as `guest_other`); any other guest kind is
+sent as `guest_other`); `operator_login
 {pam_type, user_present, key_id, serial, key_fingerprint}` for every SSH
 login to the host, from the PAM hook that runs `hostd audit-login`
 (DECISIONS I-140): the certificate's key id and serial, or a plain key's

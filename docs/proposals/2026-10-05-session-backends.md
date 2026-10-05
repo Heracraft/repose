@@ -1,61 +1,53 @@
 # Two session backends: tmux by default, herdr as the other (proposal, 2026-10-05)
 
-**Status: proposal, not built.** Code anchors are checked against `main`
-at `0bc05325`. herdr anchors are against its source at `c4653a4f` (v0.9.3
-plus 42 commits) unless a release is named. Background:
-`reports/Herdr integration avenues.md` and the live test on the temporary
-machine `herdr-live` (section 6).
+**Status: decided 2026-10-05, being built.** The owner answered every
+question in section 1; the decisions are DECISIONS I-501..I-511, the
+contracts are in `docs/interfaces/` and `docs/features/`, and the work
+is split in `docs/workstreams/16-multiplexer.md`. Where this proposal
+and those docs differ, the docs win. Code anchors are checked against
+`main` at `0bc05325`. herdr anchors are against its source at
+`c4653a4f` (v0.9.3 plus 42 commits) unless a release is named.
+Background: `reports/Herdr integration avenues.md` and the live test on
+the temporary machine `herdr-live` (section 6).
 
-## 1. Decisions asked of the owner
+Two corrections made while writing the contracts: herdr's socket answers
+one request per connection (`read_initial_request_line` in
+`src/api/server.rs`; only `events.subscribe` keeps a connection open), so
+guestd dials once per refresh where section 3.2 says "one persistent
+connection"; and the migration is 0017, since the queued `solo-at-20`
+holds 0016.
 
-Each line names the proposed answer first.
+## 1. Decisions (owner, 2026-10-05)
 
-1. **Reopen I-482.** Ship herdr in the base, start it from a boot unit on
-   projects that choose it, and let guestd read its socket. Both of
-   I-482's premises failed the live test: any herdr from 0.9.0 accepts a
-   remote of endpoint protocol generation 1, and the server resumes agents
-   with no client attached. Its "revisit when" condition has been met.
-2. **The name.** `multiplexer`, values `tmux` and `herdr`: the config key
-   `default_multiplexer` (beside `default_agent`), the run flag
+1. **I-482 is reopened and superseded (I-501).** herdr ships in the base,
+   a boot unit starts it on projects that choose it, and guestd reads its
+   socket.
+2. **The name is `multiplexer` (I-502)**, values `tmux` and `herdr`: the
+   config key `default_multiplexer` beside `default_agent`, the run flag
    `--multiplexer`, the api field, the column and the `project.json` key.
-   The repository uses the word nowhere today, so one grep finds every
-   use. "session" already means SSH sessions, the session helper and the
-   tmux session.
-3. **Choosing herdr for a project.** `repose run --multiplexer herdr` sets it
-   and it sticks, like `--no-personal` (I-490). `default_multiplexer` in
-   `config.toml` applies to new projects. Also proposed: a new project
-   created from inside a herdr pane (`HERDR_ENV=1` in the CLI's
-   environment) gets herdr, since tmux would land nested inside the
-   user's herdr. Approve or drop the automatic part.
-4. **A change takes effect at the next start.** The running multiplexer
-   and its agents keep going until the machine stops. The alternative
-   starts the second server at once and runs both until the stop; it
-   doubles the states guestd and the CLI must handle for an hour of
-   convenience.
-5. **The laptop's herdr sidebar.** The CLI adds a herdr project's machine
-   to the laptop's herdr catalog on `run` and `attach`, and removes it on
-   `rm` and in a reconcile. repose owns only entries whose target is
-   `<slug>.repose`, adopts entries the tutorial made, and never adds a
-   temporary machine. The alternative puts registration behind a config
-   key.
-6. **`repose run` inside a laptop herdr pane.** Proposed: no nested
-   client. The CLI prints `todo-app is in herdr's sidebar.`, then stays
-   in the foreground as the session helper (forwards, bridge, carry)
-   until Ctrl-C, the same lifetime it has beside a tmux attach. The
-   alternative runs `ssh -t <slug>.repose herdr`, a client inside a
-   client.
-7. **CPU priority under herdr (I-494).** herdr's panes share the server's
-   cgroup, so `CPUWeight=1000` on its unit would raise every build too.
-   Proposed: guestd renices each thread of the herdr server to -5 beside
-   its OOM write, closed by the I-494 load test. The alternatives are
-   accepting the gap, or wrapping each pane shell in its own scope (which
-   orphans panes when the server dies).
-8. **Presence.** A laptop herdr app keeps an SSH bridge to every machine
-   in its sidebar, and every SSH session counts as someone at the machine
-   (`ssh_sessions > 0` in `idle.usedSQL`, `temp.Busy`,
-   `busyUnattendedSQL`). Proposed: count it, as a tmux attach left open
-   counts today, and measure in stage 5 whether herdr's idle bridge
-   cleanup closes bridges to machines nobody has selected.
+3. **Choosing herdr (I-502).** `--multiplexer` sticks on the project.
+   `default_multiplexer` applies to new projects. A new project created
+   from a laptop shell with `HERDR_ENV=1` gets herdr; an explicit flag or
+   config key wins over that.
+4. **A change takes effect at the next start (I-502).** The running
+   multiplexer and its agents keep going until the machine stops.
+5. **The laptop's herdr sidebar is the CLI's to manage (I-510).** It adds
+   the machine on `run` and `attach`, removes it on `rm` and in a
+   reconcile, owns only entries targeting `<slug>.repose`, adopts entries
+   the tutorial made, and never adds a temporary machine. No config key.
+6. **`repose run` inside a laptop herdr pane opens no nested client
+   (I-509).** It prints one line and stays as the session helper until
+   Ctrl-C.
+7. **CPU priority under herdr (I-505).** guestd renices every thread of
+   the herdr server to -5 beside its OOM write.
+8. **Presence (I-511).** A laptop herdr's SSH bridge counts as someone at
+   the machine, as an open tmux attach does.
+
+Section 8's open questions were not put to the owner. The builders build
+the proposed answer where one is given (integrations as user-file
+installs, weekly bumps, temporary machines end at "no panes", a
+read-only dashboard label, a docs line for old CLIs) and, for question
+1, set the state without a phone notification.
 
 ## 2. The user surface
 
@@ -618,7 +610,10 @@ Untested:
 
 ## 9. DECISIONS entries this needs
 
-Ids reserved with `ops/dev/release-queue id` when built.
+Reserved and written: entries 1 to 10 are I-501 to I-510 in this order,
+presence (decision 8) is I-511, and entry 11 shipped on `herdr-fixes` as
+I-499 (hooks union) and I-500 (the stop line), with the paneless hook
+under I-499's branch.
 
 1. herdr is a supported multiplexer: in the base at a pinned upstream
    release checked for generation 1, started by a boot unit on projects

@@ -76,9 +76,11 @@ not the hour. PRICING.md has the rates.
 Stop:
 
 - `stop` sends `StopGuest{snapshot_first: true, timeout_s: 60}`. guestd gets
-  `Shutdown`; systemd in the guest stops services, which includes tmux and
-  any agent in it. The agent is interrupted; a Claude session can be resumed
-  in the guest after `start` with `claude --resume`. The CLI's stop line is
+  `Shutdown`; systemd in the guest stops services, which includes tmux or
+  herdr and any agent in it. The agent is interrupted; a Claude session can
+  be resumed in the guest after `start` with `claude --resume`, and on a
+  herdr project herdr resumes agents with an integration by itself
+  (I-501). The CLI's stop line is
   followed by `Interrupted claude (working) and claude-2 (needs input).`
   when the project's newest sample showed agents working or waiting; idle
   agents are not named, and the line names no command (DECISIONS I-500,
@@ -308,8 +310,9 @@ Expiry:
   transaction with `for update skip locked`, checks the rule again
   inside, and enqueues the destroy with `allowQueue=true`.
 - The destroy waits while the latest meter sample (under 10 minutes old)
-  shows an ssh session, a tmux client, or an agent that is not `idle` or
-  `needs_input`, and is looked at again the next minute. From
+  shows an ssh session (a laptop herdr's bridge is one, I-511), a tmux
+  client, or an agent that is not `idle` or `needs_input`, and is looked
+  at again the next minute. From
   `expires_at + 24h` it goes ahead regardless.
 - A stopped or errored temporary project expires the same way.
 - The plan is `[destroy_guest]`, also for a project with no guest yet:
@@ -340,6 +343,12 @@ Ending the session:
   an agent working never loses its machine this way.
 - On Windows, without a TTY or with `REPOSE_INPUT_PROXY=0` the CLI has
   exec'd ssh and cannot look; the machine waits for its expiry.
+- On a herdr machine (I-509) the CLI looks after any attach it ran as a
+  child (`herdr --remote` or `ssh -t ... herdr`): when `herdr pane list`
+  over the ControlMaster reports no panes, the machine is
+  destroyed with the same line. A temporary machine is never in the
+  laptop herdr's sidebar (I-510), so `run` in a laptop herdr pane uses
+  the child client for it.
 
 Built (I-348..I-355): `TestRunTempCreatesWithoutRemote`,
 `TestTempExpiryWaitsWhileAttached`, `TestTempExpiryDestroysWithoutSnapshot`,
