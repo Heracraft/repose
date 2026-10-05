@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,5 +183,48 @@ func TestStopRetriesOnOpConflictThenSucceeds(t *testing.T) {
 	got, err := e.Client.GetProject(ctx, p.ID)
 	if err != nil || got.State != "stopped" {
 		t.Fatalf("state = %q err=%v, want stopped after the retry", got.State, err)
+	}
+}
+
+// A stop names the agents it interrupted mid-turn or waiting for an
+// answer, and no command (features/stop-start-destroy.md, DECISIONS
+// I-500); an idle agent and a stop with none busy add no line.
+func TestStopNamesInterruptedAgents(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	stop := func(agents []fakeapi.AgentSignal) string {
+		t.Helper()
+		e := newLifecycleEnv(t, fake)
+		p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: fmt.Sprintf("app-%d", len(agents)), Class: "small"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := StartCmd(ctx, e, p.ID); err != nil {
+			t.Fatal(err)
+		}
+		fake.SetAgents(p.ID, agents)
+		var out bytes.Buffer
+		e.Out = &out
+		if err := StopCmd(ctx, e, p.ID, false); err != nil {
+			t.Fatalf("StopCmd: %v", err)
+		}
+		return out.String()
+	}
+
+	out := stop([]fakeapi.AgentSignal{
+		{Agent: "claude", Window: "claude", State: "working"},
+		{Agent: "codex", Window: "codex", State: "idle"},
+		{Agent: "claude", Window: "claude-2", State: "needs_input"},
+	})
+	if !strings.HasSuffix(out, "Disk is still billed.\nInterrupted claude (working) and claude-2 (needs input).\n") {
+		t.Errorf("stop with two busy agents printed %q", out)
+	}
+	if strings.Contains(out, "codex") || strings.Contains(out, "resume") {
+		t.Errorf("stop named an idle agent or a command: %q", out)
+	}
+
+	if out := stop([]fakeapi.AgentSignal{{Agent: "codex", Window: "codex", State: "idle"}}); strings.Contains(out, "Interrupted") {
+		t.Errorf("stop with only an idle agent printed %q", out)
 	}
 }

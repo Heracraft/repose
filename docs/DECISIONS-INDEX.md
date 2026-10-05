@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+525 entries.
 
 ## Scope
 
@@ -279,7 +279,7 @@ pointer, not a summary.
 - **I-177** The bootstrap key can be retired per host once the Host CA is there, and a key file in root's home is never read — 2026-09-23; L4286
 - **I-195..I-205** laptop parity, settled with the owner on 2026-09-23 before any code — 2026-09-23; L4325
 - **I-195** `run` and `attach` carry the laptop's git config, minus a denylist — L4333
-- **I-196** `run` and `attach` carry the laptop's Claude Code config, and merge `settings.json` — L4349
+- **I-196** `run` and `attach` carry the laptop's Claude Code config, and merge `settings.json` — amended by I-499; L4349
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4370
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4384
 - **I-199** Ports are auto-forwarded while a CLI session is attached — L4389
@@ -555,3 +555,5 @@ pointer, not a summary.
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
+- **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L13069
+- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13094

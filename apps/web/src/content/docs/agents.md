@@ -126,7 +126,7 @@ An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
 `run` and `attach` copy from your laptop's `~/.claude/`: `CLAUDE.md`, `settings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, `keybindings.json`, and scripts your hooks or status line run. Plugins you enabled are installed on the machine in the background.
 
-Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
+Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours. A hook you delete on your laptop leaves the machine at the next `run` or `attach`. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
 
 Never copied: your login, conversation history, `~/.claude.json`, and anything named like a key or credential.
 

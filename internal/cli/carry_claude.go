@@ -705,7 +705,10 @@ func sortedFileKeys(m map[string]claudeFile) []string {
 // laptop's home, list the commands the result would run, drop the ones
 // the guest cannot run (named once), merge, check the result with
 // `jq empty`, keep the previous file as settings.json.repose-prev and
-// rename the new one into place. An invalid guest file is left alone.
+// rename the new one into place, then keep the hooks this laptop file
+// added in ~/.repose/claude-laptop-hooks.json, which the next merge takes
+// out of the guest's before the union (DECISIONS I-499). An invalid guest
+// file is left alone.
 func claudeSettingsScript() string {
 	return `t=$1
 c="$t/claude"
@@ -722,11 +725,14 @@ if [ -s "$s" ]; then
 fi
 pf=${REPOSE_CLAUDE_PLATFORM:-/etc/repose/claude-settings.json}
 [ -r "$pf" ] || pf="$t/empty.json"
+ph="$HOME/.repose/claude-laptop-hooks.json"
+pv="$t/empty.json"
+if [ -s "$ph" ] && jq empty "$ph" 2>/dev/null; then pv="$ph"; fi
 : > "$t/missing"
 q() {
   qm=$1 qh=$2 qg=$3 ql=$4
   shift 4
-  jq -n "$@" --arg mode "$qm" --arg home "$qh" --arg cfg "$(cat "$c/cfg" 2>/dev/null || true)" --arg dest "$HOME" --slurpfile g "$qg" --slurpfile l "$ql" --slurpfile p "$pf" --rawfile missing "$t/missing" -f "$c/merge.jq"
+  jq -n "$@" --arg mode "$qm" --arg home "$qh" --arg cfg "$(cat "$c/cfg" 2>/dev/null || true)" --arg dest "$HOME" --slurpfile g "$qg" --slurpfile l "$ql" --slurpfile p "$pf" --slurpfile prev "$pv" --rawfile missing "$t/missing" -f "$c/merge.jq"
 }
 q rewrite "$(cat "$c/home")" "$g" "$c/settings.json" > "$t/laptop.json"
 cmd_ok() {
@@ -765,12 +771,20 @@ while IFS= read -r b; do
 done < "$t/commands"
 q merge "" "$g" "$t/laptop.json" > "$t/merged.json"
 jq empty "$t/merged.json"
-if [ -f "$s" ] && cmp -s "$t/merged.json" "$s"; then exit 0; fi
+q laptophooks "" "$g" "$t/laptop.json" > "$t/laptop-hooks.json"
+save_hooks() {
+  cmp -s "$t/laptop-hooks.json" "$ph" && return 0
+  mkdir -p "$HOME/.repose"
+  cp "$t/laptop-hooks.json" "$ph.tmp"
+  mv -f "$ph.tmp" "$ph"
+}
+if [ -f "$s" ] && cmp -s "$t/merged.json" "$s"; then save_hooks; exit 0; fi
 cp "$t/merged.json" "$s.tmp"
 chmod 600 "$s.tmp"
 jq empty "$s.tmp"
 if [ -f "$s" ]; then cp -p "$s" "$s.repose-prev"; fi
 mv -f "$s.tmp" "$s"
+save_hooks
 `
 }
 

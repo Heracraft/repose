@@ -398,8 +398,15 @@ func (s *Server) emitQuestion(q questions.Question) {
 func (s *Server) Questions() *questions.Store { return s.asks }
 
 // onHook is what the hook socket calls: relay to hostd and fold into the
-// agent-state machine so the next Sample agrees with the notification.
+// agent-state machine so the next Sample agrees with the notification. A
+// hook from outside tmux (window "") is relayed under the agent's name and
+// changes no tmux window's state: the tmux window named "claude" is not
+// the Claude in a herdr pane.
 func (s *Server) onHook(agent, window, kind, summary string) {
+	if window == "" {
+		s.AgentEvent(agent, agent, kind, summary)
+		return
+	}
 	s.watcher.RecordHook(window, kind, s.now())
 	s.AgentEvent(agent, window, kind, summary)
 }
