@@ -38,7 +38,7 @@ user="${USER:-$(id -un)}"
 # an older base). ~/go/bin and ~/.cargo/bin are on it, so a tool the user
 # installed with `go install` or `cargo install` is not installed again.
 search_path() {
-  printf '%s' "${PATH:-}:$HOME/.local/bin:$HOME/.local/share/pnpm:$HOME/.npm-global/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.deno/bin:$HOME/.nix-profile/bin:$HOME/.local/state/nix/profile/bin:/etc/profiles/per-user/$user/bin:/run/current-system/sw/bin"
+  printf '%s' "${PATH:-}:$HOME/.local/bin:$HOME/.local/share/pnpm/bin:$HOME/.local/share/pnpm:$HOME/.npm-global/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.deno/bin:$HOME/.nix-profile/bin:$HOME/.local/state/nix/profile/bin:/etc/profiles/per-user/$user/bin:/run/current-system/sw/bin"
 }
 
 has_cmd() {
@@ -267,6 +267,7 @@ install_one() {
       mkdir -p "$HOME/.local/bin"
       attempt timeout 1200 env GOBIN="$HOME/.local/bin" go install "$pkg@${version:-latest}" || return 1 ;;
     cargo)
+      cargo_toolchain || return 1
       if [ -n "$version" ]; then
         attempt timeout 1200 cargo install --locked --root "$HOME/.local" "$pkg" --version "$version" || return 1
       else
@@ -286,6 +287,40 @@ install_one() {
   done
   reason="installed with $manager, but none of its commands is on PATH"
   return 1
+}
+
+# cargo_toolchain gives rustup a default toolchain before the first
+# cargo install, which fails without one (I-522): the stable toolchain,
+# minimal profile. A laptop with cargo-installed crates is a Rust user's,
+# who would run `rustup default stable` anyway. A default the user chose
+# is kept.
+cargo_toolchain() {
+  rustup show active-toolchain >/dev/null 2>&1 && return 0
+  attempt timeout 1200 rustup toolchain install stable --profile minimal || return 1
+  attempt rustup default stable || return 1
+  logline "rustup: stable (minimal profile) is the default toolchain, for cargo install"
+}
+
+# ruby_bundler installs Bundler 2.7 into GEM_HOME for a ruby whose
+# RubyGems is 3.7 or newer (I-524): its default Bundler 2.6 redefines
+# RubyGems constants and prints a screen of warnings on every `bundle`.
+# --env-shebang, so the `bundle` in GEM_HOME runs whichever ruby is
+# first on PATH after a later pin.
+ruby_bundler() {
+  local gv bv
+  gv=$(bash -lc 'gem --version' 2>/dev/null) || return 0
+  [ "$(printf '%s\n3.7\n' "$gv" | sort -V | head -n 1)" = 3.7 ] || return 0
+  bv=$(bash -lc "gem list -i bundler -v '~> 2.7' >/dev/null && bundle -v" 2>/dev/null | sed -n 's/^Bundler version //p')
+  if [ -z "$bv" ]; then
+    reason=
+    if ! attempt timeout 600 bash -lc "gem install --no-document --env-shebang bundler -v '~> 2.7'"; then
+      notice "Could not install Bundler 2.7 for Ruby: $reason"
+      return 0
+    fi
+    bv=$(bash -lc 'bundle -v' 2>/dev/null | sed -n 's/^Bundler version //p')
+  fi
+  printf '%s\n' "$bv" > "$state/bundler"
+  logline "ruby: bundler ${bv:-?} in GEM_HOME"
 }
 
 notice() {
@@ -313,6 +348,7 @@ runtime_pass() {
   if attempt profile_add "$attr" && [ "$(login_version "$lang")" = "$want" ]; then
     printf '%s\n' "$attr" > "$state/$lang"
     logline "$lang: $attr is the $lang of new shells"
+    [ "$lang" != ruby ] || ruby_bundler
     return 0
   fi
   nix profile remove "$attr" >/dev/null 2>&1 || true

@@ -156,6 +156,25 @@ in
       PKG_CONFIG_PATH = pkgConfigPath;
     };
 
+    # The interpreter paths scripts and Makefiles written on other Linux
+    # systems name (I-521): `#!/bin/bash`, `#!/usr/bin/python3`,
+    # `SHELL := /bin/bash`. Links into the system profile, so they follow
+    # a base switch; python3 there is the nix-ld wrapper above. /bin/sh
+    # and /usr/bin/env stay NixOS's. Not envfs, which puts a FUSE mount
+    # on the boot path (I-231).
+    systemd.tmpfiles.rules = [
+      "L+ /bin/bash - - - - /run/current-system/sw/bin/bash"
+      "L+ /usr/bin/bash - - - - /run/current-system/sw/bin/bash"
+      "L+ /usr/bin/python3 - - - - /run/current-system/sw/bin/python3"
+      "L+ /usr/bin/python - - - - /run/current-system/sw/bin/python3"
+      "L+ /usr/bin/perl - - - - /run/current-system/sw/bin/perl"
+    ];
+
+    # python-build-standalone, the CPython uv downloads, has
+    # openssl_cafile=/etc/ssl/cert.pem compiled in; without the file every
+    # https request from it fails certificate checks (I-521).
+    environment.etc."ssl/cert.pem".source = config.environment.etc."ssl/certs/ca-certificates.crt".source;
+
     systemd.sockets.repose-prisma-engines = {
       description = "repose: Prisma engines redirect on ${prismaMirrorAddress}";
       wantedBy = [ "sockets.target" ];

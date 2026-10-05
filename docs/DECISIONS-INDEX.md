@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+528 entries.
 
 ## Scope
 
@@ -311,7 +311,7 @@ pointer, not a summary.
 - **I-224** The sync's writes are one ssh, and none when nothing changed — L5106
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — L5140
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5169
-- **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; L5239
+- **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-520; L5239
 - **I-230** Guest disks are opened O_DIRECT, and guest@ units get a MemoryHigh 128 MiB under MemoryMax — 2026-09-23; L5297
 - **I-231** A guest boot's path to Ready and to its first login carries only what they need: a scripted stage 1, no mount-rate-limit stall, zram and the setuid wrappers off the chain, and no home-manager run for an unchanged generation — 2026-09-24; L5380
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5467
@@ -555,3 +555,8 @@ pointer, not a summary.
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
+- **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13069
+- **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13093
+- **I-522** A carried cargo tool gets rustup a default toolchain first — 2026-10-05; L13115
+- **I-523** Python packages go in a venv; pipx gets the nix-ld python3; Tk comes with a uv Python — 2026-10-05; L13132
+- **I-524** A carried Ruby with RubyGems 3.7 gets Bundler 2.7 — 2026-10-05; L13148

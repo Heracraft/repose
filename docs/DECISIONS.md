@@ -13065,3 +13065,96 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-520. pnpm 11's global bin dir is on PATH, and yarn is corepack's.**
+(base-languages, 2026-10-05; amends I-227) Base 2026.10.05 carries
+pnpm 11.27.0, which links `pnpm add -g` bins into `$PNPM_HOME/bin`, not
+`$PNPM_HOME`, and refuses when that dir is not on PATH: `pnpm add -g`
+failed with ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH and `pnpm bin -g` exited 1
+(checked on kanali). I-227's list gains `.local/share/pnpm/bin`, directly
+before `.local/share/pnpm`, which stays: a project pinning pnpm 10
+through corepack (this repository pins pnpm@10.0.0) still links into
+`PNPM_HOME`. tools-carry.sh's fallback PATH names both, and tmpfiles
+creates the new dir. `command -v yarn` found nothing, though the docs and
+agent guide named yarn v1, and I-227's advice (`corepack enable`) fails
+with EROFS, writing next to node in the store. The base now has `yarn`
+and `yarnpkg` as links to corepack's own `dist/yarn.js` and
+`dist/yarnpkg.js`, from `nodejs-slim_24`'s corepack output (`nodejs_24`
+has no such output; this one is the `corepack` the system already runs,
+so the closure grows by two links). They run the version a
+`packageManager` field pins, else yarn 1 (1.22.22 and 4.5.0 checked on
+kanali). pnpm stays nixpkgs's. `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`, so a
+first run in an agent's window does not wait on a question nobody sees.
+yarn itself is fetched from registry.yarnpkg.com, outside the server's
+cache; yarn v1's package installs use the `~/.npmrc` registry, so they go
+through it. guest-devtools asserts `pnpm bin -g` and where `yarn`
+resolves; `yarn --version` needs the network the test VM lacks.
+
+**I-521. `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist.**
+(base-languages, 2026-10-05) machine.md promises programs from other
+Linux systems run as on Ubuntu, but `/bin` had only `sh` and `/usr/bin`
+only `env`: a `#!/bin/bash` or `#!/usr/bin/python3` script exited 126
+(bad interpreter) and a Makefile with `SHELL := /bin/bash` failed with
+Error 127. compat.nix adds tmpfiles `L+` links from `/bin/bash`,
+`/usr/bin/bash`, `/usr/bin/python3`, `/usr/bin/python` and `/usr/bin/perl`
+to `/run/current-system/sw/bin`, so they follow a base switch; python3
+there is I-228's nix-ld wrapper, whose `exec -a` keeps `/usr/bin/python3`
+as `sys.executable`. `/bin/sh` and `/usr/bin/env` stay NixOS's. Not
+envfs, which resolves any path but adds a FUSE mount to the boot (I-231).
+The CPython uv downloads (python-build-standalone) has
+`openssl_cafile=/etc/ssl/cert.pem` compiled in; NixOS has no such file,
+so `urlopen("https://pypi.org")` from a `uv python install 3.11` failed
+with CERTIFICATE_VERIFY_FAILED and returned 200 with the bundle given.
+`/etc/ssl/cert.pem` is now the same source as
+`/etc/ssl/certs/ca-certificates.crt`. No `SSL_CERT_FILE` or
+`NIX_SSL_CERT_FILE` in the session: they override every program's own
+choice. Checked on kanali in a bwrap with the same links: the scripts,
+the Makefile and the uv Python's https request ran. guest-compat
+asserts each.
+
+**I-522. A carried cargo tool gets rustup a default toolchain first.**
+(base-languages, 2026-10-05) The base has rustup with no toolchain, and
+machine.md asks the user to run `rustup default stable` once. The tools
+carry's cargo fallback ran `cargo install` without one, so every crate
+from the laptop that nixpkgs lacks failed with "Could not install X".
+Before the first cargo install, tools-carry.sh now checks `rustup show
+active-toolchain`; with none it installs stable with the minimal profile
+and makes it the default, and logs that once. A laptop with
+cargo-installed crates is a Rust user's, who would run the same command;
+a default the user chose is kept. No first-boot toolchain download for
+anyone else. rust-analyzer is rustup's proxy in the base: without the
+component, `rust-analyzer --version` loops until "infinite recursion
+detected". The component is not added (another download nobody asked
+for); machine.md and the agent guide say `rustup component add
+rust-analyzer`. guest-tools-carry runs a cargo item against stand-in
+rustup and cargo that fail without a default.
+
+**I-523. Python packages go in a venv; pipx gets the nix-ld python3; Tk
+comes with a uv Python.** (base-languages, 2026-10-05; extends I-228)
+nixpkgs#pipx, which the not-found hint offers, defaults to its own
+unwrapped python3.14, so `pipx run --spec numpy` failed with
+libstdc++.so.6; `PIPX_DEFAULT_PYTHON=/run/current-system/sw/bin/python3`
+is now a session variable and pipx is not added to the base. pip stays
+out of the system python: `python3 -m pip`, ensurepip and `uv pip
+--system` are refused (externally managed), so machine.md, the
+troubleshooting page and user-bin-dirs.nix no longer list `pip install
+--user`. `PIP_USER=1` is not set: it breaks pip inside a venv. The docs
+say packages go in a venv and CLIs in `uv tool install`. The system
+python3 has no `_tkinter`; the CPython uv downloads has Tk. The docs say
+so. Adding Tk to the system python (a joined interpreter with
+`_tkinter` in lib-dynload, about 13 MB) waits for closure budget;
+`withPackages` is ruled out because it breaks I-228's venv links.
+
+**I-524. A carried Ruby with RubyGems 3.7 gets Bundler 2.7.**
+(base-languages, 2026-10-05; extends I-265) nixpkgs's ruby_3_4 has
+RubyGems 3.7.2 and a default Bundler 2.6.9, which redefines RubyGems
+constants: `bundle -v` printed 18 "already initialized constant
+Gem::Platform" warnings and `bundle exec` 36. `-W:no-deprecated` does not
+hide them and `-W0` hides every warning. With Bundler 2.7 there are none.
+After the tools carry makes a pinned Ruby the default, it installs
+`bundler '~> 2.7'` into `GEM_HOME` with `--env-shebang` when that Ruby's
+RubyGems is 3.7 or newer and no 2.7 is present, records the version in
+`~/.repose/tools/bundler`, and on failure says so once and goes on. A
+`Gemfile.lock` with `BUNDLED WITH` 2.6 still switches to the old Bundler;
+`bundle update --bundler` moves it. No VM assertion: the test VM has no
+bundler gem offline; checked with stand-in gem and bundle.
