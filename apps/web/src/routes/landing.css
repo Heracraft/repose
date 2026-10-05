@@ -234,25 +234,6 @@
 .hero-h .line {
 	display: block;
 }
-/* One thick blue bar under "replicated", drawn in on load. Inline,
-   so each part keeps its bar if it wraps on a phone. */
-.hero-h .bar {
-	padding-bottom: 0.08em;
-	line-height: 1.18;
-	-webkit-box-decoration-break: clone;
-	box-decoration-break: clone;
-	background: linear-gradient(var(--sh-accent), var(--sh-accent)) no-repeat 0 100% / 100% 0.12em;
-}
-@media (prefers-reduced-motion: no-preference) {
-	.hero-h .bar {
-		animation: bar 0.8s var(--land-ease) 0.5s both;
-	}
-}
-@keyframes bar {
-	from {
-		background-size: 0% 0.12em;
-	}
-}
 /* Three sentences, each kept whole, so a line breaks between sentences
    and never ends on the next one's first word: balance alone left a lone
    "A", then a lone "The", at the end of line 1. Balanced, the three break
@@ -565,7 +546,7 @@
 /* The sign-off: the page's shapes, one to a cell between the rails. */
 .frieze {
 	display: grid;
-	grid-template-columns: repeat(8, minmax(0, 1fr));
+	grid-template-columns: repeat(7, minmax(0, 1fr));
 	list-style: none;
 	margin: 0;
 	padding: 0;

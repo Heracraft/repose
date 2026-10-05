@@ -13065,3 +13065,15 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-498. The landing drops the headline's bar and the star, and links Feedback in the top bar.**
+(landing-hero-nav, 2026-10-05; owner) The owner judged the blue bar
+under "replicated" ugly: it underlined one word of a two-line serif
+headline and left a stripe ending mid-line. The headline now has no bar;
+the prices keep theirs. The star shape was Gemini's sparkle and read as
+Gemini's logo on a page that is not Gemini's, so it left the shape set
+and the footer's row, which now has seven cells. Gemini CLI's mark in
+the toolchain box is the same sparkle and stays, since there it names
+Gemini CLI. Feedback was linked only in the footer; the top bar now
+carries it after GitHub, and it stays on a phone (GitHub hides below
+640px). `docs/LANDING.md` follows.
