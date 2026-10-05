@@ -28,18 +28,18 @@ Create or start this checkout's machine and attach. A new machine gets a copy of
 
 On your laptop, `run` changes one thing in the checkout: it adds a git remote named `repose` for the machine's checkout, so `git fetch repose` brings the agent's commits back. See [Getting work back](/docs/sync#getting-work-back).
 
-| Flag                      | What it does                                                                                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`.                                                                                                                  |
-| `--no-attach`             | Don't attach afterwards.                                                                                                                                          |
-| `--worktree`              | Start the agent in its own git worktree. Needs a prompt.                                                                                                          |
-| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                             |
-| `--size small\|large\|xl` | Size of a new project.                                                                                                                                            |
-| `--name NAME`             | The project called NAME, created if there is none: a second machine for this checkout, or a name other than the directory's for one with no remote.               |
-| `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). |
-| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines). |
-| `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                             |
-| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                    |
+| Flag                      | What it does                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`.                                                                                                                                                       |
+| `--no-attach`             | Don't attach afterwards.                                                                                                                                                                               |
+| `--worktree`              | Start the agent in its own git worktree. Needs a prompt.                                                                                                                                               |
+| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                  |
+| `--size small\|large\|xl` | Size of a new project.                                                                                                                                                                                 |
+| `--name NAME`             | The project called NAME, created if there is none: a second machine for this checkout, or a name other than the directory's for one with no remote.                                                    |
+| `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).                         |
+| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines).                                      |
+| `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                  |
+| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                         |
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix). |
 
 ### `repose attach [PROJECT]`
@@ -268,16 +268,16 @@ With `--global`, the same commands act on your machine.nix instead of the projec
 
 ## Account
 
-| Command                             | What it does                                                                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `repose login`                      | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers). |
+| Command                             | What it does                                                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `repose login`                      | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers).                         |
 | `repose logout`                     | Log out and revoke SSH certificates; connections they opened, on any device, close within 30 seconds. `--purge` removes the CLI's files. |
-| `repose notify set`                 | `--email on\|off`, `--ntfy URL\|none`.                                                                           |
-| `repose notify test`                | Send a test on every channel that's on.                                                                          |
-| `repose version`                    | Print the version.                                                                                               |
-| `repose completion bash\|zsh\|fish` | Print a shell completion script.                                                                                 |
-| `repose help [COMMAND]`             | Print help for a command.                                                                                        |
-| `repose mcp forward`                | Reserved, not available yet. Prints what works today.                                                            |
+| `repose notify set`                 | `--email on\|off`, `--ntfy URL\|none`.                                                                                                   |
+| `repose notify test`                | Send a test on every channel that's on.                                                                                                  |
+| `repose version`                    | Print the version.                                                                                                                       |
+| `repose completion bash\|zsh\|fish` | Print a shell completion script.                                                                                                         |
+| `repose help [COMMAND]`             | Print help for a command.                                                                                                                |
+| `repose mcp forward`                | Reserved, not available yet. Prints what works today.                                                                                    |
 
 ## config.toml
 
@@ -337,7 +337,7 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 
 | Path                | What it holds                                                                                                                                                                                                                                                                                                          |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | Your login (mode 0600; on macOS the token is in the keychain), `config.toml`, your `machine.nix` with `machine.nix.state` (what the last push left on both sides), and caches that are safe to delete.                                                                                                                  |
+| `~/.config/repose/` | Your login (mode 0600; on macOS the token is in the keychain), `config.toml`, your `machine.nix` with `machine.nix.state` (what the last push left on both sides), and caches that are safe to delete.                                                                                                                 |
 | `~/.ssh/repose/`    | The CLI's own SSH key and 24-hour certificate, `hosts` with one `Host` block per project, and `config`, which has `ssh` run `repose ssh-prepare` before connecting to a `.repose` host, so the certificate is renewed and a new project's block written first ([SSH and editors](/docs/ssh-and-editors#how-it-works)). |
 | `~/.ssh/config`     | One added line: `Include ~/.ssh/repose/config`.                                                                                                                                                                                                                                                                        |
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                                                                                                 |

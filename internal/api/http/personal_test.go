@@ -266,7 +266,7 @@ func TestPersonalCreateReuse(t *testing.T) {
 	if op.State != "error" || op.Error["message"] != "machine.nix contains the value of secret API_KEY" {
 		t.Fatalf("secret in machine.nix: %s %+v", op.State, op.Error)
 	}
-	if strings.Contains(string(e.logs.Bytes()), val) {
+	if strings.Contains(e.logs.String(), val) {
 		t.Fatal("the secret's value reached a log line")
 	}
 }
