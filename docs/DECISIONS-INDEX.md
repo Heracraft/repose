@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-506 entries.
+509 entries.
 
 ## Scope
 
@@ -538,3 +538,6 @@ pointer, not a summary.
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12297
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12319
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12344
+- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12358
+- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12383
+- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L12401

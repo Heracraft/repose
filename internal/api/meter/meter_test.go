@@ -206,3 +206,37 @@ func TestOneGuestsSampleCannotSinkTheHostsBatch(t *testing.T) {
 		t.Fatalf("foreign guests %v", got)
 	}
 }
+
+// The two CPU pressure counters (DECISIONS I-493): the guest's is stored
+// with the guest fields and clamped, the host's with the host fields.
+func TestIngestStoresCPUPressure(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := meter.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now().UTC().Truncate(time.Second)
+	ing.SetNow(func() time.Time { return now })
+	pidA, gidA := seed(t, pool, "large", now.Add(-time.Hour))
+	pidB, gidB := seed(t, pool, "large", now.Add(-time.Hour))
+	ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: now.Unix(), Guests: []*hostdv1.GuestSample{
+		{GuestId: gidA.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{GuestdOk: true},
+			CpuPressureUsDelta: 12_000_000, HostCpuWaitUsDelta: 3_000_000, GuestMemUsedBytes: 2 << 30},
+		{GuestId: gidB.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{GuestdOk: true},
+			CpuPressureUsDelta: 1 << 63, HostCpuWaitUsDelta: 1 << 63},
+	}})
+	read := func(pid uuid.UUID) (p, w int64) {
+		if err := pool.QueryRow(ctx, "select cpu_pressure_us, host_cpu_wait_us from meter_samples where project_id = $1", pid).Scan(&p, &w); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if p, w := read(pidA); p != 12_000_000 || w != 3_000_000 {
+		t.Fatalf("A: pressure %d wait %d", p, w)
+	}
+	var mem int64
+	if err := pool.QueryRow(ctx, "select mem_used from meter_samples where project_id = $1", pidA).Scan(&mem); err != nil || mem != 2<<30 {
+		t.Fatalf("A: mem_used %d %v", mem, err)
+	}
+	if p, w := read(pidB); p != 3_600_000_000 || w != 3_600_000_000 {
+		t.Fatalf("B: values past the bound were not clamped: pressure %d wait %d", p, w)
+	}
+}

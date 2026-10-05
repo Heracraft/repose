@@ -110,6 +110,28 @@ promised, DECISIONS I-96):
   `/settings`: timezone, email toggle, ntfy URL and its test button.
   `/account`: handle, email, GitHub login, and deletion.
 
+Usage on the dashboard (DECISIONS I-492, I-493):
+
+- The project page's Machine card spells out the size (vCPUs and memory),
+  the plan memory it takes while running, and `repose resize --size`
+  with the other two sizes.
+- Its Usage card draws `GET /projects/:id/samples` over an hour, a day or
+  a week: CPU (share of the class's vCPUs), memory in use as the guest
+  sees it, time a task in the guest waited for a vCPU, and time the
+  machine waited for a host CPU. Below them, the eight process names
+  with the most CPU in the window. It reads the minute samples the
+  platform already keeps (`meter_samples`, `proc_samples`), so it stores
+  nothing new, and a stopped machine draws a gap.
+- A guest from before I-493 has no pressure or guest memory figure; the
+  card draws a gap there, never a zero.
+
+Not built, documented for later (DECISIONS I-494): `repose status
+--watch`, a live view refreshed every two seconds. It would read `/proc`
+in the guest over the user's own SSH, as the listening list does, store
+nothing, and keep working when the api is down. It costs CLI code only.
+It waits until someone asks for detail finer than the minute the
+dashboard draws.
+
 ## Depends on
 
 Workstreams 05 (project and usage routes, ops history, log storage), 03
@@ -118,8 +140,8 @@ Workstreams 05 (project and usage routes, ops history, log storage), 03
 
 ## Deferred
 
-Application log shipping from the guest (opt-in). Historical resource
-graphs per project in the dashboard beyond cost. A `repose top` live view.
+Application log shipping from the guest (opt-in). A live view
+(`repose status --watch`, above; I-494).
 A state timeline and a per-meter cost breakdown on the project page, a
 sortable project list with a cost sparkline, a ports card, and the account
 limits on a page of their own: each was in an early draft of the Dashboard

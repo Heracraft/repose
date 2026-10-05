@@ -86,6 +86,7 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
               cpu_ns bigint, mem_rss bigint, net_tx bigint, net_rx bigint,
               disk_alloc bigint, disk_used bigint, ssh_sessions int,
               tmux_clients int, agents jsonb, docker_containers int, guestd_ok bool,
+              cpu_pressure_us bigint, host_cpu_wait_us bigint, mem_used bigint,  -- 0014, I-493; 0 before it
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
@@ -190,7 +191,9 @@ Rules:
 - No `delete` of `projects` rows; `destroyed_at` is set and the row stays for
   usage history. `users.deleted_at` likewise.
 - `meter_samples` and `proc_samples` are append-only and never joined to
-  from request paths; the hourly rollup reads them once. Both are partitioned
+  from request paths; the hourly rollup reads them once. The one request
+  path that reads them is `GET /projects/:id/samples` (I-492): one
+  project, at most seven days, a range scan on each primary key. Both are partitioned
   by month: the api creates the current and next month's partitions at start
   and in its daily job, which also drops the ones past retention and logs
   `partition_drop_fail` with `repose_api_partition_drop_fail_total` when it

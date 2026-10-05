@@ -249,6 +249,8 @@ func (f *Fake) Show(_ context.Context, unit string, props ...string) (map[string
 			out[p] = fmt.Sprint(u.MemBytes)
 		case "MainPID":
 			out[p] = fmt.Sprint(u.MainPID)
+		case "ControlGroup":
+			out[p] = "/system.slice/" + unit
 		}
 	}
 	return out, nil

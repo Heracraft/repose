@@ -3213,8 +3213,21 @@ type GuestSample struct {
 	DiskUsedBytes   uint64                 `protobuf:"varint,9,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
 	Signals         *GuestSignals          `protobuf:"bytes,10,opt,name=signals,proto3" json:"signals,omitempty"`
 	Procs           []*ProcSample          `protobuf:"bytes,11,rep,name=procs,proto3" json:"procs,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Microseconds since the last sample in which a task inside the guest
+	// was runnable and waited for a vCPU: the guest's /proc/pressure/cpu
+	// "some" total, moved on by hostd (DECISIONS I-493).
+	CpuPressureUsDelta uint64 `protobuf:"varint,12,opt,name=cpu_pressure_us_delta,json=cpuPressureUsDelta,proto3" json:"cpu_pressure_us_delta,omitempty"`
+	// Microseconds since the last sample in which a thread of the guest's
+	// hypervisor unit was runnable and waited for a host CPU: the unit
+	// cgroup's cpu.pressure "some" total on the host, the guest's steal
+	// (DECISIONS I-493).
+	HostCpuWaitUsDelta uint64 `protobuf:"varint,13,opt,name=host_cpu_wait_us_delta,json=hostCpuWaitUsDelta,proto3" json:"host_cpu_wait_us_delta,omitempty"`
+	// Memory in use as the guest sees it, MemTotal less MemAvailable, at the
+	// sample (guest-written; mem_rss_bytes is what the host has backed,
+	// which never shrinks without a balloon). DECISIONS I-493.
+	GuestMemUsedBytes uint64 `protobuf:"varint,14,opt,name=guest_mem_used_bytes,json=guestMemUsedBytes,proto3" json:"guest_mem_used_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GuestSample) Reset() {
@@ -3322,6 +3335,27 @@ func (x *GuestSample) GetProcs() []*ProcSample {
 		return x.Procs
 	}
 	return nil
+}
+
+func (x *GuestSample) GetCpuPressureUsDelta() uint64 {
+	if x != nil {
+		return x.CpuPressureUsDelta
+	}
+	return 0
+}
+
+func (x *GuestSample) GetHostCpuWaitUsDelta() uint64 {
+	if x != nil {
+		return x.HostCpuWaitUsDelta
+	}
+	return 0
+}
+
+func (x *GuestSample) GetGuestMemUsedBytes() uint64 {
+	if x != nil {
+		return x.GuestMemUsedBytes
+	}
+	return 0
 }
 
 type HostSample struct {
@@ -4349,7 +4383,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\ftmux_clients\x18\x02 \x01(\rR\vtmuxClients\x122\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
-	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xb2\x03\n" +
+	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xca\x04\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -4363,7 +4397,10 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x0fdisk_used_bytes\x18\t \x01(\x04R\rdiskUsedBytes\x127\n" +
 	"\asignals\x18\n" +
 	" \x01(\v2\x1d.repose.hostd.v1.GuestSignalsR\asignals\x121\n" +
-	"\x05procs\x18\v \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\"\x81\x01\n" +
+	"\x05procs\x18\v \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\x121\n" +
+	"\x15cpu_pressure_us_delta\x18\f \x01(\x04R\x12cpuPressureUsDelta\x122\n" +
+	"\x16host_cpu_wait_us_delta\x18\r \x01(\x04R\x12hostCpuWaitUsDelta\x12/\n" +
+	"\x14guest_mem_used_bytes\x18\x0e \x01(\x04R\x11guestMemUsedBytes\"\x81\x01\n" +
 	"\n" +
 	"HostSample\x12\x19\n" +
 	"\bmem_free\x18\x01 \x01(\x04R\amemFree\x12\x1b\n" +

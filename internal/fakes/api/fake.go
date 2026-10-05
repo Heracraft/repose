@@ -479,6 +479,7 @@ func (f *Fake) register() {
 	f.handle(logPattern, f.opLog)
 	f.handle("POST /v1/projects/{id}/resize", f.resizeProject)
 	f.handle("GET /v1/projects/{id}/route", f.projectRoute)
+	f.handle("GET /v1/projects/{id}/samples", f.projectSamples)
 	// Config.
 	f.handle("GET /v1/projects/{id}/config", f.getConfig)
 	f.handle("PUT /v1/projects/{id}/config", f.putConfig)

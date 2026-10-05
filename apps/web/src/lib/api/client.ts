@@ -25,6 +25,8 @@ import type {
 	Revision,
 	Route,
 	SecretMeta,
+	Samples,
+	SampleWindow,
 	Snapshot,
 	UsageRow
 } from './types';
@@ -174,6 +176,8 @@ export const deleteSecret = (id: string, name: string) =>
 	request<void>(`/projects/${id}/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // Snapshots.
+export const getSamples = (id: string, window: SampleWindow) =>
+	request<Samples>(`/projects/${id}/samples?window=${window}`);
 export const listSnapshots = (id: string) => request<Snapshot[]>(`/projects/${id}/snapshots`);
 export const createSnapshot = (id: string) =>
 	request<{ op_id: string }>(`/projects/${id}/snapshots`, { method: 'POST' });

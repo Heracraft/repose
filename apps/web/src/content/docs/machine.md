@@ -157,6 +157,19 @@ When a machine runs out of memory, something is killed. Your agents and tmux are
 
 Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 
+## Seeing what the machine is doing
+
+The project's page in the dashboard has a **Machine** card with the size, its vCPUs and memory, and a **Usage** card with four charts over the last hour, day or week:
+
+- **CPU**: the share of the machine's vCPUs in use.
+- **Memory**: memory in use as the machine sees it, of the size's memory.
+- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU is at 100% means more work than vCPUs, for example several builds or test runs at once. Run fewer at a time, or give the machine more vCPUs with `repose resize --size`.
+- **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy. repose watches for that; you don't need to act.
+
+Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. Repose records process names and numbers, never their arguments or anything you type; see the [privacy policy](/privacy).
+
+When every vCPU is busy, your SSH sessions and tmux get the CPU before the programs running in your panes, so what you type keeps showing up at once.
+
 ## Changing the size
 
 A project's size is chosen when it's created (`repose run --size`, default `large`) and can be changed later with `repose resize --size small|large|xl`. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.

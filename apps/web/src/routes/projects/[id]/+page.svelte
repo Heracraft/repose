@@ -17,7 +17,8 @@
 		listSnapshots,
 		createSnapshot,
 		restoreSnapshot,
-		listRevisions
+		listRevisions,
+		getSamples
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
@@ -30,6 +31,8 @@
 	import QuestionsCard from '$lib/components/QuestionsCard.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
+	import UsageChart from '$lib/components/UsageChart.svelte';
+	import { pct, cpuTime, type Pt } from '$lib/usage';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type {
 		Me,
@@ -37,7 +40,9 @@
 		Project,
 		ProjectEvent,
 		Snapshot,
-		Revision
+		Revision,
+		Samples,
+		SampleWindow
 	} from '$lib/api/types';
 
 	const id = page.params.id as string;
@@ -218,6 +223,56 @@
 		}
 	}
 
+	// Usage (I-492): the api's minute samples over a window. They change
+	// once a minute, so the 10 s page poll fetches them at most that often;
+	// a window switch fetches at once.
+	const WINDOWS: [SampleWindow, string, number][] = [
+		['1h', 'Hour', 3600_000],
+		['24h', 'Day', 86400_000],
+		['7d', 'Week', 7 * 86400_000]
+	];
+	let samplesWindow = $state<SampleWindow>('1h');
+	let samples = $state<Samples | undefined>(undefined);
+	let samplesAt = $state(0);
+	let samplesFailed = $state(false);
+
+	async function refreshSamples(force = false) {
+		if (!force && samples?.window === samplesWindow && Date.now() - samplesAt < 55_000) return;
+		const want = samplesWindow;
+		try {
+			const got = await getSamples(id, want);
+			if (want !== samplesWindow) return; // switched again while this was in flight
+			samples = got;
+			samplesAt = Date.now();
+			samplesFailed = false;
+		} catch {
+			// The card says it could not load; the rest of the page stands.
+			samplesFailed = true;
+		}
+	}
+
+	function chooseWindow(w: SampleWindow) {
+		if (w === samplesWindow) return;
+		samplesWindow = w;
+		void refreshSamples(true);
+	}
+
+	let span = $derived(WINDOWS.find(([w]) => w === samples?.window)?.[2] ?? 3600_000);
+	let series = $derived.by(() => {
+		const pts = samples?.points ?? [];
+		const at = (f: (p: (typeof pts)[number]) => number | null): Pt[] =>
+			pts.map((p) => ({ t: Date.parse(p.ts), v: f(p) }));
+		return {
+			cpu: at((p) => p.cpu),
+			mem: at((p) => p.mem_used_bytes),
+			pressure: at((p) => p.cpu_pressure),
+			wait: at((p) => p.host_cpu_wait)
+		};
+	});
+	/** A memory figure as "3.4 GB", or "410 MB" under a gigabyte. */
+	const memGb = (b: number) =>
+		b < GIB ? `${Math.round(b / (1024 * 1024))} MB` : `${(b / GIB).toFixed(1)} GB`;
+
 	async function refreshMe() {
 		try {
 			me = await getMe();
@@ -230,12 +285,14 @@
 		const stop1 = pollWhileVisible(refresh);
 		const stop2 = pollWhileVisible(refreshEvents);
 		const stop3 = pollWhileVisible(refreshSnapshots);
+		const stop4 = pollWhileVisible(() => refreshSamples());
 		void refreshRevisions();
 		void refreshMe();
 		return () => {
 			stop1();
 			stop2();
 			stop3();
+			stop4();
 		};
 	});
 
@@ -441,7 +498,14 @@
 		return revisions.find((r) => r.revision_id === project?.config_revision_id);
 	}
 
+	// The sizes as /docs/machine's table has them (DECISIONS R3-2).
+	const CLASSES: Record<string, { vcpus: number; gb: number }> = {
+		small: { vcpus: 2, gb: 4 },
+		large: { vcpus: 4, gb: 8 },
+		xl: { vcpus: 8, gb: 16 }
+	};
 	const CLASS_GB: Record<string, number> = { small: 4, large: 8, xl: 16 };
+	let spec = $derived(project ? CLASSES[project.class] : undefined);
 
 	/** "8 GB of 8 GB": the class's memory, of what the plan runs at once. */
 	let memoryLine = $derived.by(() => {
@@ -606,11 +670,118 @@
 				{/if}
 			</div>
 
-			<div class="card">
-				<h2 class="text-xl font-semibold">Plan</h2>
+			<section class="card min-w-0 sm:col-span-2" data-testid="usage-card" aria-labelledby="usage-title">
+				<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+					<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
+					<!-- The current window is marked the way the config tabs mark
+					     theirs: ink with a 1px underline, no accent. -->
+					<div class="flex gap-4 text-sm" role="group" aria-label="Window">
+						{#each WINDOWS as [w, name] (w)}
+							<button
+								type="button"
+								aria-pressed={samplesWindow === w}
+								class="cursor-pointer border-b {samplesWindow === w
+									? 'border-current text-ink'
+									: 'border-transparent text-ink-muted hover:text-ink'}"
+								onclick={() => chooseWindow(w)}>{name}</button
+							>
+						{/each}
+					</div>
+				</div>
+				{#if !samples}
+					<p class="mt-3 text-sm text-ink-muted">
+						{samplesFailed ? 'Could not load usage. It tries again in a minute.' : 'Loading…'}
+					</p>
+				{:else if samples.points.length === 0}
+					<p class="mt-3 text-sm text-ink-muted">
+						No samples in this window: the machine was not running.
+					</p>
+				{:else}
+					<div class="mt-4 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+						<UsageChart
+							label="CPU"
+							points={series.cpu}
+							max={1}
+							stepS={samples.step_s}
+							start={samplesAt - span}
+							end={samplesAt}
+							format={pct}
+							maxLabel="100% of {samples.vcpus} vCPUs"
+						/>
+						<UsageChart
+							label="Memory"
+							points={series.mem}
+							max={samples.memory_bytes}
+							stepS={samples.step_s}
+							start={samplesAt - span}
+							end={samplesAt}
+							format={memGb}
+							maxLabel={gb(samples.memory_bytes)}
+						/>
+						<UsageChart
+							label="Waiting for a vCPU"
+							points={series.pressure}
+							max={1}
+							stepS={samples.step_s}
+							start={samplesAt - span}
+							end={samplesAt}
+							format={pct}
+							maxLabel="100%"
+						/>
+						<UsageChart
+							label="Waiting for the server"
+							points={series.wait}
+							max={1}
+							stepS={samples.step_s}
+							start={samplesAt - span}
+							end={samplesAt}
+							format={pct}
+							maxLabel="100%"
+						/>
+					</div>
+					{#if samples.procs.length > 0}
+						<h3 class="mt-6 text-sm font-medium">Busiest processes</h3>
+						<table class="table mt-2 w-full text-sm">
+							<thead>
+								<tr>
+									<th scope="col" class="text-left">Process</th>
+									<th scope="col" class="text-right">CPU time</th>
+									<th scope="col" class="text-right">Peak memory</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each samples.procs as p (p.comm)}
+									<tr>
+										<td class="font-mono text-compact">{p.comm}</td>
+										<td class="text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
+										<td class="text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				{/if}
+			</section>
+
+			<div class="card" data-testid="machine-card">
+				<h2 class="text-xl font-semibold">Machine</h2>
 				<dl class="mt-3 space-y-1 text-sm">
 					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">Memory while running</dt>
+						<dt class="text-ink-muted">Size</dt>
+						<dd class="font-mono text-compact">{project.class}</dd>
+					</div>
+					{#if spec}
+						<div class="flex justify-between gap-4">
+							<dt class="text-ink-muted">vCPUs</dt>
+							<dd class="tabular-nums">{spec.vcpus}</dd>
+						</div>
+						<div class="flex justify-between gap-4">
+							<dt class="text-ink-muted">Memory</dt>
+							<dd class="tabular-nums">{spec.gb} GB</dd>
+						</div>
+					{/if}
+					<div class="flex justify-between gap-4">
+						<dt class="text-ink-muted">Plan memory</dt>
 						<dd class="tabular-nums">{memoryLine}</dd>
 					</div>
 					{#if me?.billing.plan}
@@ -620,7 +791,6 @@
 						</div>
 					{/if}
 				</dl>
-				<a href={resolve('/billing')} class="link mt-2 inline-block text-sm">Billing</a>
 			</div>
 
 			<div class="card">

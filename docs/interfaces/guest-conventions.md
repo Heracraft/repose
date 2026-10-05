@@ -387,6 +387,17 @@ stopped by guestd. `dev` cannot lower its own value, which is why root
 owns this. When the kernel does kill something, guestd's `oom` warning
 names it.
 
+## CPU weights (DECISIONS I-494)
+
+Each SSH connection (its sshd and the `tmux attach` client, a logind
+`session-N.scope`) and the tmux server (`repose-tmux-session.service` in
+`dev`'s user manager) run at `CPUWeight=1000`. Each pane is a
+`tmux-spawn-*.scope` of its own at the default 100, so with a build in
+every pane holding every vCPU, keystrokes and screen updates still get
+the CPU first. Nothing is capped: a weight only matters while the
+machine is full. A process that wants to stay out of the way can still
+use `nice`.
+
 ## Users and privileges
 
 `dev` uid 1000, gid 1000 (group `dev`), groups `wheel docker kvm`, `sudo`
