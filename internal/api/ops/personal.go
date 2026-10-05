@@ -135,3 +135,69 @@ func (e *Engine) FanOutPersonal(ctx context.Context, tx db.Tx, userID uuid.UUID)
 	}
 	return out, nil
 }
+
+// YieldPersonalBuilds makes room for a start of a stopped project whose
+// only open ops are personal builds (DECISIONS I-490): the ones not
+// started yet are closed and returned, for the caller to queue again
+// behind the start, so the machine boots on what it has and switches in
+// place once the build is done. ok is false when another kind of op is
+// open (the caller answers conflict as before); running reports a
+// personal build already under way, which the start queues behind.
+func (e *Engine) YieldPersonalBuilds(ctx context.Context, tx db.Tx, projectID uuid.UUID) (revisions []uuid.UUID, running, ok bool, err error) {
+	rows, err := tx.Query(ctx, "select id, kind, state, revision_id, params ? 'personal' from ops where project_id = $1 and state in ('pending', 'running') order by created_at for update", projectID)
+	if err != nil {
+		return nil, false, false, err
+	}
+	type open struct {
+		id       uuid.UUID
+		kind     string
+		state    string
+		rev      *uuid.UUID
+		personal bool
+	}
+	var all []open
+	for rows.Next() {
+		var o open
+		if err := rows.Scan(&o.id, &o.kind, &o.state, &o.rev, &o.personal); err != nil {
+			rows.Close()
+			return nil, false, false, err
+		}
+		all = append(all, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, false, false, err
+	}
+	if len(all) == 0 {
+		return nil, false, true, nil
+	}
+	for _, o := range all {
+		if o.kind != KindBuild || !o.personal || o.rev == nil {
+			return nil, false, false, nil
+		}
+	}
+	for _, o := range all {
+		if o.state == "running" {
+			running = true
+			continue
+		}
+		if _, err := tx.Exec(ctx, `update ops set state = 'done', finished_at = now(), result = '{"yielded_to": "start"}'::jsonb where id = $1 and state = 'pending'`, o.id); err != nil {
+			return nil, false, false, err
+		}
+		e.m.OpsOpen.WithLabelValues(o.kind).Dec()
+		revisions = append(revisions, *o.rev)
+	}
+	return revisions, running, true, nil
+}
+
+// RequeuePersonalBuilds queues the builds YieldPersonalBuilds closed
+// behind whatever the project now has open.
+func (e *Engine) RequeuePersonalBuilds(ctx context.Context, tx db.Tx, projectID uuid.UUID, revisions []uuid.UUID) error {
+	for _, rid := range revisions {
+		pid, r := projectID, rid
+		if _, err := e.Enqueue(ctx, tx, NewOp{Kind: KindBuild, ProjectID: &pid, RevisionID: &r, Params: map[string]any{"personal": "after_start"}, Phases: PlanBuild(true)}, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}

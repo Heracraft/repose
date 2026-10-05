@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/api/config"
+	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/store"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
@@ -267,5 +268,43 @@ func TestPersonalCreateReuse(t *testing.T) {
 	}
 	if strings.Contains(string(e.logs.Bytes()), val) {
 		t.Fatal("the secret's value reached a log line")
+	}
+}
+
+// TestPersonalStartYields: a start right after a personal save is not
+// refused because the save queued a build for the stopped machine; the
+// machine boots and the new layer reaches it (DECISIONS I-490).
+func TestPersonalStartYields(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-yield", "yield")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "y1", "class": "small"})
+	pid := r.body["id"].(string)
+	e.waitOp(t, r)
+	e.waitOp(t, e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil))
+	for i, f := range []string{"{ home.packages = [ ]; }", "{ home.sessionVariables.A = \"1\"; }"} {
+		e.h.StopEngine()
+		if r := e.do(t, tok, "PUT", "/me/config", map[string]any{"fragment": f}); r.status != 200 {
+			t.Fatalf("put %d: %d %s", i, r.status, r.raw)
+		}
+		r = e.do(t, tok, "POST", "/projects/"+pid+"/start", nil)
+		if r.status != 202 {
+			t.Fatalf("start %d after a personal save: %d %s", i, r.status, r.raw)
+		}
+		e.h.StartEngine(ops.Config{BaseRef: "deadbeef"})
+		if op := e.waitOp(t, r); op.State != "done" {
+			t.Fatalf("start %d: %+v", i, op.Error)
+		}
+		e.h.WaitIdle(uuid.MustParse(pid))
+		if rev := e.currentRev(t, pid); rev.Personal != f || rev.Status != "applied" {
+			rows, _ := e.h.Pool.Query(e.h.Ctx, "select kind, state, coalesce(revision_id::text,''), params::text, coalesce(error::text,'') from ops where project_id = $1 order by created_at", pid)
+			for rows.Next() {
+				var a, b, c, d, ee string
+				_ = rows.Scan(&a, &b, &c, &d, &ee)
+				t.Logf("op %s %s %s %s %s", a, b, c, d, ee)
+			}
+			rows.Close()
+			t.Fatalf("after start %d: %+v", i, rev.Personal)
+		}
+		e.waitOp(t, e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil))
 	}
 }

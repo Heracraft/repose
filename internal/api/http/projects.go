@@ -592,10 +592,24 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 	if restart {
 		n.Phases, n.Params = ops.PlanRestart(pending), ops.RestartParams()
 	}
-	id, err := s.enqueue(r.Context(), n, false)
+	var id uuid.UUID
+	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
+		// A personal change queued a build for this stopped machine
+		// (I-490): the start goes first, on what the machine has, and the
+		// build follows it and switches in place.
+		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(r.Context(), tx, pid)
+		if err != nil {
+			return err
+		}
+		if id, err = s.d.Engine.Enqueue(r.Context(), tx, n, ok); err != nil {
+			return err
+		}
+		return s.d.Engine.RequeuePersonalBuilds(r.Context(), tx, pid, yielded)
+	})
 	if err != nil {
 		return err
 	}
+	s.d.Engine.Kick()
 	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "restart": restart})
 	return nil
 }

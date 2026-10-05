@@ -169,7 +169,10 @@ func (e *Engine) Enqueue(ctx context.Context, q store.Querier, n NewOp, allowQue
 	}
 	params["phases"] = ph
 	id := store.NewID()
-	_, err := q.Exec(ctx, `insert into ops (id, project_id, host_id, kind, state, params, revision_id, snapshot_id, audit_id) values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)`,
+	// clock_timestamp, not now(): two ops queued in one transaction (a
+	// start and the personal build that follows it, I-490) get distinct,
+	// ordered times, and the loop runs a project's ops in that order.
+	_, err := q.Exec(ctx, `insert into ops (id, project_id, host_id, kind, state, params, revision_id, snapshot_id, audit_id, created_at) values ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, clock_timestamp())`,
 		id, n.ProjectID, n.HostID, n.Kind, params, n.RevisionID, n.SnapshotID, n.AuditID)
 	if err != nil {
 		return uuid.Nil, err
@@ -274,7 +277,7 @@ func (e *Engine) loop(ctx context.Context) {
 // phase not yet sent; then applies timeouts. Exposed for tests.
 func (e *Engine) Tick(ctx context.Context) {
 	rows, err := e.pool.Query(ctx, `select distinct on (coalesce(project_id, id)) id from ops
-		where state in ('pending','running') order by coalesce(project_id, id), created_at`)
+		where state in ('pending','running') order by coalesce(project_id, id), created_at, id`)
 	if err != nil {
 		e.log.Error("ops query", "event", "ops_query_fail", "err", err.Error())
 		return
