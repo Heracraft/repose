@@ -12438,7 +12438,12 @@ start (the pending-revision path, I-147). A personal build that has not
 started takes a newer text instead of a second op queueing behind it. A
 start of a stopped machine whose only open ops are personal builds is not
 refused: the builds not started are queued again behind the start, so the
-machine boots on what it has and switches once built. Ops queued in one
+machine boots on what it has and switches once built. A project
+configuration change is not refused either (stage 1's run sends
+`repose.nix` seconds after its own machine.nix push, and a new machine's
+deferred build is still running then): a personal build not started is
+superseded, since the new revision carries the account's current text
+too, and one already building is queued behind. Ops queued in one
 transaction now get `clock_timestamp()` as `created_at` and the loop
 orders ties by id, because the start and the build queued after it shared
 `now()` and interleaved in the test. A project configuration change takes

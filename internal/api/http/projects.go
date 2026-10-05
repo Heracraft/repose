@@ -597,7 +597,7 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 		// A personal change queued a build for this stopped machine
 		// (I-490): the start goes first, on what the machine has, and the
 		// build follows it and switches in place.
-		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(r.Context(), tx, pid)
+		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(r.Context(), tx, pid, "start")
 		if err != nil {
 			return err
 		}

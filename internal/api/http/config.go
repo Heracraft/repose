@@ -129,9 +129,19 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, 'building', $6, $7, $8)", rid, pid, fragment, menuJSON, p.BaseVersion, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
-		var err error
-		opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(p.State == "running")}, false)
-		return err
+		// A personal build queued by a machine.nix save (I-490) does not
+		// refuse the change: this revision carries the account's current
+		// machine.nix too, so one not started yet is superseded, and one
+		// already building is queued behind.
+		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(ctx, tx, pid, "config")
+		if err != nil {
+			return err
+		}
+		opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(p.State == "running")}, ok)
+		if err != nil {
+			return err
+		}
+		return s.d.Engine.SupersedePersonalBuilds(ctx, tx, yielded, rid)
 	})
 	if err != nil {
 		if errors.Is(err, ops.ErrOpInProgress) {

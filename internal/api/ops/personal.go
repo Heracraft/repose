@@ -143,7 +143,10 @@ func (e *Engine) FanOutPersonal(ctx context.Context, tx db.Tx, userID uuid.UUID)
 // place once the build is done. ok is false when another kind of op is
 // open (the caller answers conflict as before); running reports a
 // personal build already under way, which the start queues behind.
-func (e *Engine) YieldPersonalBuilds(ctx context.Context, tx db.Tx, projectID uuid.UUID) (revisions []uuid.UUID, running, ok bool, err error) {
+//
+// to names what the builds yield to ("start", "config"), in the closed
+// ops' result.
+func (e *Engine) YieldPersonalBuilds(ctx context.Context, tx db.Tx, projectID uuid.UUID, to string) (revisions []uuid.UUID, running, ok bool, err error) {
 	rows, err := tx.Query(ctx, "select id, kind, state, revision_id, params ? 'personal' from ops where project_id = $1 and state in ('pending', 'running') order by created_at for update", projectID)
 	if err != nil {
 		return nil, false, false, err
@@ -181,7 +184,7 @@ func (e *Engine) YieldPersonalBuilds(ctx context.Context, tx db.Tx, projectID uu
 			running = true
 			continue
 		}
-		if _, err := tx.Exec(ctx, `update ops set state = 'done', finished_at = now(), result = '{"yielded_to": "start"}'::jsonb where id = $1 and state = 'pending'`, o.id); err != nil {
+		if _, err := tx.Exec(ctx, `update ops set state = 'done', finished_at = now(), result = jsonb_build_object('yielded_to', $2::text) where id = $1 and state = 'pending'`, o.id, to); err != nil {
 			return nil, false, false, err
 		}
 		e.m.OpsOpen.WithLabelValues(o.kind).Dec()
@@ -196,6 +199,19 @@ func (e *Engine) RequeuePersonalBuilds(ctx context.Context, tx db.Tx, projectID 
 	for _, rid := range revisions {
 		pid, r := projectID, rid
 		if _, err := e.Enqueue(ctx, tx, NewOp{Kind: KindBuild, ProjectID: &pid, RevisionID: &r, Params: map[string]any{"personal": "after_start"}, Phases: PlanBuild(true)}, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SupersedePersonalBuilds marks the revisions of personal builds that a
+// configuration change closed: the new revision carries the project's new
+// fragment and the account's current machine.nix, so building these would
+// only put the old fragment back.
+func (e *Engine) SupersedePersonalBuilds(ctx context.Context, tx db.Tx, revisions []uuid.UUID, by uuid.UUID) error {
+	for _, rid := range revisions {
+		if _, err := tx.Exec(ctx, "update config_revisions set status = 'failed', error = $2 where id = $1 and status = 'building'", rid, "superseded by revision "+by.String()[:8]); err != nil {
 			return err
 		}
 	}

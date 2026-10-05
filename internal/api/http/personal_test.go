@@ -308,3 +308,39 @@ func TestPersonalStartYields(t *testing.T) {
 		e.waitOp(t, e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil))
 	}
 }
+
+// TestPersonalConfigChangeSupersedes: a project configuration change
+// right after a machine.nix save (a run that pushes machine.nix and then
+// sends the checkout's repose.nix) is not refused because the save queued
+// a build; the queued build is superseded by the change, which carries
+// both (DECISIONS I-490).
+func TestPersonalConfigChangeSupersedes(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-super", "super")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "s1", "class": "small"})
+	pid := r.body["id"].(string)
+	e.waitOp(t, r)
+	e.h.StopEngine()
+	f := "{ home.sessionVariables.B = \"2\"; }"
+	r = e.do(t, tok, "PUT", "/me/config", map[string]any{"fragment": f})
+	if r.status != 200 {
+		t.Fatalf("put personal: %d %s", r.status, r.raw)
+	}
+	stale := r.body["projects"].([]any)[0].(map[string]any)["revision_id"].(string)
+	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"fragment": "{ pkgs, ... }: { home.packages = [ pkgs.zig ]; }"})
+	if r.status != 202 {
+		t.Fatalf("config change after a personal save: %d %s", r.status, r.raw)
+	}
+	e.h.StartEngine(ops.Config{BaseRef: "deadbeef"})
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("config op: %+v", op.Error)
+	}
+	e.h.WaitIdle(uuid.MustParse(pid))
+	if rev := e.currentRev(t, pid); rev.Personal != f || !strings.Contains(rev.Fragment, "zig") || rev.Status != "applied" {
+		t.Fatalf("after: %+v", rev)
+	}
+	old, err := store.GetRevision(e.h.Ctx, e.h.Pool, uuid.MustParse(stale))
+	if err != nil || old.Status != "failed" || old.Error == nil || !strings.HasPrefix(*old.Error, "superseded by revision ") {
+		t.Fatalf("superseded revision: %+v %v", old, err)
+	}
+}
