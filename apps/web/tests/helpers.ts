@@ -69,6 +69,8 @@ export interface BillingState {
 	waitlist?: { position: number; invited?: boolean; hold_hours?: number };
 	egress_gb?: number;
 	invoices?: unknown[];
+	/** The account had a subscription before: no introductory price (I-497). */
+	intro_used?: boolean;
 }
 
 function adminURL(): string {
@@ -95,7 +97,8 @@ export async function resetBilling(): Promise<void> {
 		waitlist: { position: 0 },
 		egress_gb: 0,
 		scheduled_plan: '',
-		cancelled: false
+		cancelled: false,
+		intro_used: false
 	});
 }
 

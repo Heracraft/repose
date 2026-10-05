@@ -59,8 +59,32 @@ func TestCheckout(t *testing.T) {
 	if items[0].(map[string]any)["price_id"] != "pri_solo_test" || body["collection_mode"] != "automatic" || body["custom_data"].(map[string]any)["user_id"] != a.UserID.String() || body["customer_id"] == "" {
 		t.Fatalf("transaction body: %v", body)
 	}
+	if body["discount_id"] != "dsc_intro_test" {
+		t.Fatalf("a first Solo checkout carries the introductory discount: %v", body)
+	}
 	if userField(t, pool, a, "paddle_customer_id") == "" {
 		t.Fatal("the customer was not stored")
+	}
+	// Plus has no introductory price.
+	if _, err := s.Checkout(ctx, user(t, pool, a), "plus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Bodies["POST /transactions"][1]["discount_id"]; ok {
+		t.Fatal("a Plus checkout carried the discount")
+	}
+	// A user who had a subscription before pays the full price.
+	again := seedAccount(t, pool, "solo", "active", "", "")
+	if _, err := pool.Exec(ctx, "update subscriptions set status = 'canceled' where id = $1", again.SubID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Checkout(ctx, user(t, pool, again), "solo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Bodies["POST /transactions"][2]["discount_id"]; ok {
+		t.Fatal("a returning subscriber got the introductory discount")
+	}
+	if ov, err := s.Overview(ctx, user(t, pool, again)); err != nil || ov["intro_eligible"] != false {
+		t.Fatalf("returning subscriber's overview: %v %v", ov["intro_eligible"], err)
 	}
 	// A subscriber is refused with subscribed.
 	b := seedAccount(t, pool, "solo", "active", "", "")
@@ -84,6 +108,9 @@ func TestCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	plans := ov["plans"].([]map[string]any)
+	if plans[0]["intro_price_cents"] != int64(2000) || plans[0]["intro_months"] != 3 || plans[1]["intro_months"] != 0 || ov["intro_eligible"] != true {
+		t.Fatalf("introductory price in the overview: %v %v", plans, ov["intro_eligible"])
+	}
 	if len(plans) != 3 || plans[0]["available"] != false || plans[0]["price_cents"] != int64(2900) || plans[1]["id"] != "plus" || plans[2]["id"] != "pro" || plans[2]["seats"] != 4 {
 		t.Fatalf("plans: %v", plans)
 	}
@@ -97,6 +124,41 @@ func TestCheckout(t *testing.T) {
 	usage := ov["usage"].(map[string]any)
 	if usage["memory_gb"] != 8 || usage["project_limit"] != 10 {
 		t.Fatalf("usage without a plan shows Solo's limits: %v", usage)
+	}
+}
+
+// ChargeCents is the introductory price while the configured discount
+// runs, and the plan's price before a discount is known, after it ends,
+// for another discount and on another plan (DECISIONS I-497).
+func TestChargeCents(t *testing.T) {
+	ends := time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)
+	intro, other := "dsc_intro_test", "dsc_other"
+	before, after := ends.Add(-time.Hour), ends
+	for _, c := range []struct {
+		name string
+		sub  *billing.Sub
+		at   time.Time
+		want int64
+	}{
+		{"no subscription", nil, before, 2900},
+		{"no discount", &billing.Sub{Plan: "solo"}, before, 2900},
+		{"intro, end not fixed", &billing.Sub{Plan: "solo", DiscountID: &intro}, before, 2000},
+		{"intro, before its end", &billing.Sub{Plan: "solo", DiscountID: &intro, DiscountEndsAt: &ends}, before, 2000},
+		{"intro, at its end", &billing.Sub{Plan: "solo", DiscountID: &intro, DiscountEndsAt: &ends}, after, 2900},
+		{"another discount", &billing.Sub{Plan: "solo", DiscountID: &other}, before, 2900},
+		{"plus", &billing.Sub{Plan: "plus", DiscountID: &intro}, before, 5900},
+	} {
+		if got := c.sub.ChargeCents(intro, c.at); got != c.want {
+			t.Errorf("%s: %d, want %d", c.name, got, c.want)
+		}
+	}
+	if got := (&billing.Sub{Plan: "solo", DiscountID: &intro}).ChargeCents("", before); got != 2900 {
+		t.Errorf("no discount configured: %d", got)
+	}
+	next := before
+	j := billing.SubJSON(&billing.Sub{Plan: "solo", DiscountID: &intro, DiscountEndsAt: &ends, NextBilledAt: &next}, intro).(map[string]any)
+	if j["next_charge_cents"] != int64(2000) || j["intro_until"] != &ends {
+		t.Errorf("SubJSON: %v", j)
 	}
 }
 

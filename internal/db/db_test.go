@@ -30,21 +30,21 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0015 (the personal layer, I-490) is the newest: personal_revisions
-	// and the config_revisions columns go, and 0013 (snapshots.sha256) and
-	// 0012 (hosts.prev_cert_serial) stay. 0014 (CPU pressure, I-493) stays.
+	// 0016 (the subscription's discount, I-497) is the newest: its two
+	// columns go, and 0015 (the personal layer, I-490), 0014 (CPU
+	// pressure, I-493), 0013 (snapshots.sha256) and 0012 stay.
 	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name in ('discount_id', 'discount_ends_at')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("%d discount columns left after down 1 (0016)", n)
+	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Fatal("personal_revisions is still there after down 1 (0015)")
-	}
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where (table_name = 'config_revisions' and column_name like 'personal%') or (table_name = 'projects' and column_name = 'personal_opt_out')").Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatalf("%d personal columns left after down 1 (0015)", n)
+	if n != 1 {
+		t.Fatal("personal_revisions went with down 1 (0015 must stay)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'meter_samples' and column_name in ('cpu_pressure_us', 'host_cpu_wait_us', 'mem_used')").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0015 reverted, 0011 kept): %s", def)
+		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0016 reverted, 0011 kept): %s", def)
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {

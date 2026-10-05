@@ -111,7 +111,7 @@ func (d *Dunning) Run(ctx context.Context) (DunningResult, error) {
 		if err != nil {
 			return res, err
 		}
-		if _, err := events.InsertAccount(ctx, d.pool, a.id, now, KindPaymentFailed, paymentFailed(sub.PlanOrSolo())); err != nil {
+		if _, err := events.InsertAccount(ctx, d.pool, a.id, now, KindPaymentFailed, paymentFailed(sub, d.cfg.DiscountIntro, a.since)); err != nil {
 			return res, err
 		}
 		res.SecondNotices = append(res.SecondNotices, a.id)
@@ -163,7 +163,7 @@ func (d *Dunning) Run(ctx context.Context) (DunningResult, error) {
 		if n > 0 {
 			continue
 		}
-		if _, err := events.InsertAccount(ctx, d.pool, sub.UserID, now, KindTrialEnding, trialEnding(sub)); err != nil {
+		if _, err := events.InsertAccount(ctx, d.pool, sub.UserID, now, KindTrialEnding, trialEnding(sub, d.cfg.DiscountIntro)); err != nil {
 			return res, err
 		}
 		res.TrialEnding = append(res.TrialEnding, sub.UserID)

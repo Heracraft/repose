@@ -17,6 +17,16 @@ I-77, I-179 to I-185 and I-205; the hourly design is kept in
 | Plus | $59 a month | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 2 |
 | Pro | $99 a month | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 4 |
 
+Solo costs $20 a month for its first 3 months, then $29: the
+introductory price, for an account's first subscription only. The week
+free comes first, so the first three charges after it are $20 and the
+fourth is $29. Paddle charges it as a recurring discount of $9 restricted
+to Solo's price, which the api attaches to a first Solo checkout; a user
+who had any subscription before, or who checks out Plus or Pro, pays the
+table's price. An upgrade from Solo during the three months ends the
+introductory price, since the discount applies only to Solo's price
+(DECISIONS I-497).
+
 Three plans because one agent needs a `large`: a harness with its
 language servers, builds and browser fills 8 GB, and a smaller machine
 gets its session OOM-killed partway through. So Solo is one agent working,

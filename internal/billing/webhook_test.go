@@ -166,6 +166,12 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 	if len(seats.converted) != 1 || seats.converted[0] != a.UserID.String() {
 		t.Fatalf("Seats.Converted once on the first live subscription: %v", seats.converted)
 	}
+	// The introductory discount is recorded with its end (DECISIONS I-497).
+	must("subscription.trialing", subData("sub_life", a, "pri_solo_test", "trialing", map[string]any{"discount": map[string]any{"id": "dsc_intro_test", "starts_at": "2026-10-08T00:00:00Z", "ends_at": "2027-01-08T00:00:00Z"}}))
+	sub, _ = billing.GetSubscription(ctx, pool, "sub_life")
+	if sub.DiscountID == nil || *sub.DiscountID != "dsc_intro_test" || sub.DiscountEndsAt == nil || !sub.DiscountEndsAt.Equal(time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("discount: %v %v", sub.DiscountID, sub.DiscountEndsAt)
+	}
 	must("subscription.trialing", subData("sub_life", a, "pri_solo_test", "trialing", nil))
 	must("subscription.activated", subData("sub_life", a, "pri_solo_test", "active", map[string]any{"items": []any{map[string]any{"status": "active", "quantity": 1, "price": map[string]any{"id": "pri_solo_test"}}}}))
 	if userField(t, pool, a, "billing_status") != "active" || len(seats.converted) != 1 {

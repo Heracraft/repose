@@ -17,7 +17,8 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 		)
 	).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
-	await expect(pricing.getByText('$29')).toBeVisible();
+	await expect(pricing.getByText('$20')).toBeVisible();
+	await expect(pricing.getByText('For 3 months, then $29')).toBeVisible();
 	await expect(pricing.getByText('$59')).toBeVisible();
 	await expect(pricing.getByText('$99')).toBeVisible();
 	await expect(pricing.getByText('8 GB of memory · 100 GB disk · 250 GB egress')).toBeVisible();

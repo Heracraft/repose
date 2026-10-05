@@ -13065,3 +13065,59 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-497. Solo costs $20 a month for its first three months, then $29, on
+an account's first subscription.** (owner, 2026-10-05: "lets make the $20
+now $29 in 3 months a reality"; research in
+`proposals/2026-10-04-solo-at-20.md`, option A) Amends I-289 and I-362
+(the price table stands; this adds an introductory price). While Azure
+credit pays for the hosts, the price barely changes the burn, and $20 is
+the cheapest always-on 8 GB in the market; at $29 after three months the
+plan keeps the price set for the host repose ends up on. The $27 a
+customer gives up is acquisition cost.
+*Mechanics.* `Plan` gains `IntroCents` and `IntroMonths` (Solo: 2000, 3)
+in `plans.go`, the one place prices live; PRICING.md states it in one
+sentence that `TestPlansMatchPricingDoc` parses. Paddle charges it as a
+catalog discount the bootstrap creates once: `flat`, $9 (Solo's price
+minus the introductory one), `recur: true`, `maximum_recurring_intervals:
+3`, `restrict_to` Solo's price, `custom_data.repose =
+intro-solo-2000-3`, found again by that key and that price on a rerun.
+Its id is `PADDLE_DISCOUNT_INTRO`, which `Validate` requires while a plan
+has an introductory price, so a deploy cannot promise $20 and charge $29.
+`POST /billing/checkout` puts `discount_id` on the transaction when the
+plan has an introductory price and the account has no `subscriptions` row
+in any status (`EverSubscribed`): a cancelled or returning account pays
+the full price, so the discount is not renewable by cancelling. Paddle
+starts a recurring discount after the trial, so the three discounted
+charges are the first three after the free week. Paddle applies a catalog
+discount to a checkout only when it is `enabled_for_checkout`; it has an
+auto-generated code that is never shown. Because the discount is
+restricted to Solo's price, an upgrade to Plus or Pro ends it.
+*Record.* Migration 0016 adds `subscriptions.discount_id` and
+`discount_ends_at`, which the webhook copies from the Paddle
+subscription's `discount`. `Sub.ChargeCents(discountIntro, at)` is the
+introductory price while that discount runs (or before Paddle fixes its
+end) and the plan's price otherwise; the `trial_ending` and
+`payment_failed` emails and `GET /billing` use it, so no email says $29
+before a $20 charge.
+*Contract, additive.* `GET /billing`: `plans[].intro_price_cents`,
+`plans[].intro_months`, `intro_eligible`, and on the subscription
+`next_charge_cents` and `intro_until`. The dashboard's plan card shows
+$20 and "For 3 months, then $29" to an eligible account; a trial reads
+"Trial. First charge of $20 on DATE; $29 a month from DATE." and an
+active subscription inside the three months "Active. Renews DATE at $20;
+$29 a month from DATE." The landing's Solo card shows $20 with the same
+line, and the user docs' pricing page carries the sentence under the
+table. The fake api models it, with `intro_used` to make a returning
+account.
+*Not checked here.* Against Paddle's sandbox: that a transaction with a
+catalog discount and a trialing price completes with the discount on the
+subscription, and that the subscription's `discount.ends_at` is the end
+of the third discounted period. Both are the live check before the price
+is shown on a live key. *Rejected:* a separate $20 Solo price that the
+api moves to $29 after three charges (one more job that must run on time
+for every subscriber, and a missed run overcharges nobody but undercharges
+forever); a coupon code the user types (a field in the checkout that
+everyone without the code reads as a missed discount); founder pricing at
+$20 for life (option B: permanent loss-making seats if the hosts are
+still on Azure when the credits end).

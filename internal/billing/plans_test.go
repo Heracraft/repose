@@ -46,6 +46,21 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 	if billing.OveragePerGBCents != 5 || billing.EgressHardStopMultiplier != 4 || billing.Solo.ProjectLimit != 10 || billing.Plus.ProjectLimit != 25 || billing.Pro.ProjectLimit != 50 || billing.Solo.TrialDays != 7 {
 		t.Errorf("plans.go constants drifted from PRICING.md")
 	}
+	// The introductory price is a sentence under the table (DECISIONS I-497).
+	intro := regexp.MustCompile(`Solo costs \$(\d+) a month for its first (\d+) months`).FindStringSubmatch(doc)
+	if intro == nil {
+		t.Errorf("PRICING.md no longer states Solo's introductory price")
+	} else if n, _ := strconv.Atoi(intro[1]); int64(n)*100 != billing.Solo.IntroCents {
+		t.Errorf("PRICING.md's introductory price $%s; plans.go has %d cents", intro[1], billing.Solo.IntroCents)
+	} else if m, _ := strconv.Atoi(intro[2]); m != billing.Solo.IntroMonths {
+		t.Errorf("PRICING.md's introductory months %s; plans.go has %d", intro[2], billing.Solo.IntroMonths)
+	}
+	if billing.Plus.HasIntro() || billing.Pro.HasIntro() {
+		t.Errorf("only Solo has an introductory price")
+	}
+	if billing.Solo.IntroDiscountCents() != 900 {
+		t.Errorf("Solo's discount %d cents, want 900", billing.Solo.IntroDiscountCents())
+	}
 	if billing.PriceVersion != "plan-v1" {
 		t.Errorf("PriceVersion %q", billing.PriceVersion)
 	}

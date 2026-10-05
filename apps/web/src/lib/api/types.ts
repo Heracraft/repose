@@ -108,6 +108,10 @@ export interface Subscription {
 	trial_end: string | null;
 	cancel_at: string | null;
 	scheduled_plan: PlanId | null;
+	/** What Paddle charges at next_billed_at, in cents (I-497). */
+	next_charge_cents?: number | null;
+	/** When the introductory price ends; null for none or not yet fixed (I-497). */
+	intro_until?: string | null;
 }
 
 /** GET /billing's usage: this period's, or the last 30 days without a plan. */
@@ -137,6 +141,9 @@ export interface Plan {
 	project_limit: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
+	/** The introductory price a month and for how many months; 0 for none (I-497). */
+	intro_price_cents?: number;
+	intro_months?: number;
 }
 
 export interface Seats {
@@ -158,6 +165,8 @@ export interface Billing {
 	subscription: Subscription | null;
 	usage: Usage;
 	plans: Plan[];
+	/** Whether this user's checkout of a plan with an introductory price gets it (I-497). */
+	intro_eligible?: boolean;
 	seats: Seats;
 	waitlist: WaitlistPlace | null;
 	paddle: {

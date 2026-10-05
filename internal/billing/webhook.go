@@ -249,6 +249,10 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 		row.PeriodStart = paddleTime(ps.CurrentBillingPeriod.StartsAt)
 		row.PeriodEnd = paddleTime(ps.CurrentBillingPeriod.EndsAt)
 	}
+	if ps.Discount != nil && ps.Discount.ID != "" {
+		id := ps.Discount.ID
+		row.DiscountID, row.DiscountEndsAt = &id, paddleTime(ps.Discount.EndsAt)
+	}
 	if ps.ScheduledChange != nil && ps.ScheduledChange.Action == "cancel" {
 		row.CancelAt = paddleTime(ps.ScheduledChange.EffectiveAt)
 	}
@@ -430,7 +434,7 @@ func (w *Webhooks) transactionFailed(ctx context.Context, ev *Event) error {
 		if tag.RowsAffected() == 0 {
 			return nil
 		}
-		_, err = events.InsertAccount(ctx, tx, u.ID, now, KindPaymentFailed, paymentFailed(cur.PlanOrSolo()))
+		_, err = events.InsertAccount(ctx, tx, u.ID, now, KindPaymentFailed, paymentFailed(cur, w.cfg.DiscountIntro, now))
 		return err
 	})
 }

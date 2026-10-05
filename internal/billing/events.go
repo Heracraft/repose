@@ -79,22 +79,26 @@ type EgressStoppedPayload struct {
 }
 
 // trialEnding is the payload for a trialing subscription: charged at
-// trial_end (or next_billed_at when Paddle set only that).
-func trialEnding(sub *Sub) TrialEndingPayload {
+// trial_end (or next_billed_at when Paddle set only that), the amount
+// Paddle charges then, which is the introductory price when the
+// subscription carries the introductory discount (DECISIONS I-497).
+func trialEnding(sub *Sub, discountIntro string) TrialEndingPayload {
 	plan := sub.PlanOrSolo()
-	p := TrialEndingPayload{Plan: plan.ID, AmountCents: plan.PriceCents}
+	p := TrialEndingPayload{Plan: plan.ID}
 	switch {
 	case sub.TrialEnd != nil:
 		p.ChargeAt = sub.TrialEnd.UTC()
 	case sub.NextBilledAt != nil:
 		p.ChargeAt = sub.NextBilledAt.UTC()
 	}
+	p.AmountCents = sub.ChargeCents(discountIntro, p.ChargeAt)
 	return p
 }
 
-// paymentFailed is the payload for a subscription whose charge failed.
-func paymentFailed(plan Plan) PaymentFailedPayload {
-	return PaymentFailedPayload{Plan: plan.ID, AmountCents: plan.PriceCents}
+// paymentFailed is the payload for a subscription whose charge at at
+// failed; sub may be nil, which names Solo at its full price.
+func paymentFailed(sub *Sub, discountIntro string, at time.Time) PaymentFailedPayload {
+	return PaymentFailedPayload{Plan: sub.PlanOrSolo().ID, AmountCents: sub.ChargeCents(discountIntro, at)}
 }
 
 // subscriptionEnded is the payload when a subscription is canceled at at.

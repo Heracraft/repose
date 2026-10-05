@@ -32,7 +32,7 @@ func quiet() *slog.Logger {
 // testConfig is a sandbox configuration pointed at the fake.
 func testConfig(f *fakePaddle) billing.Config {
 	return billing.Config{APIKey: "pdl_sdbx_apikey_test", WebhookSecret: f.Secret(), ClientToken: "test_client_token",
-		PriceSolo: "pri_solo_test", PricePlus: "pri_plus_test", PricePro: "pri_pro_test", ProductOverage: "pro_overage_test",
+		PriceSolo: "pri_solo_test", PricePlus: "pri_plus_test", PricePro: "pri_pro_test", ProductOverage: "pro_overage_test", DiscountIntro: "dsc_intro_test",
 		DashboardURL: "https://repose.herakraft.co", PortalReturnURL: "https://repose.herakraft.co/billing", BaseURL: f.URL(), Enforce: true}
 }
 

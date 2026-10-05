@@ -546,6 +546,13 @@
 	text-transform: uppercase;
 	color: var(--ink-faint);
 }
+/* The price a plan becomes after its introductory months (I-497), under
+   the price in the muted ink of the spec line. */
+.tier-then {
+	margin-top: 0.5rem;
+	font-size: 0.875rem;
+	color: var(--ink-muted);
+}
 .cta-row {
 	display: flex;
 	flex-wrap: wrap;

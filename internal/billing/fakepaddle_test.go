@@ -34,6 +34,7 @@ type fakePaddle struct {
 	subs      map[string]map[string]any
 	txns      map[string]map[string]any
 	settings  map[string]map[string]any
+	discounts map[string]map[string]any
 	// Fail makes the next request matching "METHOD /path" answer status
 	// with a Paddle error, that many times.
 	Fail      map[string]int
@@ -49,7 +50,10 @@ type fakePaddle struct {
 func newFakePaddle() *fakePaddle {
 	f := &fakePaddle{secret: "pdl_ntfset_secret_test", Bodies: map[string][]map[string]any{}, customers: map[string]map[string]any{},
 		products: map[string]map[string]any{}, prices: map[string]map[string]any{}, subs: map[string]map[string]any{}, txns: map[string]map[string]any{},
-		settings: map[string]map[string]any{}, Fail: map[string]int{}, FailCode: 500}
+		settings: map[string]map[string]any{}, discounts: map[string]map[string]any{}, Fail: map[string]int{}, FailCode: 500}
+	// The discount testConfig names, as an operator's earlier bootstrap
+	// left it; no custom_data, so a bootstrap here makes its own.
+	f.discounts["dsc_intro_test"] = map[string]any{"id": "dsc_intro_test", "status": "active"}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	return f
 }
@@ -190,6 +194,13 @@ func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		t := map[string]any{"id": f.id("txn"), "status": "ready", "customer_id": body["customer_id"], "custom_data": body["custom_data"], "items": items, "currency_code": "USD", "created_at": time.Now().UTC().Format(time.RFC3339)}
+		if d, ok := body["discount_id"].(string); ok {
+			if _, known := f.discounts[d]; !known {
+				f.writeErr(w, 400, "transaction_discount_not_found", "no such discount")
+				return
+			}
+			t["discount_id"] = d
+		}
 		f.txns[t["id"].(string)] = t
 		f.write(w, 201, t)
 	case r.Method == "GET" && r.URL.Path == "/transactions":
@@ -285,6 +296,19 @@ func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
 			"billing_cycle": body["billing_cycle"], "trial_period": body["trial_period"], "custom_data": body["custom_data"]}
 		f.prices[p["id"].(string)] = p
 		f.write(w, 201, p)
+	case r.Method == "GET" && r.URL.Path == "/discounts":
+		var out []any
+		for _, d := range f.discounts {
+			out = append(out, d)
+		}
+		f.write(w, 200, out)
+	case r.Method == "POST" && r.URL.Path == "/discounts":
+		d := map[string]any{"id": f.id("dsc"), "status": "active"}
+		for _, k := range []string{"description", "type", "amount", "currency_code", "enabled_for_checkout", "recur", "maximum_recurring_intervals", "restrict_to", "custom_data"} {
+			d[k] = body[k]
+		}
+		f.discounts[d["id"].(string)] = d
+		f.write(w, 201, d)
 	case r.Method == "GET" && r.URL.Path == "/notification-settings":
 		var out []any
 		for _, s := range f.settings {

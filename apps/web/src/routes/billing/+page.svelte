@@ -22,7 +22,7 @@
 	import Meter from '$lib/components/Meter.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
-	import type { Billing, Invoice, Me, Plan, PlanId } from '$lib/api/types';
+	import type { Billing, Invoice, Me, Plan, PlanId, Subscription } from '$lib/api/types';
 
 	let me = $state<Me | undefined>(undefined);
 	let billing = $state<Billing | undefined>(undefined);
@@ -253,6 +253,24 @@
 		if (xl > 0) return `${count(xl)} xl, ${count(large)} large, or any mix`;
 		return `${count(large)} large, or ${count(Math.floor(p.memory_gb / 4))} small`;
 	}
+
+	/** "Trial. First charge of $20 on 12 Oct; $29 a month from 12 Jan." (I-497) */
+	function trialLine(sub: Subscription, plan: Plan): string {
+		const first = `Trial. First charge of ${price(sub.next_charge_cents ?? plan.price_cents)} on ${dateOnly(sub.trial_end!)}`;
+		return sub.intro_until
+			? `${first}; ${price(plan.price_cents)} a month from ${dateOnly(sub.intro_until)}.`
+			: `${first}.`;
+	}
+
+	/** The renewal while the introductory price runs, "" otherwise (I-497). */
+	function introRenewal(sub: Subscription, plan: Plan): string {
+		if (!sub.intro_until || !sub.next_billed_at || sub.next_charge_cents == null) return '';
+		if (sub.next_charge_cents >= plan.price_cents) return '';
+		return `Active. Renews ${dateOnly(sub.next_billed_at)} at ${price(sub.next_charge_cents)}; ${price(plan.price_cents)} a month from ${dateOnly(sub.intro_until)}.`;
+	}
+
+	/** The plan's introductory price applies to this user's checkout (I-497). */
+	const intro = (p: Plan) => !!billing?.intro_eligible && !!p.intro_months && !!p.intro_price_cents;
 </script>
 
 <svelte:head>
@@ -267,11 +285,16 @@
 					<h2 class="text-xl font-semibold">{p.name}</h2>
 					<p class="text-sm">
 						<span class="font-display text-2xl font-semibold tabular-nums"
-							>{price(p.price_cents)}</span
+							>{price(intro(p) ? p.intro_price_cents! : p.price_cents)}</span
 						>
 						<span class="text-ink-muted"> a month</span>
 					</p>
 				</div>
+				{#if intro(p)}
+					<p class="mt-1 text-right text-sm text-ink-muted" data-testid="intro-{p.id}">
+						For {p.intro_months} months, then {price(p.price_cents)}
+					</p>
+				{/if}
 				<dl class="mt-4 space-y-1.5 text-sm tabular-nums">
 					<div class="flex justify-between gap-4">
 						<dt class="whitespace-nowrap text-ink-muted">Running at once</dt>
@@ -423,7 +446,9 @@
 				{#if sub.cancel_at}
 					Cancelled. Ends {dateOnly(sub.cancel_at)}; machines stop then and snapshots stay 30 days.
 				{:else if sub.status === 'trialing' && sub.trial_end}
-					Trial. First charge of {price(plan.price_cents)} on {dateOnly(sub.trial_end)}.
+					{trialLine(sub, plan)}
+				{:else if sub.status === 'active' && introRenewal(sub, plan)}
+					{introRenewal(sub, plan)}
 				{:else if sub.status === 'past_due'}
 					Payment past due since {dateOnly(sub.period_start)}.
 				{:else if sub.next_billed_at}

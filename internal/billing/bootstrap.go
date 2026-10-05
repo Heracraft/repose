@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
 // Bootstrap creates, or finds, every Paddle object the api needs
 // (DECISIONS I-289): one product per plan with its monthly price and
-// seven-day trial, the overage product, and the webhook destination with
+// seven-day trial, the introductory discount (DECISIONS I-497), the
+// overage product, and the webhook destination with
 // the events list. It is idempotent: objects are found by
 // custom_data.repose before anything is created, and a second run creates
 // nothing. `repose-admin billing paddle-bootstrap` and
@@ -39,6 +41,7 @@ type BootstrapResult struct {
 	PriceSolo      string
 	PricePlus      string
 	PricePro       string
+	DiscountIntro  string
 	WebhookID      string
 	// WebhookSecret is the endpoint secret Paddle gives once; on a rerun
 	// it is read back from the existing setting.
@@ -123,6 +126,36 @@ func Bootstrap(ctx context.Context, p *Paddle, o BootstrapOptions) (*BootstrapRe
 			res.ProductPro, res.PricePro = id, priceID
 		}
 	}
+	if plan, ok := IntroPlan(); ok {
+		priceID := res.PriceSolo
+		switch plan.ID {
+		case Plus.ID:
+			priceID = res.PricePlus
+		case Pro.ID:
+			priceID = res.PricePro
+		}
+		discounts, err := p.ListDiscounts(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list discounts: %w", err)
+		}
+		for _, d := range discounts {
+			if k, _ := d.CustomData["repose"].(string); k == introDiscountKey(plan) && slices.Contains(d.RestrictTo, priceID) {
+				res.DiscountIntro = d.ID
+				res.Found = append(res.Found, "discount intro "+d.ID)
+				say("found    discount intro    %s", d.ID)
+				break
+			}
+		}
+		if res.DiscountIntro == "" {
+			d, err := p.CreateIntroDiscount(ctx, plan, priceID)
+			if err != nil {
+				return nil, fmt.Errorf("create the introductory discount: %w", err)
+			}
+			res.DiscountIntro = d.ID
+			res.Created = append(res.Created, "discount intro "+d.ID)
+			say("created  discount intro    %s ($%d off the first %d %s charges)", d.ID, plan.IntroDiscountCents()/100, plan.IntroMonths, plan.ID)
+		}
+	}
 	if res.ProductOverage, err = product(overageProductKey, "repose egress overage", "Egress past the plan's allowance, $0.05 a GB, one line a period"); err != nil {
 		return nil, err
 	}
@@ -179,6 +212,9 @@ func (r *BootstrapResult) EnvBlock() string {
 	fmt.Fprintf(&b, "PADDLE_PRICE_PLUS=%s\n", r.PricePlus)
 	fmt.Fprintf(&b, "PADDLE_PRICE_PRO=%s\n", r.PricePro)
 	fmt.Fprintf(&b, "PADDLE_PRODUCT_OVERAGE=%s\n", r.ProductOverage)
+	if r.DiscountIntro != "" {
+		fmt.Fprintf(&b, "PADDLE_DISCOUNT_INTRO=%s\n", r.DiscountIntro)
+	}
 	if r.WebhookSecret != "" {
 		fmt.Fprintf(&b, "PADDLE_WEBHOOK_SECRET=%s\n", r.WebhookSecret)
 	} else if r.WebhookID != "" {
