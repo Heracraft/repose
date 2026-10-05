@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-512 entries.
+513 entries.
 
 ## Scope
 
@@ -544,3 +544,4 @@ pointer, not a summary.
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12498
 - **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12546
 - **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12586
+- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; L12607
