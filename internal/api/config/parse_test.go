@@ -32,3 +32,16 @@ func TestParseCheck(t *testing.T) {
 		t.Fatalf("size cap: %v", err)
 	}
 }
+
+// A personal layer's syntax error names machine.nix (DECISIONS I-490).
+func TestParseCheckPersonal(t *testing.T) {
+	p, ok := NewParser()
+	if !ok {
+		t.Skip("nix-instantiate not on PATH")
+	}
+	err := p.CheckNamed(context.Background(), "{\n  home.packages = [ ;\n}", PersonalName)
+	var pe *ParseError
+	if !errors.As(err, &pe) || pe.Line != 2 || !strings.HasPrefix(pe.Message, "syntax error at machine.nix:2:") || strings.Contains(pe.Message, "fragment.nix") {
+		t.Fatalf("got %v", err)
+	}
+}

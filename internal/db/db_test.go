@@ -30,14 +30,27 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0013 (snapshot digests) is the newest: snapshots.sha256 goes, and
-	// 0012 (hosts.prev_cert_serial) and 0011's plan check stay.
+	// 0014 (the personal layer) is the newest: personal_revisions and
+	// the config_revisions columns go, and 0013 (snapshots.sha256) and
+	// 0012 (hosts.prev_cert_serial) stay.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'snapshots' and column_name = 'sha256'").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("snapshots.sha256 is still there after down 1 (0013)")
+		t.Fatal("personal_revisions is still there after down 1 (0014)")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where (table_name = 'config_revisions' and column_name like 'personal%') or (table_name = 'projects' and column_name = 'personal_opt_out')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("%d personal columns left after down 1 (0014)", n)
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'snapshots' and column_name = 'sha256'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("snapshots.sha256 went with down 1 (0013 must stay)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'prev_cert_serial'").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -50,7 +63,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0013 reverted, 0011 kept): %s", def)
+		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0014 reverted, 0011 kept): %s", def)
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {
