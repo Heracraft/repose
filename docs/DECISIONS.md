@@ -13165,7 +13165,14 @@ POST, the newest published base) is older than the first base with
 herdr; without the gate a held base (`hold_base_updates`) would start
 tmux with no word why. A request for `tmux` is never refused. Fork and
 restore as a new project copy the source's value. Old clients ignore the
-field; an absent field reads as tmux everywhere.
+field; an absent field reads as tmux everywhere. Built (mux-api): migration 0017, `store.Project.Multiplexer`, POST and
+PATCH in `internal/api/http/projects.go`, the gate in
+`internal/api/http/multiplexer.go` with `herdrMinBase` empty, the copy
+in `insertRestored`, `multiplexer` in `project_json`; a fork or restore
+as new gates on the base the copy keeps (the source's), which is what it
+runs. Tests: `TestMultiplexerField`, `TestMultiplexerForkCopies`,
+`TestMigrateUpDownUp`, the fakes' `TestMultiplexerGate` and
+`TestProjectJSONPassesThrough`.
 
 **I-503. guestd starts the session unit `project.json` names, and the
 path unit goes.** (multiplexer-spec, 2026-10-05) The user path unit
@@ -13254,7 +13261,9 @@ below 22) on two refreshes in a row, at most once per 10 minutes like
 every kind. `tmux_down` is sent only when the file says tmux or has no
 key. hostd and the api add the kind to their lists and ship before the
 base that sends it; an older hostd relays it as `guest_other`, which the
-api already stores. The detail is hostd's own `guest <id>`.
+api already stores. The detail is hostd's own `guest <id>`. Built (mux-api): `guestWarningKinds` in hostd and `warningKinds` in the
+api's events; tests `TestGuestWarningKindAndDetailAreHostWritten`,
+`TestHostWarningKindsAreAFixedSet`; RUNBOOK "herdr_down".
 
 **I-508. Under herdr, secrets, TZ and PATH reach panes through the
 login shell, `BASH_ENV` and the wrappers.** (multiplexer-spec,

@@ -37,6 +37,10 @@ type Guest struct {
 	// running guest fails with guest_unresponsive, as the real hostd does,
 	// until the guest is booted again.
 	GuestdDead bool
+	// ProjectJSON is the project_json the last CreateGuest, StartGuest or
+	// Restore delivered (I-26), passed through as hostd does to guestd's
+	// SetupProject; its `multiplexer` key names the session unit (I-503).
+	ProjectJSON []byte
 }
 
 // Options tune the fake.
@@ -416,7 +420,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		f.nextIP++
 		g := &Guest{GuestID: c.CreateGuest.GuestId, ProjectID: c.CreateGuest.ProjectId, Class: c.CreateGuest.Class, State: "creating",
-			IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.CreateGuest.SystemClosure, Secrets: map[string][]byte{}}
+			IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.CreateGuest.SystemClosure, Secrets: map[string][]byte{},
+			ProjectJSON: c.CreateGuest.ProjectJson}
 		for _, s := range c.CreateGuest.Secrets {
 			g.Secrets[s.Name] = s.Value
 		}
@@ -438,6 +443,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if g.State != "running" {
 			f.mu.Lock()
 			g.GuestdDead = false // a boot brings a fresh guestd
+			if len(c.StartGuest.ProjectJson) > 0 {
+				g.ProjectJSON = c.StartGuest.ProjectJson // hostd keeps the last one in memory
+			}
 			if c.StartGuest.Class != "" {
 				g.Class = c.StartGuest.Class // I-260, as hostd
 			}
@@ -560,7 +568,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return errResult(id, "insufficient_capacity", "host draining")
 		}
 		f.nextIP++
-		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure}
+		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson}
 		f.guests[g.GuestID] = g
 		f.mu.Unlock()
 		f.setState(g, "restoring", "")

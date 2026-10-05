@@ -53,6 +53,8 @@ var guestAgentKinds = map[string]bool{"completed": true, "needs_input": true, "e
 var guestWarningKinds = map[string]bool{
 	"disk_high": true, "inotify_exhausted": true, "docker_down": true, "freeze_timeout": true,
 	"store_path_missing": true, "oom": true, "tmux_down": true,
+	// herdr_down: herdr's socket refused on a herdr project (I-507).
+	"herdr_down": true,
 }
 
 const guestOtherWarning = "guest_other"

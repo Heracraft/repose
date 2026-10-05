@@ -123,13 +123,17 @@ restore (`grpc-hostd.md`, I-26).
 "base_update_needed", base_version, needs}` answers a POST or PATCH
 asking for `herdr` when the base the machine would run is older than the
 first base with herdr: for a PATCH the project's `base_version` (null
-counts as older), for a POST, a fork and a restore as new the newest
-published base. "Older" compares `base_versions.released_at`. The first
+counts as older), for a POST the newest published base, and for a fork or
+a restore as a new project the base the copy keeps, which is the
+source's `base_version` (the newest published base when that is null).
+"Older" compares `base_versions.released_at`; a version with no row
+counts as older. The first
 base with herdr is `herdrMinBase` in `internal/api/http/multiplexer.go`;
 while it is empty, or names no row of `base_versions`, every request for
 `herdr` is refused this way with `needs: ""`. `message` is `<slug> runs
-base <base_version>; herdr needs <needs> or newer.`, or `herdr is not
-available yet.` when `needs` is empty. A request for `tmux` is never
+base <base_version>; herdr needs <needs> or newer.`, `<slug> has no base
+yet; herdr needs <needs> or newer.` when `base_version` is null, or
+`herdr is not available yet.` when `needs` is empty. A request for `tmux` is never
 gated. Fork and restore as a new project copy the source's
 `multiplexer`, and fall back to `tmux` when the gate would refuse;
 an in-place restore keeps the project's.

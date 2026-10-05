@@ -658,6 +658,24 @@ A snapshot failed with `freeze_timeout`, or the alert fired from a
    writer that will not quiesce (a database in a container). Stop the guest
    and snapshot from stopped: `repose-admin projects restart <id>` takes the
    snapshot on the way through.
+
+## herdr_down
+
+A `host_warning{kind="herdr_down"}` (DECISIONS I-507) names a guest whose
+`project.json` says herdr, and whose herdr socket
+(`/home/dev/.config/herdr/herdr.sock`) refused guestd, or answered a
+protocol below 22, on two 5 s refreshes in a row. The machine runs; its
+agents drop out of `signals.agents` until herdr answers again.
+
+1. `repose-admin exec <id> -- systemctl --machine=dev@ --user is-active
+   repose-herdr-server` says whether the server unit runs. Failed: the
+   unit's journal (`journalctl --machine=dev@ --user -u
+   repose-herdr-server`) has the reason.
+2. Active, yet the warning repeats: the server answering is not the
+   base's pinned herdr (a tenant's `herdr update` in the guest is the known
+   way). The public troubleshooting page covers it for the tenant; nothing
+   on the host needs changing.
+3. A host on a hostd from before I-507 reports this kind as `guest_other`.
 5. To confirm the guest is healthy afterwards:
    `repose-admin exec <id> -- guestd call ping` and check `df` inside.
 

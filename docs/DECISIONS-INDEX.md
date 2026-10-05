@@ -559,12 +559,12 @@ pointer, not a summary.
 - **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13098
 - **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; L13115
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; L13142
-- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; L13170
-- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; L13186
-- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; L13216
-- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; L13235
-- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; L13250
-- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; L13259
-- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13273
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13299
-- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13315
+- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; L13177
+- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; L13193
+- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; L13223
+- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; L13242
+- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; L13257
+- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; L13268
+- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13282
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13308
+- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13324

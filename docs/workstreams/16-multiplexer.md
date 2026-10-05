@@ -81,19 +81,19 @@ Does not build: anything in `internal/cli`, `apps/web`, `nix/`,
 
 Checklist (evidence in the commit message):
 
-- [ ] Migration 0017 applied, down and up, in `db_test.go` (output).
-- [ ] `curl` (or the api test) PATCH `{"multiplexer":"herdr"}` with the
+- [x] Migration 0017 applied, down and up, in `db_test.go` (output).
+- [x] `curl` (or the api test) PATCH `{"multiplexer":"herdr"}` with the
       min base set, then GET shows it; `"screen"` answers 400; a project
       on an older or null base answers `409` with `detail.reason =
       base_update_needed`; with `herdrMinBase` empty every herdr request
       answers 409 with `needs: ""`; `tmux` is never refused (test names
       and output).
-- [ ] `project_json` sent on StartGuest carries `multiplexer` (test).
-- [ ] `herdr_down` passes hostd's `cleanWarning` unchanged and the api
+- [x] `project_json` sent on StartGuest carries `multiplexer` (test).
+- [x] `herdr_down` passes hostd's `cleanWarning` unchanged and the api
       stores it under its own kind (unit tests).
-- [ ] A POST without `multiplexer` creates a tmux project; a Project
+- [x] A POST without `multiplexer` creates a tmux project; a Project
       decoded by a client struct without the field still decodes (test).
-- [ ] `go test` for `./internal/api/...`, `./internal/hostd/...`,
+- [x] `go test` for `./internal/api/...`, `./internal/hostd/...`,
       `./internal/db/...`, `./internal/fakes/...`, per package, on
       Postgres.
 

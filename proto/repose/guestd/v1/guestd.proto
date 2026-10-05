@@ -94,6 +94,8 @@ message Response {
 }
 
 message Ready { string boot_id = 1; }
+// tmux_window in AgentEvent, AgentState and Question is a tmux window name
+// or a herdr agent key, at most 64 bytes (DECISIONS I-504).
 message AgentEvent { string agent = 1; string tmux_window = 2; string kind = 3; string summary = 4; }
 message AgentState { string agent = 1; string tmux_window = 2; string state = 3; }
 message Warning { string kind = 1; string detail = 2; }
@@ -105,6 +107,7 @@ message Warning { string kind = 1; string detail = 2; }
 message Question {
   string question_id = 1;
   string agent = 2;
+  // A tmux window name or a herdr agent key, at most 64 bytes (I-504).
   string tmux_window = 3;
   string text = 4;
   repeated string options = 5;
