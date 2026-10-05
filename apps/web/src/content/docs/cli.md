@@ -24,7 +24,7 @@ Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--ve
 
 ### `repose run [PROMPT]`
 
-Create or start this checkout's machine and attach. A new machine gets a copy of your checkout first; one that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. Your tool logins and settings are copied every time. With a prompt, start an agent and type the prompt into it. See [Run and attach](/docs/run-and-attach) and [Sync](/docs/sync).
+Create or start this checkout's machine and attach. A new machine gets a copy of your checkout first; one that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. Your tool logins and settings are copied every time, and a changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). With a prompt, start an agent and type the prompt into it. See [Run and attach](/docs/run-and-attach) and [Sync](/docs/sync).
 
 On your laptop, `run` changes one thing in the checkout: it adds a git remote named `repose` for the machine's checkout, so `git fetch repose` brings the agent's commits back. See [Getting work back](/docs/sync#getting-work-back).
 

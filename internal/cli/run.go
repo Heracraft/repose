@@ -355,6 +355,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	// The machine has its checkout now: point this checkout's `repose`
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
+	// The checkout's repose.nix is the machine's configuration (I-489).
+	if !skipSync && !opts.NoSync {
+		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
+	}
 
 	window := ""
 	if opts.Prompt != "" {

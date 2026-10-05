@@ -31,6 +31,7 @@ A second repository can live on the same machine in a checkout of its own: run `
 - **Commits.** Your current branch, including commits you haven't pushed. They go straight from your laptop, so private repositories work with no setup on the machine.
 - **Uncommitted changes** to tracked files.
 - **Untracked files** that git isn't ignoring.
+- **`repose.nix`.** At the root of the repository, it's applied as the machine's configuration when it changed ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)).
 - **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each. If the machine's copy is newer, it's kept. Unlike [secrets](/docs/secrets), they are files on the machine's disk, so they are in snapshots. `repose secrets choose --off env` keeps them on your laptop ([Secrets](/docs/secrets#choose-what-is-copied)).
 
 Everything goes over your SSH connection. None of it is stored by repose.
