@@ -146,6 +146,8 @@ An example:
 }
 ```
 
+`home.shellAliases` work in every shell on the machine, and yours replace the machine's own of the same name. `programs.bash.initExtra` is not carried: put shell code in `~/.bashrc` (from machine.nix, `home.file.".bashrc".text`).
+
 It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. When both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
 
 ```

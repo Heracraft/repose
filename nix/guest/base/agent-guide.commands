@@ -24,4 +24,5 @@ repose-guest-profile needs
 repose-notify needs
 sh
 sudo
+systemctl
 uv

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+531 entries.
 
 ## Scope
 
@@ -304,7 +304,7 @@ pointer, not a summary.
 - **I-220** The menu takes any nixpkgs package by attribute path, and `repose config add/remove` edit it — L4810
 - **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4853
 - **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; L4909
-- **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; L4958
+- **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; amended by I-517; L4958
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L4991
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5028
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5059
@@ -347,7 +347,7 @@ pointer, not a summary.
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; L6669
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6714
 - **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; amended by I-488; L6740
-- **I-264** tmux passes modified keys, OSC 8 links and passthrough to the laptop's terminal — 2026-09-26; L6787
+- **I-264** tmux passes modified keys, OSC 8 links and passthrough to the laptop's terminal — 2026-09-26; partly amended by I-515; L6787
 - **I-265** Ruby and Java pins are installed like the Node pin; Rails' native gem libraries are in the base — 2026-09-26; L6821
 - **I-266** mosh is not offered — 2026-09-26; L6870
 - **I-268** `repose resize` takes the project as its first argument — 2026-09-26; L6898
@@ -539,7 +539,7 @@ pointer, not a summary.
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12320
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12345
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12359
-- **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; L12395
+- **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; amended by I-519; L12395
 - **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; L12519
 - **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; L12558
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12623
@@ -549,9 +549,17 @@ pointer, not a summary.
 - **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12789
 - **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12815
 - **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12865
-- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12897
+- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; amended by I-519; L12897
 - **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12958
 - **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12985
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
+- **I-512** The base ships terminfo for Ghostty's and kitty's own TERM — 2026-10-05; L13069
+- **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13089
+- **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L13117
+- **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L13154
+- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13186
+- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13205
+- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13226
+- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13243

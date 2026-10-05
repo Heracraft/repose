@@ -116,6 +116,8 @@ tmux leaves the mouse to your terminal, so selecting text and copying work as th
 
 Shift+Enter starts a new line in Claude Code instead of sending the prompt, when your terminal reports modified keys to tmux (xterm's modifyOtherKeys; Ghostty, WezTerm, iTerm2 and xterm do, Apple's Terminal doesn't). If Shift+Enter still sends the prompt, type `\` and then Enter, or press Ctrl+J. Links an agent prints are clickable in terminals that support links (OSC 8), and a program in the current window can send escape sequences through tmux to your terminal.
 
+Terminals with 24-bit colour (Ghostty, kitty, WezTerm, iTerm2, Alacritty, foot, or any that sets `COLORTERM=truecolor`) get it; Apple's Terminal before macOS 26 gets 256 colours. tmux sets your terminal's title to the machine's host name and the session.
+
 ## See what's running, run one command
 
 `repose ps` lists the tmux windows without attaching: what runs in each and when it last printed something. `*` is the window `attach` opens on.

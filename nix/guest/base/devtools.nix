@@ -42,14 +42,44 @@ let
         printf '%s is still being installed; try again in a moment\n' "$cmd" >&2
         exit 127
       fi
+      # Commands whose package is the wrong answer here (DECISIONS I-517).
+      case "$cmd" in
+        apt | apt-get | aptitude | dpkg | yum | dnf | apk | pacman | zypper | brew | port | snap)
+          now="nix profile add nixpkgs#NAME"
+          {
+            printf '%s: command not found\n' "$cmd"
+            printf '  %-*s  %s\n' "''${#now}" "$now" "install a package on this machine"
+            printf '  %-*s  %s\n' "''${#now}" "repose config add NAME" "keep it on every rebuild (run this on your laptop)"
+          } >&2
+          exit 127
+          ;;
+        pip | pip3)
+          venv="python3 -m venv .venv && . .venv/bin/activate"
+          {
+            printf '%s: command not found\n' "$cmd"
+            printf '  %-*s  %s\n' "''${#venv}" "$venv" "a virtual environment, with pip in it"
+            printf '  %-*s  %s\n' "''${#venv}" "uv tool install NAME" "install a Python command-line tool"
+          } >&2
+          exit 127
+          ;;
+        crontab | cron | crond | at)
+          {
+            printf '%s: command not found\n' "$cmd"
+            printf 'This machine has no cron; a systemd user timer runs a job on a schedule: https://repose.herakraft.co/docs/machine#scheduled-jobs\n'
+          } >&2
+          exit 127
+          ;;
+      esac
       attrs=""
       case "$cmd" in
         */*) ;;
         *)
           if command -v nix-locate >/dev/null 2>&1; then
             # "air.out" -> "air"; one attribute per line, first seen first.
+            # nixpkgs' test attributes are dropped, and top-level
+            # attributes go before nested ones (python314Packages.pip).
             attrs=$(nix-locate --minimal --no-group --type x --type s --whole-name --at-root "/bin/$cmd" 2>/dev/null \
-              | sed 's/\.[^.]*$//' | awk '!seen[$0]++' || true)
+              | sed 's/\.[^.]*$//' | awk '!/^tests\./ && !seen[$0]++ { if (index($0, ".")) nested = nested $0 "\n"; else print } END { printf "%s", nested }' || true)
           fi
           ;;
       esac

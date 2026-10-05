@@ -10,6 +10,9 @@
 # unset a removed secret the process still holds as guestd exported it. A
 # value the process, its parent or the project's .envrc set itself stays.
 #
+# In a `bash -c` string it also defines bash's command_not_found_handle,
+# which names the nixpkgs package of an unknown command (I-219, I-516).
+#
 # Sourced into the caller's shell, so it runs no other program, prints
 # nothing, changes no shell option or positional parameter, keeps $_ (a
 # script's first command still sees the script's path), leaves $? at 0 and
@@ -27,6 +30,17 @@ if [ -z "${__repose_bash_env_line+set}" ] && [ -r /run/repose/secrets.refresh ];
     . /run/repose/secrets.refresh 2>/dev/null || :
   fi
   unset __repose_bash_env_line
+fi
+# A `bash -c` string (how an agent runs each command) gets the same
+# command-not-found hint as an interactive shell (DECISIONS I-219, I-516),
+# unless something already defined a handler. A script file and sh keep
+# bash's plain message: BASH_EXECUTION_STRING is set only for -c.
+if [ -n "${BASH_VERSION-}" ] && [ -n "${BASH_EXECUTION_STRING-}" ]; then
+  # shellcheck disable=SC3044 # bash only: BASH_VERSION is set
+  declare -F command_not_found_handle >/dev/null 2>&1 || command_not_found_handle() {
+    repose-command-not-found "$1"
+    return 127
+  }
 fi
 case $__repose_bash_env_opts in
 *x*v* | *v*x*) __repose_bash_env_opts=-xv ;;

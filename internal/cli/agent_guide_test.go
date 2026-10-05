@@ -71,6 +71,9 @@ var guestCommands = map[string]string{
 	"opencode": "nix/overlay/agents/default.nix:opencode",
 	"gemini":   "nix/overlay/agents/default.nix:gemini-cli",
 	"pi":       "nix/overlay/agents/default.nix:pi-coding-agent",
+
+	// Scheduled jobs are user timers (I-518).
+	"systemctl": "system:systemd, NixOS's init",
 }
 
 // notCommands are backticked words in the guide that are names, not

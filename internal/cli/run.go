@@ -710,11 +710,12 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), ren
 			extra = append(extra, "-o", "SendEnv=TZ")
 		}
 	}
-	remote := attachCommand(slug, t.Checkout, window)
+	colour := attachColour(os.Getenv("COLORTERM"))
+	remote := colour + attachCommand(slug, t.Checkout, window)
 	if inputProxyEnabled() {
 		args := append(append(append([]string{}, extra...), t.Args...), remote)
 		re := newReattacher(t, slug, renew)
-		re.args = append(append(append([]string{}, extra...), t.Args...), attachCommand(slug, t.Checkout, ""))
+		re.args = append(append(append([]string{}, extra...), t.Args...), colour+attachCommand(slug, t.Checkout, ""))
 		if handled, err := runInputProxy(args, newDropHandler(t, slug, repoDir), re); handled {
 			if after != nil {
 				after()
@@ -723,6 +724,23 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), ren
 		}
 	}
 	return execReplaceSSH(t, extra, remote)
+}
+
+// attachColour is what goes before the guest-side attach command, given
+// the laptop's COLORTERM. tmux gives a client 24-bit colour when the
+// client's own COLORTERM says truecolor or 24bit, or when its TERM is one
+// /etc/tmux.conf lists, and otherwise turns a pane's 24-bit colours into
+// the nearest of 256. The guest's PAM environment sets COLORTERM=truecolor
+// on every ssh session and overrides one sent with SendEnv, so the
+// attach unsets it when the laptop's terminal did not say so: Apple's
+// Terminal before macOS 26 then gets 256 colours instead of garbled ones
+// (DECISIONS I-515).
+func attachColour(colorterm string) string {
+	switch strings.ToLower(colorterm) {
+	case "truecolor", "24bit":
+		return ""
+	}
+	return "unset COLORTERM; "
 }
 
 // attachCommand is the guest-side command of the attach. With a window

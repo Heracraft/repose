@@ -37,12 +37,19 @@ in
   programs.neovim = {
     enable = true;
     defaultEditor = false;
+    # `vi` and `vim` are base commands to the CLI's tool carry
+    # (internal/cli/carry_tools.go), so a laptop's vim is never carried
+    # and core.editor=vim needs them here (DECISIONS I-514).
+    viAlias = true;
+    vimAlias = true;
   };
   programs.bash.completion.enable = true;
+  # `ls` stays GNU ls (NixOS's `ls --color=tty`): eza with no path reads
+  # its file list from a non-tty stdin, and its -t and -r differ, which
+  # broke scripts and loops that call ls (DECISIONS I-514).
   programs.bash.shellAliases = {
-    ls = "eza -al --group-directories-first --no-permissions --no-user";
     la = "eza -a --group-directories-first";
-    ll = "eza -l --group-directories-first";
+    ll = "eza -al --group-directories-first";
     lt = "eza -aT --group-directories-first";
   };
 }
