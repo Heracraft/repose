@@ -8,7 +8,7 @@ status: experimental
 
 [herdr](https://herdr.dev) is a terminal multiplexer for coding agents: one sidebar shows which agent is working, which is waiting for you and which is done, across your laptop and the machines you reach over SSH. A repose machine can run herdr in place of tmux. Its agents keep running with the laptop closed, and after `repose stop` and `repose start` herdr puts the tabs back and resumes the agents where they were.
 
-You need herdr 0.9.0 or newer on your laptop ([herdr.dev](https://herdr.dev)) for the sidebar, and a repose CLI whose `repose run --help` lists `--multiplexer`. Without herdr on the laptop everything below still works; `repose attach` then runs herdr's client on the machine.
+You need herdr 0.9.0 or newer on your laptop ([herdr.dev](https://herdr.dev)) for the sidebar, and repose 0.1.31 or newer (`repose version`; [update](/docs/install#update) by running the install command again). Without herdr on the laptop everything below still works; `repose attach` then runs herdr's client on the machine.
 
 ## Make herdr the default
 
@@ -76,7 +76,7 @@ A machine in the sidebar holds an SSH connection open while your laptop's herdr 
 
 ## When it doesn't work
 
-**`no server running` on `repose attach`.** Your repose CLI predates herdr. [Install](/docs/install) the current one.
+**`no server running` on `repose attach`.** Your repose CLI is older than 0.1.31. [Update](/docs/install#update) it.
 
 **`Could not add todo-app to herdr's sidebar`.** herdr's `machine add` failed and the line ends with its message. Check that `ssh todo-app.repose true` works from a plain terminal; `run` and `attach` try again each time.
 

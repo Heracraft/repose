@@ -155,7 +155,7 @@ Without it, a copied file is not named anywhere on herdr, and no status bar list
 
 `run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
 
-A machine on herdr needs a repose CLI that knows herdr: its `repose run --help` lists `--multiplexer`. An older one answers `no server running` on `attach`; [install](/docs/install) the current one. The [herdr tutorial](/docs/tutorial-herdr) walks through a first project.
+A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it. The [herdr tutorial](/docs/tutorial-herdr) walks through a first project.
 
 ## See what's running, run one command
 

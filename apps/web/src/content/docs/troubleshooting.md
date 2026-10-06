@@ -94,7 +94,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`bundled bubblewrap digest mismatch` when Codex runs a command.** Base 2026.10.05 ships Codex with a sandbox helper it refuses. The next platform update fixes it in place. Until then, run `nix profile add nixpkgs#bubblewrap` on the machine; Codex uses that one instead.
 
-**`no server running` on `repose attach` to a herdr project.** Your repose CLI predates herdr and attaches to tmux. [Install](/docs/install) the current one; its `repose run --help` lists `--multiplexer`.
+**`no server running` on `repose attach` to a herdr project.** Your repose CLI is older than 0.1.31 and attaches to tmux. [Update](/docs/install#update) it.
 
 **herdr on the machine is newer or older than expected.** The machine runs the herdr release its base ships. `herdr update` on the machine installs another one into `~/.local/bin`, which comes first on the PATH and is not what repose tests against; `rm ~/.local/bin/herdr` and a `repose stop` and `start` go back to the base's.
 
