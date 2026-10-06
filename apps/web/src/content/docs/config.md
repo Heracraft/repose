@@ -173,3 +173,5 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 Every change is saved as a revision. `repose config show --revisions` lists them with any errors, and the dashboard can re-apply an earlier one. `repose logs --kind build` shows the last build's log.
 
 The platform updates the base (agents, tools, kernel) about once a week. Each project is rebuilt on the new base and switched in place. If your configuration doesn't build on it, the project stays where it was and you get a notification. To hold a project on its current base, tick **Hold base updates** on its Config page.
+
+herdr ([herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux)) is in every base from the one that added it. A project on an older base, held or not yet rebuilt, can't switch to herdr: `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.06 or newer.`, naming the two bases. Untick **Hold base updates** and let it update first.

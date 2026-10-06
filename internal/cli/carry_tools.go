@@ -85,7 +85,7 @@ var baseCommands = setOf(
 	"curl", "wget", "jq", "rg", "fd", "bat", "fzf", "tree", "unzip", "zip", "zstd", "htop",
 	"git", "gh", "just", "node", "npm", "npx", "corepack", "pnpm", "pnpx", "python", "python3", "pip", "pip3",
 	"uv", "uvx", "go", "gofmt", "rustup", "cargo", "rustc", "rustfmt", "clippy-driver", "cargo-clippy",
-	"tmux", "ssh", "scp", "eza", "zoxide", "starship", "direnv", "nvim", "vim", "vi",
+	"tmux", "herdr", "ssh", "scp", "eza", "zoxide", "starship", "direnv", "nvim", "vim", "vi",
 	"docker", "docker-compose", "dockerd", "nix", "nix-shell", "nix-env", "nix-build",
 	// the C toolchain and everyday CLIs of I-218
 	"cc", "gcc", "g++", "c++", "cpp", "ld", "ar", "as", "nm", "strip", "objdump", "readelf",

@@ -393,7 +393,10 @@ Which path a command takes is decided by what runs: the CLI asks the
 guest `systemctl --user -q is-active repose-herdr-server` over the ssh
 connection it holds (a few milliseconds; the fast path asks too). A
 machine switched while running answers by what it runs until its next
-start. A base with no such unit answers tmux.
+start. A base with no such unit answers tmux. The CLI asks only when a
+prompt or an attach needs the answer; a `sync` (or `run --no-attach`
+with no prompt) asks nothing and takes the project's stored
+`multiplexer` for the sidebar (I-542).
 
 | Command | herdr project |
 |---|---|
@@ -445,10 +448,12 @@ start. A base with no such unit answers tmux.
 
 **The laptop's sidebar** (I-510). With `herdr` 0.9.0 or newer on the
 laptop PATH and repose's `Include` in `~/.ssh/config`, `run`, `attach`,
-`rm` and every certificate refresh reconcile herdr's machine list: a
+`sync`, `rm` and every certificate refresh reconcile herdr's machine list: a
 running herdr project with no entry gets `herdr machine add
 <slug>.repose --label <slug> --remote-session default` in the
-background (it never delays `Ready in`); an entry whose target is
+background (it never delays `Ready in`; a certificate refresh, which
+`ssh-prepare` may run in a process that ends at once, only removes,
+I-542); an entry whose target is
 `<slug>.repose` and whose slug is no live project goes (a destroy from
 the dashboard, another laptop or an expiry); anything else, including an
 entry you disabled, stays. A stopped machine keeps its entry, and herdr
@@ -459,8 +464,12 @@ machines are never added. Nothing is printed unless an add fails, once:
 **Messages.** What the session helper and the CLI show inside the
 session (`Time zone set to ...`, forwards, carry notices) goes through
 `herdr notification show repose --body "<text>"` on herdr, where tmux
-uses `display-message`.
-With no herdr client attached nobody sees them, as with tmux.
+uses `display-message`; a script that does not know the multiplexer
+uses tmux when its server answers, else herdr when its socket exists.
+herdr shows them only when the guest's herdr config sets `[ui.toast]
+delivery = "herdr"` (its default is off, I-542). In the sidebar path
+(rule 1) the helper runs in the CLI's own pane, and its messages print
+there. With no herdr client attached nobody sees them, as with tmux.
 
 **Old CLIs.** A CLI from before I-509 runs `tmux attach` on a herdr
 machine and gets tmux's `no server running`. The release notes and

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-536 entries.
+537 entries.
 
 ## Scope
 
@@ -566,5 +566,6 @@ pointer, not a summary.
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; L13257
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; L13268
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13282
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13308
-- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13324
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13317
+- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13339
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L13353

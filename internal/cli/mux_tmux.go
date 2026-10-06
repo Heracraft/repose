@@ -2,11 +2,72 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
+
+// tmuxMux is the machine's terminals in tmux: the session named after
+// the slug that repose-tmux-session.service makes (guest-conventions.md
+// "tmux"). Its behaviour is what every command did before I-509.
+type tmuxMux struct{}
+
+func (tmuxMux) Name() string { return multiplexer.Tmux }
+func (tmuxMux) Unit() string { return "window" }
+
+func (tmuxMux) PickName(ctx context.Context, t sshTarget, slug, agent string) (string, bool, error) {
+	return windowNameFor(ctx, t, slug, agent)
+}
+
+func (tmuxMux) Names(ctx context.Context, t sshTarget, slug string) ([]string, error) {
+	return listWindows(ctx, t, slug)
+}
+
+func (tmuxMux) Label(extra, agent string) string { return windowLabel(extra, agent) }
+
+func (tmuxMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error {
+	return startAgentWindow(ctx, t, s.Slug, s.Name, s.Dir, s.Agent, s.Prompt, s.AttachOnly, s.OnLoading)
+}
+
+// Attach starts the session helper beside `tmux attach` (I-195).
+func (tmuxMux) Attach(e *Env, a attachReq) error {
+	startSessionHelper(e, a.Helper)
+	return attachTmux(a.Target, a.Project.Slug, a.Window, a.TZ, a.RepoDir, a.After, a.Renew)
+}
+
+func (tmuxMux) PasteScript(slug, window string) string {
+	t := "=" + slug + ":" + window
+	return fmt.Sprintf(`p=$(tmux list-panes -t %s -F '#{?pane_active,#{pane_id},}' 2>/dev/null | grep .) || exit %d
+tmux set-buffer -b repose-paste -- "$f" || exit 1
+tmux paste-buffer -p -d -b repose-paste -t "$p" || exit 1
+tmux display-message -p -t "$p" '#{window_name}'
+`, shQuote(t), pasteExitNoPane)
+}
+
+// MessageScript shows text on the session's clients for four seconds
+// when it has any, and does nothing otherwise.
+func (tmuxMux) MessageScript(slug, text string) string {
+	return fmt.Sprintf("if tmux list-clients -t %s -F x 2>/dev/null | grep -q .; then tmux display-message -d 4000 -t %s %s; fi",
+		shQuote("="+slug), shQuote("="+slug+":"), shQuote(strings.ReplaceAll(text, "#", "##")))
+}
+
+// SessionEnded is tmux answering that the session is missing (exit 1);
+// an ssh that could not connect (255) says nothing.
+func (tmuxMux) SessionEnded(ctx context.Context, t sshTarget, slug string) (bool, error) {
+	_, err := runSSH(ctx, t, "tmux has-session -t "+shQuote("="+slug)+" 2>/dev/null", nil)
+	if err == nil {
+		return false, nil
+	}
+	var se *sshError
+	if errors.As(err, &se) && se.ExitCode == 1 {
+		return true, nil
+	}
+	return false, err
+}
 
 // agentNames are the five agents every guest ships (docs/features/agents.md).
 var agentNames = []string{"claude", "opencode", "codex", "gemini", "pi"}
@@ -297,7 +358,7 @@ func shQuote(s string) string {
 // I-253, I-342): a git worktree of the guest's checkout beside it, outside
 // the synced tree, on its own branch.
 type agentWorktree struct {
-	Window string // tmux window name, "<agent>" or "<agent>-N"
+	Window string // tmux window or herdr agent name, "<agent>" or "<agent>-N"
 	N      int    // the worktree's number, 1 and up
 	Dir    string // "~/<checkout>-worktree-<N>", as the guest's shell spells it
 	// Checkout is the checkout's name under the home (I-368).
@@ -317,12 +378,10 @@ func worktreeDir(checkout string, n int) string {
 }
 func worktreeBranch(n int) string { return fmt.Sprintf("worktree-%d", n) }
 
-// worktreeProbeScript reports, in one ssh, the session's windows, the
-// checkout's HEAD and whether it is dirty, and which worktree directories
+// worktreeProbeScript reports, in one ssh, the checkout's HEAD and whether it is dirty, and which worktree directories
 // and worktree-N branches already exist, so the number skips both.
 func worktreeProbeScript(slug, extra string) string {
 	return fmt.Sprintf(`set -e
-tmux list-windows -t %[1]s -F '#window #{window_name}'
 %[2]s[ "$repose_co" != "$HOME" ] || { echo '#nogit'; exit 0; }
 echo "#checkout ${repose_co##*/}"
 cd "$repose_co" && [ -e .git ] || { echo '#nogit'; exit 0; }
@@ -358,11 +417,20 @@ true`, homeShell(wt.Checkout), shQuote(wt.Branch), wt.Dir, wt.Base)
 // reuses a worktree: a number whose directory or branch exists is skipped,
 // so each --worktree run starts fresh from HEAD.
 func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*agentWorktree, error) {
+	return prepareWorktreeWith(ctx, t, slug, agent, tmuxMux{})
+}
+
+// prepareWorktreeWith is prepareWorktree on the machine's multiplexer,
+// whose names the agent's name skips (I-509).
+func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m muxer) (*agentWorktree, error) {
+	windows, err := m.Names(ctx, t, slug)
+	if err != nil {
+		return nil, stepFailed("list the agents on the machine", err, "")
+	}
 	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout), nil)
 	if err != nil {
-		return nil, stepFailed("list the guest's tmux windows", err, "")
+		return nil, stepFailed("read the machine's checkout", err, "")
 	}
-	var windows []string
 	taken := map[string]bool{}
 	wt := &agentWorktree{}
 	for _, l := range nonEmptyLines(string(out)) {
@@ -377,9 +445,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 		case "#dirty":
 			wt.Dirty = true
 		default:
-			if w, ok := strings.CutPrefix(l, "#window "); ok {
-				windows = append(windows, w)
-			} else if c, ok := strings.CutPrefix(l, "#checkout "); ok {
+			if c, ok := strings.CutPrefix(l, "#checkout "); ok {
 				wt.Checkout = c
 			} else if h, ok := strings.CutPrefix(l, "#head "); ok {
 				wt.Base = h
@@ -392,7 +458,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 			}
 		}
 	}
-	wt.Window, _ = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
+	wt.Window, _ = pickWindow(m.Label(t.Checkout, agent), windows, nil)
 	wt.N = nextWorktree(taken)
 	wt.Dir = worktreeDir(wt.Checkout, wt.N)
 	wt.Branch = worktreeBranch(wt.N)

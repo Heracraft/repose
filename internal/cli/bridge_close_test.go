@@ -26,7 +26,7 @@ func TestBridgeCloseReturnsPromptly(t *testing.T) {
 
 func TestTmuxIfAttached(t *testing.T) {
 	got := tmuxIfAttached("todo-app", "50% #1 done")
-	want := `if tmux list-clients -t '=todo-app' -F x 2>/dev/null | grep -q .; then tmux display-message -d 4000 -t '=todo-app:' '50% ##1 done'; fi`
+	want := `if tmux list-sessions >/dev/null 2>&1; then if tmux list-clients -t '=todo-app' -F x 2>/dev/null | grep -q .; then tmux display-message -d 4000 -t '=todo-app:' '50% ##1 done'; fi; elif [ -S /home/dev/.config/herdr/herdr.sock ]; then herdr notification show repose --body '50% #1 done' >/dev/null 2>&1 || true; fi`
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}

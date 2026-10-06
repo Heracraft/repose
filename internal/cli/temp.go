@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // Temporary machines (DECISIONS I-347..I-355): `repose run --temp` makes
@@ -136,8 +138,12 @@ func tempLine(p *Project, now time.Time) string {
 	return fmt.Sprintf("%s is temporary: %s.", p.Slug, w)
 }
 
-// createdLabel is the create phase's done line.
+// createdLabel is the create phase's done line. It names herdr, and
+// says nothing for tmux (I-502).
 func createdLabel(p *Project, class string) string {
+	if multiplexer.Normalize(p.Multiplexer) == multiplexer.Herdr {
+		class += ", herdr"
+	}
 	if p.ExpiresAt == nil {
 		return fmt.Sprintf("Created %s (%s)", p.Slug, class)
 	}
@@ -166,20 +172,24 @@ func KeepCmd(ctx context.Context, e *Env, projectArg string) error {
 	return nil
 }
 
-// tempSessionEnded is run and attach after the attach returned on the
-// input-proxy path (DECISIONS I-352): when the project is temporary and
-// its tmux session is gone (the last window exited; a detach leaves it),
-// the machine is destroyed at once, as `docker run --rm` would. The
-// check rides the ssh master the attach used. Only tmux answering that
-// the session is missing (exit 1) counts; an ssh that could not connect
-// (255) says nothing, and the machine then waits for its expiry.
+// tempSessionEnded is run and attach after an attach the CLI waited on
+// returned (DECISIONS I-352): when the project is temporary and its
+// session is gone (the last tmux window exited, or herdr has no pane
+// left; a detach leaves either), the machine is destroyed at once, as
+// `docker run --rm` would. The check rides the ssh master the attach
+// used. Only the multiplexer answering that the session is over counts;
+// an ssh that could not connect says nothing, and the machine then waits
+// for its expiry.
 func tempSessionEnded(ctx context.Context, e *Env, t sshTarget, p *Project) {
+	tempSessionEndedWith(ctx, e, t, p, tmuxMux{})
+}
+
+// tempSessionEndedWith is tempSessionEnded on the machine's multiplexer.
+func tempSessionEndedWith(ctx context.Context, e *Env, t sshTarget, p *Project, m muxer) {
 	if p == nil || p.ExpiresAt == nil {
 		return
 	}
-	_, err := runSSH(ctx, t, "tmux has-session -t "+shQuote("="+p.Slug)+" 2>/dev/null", nil)
-	var se *sshError
-	if err == nil || !errors.As(err, &se) || se.ExitCode != 1 {
+	if ended, err := m.SessionEnded(ctx, t, p.Slug); err != nil || !ended {
 		return
 	}
 	_, _ = fmt.Fprintf(e.ErrOut, "%s is temporary and its session has ended; destroying it.\n", p.Slug)

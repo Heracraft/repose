@@ -220,6 +220,8 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 		return err
 	}
 	closeMaster(ctx, e, project.Slug)
+	// The laptop herdr's entry for the machine goes with it (I-510).
+	forgetHerdrMachine(ctx, project.Slug)
 	if forgetReposeRemote(gitRepoRoot(e.Cwd), project.Slug) {
 		// The machine this checkout's `repose` remote pointed at is going
 		// away (I-272); what was fetched from it stays.

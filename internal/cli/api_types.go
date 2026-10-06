@@ -87,6 +87,11 @@ type Project struct {
 	// the api destroys it, with no snapshot, once this has passed. Absent
 	// from older apis and on every normal project.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Multiplexer is what runs the machine's terminals from its next
+	// start, tmux or herdr (DECISIONS I-502). Absent from older apis,
+	// which multiplexer.Normalize reads as tmux. What a running machine
+	// runs now is the guest's answer (muxFor), not this.
+	Multiplexer string `json:"multiplexer,omitempty"`
 }
 
 // ProjectIdle is Project.idle.

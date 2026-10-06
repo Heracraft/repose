@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // The connect fast path (DECISIONS I-223). connect's slow path reads the
@@ -256,9 +258,14 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 	if helper.RepoDir != "" {
 		e.addReposeRemote(ctx, guess, target, nil) // I-272
 	}
-	startSessionHelper(e, helper)
+	// What runs now, from the guest: no api call here either (I-509).
+	mux := muxFor(ctx, target)
+	helper.Multiplexer = mux.Name()
+	e.herdrSyncFor(ctx, guess, mux.Name() == multiplexer.Herdr)
 	defer e.keepTokenFresh()()
-	return true, attachTmux(target, guess.Slug, "", tz, helper.RepoDir, nil, renewFor(e, guess))
+	// The cache keeps no expiry: a temporary machine is never cached
+	// (I-351), so the guess is never one.
+	return true, mux.Attach(e, attachReq{Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Helper: helper})
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the

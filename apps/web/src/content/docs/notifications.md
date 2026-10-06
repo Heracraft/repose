@@ -62,7 +62,7 @@ Every email comes as HTML with a plain-text version. There are no images and no 
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`.
+Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. When herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 

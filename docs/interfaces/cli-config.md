@@ -50,7 +50,11 @@ exactly the entries whose target is `<slug>.repose` for any slug: one
 for a running herdr project that has none is added, one whose slug is no
 live project of the account is removed, and every other entry, a
 disabled one included, is left as it is. A temporary project is never
-added. A herdr older than 0.9.0, or a `machine list` that fails, makes
+added. `run`, `attach` and `sync` add and remove; a certificate
+refresh only removes, since `ssh-prepare` may run it in a process that
+ends before an add could finish (I-542). An add that fails prints
+`Could not add <slug> to herdr's sidebar: <herdr's last line>` once per
+command. A herdr older than 0.9.0, or a `machine list` that fails, makes
 the reconcile do nothing and say nothing. The CLI reads `HERDR_ENV`
 (set to `1` by herdr in its panes) to pick herdr for a new project and to
 choose the attach path; it is not a user setting and is not in

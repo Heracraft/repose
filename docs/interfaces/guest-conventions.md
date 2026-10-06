@@ -29,7 +29,8 @@ checkout the rule finds. The sync that made the checkout replaces the
 session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
 to `tmux attach`, so new windows open there. On a herdr machine the sync runs
-`repose-herdr-workspace` instead (see "herdr"), and herdr's tabs open in
+`repose-herdr-workspace` instead (see "herdr"), only when the command
+exists and `repose-herdr-server` is active, and herdr's tabs open in
 the workspace's directory.
 
 ### Other checkouts
@@ -272,6 +273,9 @@ project whose `project.json` names herdr runs its server.
 - **Messages.** The CLI's and the session helper's one-line messages use
   `herdr notification show repose --body "<text>"` where tmux uses
   `display-message`; with no client attached nobody sees them (I-313).
+  herdr shows one only when the server's config sets `[ui.toast]
+  delivery = "herdr"`; with its default, `off`, the answer is `{"shown":
+  false, "reason": "disabled"}` and nothing appears (I-542).
 - **Memory and CPU** (I-505): see "Memory pressure" and "CPU weights".
 
 Old shape, one release: a guest on a base before I-501 has no herdr and
