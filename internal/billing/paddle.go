@@ -299,15 +299,21 @@ type Transaction struct {
 // CreateCheckoutTransaction creates the transaction the dashboard opens
 // with Paddle.js: one plan price, quantity one, the customer, the user id
 // in custom_data so the webhook can find the account, collected
-// automatically (card at checkout).
-func (p *Paddle) CreateCheckoutTransaction(ctx context.Context, customerID, priceID string, userID uuid.UUID) (string, error) {
+// automatically (card at checkout). A non-empty discountID applies that
+// discount; Paddle carries a recurring one onto the subscription and
+// starts it when the trial ends (DECISIONS I-497).
+func (p *Paddle) CreateCheckoutTransaction(ctx context.Context, customerID, priceID, discountID string, userID uuid.UUID) (string, error) {
 	var out Transaction
-	err := p.do(ctx, http.MethodPost, "/transactions", map[string]any{
+	body := map[string]any{
 		"items":           []map[string]any{{"price_id": priceID, "quantity": 1}},
 		"customer_id":     customerID,
 		"custom_data":     map[string]any{"user_id": userID.String()},
 		"collection_mode": "automatic",
-	}, &out)
+	}
+	if discountID != "" {
+		body["discount_id"] = discountID
+	}
+	err := p.do(ctx, http.MethodPost, "/transactions", body, &out)
 	if err != nil {
 		return "", err
 	}
@@ -377,6 +383,13 @@ type Subscription struct {
 		UpdatePaymentMethod string `json:"update_payment_method"`
 		Cancel              string `json:"cancel"`
 	} `json:"management_urls"`
+	// Discount is the recurring discount on the subscription, if any;
+	// EndsAt is null while Paddle has not fixed its end.
+	Discount *struct {
+		ID       string `json:"id"`
+		StartsAt string `json:"starts_at"`
+		EndsAt   string `json:"ends_at"`
+	} `json:"discount"`
 	// ImmediateTransaction is set on a charge made immediately.
 	ImmediateTransaction *struct {
 		ID string `json:"id"`
@@ -618,6 +631,57 @@ func (p *Paddle) CreatePlanPrice(ctx context.Context, productID string, plan Pla
 		"custom_data":   map[string]any{"repose": plan.ID},
 	}, &out)
 	return out, err
+}
+
+// Discount is a Paddle discount as the bootstrap reads it.
+type Discount struct {
+	ID                        string         `json:"id"`
+	Status                    string         `json:"status"`
+	Description               string         `json:"description"`
+	Type                      string         `json:"type"`
+	Amount                    string         `json:"amount"`
+	CurrencyCode              string         `json:"currency_code"`
+	Recur                     bool           `json:"recur"`
+	MaximumRecurringIntervals *int           `json:"maximum_recurring_intervals"`
+	RestrictTo                []string       `json:"restrict_to"`
+	CustomData                map[string]any `json:"custom_data"`
+}
+
+// ListDiscounts lists active discounts.
+func (p *Paddle) ListDiscounts(ctx context.Context) ([]Discount, error) {
+	var out []Discount
+	if err := p.do(ctx, http.MethodGet, "/discounts?status=active&per_page=200", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreateIntroDiscount creates the plan's introductory discount: a flat
+// amount off each of the first IntroMonths charges of that plan's price.
+// It has no published code; the api applies it by id at checkout. It is
+// enabled for checkout because Paddle applies only such a discount to a
+// checkout, and its generated code is never shown to anyone.
+func (p *Paddle) CreateIntroDiscount(ctx context.Context, plan Plan, priceID string) (Discount, error) {
+	var out Discount
+	err := p.do(ctx, http.MethodPost, "/discounts", map[string]any{
+		"description":                 fmt.Sprintf("%s introductory price: $%d a month for the first %d months", plan.Name, plan.IntroCents/100, plan.IntroMonths),
+		"type":                        "flat",
+		"amount":                      strconv.FormatInt(plan.IntroDiscountCents(), 10),
+		"currency_code":               plan.Currency,
+		"enabled_for_checkout":        true,
+		"recur":                       true,
+		"maximum_recurring_intervals": plan.IntroMonths,
+		"restrict_to":                 []string{priceID},
+		"custom_data":                 map[string]any{"repose": introDiscountKey(plan)},
+	}, &out)
+	return out, err
+}
+
+// introDiscountKey is the custom_data.repose value of a plan's
+// introductory discount; it names the amount and months, so a changed
+// introductory price makes a new discount rather than reusing the old.
+func introDiscountKey(plan Plan) string {
+	return fmt.Sprintf("intro-%s-%d-%d", plan.ID, plan.IntroCents, plan.IntroMonths)
 }
 
 // NotificationSetting is a webhook destination.

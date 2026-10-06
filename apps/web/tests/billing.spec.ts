@@ -67,10 +67,14 @@ test('with no plan and seats free, the three plan cards are shown from GET /bill
 	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left.');
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
-	await expect(solo.getByText('$29')).toBeVisible();
+	await expect(solo.getByText('$20')).toBeVisible();
+	await expect(solo.getByTestId('intro-solo')).toHaveText(
+		'For 3 months, then $29 and 250 GB egress'
+	);
+	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
 	await expect(solo.getByText('8 GB: one large, or two small')).toBeVisible();
-	await expect(solo.getByText('100 GB', { exact: true })).toBeVisible();
-	await expect(solo.getByText('250 GB', { exact: true })).toBeVisible();
+	// The introductory offer's egress allowance (I-497).
+	await expect(solo.getByText('100 GB', { exact: true })).toHaveCount(2);
 	await expect(solo.getByText('7 days free, card at checkout, cancel any time.')).toBeVisible();
 	const plus = page.getByTestId('plan-plus');
 	await expect(plus.getByRole('heading', { name: 'Plus' })).toBeVisible();
@@ -94,6 +98,22 @@ test('with no plan and seats free, the three plan cards are shown from GET /bill
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeEnabled();
 	await expect(page.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/refunds');
+});
+
+test('Solo costs $20 for three months on a first subscription, then $29; a returning account pays $29', async ({
+	page
+}) => {
+	await setBilling({ mode: 'active', plan: 'solo' });
+	await page.goto('/billing');
+	await expect(page.getByTestId('plan-status')).toContainText(
+		/Active\. Renews .+ at \$20; \$29 a month from /
+	);
+	await setBilling({ mode: 'none', intro_used: true });
+	await page.goto('/billing');
+	const solo = page.getByTestId('plan-solo');
+	await expect(solo.getByText('$29')).toBeVisible();
+	await expect(page.getByTestId('intro-solo')).toHaveCount(0);
+	await setBilling({ intro_used: false });
 });
 
 test('one seat free: Solo can be chosen, Plus and Pro say why not', async ({ page }) => {
@@ -185,11 +205,13 @@ test('a trial shows the first charge date, the usage bars and the project count'
 }) => {
 	await setBilling({ mode: 'trial', plan: 'solo', egress_gb: 300 });
 	await page.goto('/billing');
-	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $29 on');
+	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $20 on');
+	await expect(page.getByTestId('plan-status')).toContainText('; $29 a month from');
 	await expect(page.getByTestId('meter-disk-allocated')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
-	await expect(egress).toContainText('300 GB of 250 GB');
-	await expect(egress).toContainText('Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.');
+	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
+	await expect(egress).toContainText('300 GB of 100 GB');
+	await expect(egress).toContainText('Over by 200 GB: $10.00 on the next invoice at $0.05 a GB.');
 	await expect(page.getByTestId('projects-count')).toContainText('of 10');
 });
 
@@ -271,7 +293,9 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await expect(page.getByTestId('change-plan')).toContainText('Downgrade to Solo ($29 a month');
 	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
 	const err = page.getByTestId('change-error');
-	await expect(err).toContainText('Solo holds 8 GB of memory for running machines and 100 GB of disk');
+	await expect(err).toContainText(
+		'Solo holds 8 GB of memory for running machines and 100 GB of disk'
+	);
 	await expect(err).toContainText('you have 16 GB of memory running');
 	await expect(err).toContainText('Stop machines or destroy projects first.');
 });
@@ -297,7 +321,9 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByRole('button', { name: /Upgrade/ })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	const err = page.getByTestId('change-error');
-	await expect(err).toContainText('Plus holds 16 GB of memory for running machines and 250 GB of disk');
+	await expect(err).toContainText(
+		'Plus holds 16 GB of memory for running machines and 250 GB of disk'
+	);
 	await expect(err).toContainText('you have 24 GB of memory running');
 	await stopAll();
 });

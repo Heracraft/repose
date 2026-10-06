@@ -419,7 +419,9 @@ with a card at checkout and a week free (DECISIONS I-289, superseding the
 hourly meter this section first described). Solo, $29 a month, buys 8 GB
 of memory that may run at once (one `large`, or two `small`), 100 GB of
 disk and 250 GB of egress; Plus, $59, buys 16 GB, 250 GB and 500 GB;
-Pro, $99, buys 32 GB, 500 GB and 1000 GB (I-362).
+Pro, $99, buys 32 GB, 500 GB and 1000 GB (I-362). A first Solo
+subscription pays $20 and has 100 GB of egress for its first three months
+(I-497).
 Projects are unlimited while stopped (10, 25 and 50 in all); egress past the
 allowance is $0.05 a GB as one line on the next invoice, and at four times
 the allowance the machines stop for the period. Paddle is the merchant of

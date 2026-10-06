@@ -108,8 +108,8 @@ func (o *Overage) ChargePeriod(ctx context.Context, sub *Sub, effectiveFrom stri
 	if sub.PeriodStart == nil {
 		return nil, nil
 	}
-	plan := sub.PlanOrSolo()
 	period := sub.Period(o.Now())
+	plan := sub.PlanFor(period.Start)
 	egress, err := PeriodEgress(ctx, o.pool, sub.UserID, period)
 	if err != nil {
 		return nil, err
@@ -186,8 +186,8 @@ func (o *Overage) hardStops(ctx context.Context) ([]uuid.UUID, error) {
 	var stopped []uuid.UUID
 	for i := range subs {
 		sub := &subs[i]
-		plan := sub.PlanOrSolo()
 		period := sub.Period(now)
+		plan := sub.PlanFor(period.Start)
 		egress, err := PeriodEgress(ctx, o.pool, sub.UserID, period)
 		if err != nil {
 			return stopped, err

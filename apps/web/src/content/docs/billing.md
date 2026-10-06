@@ -9,9 +9,11 @@ repose is a monthly plan. You choose one before your first machine starts, with 
 
 | Plan | A month | Running at once                        | Disk   | Egress a month | Projects |
 | ---- | ------- | -------------------------------------- | ------ | -------------- | -------- |
-| Solo | $29     | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         | 10       |
+| Solo | $29\*   | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         | 10       |
 | Plus | $59     | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         | 25       |
 | Pro  | $99     | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           | 50       |
+
+\*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. Until the $29 month starts, the egress allowance is 100 GB a month: $0.05 a GB is charged past 100 GB, and your machines stop at 400 GB. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
 
 Prices are in USD and exclude tax, which Paddle adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan says how much of that may run at the same time; projects cost nothing while stopped, and the month costs the same however many hours run.
 
@@ -28,7 +30,7 @@ Seven days on any plan. Your card is taken at checkout and first charged on day 
 - **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice as one line. At four times the allowance (1 TB on Solo, 2 TB on Plus, 4 TB on Pro) your machines stop until the month turns, and you get an email.
 - **Projects.** 10 on Solo, 25 on Plus, 50 on Pro, running or stopped. Destroyed projects and their 30-day snapshots don't count.
 
-Example: a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
+Example: after the first 3 months, a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
 
 ## Seeing your hours
 

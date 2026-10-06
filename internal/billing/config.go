@@ -24,6 +24,9 @@ type Config struct {
 	PricePlus      string
 	PricePro       string
 	ProductOverage string
+	// DiscountIntro is the dsc_... id of the introductory discount that a
+	// first checkout of the intro plan carries (DECISIONS I-497).
+	DiscountIntro string
 	// PortalReturnURL is where Paddle's customer portal sends the user back.
 	PortalReturnURL string
 	// DashboardURL is the dashboard's origin, which every refusal names.
@@ -109,6 +112,7 @@ func ConfigFromEnv() (cfg Config, enabled bool) {
 		PricePlus:       strings.TrimSpace(os.Getenv("PADDLE_PRICE_PLUS")),
 		PricePro:        strings.TrimSpace(os.Getenv("PADDLE_PRICE_PRO")),
 		ProductOverage:  strings.TrimSpace(os.Getenv("PADDLE_PRODUCT_OVERAGE")),
+		DiscountIntro:   strings.TrimSpace(os.Getenv("PADDLE_DISCOUNT_INTRO")),
 		PortalReturnURL: env("PADDLE_PORTAL_RETURN_URL", dash+"/billing"),
 		DashboardURL:    dash,
 		Enforce:         os.Getenv("BILLING_ENFORCE") != "false",
@@ -130,7 +134,8 @@ func ConfigFromEnv() (cfg Config, enabled bool) {
 // Validate refuses a half-configured Paddle: a key with no price ids
 // would sell nothing, no webhook secret would leave every subscription
 // event unverified and dropped, and no overage product would silently
-// give egress away.
+// give egress away. No introductory discount would charge the full price
+// to a user the dashboard promised the introductory one.
 func (c Config) Validate() error {
 	if !c.Enabled() {
 		return nil
@@ -142,7 +147,13 @@ func (c Config) Validate() error {
 		"PADDLE_PRICE_PLUS":      c.PricePlus,
 		"PADDLE_PRICE_PRO":       c.PricePro,
 		"PADDLE_PRODUCT_OVERAGE": c.ProductOverage,
+		"PADDLE_DISCOUNT_INTRO":  c.DiscountIntro,
 	} {
+		if name == "PADDLE_DISCOUNT_INTRO" {
+			if _, ok := IntroPlan(); !ok {
+				continue
+			}
+		}
 		if v == "" {
 			missing = append(missing, name)
 		}

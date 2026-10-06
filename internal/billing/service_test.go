@@ -59,8 +59,32 @@ func TestCheckout(t *testing.T) {
 	if items[0].(map[string]any)["price_id"] != "pri_solo_test" || body["collection_mode"] != "automatic" || body["custom_data"].(map[string]any)["user_id"] != a.UserID.String() || body["customer_id"] == "" {
 		t.Fatalf("transaction body: %v", body)
 	}
+	if body["discount_id"] != "dsc_intro_test" {
+		t.Fatalf("a first Solo checkout carries the introductory discount: %v", body)
+	}
 	if userField(t, pool, a, "paddle_customer_id") == "" {
 		t.Fatal("the customer was not stored")
+	}
+	// Plus has no introductory price.
+	if _, err := s.Checkout(ctx, user(t, pool, a), "plus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Bodies["POST /transactions"][1]["discount_id"]; ok {
+		t.Fatal("a Plus checkout carried the discount")
+	}
+	// A user who had a subscription before pays the full price.
+	again := seedAccount(t, pool, "solo", "active", "", "")
+	if _, err := pool.Exec(ctx, "update subscriptions set status = 'canceled' where id = $1", again.SubID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Checkout(ctx, user(t, pool, again), "solo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Bodies["POST /transactions"][2]["discount_id"]; ok {
+		t.Fatal("a returning subscriber got the introductory discount")
+	}
+	if ov, err := s.Overview(ctx, user(t, pool, again)); err != nil || ov["intro_eligible"] != false {
+		t.Fatalf("returning subscriber's overview: %v %v", ov["intro_eligible"], err)
 	}
 	// A subscriber is refused with subscribed.
 	b := seedAccount(t, pool, "solo", "active", "", "")
@@ -84,6 +108,9 @@ func TestCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	plans := ov["plans"].([]map[string]any)
+	if plans[0]["intro_price_cents"] != int64(2000) || plans[0]["intro_months"] != 3 || plans[0]["intro_egress_gb"] != 100 || plans[1]["intro_months"] != 0 || ov["intro_eligible"] != true {
+		t.Fatalf("introductory price in the overview: %v %v", plans, ov["intro_eligible"])
+	}
 	if len(plans) != 3 || plans[0]["available"] != false || plans[0]["price_cents"] != int64(2900) || plans[1]["id"] != "plus" || plans[2]["id"] != "pro" || plans[2]["seats"] != 4 {
 		t.Fatalf("plans: %v", plans)
 	}
@@ -97,6 +124,54 @@ func TestCheckout(t *testing.T) {
 	usage := ov["usage"].(map[string]any)
 	if usage["memory_gb"] != 8 || usage["project_limit"] != 10 {
 		t.Fatalf("usage without a plan shows Solo's limits: %v", usage)
+	}
+}
+
+// ChargeCents and PlanFor follow the introductory offer: $20 and 100 GB
+// of egress while it runs, before Paddle fixes its end too, and the
+// plan's own price and allowance after it, without it and on another
+// plan (DECISIONS I-497).
+func TestIntroOffer(t *testing.T) {
+	ends := time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)
+	before, after := ends.Add(-time.Hour), ends
+	for _, c := range []struct {
+		name   string
+		sub    *billing.Sub
+		at     time.Time
+		cents  int64
+		egress int
+	}{
+		{"no subscription", nil, before, 2900, 250},
+		{"no offer", &billing.Sub{Plan: "solo"}, before, 2900, 250},
+		{"offer, end not fixed", &billing.Sub{Plan: "solo", Intro: true}, before, 2000, 100},
+		{"offer, before its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, before, 2000, 100},
+		{"offer, at its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, after, 2900, 250},
+		{"plus", &billing.Sub{Plan: "plus", Intro: true}, before, 5900, 500},
+	} {
+		if got := c.sub.ChargeCents(c.at); got != c.cents {
+			t.Errorf("%s: %d cents, want %d", c.name, got, c.cents)
+		}
+		if got := c.sub.PlanFor(c.at).EgressGB; got != c.egress {
+			t.Errorf("%s: %d GB egress, want %d", c.name, got, c.egress)
+		}
+	}
+	// The allowance sets the overage and the hard stop: 150 GB is 50 GB
+	// over during the offer and nothing after it; the stop is 400 GB.
+	sub := &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}
+	gb := int64(1) << 30
+	if over, cents := billing.OverageCents(sub.PlanFor(before), 150*gb); over != 50 || cents != 250 {
+		t.Errorf("overage during the offer: %d GB %d cents", over, cents)
+	}
+	if over, _ := billing.OverageCents(sub.PlanFor(after), 150*gb); over != 0 {
+		t.Errorf("overage after the offer: %d GB", over)
+	}
+	if stop := sub.PlanFor(before).EgressHardStopBytes(); stop != 400*gb {
+		t.Errorf("hard stop during the offer: %d GB", stop/gb)
+	}
+	next := before
+	j := billing.SubJSON(&billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends, NextBilledAt: &next}).(map[string]any)
+	if j["next_charge_cents"] != int64(2000) || j["intro_until"] != &ends {
+		t.Errorf("SubJSON: %v", j)
 	}
 }
 

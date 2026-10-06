@@ -38,10 +38,11 @@ apps at the same time; the api ignores it and logs a warning (I-290).
    ```
 
    It creates the three products and prices (Solo $29, Plus $59, Pro $99,
-   seven-day trial), the overage product and the webhook destination at
+   seven-day trial), Solo's introductory discount ($9 off the first three
+   charges, I-497), the overage product and the webhook destination at
    `https://api.repose.herakraft.co/v1/billing/webhook`, and prints the
    env block: `PADDLE_PRICE_SOLO`, `PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`,
-   `PADDLE_PRODUCT_OVERAGE`, `PADDLE_WEBHOOK_SECRET`. Paste it into both
+   `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`, `PADDLE_WEBHOOK_SECRET`. Paste it into both
    api apps and redeploy. It is idempotent: run it again and it prints the
    same ids.
 4. Checkout settings, Website approval: add `repose.herakraft.co` as an

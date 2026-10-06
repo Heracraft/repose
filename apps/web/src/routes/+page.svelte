@@ -100,20 +100,23 @@
 	// the plans compare at a glance. The cards say "memory" in words and
 	// count no agents or machines: a count reads as a ceiling on what the
 	// product does, and the memory is shared by whatever is running
-	// (I-402).
+	// (I-402). Solo shows its introductory price, then the price it
+	// becomes (I-497).
 	const plans: {
 		name: string;
 		price: string;
+		then?: string;
 		memory: number;
 		disk: string;
 		egress: string;
 	}[] = [
 		{
 			name: 'Solo',
-			price: '$29',
+			price: '$20',
+			then: 'For 3 months, then $29 and 250 GB egress',
 			memory: 8,
 			disk: '100 GB',
-			egress: '250 GB'
+			egress: '100 GB'
 		},
 		{
 			name: 'Plus',
@@ -340,6 +343,9 @@
 							<span class="n">{t.price}</span>
 							<span class="per">a month</span>
 						</p>
+						{#if t.then}
+							<p class="tier-then">{t.then}</p>
+						{/if}
 					</li>
 				{/each}
 			</ul>
