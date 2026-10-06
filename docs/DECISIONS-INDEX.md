@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-545 entries.
+546 entries.
 
 ## Scope
 
@@ -571,9 +571,10 @@ pointer, not a summary.
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L13365
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13381
 - **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13429
-- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; L13496
+- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L13496
 - **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13553
 - **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13572
 - **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L13608
 - **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L13635
 - **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L13700
+- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L13713
