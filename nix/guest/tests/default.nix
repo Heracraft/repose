@@ -342,6 +342,21 @@ in
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev"
           guest.succeed("grep -Eq 'set-clipboard +on' /etc/tmux.conf && grep -Eq 'mouse +off' /etc/tmux.conf && grep -Eq 'history-limit +50000' /etc/tmux.conf")
 
+      with subtest("I-551: the session comes back after the tmux server exits"):
+          # `exit` in the last window ends the server, as kill-server does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          # Gone for the 5 s I-352's check after an attach needs.
+          guest.succeed("! sudo -u dev tmux has-session -t =todo-app")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          # The attach the CLI runs finds it (a client needs a terminal:
+          # script gives it one, and the detach ends it).
+          guest.succeed("sudo -u dev env TERM=xterm-256color script -qec 'tmux attach -t todo-app \\; detach-client' /dev/null")
+          # A stop is not undone.
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user stop repose-tmux-session.service")
+          guest.succeed("sleep 7; ! sudo -u dev tmux has-session -t =todo-app")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev/factory"

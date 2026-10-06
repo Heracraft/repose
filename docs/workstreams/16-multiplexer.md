@@ -103,7 +103,8 @@ Builds, all under `nix/` and `scripts/`:
 
 - `nix/overlay/agents/herdr.nix` (new), its entry in
   `nix/overlay/agents/default.nix` and `versions.json` (`herdr.version`,
-  `herdr.sha256`; 0.9.3 or the newest release that passes the check),
+  `herdr.x86_64-linux.url` and `.hash`, I-551; 0.9.3 or the newest
+  release that passes the check),
   `scripts/bump-agents.sh` moving it. The install check:
   `herdr status client --json` with `endpoint_protocol_generation == 1`
   and `protocol >= 22`, else the build fails naming both values.
@@ -156,8 +157,9 @@ Checklist:
       `REPOSE_PROJECT`, a secret, the login PATH and `HERDR_AGENT`; a stop
       and start resumes claude with no client (process tree pasted). Needs
       `mux-guestd`'s `ensureSession` in the same base: test them together.
-- [ ] A tmux project on the same base: `repose-tmux-session` active and
-      the existing VM subtests unchanged (or, where VM tests cannot run
+- [ ] A tmux project on the same base: `repose-tmux-session` active,
+      the existing VM subtests unchanged and I-551's restart subtest
+      passing (or, where VM tests cannot run
       here, say so in STATUS).
 
 ### 3.3 mux-guestd (S3)

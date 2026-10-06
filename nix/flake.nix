@@ -209,7 +209,8 @@
         # agent on a running guest (DECISIONS I-496, I-503). It reads the
         # unit files' text, so it builds no part of the guest system. No
         # path unit may start a session before SetupProject writes this
-        # boot's project.json (I-503).
+        # boot's project.json (I-503); the tmux unit restarts its server
+        # on a running machine instead (I-551).
         guest-session-survives-switch =
           let
             units = self.guestSystem.config.systemd.user.units;
@@ -230,8 +231,13 @@
             if printf '%s\n' "$userUnits" | grep -q '^repose-tmux-session\.path$\|^repose-herdr-server\.path$'; then
               echo "a path unit starts a session unit" >&2; fail=1
             fi
+            # The tmux server exits with its last session; the unit brings
+            # it back, after the wait I-352's temporary-machine check needs
+            # (I-551).
+            grep -qx 'Restart=always' "$tmuxUnit" || { echo "the tmux session unit lacks Restart=always" >&2; fail=1; }
+            grep -qx 'RestartSec=5s' "$tmuxUnit" || { echo "the tmux session unit lacks RestartSec=5s" >&2; fail=1; }
             [ "$fail" = 0 ] || exit 1
-            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy; no path unit"
+            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy; no path unit; tmux Restart=always after 5s"
             touch $out
           '';
         # The herdr package's install check refuses a release whose socket

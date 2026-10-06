@@ -15,7 +15,9 @@
 # multiplexer made while stopped, the old multiplexer would start before
 # SetupProject wrote the new one. The path unit is gone; a guestd from
 # before I-503 starts this unit by name, which the ExecCondition allows
-# for every tmux project.
+# for every tmux project. Restart=always brings the session back after
+# the tmux server exits on a running machine, which the path unit used to
+# do (DECISIONS I-551).
 { config, lib, pkgs, ... }:
 let
   checkout = import ./checkout.nix { inherit pkgs; };
@@ -130,9 +132,15 @@ in
       # (DECISIONS I-503).
       ExecCondition = "${multiplexerIs}/bin/repose-multiplexer-is tmux";
       ExecStart = "${tmuxSession}/bin/repose-tmux-session";
-      # tmux server exits when the last session is killed; that is a clean
-      # stop, not a failure.
-      Restart = "no";
+      # The tmux server exits with its last session (`exit` in the last
+      # window, `tmux kill-server`); the unit then starts it again, so
+      # `repose attach` and `repose run "prompt"` find a session. The path
+      # unit did this until I-503 removed it (DECISIONS I-551). The 5 s
+      # wait lets the CLI's check after an attach on a temporary machine
+      # (I-352) see the session gone before it comes back. A skipped
+      # start (ExecCondition) and a `systemctl stop` are never restarted.
+      Restart = "always";
+      RestartSec = "5s";
       KillMode = "control-group";
       # The tmux server draws every pane, so it gets ten times a pane's
       # share of CPU (each pane is its own tmux-spawn scope at the default

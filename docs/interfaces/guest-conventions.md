@@ -101,6 +101,12 @@ the attach opens is `<name>`. guestd reads none of this.
   unit also started it once `project.json` existed; a base with I-503 has
   no path unit, and a guestd from before I-503 still starts this unit by
   name, which is right for every project on such a base.
+- When the tmux server exits on a running machine (`exit` in the last
+  window, `tmux kill-server`), the unit starts it again after 5 s
+  (`Restart=always`, `RestartSec=5s`, DECISIONS I-551), which the path
+  unit used to do at once. The wait lets the CLI's check after an attach
+  on a temporary machine (I-352) find the session gone. A start the
+  `ExecCondition` skipped and a `systemctl stop` are not restarted.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names
@@ -183,6 +189,8 @@ the attach opens is `<name>`. guestd reads none of this.
   both.
 - Neither unit is wanted by `default.target` and no path unit exists:
   nothing starts a session before `SetupProject` writes this boot's file.
+  Once started, the tmux unit restarts its server after 5 s when it
+  exits (I-551, see "tmux"); the herdr unit restarts on failure.
 - Both have `restartIfChanged = false` (I-496); `nix flake check`'s
   `guest-session-survives-switch` asserts `X-RestartIfChanged=false` on
   each.
@@ -190,7 +198,7 @@ the attach opens is `<name>`. guestd reads none of this.
   Until then the running unit stays, and the condition keeps the other
   from starting.
 
-## herdr (DECISIONS I-501, I-504..I-509)
+## herdr (DECISIONS I-501, I-504..I-509, I-551)
 
 Every guest has herdr from the base, whatever its multiplexer; only a
 project whose `project.json` names herdr runs its server.
@@ -219,8 +227,10 @@ project whose `project.json` names herdr runs its server.
   when the machine has none), it runs `herdr workspace create --cwd
   "$(repose-checkout)" --label <that name> --no-focus`. It exits 0 at
   once when `repose-herdr-server.service` is neither active nor
-  activating, waits up to 10 s for herdr to answer (exit 0 when it never
-  does), exits 1 only when the create fails, and is safe to run again. The CLI runs it after the first sync in place of the tmux
+  activating, waits at most 10 s of wall time for herdr to answer (each
+  `workspace list` capped at 2 s; exit 0 when it never does), gives the
+  create at most 5 s, exits 1 only when the create fails, and is safe to
+  run again (I-551). The CLI runs it after the first sync in place of the tmux
   `respawn-pane` (see "The checkout"); on a base without it the CLI skips
   the step. Another checkout's workspace (I-480) is labelled with that
   checkout's name and is made by the CLI when it first opens a tab there.

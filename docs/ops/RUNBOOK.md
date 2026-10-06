@@ -1089,7 +1089,13 @@ no herdr server, after a start.
    switched while running keeps the old unit until `repose stop` and
    `repose start`. `repose-multiplexer-is tmux; echo $?` (or `herdr`)
    gives the answer the unit got.
-3. herdr: `journalctl --user -u repose-herdr-server` and
+3. tmux, on a machine that had a session: the tmux server exited (`exit`
+   in the last window, `tmux kill-server`, an OOM kill). The unit starts
+   it again after 5 s (I-551); `systemctl --user show -p
+   NRestarts,ActiveState repose-tmux-session` shows the count, and
+   `activating` during the wait. A unit that stays inactive was stopped
+   by hand: `systemctl --user start repose-tmux-session`.
+4. herdr: `journalctl --user -u repose-herdr-server` and
    `~/.config/herdr/herdr-server.log`. A server that started but has no
    workspace in the checkout: run `repose-herdr-workspace` by hand. It
    exits 0 without a word when the herdr unit is not active, and names

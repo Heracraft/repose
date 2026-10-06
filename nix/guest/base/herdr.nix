@@ -21,7 +21,8 @@ let
   # the checkout's directory name (`home` on a machine with no checkout),
   # it creates one there without taking focus. The server unit runs it
   # after start; the CLI runs it after the first sync. Exits 0 when herdr
-  # is not running, and is safe to run again.
+  # is not running, and is safe to run again. At most 10 s waiting for
+  # herdr and 5 s for the create.
   workspace = pkgs.writeShellApplication {
     name = "repose-herdr-workspace";
     runtimeInputs = [ herdr checkout pkgs.jq pkgs.systemd pkgs.coreutils ];
@@ -31,9 +32,17 @@ let
         active|activating|reloading) ;;
         *) exit 0 ;;
       esac
+      # Bounded by wall time, not by tries: the step runs as
+      # ExecStartPost, inside the unit's start timeout and guestd's
+      # SetupProject budget, and a herdr that accepts the connection
+      # without answering (while it restores session.json) would make a
+      # count of tries take minutes. Each try gets at most 2 s of the 10.
       list=
-      for _ in $(seq 40); do
-        if list=$(timeout 5 herdr workspace list 2>/dev/null); then
+      deadline=$((SECONDS + 10))
+      while [ "$SECONDS" -lt "$deadline" ]; do
+        left=$((deadline - SECONDS))
+        if [ "$left" -gt 2 ]; then left=2; fi
+        if list=$(timeout "$left" herdr workspace list 2>/dev/null); then
           break
         fi
         list=
@@ -53,7 +62,7 @@ let
         '[.result.workspaces[]? | select(.label == $l)] | length > 0' >/dev/null 2>&1; then
         exit 0
       fi
-      if ! timeout 10 herdr workspace create --cwd "$dir" --label "$label" --no-focus >/dev/null; then
+      if ! timeout 5 herdr workspace create --cwd "$dir" --label "$label" --no-focus >/dev/null; then
         echo "repose-herdr-workspace: herdr could not create the workspace $label" >&2
         exit 1
       fi

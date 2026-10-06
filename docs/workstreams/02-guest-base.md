@@ -59,8 +59,11 @@ runner using the host's shared store. Everything in
   overrides ",*:Tc"`, `escape-time 10`, `focus-events on`), and a
   `repose-tmux-session.service` (user unit for `dev`, started at boot via
   `loginctl enable-linger dev`) that creates the session named after the
-  slug from `project.json`. guestd's `SetupProject` is what writes
-  `project.json` first; the unit waits on a path unit for that file.
+  slug from `project.json`. guestd's `SetupProject` writes this boot's
+  `project.json` and then starts the session unit its `multiplexer`
+  names; no path unit exists, and the unit's `ExecCondition` is
+  `repose-multiplexer-is tmux` (DECISIONS I-503). The unit starts the
+  tmux server again 5 s after it exits (I-551).
 - `nix/guest/base/agents.nix`: installs the five agents from
   `nix/overlay/agents/` (overlay in `nix/overlay/agents/default.nix`,
   wrappers in `nix/overlay/agents/wrap.nix`) plus `repose-hook`. Also

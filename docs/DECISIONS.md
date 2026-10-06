@@ -13338,3 +13338,51 @@ the proposal measures whether herdr's idle bridge cleanup closes bridges
 to machines nobody has selected, and how many ssh-prepare calls a bridge
 retrying against a stopped machine makes; a decision to discount bridges
 would be a new entry.
+
+**I-551. mux-base as built: the tmux unit restarts its server after
+5 s, and the herdr steps' exact rules.** (mux-base, 2026-10-05; amends
+I-501, I-503) Five points where the base differs from the spec
+`multiplexer-spec` wrote.
+
+1. The path unit I-503 removed also brought the session back on a
+running machine: systemd.path(5) checks the paths again when the unit
+it triggered stops, and `project.json` always exists, so `exit` in the
+last window or `tmux kill-server` got a new session at once. Without it
+the machine had no session until the next start, and `repose attach`
+and `repose run "prompt"` failed with tmux's "can't find session".
+`repose-tmux-session.service` now has `Restart=always` and
+`RestartSec=5s`. A start the `ExecCondition` skipped is never restarted,
+and neither is a `systemctl stop`, so I-503's rules hold. The 5 s let
+I-352's check after an attach (`tmux has-session` over the attach's ssh
+master) see the session gone on a temporary machine; the path unit
+came back at once and could beat that check. A CLI fallback (start the
+unit when `has-session` fails) was rejected: `internal/cli` is
+`mux-cli`'s, and the CLI is not the only reader of the session (guestd's
+tmux source, `repose ps`). The herdr unit keeps `Restart=on-failure`;
+how its server behaves with no pane left is for the temporary-machine
+check in `workstreams/16-multiplexer.md`.
+2. `repose-herdr-workspace` waits for herdr by wall time: at most 10 s,
+each `herdr workspace list` capped at 2 s, then at most 5 s for the
+create. A count of tries let a herdr that accepts without answering
+hold `ExecStartPost` for minutes, past the user manager's 90 s
+`TimeoutStartSec` (a failed start kills the server's cgroup) and
+guestd's 60 s `SetupProject` budget. Measured on kanali against a socket
+that never answers: 10.37 s, exit 0. It exits 0 at once when the unit's
+`ActiveState` is not `active`, `activating` or `reloading`, exits 0 when
+herdr never answers, and exits 1 only when the create fails, which the
+unit's `-` prefix ignores.
+3. `versions.json` holds herdr as `herdr.version`,
+`herdr.x86_64-linux.url` and `herdr.x86_64-linux.hash`, the agents'
+shape that `bump-agents-pr.sh` checks, in place of `herdr.sha256`.
+4. `repose-agent-setup` reinstalls herdr's integration when `herdr
+integration status` has no `<agent>: current ` line. herdr 0.9.3's
+`--outdated-only` prints an update notice and lists nothing
+(`src/cli/integration.rs`), so the spec's rule would never find an
+outdated integration. Not installed, `outdated (vN < vM)` and `needs
+repair (vN)` (an installed version at or above the expected one whose
+files are wrong) are all reinstalled.
+5. The seeded `config.toml` is written by the server unit's
+`ExecStartPre`, as dev, before herdr reads it, and only on a project
+that runs herdr. `repose-multiplexer-is` exits 2 for an argument other
+than `tmux` or `herdr`; systemd skips that start like a refusal, and the
+2 tells a broken unit apart from a refusal in the journal.
