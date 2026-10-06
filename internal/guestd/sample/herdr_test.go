@@ -121,17 +121,31 @@ func (f *fakeHerdr) requests() ([]string, int) {
 }
 
 // agents builds an agent_list result. Each row is pane, workspace, name,
-// agent, status, seq.
+// agent, status, seq; no row carries a completion_seq.
 func agentsResult(rows ...[6]string) string {
+	full := make([][7]string, len(rows))
+	for i, r := range rows {
+		copy(full[i][:], r[:])
+	}
+	return agentsDone(full...)
+}
+
+// agentsDone is agentsResult with a seventh column, completion_seq,
+// left out of the row when empty (herdr skips a None).
+func agentsDone(rows ...[7]string) string {
 	var parts []string
 	for _, r := range rows {
 		name := ""
 		if r[2] != "" {
 			name = fmt.Sprintf(`"name":%q,`, r[2])
 		}
+		done := ""
+		if r[6] != "" {
+			done = fmt.Sprintf(`"completion_seq":%s,`, r[6])
+		}
 		parts = append(parts, fmt.Sprintf(
-			`{"terminal_id":"term_1","pane_id":%q,"workspace_id":%q,%s"agent":%q,"agent_status":%q,"state_change_seq":%s,"tab_id":"w1:t1","focused":true,"revision":0}`,
-			r[0], r[1], name, r[3], r[4], r[5]))
+			`{"terminal_id":"term_1","pane_id":%q,"workspace_id":%q,%s"agent":%q,"agent_status":%q,"state_change_seq":%s,%s"tab_id":"w1:t1","focused":true,"revision":0}`,
+			r[0], r[1], name, r[3], r[4], r[5], done))
 	}
 	return `{"type":"agent_list","agents":[` + strings.Join(parts, ",") + `]}`
 }
@@ -187,7 +201,7 @@ func TestHerdrWorkingThenDoneGemini(t *testing.T) {
 		t.Fatalf("states = %v events = %v, want working and no event", states, events)
 	}
 
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "done", "2"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "gemini", "gemini", "done", "2", "2"}))
 	for i := 0; i < 3; i++ {
 		clk.advance(Interval)
 		w.Refresh(ctx)
@@ -213,14 +227,14 @@ func TestHerdrWorkingThenDoneGemini(t *testing.T) {
 }
 
 // Two transitions between polls (a turn shorter than a refresh): the
-// sequence moved and the status reads idle, so one completion.
+// completion sequence rose, so one completion.
 func TestHerdrSequenceJumpGivesOneCompletion(t *testing.T) {
 	f := newFakeHerdr(t)
 	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
 	ctx := context.Background()
 	f.set("agent.list", agentsResult([6]string{"w1:p2", "w1", "", "pi", "idle", "4"}))
 	w.Refresh(ctx)
-	f.set("agent.list", agentsResult([6]string{"w1:p2", "w1", "", "pi", "idle", "6"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p2", "w1", "", "pi", "idle", "6", "6"}))
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	clk.advance(Interval)
@@ -228,6 +242,36 @@ func TestHerdrSequenceJumpGivesOneCompletion(t *testing.T) {
 	_, events, _ := rec.snapshot()
 	if len(events) != 1 || events[0] != "pi/pi w1:p2=completed:pi went idle" {
 		t.Fatalf("events = %v, want one completion", events)
+	}
+}
+
+// An agent coming up: herdr lists a named pane as unknown before its
+// process is found, then idle with a higher state_change_seq. herdr sets
+// no completion_seq for that, and neither does guestd (DECISIONS I-561).
+// The same holds for a pane respawn, which starts at unknown again.
+func TestHerdrUnknownToIdleIsNoCompletion(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	ctx := context.Background()
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "unknown", "0"}))
+	w.Refresh(ctx)
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "idle", "1"}))
+	for i := 0; i < 3; i++ {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+	}
+	if _, events, _ := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("events = %v, want none for an agent coming up idle", events)
+	}
+	// A completion herdr had already recorded before the first read is
+	// no new turn either.
+	f.set("agent.list", agentsDone([7]string{"w1:p2", "w1", "", "pi", "idle", "9", "9"}))
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if _, events, _ := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("events = %v, want none for a completion older than the first read", events)
 	}
 }
 
@@ -239,7 +283,7 @@ func TestHerdrHookedAgentRaisesNoCompletion(t *testing.T) {
 	ctx := context.Background()
 	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "claude", "claude", "working", "1"}))
 	w.Refresh(ctx)
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "claude", "claude", "done", "2"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "claude", "claude", "done", "2", "2"}))
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	if _, events, _ := rec.snapshot(); len(events) != 0 {
@@ -366,6 +410,133 @@ func TestDownWarningsFollowProjectJSON(t *testing.T) {
 	}
 }
 
+// setupSlug is a herdr project whose SetupProject has or has not run.
+type setupSlug struct {
+	muxSlug
+	done *bool
+}
+
+func (s setupSlug) SetupDone() bool { return *s.done }
+
+// A boot of a herdr project: project.json is the last boot's, and hostd
+// sends SetupProject, which starts the herdr server, only after
+// RegisterPaths, WriteSecrets and SetPrincipals. Until then no refresh
+// counts toward herdr_down; after it, two failed refreshes do (I-562).
+func TestHerdrDownWaitsForSetup(t *testing.T) {
+	w, _, rec, clk, _ := newHerdrWatcher(t, nil, multiplexer.Herdr, nil)
+	done := false
+	w.slugs = setupSlug{muxSlug{"todo-app", multiplexer.Herdr}, &done}
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		w.Refresh(ctx)
+		clk.advance(Interval)
+	}
+	if _, _, warns := rec.snapshot(); len(warns) != 0 {
+		t.Fatalf("warns before SetupProject = %v", warns)
+	}
+	done = true
+	w.Refresh(ctx)
+	if _, _, warns := rec.snapshot(); len(warns) != 0 {
+		t.Fatalf("warns at the first refresh after SetupProject = %v", warns)
+	}
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if _, _, warns := rec.snapshot(); len(warns) != 1 || warns[0] != WarnHerdrDown {
+		t.Fatalf("warns = %v, want herdr_down at the second refresh after SetupProject", warns)
+	}
+
+	// A guestd restarted on a running machine gets no SetupProject: the
+	// wait ends SessionGrace after it started.
+	w, _, rec, clk, _ = newHerdrWatcher(t, nil, multiplexer.Tmux, nil)
+	never := false
+	w.slugs = setupSlug{muxSlug{"todo-app", multiplexer.Tmux}, &never}
+	w.Refresh(ctx)
+	if _, _, warns := rec.snapshot(); len(warns) != 0 {
+		t.Fatalf("tmux project, before the grace: warns = %v", warns)
+	}
+	clk.advance(SessionGrace)
+	w.Refresh(ctx)
+	if _, _, warns := rec.snapshot(); len(warns) != 1 || warns[0] != WarnTmuxDown {
+		t.Fatalf("tmux project, after the grace: warns = %v, want tmux_down", warns)
+	}
+}
+
+// herdr restarting every minute (Restart=on-failure) sends herdr_down at
+// most once per 10 minutes, and a server still down when the 10 minutes
+// pass is announced then (vsock-guestd.md Notify; I-507, I-562).
+func TestHerdrDownFlapSendsOncePerRepeat(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "claude", "claude", "working", "1"}))
+	ctx := context.Background()
+	flap := func(down bool) {
+		f.setHangup(down)
+		for i := 0; i < HerdrDownAfter+1; i++ {
+			clk.advance(Interval)
+			w.Refresh(ctx)
+		}
+	}
+	w.Refresh(ctx)
+	flap(true)
+	flap(false)
+	flap(true)
+	flap(false)
+	flap(true)
+	if _, _, warns := rec.snapshot(); len(warns) != 1 || warns[0] != WarnHerdrDown {
+		t.Fatalf("warns = %v, want one herdr_down within 10 minutes", warns)
+	}
+	// Still down when the 10 minutes are up: the second one goes out.
+	clk.advance(WarnRepeat)
+	w.Refresh(ctx)
+	if _, _, warns := rec.snapshot(); len(warns) != 2 {
+		t.Fatalf("warns = %v, want a second herdr_down after WarnRepeat", warns)
+	}
+}
+
+// A tmux window and a herdr agent share the name claude, so the herdr one
+// is `claude (herdr)`. The tmux window, waiting for input, closes: the key
+// claude passes to the herdr agent, which reads its own state, and a hook
+// the herdr agent had moves with it.
+func TestHookStaysWithItsAgentWhenTheKeyMoves(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, run, _, clk, p := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	tmuxSocketFile(t, p)
+	writeProc(t, p, []fakeProc{{pid: 100, ppid: 1, comm: "bash"}, {pid: 101, ppid: 100, comm: "claude"}})
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "claude", "claude", "idle", "1"}))
+	ctx := context.Background()
+	w.Refresh(ctx)
+	w.RecordHook("claude", KindNeedsInput, clk.now())
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if got := agentStates(w); got["claude"] != "claude:needs_input" || got["claude (herdr)"] != "claude:idle" {
+		t.Fatalf("agents = %v", got)
+	}
+
+	run.Match["list-windows"] = tmuxOutput()
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if got := agentStates(w); got["claude"] != "claude:idle" || len(got) != 1 {
+		t.Fatalf("agents after the tmux window closed = %v, want the herdr claude idle", got)
+	}
+
+	// The other way: the herdr agent's own hook follows it to the new key.
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	key, ok := w.ResolveHerdr(ctx, "w1:p1")
+	if !ok || key != "claude (herdr)" {
+		t.Fatalf("ResolveHerdr = %q, %v", key, ok)
+	}
+	w.RecordHook(key, KindNeedsInput, clk.now())
+	run.Match["list-windows"] = tmuxOutput()
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if got := agentStates(w); got["claude"] != "claude:needs_input" {
+		t.Fatalf("agents = %v, want the herdr claude's hook kept under its new key", got)
+	}
+}
+
 // A reply over 1 MiB is dropped without being decoded.
 func TestHerdrReplyOverTheCapIsDropped(t *testing.T) {
 	f := newFakeHerdr(t)
@@ -383,13 +554,13 @@ func TestHerdrReplyOverTheCapIsDropped(t *testing.T) {
 
 // The decoder holds six fields, and nothing else herdr sends (titles, cwd,
 // the agent session, tokens) reaches an AgentProc or a log line.
-func TestHerdrDecoderKeepsSixFields(t *testing.T) {
+func TestHerdrDecoderKeepsSevenFields(t *testing.T) {
 	var fields []string
 	rt := reflect.TypeOf(herdrAgent{})
 	for i := 0; i < rt.NumField(); i++ {
 		fields = append(fields, rt.Field(i).Tag.Get("json"))
 	}
-	if got := strings.Join(fields, ","); got != "pane_id,workspace_id,name,agent,agent_status,state_change_seq" {
+	if got := strings.Join(fields, ","); got != "pane_id,workspace_id,name,agent,agent_status,state_change_seq,completion_seq" {
 		t.Fatalf("decoder fields = %s", got)
 	}
 
@@ -523,7 +694,7 @@ func TestHerdrRestartInTheGraceSendsNoCompletion(t *testing.T) {
 	f := newFakeHerdr(t)
 	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
 	ctx := context.Background()
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "idle", "12"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "gemini", "gemini", "idle", "12", "12"}))
 	w.Refresh(ctx)
 	f.setHangup(true)
 	for i := 0; i < HerdrGraceRefreshes; i++ {
@@ -531,7 +702,7 @@ func TestHerdrRestartInTheGraceSendsNoCompletion(t *testing.T) {
 		w.Refresh(ctx)
 	}
 	f.setHangup(false)
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "idle", "1"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "gemini", "gemini", "idle", "1", "1"}))
 	for i := 0; i < 2; i++ {
 		clk.advance(Interval)
 		w.Refresh(ctx)
@@ -540,7 +711,7 @@ func TestHerdrRestartInTheGraceSendsNoCompletion(t *testing.T) {
 		t.Fatalf("events = %v, want none after a restart", events)
 	}
 	// The next turn on the new server still completes.
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "done", "3"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "gemini", "gemini", "done", "3", "3"}))
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	if _, events, _ := rec.snapshot(); len(events) != 1 {
@@ -554,9 +725,9 @@ func TestHerdrLowerSequenceSendsNoCompletion(t *testing.T) {
 	f := newFakeHerdr(t)
 	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
 	ctx := context.Background()
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "", "pi", "idle", "37"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "", "pi", "idle", "37", "37"}))
 	w.Refresh(ctx)
-	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "", "pi", "idle", "0"}))
+	f.set("agent.list", agentsDone([7]string{"w1:p1", "w1", "", "pi", "idle", "2", "2"}))
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	if _, events, _ := rec.snapshot(); len(events) != 0 {

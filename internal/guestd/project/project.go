@@ -64,6 +64,9 @@ type Handler struct {
 	mu   sync.RWMutex
 	slug string
 	mux  string
+	// setup is true once Setup has reached the session unit since this
+	// guestd started, whether or not the unit started.
+	setup bool
 }
 
 // New builds the handler and loads the slug from a project.json left by an
@@ -86,6 +89,15 @@ func (h *Handler) Multiplexer() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.mux
+}
+
+// SetupDone is true once SetupProject has asked for the session unit since
+// guestd started. Until then no tmux or herdr server is expected
+// (DECISIONS I-562).
+func (h *Handler) SetupDone() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.setup
 }
 
 // Slug is the current project slug, or "" before the first SetupProject.
@@ -158,14 +170,19 @@ func (h *Handler) Setup(ctx context.Context, req *guestdv1.SetupProject) error {
 	// tmux for a project_json without the key (an api before I-502).
 	info, _ := h.load()
 	mux := multiplexer.Normalize(info.Multiplexer)
-	if err := h.ensureSession(ctx, mux); err != nil {
+	err = h.ensureSession(ctx, mux)
+	h.mu.Lock()
+	// A unit that failed to start is a server that is down: the
+	// warnings may say so, for the multiplexer project.json now names.
+	h.setup = true
+	h.mux = mux
+	if err == nil {
+		h.slug = slug
+	}
+	h.mu.Unlock()
+	if err != nil {
 		return err
 	}
-
-	h.mu.Lock()
-	h.slug = slug
-	h.mux = mux
-	h.mu.Unlock()
 
 	// The slug is a name the user chose, so it stays out of the line; the
 	// project id from project.json is the identifier that may be logged.

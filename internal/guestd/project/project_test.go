@@ -313,3 +313,26 @@ func TestSetupReportsAFailedHerdrStart(t *testing.T) {
 		t.Fatalf("err = %v, want the herdr unit's failure", err)
 	}
 }
+
+// SetupDone is false at New, even with an earlier boot's project.json, and
+// true after Setup, also when the session unit failed to start (I-562).
+func TestSetupDoneOnlyAfterSetup(t *testing.T) {
+	h, p, run := newHandler(t)
+	if err := h.Setup(context.Background(), req()); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !h.SetupDone() {
+		t.Fatal("SetupDone() is false after Setup")
+	}
+	fresh := New(p, run, quietLog())
+	if fresh.SetupDone() {
+		t.Fatal("SetupDone() is true for a guestd that has run no Setup")
+	}
+	run.Match["start "+TmuxUnit] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("Failed to start")}
+	if err := fresh.Setup(context.Background(), req()); err == nil {
+		t.Fatal("a failed unit start was reported as success")
+	}
+	if !fresh.SetupDone() {
+		t.Fatal("SetupDone() is false after a Setup whose unit failed to start")
+	}
+}

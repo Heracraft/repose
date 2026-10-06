@@ -135,13 +135,26 @@ func TestHerdrHookWindows(t *testing.T) {
 }
 
 // A herdr project whose herdr never answers warns herdr_down, not
-// tmux_down, though no tmux runs either.
+// tmux_down, though no tmux runs either. The warning waits for this
+// boot's SetupProject, which is what starts the herdr server (I-562).
 func TestHerdrProjectWarnsHerdrDown(t *testing.T) {
+	const pj = `{"slug":"todo-app","multiplexer":"herdr"}`
 	h := newHarness(t, func(h *harness) {
 		mustMkdir(t, filepath.Dir(h.paths.ProjectJSON()))
-		mustWrite(t, h.paths.ProjectJSON(), `{"slug":"todo-app","multiplexer":"herdr"}`)
+		mustWrite(t, h.paths.ProjectJSON(), pj)
 		h.runner.Match["list-windows"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("no server running on /tmp/tmux-1000/default")}
 	})
+	for i := 0; i < 3; i++ {
+		h.srv.watcher.Refresh(context.Background())
+	}
+	for _, n := range h.seen() {
+		if n.GetWarning() != nil {
+			t.Fatalf("warning %q before SetupProject", n.GetWarning().GetKind())
+		}
+	}
+	if err := h.srv.project.Setup(context.Background(), &guestdv1.SetupProject{ProjectSlug: "todo-app", ProjectJson: []byte(pj)}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 	for i := 0; i < 3; i++ {
 		h.srv.watcher.Refresh(context.Background())
 	}

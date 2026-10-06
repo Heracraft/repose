@@ -47,8 +47,7 @@ listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
 of the rule. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
-the attach opens is `<name>`. guestd reads the list only to prefix herdr
-agent keys (see "herdr", Agent keys; DECISIONS I-504).
+the attach opens is `<name>`. guestd reads none of this.
 
 ## Filesystem
 
@@ -238,15 +237,20 @@ project whose `project.json` names herdr runs its server.
   `{"id":"g<n>","method":"agent.list","params":{}}` (answer
   `result.type == "agent_list"`, `result.agents[]`). guestd's decoder
   holds only `pane_id`, `workspace_id`, `name`, `agent`, `agent_status`
-  (`idle|working|blocked|done|unknown`) and `state_change_seq`; every
-  other field is dropped unread. guestd never sends `session.snapshot`,
+  (`idle|working|blocked|done|unknown`), `state_change_seq` and
+  `completion_seq` (absent unless the current idle state finished a
+  turn; I-561); every other field is dropped unread. A herdr before 0.9.2,
+  which has no `completion_seq`, reports no finished turns, and states still come
+  through. guestd never sends `session.snapshot`,
   `pane.process_info`, `pane.read` or anything that changes herdr's
   state. Workspace labels come from `workspace.list`, decoded to `id`
   and `label` only, at most once a minute and on a `workspace_id` the
   last `workspace.list` was not asked about; a failed one, or one that
-  lacks an agent's workspace, waits the minute. `state_change_seq`
-  counts from 0 in each herdr server process, so the first read after a
-  failed one records it and marks no turn finished.
+  lacks an agent's workspace, waits the minute. A `completion_seq` above
+  the previous read's for that pane is a finished turn. Both sequences
+  count from 0 in each herdr server process, so the first read after a
+  failed one records them and marks no turn finished, and a lower
+  `state_change_seq` is a restart (I-561).
 - **Agent keys.** What guestd reports as an agent's window (`AgentProc`,
   `AgentEvent` and `Question` `tmux_window`, the api's `window`): the
   herdr agent `name` when set (the CLI names agents `claude`,
@@ -256,7 +260,9 @@ project whose `project.json` names herdr runs its server.
   give the same key in one refresh, the herdr one is `<key> (herdr)`; a
   refresh that cannot read tmux keeps the window names of the last one
   that could. Two herdr agents with one key: the first is reported, and
-  a hook from the other's pane is unresolved.
+  a hook from the other's pane is unresolved. A key that passes between
+  a tmux window and a herdr agent drops its recorded hook; a herdr
+  agent whose key changes keeps its hook (I-561).
   At most 64 bytes, cut on a rune boundary. Only agents whose `agent` is
   one of the five are reported.
 - **Agent wrappers** export `HERDR_AGENT=<binary>` beside
@@ -560,8 +566,9 @@ name or executable is the agent's binary), -800 for the herdr server (the
 process named `herdr` in `repose-herdr-server.service` whose parent is
 dev's `systemd --user`) and for each process in its tree whose name or
 executable is one of the five agents' binaries, the shallowest per
-branch (I-505; `node` is left out there, so Gemini CLI under herdr is
-protected only as a process named `gemini`, I-535), and 0 for any other `dev`
+branch (I-505; `node` is left out there, and Gemini CLI runs as `node`
+(I-46), so under herdr it gets no -800 until herdr reports a pane's
+root pid, I-535), and 0 for any other `dev`
 process holding a negative value (it inherited the agent's or the tmux
 server's on fork: a dev server an agent started, a pane's shell). A
 positive value the user set is left alone, and nothing is ever killed or

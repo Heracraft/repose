@@ -50,7 +50,7 @@ var (
 )
 
 // herdrAgent is the decoder for one agent.list entry. It holds exactly
-// these six fields; encoding/json drops every other one unread (titles,
+// these seven fields; encoding/json drops every other one unread (titles,
 // cwd, the agent session among them, R5-3).
 type herdrAgent struct {
 	PaneID         string `json:"pane_id"`
@@ -59,6 +59,11 @@ type herdrAgent struct {
 	Agent          string `json:"agent"`
 	AgentStatus    string `json:"agent_status"`
 	StateChangeSeq uint64 `json:"state_change_seq"`
+	// CompletionSeq is the sequence number of the change that finished
+	// the agent's last turn, absent while the current state is no
+	// finished turn. herdr leaves it unset when an agent first comes up
+	// idle (DECISIONS I-561).
+	CompletionSeq *uint64 `json:"completion_seq"`
 }
 
 // herdrWorkspace is the decoder for one workspace.list entry: id and label
@@ -115,10 +120,12 @@ type herdrSource struct {
 	misses int
 	// last is the previous successful read, kept for the EOF grace.
 	last []Pane
-	// seq is each pane's state_change_seq at the previous read. herdr
-	// counts it per server process from 0, so a read after a failure (a
-	// restart, maybe) only records it.
-	seq map[string]uint64
+	// seq is each pane's state_change_seq at the previous read, and done
+	// its completion_seq (0 when absent). herdr counts both per server
+	// process from 0, so a read after a failure (a restart, maybe) only
+	// records them.
+	seq  map[string]uint64
+	done map[string]uint64
 	// labels is the workspace id -> label map, read at labelsAt.
 	labels   map[string]string
 	labelsAt time.Time
@@ -135,7 +142,7 @@ func newHerdrSource(p sysdep.Paths, uid int, log *slog.Logger, now func() time.T
 	h := &herdrSource{
 		paths: p, socket: p.HerdrSock(), uid: uid, log: log, now: now,
 		mu:  newCtxMutex(),
-		seq: map[string]uint64{}, keys: map[string]string{},
+		seq: map[string]uint64{}, done: map[string]uint64{}, keys: map[string]string{},
 	}
 	h.checkouts = h.readCheckouts
 	return h
@@ -175,7 +182,7 @@ func (h *herdrSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 			return kept, false, nil
 		}
 		h.last, h.keys = nil, map[string]string{}
-		h.seq = map[string]uint64{}
+		h.seq, h.done = map[string]uint64{}, map[string]uint64{}
 		return nil, false, nil
 	}
 	h.misses = 0
@@ -185,6 +192,7 @@ func (h *herdrSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 
 	panes := make([]Pane, 0, len(agents))
 	seq := make(map[string]uint64, len(agents))
+	doneSeq := make(map[string]uint64, len(agents))
 	keys := make(map[string]string, len(agents))
 	for _, a := range agents {
 		if !isAgentName(a.Agent) || a.PaneID == "" {
@@ -195,15 +203,23 @@ func (h *herdrSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 			state = StateUnknown
 		}
 		prev, seen := h.seq[a.PaneID]
-		// Within one server the sequence only grows; a lower one is a
-		// restart between two refreshes.
-		done := seen && !baseline && a.StateChangeSeq > prev && (a.AgentStatus == "idle" || a.AgentStatus == "done")
+		completion := uint64(0)
+		if a.CompletionSeq != nil {
+			completion = *a.CompletionSeq
+		}
+		// A turn finished when completion_seq rose, even one shorter than
+		// a refresh. herdr sets it only for idle reached from working or
+		// blocked, so an agent coming up idle finishes nothing. Within one
+		// server the sequence only grows; a lower one is a restart between
+		// two refreshes.
+		done := seen && !baseline && a.StateChangeSeq >= prev && completion > h.done[a.PaneID]
 		seq[a.PaneID] = a.StateChangeSeq
+		doneSeq[a.PaneID] = completion
 		key := h.keyOf(a, checkouts)
 		keys[a.PaneID] = key
 		panes = append(panes, Pane{Key: key, Agent: a.Agent, Ref: a.PaneID, Reported: state, Done: done})
 	}
-	h.seq, h.keys = seq, keys
+	h.seq, h.done, h.keys = seq, doneSeq, keys
 	h.last = make([]Pane, len(panes))
 	copy(h.last, panes)
 	return panes, true, nil

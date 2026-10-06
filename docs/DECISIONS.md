@@ -13194,19 +13194,15 @@ answers one request per connection), refuses a peer whose `SO_PEERCRED`
 uid is not dev's (guestd is root and the path is dev's to replace), sends
 `ping` after any failed dial, `agent.list` on every refresh and
 `workspace.list` (decoded to `id` and `label`, to match checkout names)
-at most once a minute and at once for a `workspace_id` the last read was
-not asked about (a failed read, or one that lacks an agent's workspace,
-waits the minute), and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
+at most once a minute, and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
 keeps `pane_id`, `workspace_id`, `name`, `agent`, `agent_status` and
 `state_change_seq` and drops every other field, titles and the agent
 session among them; guestd never calls `session.snapshot` or
 `pane.process_info`, whose answers carry cwd, argv and cmdline (R5-3).
 States map `working` to working, `blocked` to needs_input, `idle` and
-`done` to idle, and `unknown` to unknown. A `state_change_seq` that rose
+`done` to idle, and `unknown` to unknown. A `state_change_seq` that moved
 while the status reads `idle` or `done` is a finished turn, even one
-shorter than a refresh. herdr counts the sequence per server process from
-0 and never saves it, so the first read after a failed one only records
-the sequence, and a lower one is a restart, never a finished turn; for gemini and pi, which have no hook, it raises
+shorter than a refresh; for gemini and pi, which have no hook, it raises
 the `completed` event (`<agent> went idle`) that I-49's heuristic raises
 under tmux, and for hooked agents it raises nothing, so no event arrives
 twice. A protocol below 22, or a refused dial for two refreshes on a
@@ -13215,7 +13211,7 @@ state for two refreshes before going `unknown`, so a herdr restart that
 resumes its agents shows no flap. Events only was rejected: a missed
 subscription or `events_lost` leaves a wrong state until something else
 changes. `events.subscribe` may later wake the watcher early; the poll
-stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSixFields`, `TestHerdrAgentKeys`, `TestHerdrRestartInTheGraceSendsNoCompletion`, `TestHerdrLowerSequenceSendsNoCompletion`, `TestHerdrLabelsAreNotReadEveryRefresh`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
+stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSevenFields`, `TestHerdrAgentKeys`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
 
 **I-505. The herdr server and its agents get I-200's memory protection
 and run at nice -5.** (multiplexer-spec, 2026-10-05; owner decision 7;
@@ -13339,8 +13335,68 @@ also carries argv and cwd (R5-3). Protecting every shallowest `node` in
 the tree would put a vite or a test runner at -800, which is the
 opposite of I-200. So the herdr walk looks for `claude`, `opencode`,
 `codex`, `gemini` and `pi` (and nix's `.X-wrapped` names) only, and
-Gemini CLI under herdr runs at the kernel's default unless its process
-is named `gemini`. The herdr server itself is protected as I-505 says,
+Gemini CLI under herdr gets no -800: it runs as `node` (I-46), so no
+process of it is named `gemini`, and it stays at the kernel's default
+until herdr reports a pane's root pid. The herdr server itself is protected as I-505 says,
 and its pane shells and their children are set back to 0 when they hold
 a negative value. Revisit when herdr reports a pane's root pid in
 `agent.list` without argv or cwd.
+
+**I-561. A herdr agent's turn finishes when `completion_seq` rises, the
+read after a failed one is a baseline, and of two herdr agents with one
+key the first is reported.** (mux-guestd, 2026-10-06;
+amends I-504 and I-506) I-504 took a `state_change_seq` that moved while
+the status reads `idle` or `done` as a finished turn. herdr bumps that
+sequence on every state change, including `unknown` to `idle` when a
+named agent's process is first found or a pane respawns, which herdr
+itself does not count as a completion (herdr 0.9.3+42,
+`finish_agent_process_acquisition`). That sent `gemini went idle` for an
+agent that had run no turn. The decoder now keeps a seventh field,
+`completion_seq` (a number or absent, no tenant text), which herdr sets
+only for idle reached from working or blocked, and clears at the next
+change. A `completion_seq` above the one the previous read saw for that
+pane is a finished turn, even one shorter than a refresh. herdr counts
+both sequences per server process from 0 and never saves them, so the
+first read after a failed one only records them, and a `state_change_seq`
+lower than the previous read's is a restart, never a finished turn.
+`workspace.list` goes at most once a minute, and at once for a
+`workspace_id` the last `workspace.list` was not asked about; a failed
+one, or one that lacks an agent's workspace, waits the minute. Keys: a
+refresh that cannot read tmux keeps the tmux window names of the last
+one that could, so a `<key> (herdr)` does not flip to `<key>`; of two
+herdr agents with one key, the first in `agent.list` is reported, and a
+hook from the other's pane is unresolved (I-506's no-state rule); a key
+that passes from a tmux window to a herdr agent, or the other way, drops
+the hook recorded on it, and a herdr agent whose key changes keeps its
+hook. Built: `herdrSource.Panes` and `Watcher.refreshPanes` in
+`internal/guestd/sample`; `TestHerdrUnknownToIdleIsNoCompletion`,
+`TestHerdrSequenceJumpGivesOneCompletion`,
+`TestHerdrRestartInTheGraceSendsNoCompletion`,
+`TestHerdrLowerSequenceSendsNoCompletion`,
+`TestHerdrLabelsAreNotReadEveryRefresh`,
+`TestHerdrDuplicateKeyHookResolvesToNothing`,
+`TestHerdrKeyKeepsItsSuffixWhileTmuxIsUnreadable`,
+`TestHookStaysWithItsAgentWhenTheKeyMoves`.
+
+**I-562. `tmux_down` and `herdr_down` wait for this boot's SetupProject,
+and the watcher sends each warning kind at most once per 10 minutes.**
+(mux-guestd, 2026-10-06; amends I-29 and I-507) The session unit starts
+only at SetupProject (I-503), which hostd sends after RegisterPaths,
+WriteSecrets and SetPrincipals, while guestd's watcher starts at boot
+with the multiplexer the last boot's `project.json` named. A boot whose
+chain took longer than a refresh sent `herdr_down` (or `tmux_down`)
+before the server had been asked to start. guestd now counts no refresh
+toward either warning until SetupProject has run since guestd started,
+whether or not the unit started, or until 60 s after guestd started, the
+end for a guestd restarted on a running machine, which gets no
+SetupProject. `herdr_down` then needs two failed refreshes counted from
+that point. The contract already said each kind is sent at most once per
+10 minutes, but the watcher sent again each time a condition cleared and
+came back, so a herdr restarting every minute (`Restart=on-failure`)
+sent `herdr_down` every minute. The watcher's warnings (`tmux_down`,
+`herdr_down`, `docker_down`) now keep a last-sent time per kind, and a
+condition that holds when the 10 minutes pass is sent then. Built:
+`Handler.SetupDone` in `internal/guestd/project`, `sessionExpected` and
+`oneShot` in `internal/guestd/sample`; `TestSetupDoneOnlyAfterSetup`,
+`TestHerdrDownWaitsForSetup`, `TestHerdrDownFlapSendsOncePerRepeat`,
+`TestHerdrProjectWarnsHerdrDown`.

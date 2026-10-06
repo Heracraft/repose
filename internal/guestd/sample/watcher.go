@@ -9,6 +9,7 @@ import (
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/guestd/warn"
 	"github.com/heracraft/repose/internal/multiplexer"
 )
 
@@ -56,6 +57,14 @@ const (
 	// longer waits for docker.service at boot (DECISIONS I-161), and dockerd
 	// takes 2 to 3 s to answer on a small guest.
 	DockerGrace = 60 * time.Second
+	// SessionGrace is how long after guestd starts tmux_down and
+	// herdr_down wait for this boot's SetupProject, which is what starts
+	// the session unit (DECISIONS I-562). A guestd restarted on a running
+	// machine gets no SetupProject, so the wait ends here.
+	SessionGrace = 60 * time.Second
+	// WarnRepeat is the least time between two warnings of one kind
+	// (vsock-guestd.md, Notify), the same as the warn package's.
+	WarnRepeat = warn.Repeat
 )
 
 // Emitter receives the watcher's notifications. The server's notify queue
@@ -76,6 +85,12 @@ type SlugSource interface{ Slug() string }
 type MultiplexerSource interface {
 	SlugSource
 	Multiplexer() string
+}
+
+// SetupSource is a SlugSource that says whether SetupProject has run since
+// guestd started. A SlugSource without it counts as set up.
+type SetupSource interface {
+	SetupDone() bool
 }
 
 type hookRecord struct {
@@ -139,8 +154,14 @@ type Watcher struct {
 	// an earlier pane had their key: a hook from one changes no state.
 	herdrDropped map[string]bool
 	// warned remembers which one-shot warnings have been sent, so tmux_down
-	// and docker_down are announced once rather than every five seconds.
-	warned map[string]bool
+	// and docker_down are announced once rather than every five seconds,
+	// and warnedAt when each kind was last sent, so a condition that
+	// flaps sends at most one per WarnRepeat.
+	warned   map[string]bool
+	warnedAt map[string]time.Time
+	// herdrDown counts refreshes in a row that could not read herdr,
+	// from the point the session warnings may go out (I-562).
+	herdrDown int
 }
 
 // NewWatcher builds a watcher. now may be nil for time.Now.
@@ -150,19 +171,20 @@ func NewWatcher(p sysdep.Paths, run sysdep.Runner, docker sysdep.Docker, slugs S
 	}
 	uid, _ := sysdep.DevIdentity()
 	return &Watcher{
-		paths:   p,
-		tmux:    &tmuxSource{client: tmuxClient{paths: p, run: run}, slugs: slugs, uid: uid},
-		herdr:   newHerdrSource(p, uid, log, now),
-		procs:   newProcReader(p),
-		docker:  docker,
-		slugs:   slugs,
-		emit:    emit,
-		log:     log,
-		now:     now,
-		windows: map[string]*windowState{},
-		hooks:   map[string]hookRecord{},
-		warned:  map[string]bool{},
-		started: now(),
+		paths:    p,
+		tmux:     &tmuxSource{client: tmuxClient{paths: p, run: run}, slugs: slugs, uid: uid},
+		herdr:    newHerdrSource(p, uid, log, now),
+		procs:    newProcReader(p),
+		docker:   docker,
+		slugs:    slugs,
+		emit:     emit,
+		log:      log,
+		now:      now,
+		windows:  map[string]*windowState{},
+		hooks:    map[string]hookRecord{},
+		warned:   map[string]bool{},
+		warnedAt: map[string]time.Time{},
+		started:  now(),
 	}
 }
 
@@ -229,6 +251,15 @@ func (w *Watcher) refreshProcs() {
 	}
 }
 
+// sessionExpected is true once this guestd has run SetupProject, or
+// SessionGrace after it started.
+func (w *Watcher) sessionExpected() bool {
+	if s, ok := w.slugs.(SetupSource); ok && !s.SetupDone() {
+		return w.now().Sub(w.started) >= SessionGrace
+	}
+	return true
+}
+
 // multiplexer is what project.json names, tmux when the slug source cannot
 // say.
 func (w *Watcher) multiplexer() string {
@@ -285,10 +316,22 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	}
 	herdrPanes, herdrUp, _ := w.herdr.Panes(ctx)
 
-	if tmuxErr == nil {
-		w.oneShot(WarnTmuxDown, mux == multiplexer.Tmux && !tmuxUp, "no tmux server is running for dev")
+	// Only SetupProject starts the session unit, so before it neither
+	// server is expected (I-562).
+	gate := w.sessionExpected()
+	w.mu.Lock()
+	switch {
+	case herdrUp || !gate:
+		w.herdrDown = 0
+	default:
+		w.herdrDown++
 	}
-	w.oneShot(WarnHerdrDown, mux == multiplexer.Herdr && !herdrUp && w.herdr.Misses() >= HerdrDownAfter,
+	herdrDown := w.herdrDown
+	w.mu.Unlock()
+	if tmuxErr == nil {
+		w.oneShot(WarnTmuxDown, gate && mux == multiplexer.Tmux && !tmuxUp, "no tmux server is running for dev")
+	}
+	w.oneShot(WarnHerdrDown, mux == multiplexer.Herdr && herdrDown >= HerdrDownAfter,
 		"herdr's socket did not answer")
 
 	// One child index per refresh, shared by every window's tree walk.
@@ -354,8 +397,21 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		}
 		ws := w.windows[p.Key]
 		if ws == nil || ws.source != source {
+			if ws != nil {
+				// The key passes from one multiplexer's agent to the
+				// other's: the hook recorded on it was the old agent's.
+				delete(w.hooks, p.Key)
+			}
 			ws = &windowState{agent: p.Agent, windowName: p.Key, source: source, lastActive: now, stateSince: now}
 			w.windows[p.Key] = ws
+		}
+		if old := w.herdrKeys[p.Ref]; source == multiplexer.Herdr && old != "" && old != p.Key {
+			// The herdr agent changed key (the tmux window that took
+			// its name closed): its hook goes with it.
+			if rec, ok := w.hooks[old]; ok {
+				w.hooks[p.Key] = rec
+				delete(w.hooks, old)
+			}
 		}
 		busy := false
 		if p.RootPID > 0 {
@@ -389,9 +445,9 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 				events = append(events, emission{agent: p.Agent, window: p.Key, kind: ev, summary: summary})
 			}
 		} else if p.Done && !HookedAgents[p.Agent] {
-			// herdr saw the turn end (state_change_seq moved to idle or
-			// done). Hooked agents report it through their hook, so
-			// nothing arrives twice.
+			// herdr saw the turn end (completion_seq rose, I-561).
+			// Hooked agents report it through their hook, so nothing
+			// arrives twice.
 			events = append(events, emission{agent: p.Agent, window: p.Key, kind: KindCompleted, summary: p.Agent + " went idle"})
 		}
 	}
@@ -514,13 +570,26 @@ func (w *Watcher) WindowOfTmuxPane(ctx context.Context, pane string) (string, er
 }
 
 // oneShot sends a warning the first time a condition becomes true and rearms
-// when it clears.
+// when it clears. A kind sent less than WarnRepeat ago waits: the
+// condition, if it holds then, sends once the time has passed (I-562).
 func (w *Watcher) oneShot(kind string, bad bool, detail string) {
+	now := w.now()
 	w.mu.Lock()
-	was := w.warned[kind]
-	w.warned[kind] = bad
+	send := false
+	switch {
+	case !bad:
+		w.warned[kind] = false
+	case w.warned[kind]:
+	default:
+		last, ok := w.warnedAt[kind]
+		if !ok || now.Sub(last) >= WarnRepeat {
+			send = true
+			w.warned[kind] = true
+			w.warnedAt[kind] = now
+		}
+	}
 	w.mu.Unlock()
-	if bad && !was {
+	if send {
 		w.log.Warn(detail, "event", "warning", "kind", kind)
 		w.emit.Warn(kind, detail)
 	}
