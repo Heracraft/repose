@@ -92,7 +92,11 @@ in
   # ones the previous configuration had and this one dropped (I-488;
   # /run/repose-session-vars.names keeps the names last pushed).
   # Idempotent; nothing to push on first boot, when neither is running
-  # yet, but the names are recorded.
+  # yet, but the names are recorded. A herdr server (I-501) has no
+  # set-environment and is never pushed into or restarted here: it is a
+  # user unit, so the user manager's new values reach it at its next
+  # start, and its panes get current values from their login shell and
+  # BASH_ENV meanwhile (I-508).
   system.activationScripts.repose-user-path = {
     deps = [ "etc" "users" ];
     text = ''

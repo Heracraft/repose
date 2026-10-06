@@ -142,6 +142,12 @@ let
             '';
           in
           lib.mkForce "${hmStart} ${config.home-manager.users.dev.home.activationPackage}";
+        # A running herdr server rereads ~/.config/herdr/config.toml when a
+        # fragment or machine.nix changed it (DECISIONS I-563), as tmux
+        # rereads its files (I-552). "-": it never fails the switch.
+        systemd.services.home-manager-dev.serviceConfig.ExecStartPost = [
+          "-${(import ./base/herdr-config.nix { inherit pkgs; herdr = pkgs.reposeHerdr; }).reload}/bin/repose-herdr-reload"
+        ];
       })
     ] ++ extraModules;
   };

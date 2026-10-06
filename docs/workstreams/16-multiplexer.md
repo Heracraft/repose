@@ -103,7 +103,8 @@ Builds, all under `nix/` and `scripts/`:
 
 - `nix/overlay/agents/herdr.nix` (new), its entry in
   `nix/overlay/agents/default.nix` and `versions.json` (`herdr.version`,
-  `herdr.sha256`; 0.9.3 or the newest release that passes the check),
+  `herdr.x86_64-linux.url` and `.hash`, I-551; 0.9.3 or the newest
+  release that passes the check),
   `scripts/bump-agents.sh` moving it. The install check:
   `herdr status client --json` with `endpoint_protocol_generation == 1`
   and `protocol >= 22`, else the build fails naming both values.
@@ -137,16 +138,16 @@ Contract it provides to the others: the unit names in
 
 Checklist:
 
-- [ ] Build log of `herdr.nix` with the install check passing, and the
+- [x] Build log of `herdr.nix` with the install check passing, and the
       same check failing against a fake binary that reports generation 2
       (both pasted).
-- [ ] `nix flake check` output with the extended
+- [x] `nix flake check` output with the extended
       `guest-session-survives-switch`, and the check failing with the
       herdr line removed. (On kanali: `nix build` of the check alone;
       never a full guest system build.)
-- [ ] `nix eval` of the guest config shows both units with their
+- [x] `nix eval` of the guest config shows both units with their
       `ExecCondition`, no path unit, `restartIfChanged = false` on both.
-- [ ] `repose-multiplexer-is` against four `project.json` files (no key,
+- [x] `repose-multiplexer-is` against four `project.json` files (no key,
       `tmux`, `herdr`, `screen`) and no file: exit codes pasted.
 - [ ] On a temporary machine (after the conductor deploys the branch's
       base, or with `nix copy` of the closure): `project.json`
@@ -156,8 +157,9 @@ Checklist:
       `REPOSE_PROJECT`, a secret, the login PATH and `HERDR_AGENT`; a stop
       and start resumes claude with no client (process tree pasted). Needs
       `mux-guestd`'s `ensureSession` in the same base: test them together.
-- [ ] A tmux project on the same base: `repose-tmux-session` active and
-      the existing VM subtests unchanged (or, where VM tests cannot run
+- [ ] A tmux project on the same base: `repose-tmux-session` active,
+      the existing VM subtests unchanged and I-551's restart subtest
+      passing (or, where VM tests cannot run
       here, say so in STATUS).
 
 ### 3.3 mux-guestd (S3)

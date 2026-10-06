@@ -72,7 +72,15 @@ Each binary is wrapped by `nix/overlay/agents/wrap.nix` to:
 1. Run `repose-agent-setup`, which writes its hook configuration so completion and needs-input
    events go to `repose-hook`, which POSTs to `/run/repose/hooks.sock`.
    The patch is idempotent and preserves the user's other hooks.
-2. Export `TERM=tmux-256color` and `COLORTERM=truecolor` so the TUIs render.
+   Inside a herdr pane (`HERDR_ENV=1`) it also installs herdr's own
+   integration for claude, codex, opencode and pi with the base's herdr
+   when `herdr integration status` does not list it as current, so herdr
+   sees the agent's state and resumes it after a restart (DECISIONS
+   I-501). herdr has no integration for gemini.
+2. Export `TERM=tmux-256color` (inside tmux) and `COLORTERM=truecolor` so
+   the TUIs render, `REPOSE_HOOK_AGENT` for `repose-hook`, and
+   `HERDR_AGENT` with the agent's name, which herdr reads to detect the
+   agent whatever its `argv0` and tmux ignores.
 3. Exec the real binary with all arguments.
 
 `repose-hook` always exits 0. A hook that fails must never block an agent,

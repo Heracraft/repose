@@ -1090,6 +1090,46 @@ desktop is off.
    it had no `DISPLAY` because it started before Xvnc. New shells export
    `DISPLAY=:99` while the X socket exists; open a new tmux window.
 
+## No session on a machine (tmux or herdr)
+
+`repose attach` finds no tmux session, or a herdr project's machine has
+no herdr server, after a start.
+
+1. In the guest, as dev: `jq .multiplexer ~/.repose/project.json` names
+   the multiplexer this boot chose (no key is tmux). `systemctl --user
+   status repose-tmux-session repose-herdr-server` shows which unit ran.
+   Nothing starts either unit but guestd's SetupProject (DECISIONS
+   I-503).
+2. `Skipped due to 'exec-condition'` on a unit means
+   `repose-multiplexer-is` refused it: the file names the other
+   multiplexer, or the other unit was already active. A change of
+   multiplexer applies at the next start (I-502), so a machine that
+   switched while running keeps the old unit until `repose stop` and
+   `repose start`. `repose-multiplexer-is tmux; echo $?` (or `herdr`)
+   gives the answer the unit got.
+3. tmux, on a machine that had a session: the tmux server exited (`exit`
+   in the last window, `tmux kill-server`, an OOM kill). The unit starts
+   it again after 5 s (I-551); `systemctl --user show -p
+   NRestarts,ActiveState repose-tmux-session` shows the count, and
+   `activating` during the wait. A unit that stays inactive was stopped
+   by hand. A failed unit whose journal says the session "is on a tmux
+   server started outside this unit" found the slug's session on a
+   server someone started over ssh (I-560): that session works, but
+   nothing restarts it; `tmux kill-server` and then `systemctl --user
+   start repose-tmux-session` put it back in the unit.
+4. herdr: `journalctl --user -u repose-herdr-server` and
+   `~/.config/herdr/herdr-server.log`. A server that started but has no
+   workspace in the checkout: run `repose-herdr-workspace` by hand. It
+   exits 0 without a word when the herdr unit is not active, and names
+   any other reason on stderr. A user's `herdr update` puts a newer
+   binary in `~/.local/bin`, which the unit runs from the server's next
+   start (`herdr update --handoff` moves the running server to it and
+   keeps the panes); removing it goes back to the base's release. `repose-herdr-watch: no herdr server left` in the journal
+   means the server ended (a crash, `herdr server stop`) and the unit
+   restarted it; `start-limit-hit` means it failed five times in a
+   minute, and `systemctl --user start repose-herdr-server` tries again
+   (I-560).
+
 ## Prisma, Playwright or a Python wheel fails in a guest
 
 The base's compat layer (DECISIONS I-228, `nix/guest/base/compat.nix`).

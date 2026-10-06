@@ -179,6 +179,7 @@
         codex = pkgs.reposeAgents.codex;
         gemini-cli = pkgs.reposeAgents.gemini-cli;
         pi-coding-agent = pkgs.reposeAgents.pi-coding-agent;
+        herdr = pkgs.reposeHerdr;
         playwright-mcp = pkgs.reposeMcp.playwright-mcp;
         chrome-devtools-mcp = pkgs.reposeMcp.chrome-devtools-mcp;
         default = self.packages.${system}.guest-runner;
@@ -203,13 +204,159 @@
           fi
           echo "$size" > $out
         '';
-        # A base switch must never restart the tmux session unit: that ends
-        # every agent on a running guest (DECISIONS I-496).
-        guest-session-survives-switch = pkgs.runCommand "guest-session-survives-switch" { } ''
-          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/user/repose-tmux-session.service
-          grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
-          touch $out
-        '';
+        # A base switch must never restart a session unit: the tmux or
+        # herdr unit's cgroup holds every pane, so a restart ends every
+        # agent on a running guest (DECISIONS I-496, I-503). It reads the
+        # unit files' text, so it builds no part of the guest system. No
+        # path unit may start a session before SetupProject writes this
+        # boot's project.json (I-503); the tmux unit restarts its server
+        # on a running machine instead (I-551).
+        guest-session-survives-switch =
+          let
+            units = self.guestSystem.config.systemd.user.units;
+            unitFile = name: pkgs.writeText name (builtins.unsafeDiscardStringContext units.${name}.text);
+          in
+          pkgs.runCommand "guest-session-survives-switch" {
+            tmuxUnit = unitFile "repose-tmux-session.service";
+            herdrUnit = unitFile "repose-herdr-server.service";
+            userUnits = lib.concatStringsSep "\n" (builtins.attrNames units);
+          } ''
+            fail=0
+            for pair in "tmux:$tmuxUnit" "herdr:$herdrUnit"; do
+              m=''${pair%%:*} unit=''${pair#*:}
+              grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "the $m session unit lacks X-RestartIfChanged=false" >&2; fail=1; }
+              grep -q "^ExecCondition=.*/bin/repose-multiplexer-is $m\$" "$unit" || { echo "the $m session unit lacks ExecCondition=repose-multiplexer-is $m" >&2; fail=1; }
+              if grep -q '^WantedBy=' "$unit"; then echo "the $m session unit is wanted by a target" >&2; fail=1; fi
+            done
+            if printf '%s\n' "$userUnits" | grep -q '^repose-tmux-session\.path$\|^repose-herdr-server\.path$'; then
+              echo "a path unit starts a session unit" >&2; fail=1
+            fi
+            # The tmux server exits with its last session; the unit brings
+            # it back, after the wait I-352's temporary-machine check needs
+            # (I-551), and a crashed or OOM-killed one too; a failed start
+            # is never restarted, so a start that leaves no server cannot
+            # loop (I-560).
+            grep -qx 'Restart=on-success' "$tmuxUnit" || { echo "the tmux session unit lacks Restart=on-success" >&2; fail=1; }
+            grep -qx 'RestartForceExitStatus=SIGKILL SIGSEGV SIGABRT SIGBUS' "$tmuxUnit" || { echo "the tmux session unit lacks RestartForceExitStatus for SIGKILL and crashes" >&2; fail=1; }
+            for unit in "$tmuxUnit" "$herdrUnit"; do
+              grep -qx 'RestartSec=5s' "$unit" || { echo "$unit lacks RestartSec=5s" >&2; fail=1; }
+            done
+            # herdr's panes share its unit: an OOM kill in a pane must not
+            # stop it, a live handoff must not end it, and a watcher ends it
+            # when no server is left, which Restart=always brings back,
+            # at most five times a minute (I-560).
+            grep -qx 'OOMPolicy=continue' "$herdrUnit" || { echo "the herdr session unit lacks OOMPolicy=continue" >&2; fail=1; }
+            grep -qx 'ExitType=cgroup' "$herdrUnit" || { echo "the herdr session unit lacks ExitType=cgroup" >&2; fail=1; }
+            grep -q '^ExecStartPost=.*/bin/repose-herdr-watch &' "$herdrUnit" || { echo "the herdr session unit does not start repose-herdr-watch" >&2; fail=1; }
+            grep -qx 'Restart=always' "$herdrUnit" || { echo "the herdr session unit lacks Restart=always" >&2; fail=1; }
+            grep -qx 'StartLimitBurst=5' "$herdrUnit" || { echo "the herdr session unit lacks StartLimitBurst=5" >&2; fail=1; }
+            [ "$fail" = 0 ] || exit 1
+            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy, back after 5s; no path unit; tmux Restart=on-success; herdr OOMPolicy=continue, ExitType=cgroup, watcher, Restart=always"
+            touch $out
+          '';
+        # The session units start their servers outside a login shell and
+        # read the login PATH through repose-login-path, so a profile that
+        # prints text or replaces the shell (machine.nix's
+        # programs.bash.profileExtra) cannot break them; the herdr server's
+        # environment lets each pane's shell load the current one; and a
+        # running herdr rereads a config.toml a switch changed (DECISIONS
+        # I-563). Runs the scripts against a scratch HOME and a fake herdr.
+        guest-session-environment =
+          let
+            loginPath = import ./guest/base/login-path.nix { inherit pkgs; };
+            names = pkgs.writeText "session-vars.names" "DROPPED_VAR\n";
+            fakeHerdr = pkgs.writeShellScriptBin "herdr" ''
+              echo "$*" >> "$HOME/herdr.log"
+              if [ "$1" = server ] && [ $# = 1 ]; then ${pkgs.coreutils}/bin/env > "$HOME/server.env"; fi
+            '';
+            start = import ./guest/base/herdr-start.nix { inherit pkgs; herdr = fakeHerdr; namesFile = names; };
+            herdrConfig = import ./guest/base/herdr-config.nix { inherit pkgs; herdr = fakeHerdr; };
+            unit = pkgs.writeText "herdr-unit" (builtins.unsafeDiscardStringContext
+              self.guestSystem.config.systemd.user.units."repose-herdr-server.service".text);
+          in
+          pkgs.runCommand "guest-session-environment" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+            fail() { echo "$*" >&2; exit 1; }
+            export HOME=$PWD/home USER=dev
+            mkdir -p "$HOME/bin"
+            # A profile that prints text: the PATH comes back without it.
+            printf 'echo hello from the profile\nexport PATH=$HOME/bin:$PATH\n' > "$HOME/.bash_profile"
+            got=$(${loginPath}/bin/repose-login-path)
+            case "$got" in
+              "$HOME/bin:"*) ;;
+              *) fail "repose-login-path printed '$got' for a profile that prints text" ;;
+            esac
+            # A profile that replaces the shell: nothing, exit 0.
+            printf 'exec sh\n' > "$HOME/.bash_profile"
+            got=$(${loginPath}/bin/repose-login-path) || fail "repose-login-path failed for a profile that runs exec"
+            [ -z "$got" ] || fail "repose-login-path printed '$got' for a profile that runs exec"
+
+            # The herdr server starts from the login PATH's herdr, without
+            # the profile guards or a dropped session variable.
+            ln -s ${fakeHerdr}/bin/herdr "$HOME/bin/herdr"
+            printf 'echo noise\nexport PATH=$HOME/bin:$PATH\n' > "$HOME/.bash_profile"
+            __NIXOS_SET_ENVIRONMENT_DONE=1 __ETC_PROFILE_DONE=1 __HM_SESS_VARS_SOURCED=1 DROPPED_VAR=old KEPT_VAR=yes \
+              ${start}/bin/repose-herdr-start
+            [ -s "$HOME/server.env" ] || fail "repose-herdr-start did not run herdr server"
+            for v in __NIXOS_SET_ENVIRONMENT_DONE __ETC_PROFILE_DONE __HM_SESS_VARS_SOURCED DROPPED_VAR; do
+              if grep -q "^$v=" "$HOME/server.env"; then fail "the herdr server kept $v"; fi
+            done
+            grep -qx 'KEPT_VAR=yes' "$HOME/server.env" || fail "the herdr server lost a variable outside the session list"
+            grep -q "^PATH=$HOME/bin:" "$HOME/server.env" || fail "the herdr server did not get the login PATH"
+            # The same with a profile that replaces the shell: the server
+            # still starts, from the unit's PATH.
+            printf 'exec sh\n' > "$HOME/.bash_profile"
+            rm "$HOME/server.env"
+            PATH=${fakeHerdr}/bin:$PATH ${start}/bin/repose-herdr-start
+            [ -s "$HOME/server.env" ] || fail "repose-herdr-start did not start herdr when the profile runs exec"
+            grep -q '^ExecStart=.*/bin/repose-herdr-start$' ${unit} || fail "the herdr unit does not start through repose-herdr-start"
+            if grep -q 'bash -lc' ${unit}; then fail "the herdr unit starts a login shell"; fi
+
+            # The reload: digest only with no server; a reload when the
+            # file changed while one runs; none when it did not; the seed
+            # back when the file went away.
+            rm -f "$HOME/herdr.log" "$HOME/.bash_profile"
+            reload=${herdrConfig.reload}/bin/repose-herdr-reload
+            mkdir -p "$HOME/.config/herdr"
+            echo 'theme = "a"' > "$HOME/.config/herdr/config.toml"
+            $reload
+            [ ! -e "$HOME/herdr.log" ] || fail "reloaded with no server"
+            python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$HOME/.config/herdr/herdr.sock"
+            $reload
+            [ ! -e "$HOME/herdr.log" ] || fail "reloaded an unchanged config"
+            echo 'theme = "b"' > "$HOME/.config/herdr/config.toml"
+            $reload
+            [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 1 ] || fail "no reload after a change"
+            rm "$HOME/.config/herdr/config.toml"
+            $reload
+            grep -q 'shell_mode = "login"' "$HOME/.config/herdr/config.toml" || fail "the seed did not come back"
+            [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 2 ] || fail "no reload after the file went away"
+            echo "login PATH guarded; herdr starts without guards or dropped names; reload on change only, seed restored"
+            touch $out
+          '';
+        # The herdr package's install check refuses a release whose socket
+        # protocol guestd and a laptop herdr cannot speak (DECISIONS I-501):
+        # generation 2, protocol 21, and unreadable output each fail it,
+        # and generation 1 at protocol 22 passes.
+        herdr-protocol-check =
+          let
+            check = pkgs.reposeHerdr.protocolCheck;
+            fake = name: out: pkgs.writeShellScript "herdr-${name}" ''
+              if [ "$*" = "status client --json" ]; then echo '${out}'; else exit 64; fi
+            '';
+          in
+          pkgs.runCommand "herdr-protocol-check" { } ''
+            ok() { "${check}" "$1" || { echo "refused $2, which it must accept" >&2; exit 1; }; }
+            refused() {
+              if "${check}" "$1"; then echo "accepted $2, which it must refuse" >&2; exit 1; fi
+            }
+            ok ${fake "good" ''{"version":"0.9.3","protocol":22,"endpoint_protocol_generation":1}''} "generation 1, protocol 22"
+            ok ${fake "newer" ''{"version":"0.10.0","protocol":23,"endpoint_protocol_generation":1}''} "generation 1, protocol 23"
+            refused ${fake "gen2" ''{"version":"1.0.0","protocol":22,"endpoint_protocol_generation":2}''} "generation 2"
+            refused ${fake "old" ''{"version":"0.8.0","protocol":21,"endpoint_protocol_generation":1}''} "protocol 21"
+            refused ${fake "nogen" ''{"version":"0.7.0","protocol":22}''} "no generation"
+            refused ${fake "junk" "not json"} "unreadable output"
+            touch $out
+          '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.

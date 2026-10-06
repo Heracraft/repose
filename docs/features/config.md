@@ -133,7 +133,9 @@ A fragment may:
   `claude-code`, `codex`, `gemini-cli`, `vscode`, `cursor`, `terraform`,
   `ngrok`, `google-chrome`;
 - configure any `programs.*` and `services.*` home-manager module (user
-  services, not system ones);
+  services, not system ones). A `systemd.user.services` unit whose name
+  starts with `repose-` is refused: it would replace the machine's own
+  session unit (DECISIONS I-563);
 - write dotfiles with `home.file` and `xdg.configFile`;
 - set `home.sessionVariables` and `home.sessionPath`. They reach every
   process (PAM, `/etc/set-environment`, agent wrappers, and dev's tmux

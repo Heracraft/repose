@@ -46,5 +46,12 @@
     "version": "1.10.1",
     "url": "https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-1.10.1.tgz",
     "hash": "sha256-ASy89ugy1PZwna0MIde+8XCJ6Ure6c8zF50V6gqa3ys="
+  },
+  "herdr": {
+    "version": "0.9.3",
+    "x86_64-linux": {
+      "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64",
+      "hash": "sha256-GKjcZfHC+khYhDRDVt6hz9kRxvBs9G+njhk/QIf026c="
+    }
   }
 }
