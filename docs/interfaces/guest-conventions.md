@@ -48,7 +48,8 @@ listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
 of the rule. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
-the attach opens is `<name>`. guestd reads none of this.
+the attach opens is `<name>`. guestd reads only the list of names, to
+prefix a herdr agent's key with its checkout (see "herdr", I-504).
 
 ## Filesystem
 
