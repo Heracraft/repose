@@ -1,6 +1,7 @@
 package mcpreg
 
 import (
+	"fmt"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -98,13 +99,28 @@ type agentRecord struct {
 	Held map[string]any `json:"held,omitempty"`
 }
 
-func readRendered(p Paths) *renderedFile {
-	rf := &renderedFile{Version: 1, Agents: map[string]*agentRecord{}}
+// held is rec's Held; a nil record holds nothing.
+func (rec *agentRecord) held() map[string]any {
+	if rec == nil {
+		return nil
+	}
+	return rec.Held
+}
+
+// readRendered reads rendered.json, or an empty record when it is
+// missing, does not parse, or is a version this base does not know: then
+// an entry equal to what sync writes now still counts as repose's, and
+// nothing else does. problem is a line for that last case.
+func readRendered(p Paths) (rf *renderedFile, problem string) {
+	rf = &renderedFile{Version: RenderedVersion, Agents: map[string]*agentRecord{}}
 	var got renderedFile
 	if err := readJSON(p.renderedFile(), &got); err == nil && got.Agents != nil {
+		if got.Version > RenderedVersion {
+			return rf, fmt.Sprintf("~/.repose/mcp/rendered.json is version %d, newer than this base reads; read as missing", got.Version)
+		}
 		rf.Agents = got.Agents
 	}
-	return rf
+	return rf, ""
 }
 
 func writeJSONFile(path string, v any) error {

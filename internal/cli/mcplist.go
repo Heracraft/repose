@@ -49,7 +49,14 @@ func mcpListOn(ctx context.Context, e *Env, target sshTarget, slug string) error
 		_, err := e.Out.Write(out)
 		return err
 	}
-	return writeMCPList(e.Out, st.Servers, writerIsTerminal(e.Out))
+	if err := writeMCPList(e.Out, st.Servers, writerIsTerminal(e.Out)); err != nil {
+		return err
+	}
+	// A registry file the machine left out (mcpreg.Load), after the rows.
+	for _, pr := range st.Problems {
+		_, _ = fmt.Fprintf(e.ErrOut, "On %s: %s.\n", slug, strings.TrimSuffix(terminalText(pr), "."))
+	}
+	return nil
 }
 
 // writeMCPList prints one row per server: a table with a header on a

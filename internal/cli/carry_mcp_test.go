@@ -888,3 +888,22 @@ func TestCarryMCPNewBase(t *testing.T) {
 		t.Errorf("marker %q", m)
 	}
 }
+
+// [mcp] forward on Windows, where attach runs no helper, says so once per
+// attach instead of doing nothing quietly; elsewhere it says nothing.
+func TestWindowsMCPForwardLine(t *testing.T) {
+	for goosName, want := range map[string]string{"windows": windowsMCPForwardLine + "\n", "linux": ""} {
+		t.Setenv("REPOSE_TEST_GOOS", goosName)
+		var errb bytes.Buffer
+		e := &Env{ErrOut: &errb, TargetFor: func(string) sshTarget { return sshTarget{} }}
+		startSessionHelper(e, sessionOptions{MCP: []string{"notes"}})
+		if errb.String() != want {
+			t.Errorf("%s: %q, want %q", goosName, errb.String(), want)
+		}
+		errb.Reset()
+		startSessionHelper(e, sessionOptions{})
+		if errb.Len() != 0 {
+			t.Errorf("%s with no [mcp] forward: %q", goosName, errb.String())
+		}
+	}
+}

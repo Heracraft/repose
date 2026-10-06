@@ -455,6 +455,15 @@ in
           dev_out("HOME=/tmp/cxlink2 repose-agent-setup codex")
           assert guest.succeed("readlink /tmp/cxlink2/.codex/config.toml").strip() == "/tmp/cxlink2/real.toml"
           assert guest.succeed("cat /tmp/cxlink2/real.toml") == 'notify = ["repose-hook"]\nmodel = "o3"\n'
+          assert guest.succeed("stat -c %a /tmp/cxlink2/real.toml").strip() == "644", "the target kept its mode"
+          # A target repose cannot replace (a read-only directory, as
+          # home-manager's store) is named once per target, not per start.
+          dev_out("mkdir -p /tmp/cxlink3/.codex /tmp/cxlink3/ro && printf 'model = \"o3\"\\n' > /tmp/cxlink3/ro/real.toml && chmod 555 /tmp/cxlink3/ro && ln -s /tmp/cxlink3/ro/real.toml /tmp/cxlink3/.codex/config.toml")
+          first = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          second = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          assert "links to a file repose cannot write" in first, first
+          assert "links to a file repose cannot write" not in second, second
+          assert guest.succeed("cat /tmp/cxlink3/ro/real.toml") == 'model = "o3"\n'
           # opencode: the managed layer, type local, no enabled key.
           oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
           for n, e in reg.items():

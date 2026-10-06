@@ -54,9 +54,9 @@ func TestCarryMCPFeedsRegistry(t *testing.T) {
 	}
 
 	p := mcpreg.Paths{Home: f.guestHome, Platform: filepath.Join(t.TempDir(), "none.json"), SecretsDir: secrets, SocketDir: t.TempDir(), Etc: t.TempDir()}
-	reg, err := mcpreg.Load(p)
-	if err != nil {
-		t.Fatalf("mcpreg.Load of the carry's laptop.json: %v", err)
+	reg := mcpreg.Load(p)
+	if len(reg.Problems) > 0 {
+		t.Fatalf("mcpreg.Load of the carry's laptop.json: %v", reg.Problems)
 	}
 	if got := slices.Sorted(maps.Keys(reg.Laptop.User)); !reflect.DeepEqual(got, []string{"gh", "linear", "notion"}) {
 		t.Fatalf("registry user servers = %v", got)

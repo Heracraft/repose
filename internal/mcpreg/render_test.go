@@ -215,6 +215,26 @@ func TestCodexLinkLeftAlone(t *testing.T) {
 	if err != nil || !strings.Contains(string(view), "linear") {
 		t.Fatalf("agents/codex.json: %s %v", view, err)
 	}
+	wantSkipped(t, p, "linear", "codex", "~/.codex/config.toml is a link, which repose does not write")
+}
+
+// wantSkipped checks the status row of laptop server name says why agent
+// lacks it.
+func wantSkipped(t *testing.T, p Paths, name, agent, reason string) {
+	t.Helper()
+	st, err := ReadStatus(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range st.Servers {
+		if s.Name == name && s.From == FromLaptop {
+			if s.Skipped[agent] != reason || !strings.Contains(s.State, agent+": "+reason) {
+				t.Errorf("%s: skipped %v, state %q; want %s: %s", name, s.Skipped, s.State, agent, reason)
+			}
+			return
+		}
+	}
+	t.Errorf("no row for %s", name)
 }
 
 // TestCodexInlineServersLeftAlone: a root `mcp_servers = { ... }` takes
@@ -239,6 +259,7 @@ func TestCodexInlineServersLeftAlone(t *testing.T) {
 	if b.String() != "" {
 		t.Fatalf("second sync stderr: %q", b.String())
 	}
+	wantSkipped(t, p, "linear", "codex", "~/.codex/config.toml holds it in a form repose does not edit")
 }
 
 // TestOpencodeCommentedConfig: opencode reads comments and trailing
@@ -265,6 +286,7 @@ func TestOpencodeCommentedConfig(t *testing.T) {
 	if b.String() != "" {
 		t.Fatalf("second sync stderr: %q", b.String())
 	}
+	wantSkipped(t, p, "linear", "opencode", "~/.config/opencode/config.json has comments, which a rewrite would lose")
 
 	// A plain config.json, and the user's own linear in a commented
 	// opencode.json: repose renders nothing under that name.

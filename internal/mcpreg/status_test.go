@@ -233,3 +233,48 @@ func TestReplaceTable(t *testing.T) {
 		t.Errorf("quoted: %v %q", ok, out)
 	}
 }
+
+// A laptop.json or forward file that does not parse, or that a newer CLI
+// wrote, costs only its own servers: the platform servers still reach
+// every agent, sync says what it left out, and status still answers.
+func TestBrokenSourceCostsOnlyItsOwn(t *testing.T) {
+	for _, c := range []struct{ laptop, forward, rendered string }{
+		{`{"version":1,"user":[]}`, `{"version":1,"name":"notes","tools":"x"}`, ""},
+		{`{"version":1,"user":{"x":"a string"}}`, `{"version":2,"name":"notes"}`, `{"version":2,"agents":{"claude":{"user":{"playwright":{"command":"old"}}}}}`},
+		{`{"version":2,"user":{"linear":{"command":"sh"}}}`, `not json`, ""},
+	} {
+		home, root := t.TempDir(), t.TempDir()
+		p := Paths{Home: home, Platform: filepath.Join(root, "etc/repose/mcp.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+		writeFile(t, p.Platform, `{"mcpServers":{"playwright":{"type":"stdio","command":"playwright-mcp","args":[]}}}`)
+		writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), c.laptop)
+		writeFile(t, filepath.Join(home, ".repose/mcp/forward/notes.json"), c.forward)
+		writeFile(t, filepath.Join(home, ".repose/mcp/forward/good.json"), `{"version":1,"name":"good","tools":[]}`)
+		if c.rendered != "" {
+			writeFile(t, filepath.Join(home, ".repose/mcp/rendered.json"), c.rendered)
+		}
+		var stderr bytes.Buffer
+		Sync(p, Agents, &stderr)
+		b, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+		if err != nil {
+			t.Fatalf("%s: no ~/.claude.json: %v (%s)", c.laptop, err, stderr.String())
+		}
+		var cj struct {
+			MCPServers map[string]any `json:"mcpServers"`
+		}
+		_ = json.Unmarshal(b, &cj)
+		if cj.MCPServers["playwright"] == nil || cj.MCPServers["good"] == nil || cj.MCPServers["notes"] != nil || cj.MCPServers["linear"] != nil {
+			t.Errorf("%s: claude has %v", c.laptop, cj.MCPServers)
+		}
+		codex, _ := os.ReadFile(filepath.Join(home, ".codex/config.toml"))
+		if !strings.Contains(string(codex), "[mcp_servers.playwright]") {
+			t.Errorf("%s: codex lacks playwright:\n%s", c.laptop, codex)
+		}
+		if !strings.Contains(stderr.String(), "laptop.json") || !strings.Contains(stderr.String(), "forward/notes.json") || strings.Count(stderr.String(), "\n") > 3 {
+			t.Errorf("%s: stderr %q", c.laptop, stderr.String())
+		}
+		st, err := ReadStatus(p)
+		if err != nil || len(st.Problems) < 2 {
+			t.Errorf("%s: status %v %+v", c.laptop, err, st)
+		}
+	}
+}

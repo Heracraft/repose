@@ -62,11 +62,19 @@ type sessionOptions struct {
 	MCP []string `json:"mcp,omitempty"`
 }
 
+// windowsMCPForwardLine is [mcp] forward on Windows, where attach runs no
+// helper to forward with.
+const windowsMCPForwardLine = "[mcp] forward in config.toml does nothing on Windows; run repose mcp forward NAME in a terminal of its own."
+
 // startSessionHelper starts the helper for the attach that follows, and
 // never fails the attach: a helper that cannot start is simply absent.
 // Windows has no multiplexing and no exec, and tests (TargetFor set) drive
 // runSession themselves.
 func startSessionHelper(e *Env, opts sessionOptions) {
+	if goos() == "windows" && len(opts.MCP) > 0 {
+		// Set and silently ignored would read as a broken forward.
+		_, _ = fmt.Fprintln(e.ErrOut, windowsMCPForwardLine)
+	}
 	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge && len(opts.MCP) == 0) {
 		return
 	}

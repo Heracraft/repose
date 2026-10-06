@@ -2,7 +2,6 @@ package mcpreg
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -26,7 +25,7 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 	// A link (home-manager, a dotfiles repo) belongs to whatever made it:
 	// the rename below would replace it with a file. agent-setup says so
 	// once per start; agents/codex.json still records what Codex would get.
-	if st, err := os.Lstat(path); err == nil && st.Mode()&os.ModeSymlink != 0 {
+	if codexLink(p) {
 		return prev
 	}
 	b, _, err := readFile(path)

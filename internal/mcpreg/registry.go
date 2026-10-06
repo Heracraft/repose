@@ -92,6 +92,8 @@ type Registry struct {
 	Platform Platform
 	Laptop   Laptop
 	Forward  map[string]*Forward
+	// Problems are the files Load left out, one line each.
+	Problems []string
 }
 
 // Paths are the files the registry reads and writes. Tests point them at a
@@ -135,20 +137,40 @@ func (p Paths) agentFile(agent string) string {
 }
 func (p Paths) etc(rel string) string { return filepath.Join(p.Etc, rel) }
 
-// Load reads the registry. Missing files are empty sources; a file that
-// does not parse is an error, so sync changes nothing rather than remove
-// every entry that file's servers had.
-func Load(p Paths) (*Registry, error) {
+// The registry files' versions this base reads; a newer one is left out
+// with a problem line, never misread.
+const (
+	LaptopVersion   = 1
+	ForwardVersion  = 1
+	RenderedVersion = 1
+)
+
+// Load reads the registry. Missing files are empty sources. A file that
+// does not parse, or that a newer CLI or base wrote in a shape this base
+// does not know, costs only its own servers: it is left out and named in
+// Problems, and every other source (the platform servers above all) still
+// renders.
+func Load(p Paths) *Registry {
 	r := &Registry{Forward: map[string]*Forward{}}
-	if err := readJSON(p.Platform, &r.Platform); err != nil {
-		return nil, fmt.Errorf("%s: %w", p.Platform, err)
+	problem := func(s string) { r.Problems = append(r.Problems, s) }
+	var plat Platform
+	if err := readJSON(p.Platform, &plat); err != nil {
+		problem(fmt.Sprintf("%s does not parse (%v); the browser servers are left out", p.Platform, err))
+	} else {
+		r.Platform = plat
 	}
-	if err := readJSON(p.laptopFile(), &r.Laptop); err != nil {
-		return nil, fmt.Errorf("~/.repose/mcp/laptop.json: %w", err)
+	var lap Laptop
+	switch err := readJSON(p.laptopFile(), &lap); {
+	case err != nil:
+		problem(fmt.Sprintf("~/.repose/mcp/laptop.json does not parse (%v); servers from your laptop are left out until the next repose run or attach rewrites it", err))
+	case lap.Version > LaptopVersion:
+		problem(fmt.Sprintf("~/.repose/mcp/laptop.json is version %d, newer than this base reads; servers from your laptop are left out until the machine's next update", lap.Version))
+	default:
+		r.Laptop = lap
 	}
 	ents, err := os.ReadDir(p.forwardDir())
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("~/.repose/mcp/forward: %w", err)
+		problem(fmt.Sprintf("cannot read ~/.repose/mcp/forward (%v); forwarded servers are left out", err))
 	}
 	for _, e := range ents {
 		name, ok := strings.CutSuffix(e.Name(), ".json")
@@ -156,12 +178,16 @@ func Load(p Paths) (*Registry, error) {
 			continue
 		}
 		var f Forward
-		if err := readJSON(filepath.Join(p.forwardDir(), e.Name()), &f); err != nil {
-			return nil, fmt.Errorf("~/.repose/mcp/forward/%s: %w", e.Name(), err)
+		switch err := readJSON(filepath.Join(p.forwardDir(), e.Name()), &f); {
+		case err != nil:
+			problem(fmt.Sprintf("~/.repose/mcp/forward/%s does not parse (%v); %s is left out until repose mcp forward %s runs again", e.Name(), err, name, name))
+		case f.Version > ForwardVersion:
+			problem(fmt.Sprintf("~/.repose/mcp/forward/%s is version %d, newer than this base reads; %s is left out until the machine's next update", e.Name(), f.Version, name))
+		default:
+			r.Forward[name] = &f
 		}
-		r.Forward[name] = &f
 	}
-	return r, nil
+	return r
 }
 
 // readJSON decodes path into v; a missing or empty file leaves v as it is.

@@ -218,18 +218,22 @@ writeShellApplication {
         return 0
       fi
       # A link (home-manager, a dotfiles repo) belongs to whatever made
-      # it: a rename would replace the link with a file. notify goes in
-      # through the link when its target is a writable file; a read-only
-      # one (home-manager's store) is named once per start that lacks it.
-      # repose-mcp sync leaves the servers alone, and still records what
-      # Codex would get in ~/.repose/mcp/agents/codex.json.
+      # it: a rename would replace the link with a file. notify goes into
+      # the link's target, by temp file and rename beside it, so a full
+      # disk or a kill never leaves the user's file half written. A target
+      # repose cannot write that way (home-manager's store) is named once
+      # per target (~/.repose/mcp/codex-link-warned). repose-mcp sync
+      # leaves the servers alone, and still records what Codex would get
+      # in ~/.repose/mcp/agents/codex.json.
       if [ -L "$cfg" ]; then
         if ! grep -Eq '^[[:space:]]*notify[[:space:]]*=' "$cfg" 2>/dev/null; then
-          local body
-          if [ -f "$cfg" ] && [ -w "$cfg" ] && body=$(cat "$cfg"); then
-            printf 'notify = ["repose-hook"]\n%s\n' "$body" > "$cfg"
-          else
+          local body target warned="$HOME/.repose/mcp/codex-link-warned"
+          target=$(readlink -f "$cfg" 2>/dev/null) || target=
+          if [ -n "$target" ] && [ -f "$target" ] && [ -w "$target" ] && [ -w "$(dirname "$target")" ] && body=$(cat "$target"); then
+            printf 'notify = ["repose-hook"]\n%s\n' "$body" | write_atomic "$target" "$(stat -c %a "$target")"
+          elif [ "$(cat "$warned" 2>/dev/null)" != "$target" ]; then
             echo "repose-agent-setup: $cfg links to a file repose cannot write; add notify = [\"repose-hook\"] to it for Codex notifications" >&2
+            printf '%s\n' "$target" > "$warned"
           fi
         fi
         exec 9>&-

@@ -37,12 +37,14 @@ func Sync(p Paths, agents []string, stderr io.Writer) {
 	}
 	defer unlock()
 
-	reg, err := Load(p)
-	if err != nil {
-		warn(err.Error() + "; MCP servers not updated")
-		return
+	reg := Load(p)
+	for _, pr := range reg.Problems {
+		warn(pr)
 	}
-	rendered := readRendered(p)
+	rendered, rerr := readRendered(p)
+	if rerr != "" {
+		warn(rerr)
+	}
 	for _, agent := range agents {
 		if !KnownAgent(agent) {
 			warn("unknown agent " + agent)

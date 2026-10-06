@@ -115,6 +115,17 @@ func TestMCPListOverSSH(t *testing.T) {
 	if out.String() != want {
 		t.Errorf("rows:\n%q\nwant:\n%q", out.String(), want)
 	}
+	// A file the machine left out is a line on stderr after the rows.
+	fakeMCPStatus(t, "cat <<'EOF'\n{\"version\":1,\"servers\":[],\"problems\":[\"~/.repose/mcp/laptop.json does not parse (x\\u001b[2J); servers from your laptop are left out\"]}\nEOF\n")
+	var errb bytes.Buffer
+	out.Reset()
+	e.ErrOut = &errb
+	if err := mcpListOn(context.Background(), e, target, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	if errb.String() != "On todo-app: ~/.repose/mcp/laptop.json does not parse (x[2J); servers from your laptop are left out.\n" {
+		t.Errorf("problems: %q", errb.String())
+	}
 }
 
 // A base without repose-mcp is one line naming the update; a registry

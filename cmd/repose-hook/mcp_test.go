@@ -59,18 +59,17 @@ func TestRunMCPDispatch(t *testing.T) {
 	if code, _, errs := run("run", "nothing"); code != 127 || !strings.Contains(errs, "nothing is not in ~/.repose/mcp/laptop.json") {
 		t.Errorf("run nothing: %d %q", code, errs)
 	}
-	// sync exits 0 even on a broken registry, and changes nothing.
+	// sync exits 0 even on a broken registry.
 	if err := os.MkdirAll(filepath.Join(home, ".repose", "mcp"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".repose", "mcp", "laptop.json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, errs := run("sync", "claude"); code != 0 || !strings.Contains(errs, "MCP servers not updated") {
+	// sync exits 0 on a broken laptop.json and names it; the file's own
+	// servers are left out (internal/mcpreg TestBrokenSourceCostsOnlyItsOwn).
+	if code, _, errs := run("sync", "claude"); code != 0 || !strings.Contains(errs, "laptop.json does not parse") {
 		t.Errorf("sync broken: %d %q", code, errs)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
-		t.Errorf("sync wrote ~/.claude.json from a broken registry")
 	}
 	if code, _, _ := run("sync", "nosuchagent"); code != 0 {
 		t.Errorf("sync unknown agent: %d", code)

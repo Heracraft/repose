@@ -87,7 +87,12 @@ func RemoveForward(p Paths, name string) (ok bool, err error) {
 // agent-setup run has met on this machine.
 func RenderedAgents(p Paths) []string {
 	var out []string
-	for a := range readRendered(p).Agents {
+	// The agent names only, whatever the file's version.
+	var rf struct {
+		Agents map[string]json.RawMessage `json:"agents"`
+	}
+	_ = readJSON(p.renderedFile(), &rf) // unreadable: no agent yet
+	for a := range rf.Agents {
 		if KnownAgent(a) {
 			out = append(out, a)
 		}

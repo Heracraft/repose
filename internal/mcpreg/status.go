@@ -17,6 +17,8 @@ type Status struct {
 	Version int            `json:"version"`
 	Agents  []string       `json:"agents"`
 	Servers []ServerStatus `json:"servers"`
+	// Problems are registry files left out, one line each (Load).
+	Problems []string `json:"problems,omitempty"`
 }
 
 // ServerStatus is one row: a server name from one source.
@@ -41,13 +43,13 @@ type found struct {
 // ReadStatus reads every agent's config and the registry. It starts no
 // server and writes nothing.
 func ReadStatus(p Paths) (*Status, error) {
-	reg, err := Load(p)
-	if err != nil {
-		return nil, err
-	}
-	rendered := readRendered(p)
+	reg := Load(p)
+	rendered, rproblem := readRendered(p)
 	checkouts := Checkouts(p.Home)
-	st := &Status{Version: 1, Agents: Agents}
+	st := &Status{Version: 1, Agents: Agents, Problems: reg.Problems}
+	if rproblem != "" {
+		st.Problems = append(st.Problems, rproblem)
+	}
 	type key struct{ name, from, checkout string }
 	rows := map[key]*ServerStatus{}
 	row := func(k key) *ServerStatus {
@@ -171,15 +173,22 @@ func ReadStatus(p Paths) (*Status, error) {
 				if contains(r.Agents, agent) {
 					continue
 				}
+				reason := ""
 				for _, s := range wants[agent].Skipped {
 					if s.Name == k.name {
-						if r.Skipped == nil {
-							r.Skipped = map[string]string{}
-						}
-						r.Skipped[agent] = s.Reason
-						parts = append(parts, agent+": "+s.Reason)
+						reason = s.Reason
 						break
 					}
+				}
+				if _, meant := wants[agent].User[k.name]; reason == "" && meant {
+					reason = heldReason(p, rendered.Agents[agent], agent, k.name)
+				}
+				if reason != "" {
+					if r.Skipped == nil {
+						r.Skipped = map[string]string{}
+					}
+					r.Skipped[agent] = reason
+					parts = append(parts, agent+": "+reason)
 				}
 			}
 		}
@@ -201,6 +210,32 @@ func ReadStatus(p Paths) (*Status, error) {
 		st.Servers = []ServerStatus{}
 	}
 	return st, nil
+}
+
+// heldReason is why agent lacks name although sync meant to give it: a
+// file repose leaves alone (DECISIONS I-555).
+func heldReason(p Paths, rec *agentRecord, agent, name string) string {
+	switch agent {
+	case "codex":
+		if codexLink(p) {
+			return "~/.codex/config.toml is a link, which repose does not write"
+		}
+		if _, held := rec.held()[name]; held {
+			return "~/.codex/config.toml holds it in a form repose does not edit"
+		}
+	case "opencode":
+		if _, held := rec.held()[name]; held {
+			return "~/.config/opencode/config.json has comments, which a rewrite would lose"
+		}
+	}
+	return ""
+}
+
+// codexLink reports whether ~/.codex/config.toml is a symbolic link,
+// which sync leaves to whatever made it.
+func codexLink(p Paths) bool {
+	st, err := os.Lstat(filepath.Join(p.Home, ".codex", "config.toml"))
+	return err == nil && st.Mode()&os.ModeSymlink != 0
 }
 
 func fromRank(f string) int {

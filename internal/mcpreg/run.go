@@ -31,12 +31,14 @@ func MissingSecretsLine(name string, need []string) string {
 // neither holds stops it with exit 1. It returns the program's path,
 // its argv and its environment (the caller's, plus the server's env).
 func Prepare(p Paths, name string) (path string, argv, env []string, err error) {
-	reg, lerr := Load(p)
-	if lerr != nil {
-		return "", nil, nil, &LaunchError{1, "repose-mcp: " + lerr.Error()}
-	}
+	reg := Load(p)
 	s, ok := reg.LaptopServer(name)
 	if !ok {
+		for _, pr := range reg.Problems {
+			if strings.HasPrefix(pr, "~/.repose/mcp/laptop.json") {
+				return "", nil, nil, &LaunchError{1, "repose-mcp: " + pr}
+			}
+		}
 		return "", nil, nil, &LaunchError{127, "repose-mcp: " + name + " is not in ~/.repose/mcp/laptop.json"}
 	}
 	if transport(s) != "stdio" {
