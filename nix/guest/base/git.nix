@@ -43,20 +43,12 @@ in
     pull.rebase = lib.mkDefault false;
   };
 
-  systemd.user.services.repose-gh-helper-cleanup = {
-    description = "repose: remove gh credential helpers that name a store path";
-    wantedBy = [ "default.target" ];
-    unitConfig.ConditionUser = "dev";
-    # Outside default.target's ordering, like repose-agent-hooks: the
-    # project's tmux session waits for default.target (DECISIONS I-231).
-    unitConfig.DefaultDependencies = false;
-    conflicts = [ "shutdown.target" ];
-    before = [ "shutdown.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = "${ghHelperCleanup}/bin/repose-gh-helper-cleanup";
-    };
-  };
+  # In dev's user activation, which runs at login and again at every
+  # base switch: dev's user manager lingers, so a unit wanted by
+  # default.target would first run at the next boot (I-526).
+  system.userActivationScripts.repose-gh-helper-cleanup.text = ''
+    ${ghHelperCleanup}/bin/repose-gh-helper-cleanup || true
+  '';
 
   # gnupg's built-in pinentry path does not exist in its store output, so
   # every passphrase prompt failed with "No pinentry". gpg-agent reads
@@ -66,7 +58,7 @@ in
   '';
   # pinentry-curses draws on the terminal gpg-agent is told about.
   programs.bash.interactiveShellInit = ''
-    GPG_TTY=$(tty)
-    export GPG_TTY
+    if repose_tty=$(tty 2>/dev/null); then export GPG_TTY=$repose_tty; fi
+    unset repose_tty
   '';
 }

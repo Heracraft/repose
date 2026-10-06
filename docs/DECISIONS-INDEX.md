@@ -557,5 +557,5 @@ pointer, not a summary.
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13064
 - **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L13085
 - **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L13104
-- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L13128
-- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L13141
+- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L13130
+- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L13143

@@ -13116,8 +13116,10 @@ and git prompts, so it is safe on every machine. The carry adds the gist
 helper beside its github.com one (hash part `gh-helper-3`), and keeps the
 two `url.insteadOf` rewrites conditional on a carried login: set
 system-wide they would send an SSH deploy key made on the machine (I-247)
-over HTTPS. The user unit `repose-gh-helper-cleanup` removes, at each
-login, the helpers for those two hosts in `~/.gitconfig` whose value
+over HTTPS. `repose-gh-helper-cleanup`, run from dev's user activation
+(at login and at each base switch, since dev's user manager lingers and
+a unit wanted by `default.target` would wait for the next boot), removes
+the helpers for those two hosts in `~/.gitconfig` whose value
 matches `^!/nix/store/[^ ]*gh[^ ]* auth git-credential$`, with the empty
 `helper =` that `gh auth setup-git` writes before each; any other helper
 stays. The secrets page now says a `gh auth login` on the machine is
@@ -13148,7 +13150,8 @@ sysconfdir, `/etc/gnupg`, before the user's: on kanali (base 2026.10.05)
 the same command succeeded once a test pinentry was named there, inside
 a mount namespace with `/etc` overlaid, and failed without it.
 `/etc/gnupg/gpg-agent.conf` names `pinentry-curses`, and interactive
-bash exports `GPG_TTY=$(tty)` so it draws in the pane. A user's own
+bash exports `GPG_TTY` as `tty` names it, when there is one, so it
+draws in the pane. A user's own
 `~/.gnupg/gpg-agent.conf` still applies on top. `gpgconf
 --list-components` keeps printing the compiled-in path, which the agent
 does not use once the file names another. Agents have no terminal; the

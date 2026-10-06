@@ -645,7 +645,8 @@ in
       with subtest("I-526: gh is the system credential helper by name, and store-path helpers go"):
           for h in ["https://github.com", "https://gist.github.com"]:
               assert dev(f"git config --system credential.{h}.helper").strip() == "!gh auth git-credential", h
-          cleanup = guest.succeed("grep -o '/nix/store/[^ ]*/bin/repose-gh-helper-cleanup' /etc/systemd/user/repose-gh-helper-cleanup.service").strip()
+          act = guest.succeed("grep -o '/nix/store/[^ ]*nixos-activation-start' /etc/systemd/user/nixos-activation.service").strip()
+          cleanup = guest.succeed(f"grep -o '/nix/store/[^ ]*/bin/repose-gh-helper-cleanup' {act}").strip()
           dev("cp ~/.gitconfig /tmp/gitconfig.keep 2>/dev/null || :; for h in https://github.com https://gist.github.com; do git config --global --add credential.$h.helper \"\"; git config --global --add credential.$h.helper '!/nix/store/0000-gh-2.100.0/bin/.gh-wrapped auth git-credential'; done; git config --global --add credential.https://example.com.helper store")
           dev(cleanup)
           dev(cleanup)
