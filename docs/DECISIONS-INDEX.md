@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+525 entries.
 
 ## Scope
 
@@ -556,3 +556,4 @@ pointer, not a summary.
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
 - **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; L13069
+- **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13139

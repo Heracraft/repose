@@ -143,8 +143,7 @@
 		['halves', 'neutral'],
 		['ring', 'neutral'],
 		['arch', 'neutral'],
-		['asterisk', 'neutral'],
-		['star', 'accent']
+		['asterisk', 'neutral']
 	];
 </script>
 
@@ -219,6 +218,7 @@
 				<a href={resolve('/docs')} class="navlink">Docs</a>
 				<a href="#pricing" class="navlink">Pricing</a>
 				<a href={SOURCE_URL} class="navlink hidden sm:inline">GitHub</a>
+				<a href={FEEDBACK_URL} class="navlink">Feedback</a>
 				{@render authAction('btn-quiet btn--sm', 'Sign in', 'Dashboard')}
 			</nav>
 		</HeaderFrame>
@@ -230,7 +230,7 @@
 				<p class="eyebrow">For solo founders and their agents</p>
 				<h1 class="hero-h">
 					<span class="line">Your dev environment,</span>
-					<span class="line"><span class="bar">replicated</span> in the cloud</span>
+					<span class="line">replicated in the cloud</span>
 				</h1>
 				<p class="lead">
 					<span>Your code, tools and logins on a machine of its own.</span>
