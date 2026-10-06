@@ -13121,7 +13121,8 @@ left alone), and an appended `[projects."<dir>"]` table with
 `trust_level = "trusted"` in `${CODEX_HOME:-~/.codex}/config.toml` when
 the file has no table for that folder in either quoting (a user's
 `untrusted` stays; a path with characters TOML would need escapes for is
-skipped). Checked on kanali: Gemini CLI started in a folder so marked
+skipped). Either file is left alone when it is a symlink, which a
+dotfiles tool manages; the dialog then shows and `run` attaches. Checked on kanali: Gemini CLI started in a folder so marked
 went straight to its prompt, and Codex in a folder whose table was
 written by hand started without the screen; a worktree of a trusted
 repository is trusted by Codex already. Folder trust stays on
@@ -13195,7 +13196,7 @@ daemon running (`app-server-daemon/daemon.pid` names no live
 `${CODEX_HOME:-~/.codex}/app-server-daemon/repose-env`, and the daemon
 this start brings up has that environment. With one running whose stamp
 differs, an interactive start (no arguments, a first argument that is an
-option, `resume`, `fork`) gets `--no-daemon`; `exec`, `app-server`,
+option or a prompt, `resume`, `fork`) gets `--no-daemon`; `exec`, `app-server`,
 `agents` and the other subcommands are left alone, and so is an
 invocation that already has `--no-daemon`. Checked on kanali with the
 built wrapper: the first start had no flag, a start with another PATH

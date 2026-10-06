@@ -43,7 +43,7 @@ To start in another mode, set `defaultMode` in `~/.claude/settings.json`, on you
 
 Claude Code also starts with its fullscreen renderer, which fills the tmux window and scrolls inside itself. To draw inline instead, set `"tui": "default"` in `~/.claude/settings.json` on your laptop or the machine, or run `/tui default` in Claude Code. Your value is kept.
 
-Codex CLI starts the same way: no approval prompts and full access to the machine. To start it otherwise, set both `approval_policy` and `sandbox_mode` in `~/.codex/config.toml` on the machine; setting only one keeps the machine's value for the other.
+Codex CLI also starts without asking: no approval prompts, and full access to the machine. To start it otherwise, set both `approval_policy` and `sandbox_mode` in `~/.codex/config.toml` on the machine; setting only one keeps the machine's value for the other.
 
 opencode, Gemini CLI and pi ask as they normally do unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
 

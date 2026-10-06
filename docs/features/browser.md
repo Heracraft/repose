@@ -60,11 +60,12 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
 
 ## What is in the guest
 
-- `chromium` from nixpkgs and `playwright-driver.browsers`, linked into
-  the usual `~/.cache/ms-playwright` at boot, so a project on the base's
-  Playwright version finds its browsers without `npx playwright install`;
-  any other version downloads its own there, and the downloaded browsers
-  run through nix-ld (DECISIONS I-228).
+- `chromium` from nixpkgs and `playwright-driver.browsers` built with
+  Chromium only, linked into the usual `~/.cache/ms-playwright` at boot,
+  so a project on the base's Playwright version finds Chromium without
+  `npx playwright install`; any other version, or Firefox, downloads its
+  own there, and the downloaded browsers run through nix-ld (DECISIONS
+  I-228). WebKit does not run (I-548).
 - The display and the VNC server in one process, `repose-xvnc.service`:
   TigerVNC's Xvnc as X display `:99`, 1440x900 until a viewer connects,
   VNC on 127.0.0.1:5900 with the boot's password, `-AcceptSetDesktopSize`
@@ -77,7 +78,8 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   socket-activated endpoint `http://127.0.0.1:9224`. The first connection
   to 9224 starts Xvnc, the window manager and the browser; nothing runs
   before that.
-- Playwright MCP registered in Claude Code's user-scope MCP config as
+- Playwright MCP registered for Claude Code (its user-scope MCP config),
+  Codex, opencode and Gemini CLI (I-545) as
   `playwright` (`--cdp-endpoint http://127.0.0.1:9224`) and
   chrome-devtools-mcp as `chrome-devtools` (`--browserUrl
   http://127.0.0.1:9224`). Both attach to the agents' browser, so they see
@@ -150,8 +152,9 @@ its password field; a new CLI against an older base opens stock noVNC's
 - A fresh guest can run a Playwright script that opens a page and takes a
   screenshot with no install step. A test in the guest base does exactly
   that.
-- Claude Code in a fresh guest lists `playwright` and `chrome-devtools` in
-  `claude mcp list`.
+- Claude Code, Codex, opencode and Gemini CLI in a fresh guest list
+  `playwright` and `chrome-devtools` in their `mcp list` (Gemini CLI in a
+  trusted folder).
 - `repose browser [PROJECT] [--stop] [--no-open]`: runs
   `repose-guest-profile desktop start` over SSH (starts the viewer, and
   with it the agents' browser if it is not running; prints the password),

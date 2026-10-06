@@ -43,14 +43,21 @@ let
   # interactive start whose dev environment (PATH and the direnv
   # directory) differs from the running daemon's gets --no-daemon. The
   # stamp is written when no daemon runs, so it names the environment of
-  # the daemon this start brings up. exec, app-server and the other
-  # subcommands are left as they are.
+  # the daemon this start brings up. Interactive means no arguments, an
+  # option or a prompt first, `resume` or `fork`; exec, app-server and the
+  # other subcommands of Codex 0.157 are left as they are.
   codexDaemon = ''
     repose_mode=
     if [ $# -eq 0 ]; then
       repose_mode=top
     else
-      case "$1" in -*) repose_mode=top ;; resume|fork) repose_mode=sub ;; esac
+      # A first word that is no subcommand is the interactive start's
+      # prompt (`codex "fix the build"`).
+      case "$1" in
+        resume|fork) repose_mode=sub ;;
+        agents|exec|e|review|login|logout|mcp|mcp-server|plugin|app-server|remote-control|completion|update|doctor|sandbox|debug|apply|a|queue|archive|delete|migrate-rollouts|unarchive|cloud|exec-server|features|help) ;;
+        *) repose_mode=top ;;
+      esac
     fi
     for repose_a in "$@"; do [ "$repose_a" = --no-daemon ] && repose_mode=; done
     if [ -n "$repose_mode" ]; then

@@ -138,7 +138,8 @@ the attach opens is `<name>`. guestd reads none of this.
   alone, mode 0600, atomic); `${CODEX_HOME:-~/.codex}/config.toml` gets
   `[projects."<folder>"]` with `trust_level = "trusted"` appended when it
   has no table for that folder in either quoting (a folder path with
-  characters outside `[A-Za-z0-9._/-]` is skipped). A pane that settles
+  characters outside `[A-Za-z0-9._/-]` is skipped). Either file is left
+  alone when it is a symlink. A pane that settles
   on either agent's trust dialog gets no prompt, and the message names
   the agent. `run` waits for a gemini pane whose `pane_current_command`
   is `node`.
@@ -235,7 +236,8 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    ends it and the shell stays without it until it leaves the folder or
    `flake.nix` changes.
 4. Exec the real binary with `"$@"`. For `codex` started interactively
-   (no arguments, a first argument that is an option, `resume`, `fork`),
+   (no arguments, a first argument that is an option or a prompt,
+   `resume`, `fork`),
    `--no-daemon` is added when a managed app-server daemon runs whose
    environment stamp, `${CODEX_HOME:-~/.codex}/app-server-daemon/repose-env`
    (sha256 of `DIRENV_DIR` and `PATH` after step 3), differs from this

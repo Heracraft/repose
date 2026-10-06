@@ -102,8 +102,12 @@ snapshot restores it; `dev` is not root, which bypass mode requires.
   `"default"`, from the guest or the laptop, is kept.
 - Deny rules, explicit ask rules and removals of critical paths still
   prompt or block in this mode (Claude Code's own rules).
-- Codex, opencode, Gemini CLI and pi keep their own defaults; the user docs
-  show Codex's two keys.
+- Codex starts the same way from `/etc/codex/config.toml`, its lowest
+  config layer: `approval_policy = "never"`, `sandbox_mode =
+  "danger-full-access"`, `check_for_update_on_startup = false` (I-546). A
+  key in `~/.codex/config.toml` wins; the user docs say to set both of the
+  first two to opt out.
+- opencode, Gemini CLI and pi keep their own defaults.
 
 ## The machine guide (DECISIONS I-243)
 

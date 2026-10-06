@@ -208,10 +208,11 @@ func agentTrustScript(binary, dir string) string {
 // (I-544). Folder trust stays on for every other folder. A DO_NOT_TRUST
 // the user chose for this exact folder is replaced, as claude's refusal
 // is; every other key is kept. Written only when the value is not already
-// TRUST_FOLDER, atomically, never when the file is not valid JSON. Best
-// effort, like claudeTrustScript.
+// TRUST_FOLDER, atomically, never when the file is not valid JSON or is a
+// symlink (a file a dotfiles tool manages). Best effort, like
+// claudeTrustScript.
 func geminiTrustScript(dir string) string {
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_gj="$HOME/.gemini/trustedFolders.json" && {
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_gj="$HOME/.gemini/trustedFolders.json" && [ ! -L "$repose_gj" ] && {
   if [ ! -s "$repose_gj" ]; then
     mkdir -p "$HOME/.gemini" && repose_tt=$(mktemp "$repose_gj.XXXXXX") && jq -n --arg p "$repose_tp" '{($p): "TRUST_FOLDER"}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_gj"
   elif jq -e --arg p "$repose_tp" 'type == "object" and .[$p] != "TRUST_FOLDER"' "$repose_gj" >/dev/null 2>&1; then
@@ -231,9 +232,10 @@ func geminiTrustScript(dir string) string {
 // has a table for that folder in either quoting, whatever its trust_level,
 // so the user's "untrusted" stays. Only paths of the checkout's character
 // set ([A-Za-z0-9._/-]) are written, since TOML would need escapes for
-// others. Atomic and best effort, like claudeTrustScript.
+// others, nor into a config.toml that is a symlink (a file a dotfiles
+// tool manages). Atomic and best effort, like claudeTrustScript.
 func codexTrustScript(dir string) string {
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && case "$repose_tp" in *[!A-Za-z0-9._/-]*) false ;; esac && repose_xd="${CODEX_HOME:-$HOME/.codex}" && repose_xc="$repose_xd/config.toml" && {
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && case "$repose_tp" in *[!A-Za-z0-9._/-]*) false ;; esac && repose_xd="${CODEX_HOME:-$HOME/.codex}" && repose_xc="$repose_xd/config.toml" && [ ! -L "$repose_xc" ] && {
   if ! grep -qF -e "[projects.\"$repose_tp\"]" -e "[projects.'$repose_tp']" "$repose_xc" 2>/dev/null; then
     mkdir -p "$repose_xd" && repose_tt=$(mktemp "$repose_xc.XXXXXX") && { if [ -s "$repose_xc" ]; then cat "$repose_xc" && [ -z "$(tail -c1 "$repose_xc")" ] || echo; fi; printf '\n[projects."%%s"]\ntrust_level = "trusted"\n' "$repose_tp"; } > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_xc"
   fi

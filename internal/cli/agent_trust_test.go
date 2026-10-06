@@ -113,6 +113,26 @@ func TestGeminiTrustScript(t *testing.T) {
 		}
 	})
 
+	t.Run("a symlinked file is left alone", func(t *testing.T) {
+		target := filepath.Join(home, "dotfiles-trusted.json")
+		if err := os.WriteFile(target, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(file); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, file); err != nil {
+			t.Fatal(err)
+		}
+		runScript(t, home, geminiTrustScript("~/proj"))
+		if fi, err := os.Lstat(file); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("the link was replaced: %v", err)
+		}
+		if b, _ := os.ReadFile(target); string(b) != "{}" {
+			t.Fatalf("link target changed to %q", b)
+		}
+	})
+
 	t.Run("a missing folder changes nothing and still starts", func(t *testing.T) {
 		if err := os.Remove(file); err != nil {
 			t.Fatal(err)
@@ -178,6 +198,26 @@ func TestCodexTrustScript(t *testing.T) {
 			if b, _ := os.ReadFile(cfg); string(b) != user {
 				t.Fatalf("%q changed to %q", user, b)
 			}
+		}
+	})
+
+	t.Run("a symlinked config.toml is left alone", func(t *testing.T) {
+		target := filepath.Join(home, "dotfiles-config.toml")
+		if err := os.WriteFile(target, []byte("model = \"o4\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, cfg); err != nil {
+			t.Fatal(err)
+		}
+		runScript(t, home, codexTrustScript("~/proj"))
+		if fi, err := os.Lstat(cfg); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("the link was replaced: %v", err)
+		}
+		if b, _ := os.ReadFile(target); string(b) != "model = \"o4\"\n" {
+			t.Fatalf("link target changed to %q", b)
 		}
 	})
 

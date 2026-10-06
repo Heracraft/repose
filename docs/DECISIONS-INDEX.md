@@ -557,7 +557,7 @@ pointer, not a summary.
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
 - **I-543** Gemini CLI and pi never update themselves on a guest — 2026-10-06; L13069
 - **I-544** The CLI marks the folder it starts Gemini CLI or Codex in as trusted — 2026-10-06; L13105
-- **I-545** The platform MCP servers reach Codex, opencode and Gemini CLI — 2026-10-06; L13134
-- **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13158
-- **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13180
-- **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13207
+- **I-545** The platform MCP servers reach Codex, opencode and Gemini CLI — 2026-10-06; L13135
+- **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13159
+- **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13181
+- **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13208
