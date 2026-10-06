@@ -12,15 +12,15 @@
 
   programs.git = {
     enable = true;
-    extraConfig.push.autoSetupRemote = true;
+    settings.push.autoSetupRemote = true;
   };
 
+  # Aliases reach bash only with home-manager writing ~/.bashrc.
+  programs.bash.enable = true;
   home.shellAliases = {
     gs = "git status --short";
     ll = "ls -la";
   };
-
-  programs.starship.enable = true;
 
   xdg.configFile."starship.toml".text = ''
     add_newline = false

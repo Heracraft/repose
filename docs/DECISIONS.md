@@ -13065,3 +13065,44 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-552. Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named.**
+(personal-removal, 2026-10-06; follows I-490, I-496) On kanali the owner
+pushed a machine.nix that themed tmux and reloaded it into the running
+server, then emptied it and applied: home-manager removed every file,
+and the purple status bar stayed. tmux reads `/etc/tmux.conf`,
+`~/.tmux.conf` and `~/.config/tmux/tmux.conf` once, when the server
+starts, and since I-496 the server lives as long as the session, so a
+fragment or machine.nix that added, changed or removed a tmux config
+did nothing on a running machine, and one sourced by hand outlived its
+file. `repose-tmux-reload` (nix/guest/base/tmux-reload.nix) now runs as
+`ExecStartPost=-` of `home-manager-dev`, which also restarts when
+`/etc/tmux.conf` changes: when the files' contents changed since its
+last run and a server is running, it unsets every global server,
+session and window option, replaces the key tables with tmux's defaults
+(from a server that read no file), and sources the files in tmux's
+order. Sourcing alone was rejected: it only adds, and appends to array
+options such as `terminal-features` on each run. Options a session sets
+for itself (the CLI's port forward line), the global environment (TZ,
+PATH) and every window and pane are kept; a global option a user set by
+hand is lost at the next config change. With no server, or on the first
+run, it records the digest only. The `-` keeps a broken user config from
+failing the switch; a file with an error still loads its other lines.
+Check `guest-tmux-follows-config` asserts the unit line, and on a real
+tmux in the build sandbox that removal resets an option, a binding and
+an array entry while a session option survives, and that an added file
+loads. Shells already open keep the aliases and functions their
+`.bashrc` loaded; that is documented, not fixed.
+
+The CLI side: deleting `~/.config/repose/machine.nix` pushes nothing,
+so the account kept applying it to new machines with no word. `run`
+now says once, when this laptop pushed the account's current revision
+and its file is gone since, that the account still has it
+(`missing_noted` in machine.nix.state keeps it to once).
+`config --global apply` with no file names `apply /dev/null` as the way
+to remove it when the account has one. The docs gain the removal steps,
+that `home.shellAliases` needs `programs.bash.enable = true` (home-manager
+writes `~/.bashrc` only then; the example lacked it, so its aliases were
+built and never loaded), and that a tmux config reaches the running
+session. Not covered: a VM test that switches a running guest's
+personal layer off with a pane open; it needs the dev box.

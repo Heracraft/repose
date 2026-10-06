@@ -210,6 +210,37 @@
           grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
           touch $out
         '';
+        # A switch that adds, changes or removes a tmux config reaches the
+        # running server, and removing one leaves tmux's defaults: the
+        # option, the binding and the array option the file touched
+        # (DECISIONS I-552).
+        guest-tmux-follows-config = pkgs.runCommand "guest-tmux-follows-config" {
+          nativeBuildInputs = [ pkgs.tmux pkgs.gnugrep ];
+        } ''
+          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/system/home-manager-dev.service
+          grep -q '^ExecStartPost=-.*/bin/repose-tmux-reload$' "$unit" || { echo "$unit lacks the tmux reload" >&2; exit 1; }
+          reload=${pkgs.callPackage ./guest/base/tmux-reload.nix { }}/bin/repose-tmux-reload
+          export HOME=$TMPDIR/h TMUX_TMPDIR=$TMPDIR/t
+          mkdir -p $HOME/.config/tmux $TMUX_TMPDIR
+          conf=$HOME/.config/tmux/tmux.conf
+          printf 'set -g status-position top\nbind M-z display-message reposecheck\nset -as terminal-features ",x:RGB"\n' > $conf
+          tmux new-session -d -s w -x 80 -y 24
+          tmux set-option -t =w: status-right forward
+          features=$(tmux show -s terminal-features | wc -l)
+          $reload
+          [ "$(tmux show -gv status-position)" = top ] || { echo "first run changed the server" >&2; exit 1; }
+          rm $conf
+          $reload
+          [ "$(tmux show -gv status-position)" = bottom ] || { echo "status-position survived removal" >&2; exit 1; }
+          ! tmux list-keys -T prefix | grep -q reposecheck || { echo "binding survived removal" >&2; exit 1; }
+          [ "$(tmux show -s terminal-features | wc -l)" -lt "$features" ] || { echo "terminal-features kept the file's entry" >&2; exit 1; }
+          [ "$(tmux show -v -t =w: status-right)" = forward ] || { echo "session option lost" >&2; exit 1; }
+          printf 'set -g status-position top\n' > $conf
+          $reload
+          [ "$(tmux show -gv status-position)" = top ] || { echo "added file not loaded" >&2; exit 1; }
+          tmux kill-server
+          touch $out
+        '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.

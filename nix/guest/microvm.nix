@@ -142,6 +142,14 @@ let
             '';
           in
           lib.mkForce "${hmStart} ${config.home-manager.users.dev.home.activationPackage}";
+        # The running tmux server takes the new tmux configuration: a
+        # fragment or machine.nix that adds, changes or removes a tmux
+        # config, or a base that changes /etc/tmux.conf, reaches the panes
+        # already open without restarting the session (DECISIONS I-552,
+        # I-496). "-": a user's broken tmux config never fails the switch.
+        systemd.services.home-manager-dev.serviceConfig.ExecStartPost =
+          "-${pkgs.callPackage ./base/tmux-reload.nix { }}/bin/repose-tmux-reload";
+        systemd.services.home-manager-dev.restartTriggers = [ config.environment.etc."tmux.conf".source ];
       })
     ] ++ extraModules;
   };
