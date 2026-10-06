@@ -71,7 +71,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 
-**A program you installed isn't on `PATH`.** Installs with npm, pnpm, `go install`, `cargo install`, uv, pip `--user`, bun, deno, gem and composer are on `PATH` in new shells. Open a new tmux window. Tools that manage `PATH` from their own shell setup (nvm, pyenv, rbenv) need that setup in `~/.bashrc`.
+**A program you installed isn't on `PATH`.** Installs with npm, pnpm, `go install`, `cargo install`, uv, bun, deno, gem and composer are on `PATH` in new shells. Open a new tmux window. Tools that manage `PATH` from their own shell setup (nvm, pyenv, rbenv) need that setup in `~/.bashrc`.
 
 **Processes get killed, or the machine is slow under load.** It ran out of memory: `sudo dmesg | grep -i killed` names what the kernel stopped. Stop what you don't need (`repose status` lists dev servers still listening), or give the machine more memory with `repose resize --size large` or `--size xl`, which restarts it. See [Changing the size](/docs/machine#changing-the-size).
 

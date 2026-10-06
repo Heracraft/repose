@@ -459,6 +459,8 @@ prefix), `PNPM_HOME=/home/dev/.local/share/pnpm`,
 revisions into it at boot, never over a real directory; until I-228 it
 was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 (I-228), `PKG_CONFIG_PATH` naming openssl, zlib, sqlite and libffi (I-228) and libyaml, libpq, libxml2, libxslt and libmysqlclient, with `pg_config` and `mysql_config` on PATH (I-265),
+`PIPX_DEFAULT_PYTHON=/run/current-system/sw/bin/python3` (I-523),
+`COREPACK_ENABLE_DOWNLOAD_PROMPT=0` (I-520),
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`, `PUPPETEER_SKIP_DOWNLOAD=1`,
 `PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium).
 `GOPATH=/home/dev/go`, `CARGO_HOME=/home/dev/.cargo`,
@@ -467,13 +469,17 @@ was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 `COMPOSER_HOME=/home/dev/.config/composer`,
 `GEM_HOME=/home/dev/.local/share/gem` (I-227). `PATH` starts with every
 package manager's user bin dir, listed in `nix/guest/base/user-bin-dirs.nix`
-(`/home/dev/.local/bin`, `/home/dev/.local/share/pnpm`,
+(`/home/dev/.local/bin`, `/home/dev/.local/share/pnpm/bin` (I-520),
+`/home/dev/.local/share/pnpm`,
 `/home/dev/.npm-global/bin`, `/home/dev/go/bin`, `/home/dev/.cargo/bin`,
 `/home/dev/.bun/bin`, `/home/dev/.deno/bin` and the rest), in login and
 non-login shells, tmux windows, and dev's systemd user units (I-227). `python`, `python3` and `python3.12` in
 `/run/current-system/sw/bin` are a wrapper that adds nix-ld's library
 directory to `LD_LIBRARY_PATH` for manylinux wheels and keeps its own
-path as `sys.executable` (I-228). `DISPLAY=:99` only while the X server
+path as `sys.executable` (I-228). `/bin/bash`, `/usr/bin/bash`,
+`/usr/bin/python3`, `/usr/bin/python` and `/usr/bin/perl` link into
+`/run/current-system/sw/bin`, and `/etc/ssl/cert.pem` is the CA bundle
+(I-521). `DISPLAY=:99` only while the X server
 socket `/tmp/.X11-unix/X99` exists (checked at every shell start); it
 exists while the agents' browser or the desktop viewer runs (I-246).
 The project fragment's `home.sessionVariables` and `home.sessionPath`

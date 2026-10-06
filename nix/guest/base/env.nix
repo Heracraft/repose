@@ -27,6 +27,9 @@ in
     # The nodejs store path is read-only; global installs need a prefix.
     NPM_CONFIG_PREFIX = "${home}/.npm-global";
     PNPM_HOME = "${home}/.local/share/pnpm";
+    # yarn is corepack's (tool-list.nix, I-520): fetch the version a
+    # project pins without asking on a terminal nobody watches.
+    COREPACK_ENABLE_DOWNLOAD_PROMPT = "0";
     # The tools' own defaults, set so every process (user units too)
     # agrees on them.
     GOPATH = "${home}/go";
@@ -37,6 +40,10 @@ in
     COMPOSER_HOME = "${home}/.config/composer";
     # Not a default: without it `gem install` writes to ruby's store path.
     GEM_HOME = "${home}/.local/share/gem";
+    # nixpkgs#pipx defaults to its own unwrapped python, whose venvs find
+    # no libstdc++ for a manylinux wheel; the system python3 is the nix-ld
+    # wrapper (compat.nix, I-228, I-523).
+    PIPX_DEFAULT_PYTHON = "/run/current-system/sw/bin/python3";
     PATH = userBinDirs;
     # A stable /etc path rather than a store path, so a process that kept
     # an older BASH_ENV across a base switch still finds the file.
@@ -150,6 +157,7 @@ in
     "d /home/dev/.local/bin 0755 dev dev -"
     "d /home/dev/.local/share 0755 dev dev -"
     "d /home/dev/.local/share/pnpm 0755 dev dev -"
+    "d /home/dev/.local/share/pnpm/bin 0755 dev dev -"
     "d /home/dev/.npm-global 0755 dev dev -"
     "d /home/dev/.npm-global/bin 0755 dev dev -"
   ];

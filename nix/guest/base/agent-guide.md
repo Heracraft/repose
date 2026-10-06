@@ -24,8 +24,9 @@ The user may have added other repositories to this machine as folders beside it,
 
 ## Installing tools
 
-- Already installed: Node.js 24 with npm and pnpm, Python 3.12 with uv, Go, rustup, gcc, make, cmake, Docker, Chromium, git, gh, jq, ripgrep, sqlite3, psql and the usual command-line tools. <!-- /docs/machine#whats-installed -->
+- Already installed: Node.js 24 with npm, pnpm and yarn (through corepack), Python 3.12 with uv, Go, rustup (run `rustup default stable` once, and `rustup component add rust-analyzer` if your editor uses it), gcc, make, cmake, Docker, Chromium, git, gh, jq, ripgrep, sqlite3, psql and the usual command-line tools. <!-- /docs/machine#whats-installed -->
 - Programs built for other Linux systems (prebuilt binaries, Prisma engines, Python wheels, `curl | sh` installers) run as they would on Ubuntu. <!-- /docs/machine#whats-installed -->
+- Python packages go in a venv (`uv venv`, or `python3 -m venv .venv` and then pip); Python CLIs install with `uv tool install`. The system `python3` has no Tk; for tkinter, use a Python from uv (`uv python install 3.12`). <!-- /docs/machine#whats-installed -->
 - Install a missing tool now with `nix profile add nixpkgs#NAME`. Typing a missing command prints the package that has it. `npm i -g`, `go install` and `uv tool install` work too. All of these stay on this machine's disk. <!-- /docs/machine#installing-more -->
 - Installs made here are not part of the project's configuration. To keep a package on every rebuild, tell the user to run `repose config add NAME` on their laptop. <!-- /docs/config#add-a-package -->
 - A tool the user wants on every machine of their account, with their shell aliases and dotfiles, belongs in their machine.nix: `repose config --global add NAME` on their laptop. <!-- /docs/config#your-machine-nix -->

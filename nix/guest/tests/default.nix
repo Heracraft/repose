@@ -627,6 +627,17 @@ in
           # from the base is a linker driver named cc.
           dev("command -v cc && command -v rustup")
 
+      with subtest("I-520: pnpm's global bin dir is on PATH, yarn is corepack's"):
+          assert dev("pnpm bin -g").strip() == "/home/dev/.local/share/pnpm/bin"
+          # yarn --version downloads yarn from registry.yarnpkg.com, which
+          # the test VM cannot reach; the command and its target are what
+          # the base provides.
+          target = dev("readlink -f $(command -v yarn)").strip()
+          assert target.endswith("/lib/node_modules/corepack/dist/yarn.js"), target
+          assert target.rsplit("/dist/", 1)[0] == dev("readlink -f $(command -v corepack)").strip().rsplit("/dist/", 1)[0], target
+          dev("command -v yarnpkg")
+          assert dev("echo -n $COREPACK_ENABLE_DOWNLOAD_PROMPT") == "0"
+
       with subtest("I-218: everyday CLIs"):
           for tool in ["file", "lsof", "zip", "unzip", "dig", "nslookup", "nc", "sqlite3", "psql", "pg_dump", "openssl", "gpg", "patch", "less", "strace", "rsync", "killall", "readelf"]:
               dev(f"command -v {tool}")
@@ -964,6 +975,33 @@ in
           print(guest.succeed("tail -n 12 /home/dev/.repose/tools-install.log"))
           assert guest.succeed("sudo -H -u dev bash -lc 'greet'").strip() == "greetings"
 
+      with subtest("I-522: a cargo tool gets rustup a default toolchain first"):
+          # Stand-ins ahead of rustup's proxies on the login PATH: rustup
+          # has no default until `default stable`, and cargo fails without
+          # one, as the real ones do.
+          guest.succeed("""sudo -H -u dev sh -c 'mkdir -p /home/dev/.local/bin && cd /home/dev/.local/bin && cat > rustup <<"EOF"
+      #!/bin/sh
+      echo "rustup $*" >> /tmp/rustup-calls
+      case "$1 $2" in
+        "show active-toolchain") test -f /tmp/rustup-default ;;
+        "toolchain install") : > /tmp/rustup-stable ;;
+        "default stable") test -f /tmp/rustup-stable && : > /tmp/rustup-default ;;
+      esac
+      EOF
+      cat > cargo <<"EOF"
+      #!/bin/sh
+      test -f /tmp/rustup-default || { echo "error: no default is configured" >&2; exit 1; }
+      printf "#!/bin/sh\\necho crate ok\\n" > /home/dev/.local/bin/fake-crate && chmod +x /home/dev/.local/bin/fake-crate
+      EOF
+      chmod +x rustup cargo'""")
+          guest.succeed("""sudo -H -u dev sh -c 'printf "%s" "{\\"hash\\":\\"cargo-1\\",\\"items\\":[{\\"name\\":\\"fake-crate\\",\\"manager\\":\\"cargo\\",\\"pkg\\":\\"fake-crate\\",\\"bins\\":[\\"fake-crate\\"]}]}" > /home/dev/.repose/tools-wanted.json'""")
+          guest.succeed("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 REPOSE_TOOLS_DELAY=0 bash -lc 'repose-tools-install run'")
+          calls = guest.succeed("cat /tmp/rustup-calls")
+          assert "rustup toolchain install stable --profile minimal\nrustup default stable" in calls, calls
+          assert guest.succeed("sudo -H -u dev bash -lc fake-crate").strip() == "crate ok"
+          assert "rustup: stable (minimal profile) is the default toolchain" in guest.succeed("cat /home/dev/.repose/tools-install.log")
+          guest.succeed("rm /home/dev/.local/bin/rustup /home/dev/.local/bin/cargo /home/dev/.local/bin/fake-crate /home/dev/.repose/tools-wanted.json")
+
       with subtest("I-417: a boot sets the old /tmp aside in one rename and deletes it after"):
           guest.succeed("sudo -u dev mkdir -p /tmp/stale && sudo -u dev sh -c 'for i in $(seq 2000); do : > /tmp/stale/f$i; done'")
           guest.shutdown()
@@ -1055,6 +1093,22 @@ in
           assert out.strip() == "2.3.3", out
           out = dev("python3 -c 'import ssl, sqlite3, sys; print(sys.executable)'")
           assert out.strip() == "/run/current-system/sw/bin/python3", out
+
+      with subtest("I-523: pipx uses the nix-ld python3"):
+          assert dev("echo -n $PIPX_DEFAULT_PYTHON") == "/run/current-system/sw/bin/python3"
+
+      with subtest("I-521: /bin/bash and /usr/bin/python3 scripts run, /etc/ssl/cert.pem is the CA bundle"):
+          guest.succeed("install -d -o dev -g dev /tmp/sb")
+          guest.succeed("printf '#!/bin/bash\\necho \"bash $BASH_VERSION\"\\n' > /tmp/sb/x.sh")
+          guest.succeed("printf '#!/usr/bin/python3\\nimport sys\\nprint(sys.executable)\\n' > /tmp/sb/p.py")
+          guest.succeed("printf 'SHELL := /bin/bash\\nall:\\n\\t@echo make $$BASH_VERSION\\n' > /tmp/sb/Makefile")
+          guest.succeed("chmod +x /tmp/sb/x.sh /tmp/sb/p.py && chown -R dev:dev /tmp/sb")
+          assert dev("/tmp/sb/x.sh").startswith("bash 5."), "#!/bin/bash"
+          assert dev("/tmp/sb/p.py").strip() == "/usr/bin/python3", "#!/usr/bin/python3"
+          assert dev("cd /tmp/sb && make -s").startswith("make 5."), "SHELL := /bin/bash"
+          dev("/usr/bin/python -c 'import ssl' && /usr/bin/bash -c true")
+          dev("test -x /usr/bin/perl || ! test -e /run/current-system/sw/bin/perl")
+          guest.succeed("test -e /etc/ssl/cert.pem && cmp /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt")
 
       with subtest("I-228: pkg-config finds the common system libraries"):
           out = dev("pkg-config --modversion openssl zlib sqlite3 libffi")

@@ -16,7 +16,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 ## What's installed
 
 - **Agents:** Claude Code, Codex CLI, opencode, Gemini CLI and pi.
-- **Languages:** Node.js 24 with npm and pnpm, Python 3.12 with uv, Go, and rustup (run `rustup default stable` once).
+- **Languages:** Node.js 24 with npm, pnpm and yarn (through corepack), Python 3.12 with uv, Go, and rustup (run `rustup default stable` once, and `rustup component add rust-analyzer` if your editor uses it).
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
 - **Browser:** Chromium and Playwright's browsers.
@@ -25,6 +25,8 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in the `docker` group, so `docker` needs no `sudo`.
 
 Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
+
+Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
 ## Installing more
 
@@ -38,7 +40,7 @@ uv tool install httpie
 nix profile add nixpkgs#ffmpeg
 ```
 
-`pip install --user`, bun, deno, gem and composer installs are on `PATH` too, as are the usual directories of yarn, dotnet, ghcup, cabal, opam, luarocks, mix, nimble, juliaup, krew and volta. `nix profile add` takes any package from nixpkgs; search names at [search.nixos.org](https://search.nixos.org/packages).
+bun, deno, gem and composer installs are on `PATH` too, as are the usual directories of yarn, dotnet, ghcup, cabal, opam, luarocks, mix, nimble, juliaup, krew and volta. `nix profile add` takes any package from nixpkgs; search names at [search.nixos.org](https://search.nixos.org/packages).
 
 Type a command the machine doesn't have and it tells you which package has it and how to add it:
 
@@ -61,9 +63,9 @@ The last line only appears when other packages have a command by that name. Inst
 Installing 2 of your tools in the background: air, portless
 ```
 
-Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`.
+Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`. Before a tool's `cargo install`, rustup gets stable (minimal profile) as its default toolchain if it has none.
 
-Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`.
+Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`. A Ruby 3.4 pin also gets Bundler 2.7 there, because the Bundler 2.6 that nixpkgs ships with Ruby 3.4 prints a screen of `already initialized constant` warnings on every `bundle`. A `Gemfile.lock` that says `BUNDLED WITH` 2.6 keeps running 2.6 until you run `bundle update --bundler`.
 
 A `.nix` file takes precedence over this guesswork. With a [machine.nix](/docs/config#your-machine-nix) on your account, `run` leaves your laptop's global tools out: machine.nix says which tools you want on every machine. With a `repose.nix` at the checkout root, it leaves out the commands the project's scripts call, because `repose.nix` describes the project. The Node, Ruby and Java pins still apply. Logins, Claude Code settings and your git identity are copied either way.
 
