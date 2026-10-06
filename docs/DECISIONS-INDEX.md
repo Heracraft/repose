@@ -556,8 +556,8 @@ pointer, not a summary.
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13028
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13055
 - **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L13076
-- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L13104
-- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L13131
-- **I-539** dev may ptrace its own processes — 2026-10-05; L13144
-- **I-540** The browser has CJK fonts — 2026-10-05; L13153
-- **I-541** `BROWSER` prints the URL — 2026-10-05; L13166
+- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L13107
+- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L13134
+- **I-539** dev may ptrace its own processes — 2026-10-05; L13150
+- **I-540** The browser has CJK fonts — 2026-10-05; L13159
+- **I-541** `BROWSER` prints the URL — 2026-10-05; L13177

@@ -13099,7 +13099,10 @@ swarm sets `live-restore` false in their own daemon config. Check
 (and a nixpkgs unit's `overrides.conf` drop-in) for the flag;
 `guest-docker` asserts `LiveRestoreEnabled` true. Not covered: a VM
 test that switches a running guest between two bases with a container
-up; it needs the dev box.
+up; it needs the dev box. `docker.service` `Requires=docker.socket`, so
+a switch that changes the socket unit's text still stops dockerd; that
+unit embeds no store path, and live-restore keeps the containers
+through it.
 
 **I-537. Containers resolve through resolved on 172.20.0.1.**
 (base-docker-system, 2026-10-05) On the default bridge, and in `docker
@@ -13139,7 +13142,10 @@ files while Claude Code's own shells had 524288. The base sets
 `security.pam.loginLimits` soft nofile 524288 for `dev`, which covers
 SSH, `repose exec` and `repose code`. System daemons keep systemd's
 defaults. The guest VM test reads the tmux server's and a pane's
-`/proc/PID/limits` and `ulimit -Sn` in a `su - dev` login.
+`/proc/PID/limits` and `ulimit -Sn` in a `su - dev` login. On a live
+base switch a new SSH login gets the limit at once, but the running
+tmux server and its panes keep 1024 until the machine's next start,
+since the switch never restarts the session (I-496).
 
 **I-539. dev may ptrace its own processes.** (base-docker-system,
 2026-10-05) `kernel.yama.ptrace_scope` was 1 (yama's default, kept by
@@ -13159,9 +13165,14 @@ cache.nixos.org), and "Noto Sans CJK SC" follows "Noto Sans" in the
 sans-serif default. The serif package and the static build are left out:
 either breaks the 6 GiB cap. The base closure was 6,306,239,088 bytes;
 with the font it is about 6,370,831,184 plus the fontconfig cache
-growth (not measured here: the dev box had 2.4 GB of disk free, too
-little to build the guest system), leaving about 71.6 MB (68 MiB) under
-the cap. `guest-closure-size` is the check.
+growth, leaving about 71.6 MB (68 MiB) under the cap. Review measured
+that growth by building the `fc-cache` derivation alone: 1,766,776
+bytes against 1,648,120 on base 2026.10.05 (+118,656), so the delta is
+about 64.7 MB and the headroom about 71.5 MB, shared with every other
+branch that adds to the closure (base-git-gpg adds about 13.8 MiB).
+With that cache, `fc-list :lang=ja` (zh, ko) lists 10 faces and
+`fc-match sans-serif:lang=ja` picks Noto Sans CJK JP. The guest system
+itself was not built; `guest-closure-size` is the check.
 
 **I-541. `BROWSER` prints the URL.** (base-docker-system, 2026-10-05)
 `BROWSER` was unset and the guest has no `xdg-open`, so `gh browse`
