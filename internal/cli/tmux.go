@@ -128,7 +128,7 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 // "~/<name>", a worktree's "~/<name>-worktree-<N>" (I-253), or "" to find
 // the checkout in the guest (checkoutVar, I-368). onLoading, when not nil, is
 // called once if the wrapper says it is loading the dev environment.
-// For claude, gemini and codex, the same ssh first marks that folder
+// For claude and codex, the same ssh first marks that folder
 // trusted in the agent's own file (agentTrustScript, I-486, I-544), and a
 // trust dialog that shows anyway is never typed into: the error is an
 // *agentDialogError.
@@ -187,40 +187,15 @@ func claudeTrustScript(dir string) string {
 
 // agentTrustScript is the shell that marks dir trusted for the agent
 // binary starts, or "" for an agent without a folder trust dialog
-// (opencode, pi).
+// (opencode, pi) or with it off machine-wide (Gemini CLI, I-553).
 func agentTrustScript(binary, dir string) string {
 	switch binary {
 	case "claude":
 		return claudeTrustScript(dir)
-	case "gemini":
-		return geminiTrustScript(dir)
 	case "codex":
 		return codexTrustScript(dir)
 	}
 	return ""
-}
-
-// geminiTrustScript is shell, run before tmux starts gemini in dir (a
-// shell word, as for claudeTrustScript), that sets "<dir, symlinks
-// resolved>": "TRUST_FOLDER" in ~/.gemini/trustedFolders.json, the file
-// Gemini CLI (0.61) reads to skip its "Do you trust the files in this
-// folder?" dialog, which otherwise takes the prompt `repose run` types
-// (I-544). Folder trust stays on for every other folder. A DO_NOT_TRUST
-// the user chose for this exact folder is replaced, as claude's refusal
-// is; every other key is kept. Written only when the value is not already
-// TRUST_FOLDER, atomically, never when the file is not valid JSON or is a
-// symlink (a file a dotfiles tool manages). Best effort, like
-// claudeTrustScript.
-func geminiTrustScript(dir string) string {
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_gj="$HOME/.gemini/trustedFolders.json" && [ ! -L "$repose_gj" ] && {
-  if [ ! -s "$repose_gj" ]; then
-    mkdir -p "$HOME/.gemini" && repose_tt=$(mktemp "$repose_gj.XXXXXX") && jq -n --arg p "$repose_tp" '{($p): "TRUST_FOLDER"}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_gj"
-  elif jq -e --arg p "$repose_tp" 'type == "object" and .[$p] != "TRUST_FOLDER"' "$repose_gj" >/dev/null 2>&1; then
-    repose_tt=$(mktemp "$repose_gj.XXXXXX") && jq --arg p "$repose_tp" '.[$p] = "TRUST_FOLDER"' "$repose_gj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_gj"
-  fi
-  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
-}; } >/dev/null 2>&1 || true
-`, dir)
 }
 
 // codexTrustScript is shell, run before tmux starts codex in dir, that
@@ -246,10 +221,9 @@ func codexTrustScript(dir string) string {
 
 // agentDialogs are lines an agent's dialog shows that a typed prompt
 // must not answer: Claude Code's folder trust dialog, in the wording of
-// 2.1.283 and of earlier releases; Gemini CLI's (0.61, the same line as
-// an earlier Claude Code); Codex's (0.157). Matching them only stops the
-// CLI from typing; it never presses a key in the dialog (I-486, I-544,
-// I-283's rejected answer).
+// 2.1.283 and of earlier releases, and Codex's (0.157). Matching them only
+// stops the CLI from typing; it never presses a key in the dialog (I-486,
+// I-544, I-283's rejected answer).
 var agentDialogs = []string{
 	"Yes, I trust this folder",
 	"Is this a project you created or one you trust",

@@ -13077,18 +13077,20 @@ the repose wrapper: no TERM fix, no secrets or `REPOSE_PROJECT` in a
 `repose run` window, no `repose-agent-setup`, no dev shell, no
 `REPOSE_HOOK_AGENT`. Reproduced on kanali with a temp HOME and
 `NPM_CONFIG_PREFIX`: "Update successful! The new version will be used on
-your next run." and `bin/gemini` in the prefix. The base now writes
-`/etc/gemini-cli/system-defaults.json`, Gemini CLI's defaults layer
-(user and workspace settings win), with `enableAutoUpdate` and
-`enableAutoUpdateNotification` false, as a root 0444 file
-(`environment.etc` with `mode`): a link into `/nix/store` is refused
-("Security Warning: Skipping system defaults file ... is insecure",
-the store is mode 1775), and Gemini CLI checks every ancestor. With the
-same file at a root path, the same start left the prefix empty.
-`settings.json` (the system override layer) was not used, since a user
-could not turn the update back on. This holds while `system.etc.overlay`
-is off; with the overlay, `/etc` files would be links into the store
-again. `repose-agent-setup gemini` removes, once per home (marker
+your next run." and `bin/gemini` in the prefix. The fix is
+`general.enableAutoUpdate` and `general.enableAutoUpdateNotification`
+false in `/etc/gemini-cli/system-defaults.json`, Gemini CLI's defaults
+layer (user and workspace settings win). That file is defined in
+`browser.nix` by the mcp branch (I-553), which owns how system defaults
+reach Gemini CLI and adds these two keys; this branch relies on it
+landing in the same batch. It must be a root-owned copy, not a link into
+`/nix/store`: a link is refused ("Security Warning: Skipping system
+defaults file ... is insecure", the store is mode 1775), and Gemini CLI
+checks every ancestor. With the same file at a root path, the same start
+left the prefix empty. `settings.json` (the system override layer) was
+not used, since a user could not turn the update back on. This holds
+while `system.etc.overlay` is off; with the overlay, `/etc` files would
+be links into the store again. `repose-agent-setup gemini` removes, once per home (marker
 `~/.local/state/repose/gemini-npm-removed`), a `@google/gemini-cli`
 package in `${NPM_CONFIG_PREFIX:-~/.npm-global}` and its `bin/gemini`
 link, and the `repose-agent-hooks` user unit runs it at login, since a
@@ -13099,62 +13101,44 @@ is available. Run pi update" at every start, and `pi update` fails
 ("pi cannot self-update this installation", exit 1); its wrapper now
 sets `PI_SKIP_VERSION_CHECK=1`, as `claude-code.nix` and `opencode.nix`
 turn their updaters off. `PI_TELEMETRY` is left as it is; a telemetry
-default needs its own decision. VM test `guest-agent-guide` checks the
-file's type, owner and mode, the pi variable, and the one-time removal.
+default needs its own decision. VM test `guest-agent-guide` checks that
+the file is root's and not writable by dev, that `enableAutoUpdate` is
+false, the pi variable, and the one-time removal.
 
-**I-544. The CLI marks the folder it starts Gemini CLI or Codex in as trusted.**
-(base-agents-config, 2026-10-06; amends I-486) Gemini CLI asks "Do you
-trust the files in this folder?" on its first start in a folder
-(`security.folderTrust.enabled` defaults to true). That line is in
-`agentDialogs` from Claude Code's older wording, so `repose run --agent
-gemini "prompt"` refused to type the prompt and printed "Claude Code is
-asking whether you trust the folder". Every checkout and `--worktree`
-folder is new to it. Codex 0.157 shows "Trust this folder? Codex can
-read, edit, and run files here" (checked on kanali in a fresh git repo,
-with and without full access); its default is "Trust and continue", so
-the Enter `run` types trusted the folder and the prompt was lost. As
-I-486 does for Claude Code, the same SSH command that opens the window
-now writes the agent's own trust record for the folder, symlinks
-resolved: `"<dir>": "TRUST_FOLDER"` in `~/.gemini/trustedFolders.json`
-(jq, atomic, 0600, other keys kept, a file that is not a JSON object
-left alone), and an appended `[projects."<dir>"]` table with
-`trust_level = "trusted"` in `${CODEX_HOME:-~/.codex}/config.toml` when
-the file has no table for that folder in either quoting (a user's
-`untrusted` stays; a path with characters TOML would need escapes for is
-skipped). Either file is left alone when it is a symlink, which a
-dotfiles tool manages; the dialog then shows and `run` attaches. Checked on kanali: Gemini CLI started in a folder so marked
-went straight to its prompt, and Codex in a folder whose table was
-written by hand started without the screen; a worktree of a trusted
-repository is trusted by Codex already. Folder trust stays on
-machine-wide, the scope I-486 rejected. `agentDialogs` gains Codex's
-line, the dialog message names the agent ("Gemini CLI is asking ..."),
-and `waitPaneIdle` accepts `pane_current_command` `node` for gemini,
-which is a node script; before, a gemini pane never matched and `run`
-waited out the 30 s timeout before typing.
+**I-544. The CLI marks the folder it starts Codex in as trusted.**
+(base-agents-config, 2026-10-06; amends I-486) Codex 0.157 shows "Trust
+this folder? Codex can read, edit, and run files here" on its first
+start in a folder (checked on kanali in a fresh git repo, with and
+without full access). Its default is "Trust and continue", so the Enter
+`repose run` typed trusted the folder and the prompt was lost; every
+checkout and `--worktree` folder is new to it. As I-486 does for Claude
+Code, the same SSH command that opens the window now appends a
+`[projects."<dir, symlinks resolved>"]` table with `trust_level =
+"trusted"` to `${CODEX_HOME:-~/.codex}/config.toml` when the file has no
+table for that folder in either quoting (a user's `untrusted` stays; a
+path with characters TOML would need escapes for is skipped; atomic,
+0600). A `config.toml` that is a symlink, which a dotfiles tool manages,
+is left alone; the dialog then shows and `run` attaches. Checked on
+kanali: Codex in a folder whose table was written by hand started
+without the screen; a worktree of a trusted repository is trusted by
+Codex already. `agentDialogs` gains Codex's line, and the dialog message
+names the agent ("Codex is asking ..."). Gemini CLI's folder trust is
+not handled here: the mcp branch turns it off machine-wide with
+`security.folderTrust.enabled: false` in
+`/etc/gemini-cli/system-defaults.json` (I-553), since Gemini disables
+every MCP server in an untrusted folder. Gemini CLI is a node script, so
+its pane's `pane_current_command` is `node`; `waitPaneIdle` now accepts
+that for gemini. Before, a gemini pane never matched and `run` waited
+out the 30 s timeout before typing.
 
-**I-545. The platform MCP servers reach Codex, opencode and Gemini CLI.**
-(base-agents-config, 2026-10-06; extends I-246) `/etc/repose/mcp.json`
-(playwright and chrome-devtools on the shared browser at 9224) was merged
-only into `~/.claude.json`; `codex mcp list`, `opencode mcp list` and
-`gemini mcp list` showed none, while the guide told agents to use them.
-From the same data: `[mcp_servers.<name>]` tables (command, args) in
-`/etc/codex/config.toml`, the system layer a user's
-`~/.codex/config.toml` overrides; `mcpServers` in the Gemini extension
-the base already links into `~/.gemini/extensions/repose-machine-guide`,
-which avoids Gemini CLI's check on files under `/etc`; and for opencode,
-`repose-agent-setup opencode` merges `{type: "local", command: [command,
-args...], enabled: true}` into `~/.config/opencode/opencode.json` `mcp`
-by the rule of the Claude merge (user entries win on a name clash, an
-entry equal to a `repose_retired` one in this shape is replaced; a
-symlinked or non-JSON file is left alone). Not
-`/etc/opencode/opencode.json`: that is opencode's managed layer, which a
-user cannot override. pi has no MCP client. Checked on kanali: `codex
-mcp list` with the rendered table lists both, `gemini mcp list` shows
-both "Connected" in a trusted folder (Gemini disables MCP servers in an
-untrusted one, which I-544 covers for `run`), `opencode mcp list` both
-connected. Both servers attach to the browser on their first call, so
-registering them starts no browser. The guide and `/docs/machine#browser`
-name the four agents.
+**I-545. Withdrawn: platform MCP servers for Codex, opencode and Gemini CLI.**
+(base-agents-config, 2026-10-06) *Superseded by I-553*, on the mcp
+branch, which owns how MCP servers reach every agent. This entry
+registered `/etc/repose/mcp.json`'s servers as `[mcp_servers.*]` in
+`/etc/codex/config.toml`, as `mcpServers` in the Gemini extension, and
+by a merge into `~/.config/opencode/opencode.json`; all three were
+removed from this branch before it merged, so the two branches do not
+write the same servers twice. The id stays reserved.
 
 **I-546. Codex starts without approvals, with full access and no update check.**
 (base-agents-config, 2026-10-06; amends I-250 and I-495) I-250 gave
@@ -13166,10 +13150,9 @@ with approval `OnRequest`, a workspace-write, no-network sandbox, and an
 update check at startup that nagged about 0.160.1 (an update the store
 package cannot take). The base's file now starts with
 `approval_policy = "never"`, `sandbox_mode = "danger-full-access"` and
-`check_for_update_on_startup = false`, before `developer_instructions`
-and the I-545 tables (in TOML a key after a table header belongs to the
-table). A guest is a VM an agent may wreck (I-250's reasoning), and a
-Codex that asks in a `repose run` window waits until someone attaches.
+`check_for_update_on_startup = false`, before `developer_instructions`.
+A guest is a VM an agent may wreck (I-250's reasoning), and a Codex that
+asks in a `repose run` window waits until someone attaches.
 With `danger-full-access`, Codex runs commands without its bwrap
 sandbox, so I-495's bundled bwrap matters only to a user who sets
 another `sandbox_mode`. To opt out, set both `approval_policy` and

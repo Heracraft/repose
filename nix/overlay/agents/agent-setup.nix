@@ -34,13 +34,6 @@
 #          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
 #          repose-agent-hooks user unit runs this at login too, so an
 #          OpenCode 2 the user installed reports without the wrapper.
-#          ~/.config/opencode/opencode.json `mcp` gains the platform servers
-#          from /etc/repose/mcp.json as {type: "local", command: [command,
-#          args...], enabled: true}, by the same rule as ~/.claude.json's
-#          mcpServers (I-545): user entries win on a name clash, except one
-#          equal to a retired entry in that shape; a symlinked file is left
-#          alone. Not the managed
-#          /etc/opencode/opencode.json, which a user could not override.
 # gemini, pi: no hooks (guestd's pane-idle heuristic reports for them); the
 #          machine guide (DECISIONS I-243) is linked in as an extension:
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
@@ -191,32 +184,6 @@ writeShellApplication {
       mkdir -p "$(dirname "$marker")" && : > "$marker"
     }
 
-    # setup_opencode_mcp: the platform MCP servers in the user's
-    # opencode.json, by the rule of the ~/.claude.json merge (I-545).
-    setup_opencode_mcp() {
-      local cfg="$HOME/.config/opencode/opencode.json" merged
-      [ -r "$platform_mcp" ] || return 0
-      # A link is a file another tool manages (home-manager's points into
-      # /nix/store); replacing it with a file would fight that tool.
-      [ -L "$cfg" ] && return 0
-      mkdir -p "$(dirname "$cfg")"
-      [ -s "$cfg" ] || jq -n '{ "$schema": "https://opencode.ai/config.json" }' | write_atomic "$cfg" 0644
-      if ! jq -e 'type == "object" and ((.mcp // {}) | type) == "object"' "$cfg" >/dev/null 2>&1; then
-        echo "repose-agent-setup: $cfg is not plain JSON with an mcp object; leaving it alone" >&2
-        return 0
-      fi
-      merged=$(jq -s '
-        def oc: { type: "local", command: ([.command] + (.args // [])), enabled: true };
-        .[0] as $u | .[1] as $p
-        | (($u.mcp // {}) | with_entries(
-            .key as $k | .value as $v
-            | select(any((($p.repose_retired // {})[$k] // [])[]; oc == $v) | not))) as $kept
-        | $u | .mcp = (($p.mcpServers | map_values(oc)) + $kept)' "$cfg" "$platform_mcp") || return 0
-      if [ "$merged" != "$(jq . "$cfg")" ]; then
-        printf '%s\n' "$merged" | write_atomic "$cfg" "$(stat -c %a "$cfg")"
-      fi
-    }
-
     setup_pi() {
       link_owned "''${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/repose-machine-guide.js" /etc/repose/pi-extension.js
     }
@@ -227,7 +194,6 @@ writeShellApplication {
     opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49"
 
     setup_opencode() {
-      setup_opencode_mcp
       local dir="$HOME/.config/opencode/plugins" have
       mkdir -p "$dir"
       if [ ! -e "$dir/repose.js" ]; then

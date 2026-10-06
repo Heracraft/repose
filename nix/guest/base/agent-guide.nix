@@ -16,9 +16,7 @@
 # (DECISIONS I-546): approval_policy "never", sandbox_mode
 # "danger-full-access" and no update check at startup, top-level keys
 # before developer_instructions. It is the lowest config layer, so a key in
-# ~/.codex/config.toml wins key by key. The platform MCP servers
-# (/etc/repose/mcp.json, browser.nix) are its [mcp_servers.*] tables, and
-# the Gemini extension's mcpServers (I-545).
+# ~/.codex/config.toml wins key by key.
 #
 # The render drops HTML comments and every line marked `needs: CMD` whose
 # CMD the guest does not have, so an agent is never told to run a command
@@ -30,7 +28,6 @@ let
   rendered = pkgs.runCommand "repose-agent-guide" {
     src = ./agent-guide.md;
     sw = config.system.path;
-    mcp = config.environment.etc."repose/mcp.json".source;
     playwrightVersion = pkgs.playwright-driver.version;
     nativeBuildInputs = [ pkgs.jq ];
   } ''
@@ -51,17 +48,14 @@ let
     done < $src | sed -E 's/[[:space:]]*<!--([^-]|-[^-])*-->//g; s/[[:space:]]+$//' \
       | sed '/./,$!d' | sed "s/@playwrightVersion@/$playwrightVersion/g" > $out/agent-guide.md
 
-    # Top-level keys first: in TOML every key after a [table] header
-    # belongs to that table. JSON strings and string arrays are valid TOML
-    # basic strings and arrays.
+    # Top-level keys only: in TOML every key after a [table] header belongs
+    # to that table. A JSON string is a valid TOML basic string.
     {
       printf 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\ncheck_for_update_on_startup = false\n'
       printf 'developer_instructions = '; jq -Rs . $out/agent-guide.md
-      jq -r '.mcpServers | to_entries[] | "\n[mcp_servers.\(.key)]\ncommand = \(.value.command | tojson)\nargs = \(.value.args | tojson)"' $mcp
     } > $out/codex-config.toml
     jq -n '{ "$schema": "https://opencode.ai/config.json", instructions: [ "/etc/repose/agent-guide.md" ] }' > $out/opencode.json
-    jq '{ name: "repose-machine-guide", version: "1.0.0", contextFileName: "GEMINI.md",
-          mcpServers: (.mcpServers | map_values({ command, args })) }' $mcp > $out/gemini-extension/gemini-extension.json
+    jq -n '{ name: "repose-machine-guide", version: "1.0.0", contextFileName: "GEMINI.md" }' > $out/gemini-extension/gemini-extension.json
     cp $out/agent-guide.md $out/gemini-extension/GEMINI.md
   '';
 
@@ -91,17 +85,5 @@ in
     "opencode/opencode.json".source = "${rendered}/opencode.json";
     "repose/gemini-extension".source = "${rendered}/gemini-extension";
     "repose/pi-extension.js".source = piExtension;
-    # Gemini CLI's defaults layer (user and workspace settings win): no
-    # self-update. Its installation check takes a /nix/store package for
-    # an npm one, and the update it runs, `npm install -g`, lands in
-    # ~/.npm-global/bin ahead of the wrapper on PATH (I-543). A copy, not a
-    # link into /nix/store: Gemini CLI skips a system file whose path
-    # resolves into a directory others can write ("is insecure").
-    "gemini-cli/system-defaults.json" = {
-      mode = "0444";
-      text = builtins.toJSON {
-        general = { enableAutoUpdate = false; enableAutoUpdateNotification = false; };
-      };
-    };
   };
 }

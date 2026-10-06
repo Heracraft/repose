@@ -1,14 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // runScript runs a trust script with HOME set to home and CODEX_HOME
@@ -44,111 +42,6 @@ func trustHome(t *testing.T) (home, resolved string) {
 	}
 	resolved, _ = filepath.EvalSymlinks(real)
 	return home, resolved
-}
-
-func readTrustedFolders(t *testing.T, home string) map[string]any {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(home, ".gemini", "trustedFolders.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		t.Fatalf("trustedFolders.json is not JSON: %v: %s", err, b)
-	}
-	return m
-}
-
-// TestGeminiTrustScript (I-544): the folder a gemini window starts in is
-// TRUST_FOLDER in ~/.gemini/trustedFolders.json, by its resolved path,
-// keeping every other folder's rule.
-func TestGeminiTrustScript(t *testing.T) {
-	home, resolved := trustHome(t)
-	file := filepath.Join(home, ".gemini", "trustedFolders.json")
-
-	t.Run("no file yet", func(t *testing.T) {
-		runScript(t, home, geminiTrustScript("~/proj"))
-		if got := readTrustedFolders(t, home)[resolved]; got != "TRUST_FOLDER" {
-			t.Fatalf("trust = %v, want TRUST_FOLDER", got)
-		}
-		if info, _ := os.Stat(file); info.Mode().Perm() != 0o600 {
-			t.Fatalf("mode %v, want 0600", info.Mode().Perm())
-		}
-	})
-
-	t.Run("keeps other keys and replaces a refusal", func(t *testing.T) {
-		other := `{"` + resolved + `":"DO_NOT_TRUST","/elsewhere":"DO_NOT_TRUST","/parent/x":"TRUST_PARENT"}`
-		if err := os.WriteFile(file, []byte(other), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		runScript(t, home, geminiTrustScript(`"$HOME"/link`))
-		m := readTrustedFolders(t, home)
-		if m[resolved] != "TRUST_FOLDER" || m["/elsewhere"] != "DO_NOT_TRUST" || m["/parent/x"] != "TRUST_PARENT" {
-			t.Fatalf("rules after: %v", m)
-		}
-		if _, ok := m[filepath.Join(home, "link")]; ok {
-			t.Fatal("the symlink's own path was trusted")
-		}
-	})
-
-	t.Run("already trusted is not rewritten", func(t *testing.T) {
-		before, _ := os.Stat(file)
-		time.Sleep(10 * time.Millisecond)
-		runScript(t, home, geminiTrustScript("~/proj"))
-		after, _ := os.Stat(file)
-		if !after.ModTime().Equal(before.ModTime()) || !os.SameFile(before, after) {
-			t.Fatal("an already trusted folder rewrote trustedFolders.json")
-		}
-	})
-
-	t.Run("invalid JSON is left alone", func(t *testing.T) {
-		for _, bad := range []string{"{not json", `["a list"]`} {
-			if err := os.WriteFile(file, []byte(bad), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			runScript(t, home, geminiTrustScript("~/proj"))
-			if b, _ := os.ReadFile(file); string(b) != bad {
-				t.Fatalf("file %q changed to %q", bad, b)
-			}
-		}
-	})
-
-	t.Run("a symlinked file is left alone", func(t *testing.T) {
-		target := filepath.Join(home, "dotfiles-trusted.json")
-		if err := os.WriteFile(target, []byte("{}"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove(file); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(target, file); err != nil {
-			t.Fatal(err)
-		}
-		runScript(t, home, geminiTrustScript("~/proj"))
-		if fi, err := os.Lstat(file); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-			t.Fatalf("the link was replaced: %v", err)
-		}
-		if b, _ := os.ReadFile(target); string(b) != "{}" {
-			t.Fatalf("link target changed to %q", b)
-		}
-	})
-
-	t.Run("a missing folder changes nothing and still starts", func(t *testing.T) {
-		if err := os.Remove(file); err != nil {
-			t.Fatal(err)
-		}
-		runScript(t, home, geminiTrustScript("~/gone"))
-		if _, err := os.Stat(file); !os.IsNotExist(err) {
-			t.Fatalf("trustedFolders.json written for a missing folder: %v", err)
-		}
-	})
-
-	entries, _ := os.ReadDir(filepath.Join(home, ".gemini"))
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "trustedFolders.json.") {
-			t.Fatalf("temporary file left behind: %s", e.Name())
-		}
-	}
 }
 
 // TestCodexTrustScript (I-544): the folder a codex window starts in gets a
@@ -247,7 +140,7 @@ func TestCodexTrustScript(t *testing.T) {
 // front of its own new-window, in the folder the window gets, and no
 // agent writes another's file.
 func TestAgentWindowCommandTrustsPerAgent(t *testing.T) {
-	files := map[string]string{"claude": ".claude.json", "gemini": "trustedFolders.json", "codex": "config.toml"}
+	files := map[string]string{"claude": ".claude.json", "codex": "config.toml"}
 	for _, a := range []string{"claude", "gemini", "codex", "opencode", "pi", "cat"} {
 		c := agentWindowCommand("proj", "", a, "~/proj-worktree-1", a)
 		if !strings.HasSuffix(c, "tmux new-window -t proj -n "+a+" -c ~/proj-worktree-1 -d '"+a+"'") {

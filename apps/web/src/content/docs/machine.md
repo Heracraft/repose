@@ -129,7 +129,7 @@ This quick tunnel needs no Cloudflare account and prints a random `trycloudflare
 
 ## Browser
 
-Claude Code, Codex, opencode and Gemini CLI on the machine have two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
+Claude Code on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
 
 ```
 repose run "screenshot each signup step with playwright"
