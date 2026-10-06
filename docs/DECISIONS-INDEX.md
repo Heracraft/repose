@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-578 entries.
+579 entries.
 
 ## Scope
 
@@ -610,3 +610,4 @@ pointer, not a summary.
 - **I-539** dev may ptrace its own processes — 2026-10-05; L14452
 - **I-540** The browser has CJK fonts — 2026-10-05; L14461
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14479
+- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14488

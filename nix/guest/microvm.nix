@@ -145,11 +145,17 @@ let
           in
           lib.mkForce "${hmStart} ${config.home-manager.users.dev.home.activationPackage}";
         # A running herdr server rereads ~/.config/herdr/config.toml when a
-        # fragment or machine.nix changed it (DECISIONS I-563), as tmux
-        # rereads its files (I-552). "-": it never fails the switch.
+        # fragment or machine.nix changed it (DECISIONS I-563), and the
+        # running tmux server takes the new tmux configuration: a fragment
+        # or machine.nix that adds, changes or removes a tmux config, or a
+        # base that changes /etc/tmux.conf, reaches the panes already open
+        # without restarting the session (I-552, I-496). "-": neither ever
+        # fails the switch.
         systemd.services.home-manager-dev.serviceConfig.ExecStartPost = [
           "-${(import ./base/herdr-config.nix { inherit pkgs; herdr = pkgs.reposeHerdr; }).reload}/bin/repose-herdr-reload"
+          "-${pkgs.callPackage ./base/tmux-reload.nix { }}/bin/repose-tmux-reload"
         ];
+        systemd.services.home-manager-dev.restartTriggers = [ config.environment.etc."tmux.conf".source ];
       })
     ] ++ extraModules;
   };

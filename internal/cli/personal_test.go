@@ -279,3 +279,48 @@ func TestPurgeKeepsMachineNix(t *testing.T) {
 		t.Fatalf("left behind: %v", entries)
 	}
 }
+
+// Deleting the laptop's machine.nix removes nothing from the account: run
+// says so once, apply names the way out, and applying /dev/null removes
+// it (DECISIONS I-552).
+func TestPersonalDeletedFile(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	e.HomeDir = filepath.Dir(e.Dir)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out = out
+	e.ErrOut = &discardWriter{}
+
+	_ = os.WriteFile(e.machineNixPath(), []byte("{ programs.git.enable = true; }\n"), 0o644)
+	if err := GlobalApplyCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(e.machineNixPath())
+
+	lines, has := e.personalSync(ctx)
+	if !has || len(lines) != 1 || !strings.Contains(lines[0], "is gone, but your account still has machine.nix") {
+		t.Fatalf("first run after delete: %v %q", has, lines)
+	}
+	if lines, _ := e.personalSync(ctx); len(lines) != 0 {
+		t.Fatalf("second run repeats: %q", lines)
+	}
+	err := GlobalApplyCmd(ctx, e, "")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "your account has machine.nix") || !strings.Contains(err.Error(), "apply /dev/null") {
+		t.Fatalf("apply with no file: %v", err)
+	}
+	out.buf.Reset()
+	if err := GlobalApplyCmd(ctx, e, "/dev/null"); err != nil || !strings.HasPrefix(out.buf.String(), "Removed machine.nix from your account") {
+		t.Fatalf("apply /dev/null: %v %q", err, out.buf.String())
+	}
+	if acct, _ := e.Client.GetPersonal(ctx); strings.TrimSpace(acct.Fragment) != "" {
+		t.Fatalf("account still has: %q", acct.Fragment)
+	}
+	if lines, has := e.personalSync(ctx); len(lines) != 0 || has {
+		t.Fatalf("run after removal: %v %q", has, lines)
+	}
+	if err := GlobalApplyCmd(ctx, e, ""); exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "yet") {
+		t.Fatalf("apply with none anywhere: %v", err)
+	}
+}

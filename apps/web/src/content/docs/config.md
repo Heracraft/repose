@@ -109,7 +109,7 @@ An example:
 }
 ```
 
-`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
+`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. A tmux config the file adds, changes or removes (`xdg.configFile."tmux/tmux.conf"` or `home.file.".tmux.conf"`) reaches the running tmux session at the switch, and its windows stay open. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
 
 On a machine that runs herdr, a `~/.config/herdr/config.toml` you write with `xdg.configFile` replaces the one the machine starts with, and herdr can't save its own settings into it. Put `shell_mode = "login"` under `[terminal]` in yours, or new panes start shells that skip your `~/.bash_profile`. A running herdr reads the file again after each apply.
 
@@ -141,14 +141,13 @@ An example:
     gs = "git status --short";
   };
 
-  programs.starship.enable = true;
   xdg.configFile."starship.toml".text = ''
     add_newline = false
   '';
 }
 ```
 
-`home.shellAliases` work in every shell on the machine, and yours replace the machine's own of the same name. `programs.bash.initExtra` is not carried: put shell code in `~/.bashrc` (from machine.nix, `home.file.".bashrc".text`).
+`home.shellAliases` work in every shell on the machine, and yours replace the machine's own of the same name. `programs.bash.initExtra` is not carried: put shell code in `~/.bashrc` (from machine.nix, `home.file.".bashrc".text`). The machine already runs starship, so the prompt needs only its config file.
 
 It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. When both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
 
@@ -168,7 +167,9 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 
 **On the dashboard.** **Account** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
 
-**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with the switch on the project's Config page. An empty machine.nix removes it from every machine.
+**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with the switch on the project's Config page.
+
+**Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
 **And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the tools you installed globally on your laptop; your machine.nix says which tools you want. See [Your laptop's tools come along](/docs/machine#your-laptops-tools-come-along).
 
