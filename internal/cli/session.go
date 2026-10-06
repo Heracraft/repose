@@ -174,7 +174,10 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 		co.Claude = cc
 		warnings = append(warnings, cc.Notes...)
 	}
-	mc, notes := buildMCPCarry(opts.HomeDir, opts.RepoDir, opts.Slug, opts.Checkout, nil)
+	// The tools carry's bins with the globals in, a superset of what run
+	// left out: the hash does not depend on them (I-556).
+	bins := toolBinsOf(buildToolsCarry(opts.HomeDir, opts.RepoDir, precedenceFor(false, opts.RepoDir)))
+	mc, notes := buildMCPCarry(opts.HomeDir, opts.RepoDir, opts.Slug, opts.Checkout, bins)
 	warnings = append(warnings, notes...)
 	if mc != nil && opts.MCPOff {
 		mc = mc.off()

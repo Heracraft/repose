@@ -258,10 +258,16 @@ payload. `internal/cli/carry_mcp.go` classifies each server, in order:
 - carried, templated: a launcher's absolute path (`~/.nvm/.../npx`) becomes
   its base name; a path under the repository becomes
   `@@REPOSE_CHECKOUT@@`; every literal credential becomes `${NAME}`: URL
-  user info and credential-named query parameters, `Authorization:
-  Bearer|Basic|Token <literal>`, a header, flag or env key named like a
-  credential, a value `secretIn` matches or with a 20-character token run
-  (headers and env only), `oauth.clientSecret`. An env key keeps its own
+  user info, credential-named query parameters, and a URL path segment or
+  query value shaped like a token; `Authorization: Bearer|Basic|Token
+  <literal>`; every header value but `Accept*`, `Content-Type`,
+  `User-Agent`, `MCP-Protocol-Version` and `Cache-Control`, in `headers`
+  and in a `--header "Name: value"` argument; the value of a flag whose
+  name holds token, secret, password or apikey or ends in key, auth or
+  pass (`--auth-type` does not); an env value under a credential-named
+  key; anywhere, a value `secretIn` matches, a provider key prefix
+  (`sk-`, `AIza`, `ntn_`, ...), or 20 token characters with a letter and
+  a digit (env values: any 20-character run); `oauth.clientSecret`. An env key keeps its own
   name when it is a valid secret name and not one an agent or the shell
   reads for itself (`ANTHROPIC_*`, `CLAUDE_CODE_*`, `OPENAI_API_KEY`,
   `CODEX_*`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
@@ -286,12 +292,16 @@ keeps it.
 scopes, on `run` and on `attach`, and the next render removes only what
 repose rendered. `repose secrets import --mcp` reads the laptop config
 again, resolves each name the carry templated to its laptop value in
-memory, and sets them through the secrets PUT for the folder's project;
-it never prompts, like the file import, and refuses a FILE argument.
+memory, and sets them through the secrets PUT for the folder's project.
+The carry chose the names, so when the project already
+has some it asks once before replacing them (`--yes` skips the question,
+a no sets only the others); it refuses a FILE argument.
 
 The agent window's trust write (I-486) also copies the laptop's
-`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository
-where the guest's entry has none, and Claude Code's "New MCP server found
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
+adding each server the guest's entry answers in neither list (Claude Code
+writes both lists empty into every project it opens, so an empty list is
+no answer), and Claude Code's "New MCP server found
 in this project" dialog stops `run` from typing its prompt (outside
 `bypassPermissions` that dialog would otherwise take the Enter).
 

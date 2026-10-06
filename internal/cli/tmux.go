@@ -175,9 +175,12 @@ func agentWindowCommand(slug, extra, windowName, dir, binary string, appr mcpApp
 // file is written only when the flag is not already true, atomically, and
 // never when it is not valid JSON. Best effort: the window starts whatever
 // happens here, and waitPaneIdle catches a dialog that shows anyway.
-// appr, the laptop's .mcp.json answers for the repository, fills
-// enabledMcpjsonServers and disabledMcpjsonServers where the guest has
-// none, so the .mcp.json dialog does not take the prompt either (I-556).
+// appr, the laptop's .mcp.json answers for the repository, adds to
+// enabledMcpjsonServers and disabledMcpjsonServers each server the guest
+// has no answer for in either list, so the .mcp.json dialog does not take
+// the prompt either (I-556). Claude Code writes both lists empty into
+// every project it opens, so an empty list is no answer; an answer given
+// on the machine is kept.
 func claudeTrustScript(dir string, appr mcpApprovals) string {
 	a := "{}"
 	if !appr.empty() {
@@ -188,8 +191,8 @@ func claudeTrustScript(dir string, appr mcpApprovals) string {
 	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_cj="$HOME/.claude.json" && repose_ta=%s && {
   if [ ! -s "$repose_cj" ]; then
     repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq -n --arg p "$repose_tp" --argjson a "$repose_ta" '{projects: {($p): ({hasTrustDialogAccepted: true} + $a)}}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
-  elif jq -e --arg p "$repose_tp" --argjson a "$repose_ta" '(.projects // {})[$p] as $e | ($e.hasTrustDialogAccepted != true) or ($a | to_entries | any(. as $kv | ($e // {})[$kv.key] == null))' "$repose_cj" >/dev/null 2>&1; then
-    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" --argjson a "$repose_ta" '.projects[$p] |= ((. // {}) | .hasTrustDialogAccepted = true | reduce ($a | to_entries[]) as $kv (.; if .[$kv.key] == null then .[$kv.key] = $kv.value else . end))' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
+  elif jq -e --arg p "$repose_tp" --argjson a "$repose_ta" '(.projects // {})[$p] as $e | ($e.hasTrustDialogAccepted != true) or (((($e // {}).enabledMcpjsonServers // []) + (($e // {}).disabledMcpjsonServers // [])) as $h | [$a[][] | select(. as $n | $h | index([$n]) | not)] | length > 0)' "$repose_cj" >/dev/null 2>&1; then
+    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" --argjson a "$repose_ta" '.projects[$p] |= ((. // {}) | .hasTrustDialogAccepted = true | reduce ($a | to_entries[] | .key as $k | .value[] | {k: $k, n: .}) as $x (.; if (((.enabledMcpjsonServers // []) + (.disabledMcpjsonServers // [])) | index([$x.n])) then . else .[$x.k] = ((.[$x.k] // []) + [$x.n]) end))' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
   fi
   [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
 }; } >/dev/null 2>&1 || true

@@ -13091,14 +13091,26 @@ the laptop, a URL on loopback, the LAN, `*.local`, `*.ts.net` or
 `100.64/10`, a `headersHelper` or `clientSecretHelper`), rewrites a
 launcher's absolute path to its name and paths under the repository to
 `@@REPOSE_CHECKOUT@@`, and replaces every literal credential with
-`${NAME}` before anything is hashed or packed (I-211). An env key keeps its
+`${NAME}` before anything is hashed or packed (I-211). Headers are where
+a server's key goes, so every header value is templated except a short
+list of plain ones (`Accept`, `Content-Type`, `User-Agent` and the like),
+in `headers` and in a `--header "Name: value"` argument (mcp-remote);
+arguments, URL path segments and query values are templated when they
+read like a token on their own (a provider prefix such as `sk-`, or 20
+token characters with a letter and a digit), so a positional key or a
+Zapier-style URL with its secret in the path stays home. Flags are judged
+by their last word (`--api-key`, `--auth`), so `--auth-type oauth` keeps
+its value. An env key keeps its
 own name unless an agent reads that name for its own login
 (`ANTHROPIC_*`, `OPENAI_API_KEY`, `GITHUB_TOKEN` and the like): a secret
 by that name would be in every agent's environment, and Claude Code then
 asks to use the API key, which takes `run`'s prompt and moves the user to
 API billing. Two different laptop values under one name give the second
-its server's prefix, compared in memory. No value reaches the payload, a
-marker or a line; a rotated laptop token sends nothing.
+its server's prefix, compared in memory, with the number placed after the
+64-character cut. No value reaches the payload, a marker or a line; a
+rotated laptop token sends nothing. The hash leaves out the tools carry's
+bins (the guest's command check filters them), so `run` and `attach`
+compute the same marker.
 
 The guest keeps the list in `~/.repose/mcp/laptop.json` (schema in
 guest-conventions.md, shared with I-555's reader), written by the carry's
@@ -13117,8 +13129,12 @@ base. The `mcp` row in `repose secrets choose` (`logins.skip`) sends empty
 scopes, on `attach` as well as `run`. `repose secrets import --mcp` (owner
 decision O4) reads the laptop config again, resolves each templated name
 to its laptop value in memory and sets it through the secrets PUT, the
-one home named secrets have; like the file import it never prompts,
-`--dry-run` lists names, and a FILE argument is refused. Secrets belong
+one home named secrets have. The carry chose those names, and an env key
+keeps its own (`DATABASE_URL`), which may be a secret the project already
+has for another use: so it asks once before replacing one (`--yes` skips
+the question, a no sets only the others), unlike the file import, whose
+names the user wrote. `--dry-run` lists names, and a FILE argument is
+refused. Secrets belong
 to one project, so a server used in three projects needs it in each.
 
 OAuth servers carry `clientId`, `callbackPort` and the like, never a
@@ -13129,8 +13145,10 @@ Claude Code outside `bypassPermissions` shows "New MCP server found in
 this project" with "continue without" preselected, and `run`'s Enter would
 answer it (seen with 2.1.283): the dialog joins `agentDialogs`, so `run`
 stops typing and says so, and the I-486 trust write copies the laptop's
-`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository
-where the guest has none. *Rejected:* writing agent configs from the
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
+adding each server the guest answers in neither list: Claude Code writes
+both lists empty into every project it opens, so an empty list is no
+answer. *Rejected:* writing agent configs from the
 carry (a second unlocked writer of `~/.claude.json`, and format
 translation in the CLI); carrying Codex, Gemini CLI and opencode laptop
 configs (owner decision O5; deferred); writing the checkout's

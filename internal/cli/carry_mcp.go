@@ -75,7 +75,12 @@ type mcpCarry struct {
 	// `repose secrets import --mcp` sets exactly these.
 	Templated []string
 	// Cmds is "SERVER BIN" for each bare command the guest checks.
+	// It does not depend on the tools carry, so run and attach hash the
+	// same list; ToolBins only filters what the guest is asked to check.
 	Cmds []string
+	// ToolBins are the commands the tools carry installs, which the
+	// guest does not report missing. Not hashed.
+	ToolBins map[string]bool `json:"-"`
 	// Slug and Checkout find the checkout in the guest (checkoutVar).
 	Slug, Checkout string
 	// HashUser and HashProject are the two markers' values.
@@ -322,8 +327,8 @@ func collectMCP(homeDir, repoRoot string, toolBins map[string]bool, values map[s
 	if user == nil && project == nil {
 		return nil, nil
 	}
-	c := newMCPClassifier(homeDir, claudeProjectKeys(repoRoot), toolBins)
-	mc := &mcpCarry{User: map[string]map[string]any{}, Approvals: appr}
+	c := newMCPClassifier(homeDir, claudeProjectKeys(repoRoot))
+	mc := &mcpCarry{User: map[string]map[string]any{}, Approvals: appr, ToolBins: toolBins}
 	mc.User = c.scope(user, &mc.Skipped, &mc.Cmds)
 	if project != nil {
 		mc.Project = c.scope(project, &mc.Skipped, &mc.Cmds)
@@ -385,15 +390,21 @@ func addMCPParts(p *guestPayload, mc *mcpCarry, opts carryOptions) ([]string, er
 	if err != nil {
 		return nil, err
 	}
+	var cmds []string
+	for _, l := range mc.Cmds {
+		if _, bin, _ := strings.Cut(l, " "); !mc.ToolBins[bin] {
+			cmds = append(cmds, l)
+		}
+	}
 	var left []string
 	for _, s := range mc.Skipped {
-		left = append(left, printable(s.Name)+" ("+s.Reason+")")
+		left = append(left, printable(s.Name+" ("+s.Reason+")"))
 	}
 	files := map[string][]byte{
 		"mcp/in.json":   b,
 		"mcp/laptop.jq": mcpLaptopJQ,
 		"mcp/templated": []byte(strings.Join(mc.Templated, "\n") + "\n"),
-		"mcp/cmds":      []byte(strings.Join(mc.Cmds, "\n") + "\n"),
+		"mcp/cmds":      []byte(strings.Join(cmds, "\n") + "\n"),
 		"mcp/left":      []byte(strings.Join(left, "\n") + "\n"),
 		"mcp/hash-user": []byte(mc.HashUser),
 		"mcp/hash-proj": []byte(mc.HashProject),
@@ -428,9 +439,7 @@ func printable(s string) string {
 
 var (
 	mcpServerName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-	// mcpRef is a `${NAME}` or `${NAME:-default}` reference.
-	mcpRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
-	// mcpSecretWord is a key, header or flag name that holds a credential.
+	// mcpSecretWord is an env key that names a credential.
 	mcpSecretWord = regexp.MustCompile(`(?i)key|token|secret|passw|auth|credential|cookie|session|private`)
 	// mcpLongRun is a 20+ character run that reads like a token.
 	mcpLongRun = regexp.MustCompile(`[A-Za-z0-9_-]{20,}`)
@@ -438,7 +447,44 @@ var (
 	mcpAuthScheme = regexp.MustCompile(`(?i)^(bearer|basic|token)\s+(\S+)$`)
 	// mcpQuerySecret is a query parameter whose name says it holds one.
 	mcpQuerySecret = regexp.MustCompile(`(?i)key|token|auth|secret|passw|sig`)
+	// mcpTokenShape is a whole argument, path segment or query value that
+	// reads like a token: 20 or more token characters with a letter and a
+	// digit among them (checked apart), or a provider's key prefix.
+	mcpTokenShape  = regexp.MustCompile(`^[A-Za-z0-9_+=~-]{20,}$`)
+	mcpTokenPrefix = regexp.MustCompile(`^(sk-|sk_|pk_|rk_|AIza|ntn_|secret_|lin_api_|xai-|gsk_|hf_|r8_|dop_v1_|npm_|pypi-|shpat_|SG\.)[A-Za-z0-9_.+=-]{8,}$`)
+	// mcpHeaderFlags take an HTTP header, "Name: value", as their value
+	// (mcp-remote, supergateway, curl-style servers).
+	mcpHeaderFlags = setOf("--header", "-H", "--headers")
+	// mcpPlainHeaders hold no credential; every other header value is
+	// templated, since a server's headers are where its key goes.
+	mcpPlainHeaders = setOf("accept", "accept-encoding", "accept-language", "content-type", "user-agent", "mcp-protocol-version", "cache-control")
 )
+
+// mcpTokenLike is a value that reads like a credential on its own.
+func mcpTokenLike(v string) bool {
+	if mcpTokenPrefix.MatchString(v) || secretIn(v) {
+		return true
+	}
+	return mcpTokenShape.MatchString(v) && strings.ContainsAny(v, "0123456789") && strings.IndexFunc(v, func(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') }) >= 0
+}
+
+// mcpSecretFlag is a flag whose value is a credential: one with token,
+// secret, password or apikey in its name, or that ends in key, auth or
+// pass. --auth-type, --session-name and --keyboard take plain values.
+func mcpSecretFlag(f string) bool {
+	f = strings.ToLower(strings.TrimLeft(f, "-"))
+	for _, w := range []string{"token", "secret", "passw", "apikey", "api-key", "api_key", "credential", "cookie", "bearer"} {
+		if strings.Contains(f, w) {
+			return true
+		}
+	}
+	words := strings.FieldsFunc(f, func(r rune) bool { return r == '-' || r == '_' || r == '.' })
+	if len(words) == 0 {
+		return false
+	}
+	last := words[len(words)-1]
+	return strings.HasSuffix(last, "key") || last == "auth" || last == "pass" || last == "pat" || last == "pwd"
+}
 
 // mcpPlatformNames are the machine's own servers (I-246): a laptop entry
 // by that name or for that package is dropped without a word, since the
@@ -449,7 +495,6 @@ var (
 	mcpAppleWords       = []string{"applescript", "apple-", "imessage", "xcode", "iterm", "macos", "osascript", "shortcuts"}
 	mcpLaunchers        = setOf("npx", "node", "uvx", "uv", "python3", "python", "docker", "bunx", "bun", "deno", "pipx")
 	mcpLaptopRoots      = []string{"/Users/", "/Applications/", "/Library/", "/opt/homebrew/", "/usr/local/", "/Volumes/", "/private/", "/var/folders/"}
-	mcpAmbientNames     = setOf("HOME", "USER", "PWD", "TMPDIR", "PATH", "SHELL", "LANG", "LOGNAME", "TERM")
 )
 
 // mcpAgentSecret is a name an agent on the machine reads for its own
@@ -494,14 +539,13 @@ func mcpSecretName(server, suffix string) string {
 }
 
 type mcpClassifier struct {
-	home     string
-	repos    []string // the repository's roots, rewritten to the checkout
-	toolBins map[string]bool
-	values   map[string]string // secret -> laptop value; memory only
+	home   string
+	repos  []string          // the repository's roots, rewritten to the checkout
+	values map[string]string // secret -> laptop value; memory only
 }
 
-func newMCPClassifier(home string, repos []string, toolBins map[string]bool) *mcpClassifier {
-	return &mcpClassifier{home: home, repos: repos, toolBins: toolBins, values: map[string]string{}}
+func newMCPClassifier(home string, repos []string) *mcpClassifier {
+	return &mcpClassifier{home: home, repos: repos, values: map[string]string{}}
 }
 
 // scope classifies one scope's servers in name order, appending skips
@@ -545,7 +589,7 @@ type mcpVerdict struct {
 // classifyMCPServer is the classifier on its own, for tests: the verdict
 // and the secrets it templated with their laptop values.
 func classifyMCPServer(home, repo, name string, s map[string]any) (mcpVerdict, map[string]string) {
-	c := newMCPClassifier(home, []string{repo}, nil)
+	c := newMCPClassifier(home, []string{repo})
 	v := c.classify(name, s)
 	return v, c.values
 }
@@ -604,7 +648,7 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 		}
 		for _, k := range sortedKeys(env) {
 			if v, ok := env[k].(string); ok && !c.underRepo(v) && c.laptopPath(v) {
-				return mcpVerdict{skip: "reads " + k + " from your laptop"}
+				return mcpVerdict{skip: "reads " + printable(k) + " from your laptop"}
 			}
 		}
 	}
@@ -668,9 +712,9 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 }
 
 // checkCmd is bin when the guest should check it: not one every machine
-// has, not one the tools carry installs, and a safe word.
+// has, and a safe word. addMCPParts leaves out the tools carry's bins.
 func (c *mcpClassifier) checkCmd(bin string) string {
-	if baseCommands[bin] || mcpLaunchers[bin] || c.toolBins[bin] || !safeBin.MatchString(bin) {
+	if baseCommands[bin] || mcpLaunchers[bin] || !safeBin.MatchString(bin) {
 		return ""
 	}
 	return bin
@@ -847,8 +891,16 @@ func (c *mcpClassifier) assign(server, suffix, want, value string) string {
 			return n
 		}
 	}
+	// The number goes after the cut to 64 characters, so a long base
+	// still gives a new name each time.
+	base := mcpSecretName(server, suffix)
 	for i := 2; ; i++ {
-		n := mcpSecretName(server, fmt.Sprintf("%s_%d", suffix, i))
+		tail := fmt.Sprintf("_%d", i)
+		n := base
+		if len(n) > 64-len(tail) {
+			n = n[:64-len(tail)]
+		}
+		n += tail
 		if old, ok := c.values[n]; !ok || old == value {
 			c.values[n] = value
 			return n
@@ -880,6 +932,17 @@ func (c *mcpClassifier) templateURL(server, raw string) string {
 		}
 		auth = ui + "@" + host
 	}
+	p, tail := path, ""
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		p, tail = path[:i], path[i:]
+	}
+	segs := strings.Split(p, "/")
+	for i, seg := range segs {
+		if seg != "" && !strings.Contains(seg, "${") && mcpTokenLike(seg) {
+			segs[i] = "${" + c.assign(server, "TOKEN", "", seg) + "}"
+		}
+	}
+	path = strings.Join(segs, "/") + tail
 	if q := strings.Index(path, "?"); q >= 0 {
 		query, frag := path[q+1:], ""
 		if h := strings.Index(query, "#"); h >= 0 {
@@ -888,7 +951,7 @@ func (c *mcpClassifier) templateURL(server, raw string) string {
 		parts := strings.Split(query, "&")
 		for i, kv := range parts {
 			k, v, ok := strings.Cut(kv, "=")
-			if !ok || v == "" || strings.Contains(v, "${") || !mcpQuerySecret.MatchString(k) {
+			if !ok || v == "" || strings.Contains(v, "${") || !(mcpQuerySecret.MatchString(k) || mcpTokenLike(v)) {
 				continue
 			}
 			parts[i] = k + "=${" + c.assign(server, k, "", v) + "}"
@@ -907,15 +970,30 @@ func (c *mcpClassifier) templateHeader(server, k, v string) string {
 			return m[1] + " ${" + c.assign(server, "TOKEN", "", m[2]) + "}"
 		}
 	}
-	if mcpSecretWord.MatchString(k) || secretIn(v) || mcpLongRun.MatchString(v) {
-		return "${" + c.assign(server, k, "", v) + "}"
+	if v == "" || (mcpPlainHeaders[strings.ToLower(k)] && !secretIn(v) && !mcpLongRun.MatchString(v)) {
+		return v
 	}
-	return v
+	return "${" + c.assign(server, k, "", v) + "}"
+}
+
+// templateHeaderArg templates "Name: value", a header flag's value.
+func (c *mcpClassifier) templateHeaderArg(server, a string) string {
+	k, v, ok := strings.Cut(a, ":")
+	if !ok {
+		return a
+	}
+	k = strings.TrimSpace(k)
+	v = strings.TrimSpace(v)
+	if k == "" || strings.ContainsAny(k, " \t") {
+		return a
+	}
+	return k + ": " + c.templateHeader(server, k, v)
 }
 
 // templateArgs replaces --flag=VALUE and --flag VALUE when the flag names a
-// credential, an argument secretIn matches, and the credential parts of
-// a URL; paths under the repository become the checkout's placeholder.
+// credential, the value of a header flag (--header "X-Key: VALUE"), an
+// argument that reads like a token, and the credential parts of a URL;
+// paths under the repository become the checkout's placeholder.
 func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 	out := make([]any, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -924,12 +1002,20 @@ func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 		case strings.Contains(a, "${"):
 		case strings.HasPrefix(a, "-") && strings.Contains(a, "="):
 			f, v, _ := strings.Cut(a, "=")
-			if v != "" && (mcpSecretWord.MatchString(f) || secretIn(v)) {
+			switch {
+			case v == "":
+			case mcpHeaderFlags[f]:
+				a = f + "=" + c.templateHeaderArg(server, v)
+			case mcpSecretFlag(f) || mcpTokenLike(v):
 				a = f + "=${" + c.assign(server, strings.TrimLeft(f, "-"), "", v) + "}"
-			} else if strings.Contains(v, "://") {
+			case strings.Contains(v, "://"):
 				a = f + "=" + c.templateURL(server, v)
 			}
-		case strings.HasPrefix(a, "-") && mcpSecretWord.MatchString(a) && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && !strings.Contains(args[i+1], "${"):
+		case mcpHeaderFlags[a] && i+1 < len(args) && !strings.Contains(args[i+1], "${"):
+			out = append(out, a)
+			i++
+			a = c.templateHeaderArg(server, args[i])
+		case strings.HasPrefix(a, "-") && mcpSecretFlag(a) && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && !strings.Contains(args[i+1], "${"):
 			out = append(out, a)
 			i++
 			a = "${" + c.assign(server, strings.TrimLeft(a, "-"), "", args[i]) + "}"
@@ -938,7 +1024,7 @@ func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 			if secretIn(a) {
 				a = "${" + c.assign(server, "TOKEN", "", args[i]) + "}"
 			}
-		case secretIn(a):
+		case mcpTokenLike(a):
 			a = "${" + c.assign(server, "TOKEN", "", a) + "}"
 		}
 		if c.underRepo(a) {
@@ -957,7 +1043,7 @@ func (c *mcpClassifier) templateEnv(server, k, v string) string {
 		return v
 	case c.underRepo(v):
 		return c.repoRewrite(v)
-	case mcpSecretWord.MatchString(k) || secretIn(v) || mcpLongRun.MatchString(v) || urlHasCredential(v):
+	case mcpSecretWord.MatchString(k) || mcpTokenLike(v) || mcpLongRun.MatchString(v) || urlHasCredential(v):
 		return "${" + c.assign(server, k, k, v) + "}"
 	}
 	return v
@@ -980,34 +1066,6 @@ func urlHasCredential(v string) bool {
 		}
 	}
 	return false
-}
-
-// mcpRefs is the secrets a value names with `${NAME}` (no default), the
-// ambient variables left out.
-func mcpRefs(v any) []string {
-	var out []string
-	var walk func(any)
-	walk = func(v any) {
-		switch t := v.(type) {
-		case string:
-			for _, m := range mcpRef.FindAllStringSubmatch(t, -1) {
-				if m[2] == "" && !mcpAmbientNames[m[1]] && !strings.HasPrefix(m[1], "XDG_") {
-					out = append(out, m[1])
-				}
-			}
-		case []any:
-			for _, e := range t {
-				walk(e)
-			}
-		case map[string]any:
-			for _, e := range t {
-				walk(e)
-			}
-		}
-	}
-	walk(v)
-	sort.Strings(out)
-	return out
 }
 
 func stringList(v any) []string {

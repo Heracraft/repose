@@ -173,6 +173,12 @@ type SecretsImportOptions struct {
 	// MCP sets the secrets the MCP carry templated, from the laptop's
 	// Claude Code config (I-556); File is then unused.
 	MCP bool
+	// Yes replaces secrets the project already has without asking
+	// (--mcp only).
+	Yes bool
+	// Confirm asks once before --mcp replaces a secret the project
+	// has; nil asks on the terminal.
+	Confirm func(prompt string) (bool, error)
 }
 
 func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -184,7 +190,8 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 			"in it as a secret of the project, replacing one of the same name. Names are checked before\n" +
 			"anything is sent; values are never printed. --dry-run lists what would be set.\n\n" +
 			"With --mcp it sets the secrets your carried MCP servers need instead, from the tokens in\n" +
-			"your laptop's Claude Code config, for this folder's project.",
+			"your laptop's Claude Code config, for this folder's project. It asks once before replacing\n" +
+			"secrets the project already has; --yes replaces them without asking.",
 		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -195,6 +202,9 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 					return exitf(ExitUsage, "--mcp reads your laptop's Claude Code config, not a file; leave out %s.", args[0])
 				}
 				opts.File = args[0]
+			}
+			if opts.Yes && !opts.MCP {
+				return exitf(ExitUsage, "--yes goes with --mcp; a file import replaces without asking.")
 			}
 			e, err := env()
 			if err != nil {
@@ -208,6 +218,7 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "list the names that would be set, and send nothing")
 	cmd.Flags().BoolVar(&opts.MCP, "mcp", false, "set the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config, for this project only")
+	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, "with --mcp, replace secrets the project already has without asking")
 	return cmd
 }
 
@@ -287,7 +298,9 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 // (user scope, and local scope for this folder's repository), and sets
 // each secret the carry made from a literal value to that value. Values
 // stay in memory and go through the same PUT as `secrets set`; only
-// names are printed. Like the file import, it never prompts.
+// names are printed. The names are the carry's, not the user's, so a
+// name the project already has is replaced only after one question
+// (or --yes); a no sets the others.
 func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions) error {
 	values := map[string]string{}
 	if _, notes := collectMCP(e.HomeDir, gitRepoRoot(e.Cwd), nil, values); len(notes) > 0 {
@@ -334,6 +347,35 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 			l[i] = label(n)
 		}
 		_, _ = fmt.Fprintf(e.Out, "Would set %d on %s from %s: %s\nNothing sent (--dry-run).\n", len(names), project.Slug, from, strings.Join(l, ", "))
+		return nil
+	}
+	var replace []string
+	for _, n := range names {
+		if existing[n] {
+			replace = append(replace, n)
+		}
+	}
+	if len(replace) > 0 && !opts.Yes {
+		confirm := opts.Confirm
+		if confirm == nil {
+			confirm = func(prompt string) (bool, error) { return askYesNo(prompt, false, "replacing secrets") }
+		}
+		ok, err := confirm(fmt.Sprintf("%s already has %s. Replace with your laptop's values? [y/N] ", project.Slug, strings.Join(replace, ", ")))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			kept := entries[:0]
+			for _, en := range entries {
+				if !existing[en.Name] {
+					kept = append(kept, en)
+				}
+			}
+			entries = kept
+		}
+	}
+	if len(entries) == 0 {
+		_, _ = fmt.Fprintln(e.Out, "Nothing imported.")
 		return nil
 	}
 	var set []string

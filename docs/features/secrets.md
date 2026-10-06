@@ -31,7 +31,9 @@ is read, never written; the values go to the one home named secrets have.
 `repose secrets import --mcp` (I-556) sets, the same way, the secrets the
 MCP carry made from literal values in the laptop's Claude Code config: it
 reads that config again, keeps each value in memory, prints names only,
-and never prompts; `--dry-run` lists the names. Secrets belong to one
+and asks once before replacing a secret the project already has, since
+the carry chose the names (`--yes` skips the question); `--dry-run` lists
+the names. Secrets belong to one
 project, so it sets them for the folder's project only.
 
 Synced logins happen inside `repose run` with no output of their own.

@@ -102,6 +102,23 @@ func TestClassifyMCPServer(t *testing.T) {
 		{desc: "existing refs kept", name: "refs", server: `{"command":"npx","args":["-y","r","${A:-b}"],"env":{"T":"${LINEAR}","U":"${USER}"}}`,
 			want: `{"args":["-y","r","${A:-b}"],"env":{"T":"${LINEAR}","U":"${USER}"}}`},
 		{desc: "missing command", name: "foo", server: `{"command":"fooctl","args":["serve"]}`, want: `{"command":"fooctl"}`, cmd: "fooctl"},
+		{desc: "header flag", name: "mr", server: `{"command":"npx","args":["-y","mcp-remote","https://api.example.com/mcp","--header","X-API-Key: NEVER3f9a8b7c6d5e4f3a2b"]}`,
+			want: `{"args":["-y","mcp-remote","https://api.example.com/mcp","--header","X-API-Key: ${MR_X_API_KEY}"]}`, secrets: []string{"MR_X_API_KEY"}},
+		{desc: "header flag=value", name: "mr2", server: `{"command":"npx","args":["mcp-remote","https://a.example/mcp","--header=Authorization: Bearer NEVERtok"]}`,
+			want: `{"args":["mcp-remote","https://a.example/mcp","--header=Authorization: Bearer ${MR2_TOKEN}"]}`, secrets: []string{"MR2_TOKEN"}},
+		{desc: "token in url path", name: "zap", server: `{"type":"http","url":"https://mcp.zapier.com/api/mcp/s/NEVERZjM4NjQ0MzYtZDQ2Ny00/mcp"}`,
+			want: `{"url":"https://mcp.zapier.com/api/mcp/s/${ZAP_TOKEN}/mcp"}`, secrets: []string{"ZAP_TOKEN"}},
+		{desc: "token in arg url path", name: "zap2", server: `{"command":"npx","args":["mcp-remote","https://mcp.zapier.com/api/mcp/s/NEVERZjM4NjQ0MzYtZDQ2Ny00/sse"]}`,
+			want: `{"args":["mcp-remote","https://mcp.zapier.com/api/mcp/s/${ZAP2_TOKEN}/sse"]}`, secrets: []string{"ZAP2_TOKEN"}},
+		{desc: "positional provider key", name: "oai", server: `{"command":"npx","args":["-y","@x/server","sk-proj-NEVERabcdefghij0123"]}`,
+			want: `{"args":["-y","@x/server","${OAI_TOKEN}"]}`, secrets: []string{"OAI_TOKEN"}},
+		{desc: "positional hex key", name: "hex", server: `{"command":"npx","args":["-y","hex-mcp","NEVER3f9a8b7c6d5e4f3a2b1c0d"]}`,
+			want: `{"args":["-y","hex-mcp","${HEX_TOKEN}"]}`, secrets: []string{"HEX_TOKEN"}},
+		{desc: "short header value", name: "h", server: `{"type":"http","url":"https://h.example/mcp","headers":{"X-Api":"NEVERabc1","Content-Type":"application/json"}}`,
+			want: `{"headers":{"X-Api":"${H_X_API}","Content-Type":"application/json"}}`, secrets: []string{"H_X_API"}},
+		{desc: "plain flags", name: "fp", server: `{"command":"npx","args":["-y","@modelcontextprotocol/server-everything","--auth-type","oauth","--session-name","foo","--private-mode","true","--keyboard","us","--transport=stdio"]}`,
+			want: `{"args":["-y","@modelcontextprotocol/server-everything","--auth-type","oauth","--session-name","foo","--private-mode","true","--keyboard","us","--transport=stdio"]}`},
+		{desc: "env key with a newline", name: "nl", server: `{"command":"npx","args":["x"],"env":{"A\n#mcpold":"/Users/me/x"}}`, skip: "reads A#mcpold from your laptop"},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			v, values := classifyMCPServer(home, repo, tc.name, mustJSON(t, tc.server))
@@ -137,10 +154,88 @@ func TestClassifyMCPServer(t *testing.T) {
 			}
 		})
 	}
-	// `${A:-b}` is not a secret the machine needs; `${LINEAR}` is; ambient
-	// names never are.
-	if got := mcpRefs(mustJSON(t, `{"a":["${A:-b}","${LINEAR}"],"e":{"H":"${HOME}","X":"${XDG_CONFIG_HOME}"}}`)); !reflect.DeepEqual(got, []string{"LINEAR"}) {
-		t.Errorf("mcpRefs = %v", got)
+}
+
+// The guest's laptop.jq builds "secrets": `${A:-b}` is not a secret the
+// machine needs, `${LINEAR}` is, and ambient names never are; local
+// scope goes under the checkout's real path with the placeholder filled.
+func TestMCPLaptopJQSecrets(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not on PATH")
+	}
+	dir := t.TempDir()
+	in := `{"user":{"a":{"command":"x","args":["${A:-b}","${LINEAR}","@@REPOSE_CHECKOUT@@/f"],"env":{"H":"${HOME}","X":"${XDG_CONFIG_HOME}","P":"${PATH}"}}},` +
+		`"project":{"p":{"url":"https://h/${PROJ_TOKEN}"}},"skipped":[]}`
+	for n, b := range map[string]string{"in.json": in, "old.json": `{"projects":{"/other":{"o":{"url":"https://o"}}}}`, "laptop.jq": string(mcpLaptopJQ)} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte(b), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := exec.Command("jq", "-S", "-n", "--slurpfile", "n", filepath.Join(dir, "in.json"), "--slurpfile", "o", filepath.Join(dir, "old.json"), "--arg", "co", "/home/dev/co", "-f", filepath.Join(dir, "laptop.jq")).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		User     map[string]map[string]any `json:"user"`
+		Projects map[string]map[string]any `json:"projects"`
+		Secrets  map[string][]string       `json:"secrets"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string][]string{"LINEAR": {"a"}, "PROJ_TOKEN": {"p"}}; !reflect.DeepEqual(got.Secrets, want) {
+		t.Errorf("secrets = %v, want %v", got.Secrets, want)
+	}
+	if got.Projects["/home/dev/co"]["p"] == nil || got.Projects["/other"]["o"] == nil {
+		t.Errorf("projects = %v", got.Projects)
+	}
+	if args := got.User["a"]["args"].([]any); args[2] != "/home/dev/co/f" {
+		t.Errorf("args = %v", args)
+	}
+}
+
+// Two long names that meet after the cut to 64 characters still get
+// two secrets, and the carry finishes.
+func TestMCPAssignLongNames(t *testing.T) {
+	c := newMCPClassifier(t.TempDir(), nil)
+	done := make(chan []string, 1)
+	go func() {
+		var got []string
+		for i, n := range []string{strings.Repeat("a", 62) + "-x", strings.Repeat("a", 62) + "_x", strings.Repeat("a", 62) + ".x"} {
+			got = append(got, c.assign(n, "TOKEN", "", fmt.Sprintf("NEVER-%d", i)))
+		}
+		done <- got
+	}()
+	select {
+	case got := <-done:
+		seen := map[string]bool{}
+		for _, n := range got {
+			if seen[n] || !secretNameRe.MatchString(n) || len(n) > 64 {
+				t.Fatalf("names = %v", got)
+			}
+			seen[n] = true
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("assign loops")
+	}
+}
+
+// run passes the tools carry's bins and attach may pass others: the hash
+// is the same, and only the guest's command list leaves them out.
+func TestMCPHashIgnoresToolBins(t *testing.T) {
+	home := t.TempDir()
+	writeClaudeJSON(t, home, map[string]any{"mcpServers": map[string]any{"tf": map[string]any{"command": "terraform-mcp-server"}}})
+	a, _ := buildMCPCarry(home, "", testSlug, "", map[string]bool{"terraform-mcp-server": true})
+	b, _ := buildMCPCarry(home, "", testSlug, "", nil)
+	if a.HashUser != b.HashUser || a.HashProject != b.HashProject {
+		t.Fatal("the tools carry's bins change the MCP hash")
+	}
+	p := newGuestPayload()
+	if _, err := addMCPParts(p, a, carryOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(p.buf.Bytes(), []byte("tf terraform-mcp-server")) {
+		t.Fatal("the guest is asked to check a bin the tools carry installs")
 	}
 }
 
@@ -487,13 +582,29 @@ func TestSessionHelperCarriesMCP(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
 	t.Setenv("REPOSE_SECRETS_DIR", t.TempDir())
-	writeClaudeJSON(t, home, map[string]any{"mcpServers": map[string]any{"s": map[string]any{"command": "npx", "args": []any{"-y", "s"}}}})
-	if err := runSession(ctx, sessionOptions{Slug: testSlug, Target: f.target.Args, Carry: true, HomeDir: home, RepoDir: f.local}, func() bool { return false }); err != nil {
+	writeClaudeJSON(t, home, map[string]any{
+		"mcpServers": map[string]any{"s": map[string]any{"command": "npx", "args": []any{"-y", "s"}}},
+		"projects":   map[string]any{f.local: map[string]any{"mcpServers": map[string]any{"loc": map[string]any{"command": "npx", "args": []any{"-y", "loc"}}}}},
+	})
+	// An extra checkout (I-480): local scope goes under it, not under the
+	// machine's own checkout.
+	other := filepath.Join(f.guestHome, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	otherReal, _ := filepath.EvalSymlinks(other)
+	if err := runSession(ctx, sessionOptions{Slug: testSlug, Target: f.target.Args, Carry: true, HomeDir: home, RepoDir: f.local, Checkout: "other"}, func() bool { return false }); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(f.guestHome, ".repose/mcp/laptop.json"))
 	if err != nil || !strings.Contains(string(b), `"s"`) {
 		t.Fatalf("laptop.json after attach: %s %v", b, err)
+	}
+	var lj struct {
+		Projects map[string]map[string]any `json:"projects"`
+	}
+	if err := json.Unmarshal(b, &lj); err != nil || len(lj.Projects) != 1 || lj.Projects[otherReal]["loc"] == nil {
+		t.Fatalf("local scope not under %s: %v %v", otherReal, lj.Projects, err)
 	}
 	if err := runSession(ctx, sessionOptions{Slug: testSlug, Target: f.target.Args, Carry: true, HomeDir: home, RepoDir: f.local, MCPOff: true}, func() bool { return false }); err != nil {
 		t.Fatal(err)
@@ -557,6 +668,27 @@ func TestSecretsImportMCP(t *testing.T) {
 	if strings.Contains(out.String()+errOut.String(), "NEVER") || !strings.Contains(out.String(), "Set 2 on izma from your laptop's MCP servers") {
 		t.Fatalf("said:\n%s%s", out.String(), errOut.String())
 	}
+	// Both names exist now: one question, and a no replaces nothing.
+	var asked []string
+	no := func(p string) (bool, error) { asked = append(asked, p); return false, nil }
+	for n := range puts {
+		delete(puts, n)
+	}
+	out.Reset()
+	if err := SecretsImportMCPCmd(ctx, e, SecretsImportOptions{ProjectArg: "izma", MCP: true, Confirm: no}); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || !strings.Contains(asked[0], "izma already has DATABASE_URL, LINEAR_TOKEN.") || len(puts) != 0 || out.String() != "Nothing imported.\n" {
+		t.Fatalf("declined: asked %q, puts %d, said %q", asked, len(puts), out.String())
+	}
+	// --yes replaces without asking.
+	asked = nil
+	if err := SecretsImportMCPCmd(ctx, e, SecretsImportOptions{ProjectArg: "izma", MCP: true, Yes: true, Confirm: no}); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 0 || len(puts) != 2 {
+		t.Fatalf("--yes: asked %q, puts %d", asked, len(puts))
+	}
 	// A FILE with --mcp is refused before anything is read.
 	cmd := newSecretsImportCmd(func() (*Env, error) { return e, nil }, &globalFlags{})
 	cmd.SetArgs([]string{"--mcp", ".env"})
@@ -564,6 +696,13 @@ func TestSecretsImportMCP(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	if err := cmd.ExecuteContext(ctx); err == nil || !strings.Contains(err.Error(), "--mcp reads your laptop's Claude Code config") {
 		t.Fatalf("--mcp with FILE: %v", err)
+	}
+	cmd = newSecretsImportCmd(func() (*Env, error) { return e, nil }, &globalFlags{})
+	cmd.SetArgs([]string{"--yes", ".env"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.ExecuteContext(ctx); err == nil || !strings.Contains(err.Error(), "--yes goes with --mcp") {
+		t.Fatalf("--yes without --mcp: %v", err)
 	}
 }
 
@@ -576,16 +715,20 @@ func TestClaudeTrustCopiesMCPApprovals(t *testing.T) {
 		t.Fatal(err)
 	}
 	real, _ := filepath.EvalSymlinks(dir)
-	writeClaudeJSON(t, home, map[string]any{"projects": map[string]any{real: map[string]any{"hasTrustDialogAccepted": true, "disabledMcpjsonServers": []any{"mine"}}}})
+	// The empty enabled list is what Claude Code writes into every
+	// project it opens: no answer. "mine" was answered on the machine.
+	writeClaudeJSON(t, home, map[string]any{"projects": map[string]any{real: map[string]any{"hasTrustDialogAccepted": true, "enabledMcpjsonServers": []any{}, "disabledMcpjsonServers": []any{"mine"}}}})
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not on PATH")
 	}
-	cmd := execBash(claudeTrustScript(dir, mcpApprovals{Enabled: []string{"notes-db"}, Disabled: []string{"other"}}), home)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v %s", err, out)
+	script := claudeTrustScript(dir, mcpApprovals{Enabled: []string{"notes-db", "mine"}, Disabled: []string{"other"}})
+	for i := 0; i < 2; i++ {
+		if out, err := execBash(script, home).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
 	}
 	p := readClaudeJSON(t, home)["projects"].(map[string]any)[real].(map[string]any)
-	if !reflect.DeepEqual(p["enabledMcpjsonServers"], []any{"notes-db"}) || !reflect.DeepEqual(p["disabledMcpjsonServers"], []any{"mine"}) || p["hasTrustDialogAccepted"] != true {
+	if !reflect.DeepEqual(p["enabledMcpjsonServers"], []any{"notes-db"}) || !reflect.DeepEqual(p["disabledMcpjsonServers"], []any{"mine", "other"}) || p["hasTrustDialogAccepted"] != true {
 		t.Fatalf("project = %v", p)
 	}
 	if !paneShowsDialog("╭─\n New MCP server found in this project: notes-db\n") {
