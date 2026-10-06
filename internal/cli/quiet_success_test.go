@@ -19,11 +19,11 @@ var quietAllowed = map[string]string{
 	"repoconfig.go:lastRepoConfigStands:%s did not build last time (revision %s:": "a failure: the last build of this repose.nix failed",
 	"repoconfig.go:applyRepoConfig:%s was not applied (%s). `repose config ":      "a refusal: the api refused the repose.nix",
 	"repoconfig.go:applyRepoConfig:Could not send %s (%s); the machine keep":      "a failure: the repose.nix could not be sent",
-	"mux_herdr.go:herdrFocusScript:%s has no checkout %s. `repose run --on ": "a refusal: exit 2, the machine has no such checkout (herdr)",
+	"mux_herdr.go:herdrFocusScript:%s has no checkout %s. `repose run --on ":      "a refusal: exit 2, the machine has no such checkout (herdr)",
 	"run.go:attachCommand:%s has no checkout %s. `repose run --on ":               "a refusal: exit 2, the machine has no such checkout",
 	"buildprogress.go:printApplied:Built revision %s. It changes the kernel":      "the change does nothing until a restart the user times",
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
-	"status.go:writeStatusLinesMux:  the environment's agent (guestd) is no":         "a failure that status reports",
+	"status.go:writeStatusLinesMux:  the environment's agent (guestd) is no":      "a failure that status reports",
 	"lifecycle.go:DestroyCmd:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
@@ -44,7 +44,7 @@ var quietAllowed = map[string]string{
 	"fork.go:ForkCmd:Could not start the agent in %s: %s. `re":                    "a failure",
 	"login.go:setUpPlainSSH:warning: could not write ~/.ssh/repose/c":             "a failure",
 	"run.go:failedStart:Fix it with `repose config edit --projec":                 "a failure: the config did not build",
-	"temp.go:tempSessionEndedWith:Could not destroy %s (%s). It goes at it":           "a failure",
+	"temp.go:tempSessionEndedWith:Could not destroy %s (%s). It goes at it":       "a failure",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",
 }
 

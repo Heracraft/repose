@@ -134,17 +134,12 @@ func writeListening(w io.Writer, procs []listeningProc) {
 	}
 }
 
-// guestListening asks the guest, best effort. It rides a multiplexed
-// connection when one is open and never leaves a new one behind
-// (ControlMaster=no), so a status does not hold a gateway session for
-// ControlPersist's ten minutes.
-func guestListening(ctx context.Context, t sshTarget) []listeningProc {
-	procs, _ := guestListeningMux(ctx, t)
-	return procs
-}
-
-// guestListeningMux is guestListening and the multiplexer that runs now
-// (I-509): "herdr", "tmux", or "" when the guest did not answer.
+// guestListeningMux asks the guest, best effort, for its listening
+// processes and the multiplexer that runs now (I-509): "herdr", "tmux",
+// or "" when the guest did not answer. It rides a multiplexed connection
+// when one is open and never leaves a new one behind (ControlMaster=no),
+// so a status does not hold a gateway session for ControlPersist's ten
+// minutes.
 func guestListeningMux(ctx context.Context, t sshTarget) ([]listeningProc, string) {
 	ctx, cancel := context.WithTimeout(ctx, statusProcsTimeout)
 	defer cancel()

@@ -316,7 +316,11 @@ func TestMultiplexerPatchRefusalWritesNothing(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	defer e.h.Pool.Exec(ctx, "drop trigger skip_mux on projects; drop function skip_mux()")
+	defer func() {
+		if _, err := e.h.Pool.Exec(ctx, "drop trigger skip_mux on projects; drop function skip_mux()"); err != nil {
+			t.Error(err)
+		}
+	}()
 	r = e.do(t, tok, "PATCH", "/projects/"+pid, map[string]any{"multiplexer": "tmux", "tz": "Europe/Paris", "hold_base_updates": true})
 	if r.status != 409 || errCode(r) != "conflict" {
 		t.Fatalf("PATCH racing a destroy: %d %s", r.status, r.raw)
