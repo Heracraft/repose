@@ -77,12 +77,13 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   socket-activated endpoint `http://127.0.0.1:9224`. The first connection
   to 9224 starts Xvnc, the window manager and the browser; nothing runs
   before that.
-- Playwright MCP registered in Claude Code's user-scope MCP config as
-  `playwright` (`--cdp-endpoint http://127.0.0.1:9224`) and
-  chrome-devtools-mcp as `chrome-devtools` (`--browserUrl
-  http://127.0.0.1:9224`). Both attach to the agents' browser, so they see
-  the same tabs, and Playwright works in its default context: the window
-  and the logins the user sees. A guest's earlier `--headless` entries are
+- Playwright MCP registered for every agent as `playwright`
+  (`--cdp-endpoint http://127.0.0.1:9224`) and chrome-devtools-mcp as
+  `chrome-devtools` (`--browserUrl http://127.0.0.1:9224`), through each
+  agent's own layer (DECISIONS I-553, I-554; the table is in agents.md
+  "MCP"). Both attach to the agents' browser, so they see the same tabs,
+  and Playwright works in its default context: the window and the logins
+  the user sees. A guest's earlier `--headless` Claude Code entries are
   replaced by `repose-agent-setup` at the next agent start; an entry the
   user changed is left alone.
 - The viewer, `repose-novnc.service`: websockify on 127.0.0.1:6081

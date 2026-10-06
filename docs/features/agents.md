@@ -222,6 +222,31 @@ guest, and never its login or its history:
 
 ## MCP
 
+### Platform servers
+
+Every agent has `playwright` and `chrome-devtools` (browser.md), written
+where the agent has a layer beneath the user's own file, with `command`
+and `args` only, so a user's field-level override stays clean (DECISIONS
+I-553, I-554):
+
+| Agent | Where repose writes them | User turns one off | User's server of the same name |
+|---|---|---|---|
+| Claude Code | `~/.claude.json` `mcpServers`, merged from `/etc/repose/mcp.json` by `repose-agent-setup` | `/mcp`, per project | wins (I-246) |
+| Codex | `~/.codex/config.toml` `[mcp_servers.NAME]`, appended by `repose-agent-setup` when the parsed file lacks NAME | `enabled = false` in that table | wins; repose never touches a table under that name |
+| opencode | `/etc/opencode/opencode.json` `mcp.NAME`, `{type: "local", command: [...]}` | `{"mcp":{"playwright":{"enabled":false}}}` in `~/.config/opencode/opencode.json` | merged field by field; the user picks another name |
+| Gemini CLI | `/etc/gemini-cli/system-defaults.json` `mcpServers`, a copied root 0644 file | `{"mcp":{"excluded":["playwright"]}}` in `~/.gemini/settings.json` | replaces ours whole |
+| pi | `pi.registerMcpServer` in `/etc/repose/pi-extension.js` (pi 0.99 and later) | `{"mcpServers":{"playwright":{"command":"playwright-mcp","enabled":false}}}` in `~/.pi/agent/mcp.json` | wins |
+
+Rejected layers: Claude Code's `managed-mcp.json` takes exclusive control
+(`claude mcp add` fails and user servers disappear from `claude mcp
+list`). Codex's `/etc/codex/config.toml` would put the servers beneath the
+user's file, but a user table of the same name holding `url` then stops
+every `codex` command (`url is not supported for stdio`), and `codex mcp
+add` copies every system-layer server into the user file anyway. Gemini's
+folder trust is off in the system defaults, since in a folder it was not
+told to trust it disables every MCP server, headless runs included. `pi mcp
+list` does not load extensions and does not show the two.
+
 What works unchanged: HTTP and SSE MCP servers (Notion, Linear, Sentry,
 GitHub, Stripe and the like), and stdio servers that are thin wrappers over
 an API and only need `npx` and a token. Playwright MCP and chrome-devtools-mcp

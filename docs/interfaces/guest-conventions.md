@@ -58,7 +58,10 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
 | `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425) |
-| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them |
+| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them; the source for Claude Code and Codex (through `repose-agent-setup`) and for the VM tests. The other agents get the same servers in their own system layer, rows below (DECISIONS I-553) |
+| `/etc/opencode/opencode.json` `mcp` | the platform MCP servers as `{type: "local", command: [CMD, ARGS...]}`, never `enabled`, so a user's `enabled: false` in `~/.config/opencode/opencode.json` turns one off (I-553) |
+| `/etc/gemini-cli/system-defaults.json` | Gemini CLI's system defaults: `mcpServers` with the platform servers (`command` and `args` only) and `security.folderTrust.enabled: false`, since Gemini disables every MCP server in a folder it was not told to trust (I-553). A copied file, root 0644, in a root 0755 directory: Gemini skips a system file whose resolved directory is not root-owned or is group-writable, which a store symlink is |
+| `/etc/repose/pi-extension.js` | pi's machine guide extension (I-243), which also calls `pi.registerMcpServer` for each server in `/etc/repose/mcp.json` and, once present, `~/.repose/mcp/agents/pi.json`, each call guarded on its own (I-554) |
 | `/etc/repose/agent-guide.md` | the machine guide agents read, rendered from `nix/guest/base/agent-guide.md` (DECISIONS I-243); the same text is `/etc/claude-code/CLAUDE.md` (Claude Code's managed memory), `developer_instructions` in `/etc/codex/config.toml`, the file named by `instructions` in `/etc/opencode/opencode.json`, and `GEMINI.md` in `/etc/repose/gemini-extension/`; `/etc/repose/pi-extension.js` reads it at each pi run |
 | `/etc/repose/agents.json` | `{<agent>: {binary, version, hook}}` for every shipped agent, for `repose status --verbose` |
 | `/etc/profile.d/repose.sh` | sources `/etc/repose/env`, then the named secrets through `/etc/repose/bash-env.sh` (or `/run/repose/secrets.env` when no `secrets.refresh` exists yet), exports `DISPLAY=:99` while the X display `:99` is up (the agents' browser or the desktop viewer runs), prepends the user bin dirs to `PATH` |
@@ -171,7 +174,11 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      the servers from `/etc/repose/mcp.json`, user entries winning on a
      name clash.
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
-     unless a `notify` key exists.
+     unless a `notify` key exists, and an `[mcp_servers.NAME]` table
+     (`command`, `args`) for each server in `/etc/repose/mcp.json` whose
+     NAME the parsed file lacks (I-553), under `flock
+     ~/.repose/mcp/.lock`; a table under that name, the user's own or one
+     they changed, stays, and a file that does not parse is left alone.
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
      absent, and replaced only while its sha256 is one an earlier base
      installed (I-481); the `repose-agent-hooks` user unit also runs this

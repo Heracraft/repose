@@ -430,6 +430,48 @@ in
           # I-481: a repose.js the user changed is kept.
           guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
+      with subtest("every agent has the platform MCP servers in its own layer, and its own switch turns one off (I-553, I-554)"):
+          import re, shlex
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          def dev_out(cmd, err=True):
+              return guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}" + (" 2>&1" if err else ""))
+          # Codex: tables appended to the user file by repose-agent-setup,
+          # once, with the same command and args.
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && codex mcp list --json", err=False))}
+          for n, e in reg.items():
+              assert cx[n]["enabled"] is True and cx[n]["transport"]["command"] == e["command"] and cx[n]["transport"]["args"] == e["args"], cx
+          before = guest.succeed("cat /home/dev/.codex/config.toml")
+          guest.succeed("sudo -u dev repose-agent-setup codex")
+          assert guest.succeed("cat /home/dev/.codex/config.toml") == before
+          assert before.count("[mcp_servers.playwright]") == 1, before
+          # opencode: the managed layer, type local, no enabled key.
+          oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
+          for n, e in reg.items():
+              assert oc[n] == {"type": "local", "command": [e["command"]] + e["args"]}, oc
+          # Gemini: a copied root file in a root 0755 directory, folder
+          # trust off, so a folder it was never told about connects both.
+          guest.succeed("test -f /etc/gemini-cli/system-defaults.json && ! test -L /etc/gemini-cli/system-defaults.json")
+          assert guest.succeed("stat -c %U%a /etc/gemini-cli /etc/gemini-cli/system-defaults.json").split() == ["root755", "root644"]
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && gemini mcp list")
+          for n in reg:
+              assert re.search(rf"{re.escape(n)}:.*Connected", out), out
+          assert "Security Warning" not in out and "untrusted" not in out.lower(), out
+          # pi: registered by the guide extension.
+          guest.succeed("grep -q registerMcpServer /etc/repose/pi-extension.js")
+          # Each agent's own off switch, each in a home of its own.
+          def put(path, text):
+              guest.succeed(f"sudo -u dev mkdir -p $(dirname {path}) && sudo -u dev tee {path} > /dev/null <<'EOF'\n{text}\nEOF")
+          put("/tmp/cxoff/.codex/config.toml", '[mcp_servers.playwright]\ncommand = "playwright-mcp"\nenabled = false')
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && HOME=/tmp/cxoff codex mcp list --json", err=False))}
+          assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
+          assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
+          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"playwright": {"enabled": false}}}')
+          out = dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list")
+          assert re.search(r"playwright\s+disabled", out), out
+          put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
+          assert re.search(r"playwright:.*Blocked", out), out
+
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
       ${transcript}
@@ -1112,9 +1154,9 @@ in
 
       reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
 
-      def mcp(server, *calls):
-          """Start the registered MCP server as dev and make the calls."""
-          e = reg[server]
+      def mcp(server, *calls, entry=None):
+          """Start the registered MCP server (or entry) as dev and make the calls."""
+          e = entry or reg[server]
           argv = [e["command"]] + e["args"] + ["--"]
           for name, args in calls:
               argv += [name, json.dumps(args)]
@@ -1216,6 +1258,21 @@ in
       with subtest("chrome-devtools MCP sees the same tab"):
           out = mcp("chrome-devtools", ("list_pages", {}))
           assert "magenta.html" in out, out
+
+      with subtest("each agent's own resolved config drives the browser (I-553)"):
+          def dev_json(cmd):
+              return json.loads(guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}"))
+          cx = dev_json("cd /tmp && codex mcp get playwright --json")["transport"]
+          oc = dev_json("cd /tmp && opencode debug config")["mcp"]["playwright"]["command"]
+          gm = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))["mcpServers"]["playwright"]
+          for agent, e in {
+              "codex": {"command": cx["command"], "args": cx["args"]},
+              "opencode": {"command": oc[0], "args": oc[1:]},
+              "gemini": gm,
+          }.items():
+              out = mcp("playwright", ("browser_navigate", {"url": page + "?" + agent}), entry=e)
+              assert "magenta.html?" + agent in out, (agent, out)
+              print(agent, [l for l in out.splitlines() if "Title" in l][:1])
 
       with subtest("software rendering: WebGL works, no GPU process relaunch loop"):
           out = mcp("playwright", ("browser_evaluate", {"function": "() => 'webgl=' + !!document.createElement('canvas').getContext('webgl')"}))
@@ -1517,6 +1574,10 @@ in
           assert codex == {"developer_instructions": guide}, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
           assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
+          # I-553: the platform MCP servers beside it; Codex gets them in
+          # the user file instead, so /etc/codex holds the guide alone.
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          assert set(oc["mcp"]) == set(reg) and not any("enabled" in v for v in oc["mcp"].values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
           guest.succeed("grep -q /etc/repose/agent-guide.md /etc/repose/pi-extension.js")
@@ -1558,6 +1619,11 @@ in
               bodies = guest.succeed("cat /tmp/caps/* 2>/dev/null || true")
               assert sentinel in bodies, f"{agent}: the guide is not in what it sent: {bodies[:3000]}"
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
+              # I-553, I-554: the platform browser tools reach the model.
+              # pi lists codemode servers by name instead of their tools.
+              tool = {"codex": "browser_navigate", "opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              if tool:
+                  assert tool in bodies, f"{agent}: {tool} is not in what it sent"
           after = dev("cd ~ && sha256sum " + " ".join(files))
           assert before == after, (before, after)
 
