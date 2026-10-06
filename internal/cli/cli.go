@@ -147,7 +147,7 @@ func newRootCmd(version string) *cobra.Command {
 		newResizeCmd(env, g),
 		newVersionCmd(version),
 		newCompletionCmd(),
-		newMCPCmd(),
+		newMCPCmd(env, g),
 		newBrowserCmd(env, g),
 		newCpCmd(env, g),
 		newPasteCmd(env, g),
@@ -1345,16 +1345,60 @@ func newVersionCmd(version string) *cobra.Command {
 	}
 }
 
-func newMCPCmd() *cobra.Command {
-	root := &cobra.Command{Use: "mcp", Short: "MCP helpers (reserved)"}
-	root.AddCommand(&cobra.Command{
-		Use:   "forward",
-		Short: "Forward a laptop-bound MCP server into the machine (not available yet)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println(NotAvailableMessage("repose mcp forward"))
+// newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.
+func newMCPCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
+	root := &cobra.Command{Use: "mcp", Short: "MCP servers for the agents on a machine"}
+	// `repose mcp forward` (DECISIONS I-557). Names only: the project comes
+	// from the folder or --project, since names and a PROJECT cannot share
+	// positions without a guess (an exception to I-155).
+	var remove bool
+	forward := &cobra.Command{
+		Use:   "forward NAME... [-- COMMAND [ARG...]]",
+		Short: "Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C",
+		Long: `Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C.
+
+NAME is a server in your Claude Code, Claude Desktop, Codex or Gemini CLI config
+on this laptop, or the command after --. It runs here, with your apps, files and
+tokens; each agent session on the machine gets its own copy over SSH. Agents
+started after the first forward list NAME; while nothing forwards it, its tools
+answer that your laptop isn't connected. To forward whenever you're attached,
+add NAME to [mcp] forward in config.toml. The project is the folder's, or
+--project's. Needs the machine running.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			names := args
+			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+				names = args[:dash]
+				if dash < len(args) && len(names) != 1 {
+					return cobraUsageError{fmt.Errorf("a command after -- goes with one NAME, got %s", gotArgs(names))}
+				}
+			}
+			if len(names) == 0 {
+				return cobraUsageError{fmt.Errorf("%s needs a server NAME, got %s", cmd.CommandPath(), gotArgs(args))}
+			}
+			for _, n := range names {
+				if err := mcpForwardName(n); err != nil {
+					return cobraUsageError{fmt.Errorf("%w; got %s", err, gotArgs(args))}
+				}
+			}
 			return nil
 		},
-	})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := MCPForwardOptions{Names: args, Remove: remove}
+			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+				opts.Names, opts.Inline = args[:dash], args[dash:]
+			}
+			if remove && len(opts.Inline) > 0 {
+				return cobraUsageError{fmt.Errorf("--remove takes names only, not a command after --")}
+			}
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return MCPForwardCmd(cmd.Context(), e, g.project, opts)
+		},
+	}
+	forward.Flags().BoolVar(&remove, "remove", false, "take NAME off the machine's agents")
+	root.AddCommand(forward)
 	return root
 }
 

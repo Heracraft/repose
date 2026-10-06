@@ -42,12 +42,16 @@ func TestRunMCPDispatch(t *testing.T) {
 	if code, out, _ := run("--help"); code != 0 || !strings.Contains(out, "repose-mcp sync") {
 		t.Errorf("help: %d %q", code, out)
 	}
-	// The forward entry points are the forward unit's; this base says so.
-	for _, args := range [][]string{{"hold", "notes"}, {"notes"}} {
-		code, _, errs := run(args...)
-		if code != 1 || !strings.Contains(errs, "forwarding is not built in this base") {
-			t.Errorf("%v: %d %q", args, code, errs)
-		}
+	// The forward's two ends (internal/mcpshim has their tests): the shim
+	// ends with its agent's stdin, and hold wants names.
+	if code, out, _ := run("notes"); code != 0 || out != "" {
+		t.Errorf("shim with no agent: %d %q", code, out)
+	}
+	if code, _, _ := run("hold"); code != 2 {
+		t.Errorf("hold with no names: %d", code)
+	}
+	if code, out, _ := run("hold", "--remove", "notes"); code != 0 || out != "notes\n" {
+		t.Errorf("hold --remove of a name never forwarded: %d %q", code, out)
 	}
 	if code, _, _ := run("bad name!"); code != 2 {
 		t.Errorf("bad name: %d", code)

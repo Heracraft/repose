@@ -555,6 +555,48 @@ in
           assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
           guest.fail("test -e /home/dev/.claude.json.lock")
 
+      with subtest("a forwarded server reaches every agent, and answers while the laptop is away (I-557)"):
+          import shlex
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp").strip() == "dev 700"
+          # The real hold, with a fake laptop end on its stdio: what the
+          # laptop's ssh carries in production (no -R; the gateway relays
+          # forwarded-tcpip only, I-296).
+          guest.succeed("sudo -u dev sh -c 'cd /home/dev && nohup python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe > /tmp/fake-laptop.log 2>&1 &'")
+          ready = guest.wait_until_succeeds("grep '^ready ' /tmp/fake-laptop.log", timeout=60)
+          r = json.loads(ready.split(" ", 1)[1])
+          assert r == {"name": "fwprobe", "tools": 1, "new": True}, r
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp/fwprobe.sock").strip() == "dev 600"
+          fwd = json.loads(guest.succeed("cat /home/dev/.repose/mcp/forward/fwprobe.json"))
+          assert fwd["name"] == "fwprobe" and [t["name"] for t in fwd["tools"]] == ["where"], fwd
+          # hold synced the agents it had rendered for already.
+          assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]["fwprobe"] == {"type": "stdio", "command": "repose-mcp", "args": ["fwprobe"]}
+          assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
+          def listed(connected_word):
+              for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+                  status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+                  print(f"{cmd} ({status}):\n{out}")
+                  rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
+                  assert rows and connected_word in rows[0] and "failed" not in rows[0] and "disconnected" not in rows[0], (cmd, out)
+          listed("connected")
+          call = shlex.quote("cd /home/dev && python3 ${./mcp-client.py} repose-mcp fwprobe -- where {}")
+          out = guest.wait_until_succeeds(f"sudo -u dev bash -lc {call}", timeout=30)
+          assert "laptop" in out, out
+          # The laptop goes away: the socket goes with the hold, agents
+          # still list the server from the cache, and a call is a tool
+          # error that says what to do.
+          guest.succeed("pkill -f mcp-fake-laptop.py")
+          guest.wait_until_fails("test -e /run/repose/mcp/fwprobe.sock", timeout=15)
+          listed("connected")
+          status, out = guest.execute(f"sudo -u dev bash -lc {call} 2>&1")
+          assert status == 1 and "fwprobe runs on the user's laptop, which isn't connected" in out, (status, out)
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [x for x in st["servers"] if x["name"] == "fwprobe"]
+          assert row and row[0]["from"] == "forward" and "laptop not connected" in row[0]["state"], st
+          # --remove takes it off every agent at their next start.
+          assert guest.succeed("sudo -u dev repose-mcp hold --remove fwprobe") == ""
+          assert "fwprobe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "fwprobe" not in guest.succeed("cat /home/dev/.codex/config.toml")
+
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
       ${transcript}

@@ -83,6 +83,7 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
 | `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it |
 | `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it |
+| `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends; its absence is how `status` says `laptop not connected` (DECISIONS I-557) |
 | `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
 | `/nix/.rw-store` | the guest's writable store overlay (upper dir `store/`, work dir `work/`), on the thin volume |
@@ -271,7 +272,7 @@ and agent-setup skips it).
 | File | Written by | Shape |
 |---|---|---|
 | `laptop.json` | the CLI's carry (unit C of the MCP design) | `{"version":1, "user": {NAME: SERVER}, "projects": {"<checkout real path>": {NAME: SERVER}}, "skipped": [{"name","reason"}], "secrets": {SECRET: [NAME,...]}}`; SERVER is a Claude Code `mcpServers` value, `{type?, command, args, env}` or `{type: http\|sse\|ws, url, headers, oauth}`, with `${NAME}` in place of every credential. Every key but `version` may be absent |
-| `forward/NAME.json` | `repose-mcp hold` (the forward) | `{"version":1, "name", "protocolVersion", "initialize", "tools", "updated"}`; its presence registers NAME, whatever the rest holds |
+| `forward/NAME.json` | `repose-mcp hold` (the forward, I-557); removed by `repose-mcp hold --remove` | `{"version":1, "name", "protocolVersion", "initialize", "tools", "updated"}`: the laptop server's initialize result and every tool from `tools/list`, as the hold's cache fill got them, `updated` RFC 3339 UTC; the shim answers from it while the laptop is away. Its presence registers NAME, whatever the rest holds |
 | `agents/<agent>.json` | `sync` | what repose renders for that agent: `{"mcpServers": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "skipped"?: [{"name","reason"}]}`; pi's machine guide extension reads `agents/pi.json` |
 | `rendered.json` | `sync` | `{"version":1, "agents": {AGENT: {"user": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "held"?: {NAME: entry}}}}`: the entries sync last left in each agent's config as repose's; `held` is what sync could not write under a name Codex holds in a form repose does not edit, so the warning comes once per value |
 | `.lock` | `sync` | `flock` held around every sync, for every agent (agents start in parallel, and `hold` syncs too) |
@@ -334,8 +335,14 @@ nothing is rendered for it.
 | `repose-mcp sync [AGENT...]` | the rendering above, for each AGENT (all five when none); warnings on stderr, `repose-mcp: ` first | 0 always |
 | `repose-mcp run NAME` | starts the carried stdio server NAME (the user scope's, else the first checkout's): each `${X}` and `${X:-default}` in its command, arguments and env filled from `/run/repose/secrets/X` (`REPOSE_SECRETS_DIR` moves it, for tests), else the environment; an unset `${X}` stays as written; then execs it with the caller's environment plus the server's env | 127 with `repose-mcp: NAME is not in ~/.repose/mcp/laptop.json`, or when the command is missing; 1 for a remote server; else the server's |
 | `repose-mcp status --json` | what each agent has, read from the files; starts no server | 0, or 1 when the registry does not parse |
-| `repose-mcp NAME` | the forward's shim for NAME (`internal/mcpshim`) | 1 with `forwarding is not built in this base` until the forward ships |
-| `repose-mcp hold NAME...` | the forward's endpoint (`internal/mcpshim`) | as above |
+| `repose-mcp NAME` | the forward's shim for NAME, the stdio server every agent's config starts (`internal/mcpshim`): answers `initialize` and `tools/list` from `forward/NAME.json`; after the agent's `notifications/initialized` connects to `/run/repose/mcp/NAME.sock`, replays the agent's initialize, and passes lines both ways; pings with `$/repose/ping` every 10 s, and after two misses or a closed socket answers each `tools/call` with `isError` and `NAME runs on the user's laptop, which isn't connected. Ask them to run repose mcp forward NAME there.`; retries every 5 s and sends `notifications/tools/list_changed` when the tools differ | 0 when the agent closes stdin |
+| `repose-mcp hold NAME...` | the forward's endpoint, the remote command of the laptop's ssh: stdin and stdout carry frames (a type byte, a big-endian uint32 stream id and length, the payload; `H` hello `1`, `O` open NAME, `D` data, `C` close, `R` ready JSON `{"name","tools","new"?,"changed"?,"error"?}`, `G` gone NAME). Per NAME: fills `forward/NAME.json` through a stream of its own, syncs the agents `rendered.json` names on a first registration, binds `/run/repose/mcp/NAME.sock` (replacing the file), carries each connection as a stream, at most 8 at once (the ninth gets one `$/repose/busy` line and is closed). Hands NAME over when the socket's inode changes (a newer hold), sending `G` | 0 when stdin ends or every NAME has gone; 2 for a name outside the pattern above or a reserved one |
+| `repose-mcp hold --remove NAME...` | deletes each `forward/NAME.json` and syncs as above; prints each NAME that had none, one per line | 0; 1 when a file cannot be removed |
+
+A base before the forward has a `repose-mcp` whose `NAME` and `hold` exit 1
+with `forwarding is not built in this base`; the CLI reads that, or exit 127
+from a base with no `repose-mcp`, as a machine to update. No CLI before
+I-557 calls either, so the frame protocol has no older shape to keep.
 
 `status --json` prints:
 

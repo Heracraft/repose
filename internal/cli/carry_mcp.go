@@ -43,10 +43,6 @@ var mcpLaptopJQ []byte
 // part writes sends it to every guest once.
 const carryMCPVersion = "mcp-1"
 
-// mcpForwardShipped turns on the clause of the left-behind line that
-// names `repose mcp forward` (unit D flips it when the command exists).
-const mcpForwardShipped = false
-
 // mcpLogin is the row in `repose secrets choose` and logins.skip that
 // turns the MCP carry off.
 const mcpLogin = "mcp"
@@ -1112,11 +1108,7 @@ func (o *carryOutcome) mcpLines() []string {
 		if len(o.MCPLeft) > 1 {
 			what = "MCP servers "
 		}
-		l := "Left on your laptop: " + what + strings.Join(o.MCPLeft, ", ") + "."
-		if mcpForwardShipped {
-			l += " repose mcp forward NAME runs one from here."
-		}
-		out = append(out, l)
+		out = append(out, "Left on your laptop: "+what+strings.Join(o.MCPLeft, ", ")+". repose mcp forward NAME runs one from here.")
 	}
 	if n := len(o.MCPSecrets); n > 0 {
 		var all, fromLaptop []string

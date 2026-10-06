@@ -57,6 +57,9 @@ type sessionOptions struct {
 	// MCPOff is logins.skip naming mcp: the carry sends an empty list
 	// (I-556).
 	MCPOff bool `json:"mcp_off,omitempty"`
+	// MCP is [mcp] forward: the laptop's MCP servers forwarded for as
+	// long as the attach lasts (I-557).
+	MCP []string `json:"mcp,omitempty"`
 }
 
 // startSessionHelper starts the helper for the attach that follows, and
@@ -64,7 +67,7 @@ type sessionOptions struct {
 // Windows has no multiplexing and no exec, and tests (TargetFor set) drive
 // runSession themselves.
 func startSessionHelper(e *Env, opts sessionOptions) {
-	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge) {
+	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge && len(opts.MCP) == 0) {
 		return
 	}
 	b, err := json.Marshal(opts)
@@ -141,9 +144,17 @@ func runSession(ctx context.Context, opts sessionOptions, alive func() bool) err
 			runSessionBridge(ctx, t, opts.Slug, opts.BridgeAllow, say, alive)
 		}
 	}()
+	mcpDone := make(chan struct{})
+	go func() {
+		defer close(mcpDone)
+		if len(opts.MCP) > 0 {
+			runSessionMCP(ctx, t, opts.MCP, opts.HomeDir, opts.RepoDir, say, alive)
+		}
+	}()
 	if opts.Forward {
 		runForwards(ctx, newForwarder(t, opts.Slug, say), alive)
 	}
+	<-mcpDone
 	<-bridged
 	<-carried
 	close(msgs)

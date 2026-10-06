@@ -153,6 +153,27 @@ Needs the machine running (it doesn't start it) and Chrome 144 or newer with rem
 
 Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to two minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
 
+### `repose mcp forward NAME...`
+
+Let the agents on the machine use MCP servers that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`. It runs on your laptop with your apps, files and tokens; `${VAR}` in its config comes from your laptop's environment. Each agent session on the machine gets its own copy over SSH, and each call is listed here by agent and tool. See [MCP servers](/docs/agents#mcp-servers).
+
+```
+$ repose mcp forward apple-notes
+apple-notes: forwarded to todo-app (12 tools). Agents already
+running list it after a restart. Ctrl-C ends it.
+claude called apple-notes.search_notes
+```
+
+```
+$ repose mcp forward notes -- node ~/mcp/notes.js
+```
+
+The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
+
+| Flag       | What it does                                                          |
+| ---------- | --------------------------------------------------------------------- |
+| `--remove` | Take NAME off the machine's agents. They drop it at their next start. |
+
 ### `repose cp [-r] SRC... DST`
 
 Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
@@ -277,7 +298,6 @@ With `--global`, the same commands act on your machine.nix instead of the projec
 | `repose version`                    | Print the version.                                                                                                                       |
 | `repose completion bash\|zsh\|fish` | Print a shell completion script.                                                                                                         |
 | `repose help [COMMAND]`             | Print help for a command.                                                                                                                |
-| `repose mcp forward`                | Reserved, not available yet. Prints what works today.                                                                                    |
 
 ## config.toml
 
@@ -295,18 +315,25 @@ skip = ["gh"]
 
 [projects.todo-app.logins]
 skip = ["gh", "env"]
+
+[mcp]
+forward = ["apple-notes"]
+
+[projects.todo-app.mcp]
+forward = ["figma"]
 ```
 
-| Key               | Default  | What it does                                                                                                                            |
-| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `default_class`   | `large`  | Size of new projects.                                                                                                                   |
-| `default_agent`   | `claude` | Agent for new projects.                                                                                                                 |
-| `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                      |
-| `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                    |
-| `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. |
-| `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                    |
-| `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                  |
-| `logto_client_id` | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                    |
+| Key               | Default  | What it does                                                                                                                                                                                                |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default_class`   | `large`  | Size of new projects.                                                                                                                                                                                       |
+| `default_agent`   | `claude` | Agent for new projects.                                                                                                                                                                                     |
+| `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
+| `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
+| `mcp.forward`     | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project.                                                                                                  |
+| `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
+| `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
+| `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
+| `logto_client_id` | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
 
 ## Environment variables
 

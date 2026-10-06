@@ -17,6 +17,11 @@ import (
 var realHome string
 
 func TestMain(m *testing.M) {
+	// The test binary doubles as a process the tests start: the stdio MCP
+	// server and repose-mcp of the forward's tests (mcpforward_test.go).
+	if h := os.Getenv(testHelperEnv); h != "" {
+		os.Exit(runTestHelper(h, os.Args[1:]))
+	}
 	realHome = os.Getenv("HOME")
 	home, err := os.MkdirTemp("", "repose-cli-test-home-")
 	if err != nil {

@@ -105,7 +105,8 @@ type Paths struct {
 }
 
 // DefaultPaths are the guest's paths for home. REPOSE_SECRETS_DIR moves the
-// secrets directory, for tests.
+// secrets directory and REPOSE_MCP_SOCKET_DIR the forward's sockets, for
+// tests.
 func DefaultPaths(home string) Paths {
 	p := Paths{
 		Home:       home,
@@ -116,6 +117,9 @@ func DefaultPaths(home string) Paths {
 	}
 	if d := os.Getenv("REPOSE_SECRETS_DIR"); d != "" {
 		p.SecretsDir = d
+	}
+	if d := os.Getenv("REPOSE_MCP_SOCKET_DIR"); d != "" {
+		p.SocketDir = d
 	}
 	return p
 }

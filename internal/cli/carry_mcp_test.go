@@ -490,7 +490,7 @@ func TestCarryMCPServers(t *testing.T) {
 	lines := strings.Join(o.Lines(), "\n")
 	t.Logf("first carry lines:\n%s", lines)
 	for _, want := range []string{
-		"Left on your laptop: MCP servers apple-notes (an Apple app), figma (runs on your laptop).",
+		"Left on your laptop: MCP servers apple-notes (an Apple app), figma (runs on your laptop). repose mcp forward NAME runs one from here.",
 		"MCP servers need secrets the machine lacks: LINEAR_TOKEN (linear), PROJ_SECRET (proj). Set them from your laptop's values with repose secrets import --mcp.",
 		"MCP server foo needs fooctl-not-here, which the machine lacks.",
 		"This machine's base predates MCP servers from your laptop; they arrive after its next update.",
@@ -499,7 +499,7 @@ func TestCarryMCPServers(t *testing.T) {
 			t.Errorf("lines lack %q", want)
 		}
 	}
-	if strings.Contains(lines, "SET_ALREADY") || strings.Contains(lines, "playwright") || strings.Contains(lines, "mcp forward") {
+	if strings.Contains(lines, "SET_ALREADY") || strings.Contains(lines, "playwright") {
 		t.Errorf("lines name what they should not:\n%s", lines)
 	}
 	if bytes.Contains(stream.Bytes(), []byte("NEVER-")) {

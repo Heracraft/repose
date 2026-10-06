@@ -254,8 +254,8 @@ secrets. A user who wants an MCP server only in the guest adds it there with
 the agent's own command, or in the repo's `.mcp.json`, which syncs with the
 repo. Servers bound to the laptop (Apple Notes, Xcode, iMessage, desktop
 automation, filesystem servers pointed at laptop paths) stay there; the
-carry names them once, and the forward (below, not built) is how they would
-reach the machine.
+carry names them once, and `repose mcp forward` (below) runs one on the
+laptop for the machine's agents while the laptop is open.
 
 ### One list per machine, rendered per agent (DECISIONS I-555)
 
@@ -297,8 +297,8 @@ it cannot fill, is skipped for Codex alone.
 agents have it and what it lacks; `repose mcp list` will show it. The
 layout and the commands are in `docs/interfaces/guest-conventions.md` "MCP
 registry". `repose-mcp NAME` and `repose-mcp hold` are the forward's two
-ends; in a base without the forward they exit 1 with "forwarding is not
-built in this base".
+ends (below); in a base before the forward they exit 1 with "forwarding is
+not built in this base", which the CLI reads as an old base.
 
 ### Carry of the laptop's Claude Code servers (DECISIONS I-556)
 
@@ -371,23 +371,76 @@ no answer), and Claude Code's "New MCP server found
 in this project" dialog stops `run` from typing its prompt (outside
 `bypassPermissions` that dialog would otherwise take the Enter).
 
-### Not built: `repose mcp forward NAME`
+### Forward: `repose mcp forward NAME...` (DECISIONS I-557)
 
-The command is reserved: it prints that it is not available yet and exits 0.
+For a server the carry leaves on the laptop (an Apple app, a laptop file,
+a program only the laptop has), `repose mcp forward NAME...` runs it on the
+laptop for the agents on the machine, until Ctrl-C. `[mcp] forward` and
+`[projects.NAME.mcp] forward` in config.toml do the same beside every
+attach, through the session helper, the way `--bridge` does; that path
+prints nothing on success and names a failure through tmux. The command
+takes names only; the project comes from the folder or `--project`, since
+names and a PROJECT cannot share positions without a guess (an exception
+to I-155).
 
-For when the laptop is open and a laptop-bound server is wanted anyway:
+Definitions are the laptop's, in order: Claude Code's local scope for the
+repository, its user scope, Claude Desktop (macOS), `$CODEX_HOME` or
+`~/.codex/config.toml`, `~/.gemini/settings.json`, or `-- COMMAND ARGS`
+for one NAME. `${VAR}` expands from the laptop's environment, so tokens
+stay there. The server runs in the laptop's repository, or home, or the
+entry's `cwd`. An HTTP entry is refused (forwarding loopback HTTP servers
+is deferred); an unknown NAME lists every name each config has.
 
-1. The CLI reads the server's definition from the laptop's Claude config.
-2. It starts the stdio server locally wrapped by `mcp-proxy` as HTTP on a
-   free local port.
-3. It opens an SSH reverse tunnel (`-R`) from a guest port to that local
-   port for the life of the CLI process.
-4. It registers `NAME` in the guest's Claude user-scope config as an HTTP
-   server at `http://127.0.0.1:<port>/mcp`, and removes it when the tunnel
-   closes.
+Transport, per the design's critic correction 1: the laptop runs `ssh
+MACHINE repose-mcp hold NAME...` on a connection of its own
+(`ControlPath=none`) with no `-R`, since the gateway relays only
+`forwarded-tcpip` channels back to a client (I-296). The session's stdin
+and stdout carry frames (`internal/mcpshim/frame.go`): hello, open NAME,
+data, close, ready, gone. Hold listens on `/run/repose/mcp/NAME.sock`
+(tmpfiles `0700 dev`, socket `0600`) and carries each connection as a
+stream; the laptop starts one server process per stream, so each agent
+session gets its own, as stdio servers run locally. At most 8 per NAME:
+hold turns the ninth away with a busy line the shim reports, and the
+laptop refuses past that too. A stream's end closes the server's stdin and
+sends TERM to its process group, KILL after 2 s. The laptop's end answers
+the shim's `$/repose/ping` itself, and starts only the command its own
+config names: the machine sends a name, never a command.
 
-It only works while the laptop is up, which is the case this product exists
-to escape, so it is a convenience, not a promise.
+Registration: before it listens, hold acts as an MCP client through the
+laptop (initialize, then `tools/list` page by page), writes
+`~/.repose/mcp/forward/NAME.json`, and on a first registration runs
+`repose-mcp sync` for every agent sync has rendered for, so each lists
+NAME at its next start. The ready frame carries the tool count and whether
+the registration is new or the tools changed, for the CLI's one line. A
+new hold of the same NAME unlinks and rebinds the socket; the old one sees
+the socket's inode change within a second, ends its streams and sends
+gone. `repose-mcp hold --remove NAME...` deletes the registration and
+syncs; the CLI's `--remove` runs it.
+
+The shim, `repose-mcp NAME`, is what every agent's config starts. It
+answers `initialize` (protocol version the older of the agent's and the
+cached one, `capabilities.tools.listChanged` set, since opencode listens
+for list_changed only then) and `tools/list` from the registration, so an
+agent's start never waits on the laptop. After `notifications/initialized`
+it connects, replays the agent's initialize to the laptop's server, fetches
+the tools and passes lines both ways; tools that differ from what the
+agent has send `notifications/tools/list_changed` (Codex ignores it, which
+the CLI's line says). A server choosing another protocol revision than the
+agent was told is a stderr line, and the session goes on. The shim pings
+every 10 s; two misses, or the socket closing, mark the laptop away:
+pending requests are answered (a tools/call with `isError`), every later
+tools/call answers `NAME runs on the user's laptop, which isn't connected.
+Ask them to run repose mcp forward NAME there.`, list methods answer from
+the cache, and the shim retries every 5 s. A sleeping laptop shows within
+about 20 s, where sshd alone takes 2 minutes.
+
+The laptop prints one line per name when it is registered, one per call
+(`claude called apple-notes.search_notes`, agent from the initialize's
+`clientInfo`, tool name only), and a line when the connection drops and
+it reconnects with a backoff up to 30 s. A base without the forward is
+named once and not retried. Windows has no session helper, so `[mcp]
+forward` does nothing there; the foreground command needs only ssh's
+stdio.
 
 ## Depends on
 
@@ -397,7 +450,9 @@ pane-idle heuristic, AgentState), 05 (events ingest), 07 (`--agent`,
 
 ## Deferred
 
-`repose mcp forward`. Carrying the laptop's Codex, Gemini CLI and opencode
-MCP configs (only Claude Code's travels, I-556). Agents
+Carrying the laptop's Codex, Gemini CLI and opencode MCP configs (only
+Claude Code's travels, I-556). Forwarding loopback HTTP servers on the
+laptop (Figma Dev Mode at `127.0.0.1:3845/mcp`): the laptop end would be an
+HTTP client of that URL, and the guest side stays as it is. Agents
 beyond the five (DECISIONS R2-11: anything nixpkgs does not package is a
 package the platform maintains).
