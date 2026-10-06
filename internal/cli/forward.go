@@ -390,8 +390,15 @@ func (f *forwarder) guestPorts() []int {
 // empty list removes the entry) and sets the session's status-right to
 // the union of every live entry, or back to the global one when none is
 // left: two CLIs attached from two laptops each forward on their own and
-// the bar shows both.
+// the bar shows both. A machine with no tmux session of that name (a
+// herdr machine) has no bar; the script still exits 0 there, so the
+// heartbeat, not every poll, sets the pace of publishes.
 func (f *forwarder) publish(ctx context.Context) error {
+	return runSSHOK(ctx, f.t, f.publishScript())
+}
+
+// publishScript is publish's guest side.
+func (f *forwarder) publishScript() string {
 	ports := make([]string, 0, len(f.fwd))
 	for _, p := range f.guestPorts() {
 		ports = append(ports, strconv.Itoa(p))
@@ -400,13 +407,15 @@ func (f *forwarder) publish(ctx context.Context) error {
 	if len(ports) > 0 {
 		entry = fmt.Sprintf("printf '%%s\\n' %s > \"$d/%s\"", shQuote(strings.Join(ports, " ")), f.id)
 	}
-	script := fmt.Sprintf(`d="$HOME/.repose/forwards"
+	return fmt.Sprintf(`d="$HOME/.repose/forwards"
 mkdir -p "$d"
 %s
 u=$(find "$d" -type f -newermt "%d seconds ago" -exec cat {} + 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
 u=${u%% }
 s=%s
-if [ -n "$u" ]; then
+if ! tmux has-session -t "=$s" 2>/dev/null; then
+  :
+elif [ -n "$u" ]; then
   g=$(tmux show-options -gv status-right 2>/dev/null || true)
   tmux set-option -t "=$s:" status-right-length 120
   tmux set-option -t "=$s:" status-right "⇄ $u │ $g"
@@ -415,7 +424,6 @@ else
   tmux set-option -u -t "=$s:" status-right-length 2>/dev/null || true
 fi
 `, entry, int(forwardStale/time.Second), shQuote(f.slug))
-	return runSSHOK(ctx, f.t, script)
 }
 
 func sortedPorts(m map[int]guestListener) []int {

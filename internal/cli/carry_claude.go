@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // unixEpoch is the mtime carried files are packed with, so the payload's
@@ -820,11 +818,11 @@ done
 msg=""
 [ -n "$ok" ] && msg="Installed Claude plugins:$ok."
 [ -n "$bad" ] && msg="$msg Could not install:$bad (claude plugin install in the guest says why)."
-if [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then
+if [ -n "$msg" ] && ` + muxProbeScript + `; then
+  herdr notification show repose --body "$msg" >/dev/null 2>&1 || true
+elif [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then
   s=$(tmux list-sessions -F '#{session_name}' | head -n 1)
   tmux display-message -d 6000 -t "=$s:" "$msg" 2>/dev/null || true
-elif [ -n "$msg" ] && [ -S ` + multiplexer.HerdrSocket + ` ]; then
-  herdr notification show repose --body "$msg" >/dev/null 2>&1 || true
 fi
 if [ -z "$bad" ]; then
 ` + setMarker("claude-plugins", hash) + `fi

@@ -23,8 +23,8 @@ func (tmuxMux) PickName(ctx context.Context, t sshTarget, slug, agent string) (s
 	return windowNameFor(ctx, t, slug, agent)
 }
 
-func (tmuxMux) Names(ctx context.Context, t sshTarget, slug string) ([]string, error) {
-	return listWindows(ctx, t, slug)
+func (tmuxMux) NamesScript(slug string) string {
+	return fmt.Sprintf("tmux list-windows -t %s -F '#window #{window_name}'\n", slug)
 }
 
 func (tmuxMux) Label(extra, agent string) string { return windowLabel(extra, agent) }
@@ -378,11 +378,13 @@ func worktreeDir(checkout string, n int) string {
 }
 func worktreeBranch(n int) string { return fmt.Sprintf("worktree-%d", n) }
 
-// worktreeProbeScript reports, in one ssh, the checkout's HEAD and whether it is dirty, and which worktree directories
-// and worktree-N branches already exist, so the number skips both.
-func worktreeProbeScript(slug, extra string) string {
+// worktreeProbeScript reports, in one ssh, the agent names in use (from
+// names, the muxer's NamesScript), the checkout's HEAD and whether it is
+// dirty, and which worktree directories and worktree-N branches already
+// exist, so the number skips both.
+func worktreeProbeScript(slug, extra, names string) string {
 	return fmt.Sprintf(`set -e
-%[2]s[ "$repose_co" != "$HOME" ] || { echo '#nogit'; exit 0; }
+%[3]s%[2]s[ "$repose_co" != "$HOME" ] || { echo '#nogit'; exit 0; }
 echo "#checkout ${repose_co##*/}"
 cd "$repose_co" && [ -e .git ] || { echo '#nogit'; exit 0; }
 h=$(git rev-parse -q --verify HEAD) || { echo '#nohead'; exit 0; }
@@ -390,7 +392,7 @@ echo "#head $h"
 [ -z "$(git status --porcelain 2>/dev/null)" ] || echo '#dirty'
 git for-each-ref --format='#branch %%(refname:strip=2)' 'refs/heads/worktree-*'
 for p in "$repose_co"-worktree-*; do [ -e "$p" ] && echo "#dir ${p##*/}"; done
-true`, slug, checkoutVar(slug, extra))
+true`, slug, checkoutVar(slug, extra), names)
 }
 
 // worktreeAddScript makes the worktree and copies into it the checkout's
@@ -423,14 +425,15 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 // prepareWorktreeWith is prepareWorktree on the machine's multiplexer,
 // whose names the agent's name skips (I-509).
 func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m muxer) (*agentWorktree, error) {
-	windows, err := m.Names(ctx, t, slug)
+	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout, m.NamesScript(slug)), nil)
 	if err != nil {
-		return nil, stepFailed("list the agents on the machine", err, "")
+		step := "list the guest's tmux windows"
+		if m.Name() == multiplexer.Herdr {
+			step = "list herdr's agents on the machine"
+		}
+		return nil, stepFailed(step, err, "")
 	}
-	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout), nil)
-	if err != nil {
-		return nil, stepFailed("read the machine's checkout", err, "")
-	}
+	var windows []string
 	taken := map[string]bool{}
 	wt := &agentWorktree{}
 	for _, l := range nonEmptyLines(string(out)) {
@@ -445,7 +448,9 @@ func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m
 		case "#dirty":
 			wt.Dirty = true
 		default:
-			if c, ok := strings.CutPrefix(l, "#checkout "); ok {
+			if w, ok := strings.CutPrefix(l, "#window "); ok {
+				windows = append(windows, w)
+			} else if c, ok := strings.CutPrefix(l, "#checkout "); ok {
 				wt.Checkout = c
 			} else if h, ok := strings.CutPrefix(l, "#head "); ok {
 				wt.Base = h

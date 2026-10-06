@@ -41,7 +41,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                  |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                         |
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix). |
-| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop (not for `--temp`), else tmux. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
+| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. A `--temp` machine always runs tmux, and `--temp --multiplexer herdr` stops with an error. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
 ### `repose attach [PROJECT]`
 
@@ -304,7 +304,7 @@ skip = ["gh", "env"]
 | ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `default_class`   | `large`  | Size of new projects.                                                                                                                   |
 | `default_agent`   | `claude` | Agent for new projects.                                                                                                                 |
-| `default_multiplexer` | none | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key. |
+| `default_multiplexer` | none | `tmux` or `herdr` for new projects; a `--temp` machine runs tmux either way. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key. |
 | `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                      |
 | `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`. `repose secrets choose` sets it.                           |
 | `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. |

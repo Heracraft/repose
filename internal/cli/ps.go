@@ -181,7 +181,11 @@ func PsCmd(ctx context.Context, e *Env, projectArg string) error {
 	if err != nil {
 		return err
 	}
-	if muxFor(ctx, target).Name() == multiplexer.Herdr {
+	mux, err := muxFor(ctx, target, project)
+	if err != nil {
+		return err
+	}
+	if mux.Name() == multiplexer.Herdr {
 		return psHerdr(ctx, e, target, project.Slug)
 	}
 	out, err := runSSH(ctx, target, psScript(project.Slug), nil)

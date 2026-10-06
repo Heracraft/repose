@@ -9,9 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -38,7 +42,7 @@ func TestPickMultiplexerOrder(t *testing.T) {
 		{"config tmux wins over the herdr pane", "", "tmux", true, false, "tmux", false},
 		{"herdr pane", "", "", true, false, "herdr", true},
 		{"herdr pane, temporary", "", "", true, true, "tmux", false},
-		{"config herdr on a temporary machine", "", "herdr", false, true, "herdr", false},
+		{"config herdr on a temporary machine", "", "herdr", false, true, "tmux", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -57,14 +61,37 @@ func TestPickMultiplexerOrder(t *testing.T) {
 
 func TestMultiplexerFlagRefusesOtherValues(t *testing.T) {
 	for _, v := range []string{"", "tmux", "herdr"} {
-		if err := checkMultiplexerFlag(v); err != nil {
+		if err := checkMultiplexerFlag(v, false); err != nil {
 			t.Fatalf("%q: %v", v, err)
 		}
 	}
-	err := checkMultiplexerFlag("screen")
+	err := checkMultiplexerFlag("screen", false)
 	var ue cobraUsageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "tmux or herdr") || !strings.Contains(err.Error(), `"screen"`) {
 		t.Fatalf("screen: %v", err)
+	}
+	// A temporary machine takes tmux only (I-542): herdr never lets the
+	// session end, which is what destroys one.
+	for _, v := range []string{"", "tmux"} {
+		if err := checkMultiplexerFlag(v, true); err != nil {
+			t.Fatalf("--temp %q: %v", v, err)
+		}
+	}
+	err = checkMultiplexerFlag("herdr", true)
+	if !errors.As(err, &ue) || !strings.HasPrefix(err.Error(), "--temp machines run tmux: ") {
+		t.Fatalf("--temp herdr: %v", err)
+	}
+}
+
+// --multiplexer herdr on a project that is temporary exits 2 before any
+// PATCH, and names `repose keep`.
+func TestSwitchTemporaryToHerdrRefused(t *testing.T) {
+	exp := time.Now().Add(time.Hour)
+	e := &Env{Out: io.Discard, ErrOut: io.Discard}
+	err := switchMultiplexer(context.Background(), e, &Project{ID: "p1", Slug: "tmp-k3f9", State: "running", ExpiresAt: &exp}, "herdr")
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != ExitUsage || !strings.Contains(err.Error(), "tmp-k3f9 is temporary and runs tmux") || !strings.Contains(err.Error(), "`repose keep tmp-k3f9`") {
+		t.Fatalf("switch of a temporary machine: %v", err)
 	}
 }
 
@@ -131,7 +158,9 @@ func muxFixture(t *testing.T) (*runFixture, *fakeapi.Fake, *patchLog) {
 	log := &patchLog{}
 	f.env.Client = newClient(log.server(t, fake)+"/v1", staticToken("tok"))
 	old := muxProbe
-	muxProbe = func(context.Context, sshTarget) string { return multiplexer.Tmux }
+	muxProbe = func(context.Context, sshTarget) (muxProbeAnswer, error) {
+		return muxProbeAnswer{Herdr: "inactive", Tmux: true}, nil
+	}
 	t.Cleanup(func() { muxProbe = old })
 	return f, fake, log
 }
@@ -285,7 +314,9 @@ case "$1" in
 machine)
   case "$2" in
   list) [ -f "$d/listfail" ] && exit 1; cat "$d/machines.json" ;;
-  add) [ -f "$d/addfail" ] && { echo 'Preparing remote...' >&2; echo 'ssh: connect to host gone.repose: refused' >&2; exit 1; }; exit 0 ;;
+  add) [ -f "$d/addfail" ] && { echo 'Preparing remote...' >&2; echo 'ssh: connect to host gone.repose: refused' >&2; exit 1; }
+    if [ -f "$d/addwrites" ]; then sleep 0.3; jq --arg t "$3" '. + [{"id":"new","label":"x","target":$t,"session":"default","enabled":true}]' "$d/machines.json" > "$d/m.tmp" && mv "$d/m.tmp" "$d/machines.json"; fi
+    exit 0 ;;
   remove) exit 0 ;;
   esac ;;
 esac
@@ -374,7 +405,7 @@ func TestSyncHerdrMachinesRunsHerdrsCommands(t *testing.T) {
 	syncHerdrMachines(context.Background(), catalogProjects(), true, func(s string) { warned = append(warned, s) })
 	waitHerdrAdds(10 * time.Second)
 	got := strings.Join(l.calls(t), "\n")
-	want := "machine list --json\nmachine remove ssh-2\nmachine remove ssh-5\nmachine add new-one.repose --label new-one --remote-session default"
+	want := "machine list --json\nmachine remove ssh-2\nmachine remove ssh-5\nmachine list --json\nmachine add new-one.repose --label new-one --remote-session default"
 	if got != want {
 		t.Fatalf("calls:\n%s\nwant:\n%s", got, want)
 	}
@@ -603,9 +634,9 @@ func TestStatusNamesHerdr(t *testing.T) {
 func TestGuestMessageScriptBothMultiplexers(t *testing.T) {
 	got := guestMessageScript("todo-app", "50% #1 done")
 	for _, want := range []string{
-		`if tmux list-sessions >/dev/null 2>&1; then if tmux list-clients -t '=todo-app' -F x`,
+		`if systemctl --user -q is-active repose-herdr-server.service 2>/dev/null; then herdr notification show repose --body '50% #1 done'`,
+		`; else if tmux list-clients -t '=todo-app' -F x`,
 		`tmux display-message -d 4000 -t '=todo-app:' '50% ##1 done'`,
-		`elif [ -S /home/dev/.config/herdr/herdr.sock ]; then herdr notification show repose --body '50% #1 done'`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%s\nlacks %s", got, want)
@@ -616,5 +647,281 @@ func TestGuestMessageScriptBothMultiplexers(t *testing.T) {
 func TestBaseCommandsHasHerdr(t *testing.T) {
 	if !baseCommands["herdr"] {
 		t.Fatal("herdr is in every base (I-501)")
+	}
+}
+
+// A sidebar add that fails while an attach owns the terminal says so only
+// once release runs (after the attach), never over the pane.
+func TestHerdrSyncForHoldsWarningsUntilRelease(t *testing.T) {
+	l := newFakeLaptopHerdr(t, "herdr 0.9.3", `[]`)
+	l.touch(t, "addfail")
+	herdrAddFailed = sync.Map{}
+	var errOut bytes.Buffer
+	e := &Env{Client: &Client{}, ErrOut: &errOut, listed: []Project{{ID: "p1", Slug: "gone", State: "running", Multiplexer: "herdr"}}}
+	release := e.herdrSyncFor(context.Background(), &e.listed[0], true)
+	waitHerdrAdds(10 * time.Second)
+	if errOut.Len() != 0 {
+		t.Fatalf("printed during the attach: %q", errOut.String())
+	}
+	release()
+	if got := errOut.String(); got != "Could not add gone to herdr's sidebar: ssh: connect to host gone.repose: refused\n" {
+		t.Fatalf("after release: %q", got)
+	}
+	release()
+	if strings.Count(errOut.String(), "Could not") != 1 {
+		t.Fatalf("second release printed again: %q", errOut.String())
+	}
+}
+
+// herdr --remote runs ssh on its own for as long as it lives, so it gets
+// no REPOSE_SSH_PREPARED and its ssh-prepare renews the certificate; and
+// the wait for it leaves the command's Ctrl-C handler in place.
+func TestHerdrRemoteChild(t *testing.T) {
+	dir := t.TempDir()
+	seen := filepath.Join(dir, "seen")
+	bin := filepath.Join(dir, "herdr")
+	if err := os.WriteFile(bin, []byte("#!/usr/bin/env bash\nprintf '%s|%s\\n' \"${REPOSE_SSH_PREPARED-unset}\" \"$*\" > "+seen+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envSSHPrepared, "1")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := (&laptopHerdrCLI{path: bin}).remote("todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(seen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(b)); got != "unset|--remote todo-app.repose --session default" {
+		t.Fatalf("herdr saw %q", got)
+	}
+	// With the handler gone, this SIGINT would kill the test binary.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Ctrl-C after herdr --remote did not reach the command's context")
+	}
+}
+
+// On a herdr machine a tmux that answers (started by hand in a pane) does
+// not take the message: the herdr unit is asked first.
+func TestGuestMessageScriptPrefersHerdrUnit(t *testing.T) {
+	for _, herdrUp := range []bool{true, false} {
+		dir := t.TempDir()
+		log := filepath.Join(dir, "log")
+		sysExit := "1"
+		if herdrUp {
+			sysExit = "0"
+		}
+		for name, body := range map[string]string{
+			"systemctl": "exit " + sysExit,
+			"herdr":     `echo herdr >> ` + log,
+			"tmux":      `case "$1" in list-clients) echo x ;; *) echo "tmux $1" >> ` + log + ` ;; esac`,
+		} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("bash", "-c", guestMessageScript("todo-app", "hi"))
+		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		b, _ := os.ReadFile(log)
+		want := "tmux display-message\n"
+		if herdrUp {
+			want = "herdr\n"
+		}
+		if string(b) != want {
+			t.Errorf("herdr unit up=%v: ran %q, want %q", herdrUp, b, want)
+		}
+	}
+}
+
+// The probe's rule (I-542): herdr while its unit is up or coming back,
+// tmux when tmux answers, an error when this boot named herdr and
+// neither runs, and the stored value when the ssh itself failed.
+func TestMuxFromProbe(t *testing.T) {
+	h := &Project{Slug: "todo-app", Multiplexer: "herdr"}
+	tm := &Project{Slug: "todo-app", Multiplexer: "tmux"}
+	sshErr := errors.New("exit 255")
+	cases := []struct {
+		name string
+		a    muxProbeAnswer
+		err  error
+		p    *Project
+		want string // "" is an error
+	}{
+		{"herdr active", muxProbeAnswer{Herdr: "active", Boot: "herdr"}, nil, h, "herdr"},
+		{"herdr restarting", muxProbeAnswer{Herdr: "activating", Boot: "herdr"}, nil, h, "herdr"},
+		{"herdr reloading", muxProbeAnswer{Herdr: "reloading", Boot: "herdr"}, nil, h, "herdr"},
+		{"herdr failed", muxProbeAnswer{Herdr: "failed", Boot: "herdr"}, nil, h, ""},
+		{"herdr stopped", muxProbeAnswer{Herdr: "inactive", Boot: "herdr"}, nil, h, ""},
+		{"switched to herdr, tmux still runs", muxProbeAnswer{Herdr: "inactive", Boot: "tmux", Tmux: true}, nil, h, "tmux"},
+		{"tmux boot, tmux down", muxProbeAnswer{Herdr: "inactive", Boot: "tmux"}, nil, tm, "tmux"},
+		{"old base", muxProbeAnswer{Herdr: "inactive"}, nil, tm, "tmux"},
+		{"ssh failed, stored herdr", muxProbeAnswer{}, sshErr, h, "herdr"},
+		{"ssh failed, stored tmux", muxProbeAnswer{}, sshErr, tm, "tmux"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := muxFromProbe(c.a, c.err, c.p)
+			if c.want == "" {
+				var ee *exitError
+				if !errors.As(err, &ee) || ee.code != ExitGeneric || !strings.HasPrefix(err.Error(), "herdr is not running on todo-app: repose-herdr-server is "+c.a.Herdr+".") {
+					t.Fatalf("got %v %v, want herdr down", m, err)
+				}
+				return
+			}
+			if err != nil || m.Name() != c.want {
+				t.Fatalf("got %v %v, want %s", m, err, c.want)
+			}
+		})
+	}
+}
+
+// muxStateScript against stand-ins for systemctl, jq's input and tmux.
+func TestMuxStateScript(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".repose"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".repose", "project.json"), []byte(`{"slug":"todo-app","multiplexer":"herdr"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"systemctl": `[ "$*" = "--user show -p ActiveState --value repose-herdr-server.service" ] && echo activating`,
+		"tmux":      `exit 1`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	cmd := exec.Command("bash", "-c", muxStateScript)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if got := parseMuxProbe(string(out)); got != (muxProbeAnswer{Herdr: "activating", Boot: "herdr"}) {
+		t.Fatalf("parsed %+v from %q", got, out)
+	}
+}
+
+// `sync --multiplexer herdr` on a running tmux machine adds no sidebar
+// entry: `herdr machine add` would start a herdr server beside tmux. A
+// later sync, with the setting already herdr, goes by the stored value.
+func TestSyncSwitchToHerdrAddsNoEntryWhileTmuxRuns(t *testing.T) {
+	f, fake, _ := muxFixture(t)
+	fake.SetHerdrMinBase("2026.09.01")
+	ctx := context.Background()
+	e, _, _ := freshEnv(f.env, f.local)
+	if err := runRun(ctx, e, RunOptions{Name: testSlug, NoAttach: true, NoSync: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	l := newFakeLaptopHerdr(t, "herdr 0.9.3", `[]`)
+	e2, _, errOut := freshEnv(f.env, f.local)
+	if err := runRun(ctx, e2, RunOptions{Name: testSlug, Multiplexer: "herdr", NoAttach: true, NoSync: true}, false); err != nil {
+		t.Fatalf("switch: %v (%s)", err, errOut.buf.String())
+	}
+	waitHerdrAdds(10 * time.Second)
+	if calls := strings.Join(l.calls(t), "\n"); strings.Contains(calls, "machine add") {
+		t.Fatalf("the switch added an entry: %q", calls)
+	}
+	if !strings.Contains(strings.Join(l.calls(t), "\n"), "machine list") {
+		t.Fatalf("the reconcile did not run: %q", l.calls(t))
+	}
+}
+
+// An attach that execs ssh in place of the CLI (no input proxy) waits
+// for the sidebar adds in flight first; the exec would kill them halfway.
+func TestExecReplaceWaitsForHerdrAdds(t *testing.T) {
+	var finished atomic.Bool
+	herdrAdds.Add(1)
+	go func() {
+		defer herdrAdds.Done()
+		time.Sleep(200 * time.Millisecond)
+		finished.Store(true)
+	}()
+	old := execSSH
+	t.Cleanup(func() { execSSH = old })
+	var addDoneAtExec bool
+	execSSH = func(string, []string) error { addDoneAtExec = finished.Load(); return nil }
+	if err := execReplaceSSH(hostTarget("todo-app"), []string{"-t"}, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if !addDoneAtExec {
+		t.Fatal("ssh was exec'd while an add was still running")
+	}
+}
+
+// With no project list read (the fast attach), the reconcile makes no
+// api call: it adds the current project when its guest runs herdr and
+// removes nothing.
+func TestHerdrSyncForWithoutListMakesNoAPICall(t *testing.T) {
+	l := newFakeLaptopHerdr(t, "herdr 0.9.3", catalogMachines)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(500) }))
+	defer srv.Close()
+	e := &Env{Client: newClient(srv.URL+"/v1", staticToken("tok")), ErrOut: io.Discard, Out: io.Discard}
+	e.herdrSyncFor(context.Background(), &Project{ID: "p9", Slug: "fresh"}, true)()
+	waitHerdrAdds(10 * time.Second)
+	if calls != 0 {
+		t.Fatalf("%d api calls", calls)
+	}
+	if got := strings.Join(l.calls(t), "\n"); got != "machine list --json\nmachine list --json\nmachine add fresh.repose --label fresh --remote-session default" {
+		t.Fatalf("calls %q", got)
+	}
+}
+
+// Two entries for one live slug (two adds that raced) leave one, the
+// enabled one when only one is.
+func TestPlanHerdrCatalogDuplicates(t *testing.T) {
+	entries := []herdrMachine{
+		{ID: "a", Target: "todo-app.repose", Enabled: false},
+		{ID: "b", Target: "todo-app.repose", Enabled: true},
+		{ID: "c", Target: "todo-app.repose", Enabled: true},
+		{ID: "d", Target: "blog.repose", Enabled: true},
+	}
+	ps := []Project{{Slug: "todo-app", State: "running", Multiplexer: "herdr"}, {Slug: "blog", State: "stopped", Multiplexer: "herdr"}}
+	plan := planHerdrCatalog(entries, ps)
+	if strings.Join(plan.Remove, ",") != "a,c" || len(plan.Add) != 0 {
+		t.Fatalf("plan %+v, want remove a,c", plan)
+	}
+}
+
+// An add reads herdr's list again under the lock: an entry another
+// command made meanwhile is not added twice.
+func TestAddOnceSkipsAnEntryMadeMeanwhile(t *testing.T) {
+	l := newFakeLaptopHerdr(t, "herdr 0.9.3", catalogMachines)
+	lh := laptopHerdr()
+	en, err := lh.addOnce(context.Background(), "todo-app")
+	if err != nil || !en {
+		t.Fatalf("todo-app: %v %v", en, err)
+	}
+	if strings.Contains(strings.Join(l.calls(t), "\n"), "machine add") {
+		t.Fatalf("added again: %q", l.calls(t))
+	}
+	// Two at once for a new slug: the fake's add writes the entry, so the
+	// second, under the lock, finds it.
+	if err := os.WriteFile(filepath.Join(l.dir, "addwrites"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = lh.addOnce(context.Background(), "fresh") }()
+	}
+	wg.Wait()
+	if n := strings.Count(strings.Join(l.calls(t), "\n"), "machine add fresh.repose"); n != 1 {
+		t.Fatalf("%d adds of fresh: %q", n, l.calls(t))
 	}
 }

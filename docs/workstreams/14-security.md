@@ -203,7 +203,8 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
 - [x] `rg 'credentials.json'` shows only the exclusion. Evidence
       (2026-09-20, `rg -n 'credentials.json' cmd internal`, non-test):
       `internal/cli/creds.go:29` (the comment on the allowlist that never
-      includes it), `internal/cli/tmux.go:52` (`test -f
+      includes it), `internal/cli/mux_tmux.go:179` (moved from
+      `tmux.go` by mux-cli, 2026-10-05; `test -s
       ~/.claude/.credentials.json` in the guest, which decides whether
       `run` attaches for the user to log in instead of sending a prompt,
       DESIGN §11), and `internal/cli/config.go`, `keychain_other.go` (the

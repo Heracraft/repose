@@ -172,6 +172,16 @@ func execReplaceSSH(t sshTarget, extraArgs []string, remoteCmd string) error {
 	if remoteCmd != "" {
 		args = append(args, remoteCmd)
 	}
+	// The exec ends every goroutine, and with them any laptop herdr
+	// `machine add` still running (herdrSyncFor): give those a moment.
+	waitHerdrAdds(execAddsWait)
 	timingf("exec ssh (attach)")
-	return sysExec("ssh", args)
+	return execSSH("ssh", args)
 }
+
+// execAddsWait bounds execReplaceSSH's wait for sidebar adds in flight;
+// an add to a running machine takes about a second.
+const execAddsWait = 10 * time.Second
+
+// execSSH is sysExec, a variable so a test can see when it would run.
+var execSSH = sysExec

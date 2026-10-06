@@ -163,11 +163,19 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			return err
 		}
 	}
+	// runningMux is what a machine that was already running runs while
+	// this command switches its setting: the old value until its next
+	// start (I-502), which the sidebar of a sync goes by.
+	runningMux := ""
 	if !attachOnly && res.Project != nil && opts.Multiplexer != "" {
 		// --multiplexer on a project that exists: the setting changes
 		// first, and sticks (I-502).
+		before := multiplexer.Normalize(res.Project.Multiplexer)
 		if err := switchMultiplexer(ctx, e, res.Project, opts.Multiplexer); err != nil {
 			return err
+		}
+		if res.Project.State == "running" && multiplexer.Normalize(res.Project.Multiplexer) != before {
+			runningMux = before
 		}
 	}
 	project := res.Project
@@ -255,21 +263,29 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	// What runs the machine's terminals now (I-509): the guest says, asked
 	// once and only by a prompt or an attach, so a sync costs no ssh.
 	var muxOnce muxer
-	muxNow := func() muxer {
+	muxNow := func() (muxer, error) {
 		if muxOnce == nil {
-			muxOnce = muxFor(ctx, target)
+			m, err := muxFor(ctx, target, project)
+			if err != nil {
+				return nil, err
+			}
+			muxOnce = m
 		}
-		return muxOnce
+		return muxOnce, nil
 	}
 	attach := func(window string) error {
-		mux := muxNow()
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
 		helper.Multiplexer = mux.Name()
-		e.herdrSyncFor(ctx, project, mux.Name() == multiplexer.Herdr)
+		release := e.herdrSyncFor(ctx, project, mux.Name() == multiplexer.Herdr)
+		defer release()
 		// After an attach the CLI waited on: a temporary machine whose
 		// session has ended goes at once (I-352).
 		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
 		defer e.keepTokenFresh()()
-		return mux.Attach(e, attachReq{Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Helper: helper})
+		return mux.Attach(e, attachReq{Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
 	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).
@@ -408,7 +424,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 
 	window := ""
 	if opts.Prompt != "" {
-		mux := muxNow()
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
 		agent := opts.Agent
 		if agent == "" {
 			agent = project.AgentDefault
@@ -462,7 +481,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err := mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell})
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
@@ -488,13 +507,18 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	tzSaved()
 	if opts.NoAttach {
 		// A sync ends here. The sidebar takes the project by its stored
-		// multiplexer, or by the guest's answer when a prompt asked; the
-		// adds finish before the command does.
+		// multiplexer, by the old one when this command switched a
+		// running machine, or by the guest's answer when a prompt asked;
+		// the adds finish before the command does.
 		runsHerdr := multiplexer.Normalize(project.Multiplexer) == multiplexer.Herdr
+		if runningMux != "" {
+			runsHerdr = runningMux == multiplexer.Herdr
+		}
 		if muxOnce != nil {
 			runsHerdr = muxOnce.Name() == multiplexer.Herdr
 		}
-		e.herdrSyncFor(ctx, project, runsHerdr)
+		release := e.herdrSyncFor(ctx, project, runsHerdr)
+		release()
 		waitHerdrAdds(30 * time.Second)
 		return nil
 	}

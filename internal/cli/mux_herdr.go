@@ -159,18 +159,12 @@ func (herdrMux) PickName(ctx context.Context, t sshTarget, slug, agent string) (
 	return name, others, nil
 }
 
-func (herdrMux) Names(ctx context.Context, t sshTarget, slug string) ([]string, error) {
-	st, err := herdrListState(ctx, t, slug)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, a := range st.Agents {
-		if a.Name != "" {
-			names = append(names, a.Name)
-		}
-	}
-	return names, nil
+// NamesScript prints herdr's agent names; an answer that is an error
+// (no .result.agents) fails jq, and set -e the probe.
+func (herdrMux) NamesScript(slug string) string {
+	return `repose_n=$(herdr agent list)
+printf '%s\n' "$repose_n" | jq -r '.result.agents[] | .name // empty | select(. != "") | "#window " + .'
+`
 }
 
 // herdrDir is a guest folder ("~/<name>", "" for the checkout) as a
@@ -193,9 +187,15 @@ const herdrAgentStartTimeout = 300 * time.Second
 // herdrStartScript opens the agent's tab and starts the agent in it
 // (features/run-and-attach.md "A prompt on herdr", steps 1, 2, 4, 5). It
 // prints "#pane <id>" and "#start <status or error code>"; with
-// attachOnly it types the agent's command into the tab and prints no
-// "#start".
+// attachOnly it types the agent's command into the tab, prints no
+// "#start", and focuses the tab: `herdr pane run` gives the pane no
+// agent name, so the attach's `herdr agent focus <name>` cannot find it,
+// and the user must land in this tab (the Claude Code login).
 func herdrStartScript(s agentStart, extra string) string {
+	focus := "--no-focus"
+	if s.AttachOnly {
+		focus = "--focus"
+	}
 	var b strings.Builder
 	b.WriteString(checkoutVar(s.Slug, extra))
 	fmt.Fprintf(&b, "repose_d=%s\n", herdrDir(s.Dir))
@@ -216,10 +216,10 @@ repose_l=${repose_d##*/}
   [ -n "$repose_ws" ] || repose_ws=$(herdr workspace create --cwd "$repose_d" --label "$repose_l" --no-focus | jq -r '.result.workspace.workspace_id // empty')
 fi
 [ -n "$repose_ws" ] || { echo 'herdr made no workspace' >&2; exit 1; }
-repose_p=$(herdr tab create --workspace "$repose_ws" --cwd "$repose_d" --label %[1]s --no-focus | jq -r '.result.root_pane.pane_id // empty')
+repose_p=$(herdr tab create --workspace "$repose_ws" --cwd "$repose_d" --label %[1]s %[2]s | jq -r '.result.root_pane.pane_id // empty')
 [ -n "$repose_p" ] || { echo 'herdr made no tab' >&2; exit 1; }
 printf '#pane %%s\n' "$repose_p"
-`, shQuote(s.Name))
+`, shQuote(s.Name), focus)
 	if s.AttachOnly {
 		fmt.Fprintf(&b, "herdr pane run \"$repose_p\" %s >/dev/null\n", shQuote(s.Agent))
 		return b.String()
@@ -368,6 +368,9 @@ func (herdrMux) Attach(e *Env, a attachReq) error {
 	lh := laptopHerdr()
 	switch chooseHerdrPath(lh, a.Project, a.Target, func() bool { return lh.ensureEntry(e, slug) }) {
 	case herdrPathSidebar:
+		if a.Release != nil {
+			a.Release()
+		}
 		_, _ = fmt.Fprintf(e.Out, "%s is in herdr's sidebar.\n", slug)
 		return runHelperForeground(e, a.Helper)
 	case herdrPathRemote:
@@ -563,13 +566,21 @@ func versionLess(a, b [3]int) bool {
 
 // remote is rule 2: `herdr --remote <slug>.repose --session default` as
 // a child with the terminal, so the session helper lives as long as it
-// does. herdr's exit status is the command's.
+// does. herdr's exit status is the command's. herdr runs ssh on its own
+// for hours (each reconnect), so it gets an environment without
+// REPOSE_SSH_PREPARED: its ssh then runs `repose ssh-prepare`, which
+// renews the certificate the gateway ends a connection at (I-436).
 func (h *laptopHerdrCLI) remote(slug string) error {
 	cmd := exec.Command(h.path, "--remote", slug+".repose", "--session", "default")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	// Ctrl-C belongs to herdr's client; the CLI waits for it.
-	signal.Ignore(os.Interrupt)
-	defer signal.Reset(os.Interrupt)
+	cmd.Env = envWithoutSSHPrepared()
+	// Ctrl-C belongs to herdr's client; the CLI waits for it. A channel of
+	// its own catches the signal meanwhile: signal.Ignore and Reset would
+	// drop the command's own NotifyContext (cli.go) for the rest of the
+	// run, After hook included, and the child would inherit SIG_IGN.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	defer signal.Stop(sig)
 	timingf("herdr --remote (attach)")
 	err := cmd.Run()
 	var xe *exec.ExitError

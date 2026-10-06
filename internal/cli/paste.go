@@ -258,7 +258,9 @@ func PasteCmd(ctx context.Context, e *Env, opts PasteOptions) error {
 	guestPath := pasteGuestDir + "/" + now.Format("20060102-150405") + fmt.Sprintf("-%03d.png", now.Nanosecond()/1e6)
 	m := muxer(tmuxMux{})
 	if !opts.Print {
-		m = muxFor(ctx, target)
+		if m, err = muxFor(ctx, target, project); err != nil {
+			return err
+		}
 	}
 	out, err := runSSH(ctx, target, pasteScriptWith(m, project.Slug, guestPath, opts), bytes.NewReader(img))
 	var se *sshError

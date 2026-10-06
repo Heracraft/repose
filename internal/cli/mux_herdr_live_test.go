@@ -127,6 +127,13 @@ while IFS= read -r l; do printf '%s\n' "$l" >> `+typed+`; echo "> "; done
 		t.Fatalf("second pick %q %v", name, others)
 	}
 
+	// The worktree probe lists herdr's agent names in its one ssh.
+	out, err = run(worktreeProbeScript("todo-app", "", herdrMux{}.NamesScript("todo-app")))
+	must(err)
+	if !strings.Contains(out, "#window claude\n") || !strings.Contains(out, "#checkout todo-app\n") {
+		t.Fatalf("worktree probe: %q", out)
+	}
+
 	// pane send-text into the agent's pane, and into the focused pane.
 	for _, w := range []string{"claude", ""} {
 		out, err = run(`f=/tmp/repose-paste/x.png` + "\n" + herdrMux{}.PasteScript("todo-app", w))
@@ -152,6 +159,21 @@ while IFS= read -r l; do printf '%s\n' "$l" >> `+typed+`; echo "> "; done
 	must(err)
 	if !strings.Contains(out, `{"label":"todo-app-worktree-1","repo":"todo-app","linked":true}`) {
 		t.Fatalf("worktree workspace: %s", out)
+	}
+
+	// The Claude Code login (attach only): the tab is focused, since
+	// `herdr agent focus` finds no agent name on a `pane run` pane.
+	out, err = run(herdrStartScript(agentStart{Slug: "todo-app", Agent: "claude", Name: "claude-3", AttachOnly: true}, ""))
+	must(err)
+	loginPane := marker(out, "pane")
+	if _, err := run(herdrFocusScript("todo-app", "", "claude-3")); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run(`w=$(herdr workspace list | jq -r 'first(.result.workspaces[] | select(.focused)) | .workspace_id')
+herdr pane list | jq -r --arg w "$w" 'first(.result.panes[] | select(.focused and .workspace_id == $w)) | .pane_id'`)
+	must(err)
+	if loginPane == "" || strings.TrimSpace(out) != loginPane {
+		t.Fatalf("focused pane %q, the login tab's %q", out, loginPane)
 	}
 
 	// Another checkout's workspace, made and focused by the attach.
@@ -192,7 +214,6 @@ outer:
 	}
 	return out
 }
-
 
 func scriptHead(s string) string {
 	l, _, _ := strings.Cut(strings.TrimSpace(s), "\n")

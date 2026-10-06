@@ -18,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // `repose browser bridge` (DECISIONS I-296): the agents on a machine drive
@@ -566,9 +564,11 @@ func bridgeStop(t sshTarget, slug, tmuxLine string) {
 func tmuxIfAttached(slug, msg string) string { return guestMessageScript(slug, msg) }
 
 // guestMessageScript is shell that shows msg on whichever multiplexer the
-// machine runs, without asking first: tmux's clients when the tmux
-// server answers, else herdr's notification when its socket is there.
+// machine runs, without asking first: herdr's notification when the
+// herdr session unit runs (muxFor's test), else tmux's clients. Asking
+// herdr first matters: a tmux started by hand inside a herdr pane would
+// otherwise take every message, and show none.
 func guestMessageScript(slug, msg string) string {
-	return fmt.Sprintf("if tmux list-sessions >/dev/null 2>&1; then %s; elif [ -S %s ]; then %s; fi",
-		tmuxMux{}.MessageScript(slug, msg), multiplexer.HerdrSocket, herdrMux{}.MessageScript(slug, msg))
+	return fmt.Sprintf("if %s; then %s; else %s; fi",
+		muxProbeScript, herdrMux{}.MessageScript(slug, msg), tmuxMux{}.MessageScript(slug, msg))
 }

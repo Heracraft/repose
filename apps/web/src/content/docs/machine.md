@@ -105,7 +105,7 @@ As long as you're attached with `repose run` or `repose attach`, every port a pr
 ⇄ localhost:5173 → :5173
 ```
 
-Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ 6 ports on localhost: 3000, 3001, 3002, 3003, 3004, 3005`, and the status bar lists every forwarded port.
+Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ 6 ports on localhost: 3000, 3001, 3002, 3003, 3004, 3005`, and tmux's status bar lists every forwarded port. A herdr machine has no such list, and shows the messages only with [herdr's notifications on](/docs/run-and-attach#herdr-instead-of-tmux).
 
 Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one (up to 20 higher) is used and the message says which.
 

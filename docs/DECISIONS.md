@@ -13369,3 +13369,48 @@ for its adds). Third, herdr 0.9.3 shows `notification show` only when
 `off`, answers `reason: "disabled"`. The CLI sends the messages I-509
 names either way; whether the base seeds that key is mux-base's call
 and is not made here.
+
+Review of mux-cli added four more (amends I-509, I-510). A temporary
+machine runs tmux only: I-352 destroys it when the last terminal closes,
+and herdr 0.9.3 with a client attached opens a fresh workspace and shell
+as soon as its last pane closes (`ensure_default_workspace`), so a herdr
+session never reaches zero panes and the machine would wait out its
+expiry. `--temp` takes tmux from `default_multiplexer` as from
+`HERDR_ENV`, `--temp --multiplexer herdr` exits 2, and `--multiplexer
+herdr` on a temporary project exits 2 naming `repose keep`. Telling an
+idle shell from a running job would need herdr's process info, whose
+answer carries argv, which R5-3 keeps out of reach. Second, the sidebar
+reconcile adds other projects by their stored `multiplexer`: the api has
+no other answer, and probing each would cost an ssh per project. A
+project switched to herdr while it runs tmux can therefore enter the
+sidebar before its next start, and herdr's `machine add` prepares the
+remote and starts a herdr server there, beside tmux and outside the
+unit, until the stop. The current project is added only on the guest's
+answer, or, on a `sync` that asks nothing, by the value it had before
+that same command switched it while running. Third, a failed add's line
+is held while an attach owns the terminal and printed after it returns.
+Fourth, the public docs name the test for a CLI that knows herdr
+(`repose run --help` lists `--multiplexer`) rather than a version, which
+is not known before the conductor tags the release; the release notes
+name the version.
+
+A second review pass added five (amends I-509, I-510). The probe reads
+the unit's `ActiveState`, this boot's `multiplexer` in `project.json`
+and whether tmux answers, in the same one ssh: `active`, `activating`
+(the restart wait) and `reloading` are herdr, a tmux that answers is
+tmux, a boot that named herdr with neither exits 1 (`herdr is not
+running on <slug>`) instead of attaching to a tmux server that is not
+there, and an ssh that failed takes the stored value. A command that
+read no project list (the fast attach, a `run` whose connection was
+already up) reconciles its own project alone, adding and never
+removing, so I-223's fast attach makes no api call for the sidebar.
+Each add reads herdr's list again under `herdr-sidebar.lock` in the
+config directory, since herdr's `machine add --label` makes a second
+entry for a target it has; the reconcile removes all but one entry per
+live slug. An attach that execs ssh in place of the CLI waits up to
+10 s for adds in flight, which the exec would kill halfway. The guest's
+herdr shows repose's messages only with `[ui.toast] delivery =
+"herdr"`, which no base seeds yet; until mux-base or the conductor
+records who seeds it, the public docs say so and give the two lines,
+and say that drops and Ctrl+V from a laptop herdr go to herdr and copy
+nothing.

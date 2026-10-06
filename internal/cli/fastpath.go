@@ -258,14 +258,19 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 	if helper.RepoDir != "" {
 		e.addReposeRemote(ctx, guess, target, nil) // I-272
 	}
-	// What runs now, from the guest: no api call here either (I-509).
-	mux := muxFor(ctx, target)
+	// What runs now, from the guest: no api call here either (I-509),
+	// and the sidebar reconcile takes this project alone (herdrSyncFor).
+	mux, err := muxFor(ctx, target, guess)
+	if err != nil {
+		return true, err
+	}
 	helper.Multiplexer = mux.Name()
-	e.herdrSyncFor(ctx, guess, mux.Name() == multiplexer.Herdr)
+	release := e.herdrSyncFor(ctx, guess, mux.Name() == multiplexer.Herdr)
+	defer release()
 	defer e.keepTokenFresh()()
 	// The cache keeps no expiry: a temporary machine is never cached
 	// (I-351), so the guess is never one.
-	return true, mux.Attach(e, attachReq{Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Helper: helper})
+	return true, mux.Attach(e, attachReq{Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the

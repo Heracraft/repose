@@ -177,7 +177,7 @@ Not a git repository, so nothing was synced.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
-- A temporary machine is tmux unless you pass `--multiplexer herdr` or set `default_multiplexer`. On herdr it is destroyed the same way once you leave herdr's client and herdr has no pane left. It never goes into your laptop herdr's sidebar, so `run` opens herdr's client for it even from a herdr pane.
+- A temporary machine always runs tmux, whatever `default_multiplexer` says. herdr opens a new shell when its last tab closes, so the session would never end. `--temp --multiplexer herdr` stops with an error, and so does `--multiplexer herdr` on a temporary machine until `repose keep` makes it a normal one.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project limit](/docs/limits#projects) and plan while it exists, like any other.
 

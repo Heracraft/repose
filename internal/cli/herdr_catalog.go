@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -59,12 +61,24 @@ type herdrCatalogPlan struct {
 // planHerdrCatalog compares herdr's entries with the account's projects.
 // A running herdr project that is not temporary and has no entry (a
 // disabled one counts as an entry) is added; an entry repose owns whose
-// slug is no live project is removed; nothing else is touched.
+// slug is no live project is removed, and so is each entry past the
+// first for a live slug (the enabled one kept when there is one), left
+// by two adds that raced before addOnce's lock; nothing else is touched.
 func planHerdrCatalog(entries []herdrMachine, projects []Project) herdrCatalogPlan {
 	live := map[string]bool{}
 	for _, p := range projects {
 		if p.State != "destroying" && p.State != "destroyed" {
 			live[p.Slug] = true
+		}
+	}
+	keep := map[string]herdrMachine{}
+	for _, m := range entries {
+		slug := ownedSlug(m)
+		if slug == "" || !live[slug] {
+			continue
+		}
+		if k, ok := keep[slug]; !ok || (!k.Enabled && m.Enabled) {
+			keep[slug] = m
 		}
 	}
 	has := map[string]bool{}
@@ -75,7 +89,7 @@ func planHerdrCatalog(entries []herdrMachine, projects []Project) herdrCatalogPl
 			continue
 		}
 		has[slug] = true
-		if !live[slug] {
+		if !live[slug] || keep[slug].ID != m.ID {
 			plan.Remove = append(plan.Remove, m.ID)
 		}
 	}
@@ -96,6 +110,9 @@ func (h *laptopHerdrCLI) run(ctx context.Context, timeout time.Duration, args ..
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.path, args...)
 	cmd.Stdin = nil
+	// `machine add` runs ssh to the machine: its ssh-prepare should do
+	// its work, as for any ssh the CLI did not start itself.
+	cmd.Env = envWithoutSSHPrepared()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	cmd.WaitDelay = time.Second
@@ -131,6 +148,40 @@ func (h *laptopHerdrCLI) add(ctx context.Context, slug string) error {
 		return fmt.Errorf("%s", last)
 	}
 	return nil
+}
+
+// herdrLockName is the lock under ~/.config/repose that addOnce holds
+// (cli-config.md).
+const herdrLockName = "herdr-sidebar.lock"
+
+// errHerdrList is a `machine list` that failed inside addOnce; the
+// reconcile says nothing about it, as for its own list.
+var errHerdrList = errors.New("herdr machine list failed")
+
+// addOnce adds slug unless herdr has an entry for it, reading the list
+// again under a lock every repose process takes for its adds: herdr's
+// `machine add --label` makes a second entry for the same target, so two
+// commands at once (two panes, or ensureEntry beside a background add)
+// would each add one. enabled is the entry's state.
+func (h *laptopHerdrCLI) addOnce(ctx context.Context, slug string) (enabled bool, err error) {
+	if dir, derr := configDir(); derr == nil && os.MkdirAll(dir, 0o700) == nil {
+		if unlock, lerr := lockFile(filepath.Join(dir, herdrLockName)); lerr == nil {
+			defer unlock()
+		}
+	}
+	entries, err := h.machines(ctx)
+	if err != nil {
+		return false, errHerdrList
+	}
+	for _, m := range entries {
+		if ownedSlug(m) == slug {
+			return m.Enabled, nil
+		}
+	}
+	if err := h.add(ctx, slug); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (h *laptopHerdrCLI) remove(ctx context.Context, id string) {
@@ -176,6 +227,13 @@ func herdrCatalogReady() *laptopHerdrCLI {
 // herdr that is too old or whose list fails does nothing and says
 // nothing.
 func syncHerdrMachines(ctx context.Context, projects []Project, adds bool, warn func(string)) {
+	syncHerdrMachinesWith(ctx, projects, adds, true, warn)
+}
+
+// syncHerdrMachinesWith is syncHerdrMachines with removes optional: a
+// list that is not the account's whole list (herdrSyncFor with no api
+// read) must remove nothing.
+func syncHerdrMachinesWith(ctx context.Context, projects []Project, adds, removes bool, warn func(string)) {
 	lh := herdrCatalogReady()
 	if lh == nil {
 		return
@@ -186,7 +244,9 @@ func syncHerdrMachines(ctx context.Context, projects []Project, adds bool, warn 
 	}
 	plan := planHerdrCatalog(entries, projects)
 	for _, id := range plan.Remove {
-		lh.remove(ctx, id)
+		if removes {
+			lh.remove(ctx, id)
+		}
 	}
 	if !adds {
 		return
@@ -195,7 +255,7 @@ func syncHerdrMachines(ctx context.Context, projects []Project, adds bool, warn 
 		herdrAdds.Add(1)
 		go func(slug string) {
 			defer herdrAdds.Done()
-			if err := lh.add(context.WithoutCancel(ctx), slug); err != nil {
+			if _, err := lh.addOnce(context.WithoutCancel(ctx), slug); err != nil && !errors.Is(err, errHerdrList) {
 				sayHerdrAddFailed(warn, slug, err)
 			}
 		}(slug)
@@ -238,50 +298,85 @@ func (h *laptopHerdrCLI) ensureEntry(e *Env, slug string) bool {
 	if herdrCatalogReady() == nil {
 		return false
 	}
-	ctx := context.Background()
-	waitHerdrAdds(60 * time.Second)
-	entries, err := h.machines(ctx)
-	if err != nil {
-		return false
-	}
-	for _, m := range entries {
-		if ownedSlug(m) == slug {
-			return m.Enabled
-		}
-	}
-	if err := h.add(ctx, slug); err != nil {
+	enabled, err := h.addOnce(context.Background(), slug)
+	if err != nil && !errors.Is(err, errHerdrList) {
 		sayHerdrAddFailed(func(s string) { e.warn("%s", s) }, slug, err)
-		return false
 	}
-	return true
+	return err == nil && enabled
 }
 
-// herdrSyncFor is run's and attach's reconcile with the account's
-// projects read now, in the background, so neither waits on the api for
-// it; the project the command works on is added only when the guest
-// runs herdr (current).
-func (e *Env) herdrSyncFor(ctx context.Context, current *Project, runsHerdr bool) {
-	if herdrCatalogReady() == nil || e.Client == nil {
+// heldLines holds warning lines while an attach owns the terminal, so a
+// sidebar add that fails mid-attach never prints over the pane
+// (features/run-and-attach.md: helper output goes "never over the
+// pane"); release prints what was held and lets later lines through.
+type heldLines struct {
+	mu    sync.Mutex
+	held  bool
+	lines []string
+	out   func(string)
+}
+
+func (h *heldLines) say(s string) {
+	h.mu.Lock()
+	if h.held {
+		h.lines = append(h.lines, s)
+		h.mu.Unlock()
 		return
+	}
+	h.mu.Unlock()
+	h.out(s)
+}
+
+func (h *heldLines) release() {
+	h.mu.Lock()
+	h.held = false
+	lines := h.lines
+	h.lines = nil
+	h.mu.Unlock()
+	for _, l := range lines {
+		h.out(l)
+	}
+}
+
+// herdrSyncFor is run's and attach's reconcile, in the background, with
+// the projects connect read (e.listed). A command that read no list (the
+// fast attach, a run whose connection was already up) makes no api call
+// for one (I-223): it reconciles the current project alone, adding and
+// never removing. The current project is added only when the guest runs
+// herdr (runsHerdr). A failed add's line is held until release,
+// which the caller runs once the terminal is its own again (after the
+// attach, or at once for a command that attaches nothing).
+func (e *Env) herdrSyncFor(ctx context.Context, current *Project, runsHerdr bool) (release func()) {
+	h := &heldLines{held: true, out: func(s string) { e.warn("%s", s) }}
+	if herdrCatalogReady() == nil {
+		return h.release
 	}
 	herdrAdds.Add(1)
 	go func() {
 		defer herdrAdds.Done()
-		projects := e.listed
+		projects, whole := e.listed, true
 		if projects == nil {
-			var err error
-			if projects, err = e.Client.ListProjects(context.WithoutCancel(ctx)); err != nil {
+			if current == nil {
 				return
 			}
+			projects, whole = []Project{*current}, false
 		}
 		projects = append([]Project(nil), projects...)
 		for i := range projects {
-			if current != nil && projects[i].ID == current.ID && !runsHerdr {
-				// Switched to herdr while running tmux: not until it
-				// runs herdr (I-502).
-				projects[i].Multiplexer = multiplexer.Tmux
+			if current == nil || projects[i].ID != current.ID {
+				continue
 			}
+			// The current project goes by what its guest runs: one
+			// switched to herdr while running tmux waits for its next
+			// start (I-502). The command works on it, so it runs (a
+			// cached project carries no state).
+			projects[i].Multiplexer = multiplexer.Tmux
+			if runsHerdr {
+				projects[i].Multiplexer = multiplexer.Herdr
+			}
+			projects[i].State = "running"
 		}
-		syncHerdrMachines(context.WithoutCancel(ctx), projects, true, func(s string) { e.warn("%s", s) })
+		syncHerdrMachinesWith(context.WithoutCancel(ctx), projects, true, whole, h.say)
 	}()
+	return h.release
 }
