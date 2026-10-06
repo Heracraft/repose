@@ -363,7 +363,7 @@ Switching a running machine:
 
 ```
 $ repose run --multiplexer herdr
-todo-app uses herdr from its next start; tmux keeps running until then.
+todo-app uses herdr from its next start; tmux runs until then.
 ```
 
 - `--multiplexer` is a flag of `run` and `sync`. Values `tmux` and

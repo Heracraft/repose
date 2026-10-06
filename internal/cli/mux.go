@@ -281,5 +281,5 @@ func switchMultiplexer(ctx context.Context, e *Env, p *Project, want string) err
 
 // switchLine is what a switch of a running machine prints.
 func switchLine(slug, want, have string) string {
-	return fmt.Sprintf("%s uses %s from its next start; %s keeps running until then.", slug, want, have)
+	return fmt.Sprintf("%s uses %s from its next start; %s runs until then.", slug, want, have)
 }

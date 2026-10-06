@@ -252,7 +252,7 @@ func TestRunSwitchMultiplexer(t *testing.T) {
 	if err := runRun(ctx, e2, RunOptions{Name: testSlug, Multiplexer: "herdr", NoAttach: true, NoSync: true}, false); err != nil {
 		t.Fatalf("switch: %v", err)
 	}
-	if want := testSlug + " uses herdr from its next start; tmux keeps running until then."; !strings.Contains(out.buf.String(), want) {
+	if want := testSlug + " uses herdr from its next start; tmux runs until then."; !strings.Contains(out.buf.String(), want) {
 		t.Fatalf("stdout %q lacks %q", out.buf.String(), want)
 	}
 	if p := bySlug(listed(t, e2), testSlug); p == nil || p.Multiplexer != "herdr" {
@@ -291,7 +291,7 @@ func TestRunSwitchMultiplexer(t *testing.T) {
 }
 
 func TestSwitchLine(t *testing.T) {
-	if got := switchLine("todo-app", "tmux", "herdr"); got != "todo-app uses tmux from its next start; herdr keeps running until then." {
+	if got := switchLine("todo-app", "tmux", "herdr"); got != "todo-app uses tmux from its next start; herdr runs until then." {
 		t.Fatal(got)
 	}
 }

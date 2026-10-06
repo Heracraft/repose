@@ -132,7 +132,7 @@ A switch takes effect at the next start. A running machine keeps its current mul
 
 ```
 $ repose run --multiplexer herdr
-todo-app uses herdr from its next start; tmux keeps running until then.
+todo-app uses herdr from its next start; tmux runs until then.
 ```
 
 On a herdr project the commands on this page work through herdr:
@@ -230,7 +230,7 @@ repose run --no-sync          # a new machine without your checkout
 repose run --size xl          # size of a new project
 repose run --name scratch     # a project by name, made if missing
 repose run --temp             # a new machine, gone after 24 hours
-repose run --multiplexer herdr # herdr instead of tmux, from the next start
+repose run --multiplexer herdr # herdr, from the next start
 repose run --project todo-app # a project other than this checkout's
 ```
 
