@@ -74,7 +74,10 @@ func runHook(t *testing.T, bin string, stdin string, env []string, args ...strin
 	t.Helper()
 	cmd := exec.Command(bin, args...)
 	cmd.Stdin = strings.NewReader(stdin)
-	cmd.Env = append(os.Environ(), env...)
+	// The pane the test runs in is not the hook's: clear it, and let
+	// env set it.
+	cmd.Env = append(os.Environ(), "TMUX_PANE=", "HERDR_ENV=", "HERDR_PANE_ID=", "REPOSE_AGENT_WINDOW=")
+	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if err != nil {
@@ -195,5 +198,34 @@ func TestHookPassesTheWindowThrough(t *testing.T) {
 	got := sink.all()
 	if len(got) != 1 || !strings.HasSuffix(got[0], "|claude-2") {
 		t.Fatalf("posted = %v, want the window carried through", got)
+	}
+}
+
+// In a herdr pane (HERDR_ENV=1, no $TMUX_PANE) the hook names the pane as
+// "herdr:<HERDR_PANE_ID>" for guestd to resolve (DECISIONS I-506); inside
+// tmux, or with REPOSE_AGENT_WINDOW, it does not.
+func TestHookNamesTheHerdrPane(t *testing.T) {
+	bin := buildHook(t)
+	cases := []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"herdr pane", []string{"HERDR_ENV=1", "HERDR_PANE_ID=w2:p1"}, "|herdr:w2:p1"},
+		{"tmux inside herdr", []string{"HERDR_ENV=1", "HERDR_PANE_ID=w2:p1", "TMUX_PANE=%3"}, "|"},
+		{"wrapper window wins", []string{"HERDR_ENV=1", "HERDR_PANE_ID=w2:p1", "REPOSE_AGENT_WINDOW=claude-2"}, "|claude-2"},
+		{"no HERDR_ENV", []string{"HERDR_PANE_ID=w2:p1"}, "|"},
+		{"no pane id", []string{"HERDR_ENV=1"}, "|"},
+	}
+	for _, c := range cases {
+		sink := newHookSink(t)
+		env := append([]string{"REPOSE_HOOK_SOCKET=" + sink.path, "REPOSE_HOOK_AGENT=claude"}, c.env...)
+		if code, out := runHook(t, bin, `{"hook_event_name":"Stop"}`, env); code != 0 {
+			t.Fatalf("%s: exit = %d; output: %s", c.name, code, out)
+		}
+		got := sink.all()
+		if len(got) != 1 || !strings.HasSuffix(got[0], c.want) || (c.want == "|" && strings.Count(got[0], "|") != 3) {
+			t.Errorf("%s: posted = %v, want the window %q", c.name, got, strings.TrimPrefix(c.want, "|"))
+		}
 	}
 }

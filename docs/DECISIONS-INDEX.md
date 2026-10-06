@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-540 entries.
+543 entries.
 
 ## Scope
 
@@ -115,7 +115,7 @@ pointer, not a summary.
 - **I-26** Commands carry what hostd cannot keep: StartGuest repeats the delivery fields, CreateGuest and Restore name the user, slug and remote, Restore names the closure, Exec carries an audit id, StopResult carries the snapshot's blob path — L545
 - **I-27** hostd launches Cloud Hypervisor directly from the guest's system closure; no per-guest microvm.nix runner is built — L567
 - **I-28** The platform flake takes the user fragment as a non-flake input named `fragment` and exposes `guestSystem`; hostd fetches base checkouts with git — L584
-- **I-29** Two more guestd warning kinds: `oom` and `tmux_down` — amended by I-507; L598
+- **I-29** Two more guestd warning kinds: `oom` and `tmux_down` — amended by I-507; amended by I-562; L598
 - **I-30** `WriteSecrets` carries the whole set, and validates before it writes — L611
 - **I-31** `Sample` serves the tmux and Docker signals from a 5 s cache, and carries a `partial` flag — amended by I-504; L621
 - **I-32** `guestd call` is the client side of the vsock contract, in the same binary — L636
@@ -560,10 +560,10 @@ pointer, not a summary.
 - **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; L13115
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L13153
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13187
-- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; L13203
-- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; L13233
-- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; L13252
-- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; L13267
+- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L13203
+- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; L13233
+- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L13252
+- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L13267
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13278
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13297
 - **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13323
@@ -572,3 +572,6 @@ pointer, not a summary.
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13366
 - **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13414
 - **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; L13481
+- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13538
+- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13557
+- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L13593

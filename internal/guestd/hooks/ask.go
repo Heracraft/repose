@@ -68,10 +68,7 @@ func callerAgent(name string) string {
 }
 
 func (s *Server) callerWindow(r *http.Request, given, agent string) string {
-	if given != "" {
-		return given
-	}
-	if w := s.windowOfCaller(r); w != "" {
+	if w := s.windowOf(r, given); w != "" {
 		return w
 	}
 	return agent

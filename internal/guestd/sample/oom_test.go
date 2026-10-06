@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
 // DECISIONS I-213: the nix packages run the agents through makeWrapper,
@@ -71,7 +73,7 @@ func TestOOMPriority(t *testing.T) {
 	if len(agents) != 2 || !agents[201] || !agents[301] {
 		t.Fatalf("agents = %v, want 201 (claude) and 301 (gemini's node, not the vite under it)", agents)
 	}
-	changes := r.applyOOM(1000, agents)
+	changes := r.applyOOM(1000, agents, nil)
 	got := map[int]int{}
 	for pid := range adj {
 		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
@@ -86,7 +88,120 @@ func TestOOMPriority(t *testing.T) {
 		}
 	}
 	t.Logf("changes: %+v", changes)
-	if again := r.applyOOM(1000, agents); len(again) != 0 {
+	if again := r.applyOOM(1000, agents, nil); len(again) != 0 {
 		t.Errorf("second pass wrote %+v", again)
+	}
+}
+
+// writeTasks gives a fixture process threads with nice values: tid -> nice.
+func writeTasks(t *testing.T, p sysdep.Paths, pid int, comm string, tasks map[int]int) {
+	t.Helper()
+	for tid, nice := range tasks {
+		dir := filepath.Join(p.ProcPID(fmt.Sprint(pid)), "task", fmt.Sprint(tid))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeTaskNice(t, dir, tid, comm, nice)
+	}
+}
+
+func writeTaskNice(t *testing.T, dir string, tid int, comm string, nice int) {
+	t.Helper()
+	fields := make([]string, 52)
+	for i := range fields {
+		fields[i] = "0"
+	}
+	fields[15] = fmt.Sprint(nice) // field 19
+	line := fmt.Sprintf("%d (%s) S %s\n", tid, comm, joinFields(fields))
+	if err := os.WriteFile(filepath.Join(dir, "stat"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// I-505 on a fixture /proc: the herdr server (herdr under dev's systemd
+// --user) and the agents in its tree get OOMProtected; its threads go to
+// nice -5; a pane's shell and a build that inherited -5 go back to 0; a
+// herdr client under sshd and a node dev server are neither; a second
+// pass changes nothing.
+func TestHerdrServerOOMAndNice(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 10, ppid: 1, comm: "systemd", uid: 1000},
+		{pid: 20, ppid: 10, comm: "herdr", uid: 1000},
+		{pid: 30, ppid: 20, comm: "bash", uid: 1000},
+		{pid: 31, ppid: 30, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+		{pid: 32, ppid: 31, comm: "node", uid: 1000, exe: "node"},
+		{pid: 40, ppid: 20, comm: "bash", uid: 1000},
+		{pid: 41, ppid: 40, comm: "node", uid: 1000, exe: "node"},
+		{pid: 42, ppid: 40, comm: "make", uid: 1000},
+		{pid: 50, ppid: 20, comm: "bash", uid: 1000},
+		{pid: 51, ppid: 50, comm: "gemini", uid: 1000},
+		{pid: 60, ppid: 1, comm: "sshd", uid: 0},
+		{pid: 61, ppid: 60, comm: "herdr", uid: 1000},
+		{pid: 70, ppid: 1, comm: "systemd", uid: 0},
+		{pid: 71, ppid: 70, comm: "herdr", uid: 1000},
+	}
+	r, p := newProcFixture(t, procs)
+	writeTasks(t, p, 20, "herdr", map[int]int{20: 0, 21: 0, 22: -5, 23: -10})
+	writeTasks(t, p, 30, "bash", map[int]int{30: -5})
+	writeTasks(t, p, 42, "make", map[int]int{42: -5, 43: -5})
+	writeTasks(t, p, 41, "node", map[int]int{41: 0})
+	writeTasks(t, p, 61, "herdr", map[int]int{61: 0})
+	var calls []string
+	r.setNice = func(tid, nice int) error {
+		calls = append(calls, fmt.Sprintf("%d=%d", tid, nice))
+		// Write it back, as the kernel would.
+		for _, pid := range []int{20, 30, 42, 41, 61} {
+			dir := filepath.Join(p.ProcPID(fmt.Sprint(pid)), "task", fmt.Sprint(tid))
+			if _, err := os.Stat(dir); err == nil {
+				writeTaskNice(t, dir, tid, "x", nice)
+			}
+		}
+		return nil
+	}
+	for pid := range map[int]bool{20: true, 30: true, 31: true, 32: true, 41: true, 51: true, 61: true} {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte("200\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(p.ProcPID("30"), "oom_score_adj"), []byte("-800\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	servers := r.herdrServers(1000)
+	if len(servers) != 1 || !servers[20] {
+		t.Fatalf("servers = %v, want 20 only (61 is a client under sshd, 71's systemd is root's)", servers)
+	}
+	children, _ := r.childIndex()
+	agents := r.herdrAgentPIDs(children, servers)
+	if len(agents) != 2 || !agents[31] || !agents[51] {
+		t.Fatalf("agents = %v, want 31 (claude) and 51 (gemini), not the node processes", agents)
+	}
+	r.applyOOM(1000, agents, servers)
+	for pid, want := range map[int]int{20: -800, 31: -800, 51: -800, 30: 0, 32: 200, 41: 200, 61: 200} {
+		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
+		if got := strings.TrimSpace(string(b)); got != fmt.Sprint(want) {
+			t.Errorf("pid %d oom_score_adj = %s, want %d", pid, got, want)
+		}
+	}
+
+	if n := r.applyNice(children, servers); n != 5 {
+		t.Errorf("changed %d threads (%v), want 5", n, calls)
+	}
+	want := "20=-5 21=-5 30=0 42=0 43=0"
+	sortStrings(calls)
+	if got := strings.Join(calls, " "); got != want {
+		t.Fatalf("setpriority calls = %s, want %s", got, want)
+	}
+	calls = nil
+	if n := r.applyNice(children, servers); n != 0 || len(calls) != 0 {
+		t.Fatalf("second pass changed %d: %v", n, calls)
+	}
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
 	}
 }

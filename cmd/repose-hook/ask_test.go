@@ -30,6 +30,8 @@ type guestSide struct {
 	mu       sync.Mutex
 	messages []string
 	asked    []questions.Question
+	// herdr resolves herdr pane ids as guestd's watcher would.
+	herdr hooks.HerdrResolver
 }
 
 func newGuestSide(t *testing.T) *guestSide {
@@ -61,6 +63,7 @@ func (g *guestSide) start(t *testing.T) {
 		g.mu.Unlock()
 	}, log, nil)
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
+	srv.SetHerdrResolver(g.herdr)
 	srv.EnableAsk(g.store, func(agent, window, kind, summary string) {
 		g.mu.Lock()
 		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary}, "|"))
@@ -172,6 +175,37 @@ func TestNotifyPostsTheMessage(t *testing.T) {
 	withEnv(t, "REPOSE_HOOK_SOCKET", filepath.Join(t.TempDir(), "none.sock"))
 	if code := runNotify([]string{"x"}, strings.NewReader(""), &out, &errb); code != ExitError {
 		t.Fatalf("no guestd: exit %d", code)
+	}
+}
+
+// repose-notify in a herdr pane sends the pane as its window, so guestd
+// attributes the message to the agent in it (DECISIONS I-506).
+// An unresolved pane goes under the agent's name.
+func TestNotifyNamesTheHerdrPane(t *testing.T) {
+	g := &guestSide{socket: filepath.Join(t.TempDir(), "hooks.sock"), dir: t.TempDir()}
+	g.herdr = func(_ context.Context, ref string) (string, bool) {
+		if ref == "w1:p3" {
+			return "claude-2", true
+		}
+		return "", false
+	}
+	g.start(t)
+	t.Cleanup(func() { _ = g.srv.Close(context.Background()) })
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "claude", "REPOSE_AGENT_WINDOW", "",
+		"TMUX_PANE", "", "HERDR_ENV", "1", "HERDR_PANE_ID", "w1:p3")
+	var out, errb bytes.Buffer
+	if code := runNotify([]string{"hi"}, strings.NewReader(""), &out, &errb); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	withEnv(t, "HERDR_PANE_ID", "w9:p9")
+	if code := runNotify([]string{"there"}, strings.NewReader(""), &out, &errb); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	g.mu.Lock()
+	got := strings.Join(g.messages, "\n")
+	g.mu.Unlock()
+	if got != "claude|claude-2|agent_message|hi\nclaude|claude|agent_message|there" {
+		t.Fatalf("messages:\n%s", got)
 	}
 }
 

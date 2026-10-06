@@ -34,6 +34,8 @@ type harness struct {
 	runner  *sysdep.FakeRunner
 	freezer *sysdep.FakeFreezer
 	docker  *sysdep.FakeDocker
+	// herdrSock, when a setup sets it, is the fake herdr's socket.
+	herdrSock string
 
 	mu       sync.Mutex
 	notifies []*guestdv1.Notify
@@ -90,6 +92,10 @@ func newHarness(t *testing.T, setup ...func(*harness)) *harness {
 		docker:  &sysdep.FakeDocker{Up: true, Containers: 1},
 	}
 	h.runner.Match["list-windows"] = sysdep.RunResult{}
+	// dev's tmux socket: guestd forks tmux only when it exists.
+	uid, _ := sysdep.DevIdentity()
+	mustMkdir(t, filepath.Dir(p.TmuxSocket(uid)))
+	mustWrite(t, p.TmuxSocket(uid), "")
 	for _, f := range setup {
 		f(h)
 	}
@@ -104,6 +110,8 @@ func newHarness(t *testing.T, setup ...func(*harness)) *harness {
 		Docker:         h.docker,
 		FreezeTimeout:  200 * time.Millisecond,
 		SkipReadyProbe: true,
+		HerdrSocket:    h.herdrSock,
+		HerdrUID:       os.Getuid(),
 	})
 	if err != nil {
 		t.Fatalf("new: %v", err)
