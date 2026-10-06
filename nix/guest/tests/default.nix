@@ -430,6 +430,65 @@ in
           # I-481: a repose.js the user changed is kept.
           guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
+      with subtest("the MCP registry reaches every agent with its secret (I-555)"):
+          import hashlib
+          # The registry as the carry writes it: one stdio server whose token
+          # is a ''${NAME} reference to a repose secret, in env and in args.
+          guest.succeed("install -d -m 0700 -o dev -g dev /run/repose/secrets && printf probe-secret > /run/repose/secrets/PROBE_TOKEN && chown dev:dev /run/repose/secrets/PROBE_TOKEN && chmod 0400 /run/repose/secrets/PROBE_TOKEN")
+          probe = {"type": "stdio", "command": "python3", "args": ["${./mcp-probe-server.py}", "''${PROBE_TOKEN}"], "env": {"PROBE_TOKEN": "''${PROBE_TOKEN}"}}
+          def write_laptop(reg):
+              guest.succeed(f"sudo -u dev sh -c 'mkdir -p ~/.repose/mcp && chmod 700 ~/.repose/mcp && cat > ~/.repose/mcp/laptop.json' <<'EOF'\n{json.dumps(reg)}\nEOF")
+          write_laptop({"version": 1, "user": {"probe": probe}})
+          agents = ["claude", "codex", "gemini", "opencode", "pi"]
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a} 2>/tmp/setup-{a}.err")
+              assert guest.succeed(f"cat /tmp/setup-{a}.err") == "", a
+          u = json.loads(guest.succeed("cat /home/dev/.claude.json"))
+          assert u["mcpServers"]["probe"] == probe, u["mcpServers"]
+          assert set(u["mcpServers"]) >= {"playwright", "chrome-devtools"}, u
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert '[mcp_servers.probe]\ncommand = "repose-mcp"\nargs = ["run", "probe"]\nstartup_timeout_sec = 60' in codex, codex
+          ext = json.loads(guest.succeed("cat /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json"))
+          assert ext["mcpServers"]["probe"]["command"] == "repose-mcp", ext  # a reference in args needs the launcher
+          oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))
+          assert oc["mcp"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
+          assert "probe" in json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]
+          # Each agent lists it from its own config.
+          cl = json.loads(guest.succeed("sudo -u dev bash -lc 'codex mcp list --json'"))
+          print(cl)
+          assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
+          for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+              status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+              print(f"{cmd} ({status}):\n{out}")
+              assert "probe" in out, (cmd, out)
+          # The launcher fills ''${PROBE_TOKEN} from /run/repose/secrets, in
+          # the environment and the arguments; the server reports digests.
+          want = hashlib.sha256(b"probe-secret").hexdigest()
+          out = guest.succeed("sudo -u dev env -u PROBE_TOKEN bash -c 'cd /home/dev && python3 ${./mcp-client.py} repose-mcp run probe -- probe {}'")
+          assert f"env={want} arg={want}" in out, out
+          assert "probe-secret" not in out
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "probe"]
+          assert len(row) == 1 and row[0]["from"] == "laptop" and row[0]["state"] == "", st
+          assert set(row[0]["agents"]) >= {"claude", "codex", "gemini", "opencode"}, row
+          # Idempotent: a second start changes no byte.
+          files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/config.json /home/dev/.repose/mcp/rendered.json"
+          before = guest.succeed(f"sha256sum {files}")
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert guest.succeed(f"sha256sum {files}") == before
+          # The laptop drops it: every agent loses it; the user's own stays.
+          guest.succeed("sudo -u dev sh -c 'cat >> ~/.codex/config.toml' <<'EOF'\n\n[mcp_servers.mine]\ncommand = \"my-mcp\"\nEOF")
+          write_laptop({"version": 1})
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert "mcp_servers.probe" not in codex and "[mcp_servers.mine]" in codex, codex
+          guest.fail("test -e /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
+          guest.fail("test -e /home/dev/.claude.json.lock")
+
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
       ${transcript}

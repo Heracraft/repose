@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "keep": {
+      "url": "https://keep.example/mcp"
+    }
+  }
+}

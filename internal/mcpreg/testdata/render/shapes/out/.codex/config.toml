@@ -1,0 +1,23 @@
+[mcp_servers.argref]
+command = "repose-mcp"
+args = ["run", "argref"]
+startup_timeout_sec = 60
+
+[mcp_servers.linear]
+command = "repose-mcp"
+args = ["run", "linear"]
+startup_timeout_sec = 60
+
+[mcp_servers.localdb]
+command = "repose-mcp"
+args = ["run", "localdb"]
+startup_timeout_sec = 60
+
+[mcp_servers.notion]
+url = "https://mcp.notion.com/mcp"
+bearer_token_env_var = "NOTION_TOKEN"
+
+[mcp_servers.withdefault]
+command = "repose-mcp"
+args = ["run", "withdefault"]
+startup_timeout_sec = 60

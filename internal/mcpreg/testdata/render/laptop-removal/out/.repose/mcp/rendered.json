@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "keep": {
+          "type": "http",
+          "url": "https://keep.example/mcp"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "keep": {
+          "url": "https://keep.example/mcp"
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "keep": {
+          "type": "http",
+          "url": "https://keep.example/mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "keep": {
+          "type": "remote",
+          "url": "https://keep.example/mcp"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "keep": {
+          "url": "https://keep.example/mcp"
+        }
+      }
+    }
+  }
+}

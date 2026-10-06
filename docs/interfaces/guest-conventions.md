@@ -54,6 +54,7 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a fork, a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
 | `/home/dev/.repose/checkout` | one line, the checkout's directory name under `/home/dev` (`[A-Za-z0-9._-]`, no leading dot, no `/`), written by the CLI's first sync (I-368); absent on a machine with no checkout and on one set up before I-368 |
 | `/home/dev/<checkout>-worktree-<N>` | a git worktree of the checkout on branch `worktree-<N>`, made by `repose run --worktree` (DECISIONS I-253, I-342); see "tmux". Worktrees made before I-342 are `/home/dev/<slug>-<window>` on `repose/<window>` and stay as they are |
+| `/home/dev/.repose/mcp/` | the MCP registry, `laptop.json`, `forward/NAME.json`, `agents/<agent>.json`, `rendered.json` (DECISIONS I-555); see "MCP registry" |
 | `/home/dev/.repose/project.json` | `{project_id, slug, name, remote_url, user_handle, class, tz}` written by guestd at SetupProject |
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
@@ -169,7 +170,10 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      no `permissions.defaultMode` (I-250), and its `tui` only when the
      user's file has no `tui` (I-425); `~/.claude.json` `mcpServers` gains
      the servers from `/etc/repose/mcp.json`, user entries winning on a
-     name clash.
+     name clash, through `repose-mcp sync claude` (see "MCP registry");
+     on a base without `repose-mcp` agent-setup merges the platform
+     servers itself, with the same rule. Every write agent-setup makes to
+     `~/.claude.json` holds Claude Code's lock `~/.claude.json.lock`.
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
      unless a `notify` key exists.
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
@@ -183,6 +187,8 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/repose-machine-guide.js`
      → `/etc/repose/pi-extension.js`. A stale link of that name is
      repointed; anything else at the path is left alone.
+   - every agent: last, `repose-mcp sync <agent>` where `repose-mcp`
+     exists (DECISIONS I-555, "MCP registry").
 2. Set `TERM=tmux-256color` (when inside tmux), `COLORTERM=truecolor`, and
    `REPOSE_HOOK_AGENT=<binary>` so `repose-hook` knows who called it.
 3. Load the checkout's dev environment into its own process
@@ -234,6 +240,110 @@ never blocks an agent. Mapping:
 
 Anything else is dropped silently. `window` is the tmux window name of the
 caller's `$TMUX_PANE` when set.
+
+## MCP registry (DECISIONS I-555)
+
+One list of MCP servers per machine, kept in `/home/dev/.repose/mcp/`
+(directory 0700, files 0600, owned by dev) and written into each agent's
+own config by `repose-mcp sync AGENT`. The carry and the forward write
+only the registry; agent configs have one repose writer, `sync`, which
+`repose-agent-setup` runs at the end of each agent's setup (on a base
+whose `repose-hook` is the shell implementation there is no `repose-mcp`,
+and agent-setup skips it).
+
+| File | Written by | Shape |
+|---|---|---|
+| `laptop.json` | the CLI's carry (unit C of the MCP design) | `{"version":1, "user": {NAME: SERVER}, "projects": {"<checkout real path>": {NAME: SERVER}}, "skipped": [{"name","reason"}], "secrets": {SECRET: [NAME,...]}}`; SERVER is a Claude Code `mcpServers` value, `{type?, command, args, env}` or `{type: http\|sse\|ws, url, headers, oauth}`, with `${NAME}` in place of every credential. Every key but `version` may be absent |
+| `forward/NAME.json` | `repose-mcp hold` (the forward) | `{"version":1, "name", "protocolVersion", "initialize", "tools", "updated"}`; its presence registers NAME, whatever the rest holds |
+| `agents/<agent>.json` | `sync` | what repose renders for that agent: `{"mcpServers": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "skipped"?: [{"name","reason"}]}`; pi's machine guide extension reads `agents/pi.json` |
+| `rendered.json` | `sync` | `{"version":1, "agents": {AGENT: {"user": {NAME: entry}, "projects"?: {path: {NAME: entry}}}}}`: the entries sync last left in each agent's config as repose's |
+| `.lock` | `sync` | `flock` held around every sync, for every agent (agents start in parallel, and `hold` syncs too) |
+
+Sources claim a name in this order, and a later source's server of a
+claimed name is skipped: `/etc/repose/mcp.json` (the platform), each
+`forward/NAME.json`, `laptop.json` `user`, `laptop.json` `projects`. For
+Claude Code a project server is kept per checkout under
+`projects[<path>].mcpServers` and gives way only to the platform and the
+forwards, as its local scope does on the laptop; the other agents have no
+per-folder scope and get project servers at user level, the user scope
+and then the first checkout in path order keeping a name. Names outside
+`^[A-Za-z0-9_-]{1,64}$`, and `sync`, `run`, `status`, `hold`, `help`, are
+skipped.
+
+Per agent, `sync` writes:
+
+| Agent | File | Platform | Carried stdio | Carried http/sse | Forwarded NAME |
+|---|---|---|---|---|---|
+| claude | `~/.claude.json` `mcpServers`, and `projects[<path>].mcpServers` for project servers | as in `mcp.json` | as carried | as carried | `{"type":"stdio","command":"repose-mcp","args":[NAME]}` |
+| codex | `~/.codex/config.toml` `[mcp_servers.NAME]` tables | `command`, `args` | `command = "repose-mcp"`, `args = ["run", NAME]`, `startup_timeout_sec = 60` | `url`; `Authorization: Bearer ${X}` as `bearer_token_env_var = "X"`, a header that is all `${X}` in `env_http_headers`, a literal one in `http_headers`; sse, ws, a `${X}` in the URL or inside a longer header are skipped | `command = "repose-mcp"`, `args = [NAME]` |
+| gemini | `~/.gemini/extensions/repose-mcp/gemini-extension.json` | none (its system defaults) | `command`, `args`, `env` as carried | `type`, `url`, `headers` as carried; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
+| opencode | `~/.config/opencode/config.json` `mcp` | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
+| pi | `~/.repose/mcp/agents/pi.json` | none (its extension) | `command`, `args`, `env` as carried | `url`, `headers`; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
+
+A carried stdio server for gemini, opencode or pi whose command or
+arguments hold a `${X}`, or whose env holds a `${X:-default}`, is written
+as Codex's is (`repose-mcp run NAME`), since those agents expand neither.
+A remote server with a `${X:-default}` is skipped for them.
+
+Ownership (I-246's rule): `sync` writes a name only where the file has no
+entry of that name, or has exactly the value in `rendered.json`, the value
+`sync` would write now, or one of `mcp.json`'s `repose_retired` values for
+it; it removes an entry only when its value is one of those and the
+registry no longer has it. Anything else under a name is the user's and
+stays; for opencode and Gemini CLI, a server of the same name in the
+user's own `opencode.json` or `settings.json` also wins in the agent
+itself. `~/.claude.json` is written under Claude Code's own lock, the
+directory `~/.claude.json.lock` (proper-lockfile): `sync` waits up to 5 s,
+takes over a lock older than 10 s, re-reads the file once it holds it,
+and removes the lock on every path; `repose-agent-setup`'s other writes to
+the file take the same lock. Codex's TOML is judged from its parse and
+edited by whole tables, from a `[mcp_servers.NAME]` header to the line
+before the next header outside `mcp_servers.NAME.*`; a name held in
+another form (dotted keys, an inline table) is left alone with a warning,
+and an edit that does not parse back to exactly the intended servers is
+not written. A file that is not valid JSON or TOML is left alone. The
+Gemini CLI extension directory is repose's by name and is removed when
+nothing is rendered for it.
+
+`repose-mcp` is `repose-hook` under another name (or `repose-hook mcp`):
+
+| Command | What it does | Exit |
+|---|---|---|
+| `repose-mcp sync [AGENT...]` | the rendering above, for each AGENT (all five when none); warnings on stderr, `repose-mcp: ` first | 0 always |
+| `repose-mcp run NAME` | starts the carried stdio server NAME (the user scope's, else the first checkout's): each `${X}` and `${X:-default}` in its command, arguments and env filled from `/run/repose/secrets/X` (`REPOSE_SECRETS_DIR` moves it, for tests), else the environment; an unset `${X}` stays as written; then execs it with the caller's environment plus the server's env | 127 with `repose-mcp: NAME is not in ~/.repose/mcp/laptop.json`, or when the command is missing; 1 for a remote server; else the server's |
+| `repose-mcp status --json` | what each agent has, read from the files; starts no server | 0, or 1 when the registry does not parse |
+| `repose-mcp NAME` | the forward's shim for NAME (`internal/mcpshim`) | 1 with `forwarding is not built in this base` until the forward ships |
+| `repose-mcp hold NAME...` | the forward's endpoint (`internal/mcpshim`) | as above |
+
+`status --json` prints:
+
+```json
+{"version": 1,
+ "agents": ["claude", "codex", "gemini", "opencode", "pi"],
+ "servers": [
+   {"name": "linear", "from": "laptop", "agents": ["claude", "codex", "opencode"],
+    "state": "needs LINEAR_TOKEN; gemini: ...", "needs": ["LINEAR_TOKEN"],
+    "missing": ["fooctl"], "skipped": {"gemini": "..."}, "checkout": "/home/dev/app"}]}
+```
+
+One row per server name and source. `from` is `machine` (the platform),
+`laptop` (carried; also a server the carry left on the laptop, with
+`agents` empty and its reason as `state`), `project` (a checkout's
+`.mcp.json`, Claude Code only, with `checkout`), `forward`, or `yours` (an
+entry in an agent's own config that repose did not write, including one
+under a repose name the user changed). `agents` lists the agents whose
+config, with each agent's own precedence and off switches (`enabled =
+false`, Gemini CLI's `mcp.excluded`), has the server, in the order of
+`agents`. `needs` are secrets the server references without a default
+that neither `/run/repose/secrets` nor the environment holds (`HOME`,
+`USER`, `PWD`, `TMPDIR`, `PATH`, `SHELL`, `LANG`, `XDG_*` never count);
+`missing` is a stdio command not on `PATH`; `skipped` maps an agent that
+lacks the server to the reason. `state` joins, with `; `, the carry's
+reason, `laptop not connected` for a forward whose
+`/run/repose/mcp/NAME.sock` is absent, `needs A, B`, `CMD missing` and
+`AGENT: reason`; it is empty when there is nothing to do. Optional keys
+are absent when empty. Rows are ordered by `from` in the order above,
+then by name.
 
 ## Messages and questions (DECISIONS I-244)
 

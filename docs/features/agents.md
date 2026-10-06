@@ -236,6 +236,46 @@ project-scoped entries are keyed on absolute laptop paths that do not exist
 in the guest; a user who wants an MCP in the guest adds it there, or in the
 repo's `.mcp.json`, which syncs with the repo.
 
+### One list per machine, rendered per agent (DECISIONS I-555)
+
+The guest keeps one MCP list in `~/.repose/mcp/`: the platform servers
+from `/etc/repose/mcp.json`, the laptop's Claude Code servers the carry
+writes to `laptop.json`, and each forwarded server in `forward/NAME.json`.
+`repose-mcp sync AGENT`, run by `repose-agent-setup` at every agent start,
+writes that list into the agent's own config: `~/.claude.json` (user scope,
+and `projects[<path>]` for a checkout's servers), `~/.codex/config.toml`,
+the Gemini CLI extension `repose-mcp`, `~/.config/opencode/config.json`
+(which opencode loads beneath the user's `opencode.json`), and
+`~/.repose/mcp/agents/pi.json` for pi's extension. The carry and the
+forward never touch an agent file, so `~/.claude.json` has one repose
+writer, and it holds Claude Code's own lock.
+
+An entry is repose's only while it holds what repose wrote; a user who
+edits one owns it from then on, and a user's server of the same name wins
+(I-246's rule, now for every agent). Deleting a server repose renders
+brings it back at the next start; each agent's own off switch (`enabled =
+false` in Codex and opencode, `mcp.excluded` in Gemini CLI, `/mcp` in
+Claude Code) turns it off.
+
+Secrets: Codex hands stdio servers a fixed environment allowlist and
+expands nothing, so its carried stdio servers run as `repose-mcp run
+NAME`, which fills each `${NAME}` from `/run/repose/secrets` and execs the
+real command; a secret set later reaches the next server start without
+restarting Codex. Claude Code, Gemini CLI, opencode (`{env:NAME}`) and pi
+expand references themselves and get the server's own shape, except a
+server with a reference in its command or arguments, or a
+`${NAME:-default}`, which goes through the launcher too. Codex takes
+`Bearer ${NAME}` and whole-value `${NAME}` headers as its
+`bearer_token_env_var` and `env_http_headers`; an SSE server, or a header
+it cannot fill, is skipped for Codex alone.
+
+`repose-mcp status --json` reports, per server, where it came from, which
+agents have it and what it lacks; `repose mcp list` will show it. The
+layout and the commands are in `docs/interfaces/guest-conventions.md` "MCP
+registry". `repose-mcp NAME` and `repose-mcp hold` are the forward's two
+ends; in a base without the forward they exit 1 with "forwarding is not
+built in this base".
+
 ### Not built: `repose mcp forward NAME`
 
 The command is reserved: it prints that it is not available yet and exits 0.

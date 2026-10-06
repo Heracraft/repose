@@ -13065,3 +13065,46 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-555. repose keeps one MCP list per machine and renders it into each agent's own config.**
+(mcp-registry, 2026-10-06; amends I-246) The carry of the laptop's
+Claude Code servers and `repose mcp forward` each have to reach five
+agents with three ways of handling secrets. Writing agent files from the
+carry would put a second unlocked writer on `~/.claude.json` and spread
+format translation over the CLI and the guest. Instead the carry writes
+`~/.repose/mcp/laptop.json`, the forward writes `~/.repose/mcp/forward/NAME.json`,
+and `repose-mcp sync AGENT`, which `repose-agent-setup` runs at each agent
+start, renders them with the platform's `/etc/repose/mcp.json` into
+`~/.claude.json`, `~/.codex/config.toml`, a Gemini CLI extension named
+`repose-mcp`, `~/.config/opencode/config.json` and
+`~/.repose/mcp/agents/pi.json`. Ownership is judged by value, I-246's
+rule for every agent: an entry is repose's while it equals what
+`rendered.json` records, what sync would write now, or a
+`repose_retired` value; anything else under the name is the user's and
+stays. Codex passes stdio servers a fixed environment allowlist and
+expands nothing, so its carried stdio servers start through `repose-mcp
+run NAME`, which fills `${NAME}` from `/run/repose/secrets` and execs the
+real command. Claude Code, Gemini CLI, opencode (as `{env:NAME}`) and pi
+expand references themselves (the MCP design's critic run confirmed each
+on the pinned versions) and get the server's own shape; only a reference
+in the command or arguments, or a `${NAME:-default}`, sends theirs through
+the launcher. Codex also gets the platform servers this way, as
+user-file tables owned by value, because a user's same-name `url` table
+beside a system-layer stdio entry stops Codex from loading at all.
+opencode's entries go to `config.json`, which opencode loads beneath the
+user's `opencode.json`, and not through `OPENCODE_CONFIG`, which
+outranks the user's file. Writes to `~/.claude.json` take Claude Code's
+own `~/.claude.json.lock` (a directory, proper-lockfile), held under
+5 s, taken over after 10 s as Claude Code does, and agent-setup's other
+writes to the file take it too; every sync runs under `flock
+~/.repose/mcp/.lock`, since agents start in parallel and two appends of
+one Codex table make Codex refuse its config. On a base whose
+`repose-hook` is the shell implementation there is no `repose-mcp`, and
+agent-setup keeps merging the platform servers into `~/.claude.json`
+itself. `repose-mcp status --json` reports each server's source, agents
+and needs for `repose mcp list`. `repose-mcp NAME` and `repose-mcp hold`
+route to `internal/mcpshim`, which in this base exits 1 with
+"forwarding is not built in this base"; the forward replaces it (I-557).
+Not covered here: the guest-base VM subtest (real `codex`, `claude`,
+`gemini`, `opencode` listing the server, and a tool call through the
+launcher returning the secret's digest) needs the dev box.

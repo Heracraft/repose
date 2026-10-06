@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "events": {
+      "type": "remote",
+      "url": "https://events.example/sse"
+    },
+    "partial": {
+      "headers": {
+        "X-Key": "key-{env:PARTIAL_KEY}"
+      },
+      "type": "remote",
+      "url": "https://partial.example/mcp"
+    },
+    "sentry": {
+      "headers": {
+        "Authorization": "Bearer {env:SENTRY_TOKEN}",
+        "X-Org": "{env:SENTRY_ORG}",
+        "X-Plain": "yes"
+      },
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp"
+    }
+  }
+}

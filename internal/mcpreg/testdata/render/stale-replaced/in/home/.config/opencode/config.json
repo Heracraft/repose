@@ -1,0 +1,1 @@
+{"mcp":{"linear":{"type":"local","command":["npx","-y","linear-mcp@1"],"environment":{"LINEAR_TOKEN":"{env:LINEAR_TOKEN}"}}},"theme":"dark"}

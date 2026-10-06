@@ -1,0 +1,2 @@
+model = "o4"
+mcp_servers.linear.url = "https://old.linear.app/mcp"

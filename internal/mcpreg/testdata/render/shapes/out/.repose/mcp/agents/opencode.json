@@ -1,0 +1,64 @@
+{
+  "mcpServers": {
+    "argref": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "argref"
+      ],
+      "type": "local"
+    },
+    "linear": {
+      "command": [
+        "npx",
+        "-y",
+        "linear-mcp"
+      ],
+      "environment": {
+        "LINEAR_TOKEN": "{env:LINEAR_TOKEN}",
+        "MODE": "fast"
+      },
+      "type": "local"
+    },
+    "localdb": {
+      "command": [
+        "pg-mcp",
+        "/home/dev/app/db"
+      ],
+      "type": "local"
+    },
+    "notion": {
+      "headers": {
+        "Authorization": "Bearer {env:NOTION_TOKEN}"
+      },
+      "type": "remote",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "withdefault": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "withdefault"
+      ],
+      "type": "local"
+    }
+  },
+  "skipped": [
+    {
+      "name": "bad name",
+      "reason": "a name repose cannot give a server"
+    },
+    {
+      "name": "run",
+      "reason": "a name repose cannot give a server"
+    },
+    {
+      "name": "linear",
+      "reason": "another server has this name"
+    },
+    {
+      "name": "localdb",
+      "reason": "another server has this name"
+    }
+  ]
+}

@@ -10,10 +10,15 @@
 #          no permissions.defaultMode (DECISIONS I-250); tui from the
 #          platform file is added only when the user's file has no tui
 #          (I-425);
-#          ~/.claude.json mcpServers gains the platform servers from
-#          /etc/repose/mcp.json, user entries winning on name clash
-#          except an entry the platform registered itself in an earlier
-#          base (mcp.json's repose_retired), which is replaced;
+#          ~/.claude.json MCP servers are `repose-mcp sync claude`'s
+#          (DECISIONS I-555): the platform servers from /etc/repose/mcp.json
+#          and the registry's in ~/.repose/mcp, user entries winning on
+#          name clash except an entry repose wrote itself (rendered.json,
+#          or mcp.json's repose_retired from an earlier base), which is
+#          replaced; on a base without repose-mcp (the shell repose-hook)
+#          the platform merge below does the same for the platform
+#          servers. Every write to ~/.claude.json here holds Claude Code's
+#          own lock, the directory ~/.claude.json.lock;
 #          ~/.claude.json hasCompletedOnboarding is set to true when the
 #          Claude login share is bind-mounted over .credentials.json and
 #          the key is absent, since first-run onboarding asks for a login
@@ -29,6 +34,9 @@
 #          takes that prompt the same way (I-306).
 # codex   ~/.codex/config.toml gains `notify = ["repose-hook"]` unless a
 #          `notify` key already exists.
+# every agent ends with `repose-mcp sync <agent>` where repose-mcp exists,
+#          which renders ~/.repose/mcp into that agent's own config
+#          (DECISIONS I-555) and exits 0 on every path.
 # opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
 #          replaced while it is byte for byte one an earlier base installed
 #          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
@@ -56,8 +64,65 @@ writeShellApplication {
       mv -f "$tmp" "$path"
     }
 
+    # with_claude_lock CMD...: run CMD holding Claude Code's own lock on
+    # ~/.claude.json (proper-lockfile's directory ~/.claude.json.lock), so
+    # a read-modify-write here never loses one Claude Code makes. A lock
+    # older than 10 s was abandoned and is taken over, as Claude Code does;
+    # after 5 s of waiting the write is skipped.
+    with_claude_lock() {
+      local lock="$HOME/.claude.json.lock" n=0 age rc=0
+      until mkdir "$lock" 2>/dev/null; do
+        age=$(( $(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s) ))
+        if [ "$age" -gt 10 ]; then
+          rmdir "$lock" 2>/dev/null || true
+          continue
+        fi
+        n=$((n + 1))
+        if [ "$n" -ge 100 ]; then
+          echo "repose-agent-setup: ~/.claude.json stayed locked; leaving it alone" >&2
+          return 0
+        fi
+        sleep 0.05
+      done
+      "$@" || rc=$?
+      rmdir "$lock" 2>/dev/null || true
+      return "$rc"
+    }
+
+    # mcp_sync <agent>: render the MCP registry into the agent's config
+    # (DECISIONS I-555). A base with the shell repose-hook has no
+    # repose-mcp; it must not print "command not found" above the agent.
+    mcp_sync() {
+      if command -v repose-mcp >/dev/null 2>&1; then
+        repose-mcp sync "$1" || true
+      fi
+    }
+
+    # The platform servers into ~/.claude.json, for a base without
+    # repose-mcp; repose-mcp sync claude does this with the registry's
+    # servers otherwise. Called through with_claude_lock.
+    # shellcheck disable=SC2329
+    merge_platform_mcp() {
+      local userjson="$HOME/.claude.json"
+      if [ ! -s "$userjson" ]; then
+        jq '{ mcpServers: .mcpServers }' "$platform_mcp" | write_atomic "$userjson" 0600
+      elif jq -e . "$userjson" >/dev/null 2>&1; then
+        # A user entry that is exactly one the platform registered
+        # before (repose_retired) was written here, not by the user, and
+        # gives way to the current one (I-246).
+        jq -s '.[0] as $u | .[1] as $p
+          | (($u.mcpServers // {}) | with_entries(
+              .key as $k | .value as $v
+              | select(any((($p.repose_retired // {})[$k] // [])[]; . == $v) | not))) as $kept
+          | $u | .mcpServers = ($p.mcpServers + $kept)' \
+          "$userjson" "$platform_mcp" | write_atomic "$userjson" 0600
+      else
+        echo "repose-agent-setup: $userjson is not valid JSON; leaving it alone" >&2
+      fi
+    }
+
     setup_claude() {
-      local settings="$HOME/.claude/settings.json" userjson="$HOME/.claude.json"
+      local settings="$HOME/.claude/settings.json"
       mkdir -p "$HOME/.claude"
       if [ -r "$platform_claude" ]; then
         if [ ! -s "$settings" ]; then
@@ -88,34 +153,22 @@ writeShellApplication {
           echo "repose-agent-setup: $settings is not valid JSON; leaving it alone" >&2
         fi
       fi
-      if [ -r "$platform_mcp" ]; then
-        if [ ! -s "$userjson" ]; then
-          jq '{ mcpServers: .mcpServers }' "$platform_mcp" | write_atomic "$userjson" 0600
-        elif jq -e . "$userjson" >/dev/null 2>&1; then
-          # A user entry that is exactly one the platform registered
-          # before (repose_retired) was written here, not by the user, and
-          # gives way to the current one (I-246).
-          jq -s '.[0] as $u | .[1] as $p
-            | (($u.mcpServers // {}) | with_entries(
-                .key as $k | .value as $v
-                | select(any((($p.repose_retired // {})[$k] // [])[]; . == $v) | not))) as $kept
-            | $u | .mcpServers = ($p.mcpServers + $kept)' \
-            "$userjson" "$platform_mcp" | write_atomic "$userjson" 0600
-        else
-          echo "repose-agent-setup: $userjson is not valid JSON; leaving it alone" >&2
-        fi
+      if command -v repose-mcp >/dev/null 2>&1; then
+        mcp_sync claude
+      elif [ -r "$platform_mcp" ]; then
+        with_claude_lock merge_platform_mcp
       fi
       # The shared login (I-278) is signed in already; without this, the
       # first interactive start still shows the theme and login-method
       # screens. /login stays available.
       if findmnt -n --mountpoint "$HOME/.claude/.credentials.json" >/dev/null 2>&1; then
-        userjson_default hasCompletedOnboarding
+        with_claude_lock userjson_default hasCompletedOnboarding
       fi
       # The auto-mode offer (I-283) only where the mode is the bypass the
       # platform or the user chose; answering it is Shift-Tab or
       # defaultMode, not a dialog a sent prompt can hit.
       if [ "$(jq -r '.permissions.defaultMode? // empty' "$settings" 2>/dev/null)" = bypassPermissions ]; then
-        userjson_default hasSeenAutoDefaultNudge
+        with_claude_lock userjson_default hasSeenAutoDefaultNudge
         # A bypass mode the user set (their laptop's settings, carried
         # in) came without the platform's skip flag, and Claude Code's
         # bypass warning then takes the prompt `repose run` sends, and
@@ -128,7 +181,9 @@ writeShellApplication {
     }
 
     # userjson_default <key>: set ~/.claude.json's <key> to true unless the
-    # key is there already (any value, the user's false included).
+    # key is there already (any value, the user's false included). Called
+    # through with_claude_lock.
+    # shellcheck disable=SC2329
     userjson_default() {
       local userjson="$HOME/.claude.json" key="$1"
       if [ ! -s "$userjson" ]; then
@@ -146,6 +201,7 @@ writeShellApplication {
       elif ! grep -Eq '^[[:space:]]*notify[[:space:]]*=' "$cfg"; then
         { printf 'notify = ["repose-hook"]\n'; cat "$cfg"; } | write_atomic "$cfg" 0600
       fi
+      mcp_sync codex
     }
 
     # link_owned <link> <target>: the link is ours by name; point it at the
@@ -165,10 +221,12 @@ writeShellApplication {
 
     setup_gemini() {
       link_owned "$HOME/.gemini/extensions/repose-machine-guide" /etc/repose/gemini-extension
+      mcp_sync gemini
     }
 
     setup_pi() {
       link_owned "''${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/repose-machine-guide.js" /etc/repose/pi-extension.js
+      mcp_sync pi
     }
 
     # sha256 of every repose.js an earlier base installed. A file equal to
@@ -187,6 +245,7 @@ writeShellApplication {
           *" $have "*) write_atomic "$dir/repose.js" 0644 < ${reposeOpencodePlugin} ;;
         esac
       fi
+      mcp_sync opencode
     }
 
     case "$agent" in

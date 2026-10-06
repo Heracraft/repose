@@ -1,0 +1,13 @@
+# my codex config
+model = "o4" # the model
+
+# servers I added
+[mcp_servers.mine]
+command = "my-mcp" # mine
+
+[mcp_servers.linear]
+url = "https://old.linear.app/mcp"
+
+# profiles below
+[profiles.fast]
+model = "o4-mini"
