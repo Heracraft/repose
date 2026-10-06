@@ -539,3 +539,44 @@ func TestQueueNeverBlocks(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A cache whose initialize is null (a laptop server that answered with a
+// null result before hold refused one) still answers initialize.
+func TestShimNullCachedInitialize(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	if err := os.MkdirAll(filepath.Join(p.Home, ".repose/mcp/forward"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, init := range []string{"null", `"x"`, "[]"} {
+		if err := os.WriteFile(filepath.Join(p.Home, ".repose/mcp/forward/notes.json"), []byte(`{"version":1,"name":"notes","initialize":`+init+`,"tools":[]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		a := startShim(t, p, "notes")
+		res := a.initialize("2025-06-18")
+		if res["protocolVersion"] != "2025-06-18" || res["capabilities"] == nil {
+			t.Errorf("initialize %s: %v", init, res)
+		}
+	}
+}
+
+// hold refuses a server whose initialize result is null, so no such
+// cache is written.
+func TestFetchRefusesNullInitialize(t *testing.T) {
+	a, b := net.Pipe()
+	defer func() { _ = a.Close() }()
+	go func() {
+		lr := newLineReader(b)
+		line, err := lr.next()
+		if err != nil {
+			return
+		}
+		m, _ := parse(line)
+		_, _ = b.Write([]byte(`{"jsonrpc":"2.0","id":` + string(m.ID) + `,"result":null}` + "\n"))
+		_, _ = io.Copy(io.Discard, b)
+	}()
+	_, _, _, err := fetch(a)
+	if err == nil || !strings.Contains(err.Error(), "no result object") {
+		t.Errorf("fetch = %v", err)
+	}
+}

@@ -16,9 +16,19 @@ type LaunchError struct {
 
 func (e *LaunchError) Error() string { return e.Msg }
 
+// MissingSecretsLine is what `repose-mcp run` prints when NAME references
+// secrets the machine lacks.
+func MissingSecretsLine(name string, need []string) string {
+	if len(need) == 1 {
+		return "repose-mcp: " + name + " needs the secret " + need[0] + "; set it with `repose secrets set " + need[0] + "` on your laptop, then restart the agent."
+	}
+	return "repose-mcp: " + name + " needs the secrets " + strings.Join(need, ", ") + "; set each with `repose secrets set NAME` on your laptop, then restart the agent."
+}
+
 // Prepare resolves `repose-mcp run NAME`: the carried stdio server NAME
 // with every ${X} in its command, arguments and env filled from
-// /run/repose/secrets, else the environment. It returns the program's path,
+// /run/repose/secrets, else the environment. A ${X} without a default that
+// neither holds stops it with exit 1. It returns the program's path,
 // its argv and its environment (the caller's, plus the server's env).
 func Prepare(p Paths, name string) (path string, argv, env []string, err error) {
 	reg, lerr := Load(p)
@@ -31,6 +41,11 @@ func Prepare(p Paths, name string) (path string, argv, env []string, err error) 
 	}
 	if transport(s) != "stdio" {
 		return "", nil, nil, &LaunchError{1, "repose-mcp: " + name + " is a remote server; agents reach it by its URL"}
+	}
+	if need := Needs(s, p.SecretsDir); len(need) > 0 {
+		// Started anyway, the server would send the literal ${NAME} to its
+		// service as a token and fail with that service's auth error.
+		return "", nil, nil, &LaunchError{1, MissingSecretsLine(name, need)}
 	}
 	raw := str(s, "command")
 	cmd := Expand(raw, p.SecretsDir)

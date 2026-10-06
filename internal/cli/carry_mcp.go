@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // The MCP part of the carry (DECISIONS I-556, amending I-196): the MCP
@@ -57,6 +58,9 @@ const (
 type mcpSkip struct {
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
+	// Forward is a server `repose mcp forward` can run from the laptop:
+	// one that starts with a command and has a name forward takes.
+	Forward bool `json:"-"`
 }
 
 // mcpCarry is what the MCP part sends.
@@ -395,10 +399,7 @@ func addMCPParts(p *guestPayload, mc *mcpCarry, opts carryOptions) ([]string, er
 			cmds = append(cmds, l)
 		}
 	}
-	var left []string
-	for _, s := range mc.Skipped {
-		left = append(left, printable(s.Name+" ("+s.Reason+")"))
-	}
+	left := mcpLeftLines(mc.Skipped)
 	files := map[string][]byte{
 		"mcp/in.json":   b,
 		"mcp/laptop.jq": mcpLaptopJQ,
@@ -419,6 +420,20 @@ func addMCPParts(p *guestPayload, mc *mcpCarry, opts carryOptions) ([]string, er
 	return []string{mcpUserMarker}, nil
 }
 
+// mcpLeftLines are the guest's #mcpleft lines: 1 for a server forward
+// can run, else 0, then "NAME (reason)".
+func mcpLeftLines(skipped []mcpSkip) []string {
+	var left []string
+	for _, s := range skipped {
+		f := "0 "
+		if s.Forward {
+			f = "1 "
+		}
+		left = append(left, f+printable(s.Name)+" ("+printable(s.Reason)+")")
+	}
+	return left
+}
+
 // printable drops control characters from a name the classifier refused,
 // so it cannot break the line it is named on.
 func printable(s string) string {
@@ -429,7 +444,12 @@ func printable(s string) string {
 		return r
 	}, s)
 	if len(s) > 64 {
-		s = s[:64]
+		// Cut on a rune boundary: a cut inside one leaves invalid UTF-8.
+		n := 64
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n]
 	}
 	return s
 }
@@ -495,7 +515,7 @@ func mcpSecretFlag(f string) bool {
 var (
 	mcpPlatformNames    = setOf("playwright", "chrome-devtools")
 	mcpPlatformPackages = setOf("@playwright/mcp", "playwright-mcp", "chrome-devtools-mcp")
-	mcpAppleWords       = []string{"applescript", "apple-", "imessage", "xcode", "iterm", "macos", "osascript", "shortcuts"}
+	mcpAppleWords       = []string{"applescript", "apple-", "imessage", "xcode", "xcrun", "iterm", "macos", "osascript", "shortcuts"}
 	mcpLaunchers        = setOf("npx", "node", "uvx", "uv", "python3", "python", "docker", "bunx", "bun", "deno", "pipx")
 	mcpLaptopRoots      = []string{"/Users/", "/Applications/", "/Library/", "/opt/homebrew/", "/usr/local/", "/Volumes/", "/private/", "/var/folders/"}
 )
@@ -536,7 +556,12 @@ func mcpSecretName(server, suffix string) string {
 		s = "MCP_" + s
 	}
 	if len(s) > 64 {
-		s = s[:64]
+		// Cut on a rune boundary: a cut inside one leaves invalid UTF-8.
+		n := 64
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n]
 	}
 	return s
 }
@@ -563,14 +588,14 @@ func (c *mcpClassifier) scope(raw map[string]json.RawMessage, skipped *[]mcpSkip
 	for _, n := range names {
 		var s map[string]any
 		if err := json.Unmarshal(raw[n], &s); err != nil || s == nil {
-			*skipped = append(*skipped, mcpSkip{n, "not a server entry"})
+			*skipped = append(*skipped, mcpSkip{Name: n, Reason: "not a server entry"})
 			continue
 		}
 		v := c.classify(n, s)
 		switch {
 		case v.drop:
 		case v.skip != "":
-			*skipped = append(*skipped, mcpSkip{n, v.skip})
+			*skipped = append(*skipped, mcpSkip{Name: n, Reason: v.skip, Forward: v.forward})
 		default:
 			out[n] = v.server
 			if v.cmd != "" {
@@ -585,8 +610,10 @@ func (c *mcpClassifier) scope(raw map[string]json.RawMessage, skipped *[]mcpSkip
 type mcpVerdict struct {
 	server map[string]any
 	skip   string
-	drop   bool
-	cmd    string
+	// forward: skipped, and `repose mcp forward NAME` can run it.
+	forward bool
+	drop    bool
+	cmd     string
 }
 
 // classifyMCPServer is the classifier on its own, for tests: the verdict
@@ -599,7 +626,10 @@ func classifyMCPServer(home, repo, name string, s map[string]any) (mcpVerdict, m
 
 func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 	if !mcpServerName.MatchString(name) {
-		return mcpVerdict{skip: "name"}
+		if len(name) > 64 {
+			return mcpVerdict{skip: "its name is longer than 64 characters"}
+		}
+		return mcpVerdict{skip: "its name has characters other than letters, digits, - and _"}
 	}
 	kind, _ := s["type"].(string)
 	command, _ := s["command"].(string)
@@ -613,7 +643,7 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 	switch kind {
 	case "stdio", "http", "sse", "ws":
 	default:
-		return mcpVerdict{skip: "type"}
+		return mcpVerdict{skip: "type " + printable(kind) + ", which repose does not copy"}
 	}
 	args := stringList(s["args"])
 	// cmd /c npx ..., how a Windows laptop starts npx: the machine runs
@@ -629,7 +659,7 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 		hay := strings.ToLower(cmdBase(command) + " " + strings.Join(args, " "))
 		for _, w := range mcpAppleWords {
 			if strings.Contains(hay, w) {
-				return mcpVerdict{skip: "an Apple app"}
+				return mcpVerdict{skip: "an Apple app", forward: true}
 			}
 		}
 	} else if mcpLaptopHost(rawURL) {
@@ -648,16 +678,16 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 			return mcpVerdict{skip: "no command"}
 		}
 		if !c.underRepo(command) && c.laptopPath(command) && !mcpLaunchers[cmdBase(command)] {
-			return mcpVerdict{skip: "a program on your laptop"}
+			return mcpVerdict{skip: "a program on your laptop", forward: true}
 		}
 		for _, a := range args {
 			if p := argPath(a); p != "" && !c.underRepo(p) && c.laptopPath(p) {
-				return mcpVerdict{skip: "files on your laptop"}
+				return mcpVerdict{skip: "files on your laptop", forward: true}
 			}
 		}
 		for _, k := range sortedKeys(env) {
 			if v, ok := env[k].(string); ok && !c.underRepo(v) && c.laptopPath(v) {
-				return mcpVerdict{skip: "reads " + printable(k) + " from your laptop"}
+				return mcpVerdict{skip: "reads " + printable(k) + " from your laptop", forward: true}
 			}
 		}
 	}
@@ -1157,7 +1187,16 @@ func (o *carryOutcome) mcpLines() []string {
 		if len(o.MCPLeft) > 1 {
 			what = "MCP servers "
 		}
-		out = append(out, "Left on your laptop: "+what+strings.Join(o.MCPLeft, ", ")+". repose mcp forward NAME runs one from here.")
+		l := "Left on your laptop: " + what + strings.Join(o.MCPLeft, ", ") + "."
+		switch {
+		case len(o.MCPForward) == len(o.MCPLeft):
+			l += " repose mcp forward NAME runs one from here."
+		case len(o.MCPForward) == 1:
+			l += " repose mcp forward " + o.MCPForward[0] + " runs it from here."
+		case len(o.MCPForward) > 1:
+			l += " repose mcp forward NAME runs " + strings.Join(o.MCPForward, ", ") + " from here."
+		}
+		out = append(out, l)
 	}
 	if n := len(o.MCPSecrets); n > 0 {
 		var all, fromLaptop []string
@@ -1184,7 +1223,7 @@ func (o *carryOutcome) mcpLines() []string {
 		out = append(out, l)
 	}
 	for _, m := range o.MCPMissing {
-		out = append(out, "MCP server "+m[0]+" needs "+m[1]+", which the machine lacks.")
+		out = append(out, "MCP server "+m[0]+" needs "+m[1]+", which the machine lacks. repose config add PACKAGE adds the package that has it.")
 	}
 	if o.MCPOld {
 		out = append(out, "This machine's base predates MCP servers from your laptop; they arrive after its next update.")
@@ -1205,7 +1244,15 @@ type mcpNeed struct {
 func (o *carryOutcome) parseMCP(tag, rest string) bool {
 	switch tag {
 	case "#mcpleft":
-		o.MCPLeft = append(o.MCPLeft, rest)
+		f, l, ok := strings.Cut(rest, " ")
+		if !ok || (f != "0" && f != "1") {
+			l = rest
+		}
+		o.MCPLeft = append(o.MCPLeft, l)
+		if f == "1" {
+			name, _, _ := strings.Cut(l, " (")
+			o.MCPForward = append(o.MCPForward, name)
+		}
 	case "#mcpsecret":
 		f := strings.Fields(rest)
 		if len(f) < 2 {

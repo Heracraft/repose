@@ -285,7 +285,9 @@ Secrets: Codex hands stdio servers a fixed environment allowlist and
 expands nothing, so its carried stdio servers run as `repose-mcp run
 NAME`, which fills each `${NAME}` from `/run/repose/secrets` and execs the
 real command; a secret set later reaches the next server start without
-restarting Codex. Claude Code, Gemini CLI, opencode (`{env:NAME}`) and pi
+restarting Codex. A secret it lacks stops the start with one line naming
+it and `repose secrets set NAME`, since the server would otherwise send
+the literal `${NAME}` to its service as a token. Claude Code, Gemini CLI, opencode (`{env:NAME}`) and pi
 expand references themselves and get the server's own shape, except a
 server with a reference in its command or arguments, or a
 `${NAME:-default}`, which goes through the launcher too. Codex takes

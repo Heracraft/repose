@@ -360,6 +360,8 @@ func errNoProjectFound(remote string) error { return errNoProjectFoundFor(remote
 func errNoProjectFoundFor(remote, command string) error {
 	usage := "`repose <command> PROJECT`"
 	if command != "" {
+		// command ends in " --project" when the command takes PROJECT
+		// as that flag only.
 		usage = "`" + command + " PROJECT`"
 	}
 	if remote == "" {

@@ -13,8 +13,8 @@ var refRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
 // Expand replaces each ${NAME} in s with the secret NAME from secretsDir,
 // else the environment variable NAME. ${NAME:-default} gives default when
-// both are unset or empty. A ${NAME} with neither stays as written, so the
-// server's own error names what is missing.
+// both are unset or empty. A ${NAME} with neither stays as written; callers
+// that start a server check Needs first.
 func Expand(s, secretsDir string) string {
 	return refRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := refRe.FindStringSubmatch(m)

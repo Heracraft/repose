@@ -151,6 +151,18 @@ func toLaptopMCP(name, source, home, repoDir string, s map[string]any) laptopMCP
 	return l
 }
 
+// refList is ${A}, ${A} and ${B}, or ${A}, ${B} and ${C}.
+func refList(names []string) string {
+	refs := make([]string, len(names))
+	for i, n := range names {
+		refs[i] = "${" + n + "}"
+	}
+	if len(refs) == 1 {
+		return refs[0]
+	}
+	return strings.Join(refs[:len(refs)-1], ", ") + " and " + refs[len(refs)-1]
+}
+
 // findLaptopMCP is NAME's definition, from the first config that has it.
 func findLaptopMCP(home, repoDir, name string) (laptopMCP, error) {
 	srcs := laptopMCPSources(home, repoDir)
@@ -159,6 +171,15 @@ func findLaptopMCP(home, repoDir, name string) (laptopMCP, error) {
 			l := toLaptopMCP(name, src.Label, home, repoDir, s)
 			if l.Remote {
 				return l, exitf(ExitGeneric, "%s in your %s config is an HTTP server; repose mcp forward runs servers that start with a command.", name, src.Label)
+			}
+			// An unset ${VAR} would reach the server as its literal text,
+			// which it then sends to its service as a token.
+			if need := mcpreg.Needs(s, ""); len(need) > 0 {
+				them := "it"
+				if len(need) > 1 {
+					them = "them"
+				}
+				return l, exitf(ExitGeneric, "%s in your %s config uses %s, which this shell does not set. Set %s and run the forward again.", name, src.Label, refList(need), them)
 			}
 			return l, nil
 		}

@@ -223,11 +223,15 @@ func (s *shim) answerInitialize(m msg) {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
 	_ = json.Unmarshal(m.Params, &params)
-	res := map[string]any{}
+	var res map[string]any
 	cached := ""
 	if s.cache != nil && len(s.cache.Initialize) > 0 {
+		// A cached null or non-object leaves res nil: start from empty.
 		_ = json.Unmarshal(s.cache.Initialize, &res)
 		cached = s.cache.ProtocolVersion
+	}
+	if res == nil {
+		res = map[string]any{}
 	}
 	told := params.ProtocolVersion
 	if told == "" || (cached != "" && cached < told) {

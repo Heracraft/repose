@@ -21,6 +21,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -50,13 +51,14 @@ func TestClassifyMCPServer(t *testing.T) {
 		secrets            []string
 		cmd                string
 	}{
-		{desc: "name", name: "bad name!", server: `{"command":"npx","args":["x"]}`, skip: "name"},
-		{desc: "type", name: "proxy", server: `{"type":"claudeai-proxy","url":"https://x"}`, skip: "type"},
+		{desc: "name", name: "bad name!", server: `{"command":"npx","args":["x"]}`, skip: "its name has characters other than letters, digits, - and _"},
+		{desc: "type", name: "proxy", server: `{"type":"claudeai-proxy","url":"https://x"}`, skip: "type claudeai-proxy, which repose does not copy"},
 		{desc: "platform name", name: "playwright", server: `{"command":"npx","args":["-y","something-else"]}`, drop: true},
 		{desc: "platform package", name: "pw", server: `{"command":"npx","args":["-y","@playwright/mcp@latest"]}`, drop: true},
 		{desc: "platform command", name: "cdt", server: `{"command":"/opt/homebrew/bin/chrome-devtools-mcp"}`, drop: true},
 		{desc: "apple", name: "notes", server: `{"command":"npx","args":["-y","mcp-server-apple-notes"]}`, skip: "an Apple app"},
 		{desc: "xcode", name: "xc", server: `{"command":"xcodebuildmcp"}`, skip: "an Apple app"},
+		{desc: "xcrun", name: "xcode", server: `{"command":"xcrun","args":["mcpbridge"]}`, skip: "an Apple app"},
 		{desc: "localhost", name: "figma", server: `{"type":"http","url":"http://127.0.0.1:3845/mcp"}`, skip: "runs on your laptop"},
 		{desc: "lan", name: "nas", server: `{"type":"sse","url":"http://192.168.1.4/sse"}`, skip: "runs on your laptop"},
 		{desc: "tailnet ip", name: "tail", server: `{"type":"http","url":"http://100.101.102.103:8080/mcp"}`, skip: "runs on your laptop"},
@@ -518,9 +520,9 @@ func TestCarryMCPServers(t *testing.T) {
 	lines := strings.Join(o.Lines(), "\n")
 	t.Logf("first carry lines:\n%s", lines)
 	for _, want := range []string{
-		"Left on your laptop: MCP servers apple-notes (an Apple app), figma (runs on your laptop). repose mcp forward NAME runs one from here.",
+		"Left on your laptop: MCP servers apple-notes (an Apple app), figma (runs on your laptop). repose mcp forward apple-notes runs it from here.",
 		"MCP servers need secrets the machine lacks: LINEAR_TOKEN (linear), PROJ_SECRET (proj). Set them from your laptop's values with repose secrets import --mcp.",
-		"MCP server foo needs fooctl-not-here, which the machine lacks.",
+		"MCP server foo needs fooctl-not-here, which the machine lacks. repose config add PACKAGE adds the package that has it.",
 		"This machine's base predates MCP servers from your laptop; they arrive after its next update.",
 	} {
 		if !strings.Contains(lines, want) {
@@ -787,5 +789,74 @@ func TestClaudeTrustCopiesMCPApprovals(t *testing.T) {
 	}
 	if e := dialogError("New MCP server found in this project"); !e.MCP || !strings.Contains(e.Error(), ".mcp.json") {
 		t.Fatalf("dialog error = %v", e)
+	}
+}
+
+// The forward clause names only servers forward can run: one that starts
+// with a command and has a name forward takes. An HTTP server on the
+// laptop, a headers helper or a bad name gets no clause.
+func TestMCPLeftLineForwardClause(t *testing.T) {
+	lines := func(replies ...string) string {
+		o := &carryOutcome{}
+		for _, r := range replies {
+			tag, rest, _ := strings.Cut(r, " ")
+			if !o.parseMCP(tag, rest) {
+				t.Fatalf("not an MCP reply: %q", r)
+			}
+		}
+		return strings.Join(o.mcpLines(), "\n")
+	}
+	cases := []struct {
+		replies []string
+		want    string
+	}{
+		{[]string{"#mcpleft 1 xcode (an Apple app)"}, "Left on your laptop: MCP server xcode (an Apple app). repose mcp forward NAME runs one from here."},
+		{[]string{"#mcpleft 0 figma (runs on your laptop)"}, "Left on your laptop: MCP server figma (runs on your laptop)."},
+		{[]string{"#mcpleft 0 bad name! (its name has characters other than letters, digits, - and _)"}, "Left on your laptop: MCP server bad name! (its name has characters other than letters, digits, - and _)."},
+		{[]string{"#mcpleft 1 xcode (an Apple app)", "#mcpleft 0 figma (runs on your laptop)"}, "Left on your laptop: MCP servers xcode (an Apple app), figma (runs on your laptop). repose mcp forward xcode runs it from here."},
+		{[]string{"#mcpleft 1 xcode (an Apple app)", "#mcpleft 1 notes (files on your laptop)", "#mcpleft 0 sentry (gets its headers from a laptop command)"}, "Left on your laptop: MCP servers xcode (an Apple app), notes (files on your laptop), sentry (gets its headers from a laptop command). repose mcp forward NAME runs xcode, notes from here."},
+	}
+	for _, c := range cases {
+		if got := lines(c.replies...); got != c.want {
+			t.Errorf("%v:\n got %q\nwant %q", c.replies, got, c.want)
+		}
+	}
+	// What the classifier marks: stdio skips are forwardable, the rest not.
+	home, repo := t.TempDir(), t.TempDir()
+	for _, c := range []struct {
+		name, server string
+		forward      bool
+	}{
+		{"xcode", `{"command":"xcrun","args":["mcpbridge"]}`, true},
+		{"local", `{"command":"` + home + `/bin/tool"}`, true},
+		{"figma", `{"type":"http","url":"http://127.0.0.1:3845/mcp"}`, false},
+		{"helper", `{"type":"http","url":"https://x.example","headersHelper":"get-token"}`, false},
+		{"bad name!", `{"command":"npx"}`, false},
+		{"proxy", `{"type":"claudeai-proxy","url":"https://x"}`, false},
+		{"empty", `{"type":"stdio"}`, false},
+	} {
+		var s map[string]any
+		if err := json.Unmarshal([]byte(c.server), &s); err != nil {
+			t.Fatal(err)
+		}
+		v, _ := classifyMCPServer(home, repo, c.name, s)
+		if v.skip == "" || v.forward != c.forward {
+			t.Errorf("%s: skip %q forward %v, want forward %v", c.name, v.skip, v.forward, c.forward)
+		}
+	}
+}
+
+// A long unicode name is cut on a rune boundary, and its reason survives
+// beside it.
+func TestPrintableLongUnicodeName(t *testing.T) {
+	name := strings.Repeat("服", 22) // 66 bytes
+	got := printable(name)
+	if !utf8.ValidString(got) || len(got) > 64 || got != strings.Repeat("服", 21) {
+		t.Errorf("printable = %q (%d bytes)", got, len(got))
+	}
+	left := mcpLeftLines([]mcpSkip{{Name: name + "\x1b[2J", Reason: "its name has characters other than letters, digits, - and _"}, {Name: "xcode", Reason: "an Apple app", Forward: true}})
+	want := []string{"0 " + strings.Repeat("服", 21) + " (its name has characters other than letters, digits, - and _)", "1 xcode (an Apple app)"}
+	if !reflect.DeepEqual(left, want) {
+		t.Errorf("left = %q, want %q", left, want)
 	}
 }

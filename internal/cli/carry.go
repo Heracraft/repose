@@ -73,11 +73,13 @@ type carryOutcome struct {
 	// Failed names the parts whose script failed; the previous state of
 	// that part is still in place.
 	Failed []string
-	// MCPLeft is "NAME (reason)" per MCP server left on the laptop;
+	// MCPLeft is "NAME (reason)" per MCP server left on the laptop, and
+	// MCPForward the names among them `repose mcp forward` can run;
 	// MCPSecrets the secrets those carried need and the machine lacks;
 	// MCPMissing the [server, command] pairs the machine lacks; MCPOld a
 	// base without repose-mcp (I-556).
 	MCPLeft    []string
+	MCPForward []string
 	MCPSecrets []mcpNeed
 	MCPMissing [][2]string
 	MCPOld     bool

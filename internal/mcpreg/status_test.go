@@ -134,8 +134,13 @@ func TestPrepare(t *testing.T) {
 	  "remote":{"type":"http","url":"https://x"},
 	  "absent":{"command":"no-such-command-repose"},
 	  "hidden":{"command":"${PROBE_TOKEN}/bin/mcp"},
-	  "override":{"command":"sh","env":{"REPOSE_DUP_T":"server"}}}}`)
+	  "override":{"command":"sh","env":{"REPOSE_DUP_T":"server"}},
+	  "linear":{"command":"sh","args":["--token","${PROBE_LINEAR_T}"],"env":{"R":"${PROBE_REGION:-eu}"}},
+	  "two":{"command":"sh","env":{"A":"${PROBE_B_T}","B":"${PROBE_A_T}","C":"${PROBE_TOKEN}"}}}}`)
 	t.Setenv("REPOSE_DUP_T", "agent")
+	os.Unsetenv("PROBE_LINEAR_T")
+	os.Unsetenv("PROBE_A_T")
+	os.Unsetenv("PROBE_B_T")
 	path, argv, env, err := Prepare(p, "probe")
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +177,27 @@ func TestPrepare(t *testing.T) {
 		if s.Name == "hidden" && (!reflect.DeepEqual(s.Missing, []string{"${PROBE_TOKEN}/bin/mcp"}) || strings.Contains(s.State, "s3cret")) {
 			t.Errorf("hidden status %+v", s)
 		}
+	}
+	// A secret the machine lacks stops the start: the server would send
+	// the literal ${NAME} to its service as a token. ${X:-d} is not a need.
+	_, _, _, err = Prepare(p, "linear")
+	if le, ok := err.(*LaunchError); !ok || le.Code != 1 || le.Msg != "repose-mcp: linear needs the secret PROBE_LINEAR_T; set it with `repose secrets set PROBE_LINEAR_T` on your laptop, then restart the agent." {
+		t.Errorf("linear without its secret: %v", err)
+	}
+	_, _, _, err = Prepare(p, "two")
+	if err == nil || err.Error() != "repose-mcp: two needs the secrets PROBE_A_T, PROBE_B_T; set each with `repose secrets set NAME` on your laptop, then restart the agent." {
+		t.Errorf("two without their secrets: %v", err)
+	}
+	// Set in the environment (an agent started with it) is enough, and an
+	// empty secret file is not.
+	t.Setenv("PROBE_LINEAR_T", "tok")
+	if _, argv, _, err := Prepare(p, "linear"); err != nil || !reflect.DeepEqual(argv, []string{"sh", "--token", "tok"}) {
+		t.Errorf("linear from the environment: %v %v", argv, err)
+	}
+	writeFile(t, filepath.Join(dir, "PROBE_A_T"), "")
+	writeFile(t, filepath.Join(dir, "PROBE_B_T"), "b")
+	if _, _, _, err := Prepare(p, "two"); err == nil || !strings.Contains(err.Error(), "needs the secret PROBE_A_T;") {
+		t.Errorf("two with an empty secret: %v", err)
 	}
 	// The server's env replaces an inherited name: one copy, the server's.
 	_, _, env, err = Prepare(p, "override")

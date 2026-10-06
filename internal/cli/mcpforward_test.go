@@ -117,6 +117,7 @@ func TestFindLaptopMCP(t *testing.T) {
 			"notes":  map[string]any{"command": "user-notes"},
 			"tokens": map[string]any{"command": "tok", "args": []any{"--token", "${MCP_TEST_SECRET}"}, "env": map[string]any{"K": "${MCP_TEST_SECRET:-x}", "D": "${MCP_TEST_UNSET:-dflt}"}},
 			"linear": map[string]any{"type": "http", "url": "https://mcp.linear.app/mcp"},
+			"unset":  map[string]any{"command": "tok", "args": []any{"${MCP_TEST_UNSET}"}, "env": map[string]any{"B": "${MCP_TEST_UNSET_B}", "H": "${HOME}"}},
 		},
 		"projects": map[string]any{real: map[string]any{"mcpServers": map[string]any{"notes": map[string]any{"command": "local-notes"}}}},
 	})
@@ -155,6 +156,12 @@ func TestFindLaptopMCP(t *testing.T) {
 	if _, err := findLaptopMCP(home, root, "linear"); err == nil || !strings.Contains(err.Error(), "is an HTTP server") {
 		t.Errorf("linear: %v", err)
 	}
+	// An unset ${VAR} would reach the server as its literal text.
+	os.Unsetenv("MCP_TEST_UNSET")
+	os.Unsetenv("MCP_TEST_UNSET_B")
+	if _, err := findLaptopMCP(home, root, "unset"); err == nil || err.Error() != "unset in your Claude Code config uses ${MCP_TEST_UNSET} and ${MCP_TEST_UNSET_B}, which this shell does not set. Set them and run the forward again." {
+		t.Errorf("unset: %v", err)
+	}
 	t.Setenv("REPOSE_TEST_GOOS", "linux")
 	if _, err := findLaptopMCP(home, root, "apple-notes"); err == nil {
 		t.Error("Claude Desktop read on Linux")
@@ -164,7 +171,7 @@ func TestFindLaptopMCP(t *testing.T) {
 		t.Errorf("apple-notes = %+v", d)
 	}
 	_, err := findLaptopMCP(home, root, "nope")
-	want := "No MCP server named nope on this laptop: found notes (Claude Code, this project); linear, notes, tokens (Claude Code); apple-notes (Claude Desktop); xcode (Codex); figma (Gemini CLI)."
+	want := "No MCP server named nope on this laptop: found notes (Claude Code, this project); linear, notes, tokens, unset (Claude Code); apple-notes (Claude Desktop); xcode (Codex); figma (Gemini CLI)."
 	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "repose mcp forward nope -- COMMAND ARGS") {
 		t.Errorf("unknown name: %v", err)
 	}

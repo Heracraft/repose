@@ -75,6 +75,14 @@ func TestRunMCPDispatch(t *testing.T) {
 	if code, _, _ := run("sync", "nosuchagent"); code != 0 {
 		t.Errorf("sync unknown agent: %d", code)
 	}
+	// run refuses a server whose secret is missing, before starting it.
+	if err := os.WriteFile(filepath.Join(home, ".repose", "mcp", "laptop.json"), []byte(`{"version":1,"user":{"linear":{"command":"sh","args":["-c","echo started"],"env":{"T":"${REPOSE_TEST_LINEAR_T}"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Unsetenv("REPOSE_TEST_LINEAR_T")
+	if code, out, errs := run("run", "linear"); code != 1 || out != "" || errs != "repose-mcp: linear needs the secret REPOSE_TEST_LINEAR_T; set it with `repose secrets set REPOSE_TEST_LINEAR_T` on your laptop, then restart the agent.\n" {
+		t.Errorf("run without its secret: %d %q %q", code, out, errs)
+	}
 	if err := os.WriteFile(filepath.Join(home, ".repose", "mcp", "laptop.json"), []byte(`{"version":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}

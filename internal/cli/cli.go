@@ -72,11 +72,21 @@ func isCobraRefusal(err error) bool {
 type cobraUsageError struct{ error }
 
 type globalFlags struct {
-	command string // the running command's path, set before RunE
+	command string // the running command's path, set before RunE, with " --project" when it takes no PROJECT argument
 	project string
 	apiURL  string
 	json    bool
 	verbose bool
+}
+
+// hintCommand is the command as the not-found hint shows it: its path,
+// with " --project" when it takes PROJECT as that flag only (`secrets
+// set`, `mcp forward`), since a PROJECT argument there is refused.
+func hintCommand(cmd *cobra.Command) string {
+	if strings.Contains(cmd.Use, "PROJECT") {
+		return cmd.CommandPath()
+	}
+	return cmd.CommandPath() + " --project"
 }
 
 func newRootCmd(version string) *cobra.Command {
@@ -108,7 +118,7 @@ func newRootCmd(version string) *cobra.Command {
 		e.Command = g.command
 		return e, nil
 	}
-	root.PersistentPreRun = func(cmd *cobra.Command, args []string) { g.command = cmd.CommandPath() }
+	root.PersistentPreRun = func(cmd *cobra.Command, args []string) { g.command = hintCommand(cmd) }
 	envJSON := func(cmd *cobra.Command) (*Env, error) {
 		json, _ := cmd.Flags().GetBool("json")
 		g.json = json

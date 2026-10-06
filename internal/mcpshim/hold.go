@@ -1,6 +1,7 @@
 package mcpshim
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -481,6 +482,9 @@ func fetch(c net.Conn) (init json.RawMessage, version string, tools []json.RawMe
 	if err := json.Unmarshal(init, &ir); err != nil {
 		return nil, "", nil, fmt.Errorf("initialize answered %v", err)
 	}
+	if !jsonObject(init) {
+		return nil, "", nil, errors.New("initialize answered with no result object")
+	}
 	if _, err := c.Write(notification("notifications/initialized")); err != nil {
 		return nil, "", nil, errEnded
 	}
@@ -512,4 +516,11 @@ func fetch(c net.Conn) (init json.RawMessage, version string, tools []json.RawMe
 		cursor = tl.NextCursor
 	}
 	return init, ir.ProtocolVersion, tools, nil
+}
+
+// jsonObject is whether b is a JSON object; null decodes into a struct
+// without error.
+func jsonObject(b json.RawMessage) bool {
+	b = bytes.TrimSpace(b)
+	return len(b) > 0 && b[0] == '{'
 }
