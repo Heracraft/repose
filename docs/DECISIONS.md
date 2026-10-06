@@ -13453,3 +13453,61 @@ attach of `repose attach` or `repose run` returns and the CLI's check
 runs (I-352). It now says so. The file is `mux-cli`'s; `mux-base`
 carries this one sentence because the behaviour ships in the base, and
 STATUS.md records it for `mux-cli`.
+
+**I-563. The session units start their servers outside a login shell,
+herdr's panes load the current environment, and a running herdr rereads
+a changed config.** (mux-base, 2026-10-06; amends I-501, I-508, I-227)
+Another session's findings on machine.nix and the tmux session
+(`reports/nix-demo tmux findings.md`, findings 1, 2, 4, 6 and 8) named
+five gaps a herdr project would hit; tmux shares 3 and 5.
+
+1. herdr's unit ran `bash -lc 'exec herdr server'`. That login shell
+exports `__NIXOS_SET_ENVIRONMENT_DONE` and `__ETC_PROFILE_DONE` into the
+server, and every pane inherited them, so a pane's shell skipped
+`/etc/set-environment` and `/etc/profile.d/repose.sh`: no fresh session
+variables, zone or secrets, where a new tmux window gets them. The unit
+now runs `repose-herdr-start`, which clears those guards and
+home-manager's `__HM_SESS_VARS_SOURCED` before it execs the server. A
+pane's shell, login or not (`/etc/bashrc` reads `/etc/profile` when the
+guard is unset), then loads the current environment.
+2. herdr has no `set-environment`, so a session variable a later switch
+dropped stayed in every new pane. `repose-herdr-start` also unsets the
+names in `/etc/repose/session-vars.names`; the panes' shells and the
+agent wrappers set the current ones. tmux gets the same result from the
+activation script's `set-environment -g -u` (I-488).
+3. Both units read the login PATH through a login shell, and a
+machine.nix can write the user's profile (`programs.bash.profileExtra`).
+Text a profile prints went into tmux's PATH, and a profile that runs
+`exec zsh` replaced herdr's shell before the server started. Both now
+call `repose-login-path`: a login shell with an empty environment, no
+stdin and at most 10 s that prints PATH after a marker line, so printed
+text is ignored and a replaced shell gives nothing, in which case the
+unit's own PATH stays. herdr's server is resolved on that PATH, so a
+`herdr` in `~/.local/bin` or in `home.packages` wins over the base's, as
+I-501 accepts; guestd's protocol check (I-504) reports a server it
+cannot speak to as `herdr_down`.
+4. herdr reads `config.toml` at server start, and the server lives for
+the session (I-496), so a machine.nix that changed or removed it reached
+a running machine only at its next start. `repose-herdr-reload` runs
+after every home-manager activation (`home-manager-dev`'s
+`ExecStartPost`, beside I-552's tmux reload): with a server's socket
+there it puts the seed back when the file went away, and when the
+file's digest changed since its last run it runs `herdr server
+reload-config`. It never fails the switch.
+5. home-manager writes user units to `~/.config/systemd/user`, which
+systemd reads before `/etc/systemd/user`, so a fragment's
+`systemd.user.services.repose-herdr-server` (or `repose-tmux-session`)
+would replace the base's. The contract now refuses any
+`systemd.user.services` name that starts with `repose-`.
+
+A `config.toml` that machine.nix manages is a read-only link and
+replaces the seeded file; it keeps herdr's defaults for anything it
+leaves out, including a non-login pane shell, and herdr cannot save
+onboarding into it. The public docs say to carry `shell_mode = "login"`.
+Evidence: `nix flake check`'s `guest-session-environment` runs both
+scripts against a scratch HOME and a fake herdr (a profile that prints
+text, one that runs `exec sh`, the guards and a dropped name, the
+reload on change only and the seed restored), and fails when the
+guards are kept or the marker is dropped; `fragment-contract`'s
+`user-unit-repose-name` fails evaluation and passes when the assertion
+is removed. Not booted on a guest: no VM test runs on kanali.

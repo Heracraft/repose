@@ -198,6 +198,18 @@ the attach opens is `<name>`. guestd reads none of this.
   nothing starts a session before `SetupProject` writes this boot's file.
   Once started, each unit brings its server back 5 s after it exits
   (I-551, I-560; see "tmux" and the herdr Server bullet).
+- Neither starts its server through a login shell (I-563). Each reads
+  the login PATH from `repose-login-path`, which runs `bash -lc` as dev
+  with an empty environment (`HOME`, `USER`, `LOGNAME` only), stdin from
+  `/dev/null` and a 10 s limit, and prints the PATH it printed after a
+  `__repose_login_path=` marker line; it prints nothing when no marker
+  came back (a profile that runs `exec zsh`), and the unit keeps its own
+  PATH. tmux sets that PATH with `set-environment -g`; herdr's server
+  starts with it. `nix flake check`'s `guest-session-environment` covers
+  both.
+- A fragment or machine.nix may not define a `systemd.user.services`
+  unit whose name starts with `repose-`; one in
+  `~/.config/systemd/user` would replace the base's (I-563).
 - Both have `restartIfChanged = false` (I-496); `nix flake check`'s
   `guest-session-survives-switch` asserts `X-RestartIfChanged=false` on
   each.
@@ -221,8 +233,12 @@ project whose `project.json` names herdr runs its server.
   discovery looks there). `/etc/repose/agents.json` gains no entry:
   herdr is not an agent.
 - **Server.** `repose-herdr-server.service`: `Type=simple`, `ExecStart`
-  is `bash -lc 'exec herdr server'` (the server and every pane get the
-  login PATH, I-227), `EnvironmentFile=-/etc/repose/env`,
+  is `repose-herdr-start` (I-563), which sets PATH to
+  `repose-login-path`'s answer (see "Session units"), unsets
+  `__NIXOS_SET_ENVIRONMENT_DONE`, `__ETC_PROFILE_DONE`,
+  `__HM_SESS_VARS_SOURCED` and every name in
+  `/etc/repose/session-vars.names`, and execs `herdr server` from that
+  PATH (the base's when none is found), `EnvironmentFile=-/etc/repose/env`,
   `KillMode=control-group`, `TasksMax=infinity`, no `CPUWeight` (I-505).
   On start herdr restores `~/.config/herdr/session.json` and resumes
   agents whose integration recorded a session, with no client attached.
@@ -256,9 +272,18 @@ project whose `project.json` names herdr runs its server.
   file and no link), the server unit's `ExecStartPre` writes `[terminal]`
   `shell_mode = "login"` and `[update]` `version_check = false`, owned by
   dev with mode 0644 (herdr edits the file itself after onboarding). A
-  file that exists is never changed. `herdr update` in a guest installs
-  to `~/.local/bin`, which comes first on PATH; the docs say the base's
-  release is the supported one. The running server keeps the old binary
+  file that exists is never changed; one a machine.nix or fragment
+  manages is a read-only link that replaces the seed, and carries
+  `shell_mode = "login"` itself or gets non-login panes. After every
+  home-manager activation `repose-herdr-reload` (`home-manager-dev`'s
+  `ExecStartPost`, I-563) runs as dev: when `~/.config/herdr/herdr.sock`
+  exists it runs the seed, and when the file's SHA-256 differs from the
+  one in `~/.local/state/repose/herdr-conf.sha256` it runs `herdr server
+  reload-config`; it always records the digest and never fails.
+  `herdr update` in a guest installs to `~/.local/bin`, and a herdr in
+  `home.packages` lands in `/etc/profiles/per-user/dev/bin`; both come
+  before the base's on PATH and the server runs that one. The docs say
+  the base's release is the supported one. The running server keeps the old binary
   until it restarts; `herdr update --handoff` moves it to the new one and
   keeps every pane (see Server).
 - **Socket use by guestd** (I-504). guestd, as root, connects to
@@ -303,12 +328,14 @@ project whose `project.json` names herdr runs its server.
   `REPOSE_AGENT_WINDOW` is empty, `$TMUX_PANE` is unset and
   `HERDR_ENV=1`. guestd resolves it to the agent key above; an
   unresolved one is relayed under the agent's name and changes no state.
-- **Environment** (I-508). herdr has no `set-environment`. `WriteSecrets`
-  pushes into tmux only when `/tmp/tmux-1000/default` exists. A herdr
-  pane gets secrets, TZ and PATH from its login shell
-  (`/etc/profile.d/repose.sh`) and each bash command from `BASH_ENV`; the
-  server's own environment is the one it started with. The CLI's TZ push
-  writes `/etc/repose/env` only.
+- **Environment** (I-508, I-563). herdr has no `set-environment`.
+  `WriteSecrets` pushes into tmux only when `/tmp/tmux-1000/default`
+  exists. The server's environment has no NixOS or home-manager profile
+  guard and no session variable, so each pane's shell, login or not,
+  runs `/etc/set-environment` and `/etc/profile.d/repose.sh` and gets the
+  current session variables, secrets, TZ and PATH, and each bash command
+  gets secrets from `BASH_ENV`. A variable a switch dropped is in no new
+  pane. The CLI's TZ push writes `/etc/repose/env` only.
 - **Messages.** The CLI's and the session helper's one-line messages use
   `herdr notification show repose --body "<text>"` where tmux uses
   `display-message`; with no client attached nobody sees them (I-313).

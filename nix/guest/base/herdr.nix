@@ -91,36 +91,9 @@ let
     text = builtins.readFile ./herdr-watch.sh;
   };
 
-  # The seeded ~/.config/herdr/config.toml, written only when no file (or
-  # link) is there: panes start login shells as tmux's do (herdr's Linux
-  # default is non-login), and herdr does not look for releases, since
-  # the base's pinned one is the supported one. A file that exists is
-  # never changed; herdr itself edits it (onboarding), so it is dev's
-  # and writable.
-  seedConfig = pkgs.writeText "herdr-config.toml" ''
-    [terminal]
-    shell_mode = "login"
-
-    [update]
-    version_check = false
-  '';
-  seed = pkgs.writeShellApplication {
-    name = "repose-herdr-config";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = ''
-      dir="''${HOME:-/home/dev}/.config/herdr"
-      cfg="$dir/config.toml"
-      if [ -e "$cfg" ] || [ -L "$cfg" ]; then
-        exit 0
-      fi
-      mkdir -p "$dir"
-      tmp=$(mktemp -p "$dir" .config.toml.XXXXXX)
-      cat ${seedConfig} > "$tmp"
-      chmod 0644 "$tmp"
-      mv -n "$tmp" "$cfg"
-      rm -f "$tmp"
-    '';
-  };
+  inherit (import ./herdr-config.nix { inherit pkgs herdr; }) seed;
+  # repose-herdr-start, the unit's main process (DECISIONS I-563).
+  start = import ./herdr-start.nix { inherit pkgs herdr; };
 in
 {
   # /run/current-system/sw/bin/herdr resolves: a laptop herdr's remote
@@ -142,10 +115,9 @@ in
       Type = "simple";
       ExecCondition = "${multiplexerIs}/bin/repose-multiplexer-is herdr";
       ExecStartPre = "${seed}/bin/repose-herdr-config";
-      # A login shell, so the server and every pane get the login PATH
-      # with each user bin dir (I-227); `herdr update` in the guest lands
-      # in ~/.local/bin, which comes first.
-      ExecStart = "${pkgs.bash}/bin/bash -lc 'exec herdr server'";
+      # The login PATH without a login shell, and an environment whose
+      # panes load the current one (see `start` above; I-563).
+      ExecStart = "${start}/bin/repose-herdr-start";
       # The watcher runs in the background for the unit's life (see
       # `watch` above). A failed workspace step never stops the server.
       ExecStartPost = [

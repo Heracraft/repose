@@ -22,9 +22,10 @@
 let
   checkout = import ./checkout.nix { inherit pkgs; };
   multiplexerIs = import ./multiplexer-is.nix { inherit pkgs; };
+  loginPath = import ./login-path.nix { inherit pkgs; };
   tmuxSession = pkgs.writeShellApplication {
     name = "repose-tmux-session";
-    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash checkout ];
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash checkout loginPath ];
     text = ''
       project="$HOME/.repose/project.json"
       # Exit 3: nothing for the unit to keep running. A failed start is
@@ -63,8 +64,9 @@ let
       # own). What runs with the server's environment (run-shell, #()
       # jobs, a window opened from inside tmux with a command) gets the
       # login PATH instead, with every user bin dir (DECISIONS I-227).
-      # shellcheck disable=SC2016 # expanded by the login shell
-      login_path=$(env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" bash -lc 'printf %s "$PATH"' 2>/dev/null || true)
+      # repose-login-path reads it without letting the user's profile
+      # print into it or replace the shell (DECISIONS I-563).
+      login_path=$(repose-login-path || true)
       if [ -n "$login_path" ]; then
         tmux set-environment -g PATH "$login_path"
       fi

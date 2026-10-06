@@ -457,6 +457,11 @@ in
           user("systemctl --user restart repose-herdr-server.service")
           guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
           guest.succeed("grep -qx '# mine' /home/dev/.config/herdr/config.toml")
+          # The server starts without the profile guards, so each pane's
+          # shell loads the current environment (I-563).
+          main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
+          assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
           # I-560: a live handoff keeps the unit and every pane; a server
           # that stops comes back with its workspaces.
           pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-538 entries.
+539 entries.
 
 ## Scope
 
@@ -311,7 +311,7 @@ pointer, not a summary.
 - **I-224** The sync's writes are one ssh, and none when nothing changed — L5106
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — L5140
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5169
-- **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; L5239
+- **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-563; L5239
 - **I-230** Guest disks are opened O_DIRECT, and guest@ units get a MemoryHigh 128 MiB under MemoryMax — 2026-09-23; L5297
 - **I-231** A guest boot's path to Ready and to its first login carries only what they need: a scripted stage 1, no mount-rate-limit stall, zram and the setuid wrappers off the chain, and no home-manager run for an unchanged generation — 2026-09-24; L5380
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5467
@@ -557,16 +557,17 @@ pointer, not a summary.
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13052
 - **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L13073
 - **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13098
-- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; L13115
+- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; L13115
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; L13153
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13181
 - **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; L13197
 - **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; L13227
 - **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; L13246
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; L13261
-- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; L13270
+- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13270
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13289
 - **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13315
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13331
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13342
 - **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13390
+- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; L13457

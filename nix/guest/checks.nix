@@ -59,6 +59,10 @@ let
     (refusal "session-variable-quote"
       { home.sessionVariables.GREETING = "say \"hi\""; }
       "home.sessionVariables.GREETING: a value may not contain a double quote")
+    # A user unit named like the base's would replace it (I-563).
+    (refusal "user-unit-repose-name"
+      { systemd.user.services.repose-herdr-server.Service.ExecStart = "/bin/true"; }
+      "systemd.user.services.repose-herdr-server: not allowed in a fragment")
     # The message itself is asserted by internal/menu's
     # TestRealNixMissingPackage (tryEval cannot see it).
     (refusal "menu-missing-package"

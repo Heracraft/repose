@@ -254,6 +254,85 @@
             echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy, back after 5s; no path unit; tmux Restart=on-success; herdr OOMPolicy=continue, ExitType=cgroup, watcher, Restart=always"
             touch $out
           '';
+        # The session units start their servers outside a login shell and
+        # read the login PATH through repose-login-path, so a profile that
+        # prints text or replaces the shell (machine.nix's
+        # programs.bash.profileExtra) cannot break them; the herdr server's
+        # environment lets each pane's shell load the current one; and a
+        # running herdr rereads a config.toml a switch changed (DECISIONS
+        # I-563). Runs the scripts against a scratch HOME and a fake herdr.
+        guest-session-environment =
+          let
+            loginPath = import ./guest/base/login-path.nix { inherit pkgs; };
+            names = pkgs.writeText "session-vars.names" "DROPPED_VAR\n";
+            fakeHerdr = pkgs.writeShellScriptBin "herdr" ''
+              echo "$*" >> "$HOME/herdr.log"
+              if [ "$1" = server ] && [ $# = 1 ]; then ${pkgs.coreutils}/bin/env > "$HOME/server.env"; fi
+            '';
+            start = import ./guest/base/herdr-start.nix { inherit pkgs; herdr = fakeHerdr; namesFile = names; };
+            herdrConfig = import ./guest/base/herdr-config.nix { inherit pkgs; herdr = fakeHerdr; };
+            unit = pkgs.writeText "herdr-unit" (builtins.unsafeDiscardStringContext
+              self.guestSystem.config.systemd.user.units."repose-herdr-server.service".text);
+          in
+          pkgs.runCommand "guest-session-environment" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+            fail() { echo "$*" >&2; exit 1; }
+            export HOME=$PWD/home USER=dev
+            mkdir -p "$HOME/bin"
+            # A profile that prints text: the PATH comes back without it.
+            printf 'echo hello from the profile\nexport PATH=$HOME/bin:$PATH\n' > "$HOME/.bash_profile"
+            got=$(${loginPath}/bin/repose-login-path)
+            case "$got" in
+              "$HOME/bin:"*) ;;
+              *) fail "repose-login-path printed '$got' for a profile that prints text" ;;
+            esac
+            # A profile that replaces the shell: nothing, exit 0.
+            printf 'exec sh\n' > "$HOME/.bash_profile"
+            got=$(${loginPath}/bin/repose-login-path) || fail "repose-login-path failed for a profile that runs exec"
+            [ -z "$got" ] || fail "repose-login-path printed '$got' for a profile that runs exec"
+
+            # The herdr server starts from the login PATH's herdr, without
+            # the profile guards or a dropped session variable.
+            ln -s ${fakeHerdr}/bin/herdr "$HOME/bin/herdr"
+            printf 'echo noise\nexport PATH=$HOME/bin:$PATH\n' > "$HOME/.bash_profile"
+            __NIXOS_SET_ENVIRONMENT_DONE=1 __ETC_PROFILE_DONE=1 __HM_SESS_VARS_SOURCED=1 DROPPED_VAR=old KEPT_VAR=yes \
+              ${start}/bin/repose-herdr-start
+            [ -s "$HOME/server.env" ] || fail "repose-herdr-start did not run herdr server"
+            for v in __NIXOS_SET_ENVIRONMENT_DONE __ETC_PROFILE_DONE __HM_SESS_VARS_SOURCED DROPPED_VAR; do
+              if grep -q "^$v=" "$HOME/server.env"; then fail "the herdr server kept $v"; fi
+            done
+            grep -qx 'KEPT_VAR=yes' "$HOME/server.env" || fail "the herdr server lost a variable outside the session list"
+            grep -q "^PATH=$HOME/bin:" "$HOME/server.env" || fail "the herdr server did not get the login PATH"
+            # The same with a profile that replaces the shell: the server
+            # still starts, from the unit's PATH.
+            printf 'exec sh\n' > "$HOME/.bash_profile"
+            rm "$HOME/server.env"
+            PATH=${fakeHerdr}/bin:$PATH ${start}/bin/repose-herdr-start
+            [ -s "$HOME/server.env" ] || fail "repose-herdr-start did not start herdr when the profile runs exec"
+            grep -q '^ExecStart=.*/bin/repose-herdr-start$' ${unit} || fail "the herdr unit does not start through repose-herdr-start"
+            if grep -q 'bash -lc' ${unit}; then fail "the herdr unit starts a login shell"; fi
+
+            # The reload: digest only with no server; a reload when the
+            # file changed while one runs; none when it did not; the seed
+            # back when the file went away.
+            rm -f "$HOME/herdr.log" "$HOME/.bash_profile"
+            reload=${herdrConfig.reload}/bin/repose-herdr-reload
+            mkdir -p "$HOME/.config/herdr"
+            echo 'theme = "a"' > "$HOME/.config/herdr/config.toml"
+            $reload
+            [ ! -e "$HOME/herdr.log" ] || fail "reloaded with no server"
+            python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$HOME/.config/herdr/herdr.sock"
+            $reload
+            [ ! -e "$HOME/herdr.log" ] || fail "reloaded an unchanged config"
+            echo 'theme = "b"' > "$HOME/.config/herdr/config.toml"
+            $reload
+            [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 1 ] || fail "no reload after a change"
+            rm "$HOME/.config/herdr/config.toml"
+            $reload
+            grep -q 'shell_mode = "login"' "$HOME/.config/herdr/config.toml" || fail "the seed did not come back"
+            [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 2 ] || fail "no reload after the file went away"
+            echo "login PATH guarded; herdr starts without guards or dropped names; reload on change only, seed restored"
+            touch $out
+          '';
         # The herdr package's install check refuses a release whose socket
         # protocol guestd and a laptop herdr cannot speak (DECISIONS I-501):
         # generation 2, protocol 21, and unreadable output each fail it,
