@@ -33,7 +33,8 @@
 #          /etc/repose/mcp.json whose NAME the parsed file does not have
 #          (DECISIONS I-553). A table the user changed, `enabled = false`
 #          included, is theirs and stays; a file that does not parse is
-#          left alone. Runs under flock ~/.repose/mcp/.lock, since agents
+#          left alone, and so is a file that is a symlink (home-manager,
+#          dotfiles). Runs under flock ~/.repose/mcp/.lock, since agents
 #          start in parallel and a duplicate table stops Codex.
 # opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
 #          replaced while it is byte for byte one an earlier base installed
@@ -152,6 +153,13 @@ writeShellApplication {
       exec 9>>"$lock"
       if ! flock -w 5 9; then
         echo "repose-agent-setup: $lock is held; leaving $cfg alone" >&2
+        exec 9>&-
+        return 0
+      fi
+      # A link (home-manager, a dotfiles repo) belongs to whatever made
+      # it: rewriting would replace the link with a file.
+      if [ -L "$cfg" ]; then
+        echo "repose-agent-setup: $cfg is a link; leaving it alone" >&2
         exec 9>&-
         return 0
       fi

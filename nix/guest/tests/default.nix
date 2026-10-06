@@ -444,6 +444,12 @@ in
           guest.succeed("sudo -u dev repose-agent-setup codex")
           assert guest.succeed("cat /home/dev/.codex/config.toml") == before
           assert before.count("[mcp_servers.playwright]") == 1, before
+          # A config.toml that is a link (home-manager) stays a link, and
+          # its target is not rewritten.
+          dev_out("mkdir -p /tmp/cxlink/.codex && printf 'notify = [\"mine\"]\\n' > /tmp/cxlink/real.toml && ln -s /tmp/cxlink/real.toml /tmp/cxlink/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink/.codex/config.toml").strip() == "/tmp/cxlink/real.toml"
+          assert guest.succeed("cat /tmp/cxlink/real.toml") == 'notify = ["mine"]\n'
           # opencode: the managed layer, type local, no enabled key.
           oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
           for n, e in reg.items():
@@ -1621,7 +1627,9 @@ in
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
               # I-553, I-554: the platform browser tools reach the model.
               # pi lists codemode servers by name instead of their tools.
-              tool = {"codex": "browser_navigate", "opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              # Codex (code mode) names no MCP tool in the request; its
+              # registration is checked with codex mcp list above.
+              tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
               if tool:
                   assert tool in bodies, f"{agent}: {tool} is not in what it sent"
           after = dev("cd ~ && sha256sum " + " ".join(files))

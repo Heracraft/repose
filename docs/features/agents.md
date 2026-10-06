@@ -232,7 +232,7 @@ I-553, I-554):
 | Agent | Where repose writes them | User turns one off | User's server of the same name |
 |---|---|---|---|
 | Claude Code | `~/.claude.json` `mcpServers`, merged from `/etc/repose/mcp.json` by `repose-agent-setup` | `/mcp`, per project | wins (I-246) |
-| Codex | `~/.codex/config.toml` `[mcp_servers.NAME]`, appended by `repose-agent-setup` when the parsed file lacks NAME | `enabled = false` in that table | wins; repose never touches a table under that name |
+| Codex | `~/.codex/config.toml` `[mcp_servers.NAME]`, appended by `repose-agent-setup` when the parsed file lacks NAME; a file that is a symlink (home-manager) is left alone | `enabled = false` in that table | wins; repose never touches a table under that name |
 | opencode | `/etc/opencode/opencode.json` `mcp.NAME`, `{type: "local", command: [...]}` | `{"mcp":{"playwright":{"enabled":false}}}` in `~/.config/opencode/opencode.json` | merged field by field; the user picks another name |
 | Gemini CLI | `/etc/gemini-cli/system-defaults.json` `mcpServers`, a copied root 0644 file | `{"mcp":{"excluded":["playwright"]}}` in `~/.gemini/settings.json` | replaces ours whole |
 | pi | `pi.registerMcpServer` in `/etc/repose/pi-extension.js` (pi 0.99 and later) | `{"mcpServers":{"playwright":{"command":"playwright-mcp","enabled":false}}}` in `~/.pi/agent/mcp.json` | wins |
