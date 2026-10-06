@@ -725,7 +725,9 @@ func TestMCPForwardOutageSaidOnce(t *testing.T) {
 		},
 	}
 	done := make(chan error, 1)
-	go func() { done <- runMCPForward(ctx, target, map[string]laptopMCP{"probe": helperDef(t, "probe", "pid")}, ui) }()
+	go func() {
+		done <- runMCPForward(ctx, target, map[string]laptopMCP{"probe": helperDef(t, "probe", "pid")}, ui)
+	}()
 	if e := <-events; e != "ready" {
 		t.Fatalf("first event %q", e)
 	}
