@@ -375,6 +375,25 @@
             refused ${fake "junk" "not json"} "unreadable output"
             touch $out
           '';
+
+        # A base switch must never restart dockerd, the desktop or the
+        # agents' browser (I-536); the session units are checked above. A unit nixpkgs ships
+        # carries the line in its overrides.conf drop-in.
+        guest-services-survive-switch = pkgs.runCommand "guest-services-survive-switch" { } ''
+          etc=${self.guestSystem.config.system.build.etc}/etc/systemd
+          check() {
+            local files=("$1") f
+            for f in "$1.d"/*.conf; do [ -e "$f" ] && files+=("$f"); done
+            if ! cat "''${files[@]}" | grep -x 'X-RestartIfChanged=false' >/dev/null; then
+              echo "$1 lacks X-RestartIfChanged=false" >&2; exit 1
+            fi
+          }
+          for u in docker repose-xvnc repose-openbox repose-vncconfig repose-novnc \
+            repose-novnc-proxy repose-browser repose-browser-proxy repose-browser-bridge-proxy; do
+            check $etc/system/$u.service
+          done
+          touch $out
+        '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.

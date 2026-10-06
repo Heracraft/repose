@@ -79,7 +79,7 @@ keeps that group honest from now on.
 | Node pin also from `.tool-versions`, `volta.node` | added | machine#your-laptops-tools-come-along |
 | Extra PATH dirs (yarn, dotnet, ghcup, cabal, opam, luarocks, mix, nimble, juliaup, krew, volta) | added | machine#installing-more; gem/composer added in troubleshooting#on-the-machine |
 | Installed but unlisted: tmux, zoxide, starship, `ls` is GNU ls and `ll`/`la`/`lt` run eza (I-514), killall, file, zstd, pg_restore; `dev` in docker group | added | machine#whats-installed |
-| Ports never forwarded (5353, 5355, 5900, 6080, 6081); fallback within 20 ports | added | machine#ports |
+| Ports never forwarded (5353, 5355, 5900, 6080, 6081, 9224 to 9226); fallback within 20 ports | added | machine#ports |
 | npm cache: yarn v1 only; `~/.npmrc` lines, opt-out, own-registry left alone | fixed | machine#network |
 | Snapshot retention "seven newest" (code: 7 days, newest always kept) | fixed | lifecycle#snapshots |
 | Mining pool ports named; flow limit 200/s burst 2000 | added | limits#network |

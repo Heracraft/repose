@@ -25,6 +25,7 @@ Data your machines send to the internet is counted against the month's allowance
 
 ## Network
 
+- Outbound TCP and UDP are allowed. Ping to the internet gets no reply, so check connectivity with `curl -sI https://example.com`.
 - Outbound traffic is limited to 200 Mbit/s per machine. Downloads into the machine are limited to 1 Gbit/s; downloads from the npm and Docker Hub caches on the server aren't limited.
 - Outbound connections to port 25 are blocked. Use your email provider's API, or its submission port (587 or 465) with a login.
 - Outbound connections to the ports mining pools use (3333, 5555, 7777, 14433 and 14444) are blocked.

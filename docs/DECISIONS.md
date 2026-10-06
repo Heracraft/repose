@@ -4796,6 +4796,13 @@ newer `.env` is named once.** (ws/15 live fixes, 2026-09-23)
   then records the new mtime: named once per change, never on every run.
 - *Wording.* The credential notes agree in number ("1 git config entry
   that holds").
+- *Addendum (base-docker-system, 2026-10-05).* resolved's mDNS responder
+  still listened on 0.0.0.0:5353 and [::]:5353 and answered on docker0
+  and every container's veth. The base now sets
+  `services.resolved.settings.Resolve` with `LLMNR = "false"` and
+  `MulticastDNS = "false"` (`services.resolved.llmnr` worked only through
+  a rename shim), and the VM subtest asserts no `:5353` or `:5355` in
+  `ss -Hlun`. The CLI keeps skipping both ports for older bases.
 
 **I-216. The dashboard is developed against the live api and Logto, not
 the fake.** 08-dashboard.md §7 builds cmd/fakeapi and cmd/fake-logto for
@@ -14368,3 +14375,113 @@ runner's `bin/run` passes `systemd.hostname=` too.
 link). Tests: `TestCmdlineHostname`, `TestCmdlineHostnameFallback`,
 `TestCreateReachesRunningWithEverythingWired` and
 `TestSnapshotRestoreRoundTrip` read `ch.args`.
+**I-536. A base switch never restarts dockerd, the desktop or the
+agents' browser; containers outlive dockerd.** (base-docker-system,
+2026-10-05; the failure class of I-496) guestd runs
+`switch-to-configuration` at the 04:00 UTC sweep
+(`internal/guestd/system/system.go`). `docker.service` had no
+`X-RestartIfChanged=false` (the pinned nixpkgs sets it only on
+`docker-prune`), its unit embeds the docker, systemd, coreutils and kmod
+store paths, and live-restore was off, so the first switch after a
+nixpkgs bump would stop every container, and a `docker run -d
+postgres:17` with no restart policy would stay down. The desktop
+(repose-xvnc, -openbox, -vncconfig, -novnc, -novnc-proxy) and the
+browser (repose-browser, -browser-proxy, -browser-bridge-proxy) had the
+same gap, and repose-browser `BindsTo` repose-xvnc, so a changed Xvnc
+unit would have closed the agents' pages mid-session. All of them now
+set `restartIfChanged = false`, and the daemon sets `live-restore =
+true` directly (the `virtualisation.docker.liveRestore` option is a
+rename alias). A new dockerd runs from the machine's next start; the
+desktop and browser stop on their own (StopWhenUnneeded, the 30-minute
+idle check) and the next socket activation starts the new closure. The
+socket units are left alone: they hold no process. live-restore is
+incompatible with swarm mode, which no guest runs; a user who wants
+swarm sets `live-restore` false in their own daemon config. Check
+`guest-session-survives-switch` now also greps each of these units
+(and a nixpkgs unit's `overrides.conf` drop-in) for the flag;
+`guest-docker` asserts `LiveRestoreEnabled` true. Not covered: a VM
+test that switches a running guest between two bases with a container
+up; it needs the dev box. `docker.service` `Requires=docker.socket`, so
+a switch that changes the socket unit's text still stops dockerd; that
+unit embeds no store path, and live-restore keeps the containers
+through it.
+
+**I-537. Containers resolve through resolved on 172.20.0.1.**
+(base-docker-system, 2026-10-05) On the default bridge, and in `docker
+build` RUN steps, an Alpine (musl) container waited 2.50 s on every
+lookup: musl sends A and AAAA from one UDP socket at once to
+1.1.1.1/8.8.8.8, the second answer is lost past the guest, and musl
+retries at +2.5 s. A Python two-query test without Docker lost the
+second answer 6/6 to 9/10, against 0/10 with a 50 ms gap or through
+127.0.0.53; guest conntrack counters were clean and the guest has no
+firewall. dockerd now pins the default bridge to `bip 172.20.0.1/24`
+(the first /24 of the 172.20.0.0/14 pool, which docker0 already had)
+and gives containers `dns [172.20.0.1]`; resolved's stub also listens
+there (`DNSStubListenerExtra`, bound with IP_FREEBIND, so it needs no
+docker0 at boot). The same daemon `dns` feeds the embedded resolver
+(127.0.0.11) of user networks and BuildKit. No `dns-opts` timeout:
+with resolved answering, nothing waits. Checked on kanali (base
+2026.10.05) with a runtime resolved drop-in: `docker run alpine getent
+ahosts github.com` took 2.50 s per lookup before, 0.00 to 0.02 s with
+`--dns 172.20.0.1` on the default bridge and on a user network;
+`ss -Hlun` showed 172.20.0.1:53. `guest-docker` asserts the bridge
+container's resolv.conf and the listener. *Host root cause, not
+measured:* the per-guest `ct count`/`limit` rules in
+`nix/hosts/nftables.nix` may drop the clashing second packet of a new
+UDP flow. Someone should read `conntrack -S` and flows_drop on host-01
+during the two-query test and, if confirmed, add `iifname "br-guests"
+meta l4proto udp th dport 53 accept` ahead of them. nftables is not
+changed without that measurement.
+
+**I-538. Open files: 524288 soft for the user manager and dev's
+logins.** (base-docker-system, 2026-10-05) The user manager's
+defaults were `DefaultLimitNOFILESoft=1024` (hard 524288), so
+`repose-tmux-session.service`, the tmux server and every pane had a
+soft limit of 1024; Python in a pane hit EMFILE at about 1021 open
+files while Claude Code's own shells had 524288. The base sets
+`systemd.user.settings.Manager.DefaultLimitNOFILE = "524288:524288"`
+(`systemd.user.extraConfig` is removed in the pinned nixpkgs) and
+`security.pam.loginLimits` soft nofile 524288 for `dev`, which covers
+SSH, `repose exec` and `repose code`. System daemons keep systemd's
+defaults. The guest VM test reads the tmux server's and a pane's
+`/proc/PID/limits` and `ulimit -Sn` in a `su - dev` login. On a live
+base switch a new SSH login gets the limit at once, but the running
+tmux server and its panes keep 1024 until the machine's next start,
+since the switch never restarts the session (I-496).
+
+**I-539. dev may ptrace its own processes.** (base-docker-system,
+2026-10-05) `kernel.yama.ptrace_scope` was 1 (yama's default, kept by
+I-231's `security.lsm = [ "landlock" "yama" ]`), so `strace -p`, `gdb
+-p` and py-spy on dev's own process failed. The guest has a single
+user with passwordless sudo, and the VM is the boundary; Landlock
+(Codex) and the bwrap PID namespaces still confine the agents. The
+sysctl is now 0, and yama stays in `security.lsm` so the knob exists.
+The sysctls subtest asserts it.
+
+**I-540. The browser has CJK fonts.** (base-docker-system, 2026-10-05)
+`fc-list :lang=ja` (zh, ko) returned nothing, so Chinese, Japanese and
+Korean rendered blank or as boxes in Chromium and in the agents'
+screenshots. `fonts.packages` adds `noto-fonts-cjk-sans`, the variable
+OTC build alone (narSize 64,592,096 bytes, no references, from
+cache.nixos.org), and "Noto Sans CJK SC" follows "Noto Sans" in the
+sans-serif default. The serif package and the static build are left out:
+either breaks the 6 GiB cap. The base closure was 6,306,239,088 bytes;
+with the font it is about 6,370,831,184 plus the fontconfig cache
+growth, leaving about 71.6 MB (68 MiB) under the cap. Review measured
+that growth by building the `fc-cache` derivation alone: 1,766,776
+bytes against 1,648,120 on base 2026.10.05 (+118,656), so the delta is
+about 64.7 MB and the headroom about 71.5 MB, shared with every other
+branch that adds to the closure (base-git-gpg adds about 13.8 MiB).
+With that cache, `fc-list :lang=ja` (zh, ko) lists 10 faces and
+`fc-match sans-serif:lang=ja` picks Noto Sans CJK JP. The guest system
+itself was not built; `guest-closure-size` is the check.
+
+**I-541. `BROWSER` prints the URL.** (base-docker-system, 2026-10-05)
+`BROWSER` was unset and the guest has no `xdg-open`, so `gh browse`
+and `gh pr create --web` failed with `exec: "xdg-open,...": executable
+file not found` and never showed the URL. `environment.variables.BROWSER`
+is now a store-path script that prints `Open in your browser: URL` to
+stderr and exits 0, so no new command lands on PATH. It never opens the
+agents' Chromium: that would put the user's logins in the agents'
+browser. A user's own `BROWSER` wins. Python's `webbrowser.open`, which
+launched a separate Chromium, now prints too.

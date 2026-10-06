@@ -325,6 +325,8 @@ in
       with subtest("sysctls"):
           assert guest.succeed("sysctl -n fs.inotify.max_user_watches").strip() == "1048576"
           assert guest.succeed("sysctl -n fs.inotify.max_user_instances").strip() == "1024"
+          # I-539: dev may attach a debugger to its own processes.
+          assert guest.succeed("sysctl -n kernel.yama.ptrace_scope").strip() == "0"
 
       with subtest("environment in a login shell"):
           guest.succeed("printf 'TZ=Europe/Berlin\\nREPOSE_PROJECT=todo-app\\n' > /etc/repose/env")
@@ -387,6 +389,17 @@ in
           guest.succeed("kill -KILL $(sudo -u dev tmux display-message -p '#{pid}')")
           guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
           assert user_q("systemctl --user is-active repose-tmux-session.service") == "active"
+
+      with subtest("I-538: the tmux server, its panes and a dev login get 524288 open files"):
+          pid = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
+          limits = guest.succeed(f"awk '/^Max open files/ {{print $4, $5}}' /proc/{pid}/limits").strip()
+          assert limits == "524288 524288", limits
+          pane = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pane_pid}'").strip()
+          limits = guest.succeed(f"awk '/^Max open files/ {{print $4, $5}}' /proc/{pane}/limits").strip()
+          assert limits == "524288 524288", limits
+          # su runs dev's PAM session, as sshd does for SSH, exec and code.
+          soft = guest.succeed("su - dev -c 'ulimit -Sn'").strip().splitlines()[-1]
+          assert soft == "524288", soft
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
@@ -721,6 +734,10 @@ in
           listeners = guest.succeed("ss -Hltn")
           print(listeners)
           assert ":5355 " not in listeners, "resolved's LLMNR responder is listening"
+          udp = guest.succeed("ss -Hlun")
+          print(udp)
+          assert ":5353 " not in udp, "resolved's mDNS responder is listening"
+          assert ":5355 " not in udp, "resolved's LLMNR responder is listening"
 
       with subtest("the session starts in the project's zone; tmux does not take TZ from the client"):
           assert guest.succeed("sudo -H -u dev tmux show-environment -g TZ").strip() == "TZ=Europe/Berlin"
@@ -1449,6 +1466,15 @@ in
           subnet = guest.succeed("docker network inspect t -f '{{(index .IPAM.Config 0).Subnet}}'").strip()
           assert subnet.startswith("172.2") and int(subnet.split(".")[1]) in range(20, 24), subnet
           guest.succeed("docker compose version")
+      with subtest("I-536: containers outlive dockerd"):
+          assert guest.succeed("docker info -f '{{.LiveRestoreEnabled}}'").strip() == "true"
+      with subtest("I-537: containers resolve through resolved on the bridge's gateway"):
+          guest.succeed("docker run --name dns repose-hello:test")
+          path = guest.succeed("docker inspect -f '{{.ResolvConfPath}}' dns").strip()
+          conf = guest.succeed(f"cat {path}")
+          assert "nameserver 172.20.0.1" in conf, conf
+          assert "172.20.0.1:53 " in guest.succeed("ss -Hlun"), "no resolved stub on 172.20.0.1"
+          guest.succeed("docker rm dns")
     '';
   };
 

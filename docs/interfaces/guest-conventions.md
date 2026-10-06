@@ -710,7 +710,9 @@ was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 `PIPX_DEFAULT_PYTHON=/run/current-system/sw/bin/python3` (I-523),
 `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` (I-520),
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`, `PUPPETEER_SKIP_DOWNLOAD=1`,
-`PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium).
+`PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium),
+`BROWSER` (a store-path script that prints `Open in your browser: URL`
+to stderr and exits 0; I-541).
 `GOPATH=/home/dev/go`, `CARGO_HOME=/home/dev/.cargo`,
 `RUSTUP_HOME=/home/dev/.rustup`, `BUN_INSTALL=/home/dev/.bun`,
 `DENO_INSTALL_ROOT=/home/dev/.deno`,

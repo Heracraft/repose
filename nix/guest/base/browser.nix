@@ -197,11 +197,21 @@ in
     PUPPETEER_SKIP_DOWNLOAD = "1";
     PUPPETEER_EXECUTABLE_PATH = "${chromium}/bin/chromium";
     CHROME_BIN = "${chromium}/bin/chromium";
+    # `gh browse`, `gh pr create --web` and other --web flows print the
+    # URL and succeed instead of failing to find xdg-open. A store path,
+    # so nothing new lands on PATH; it never opens the agents' browser,
+    # which would carry the user's logins there. A user's own BROWSER
+    # wins (DECISIONS I-541).
+    BROWSER = "${pkgs.writeShellScript "repose-print-url" ''
+      printf 'Open in your browser: %s\n' "$@" >&2
+    ''}";
   };
 
   environment.etc."repose/mcp.json".text = builtins.toJSON mcpConfig;
 
   # Fonts the pages render with (Noto Sans, Noto Sans Mono, Noto Serif;
+  # Noto Sans CJK for Chinese, Japanese and Korean, the variable OTC alone,
+  # since the serif and static builds would break the closure cap, I-540;
   # Liberation for the metric-compatible Arial, Times and Courier names
   # pages ask for; colour emoji), so no page renders as boxes. Grayscale
   # antialiasing with slight hinting: the screen travels as an image to
@@ -214,14 +224,14 @@ in
       hinting = { enable = true; style = "slight"; };
       subpixel = { rgba = "none"; lcdfilter = "none"; };
       defaultFonts = {
-        sansSerif = [ "Noto Sans" ];
+        sansSerif = [ "Noto Sans" "Noto Sans CJK SC" ];
         serif = [ "Noto Serif" ];
         monospace = [ "Noto Sans Mono" ];
         emoji = [ "Noto Color Emoji" ];
       };
     };
     enableDefaultPackages = false;
-    packages = with pkgs; [ noto-fonts noto-fonts-color-emoji liberation_ttf ];
+    packages = with pkgs; [ noto-fonts noto-fonts-cjk-sans noto-fonts-color-emoji liberation_ttf ];
   };
 
   systemd.user.slices.repose-browser = {
@@ -234,12 +244,16 @@ in
     sliceConfig = slice;
   };
 
+  # A base switch leaves the browser and both proxies running (an agent
+  # mid-session keeps its pages); the idle check stops them, and the next
+  # DevTools connection starts the new base's browser (DECISIONS I-536).
   # A crash or an OOM kill of the browser stops this unit and the proxy
   # (BindsTo); the socket keeps listening, the next DevTools connection
   # starts both again with the same profile, and both MCP servers reconnect
   # on their next call.
   systemd.services.repose-browser = {
     description = "repose: the agents' Chromium on ${display}, DevTools on 127.0.0.1:${toString backendPort}";
+    restartIfChanged = false;
     requires = [ "repose-xvnc.service" ];
     bindsTo = [ "repose-xvnc.service" ];
     wants = [ "repose-openbox.service" ];
@@ -294,6 +308,7 @@ in
 
   systemd.services.repose-browser-bridge-proxy = {
     description = "repose: proxy ${toString cdpPort} to the laptop's Chrome on 127.0.0.1:${toString bridgePort}";
+    restartIfChanged = false;
     serviceConfig = {
       ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd 127.0.0.1:${toString bridgePort}";
       PrivateTmp = true;
@@ -303,6 +318,7 @@ in
 
   systemd.services.repose-browser-proxy = {
     description = "repose: proxy ${toString cdpPort} to the agents' browser, starting it";
+    restartIfChanged = false;
     requires = [ "repose-browser.service" ];
     bindsTo = [ "repose-browser.service" ];
     after = [ "repose-browser.service" ];

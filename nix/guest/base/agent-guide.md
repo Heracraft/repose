@@ -11,7 +11,7 @@ This is a repose machine: a NixOS virtual machine for one project, where agents 
 The user works from their laptop. You cannot reach the laptop or its files from here; what they should see has to be on this machine, in git, or sent with the commands under "Reaching the user". <!-- /docs/secrets#what-an-agent-on-the-machine-can-reach -->
 The user can also work in this checkout from their laptop without attaching: in their editor over SSH (`repose code`), or one command at a time (`repose exec`), so files here can change while you work. <!-- /docs/ssh-and-editors -->
 Before you tell the user to run a `repose` command, read its page: https://repose.herakraft.co/llms.txt lists every docs page as plain markdown. The docs describe the latest release. `~/.repose/cli-version` holds the version on the user's laptop as of their last `repose run` or `repose attach`; when it is older, a command may not work as the docs show, so tell them to update by running the install command again. <!-- /docs/cli -->
-You are `dev`, with passwordless `sudo`. The checkout is under `/home/dev`, and everything in `/home/dev` survives a stop. <!-- /docs/machine -->
+You are `dev`, with passwordless `sudo`. The checkout is under `/home/dev`, and everything in `/home/dev` survives a stop; `/tmp` starts empty at each boot. <!-- /docs/machine -->
 The checkout is named after the folder on the user's laptop it came from, not after the project, and `repose-checkout` prints its path; before the first sync there is none and work happens in `/home/dev`. <!-- /docs/sync#where-the-checkout-is --> <!-- needs: repose-checkout -->
 The user may have added other repositories to this machine as folders beside it, listed in `~/.repose/checkouts`; each is a separate project of theirs. Work in the folder you were started in, and leave the others alone unless the user asks. <!-- /docs/run-and-attach#several-repositories-on-one-machine -->
 
@@ -19,7 +19,7 @@ The user may have added other repositories to this machine as folders beside it,
 
 - While the user is attached, every port a program here listens on (1024 and up, on `localhost` or `0.0.0.0`) appears on their laptop at the same port within a second or so. Tell them "open http://localhost:PORT". <!-- /docs/machine#ports -->
 - There are no public URLs. Don't look for one or start a tunnel unless the user asks. <!-- /docs/machine#ports -->
-- Not forwarded: ports below 1024, 5353, 5355, 5900, 6080 and 6081, and servers that listen only on another address. A Docker port published with `-p` is forwarded. <!-- /docs/machine#ports -->
+- Not forwarded: ports below 1024, 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 (the machine's browser), and servers that listen only on another address. A Docker port published with `-p` is forwarded. <!-- /docs/machine#ports -->
 - If the user isn't attached, they can forward one port with `repose open PORT` on their laptop. <!-- /docs/machine#ports -->
 
 ## Installing tools
@@ -40,6 +40,7 @@ The user may have added other repositories to this machine as folders beside it,
 
 - `docker` and `docker compose` work without `sudo`. <!-- /docs/machine#whats-installed -->
 - No database server is installed. Run one in Docker (`docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:17`), or tell the user to run `repose config add postgresql` on their laptop (also `redis`, `mysql` and others), which starts it on `localhost`. <!-- /docs/config#the-menu -->
+- `host.docker.internal` isn't defined. To reach a server on the machine from a container, add `extra_hosts: ["host.docker.internal:host-gateway"]` (or `--add-host host.docker.internal:host-gateway`), and have that server listen on `0.0.0.0`; one listening only on localhost refuses the connection. <!-- /docs/machine#whats-installed -->
 
 ## Secrets
 
@@ -55,6 +56,7 @@ The user may have added other repositories to this machine as folders beside it,
 - While the user runs `repose browser bridge` on their laptop, those same two tools drive the user's own Chrome there instead, with their logins and extensions; the switch happens on your next call, nothing restarts. `repose-guest-profile browser bridge status` prints on while it does, off otherwise. A site the user is logged in to on their laptop needs that; ask them for the bridge rather than for their password. <!-- /docs/machine#use-your-own-chrome --> <!-- needs: repose-guest-profile -->
 - The user may open the bridge with an allowlist. Then a site off the list fails: navigating there returns an error saying it is not on the bridge's allowlist, and pages there fail to load with net::ERR_BLOCKED_BY_CLIENT. Ask the user to add the site; don't try to reach it another way. Tabs of theirs on other sites are hidden from you. <!-- /docs/your-chrome#keep-the-agents-to-some-sites -->
 - Through the bridge, network events carry no cookies, no Authorization or API-key headers, no request bodies and no WebSocket or server-sent event payloads, and reading a response body is refused. Read what you need from the page itself. <!-- /docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome -->
+- `gh browse`, `gh pr create --web` and other commands that open a browser print the URL instead; pass it on to the user. <!-- /docs/machine#browser -->
 
 ## Memory and disk
 
@@ -93,7 +95,7 @@ The user may have added other repositories to this machine as folders beside it,
 
 - The user's plan buys memory that may run at once (Solo 8 GB, Plus 16 GB, Pro 32 GB), disk that may be allocated and egress for the month. A start refused with exit code 7 and a message naming the machine using the memory is the user's call: they stop one or upgrade. Don't work around it. <!-- /docs/limits#your-plan -->
 - Data this machine sends to the internet counts against the user's monthly egress allowance (250 GB on Solo, 500 GB on Plus, 1 TB on Pro); every GB past it costs them $0.05, and at four times the allowance their machines stop until the month turns. Incoming data is free, disk is a hard limit: don't download, serve or upload large files needlessly. <!-- /docs/limits#egress -->
-- Nothing on the internet can connect to this machine. Outbound traffic is allowed, up to 200 Mbit/s. <!-- /docs/limits#network --> <!-- /docs/machine#network -->
+- Nothing on the internet can connect to this machine. Outbound TCP and UDP are allowed, up to 200 Mbit/s; ping to the internet gets no reply, so check connectivity with `curl -sI https://example.com`. <!-- /docs/limits#network --> <!-- /docs/machine#network -->
 - Outbound port 25 is blocked. Send mail through a provider's API or its submission port (587 or 465). <!-- /docs/limits#network -->
 - New outbound connections are limited to 200 a second, in bursts of up to 2000, with at most 16,384 open at once. <!-- /docs/limits#network -->
 - Disk reads and writes are rate-limited by size (small 2,000 operations a second and 80 MB/s, large 3,000 and 120 MB/s, xl 4,000 and 150 MB/s), so a slow build or test may be disk-bound. A disk resize can fail with "the host has no room for this project right now" even within the plan. <!-- /docs/limits#disk-and-console -->
