@@ -208,6 +208,12 @@ let
 
   # I-264: a tmux server on /etc/tmux.conf, a pane in raw mode that asks
   # for extended keys and records its input, then Shift+Enter and Enter.
+  # Asks the running herdr server for a live handoff, the request
+  # `herdr update --handoff` sends after it installs (I-560).
+  herdrHandoff = pkgs.writeShellScript "herdr-handoff" ''
+    echo '{"id":"t","method":"server.live_handoff","params":{}}' \
+      | ${pkgs.socat}/bin/socat -t 20 - UNIX-CONNECT:/home/dev/.config/herdr/herdr.sock
+  '';
   tmuxKeysProbe = pkgs.writeShellScript "tmux-keys-probe" ''
     set -eu
     t() { ${pkgs.tmux}/bin/tmux -L keysprobe -f /etc/tmux.conf "$@"; }
@@ -357,6 +363,27 @@ in
           guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
           guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
 
+      with subtest("I-560: a session on a tmux server outside the unit is not restarted"):
+          def user_q(cmd):
+              return guest.succeed(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}").strip()
+          guest.succeed("sudo -u dev tmux kill-server")
+          # In the 5 s wait, a tmux started outside the unit (over ssh,
+          # as here from the test's shell) takes the slug.
+          guest.succeed("sudo -u dev tmux new-session -d -s todo-app")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-failed repose-tmux-session.service", timeout=30)
+          n = user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service")
+          guest.succeed("sleep 12")
+          assert user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service") == n, "the unit kept restarting"
+          guest.succeed("sudo -u dev tmux has-session -t =todo-app")
+          # A server that dies by a signal (SIGKILL is the OOM kill) comes
+          # back as an exit does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+          guest.succeed("kill -KILL $(sudo -u dev tmux display-message -p '#{pid}')")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          assert user_q("systemctl --user is-active repose-tmux-session.service") == "active"
+
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev/factory"
@@ -430,6 +457,22 @@ in
           user("systemctl --user restart repose-herdr-server.service")
           guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
           guest.succeed("grep -qx '# mine' /home/dev/.config/herdr/config.toml")
+          # I-560: a live handoff keeps the unit and every pane; a server
+          # that stops comes back with its workspaces.
+          pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
+          user(f"herdr pane run {pane} 'sleep 4242'")
+          guest.wait_until_succeeds("pgrep -u dev -fx 'sleep 4242'", timeout=10)
+          old = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          print(user("${herdrHandoff}"))
+          guest.succeed("sleep 8")
+          assert unit_state("repose-herdr-server.service") == "active"
+          guest.succeed("pgrep -u dev -fx 'sleep 4242'")
+          new = guest.succeed("pgrep -u dev -x herdr").split()
+          assert old not in new and len(new) == 1, (old, new)
+          user("herdr server stop")
+          guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
+          guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q factory", timeout=40)
+          assert unit_state("repose-herdr-server.service") == "active"
           # Back to tmux for the subtests below.
           user("systemctl --user stop repose-herdr-server.service")
           project("")

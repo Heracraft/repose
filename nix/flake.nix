@@ -233,11 +233,25 @@
             fi
             # The tmux server exits with its last session; the unit brings
             # it back, after the wait I-352's temporary-machine check needs
-            # (I-551).
-            grep -qx 'Restart=always' "$tmuxUnit" || { echo "the tmux session unit lacks Restart=always" >&2; fail=1; }
-            grep -qx 'RestartSec=5s' "$tmuxUnit" || { echo "the tmux session unit lacks RestartSec=5s" >&2; fail=1; }
+            # (I-551), and a crashed or OOM-killed one too; a failed start
+            # is never restarted, so a start that leaves no server cannot
+            # loop (I-560).
+            grep -qx 'Restart=on-success' "$tmuxUnit" || { echo "the tmux session unit lacks Restart=on-success" >&2; fail=1; }
+            grep -qx 'RestartForceExitStatus=SIGKILL SIGSEGV SIGABRT SIGBUS' "$tmuxUnit" || { echo "the tmux session unit lacks RestartForceExitStatus for SIGKILL and crashes" >&2; fail=1; }
+            for unit in "$tmuxUnit" "$herdrUnit"; do
+              grep -qx 'RestartSec=5s' "$unit" || { echo "$unit lacks RestartSec=5s" >&2; fail=1; }
+            done
+            # herdr's panes share its unit: an OOM kill in a pane must not
+            # stop it, a live handoff must not end it, and a watcher ends it
+            # when no server is left, which Restart=always brings back,
+            # at most five times a minute (I-560).
+            grep -qx 'OOMPolicy=continue' "$herdrUnit" || { echo "the herdr session unit lacks OOMPolicy=continue" >&2; fail=1; }
+            grep -qx 'ExitType=cgroup' "$herdrUnit" || { echo "the herdr session unit lacks ExitType=cgroup" >&2; fail=1; }
+            grep -q '^ExecStartPost=.*/bin/repose-herdr-watch &' "$herdrUnit" || { echo "the herdr session unit does not start repose-herdr-watch" >&2; fail=1; }
+            grep -qx 'Restart=always' "$herdrUnit" || { echo "the herdr session unit lacks Restart=always" >&2; fail=1; }
+            grep -qx 'StartLimitBurst=5' "$herdrUnit" || { echo "the herdr session unit lacks StartLimitBurst=5" >&2; fail=1; }
             [ "$fail" = 0 ] || exit 1
-            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy; no path unit; tmux Restart=always after 5s"
+            echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy, back after 5s; no path unit; tmux Restart=on-success; herdr OOMPolicy=continue, ExitType=cgroup, watcher, Restart=always"
             touch $out
           '';
         # The herdr package's install check refuses a release whose socket

@@ -13386,3 +13386,70 @@ files are wrong) are all reinstalled.
 that runs herdr. `repose-multiplexer-is` exits 2 for an argument other
 than `tmux` or `herdr`; systemd skips that start like a refusal, and the
 2 tells a broken unit apart from a refusal in the journal.
+
+**I-560. The session units outlive their own servers' exits: herdr's
+keeps its panes through a handoff and an OOM kill, tmux's never
+restarts a start that failed.** (mux-base, 2026-10-06; amends I-551,
+I-501) A review of mux-base found four faults in the units and two
+claims the code did not keep.
+
+1. herdr's panes run in `repose-herdr-server.service`'s cgroup, and the
+unit inherited the user manager's `DefaultOOMPolicy=stop`: the kernel's
+OOM kill of a test run in one pane stopped the unit and, through
+`KillMode=control-group`, the server and every agent. The unit now has
+`OOMPolicy=continue`, as the browser unit has. The tmux unit needs none:
+each tmux pane is a scope of its own.
+2. A live handoff (`herdr update --handoff`, the `server.live_handoff`
+request) starts the new server as a child of the old one, and the old
+one, the unit's main process, exits 0. With the default
+`ExitType=main` systemd ended the unit there and killed the new server
+and every pane. The unit now has `ExitType=cgroup`. That alone kept a
+unit up with no server for as long as one pane process outlived a crash
+or `herdr server stop` (measured: a failed main process with a leftover
+child stays `active`), so the unit also starts `repose-herdr-watch` in
+the background. It kills the cgroup once no process named herdr whose
+parent is dev's systemd runs in it (guestd's rule for the server,
+I-505), checking every 0.5 s until the first server and every 5 s
+after. The herdr unit moves from `Restart=on-failure` to
+`Restart=always`, `RestartSec=5s`, so a stopped or crashed server is
+back 5 s later with its workspaces, as tmux's is (I-551), and
+`StartLimitBurst=5` in 60 s, so a server that cannot start is not tried
+every 5 s forever. Measured on kanali with herdr 0.9.3 in a transient
+user unit with these settings: after a live handoff the unit stayed
+`active` and `sleep 4242` in a pane kept running; `herdr server stop`
+with a `nohup` process in a pane ended the unit, killed that process
+and restarted the server 5 s later with workspace `app` restored; an
+OOM kill in a pane under `MemoryMax=300M` left the server's pid and
+`NRestarts` unchanged; `kill -KILL` of the server gave `Failed with
+result 'signal'` and a restart; a server failing at start stopped at
+`start-limit-hit` after five restarts.
+3. `Restart=always` on the tmux unit, which is `Type=forking`, restarted
+every start that left nothing running: a session on a tmux server
+started outside the unit (over ssh, in the 5 s wait) made the script
+exit 0 with an empty cgroup, and a `project.json` with no slug made it
+exit 1; either repeated every 5 s, below the default start limit.
+`RestartPreventExitStatus` does not help: it reads the main process,
+which a forking unit's start is not (measured: exit 1 and exit 3 with
+`RestartPreventExitStatus=1 3` each restarted three times in 4 s). The
+unit now has `Restart=on-success` and `RestartForceExitStatus=SIGKILL
+SIGSEGV SIGABRT SIGBUS`: a server's exit and its crash or OOM kill are
+restarted, a failed start is not. `repose-tmux-session` exits 3 when the
+slug's session belongs to a server outside the unit's cgroup (checked
+only when it runs in `repose-tmux-session.service`'s cgroup), and when
+`project.json` is empty. Measured on kanali in a transient unit with the
+built script: `kill-server` gave the session back after 5 s in the
+unit's cgroup; a server started outside during the wait ended the unit
+`failed` with `NRestarts` unchanged 12 s later; `kill -KILL` of the
+server restarted it; a `project.json` of `{}` failed with no restart.
+4. guest-conventions and `repose-agent-setup` said the base's herdr
+integration replaces one the laptop carried. herdr reports any
+installed version at or above its own as `current` (measured with
+0.9.3: v11 `current`, v9 `outdated (v9 < v10)`), so a newer hook from a
+newer laptop herdr is kept. The texts now say so; the behaviour stays,
+since a newer hook is the newer herdr's to keep.
+5. The public sentence on a temporary machine's last window
+(`run-and-attach.md`) said it is destroyed; that holds only when the
+attach of `repose attach` or `repose run` returns and the CLI's check
+runs (I-352). It now says so. The file is `mux-cli`'s; `mux-base`
+carries this one sentence because the behaviour ships in the base, and
+STATUS.md records it for `mux-cli`.

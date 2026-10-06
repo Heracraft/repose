@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-537 entries.
+538 entries.
 
 ## Scope
 
@@ -557,7 +557,7 @@ pointer, not a summary.
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13052
 - **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L13073
 - **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13098
-- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; L13115
+- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; L13115
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; L13153
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13181
 - **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; L13197
@@ -568,4 +568,5 @@ pointer, not a summary.
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13289
 - **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13315
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13331
-- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; L13342
+- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13342
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13390

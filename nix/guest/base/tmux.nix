@@ -15,7 +15,7 @@
 # multiplexer made while stopped, the old multiplexer would start before
 # SetupProject wrote the new one. The path unit is gone; a guestd from
 # before I-503 starts this unit by name, which the ExecCondition allows
-# for every tmux project. Restart=always brings the session back after
+# for every tmux project. The unit brings the session back after
 # the tmux server exits on a running machine, which the path unit used to
 # do (DECISIONS I-551).
 { config, lib, pkgs, ... }:
@@ -27,9 +27,13 @@ let
     runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash checkout ];
     text = ''
       project="$HOME/.repose/project.json"
+      # Exit 3: nothing for the unit to keep running. A failed start is
+      # never restarted (Restart=on-success), so a start that leaves no
+      # tmux server in the unit's cgroup ends there instead of starting
+      # again every 5 s (DECISIONS I-560).
       if [ ! -s "$project" ]; then
         echo "repose-tmux-session: $project missing; nothing to do" >&2
-        exit 0
+        exit 3
       fi
       slug=$(jq -r '.slug // empty' "$project")
       if [ -z "$slug" ]; then
@@ -37,11 +41,24 @@ let
         exit 1
       fi
       dir=$(repose-checkout)
-      if tmux has-session -t "=$slug" 2>/dev/null; then
-        exit 0
+      if ! tmux has-session -t "=$slug" 2>/dev/null; then
+        # -d: detached. A server this starts runs in the unit's cgroup.
+        tmux new-session -d -s "$slug" -n shell -c "$dir"
       fi
-      # -d: detached. The server keeps running in this unit's cgroup.
-      tmux new-session -d -s "$slug" -n shell -c "$dir"
+      # Run by the unit, the session must belong to a server in the
+      # unit's cgroup. A server someone started outside it (`tmux` in an
+      # ssh terminal while the unit waited to restart) answers on the same
+      # socket: has-session finds the session there, or new-session adds
+      # it there, and the unit would be left with nothing to supervise.
+      # Run by hand (from a pane, say), the script skips the check.
+      self_cg=$(cat /proc/self/cgroup)
+      if [ "''${self_cg%/repose-tmux-session.service}" != "$self_cg" ]; then
+        server=$(tmux display-message -p -t "=$slug:" '#{pid}' 2>/dev/null || true)
+        if [ -z "$server" ] || [ "$(cat "/proc/$server/cgroup" 2>/dev/null)" != "$self_cg" ]; then
+          echo "repose-tmux-session: session $slug is on a tmux server started outside this unit; leaving it" >&2
+          exit 3
+        fi
+      fi
       # The server copied this unit's PATH (NixOS gives every unit its
       # own). What runs with the server's environment (run-shell, #()
       # jobs, a window opened from inside tmux with a command) gets the
@@ -137,9 +154,16 @@ in
       # `repose attach` and `repose run "prompt"` find a session. The path
       # unit did this until I-503 removed it (DECISIONS I-551). The 5 s
       # wait lets the CLI's check after an attach on a temporary machine
-      # (I-352) see the session gone before it comes back. A skipped
-      # start (ExecCondition) and a `systemctl stop` are never restarted.
-      Restart = "always";
+      # (I-352) see the session gone before it comes back. A server that
+      # crashed or was killed (SIGKILL is also the OOM kill) comes back
+      # the same way. A skipped start (ExecCondition), a `systemctl stop`
+      # and a failed start are never restarted: a start that leaves no
+      # server in the unit (exit 3) or finds no slug (exit 1) would fail
+      # the same way every 5 s, below the start limit. Restart=always
+      # restarts a failed start too, and RestartPreventExitStatus reads
+      # the main process, which a forking unit's start is not (I-560).
+      Restart = "on-success";
+      RestartForceExitStatus = "SIGKILL SIGSEGV SIGABRT SIGBUS";
       RestartSec = "5s";
       KillMode = "control-group";
       # The tmux server draws every pane, so it gets ten times a pane's

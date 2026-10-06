@@ -43,8 +43,11 @@
 #          and pi: `herdr integration install <agent>` with the base's
 #          herdr when `herdr integration status` does not list the agent's
 #          integration as current, so herdr knows the agent's state and
-#          resumes it after a restart. The base's version replaces one the
-#          laptop carried. Best effort and silent (DECISIONS I-501).
+#          resumes it after a restart. A hook older than the base's herdr
+#          expects, or one needing repair, is replaced; a newer one (carried
+#          from a newer laptop herdr) counts as current and is kept, since
+#          herdr reports any version at or above its own as current. Best
+#          effort and silent (DECISIONS I-501, I-560).
 { lib, writeShellApplication, jq, coreutils, util-linux, gnugrep, reposeOpencodePlugin, herdr }:
 writeShellApplication {
   name = "repose-agent-setup";

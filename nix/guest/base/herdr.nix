@@ -69,6 +69,28 @@ let
     '';
   };
 
+  # repose-herdr-watch: ends the unit once no herdr server is left in it.
+  # The unit has ExitType=cgroup, so it stays up while its cgroup holds
+  # processes: a live handoff (`herdr update --handoff`) starts the new
+  # server as a child of the old one, and the old one, the unit's main
+  # process, then exits 0. With ExitType=main systemd would stop the unit
+  # there and kill the new server and every pane. ExitType=cgroup alone
+  # would keep the unit up with no server after a crash or `herdr server
+  # stop`, for as long as one pane process outlived the hangup (a `nohup`
+  # dev server), and nothing would restart it. The unit starts this
+  # watcher in the background. A herdr server is a process named herdr
+  # whose parent is dev's systemd ($MANAGERPID; guestd's rule, I-505); a
+  # handed-off server gets that parent when the old one exits. Every
+  # 0.5 s until a server shows up, then every 5 s, it looks for one, and
+  # when there is none (or the main process ended before herdr ran) it
+  # kills what is left of the cgroup. systemd then ends the unit and
+  # restarts it (DECISIONS I-560).
+  watch = pkgs.writeShellApplication {
+    name = "repose-herdr-watch";
+    runtimeInputs = [ pkgs.coreutils pkgs.gnused ];
+    text = builtins.readFile ./herdr-watch.sh;
+  };
+
   # The seeded ~/.config/herdr/config.toml, written only when no file (or
   # link) is there: panes start login shells as tmux's do (herdr's Linux
   # default is non-login), and herdr does not look for releases, since
@@ -112,6 +134,10 @@ in
     # server and every pane (I-496). A changed unit takes effect at the
     # server's next start.
     restartIfChanged = false;
+    unitConfig = {
+      StartLimitIntervalSec = 60;
+      StartLimitBurst = 5;
+    };
     serviceConfig = {
       Type = "simple";
       ExecCondition = "${multiplexerIs}/bin/repose-multiplexer-is herdr";
@@ -120,13 +146,32 @@ in
       # with each user bin dir (I-227); `herdr update` in the guest lands
       # in ~/.local/bin, which comes first.
       ExecStart = "${pkgs.bash}/bin/bash -lc 'exec herdr server'";
-      # A failed workspace step never stops the server.
-      ExecStartPost = "-${workspace}/bin/repose-herdr-workspace";
+      # The watcher runs in the background for the unit's life (see
+      # `watch` above). A failed workspace step never stops the server.
+      ExecStartPost = [
+        "${pkgs.bash}/bin/bash -c '${watch}/bin/repose-herdr-watch &'"
+        "-${workspace}/bin/repose-herdr-workspace"
+      ];
+      # Up while the cgroup holds processes, so a live handoff keeps every
+      # pane; the watcher ends the unit when no server is left (I-560).
+      ExitType = "cgroup";
       # The project's zone (TZ) and REPOSE_PROJECT.
       EnvironmentFile = "-/etc/repose/env";
       KillMode = "control-group";
       # A restarted server restores session.json and resumes its agents.
-      Restart = "on-failure";
+      # The unit ends when no server is left (a crash, an OOM kill of the
+      # server, `herdr server stop`), and comes back 5 s later, as the
+      # tmux unit does (I-551). A server that cannot start is tried five
+      # times in a minute, then left failed until the next start
+      # (DECISIONS I-560).
+      Restart = "always";
+      RestartSec = "5s";
+      # herdr's panes run in this cgroup: the kernel's OOM kill of a test
+      # run or dev server in a pane must not stop the unit, which would
+      # take the server and every agent with it (the user manager's
+      # default is stop). The tmux unit needs none: each tmux pane is a
+      # scope of its own (DECISIONS I-560).
+      OOMPolicy = "continue";
       TasksMax = "infinity";
       # No CPUWeight: herdr's panes live in this unit's cgroup, so a
       # weight would lift every build with them. guestd renices the

@@ -1094,14 +1094,23 @@ no herdr server, after a start.
    it again after 5 s (I-551); `systemctl --user show -p
    NRestarts,ActiveState repose-tmux-session` shows the count, and
    `activating` during the wait. A unit that stays inactive was stopped
-   by hand: `systemctl --user start repose-tmux-session`.
+   by hand. A failed unit whose journal says the session "is on a tmux
+   server started outside this unit" found the slug's session on a
+   server someone started over ssh (I-560): that session works, but
+   nothing restarts it; `tmux kill-server` and then `systemctl --user
+   start repose-tmux-session` put it back in the unit.
 4. herdr: `journalctl --user -u repose-herdr-server` and
    `~/.config/herdr/herdr-server.log`. A server that started but has no
    workspace in the checkout: run `repose-herdr-workspace` by hand. It
    exits 0 without a word when the herdr unit is not active, and names
    any other reason on stderr. A user's `herdr update` puts a newer
-   binary in `~/.local/bin`, which the unit then runs; removing it goes
-   back to the base's release.
+   binary in `~/.local/bin`, which the unit runs from the server's next
+   start (`herdr update --handoff` moves the running server to it and
+   keeps the panes); removing it goes back to the base's release. `repose-herdr-watch: no herdr server left` in the journal
+   means the server ended (a crash, `herdr server stop`) and the unit
+   restarted it; `start-limit-hit` means it failed five times in a
+   minute, and `systemctl --user start repose-herdr-server` tries again
+   (I-560).
 
 ## Prisma, Playwright or a Python wheel fails in a guest
 
