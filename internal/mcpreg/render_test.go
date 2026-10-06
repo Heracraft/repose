@@ -216,3 +216,63 @@ func TestCodexLinkLeftAlone(t *testing.T) {
 		t.Fatalf("agents/codex.json: %s %v", view, err)
 	}
 }
+
+// TestCodexInlineServersLeftAlone: a root `mcp_servers = { ... }` takes
+// no [mcp_servers.NAME] after it, which Codex would refuse to load; the
+// file stays as it was and sync warns once.
+func TestCodexInlineServersLeftAlone(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+	const orig = "model = \"o3\"\nmcp_servers = { mine = { command = \"x\" } }\n"
+	writeFile(t, filepath.Join(home, ".codex/config.toml"), orig)
+	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}`)
+	var b bytes.Buffer
+	Sync(p, []string{"codex"}, &b)
+	if !strings.Contains(b.String(), "mcp_servers.linear") {
+		t.Fatalf("first sync stderr: %q", b.String())
+	}
+	if got, _ := os.ReadFile(filepath.Join(home, ".codex/config.toml")); string(got) != orig {
+		t.Fatalf("config.toml changed:\n%s", got)
+	}
+	b.Reset()
+	Sync(p, []string{"codex"}, &b)
+	if b.String() != "" {
+		t.Fatalf("second sync stderr: %q", b.String())
+	}
+}
+
+// TestOpencodeCommentedConfig: opencode reads comments and trailing
+// commas in its .json files. A commented config.json is left as written
+// with one warning, and a server the user's commented opencode.json
+// defines is not rendered beside it.
+func TestOpencodeCommentedConfig(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+	const orig = "{\n  // mine\n  \"theme\": \"dark\",\n}\n"
+	cfg := filepath.Join(home, ".config/opencode/config.json")
+	writeFile(t, cfg, orig)
+	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}`)
+	var b bytes.Buffer
+	Sync(p, []string{"opencode"}, &b)
+	if !strings.Contains(b.String(), "has comments") {
+		t.Fatalf("first sync stderr: %q", b.String())
+	}
+	if got, _ := os.ReadFile(cfg); string(got) != orig {
+		t.Fatalf("config.json changed:\n%s", got)
+	}
+	b.Reset()
+	Sync(p, []string{"opencode"}, &b)
+	if b.String() != "" {
+		t.Fatalf("second sync stderr: %q", b.String())
+	}
+
+	// A plain config.json, and the user's own linear in a commented
+	// opencode.json: repose renders nothing under that name.
+	writeFile(t, cfg, "{}\n")
+	writeFile(t, filepath.Join(home, ".config/opencode/opencode.json"), "{\n  // mine\n  \"mcp\": {\"linear\": {\"type\": \"remote\", \"url\": \"https://x\"},},\n}\n")
+	b.Reset()
+	Sync(p, []string{"opencode"}, &b)
+	if got, _ := os.ReadFile(cfg); strings.Contains(string(got), "linear") || b.String() != "" {
+		t.Fatalf("config.json = %s, stderr %q", got, b.String())
+	}
+}

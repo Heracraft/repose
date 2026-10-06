@@ -66,6 +66,9 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 	}
 	doc, err := parseObject(b)
 	if err != nil {
+		if jdoc, jerr := parseObject(stripJSONC(b)); jerr == nil {
+			return opencodeCommented(jdoc, user, want, prev, warn)
+		}
 		warn("~/.config/opencode/config.json is not valid JSON; leaving it alone")
 		return prev
 	}
@@ -93,6 +96,31 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		warn("cannot write ~/.config/opencode/config.json: " + err.Error())
 		return prev
 	}
+	return rec
+}
+
+// opencodeCommented is a config.json with comments or trailing commas,
+// which opencode reads and a rewrite would lose: repose writes nothing
+// and warns once per set of changes it holds back.
+func opencodeCommented(doc *object, user map[string]any, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
+	servers, err := doc.child("mcp")
+	if err != nil {
+		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
+		return prev
+	}
+	changes, _ := plan(rawMap(servers), user, prev.User, want.Retired)
+	rec := &agentRecord{User: prev.User}
+	if len(changes) == 0 {
+		return rec
+	}
+	held := map[string]any{}
+	for _, c := range changes {
+		held[c.name] = c.want
+	}
+	if !equal(map[string]any(prev.Held), held) {
+		warn("~/.config/opencode/config.json has comments, which a rewrite would lose; leaving it alone")
+	}
+	rec.Held = held
 	return rec
 }
 

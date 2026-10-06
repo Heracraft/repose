@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Status is `repose-mcp status --json` (docs/interfaces/guest-conventions.md
@@ -155,7 +156,7 @@ func ReadStatus(p Paths) (*Status, error) {
 				}
 			}
 		case FromForward:
-			if _, err := os.Stat(filepath.Join(p.SocketDir, k.name+".sock")); err != nil {
+			if p.LaptopAway(k.name, time.Now()) {
 				parts = append(parts, "laptop not connected")
 			}
 		}
@@ -241,7 +242,10 @@ func jsonServers(path, key string) map[string]any {
 	}
 	doc, err := parseObject(b)
 	if err != nil {
-		return nil
+		// opencode reads comments and trailing commas in a .json too.
+		if doc, err = parseObject(stripJSONC(b)); err != nil {
+			return nil
+		}
 	}
 	o, err := doc.child(key)
 	if err != nil {

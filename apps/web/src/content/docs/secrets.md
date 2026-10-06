@@ -32,7 +32,7 @@ DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 
 Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
-The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). `repose secrets import --mcp` sets those secrets from the tokens on your laptop, for the project of the folder you run it in. It asks once before it replaces a secret the project already has; `--yes` replaces without asking, and `--dry-run` lists the names.
+The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in.
 
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 

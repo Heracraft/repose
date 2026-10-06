@@ -39,8 +39,10 @@
 #          (command and args) is appended for each platform server in
 #          /etc/repose/mcp.json whose NAME the parsed file does not have
 #          (I-553). A table the user changed, `enabled = false` included,
-#          is theirs and stays; a file that does not parse is left alone,
-#          and so is a file that is a symlink (home-manager, dotfiles).
+#          is theirs and stays; a file that does not parse is left alone.
+#          A config.toml that is a symlink (home-manager, dotfiles) stays a
+#          link: notify is written through it when the target is a
+#          writable file, and its MCP servers are left alone.
 #          Runs under flock ~/.repose/mcp/.lock, the lock repose-mcp sync
 #          takes, since agents start in parallel and a duplicate table
 #          stops Codex.
@@ -216,11 +218,20 @@ writeShellApplication {
         return 0
       fi
       # A link (home-manager, a dotfiles repo) belongs to whatever made
-      # it: rewriting would replace the link with a file.
-      # repose-mcp sync leaves it alone too, and still records what Codex
-      # would get in ~/.repose/mcp/agents/codex.json.
+      # it: a rename would replace the link with a file. notify goes in
+      # through the link when its target is a writable file; a read-only
+      # one (home-manager's store) is named once per start that lacks it.
+      # repose-mcp sync leaves the servers alone, and still records what
+      # Codex would get in ~/.repose/mcp/agents/codex.json.
       if [ -L "$cfg" ]; then
-        echo "repose-agent-setup: $cfg is a link; leaving it alone" >&2
+        if ! grep -Eq '^[[:space:]]*notify[[:space:]]*=' "$cfg" 2>/dev/null; then
+          local body
+          if [ -f "$cfg" ] && [ -w "$cfg" ] && body=$(cat "$cfg"); then
+            printf 'notify = ["repose-hook"]\n%s\n' "$body" > "$cfg"
+          else
+            echo "repose-agent-setup: $cfg links to a file repose cannot write; add notify = [\"repose-hook\"] to it for Codex notifications" >&2
+          fi
+        fi
         exec 9>&-
         mcp_sync codex
         return 0

@@ -189,7 +189,7 @@ apple-notes  forward  claude codex gemini opencode pi
 my-db        machine  claude
 ```
 
-FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE is empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
+FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE starts with the checkout for a server from one (`~/todo-app`), and is otherwise empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
 
 | Flag     | What it does                                                                                        |
 | -------- | --------------------------------------------------------------------------------------------------- |

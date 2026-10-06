@@ -3,7 +3,8 @@
 # never an agent's config: repose-mcp sync renders it at the next agent
 # start. Reports, once per change: #mcpleft for each server left on the
 # laptop, #mcpsecret for each secret the machine lacks, #mcpcmd for each
-# command it lacks, #mcpold on a base without repose-mcp.
+# command it lacks, #mcpold on a base without repose-mcp when there are
+# servers to carry.
 t=$1
 d="$HOME/.repose/mcp"
 mkdir -p "$d"
@@ -48,7 +49,10 @@ done < "$t/mcp/cmds"
 old=
 if ! have repose-mcp; then
   old=:old
-  echo '#mcpold'
+  # Only a laptop with servers to carry has something waiting.
+  if jq -e '(.user // {} | length) + (.project // {} | length) > 0' "$t/mcp/in.json" >/dev/null 2>&1; then
+    echo '#mcpold'
+  fi
 fi
 mkdir -p ~/.repose/carry
 printf '%s%s\n' "$(cat "$t/mcp/hash-user")" "$old" > ~/.repose/carry/claude-mcp

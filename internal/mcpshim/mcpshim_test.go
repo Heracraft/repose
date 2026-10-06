@@ -65,11 +65,18 @@ type fakeServer struct {
 	version   string
 	tools     []string
 	pings     bool // answer the shim's pings
-	mu        sync.Mutex
-	inits     []json.RawMessage
-	sawPing   bool
-	conns     []net.Conn
-	callsSeen int
+	initDelay time.Duration
+	// askRoots sends roots/list right after notifications/initialized;
+	// rootsAnswer is the client's answer to it.
+	askRoots    bool
+	rootsAnswer string
+	// closeFirst closes the first connection right after its tools/list.
+	closeFirst bool
+	mu         sync.Mutex
+	inits      []json.RawMessage
+	sawPing    bool
+	conns      []net.Conn
+	callsSeen  int
 }
 
 func (f *fakeServer) listen(t *testing.T, path string) net.Listener {
@@ -112,8 +119,19 @@ func (f *fakeServer) handle(c io.ReadWriteCloser) {
 			return
 		}
 		m, _ := parse(line)
+		if m.Method == "initialize" && f.initDelay > 0 {
+			time.Sleep(f.initDelay) // a laptop server that starts slowly
+		}
 		f.mu.Lock()
 		switch m.Method {
+		case "notifications/initialized":
+			if f.askRoots {
+				_, _ = c.Write(request("srv-roots", "roots/list", nil))
+			}
+		case "":
+			if string(m.ID) == `"srv-roots"` {
+				f.rootsAnswer = string(m.Result)
+			}
 		case "initialize":
 			f.inits = append(f.inits, m.Params)
 			_, _ = c.Write(result(m.ID, map[string]any{"protocolVersion": f.version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "probe", "version": "1"}}))
@@ -123,6 +141,10 @@ func (f *fakeServer) handle(c io.ReadWriteCloser) {
 				ts = append(ts, tool(n))
 			}
 			_, _ = c.Write(result(m.ID, map[string]any{"tools": ts}))
+			if f.closeFirst && len(f.inits) == 1 {
+				f.mu.Unlock()
+				return
+			}
 		case "tools/call":
 			f.callsSeen++
 			var p struct {
@@ -412,5 +434,108 @@ func waitFor(t *testing.T, ok func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// While the first connect is still replaying to a slow laptop server, a
+// call waits for it and reaches the server; the list methods answer from
+// the cache at once.
+func TestShimHoldsCallsWhileConnecting(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	writeCache(t, p, "notes", "2025-06-18", "search")
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true, initDelay: 700 * time.Millisecond}
+	srv.listen(t, p.SocketPath("notes"))
+	a := startShim(t, p, "notes")
+	a.initialize("2025-06-18")
+	start := time.Now()
+	a.send(2, "tools/list", nil)
+	if m := a.next(time.Second); string(m.ID) != "2" || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("tools/list = %+v after %s, want the cache at once", m, time.Since(start))
+	}
+	a.send(3, "tools/call", map[string]any{"name": "search"})
+	text, isErr := callText(t, a.next(3*time.Second))
+	if isErr || text != "called search" {
+		t.Fatalf("call during the connect = %q isError=%v, want it passed to the server", text, isErr)
+	}
+}
+
+// A request the server sends before the link is up (roots/list right
+// after initialized) reaches the agent, and the agent's answer reaches
+// the server.
+func TestShimPassesServerRequestsBeforeUp(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	writeCache(t, p, "notes", "2025-06-18", "search")
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true, askRoots: true}
+	srv.listen(t, p.SocketPath("notes"))
+	a := startShim(t, p, "notes")
+	a.initialize("2025-06-18")
+	m := a.next(3 * time.Second)
+	if m.Method != "roots/list" || string(m.ID) != `"srv-roots"` {
+		t.Fatalf("got %+v, want the server's roots/list", m)
+	}
+	if _, err := a.in.Write(result(m.ID, map[string]any{"roots": []any{}})); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { srv.mu.Lock(); defer srv.mu.Unlock(); return srv.rootsAnswer != "" })
+}
+
+// A link that closes between its last tools/list and becoming live is
+// not installed: the shim reconnects without waiting for the agent.
+func TestShimReconnectsAfterEarlyClose(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	writeCache(t, p, "notes", "2025-06-18", "search")
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true, closeFirst: true}
+	srv.listen(t, p.SocketPath("notes"))
+	a := startShim(t, p, "notes")
+	a.initialize("2025-06-18")
+	waitFor(t, func() bool { srv.mu.Lock(); defer srv.mu.Unlock(); return len(srv.inits) >= 2 })
+	waitFor(t, func() bool {
+		a.send(4, "tools/call", map[string]any{"name": "search"})
+		text, _ := callText(t, a.next(2*time.Second))
+		return text == "called search"
+	})
+}
+
+// A Queue never blocks the one who pushes: past MaxQueued it refuses and
+// ends, and what it took comes out in order.
+func TestQueueNeverBlocks(t *testing.T) {
+	q := NewQueue()
+	b := make([]byte, 1<<20)
+	done := make(chan int)
+	go func() {
+		n := 0
+		for q.Push(b) {
+			n++
+		}
+		done <- n
+	}()
+	select {
+	case n := <-done:
+		if n != MaxQueued/len(b) {
+			t.Fatalf("took %d MB before refusing", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Push blocked with no reader")
+	}
+	if _, ok := q.Next(); ok {
+		t.Fatal("a queue past its bound still gives data")
+	}
+	q2 := NewQueue()
+	q2.Push([]byte("a"))
+	q2.Push([]byte("b"))
+	q2.Close()
+	var got []string
+	for {
+		x, ok := q2.Next()
+		if !ok {
+			break
+		}
+		got = append(got, string(x))
+	}
+	if strings.Join(got, "") != "ab" {
+		t.Fatalf("got %q", got)
 	}
 }

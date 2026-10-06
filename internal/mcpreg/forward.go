@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 )
 
 // The forward's files (DECISIONS I-557): forward/NAME.json registers NAME
@@ -17,6 +18,27 @@ import (
 // SocketPath is where hold listens for NAME's shims.
 func (p Paths) SocketPath(name string) string {
 	return filepath.Join(p.SocketDir, name+".sock")
+}
+
+// AlivePath is /run/repose/mcp/NAME.alive, which hold touches each time
+// the laptop's keepalive arrives. A CLI from before the keepalive sends
+// none, so hold never writes the file for it.
+func (p Paths) AlivePath(name string) string {
+	return filepath.Join(p.SocketDir, name+".alive")
+}
+
+// AliveStale is how old NAME.alive may be before status calls the
+// laptop away: three keepalives missed.
+const AliveStale = 30 * time.Second
+
+// LaptopAway reports whether a forward's laptop is away: no socket, or a
+// keepalive file older than AliveStale.
+func (p Paths) LaptopAway(name string, now time.Time) bool {
+	if _, err := os.Stat(p.SocketPath(name)); err != nil {
+		return true
+	}
+	fi, err := os.Stat(p.AlivePath(name))
+	return err == nil && now.Sub(fi.ModTime()) > AliveStale
 }
 
 // ForwardFile is forward/NAME.json.

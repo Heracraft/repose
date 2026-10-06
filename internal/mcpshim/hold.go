@@ -101,6 +101,8 @@ type holder struct {
 	mu      sync.Mutex
 	next    uint32
 	streams map[uint32]*stream
+	// serving is each name whose socket this hold owns now.
+	serving map[string]bool
 	// done closes when the laptop's side ends.
 	done chan struct{}
 }
@@ -109,33 +111,14 @@ type holder struct {
 type stream struct {
 	name     string
 	conn     net.Conn
-	q        chan []byte // from the laptop, written to conn in order
-	internal bool        // the cache fill, not a shim
-
-	mu     sync.Mutex
-	closed bool
+	q        *Queue // from the laptop, written to conn in order
+	internal bool   // the cache fill, not a shim
 }
 
-// push queues bytes for conn; a stream already ended drops them.
-func (s *stream) push(b []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.closed {
-		s.q <- b
-	}
-}
-
-func (s *stream) end() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.closed {
-		s.closed = true
-		close(s.q)
-	}
-}
+func (s *stream) end() { s.q.Close() }
 
 func newHolder(p mcpreg.Paths, in io.Reader, out, stderr io.Writer) *holder {
-	return &holder{p: p, in: in, fw: NewFrameWriter(out), stderr: stderr, streams: map[uint32]*stream{}, done: make(chan struct{})}
+	return &holder{p: p, in: in, fw: NewFrameWriter(out), stderr: stderr, streams: map[uint32]*stream{}, serving: map[string]bool{}, done: make(chan struct{})}
 }
 
 func (h *holder) run(names []string) int {
@@ -180,11 +163,16 @@ func (h *holder) readLoop() {
 			h.mu.Lock()
 			s := h.streams[f.ID]
 			h.mu.Unlock()
-			if s != nil {
-				s.push(f.Payload)
+			if s != nil && !s.q.Push(f.Payload) {
+				// A shim that stopped reading: end its stream rather
+				// than stall every other one behind it.
+				_ = h.fw.Write(FrameClose, f.ID, nil)
+				h.drop(f.ID)
 			}
 		case FrameClose:
 			h.drop(f.ID)
+		case FrameAlive:
+			h.alive()
 		}
 	}
 }
@@ -196,6 +184,39 @@ func (h *holder) drop(id uint32) {
 	h.mu.Unlock()
 	if s != nil {
 		s.end()
+	}
+}
+
+// alive touches NAME.alive for each name this hold serves.
+func (h *holder) alive() {
+	h.mu.Lock()
+	var names []string
+	for n := range h.serving {
+		names = append(names, n)
+	}
+	h.mu.Unlock()
+	now := time.Now()
+	for _, n := range names {
+		path := h.p.AlivePath(n)
+		if err := os.Chtimes(path, now, now); err != nil {
+			_ = os.WriteFile(path, nil, 0o600)
+		}
+	}
+}
+
+// setServing marks name as this hold's, or no longer; on, it drops a
+// keepalive file an earlier hold left, which a laptop that sends none
+// would leave stale.
+func (h *holder) setServing(name string, on bool) {
+	h.mu.Lock()
+	if on {
+		h.serving[name] = true
+	} else {
+		delete(h.serving, name)
+	}
+	h.mu.Unlock()
+	if on {
+		_ = os.Remove(h.p.AlivePath(name))
 	}
 }
 
@@ -214,7 +235,7 @@ func (h *holder) live(name string) int {
 
 // open carries conn to the laptop as a new stream for name.
 func (h *holder) open(name string, conn net.Conn, internal bool) {
-	s := &stream{name: name, conn: conn, q: make(chan []byte, 256), internal: internal}
+	s := &stream{name: name, conn: conn, q: NewQueue(), internal: internal}
 	h.mu.Lock()
 	h.next++
 	id := h.next
@@ -226,14 +247,17 @@ func (h *holder) open(name string, conn net.Conn, internal bool) {
 	default:
 	}
 	go func() {
-		for b := range s.q {
+		for {
+			b, ok := s.q.Next()
+			if !ok {
+				break
+			}
 			if _, err := conn.Write(b); err != nil {
+				s.q.Abort()
 				break
 			}
 		}
 		_ = conn.Close()
-		for range s.q { // a writer that failed still lets the reader finish
-		}
 	}()
 	if err := h.fw.Write(FrameOpen, id, []byte(name)); err != nil {
 		h.drop(id)
@@ -275,6 +299,10 @@ func (h *holder) serveName(name string) {
 			r = Ready{Name: name, Error: "cannot listen on the machine: " + err.Error()}
 		}
 	}
+	if l != nil {
+		h.setServing(name, true)
+		defer h.setServing(name, false)
+	}
 	_ = h.fw.Write(FrameReady, 0, ReadyFrame(r))
 	if l == nil {
 		return
@@ -302,6 +330,7 @@ func (h *holder) serveName(name string) {
 			_ = l.Close()
 			if fi, err := os.Stat(path); err == nil && os.SameFile(fi, mine) {
 				_ = os.Remove(path)
+				_ = os.Remove(h.p.AlivePath(name))
 			}
 			return
 		case <-t.C:

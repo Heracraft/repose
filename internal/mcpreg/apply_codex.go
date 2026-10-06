@@ -17,7 +17,9 @@ import (
 // `[mcp_servers.NAME]` header to the line before the next header outside
 // `mcp_servers.NAME.*`, so comments and everything else stay as written.
 // A name the file holds in another form (dotted keys, an inline table) is
-// left alone with a warning. The edited text must parse to exactly the
+// left alone with a warning, and so is every new name when mcp_servers is
+// itself an inline table: Codex refuses a [mcp_servers.NAME] header after
+// one, though the TOML parser here accepts it. The edited text must parse to exactly the
 // intended servers, or nothing is written.
 func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
 	path := filepath.Join(p.Home, ".codex", "config.toml")
@@ -38,6 +40,7 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 		warn("~/.codex/config.toml does not parse; leaving it alone")
 		return prev
 	}
+	inline := inlineServers(text)
 	changes, owned := plan(cur, want.User, prev.User, want.Retired)
 	held := map[string]any{}
 	expect := map[string]any{}
@@ -48,8 +51,10 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 		var ok bool
 		switch c.act {
 		case actAdd:
-			text = appendTable(text, c.name, c.want)
-			ok = true
+			if !inline {
+				text = appendTable(text, c.name, c.want)
+				ok = true
+			}
 		case actReplace:
 			text, ok = replaceTable(text, c.name, tomlTable(c.name, c.want))
 		case actRemove:
@@ -93,6 +98,24 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 		return prev
 	}
 	return rec
+}
+
+// rootInlineRe is a root-level `mcp_servers = ...` line.
+var rootInlineRe = regexp.MustCompile(`^\s*(mcp_servers|"mcp_servers"|'mcp_servers')\s*=`)
+
+// inlineServers reports whether the root table sets mcp_servers with
+// `mcp_servers = { ... }`: no [mcp_servers.NAME] header may follow it.
+func inlineServers(text string) bool {
+	for _, l := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "[") {
+			return false
+		}
+		if rootInlineRe.MatchString(l) {
+			return true
+		}
+	}
+	return false
 }
 
 // codexServers is the mcp_servers table of a Codex config.

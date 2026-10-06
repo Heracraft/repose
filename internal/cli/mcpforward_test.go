@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -316,10 +317,46 @@ func TestMCPEndProcesses(t *testing.T) {
 	if !alive(pids[2]) {
 		t.Error("closing one stream stopped the other's server")
 	}
+	// An id already in use is refused: the server on it stays the one
+	// the map holds, so the hold's end still stops it.
+	_ = fw.Write(mcpshim.FrameOpen, 2, []byte("probe"))
+	waitUntil(t, func() bool { return fl.isClosed(2) })
+	end.mu.Lock()
+	n := len(end.procs)
+	end.mu.Unlock()
+	if n != 1 {
+		t.Errorf("%d servers after a reused id, want 1", n)
+	}
 	// The hold's end stops the rest.
 	_ = toEndW.Close()
 	<-served
 	waitUntil(t, func() bool { return !alive(pids[2]) })
+}
+
+// What the machine says in R and G frames reaches the laptop's terminal
+// only for a name the laptop forwards, and with no control characters.
+func TestMCPEndMachineStrings(t *testing.T) {
+	toEndR, toEndW := io.Pipe()
+	end := newMCPEnd(map[string]laptopMCP{"probe": {Name: "probe"}}, io.Discard)
+	var mu sync.Mutex
+	var got []string
+	end.onReady = func(r mcpshim.Ready) { mu.Lock(); got = append(got, "ready "+r.Name+" "+r.Error); mu.Unlock() }
+	end.onGone = func(n string) { mu.Lock(); got = append(got, "gone "+n); mu.Unlock() }
+	served := make(chan struct{})
+	go func() { end.serve(toEndR); close(served) }()
+	fw := mcpshim.NewFrameWriter(toEndW)
+	_ = fw.Write(mcpshim.FrameReady, 0, mcpshim.ReadyFrame(mcpshim.Ready{Name: "probe", Error: "bad\x1b]52;c;aGk=\x07 start\u009b2J"}))
+	_ = fw.Write(mcpshim.FrameReady, 0, mcpshim.ReadyFrame(mcpshim.Ready{Name: "\x1b[2Kfake"}))
+	_ = fw.Write(mcpshim.FrameGone, 0, []byte("\x1b[2Jother"))
+	_ = fw.Write(mcpshim.FrameGone, 0, []byte("probe"))
+	_ = toEndW.Close()
+	<-served
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"ready probe bad]52;c;aGk= start2J", "gone probe"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
 }
 
 func waitUntil(t *testing.T, ok func() bool) {

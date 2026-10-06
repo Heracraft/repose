@@ -450,6 +450,11 @@ in
           dev_out("HOME=/tmp/cxlink repose-agent-setup codex")
           assert guest.succeed("readlink /tmp/cxlink/.codex/config.toml").strip() == "/tmp/cxlink/real.toml"
           assert guest.succeed("cat /tmp/cxlink/real.toml") == 'notify = ["mine"]\n'
+          # A link whose target lacks notify gets it through the link.
+          dev_out("mkdir -p /tmp/cxlink2/.codex && printf 'model = \"o3\"\\n' > /tmp/cxlink2/real.toml && ln -s /tmp/cxlink2/real.toml /tmp/cxlink2/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink2 repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink2/.codex/config.toml").strip() == "/tmp/cxlink2/real.toml"
+          assert guest.succeed("cat /tmp/cxlink2/real.toml") == 'notify = ["repose-hook"]\nmodel = "o3"\n'
           # opencode: the managed layer, type local, no enabled key.
           oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
           for n, e in reg.items():

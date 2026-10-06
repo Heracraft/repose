@@ -287,3 +287,29 @@ func TestFrameRoundTrip(t *testing.T) {
 		t.Error("an oversized frame was accepted")
 	}
 }
+
+// The laptop's keepalive touches NAME.alive; status calls the laptop away
+// once it is stale, and the file goes with the hold.
+func TestHoldKeepalive(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true}
+	fl, laptop, code := startHold(t, p, srv, "notes")
+	readyOf(t, fl)
+	if p.LaptopAway("notes", time.Now()) {
+		t.Fatal("away with the socket up and no keepalive yet (a CLI that sends none)")
+	}
+	_ = fl.fw.Write(FrameAlive, 0, nil)
+	waitFor(t, func() bool { _, err := os.Stat(p.AlivePath("notes")); return err == nil })
+	if p.LaptopAway("notes", time.Now()) {
+		t.Error("away right after a keepalive")
+	}
+	if !p.LaptopAway("notes", time.Now().Add(mcpreg.AliveStale+time.Second)) {
+		t.Error("not away with a stale keepalive")
+	}
+	_ = laptop.Close()
+	<-code
+	if _, err := os.Stat(p.AlivePath("notes")); !os.IsNotExist(err) {
+		t.Errorf("keepalive file left behind: %v", err)
+	}
+}

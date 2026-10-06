@@ -303,22 +303,25 @@ func skipValue(b []byte, i int) (int, error) {
 // installs, which the guest does not report missing. It returns nil only
 // when there is nothing to say: no ~/.claude.json and no repository.
 func buildMCPCarry(homeDir, repoRoot, slug, checkout string, toolBins map[string]bool) (*mcpCarry, []string) {
-	mc, notes := collectMCP(homeDir, repoRoot, toolBins, nil)
+	mc, err := collectMCP(homeDir, repoRoot, toolBins, nil)
+	if err != nil {
+		return nil, []string{"Could not read your Claude Code MCP servers (" + err.Error() + "); the machine keeps the ones it has."}
+	}
 	if mc == nil {
-		return nil, notes
+		return nil, nil
 	}
 	mc.Slug, mc.Checkout = slug, checkout
 	mc.hash()
-	return mc, notes
+	return mc, nil
 }
 
 // collectMCP is buildMCPCarry without the guest's coordinates. values,
 // when not nil, receives each templated secret's laptop value: only
 // `repose secrets import --mcp` passes one, and the carry never does.
-func collectMCP(homeDir, repoRoot string, toolBins map[string]bool, values map[string]string) (*mcpCarry, []string) {
+func collectMCP(homeDir, repoRoot string, toolBins map[string]bool, values map[string]string) (*mcpCarry, error) {
 	user, project, appr, err := readClaudeMCP(homeDir, repoRoot)
 	if err != nil {
-		return nil, []string{"Could not read your Claude Code MCP servers (" + err.Error() + "); the machine keeps the ones it has."}
+		return nil, err
 	}
 	if user == nil && project == nil {
 		return nil, nil
@@ -436,17 +439,21 @@ func printable(s string) string {
 var (
 	mcpServerName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	// mcpSecretWord is an env key that names a credential.
-	mcpSecretWord = regexp.MustCompile(`(?i)key|token|secret|passw|auth|credential|cookie|session|private`)
+	mcpSecretWord = regexp.MustCompile(`(?i)key|token|secret|passw|auth|credential|cookie|session|private|jwt`)
 	// mcpLongRun is a 20+ character run that reads like a token.
 	mcpLongRun = regexp.MustCompile(`[A-Za-z0-9_-]{20,}`)
 	// mcpAuthScheme is an Authorization value with a literal credential.
 	mcpAuthScheme = regexp.MustCompile(`(?i)^(bearer|basic|token)\s+(\S+)$`)
 	// mcpQuerySecret is a query parameter whose name says it holds one.
-	mcpQuerySecret = regexp.MustCompile(`(?i)key|token|auth|secret|passw|sig`)
+	mcpQuerySecret = regexp.MustCompile(`(?i)key|token|auth|secret|passw|sig|jwt`)
 	// mcpTokenShape is a whole argument, path segment or query value that
 	// reads like a token: 20 or more token characters with a letter and a
 	// digit among them (checked apart), or a provider's key prefix.
-	mcpTokenShape  = regexp.MustCompile(`^[A-Za-z0-9_+=~-]{20,}$`)
+	mcpTokenShape = regexp.MustCompile(`^[A-Za-z0-9_+=~-]{20,}$`)
+	// mcpJWT is a JSON Web Token: dotted, so mcpTokenShape misses it.
+	mcpJWT = regexp.MustCompile(`^eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*$`)
+	// mcpEnvAssign is NAME=VALUE, as docker -e and env take.
+	mcpEnvAssign   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	mcpTokenPrefix = regexp.MustCompile(`^(sk-|sk_|pk_|rk_|AIza|ntn_|secret_|lin_api_|xai-|gsk_|hf_|r8_|dop_v1_|npm_|pypi-|shpat_|SG\.)[A-Za-z0-9_.+=-]{8,}$`)
 	// mcpHeaderFlags take an HTTP header, "Name: value", as their value
 	// (mcp-remote, supergateway, curl-style servers).
@@ -458,7 +465,7 @@ var (
 
 // mcpTokenLike is a value that reads like a credential on its own.
 func mcpTokenLike(v string) bool {
-	if mcpTokenPrefix.MatchString(v) || secretIn(v) {
+	if mcpTokenPrefix.MatchString(v) || mcpJWT.MatchString(v) || secretIn(v) {
 		return true
 	}
 	return mcpTokenShape.MatchString(v) && strings.ContainsAny(v, "0123456789") && strings.IndexFunc(v, func(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') }) >= 0
@@ -469,7 +476,7 @@ func mcpTokenLike(v string) bool {
 // pass. --auth-type, --session-name and --keyboard take plain values.
 func mcpSecretFlag(f string) bool {
 	f = strings.ToLower(strings.TrimLeft(f, "-"))
-	for _, w := range []string{"token", "secret", "passw", "apikey", "api-key", "api_key", "credential", "cookie", "bearer"} {
+	for _, w := range []string{"token", "secret", "passw", "apikey", "api-key", "api_key", "credential", "cookie", "bearer", "jwt"} {
 		if strings.Contains(f, w) {
 			return true
 		}
@@ -609,6 +616,12 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 		return mcpVerdict{skip: "type"}
 	}
 	args := stringList(s["args"])
+	// cmd /c npx ..., how a Windows laptop starts npx: the machine runs
+	// what follows /c.
+	stripped := false
+	if kind == "stdio" && strings.EqualFold(cmdBase(command), "cmd") && len(args) >= 2 && strings.EqualFold(args[0], "/c") {
+		command, args, stripped = args[1], args[2:], true
+	}
 	if mcpPlatformNames[name] || (kind == "stdio" && mcpIsPlatform(command, args)) {
 		return mcpVerdict{drop: true}
 	}
@@ -656,15 +669,23 @@ func (c *mcpClassifier) classify(name string, s map[string]any) mcpVerdict {
 	}
 	var cmd string
 	if kind == "stdio" {
+		if stripped {
+			out["command"] = command
+		}
 		switch {
 		case c.underRepo(command):
 			out["command"] = c.repoRewrite(command)
 		case strings.ContainsAny(command, "/\\") && mcpLaunchers[cmdBase(command)]:
 			out["command"] = cmdBase(command)
+		case strings.HasPrefix(command, "/"):
+			// /bin/zsh, /usr/bin/ruby: NixOS has neither path, so the
+			// machine runs the program by name and checks it has it.
+			out["command"] = cmdBase(command)
+			cmd = c.checkCmd(cmdBase(command))
 		case !strings.ContainsAny(command, "/\\"):
 			cmd = c.checkCmd(command)
 		}
-		if _, ok := s["args"]; ok {
+		if _, ok := s["args"]; ok || stripped {
 			out["args"] = c.templateArgs(name, args)
 		}
 		if env != nil {
@@ -809,9 +830,20 @@ func (c *mcpClassifier) laptopPath(p string) bool {
 	return false
 }
 
+// winSlashes turns a Windows path's backslashes into slashes, so a root
+// git gives as C:/code/repo matches an argument written C:\code\repo.
+// Other strings are returned as they are.
+func winSlashes(s string) string {
+	if !strings.Contains(s, ":\\") && !strings.Contains(s, ":/") {
+		return s
+	}
+	return strings.ReplaceAll(s, "\\", "/")
+}
+
 func (c *mcpClassifier) underRepo(p string) bool {
-	p = c.expandHome(p)
+	p = winSlashes(c.expandHome(p))
 	for _, r := range c.repos {
+		r = winSlashes(r)
 		if r != "" && (p == r || strings.HasPrefix(p, r+"/") || strings.Contains(p, "="+r) || strings.Contains(p, ":"+r) || strings.HasPrefix(p, r+":")) {
 			return true
 		}
@@ -822,9 +854,12 @@ func (c *mcpClassifier) underRepo(p string) bool {
 // repoRewrite replaces every repository root in s with the placeholder
 // the guest fills in.
 func (c *mcpClassifier) repoRewrite(s string) string {
-	s2 := c.expandHome(s)
+	s2 := winSlashes(c.expandHome(s))
 	// Longest root first, so a nested worktree is not half replaced.
-	roots := append([]string(nil), c.repos...)
+	roots := make([]string, 0, len(c.repos))
+	for _, r := range c.repos {
+		roots = append(roots, winSlashes(r))
+	}
 	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
 	for _, r := range roots {
 		if r == "" {
@@ -1002,6 +1037,8 @@ func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 			case v == "":
 			case mcpHeaderFlags[f]:
 				a = f + "=" + c.templateHeaderArg(server, v)
+			case mcpEnvAssign.MatchString(v):
+				a = f + "=" + c.templateAssign(server, v) // --env=NAME=VALUE
 			case mcpSecretFlag(f) || mcpTokenLike(v):
 				a = f + "=${" + c.assign(server, strings.TrimLeft(f, "-"), "", v) + "}"
 			case strings.Contains(v, "://"):
@@ -1020,6 +1057,8 @@ func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 			if secretIn(a) {
 				a = "${" + c.assign(server, "TOKEN", "", args[i]) + "}"
 			}
+		case mcpEnvAssign.MatchString(a):
+			a = c.templateAssign(server, a) // docker -e NAME=VALUE, env NAME=VALUE
 		case mcpTokenLike(a):
 			a = "${" + c.assign(server, "TOKEN", "", a) + "}"
 		}
@@ -1029,6 +1068,16 @@ func (c *mcpClassifier) templateArgs(server string, args []string) []any {
 		out = append(out, a)
 	}
 	return out
+}
+
+// templateAssign templates NAME=VALUE by the env map's rules, so
+// docker -e POSTGRES_PASSWORD=x carries ${POSTGRES_PASSWORD}.
+func (c *mcpClassifier) templateAssign(server, kv string) string {
+	k, v, _ := strings.Cut(kv, "=")
+	if v == "" {
+		return kv
+	}
+	return k + "=" + c.templateEnv(server, k, v)
 }
 
 // templateEnv makes a credential-looking value `${KEY}` (or the server's

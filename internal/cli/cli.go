@@ -1409,9 +1409,10 @@ add NAME to [mcp] forward in config.toml. The project is the folder's, or
 
 FROM is repose (the browser tools), laptop (copied from your laptop's Claude
 Code, or kept there, with the reason in STATE), forward (repose mcp forward),
-project (a checkout's .mcp.json) or machine (added on the machine). STATE is
-empty when the server needs nothing. Piped, it prints one tab-separated line
-per server with no header. Needs the machine running.`,
+project (a checkout's .mcp.json) or machine (added on the machine). STATE
+starts with the checkout for a server from one, and is otherwise empty when
+the server needs nothing. Piped, it prints one tab-separated line per server
+with no header. Needs the machine running.`,
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

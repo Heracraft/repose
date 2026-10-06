@@ -8,11 +8,14 @@
 // NAME.json, so an agent's start never waits on the laptop. Once the agent
 // has initialized it connects to /run/repose/mcp/NAME.sock, replays the
 // agent's initialize to the laptop's server and from then on passes lines
-// both ways. It pings through the link every 10 s; two missed pings, or
-// the socket closing, mark the laptop away, and from then on each
-// tools/call answers isError with a line for the agent to act on. It
-// retries every 5 s and sends notifications/tools/list_changed when the
-// tools it finds on reconnect differ from the ones the agent has.
+// both ways. While a connect is in progress, calls wait for it rather than
+// being answered away; the cache still answers the list methods. It pings
+// through the link every 10 s; two missed pings mark the laptop away, and
+// from then on each tools/call answers isError with a line for the agent to
+// act on, and it retries every 5 s. A socket that closes (a hand-over to a
+// newer forward, a server that exited) reconnects at once. It sends
+// notifications/tools/list_changed when the tools it finds on reconnect
+// differ from the ones the agent has.
 //
 // Nothing here logs what passes through: stderr lines name the server and
 // protocol versions only.
@@ -90,9 +93,15 @@ type shim struct {
 	link        *link
 	pending     map[string]string // agent request id -> method, sent over link
 	busy        bool
-	seq         int
-	wake        chan struct{}
-	quit        chan struct{}
+	// connecting: a connect is in progress and the agent's calls wait in
+	// held until it settles. away: the last link went down on missed pings,
+	// so calls are answered at once until a connect succeeds.
+	connecting bool
+	held       [][]byte
+	away       bool
+	seq        int
+	wake       chan struct{}
+	quit       chan struct{}
 }
 
 func serve(p mcpreg.Paths, name string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -171,6 +180,9 @@ func (s *shim) fromAgent(line []byte) {
 		return
 	case m.Method == "notifications/initialized":
 		s.mu.Lock()
+		if !s.initialized && s.link == nil && !s.away {
+			s.connecting = true // the connector starts one now
+		}
 		s.initialized = true
 		s.mu.Unlock()
 		s.poke()
@@ -178,17 +190,29 @@ func (s *shim) fromAgent(line []byte) {
 	}
 	s.mu.Lock()
 	l := s.link
+	if l == nil && s.connecting && !fromCache[m.Method] {
+		s.held = append(s.held, append([]byte{}, line...))
+		s.mu.Unlock()
+		return
+	}
 	if l != nil && m.request() {
 		s.pending[string(m.ID)] = m.Method
 	}
 	s.mu.Unlock()
 	if l != nil {
 		if err := l.send(line); err != nil {
-			s.down(l) // answers this request with the others pending
+			s.down(l, false) // answers this request with the others pending
 		}
 		return
 	}
 	s.answerLocally(m)
+}
+
+// fromCache are the methods the shim answers itself while there is no
+// link, so an agent's start never waits on a connect.
+var fromCache = map[string]bool{
+	"tools/list": true, "ping": true, "resources/list": true,
+	"resources/templates/list": true, "prompts/list": true,
 }
 
 // answerInitialize answers from the cache, so the agent's start never
@@ -298,8 +322,9 @@ func (s *shim) fromLaptop(line []byte, m msg) {
 	s.toAgent(append(append([]byte{}, line...), '\n'))
 }
 
-// down ends l, answering every request still pending on it.
-func (s *shim) down(l *link) {
+// down ends l, answering every request still pending on it. away is a
+// laptop that stopped answering pings, as against a socket that closed.
+func (s *shim) down(l *link, away bool) {
 	l.close()
 	s.mu.Lock()
 	if s.link != l {
@@ -307,10 +332,17 @@ func (s *shim) down(l *link) {
 		return
 	}
 	s.link = nil
+	s.away = away
 	pending := s.pending
 	s.pending = map[string]string{}
-	text := AwayText(s.name)
 	s.mu.Unlock()
+	s.answerAway(pending)
+	s.poke()
+}
+
+// answerAway answers requests that were sent over a link now gone.
+func (s *shim) answerAway(pending map[string]string) {
+	text := AwayText(s.name)
 	for id, method := range pending {
 		if method == "tools/call" {
 			s.toAgent(toolError(json.RawMessage(id), text))
@@ -318,25 +350,23 @@ func (s *shim) down(l *link) {
 			s.toAgent(rpcError(json.RawMessage(id), -32000, text))
 		}
 	}
-	s.poke()
 }
 
 // connector keeps a link up while the agent is initialized: at once when
-// it initializes, then every retryEvery while the link is down.
+// it initializes or a socket closes, and every retryEvery after a connect
+// that failed or a laptop that went away.
 func (s *shim) connector() {
+	wait := false
 	for {
 		s.mu.Lock()
 		init, up := s.initialized, s.link != nil
 		s.mu.Unlock()
 		if init && !up {
-			s.connect()
-			s.mu.Lock()
-			up = s.link != nil
-			s.mu.Unlock()
-			if !up {
-				if !s.sleep(retryEvery.get()) {
-					return
-				}
+			if wait && !s.sleep(retryEvery.get()) {
+				return
+			}
+			if !s.connect() {
+				wait = true
 				continue
 			}
 		}
@@ -346,11 +376,8 @@ func (s *shim) connector() {
 		case <-s.wake:
 		}
 		s.mu.Lock()
-		down := s.link == nil
+		wait = s.away
 		s.mu.Unlock()
-		if up && down && !s.sleep(retryEvery.get()) {
-			return // a link that just went down waits out one retry first
-		}
 	}
 }
 
@@ -367,14 +394,21 @@ func (s *shim) sleep(d time.Duration) bool {
 }
 
 // connect replays the agent's initialize through the socket and makes the
-// link the live one.
-func (s *shim) connect() {
+// link the live one. It reports whether a link is up.
+func (s *shim) connect() bool {
+	s.mu.Lock()
+	s.connecting = !s.away
+	s.mu.Unlock()
 	c, err := net.DialTimeout("unix", s.sock, 2*time.Second)
 	if err != nil {
-		return
+		return s.settle(nil)
 	}
 	l := newLink(c)
 	go l.readLoop(s)
+	fail := func() bool {
+		l.close()
+		return s.settle(nil)
+	}
 	s.mu.Lock()
 	params := s.initParams
 	told := s.told
@@ -386,8 +420,7 @@ func (s *shim) connect() {
 			s.busy = true
 			s.mu.Unlock()
 		}
-		l.close()
-		return
+		return fail()
 	}
 	var ir struct {
 		ProtocolVersion string `json:"protocolVersion"`
@@ -397,8 +430,7 @@ func (s *shim) connect() {
 		fmt.Fprintf(s.stderr, "repose-mcp: %s: the server on the laptop chose protocol %s; the agent was told %s\n", s.name, ir.ProtocolVersion, told)
 	}
 	if err := l.send(notification("notifications/initialized")); err != nil {
-		l.close()
-		return
+		return fail()
 	}
 	var tools []json.RawMessage
 	cursor := ""
@@ -409,8 +441,7 @@ func (s *shim) connect() {
 		}
 		res, err := l.call(s.privateID("tools"), "tools/list", p, replayWait.get())
 		if err != nil {
-			l.close()
-			return
+			return fail()
 		}
 		var tl struct {
 			Tools      []json.RawMessage `json:"tools"`
@@ -429,21 +460,78 @@ func (s *shim) connect() {
 	s.mu.Lock()
 	select {
 	case <-s.quit:
+		s.connecting = false
 		s.mu.Unlock()
 		l.close()
-		return
+		return false
 	default:
 	}
 	changed := !sameJSON(tools, s.tools)
 	s.tools = tools
 	s.busy = false
-	s.link = l
-	l.setUp()
+	s.mu.Unlock()
+	// What the server sent since the replay (roots/list, a log line)
+	// reaches the agent before anything newer.
+	l.setUp(s)
+	if !s.settle(l) {
+		return false
+	}
+	s.mu.Lock()
+	s.away = false
 	s.mu.Unlock()
 	if changed {
 		s.toAgent(notification("notifications/tools/list_changed"))
 	}
 	go s.pinger(l)
+	return true
+}
+
+// settle ends a connect. With l, the calls held during it go over l in
+// order and l becomes the live link; without, they are answered here. It
+// reports whether l is live: a link that closed meanwhile is not installed.
+func (s *shim) settle(l *link) bool {
+	for {
+		s.mu.Lock()
+		held := s.held
+		s.held = nil
+		if len(held) == 0 {
+			s.connecting = false
+			if l == nil {
+				s.mu.Unlock()
+				return false
+			}
+			select {
+			case <-l.closed:
+				pending := s.pending
+				s.pending = map[string]string{}
+				s.mu.Unlock()
+				s.answerAway(pending)
+				return false
+			default:
+			}
+			s.link = l
+			s.mu.Unlock()
+			return true
+		}
+		s.mu.Unlock()
+		for _, line := range held {
+			m, ok := parse(line)
+			if l == nil {
+				if ok {
+					s.answerLocally(m)
+				}
+				continue
+			}
+			if ok && m.request() {
+				s.mu.Lock()
+				s.pending[string(m.ID)] = m.Method
+				s.mu.Unlock()
+			}
+			if l.send(line) != nil {
+				l.close() // the next pass answers what is pending
+			}
+		}
+	}
 }
 
 // pinger marks the link down after two pings in a row go unanswered.
@@ -455,6 +543,7 @@ func (s *shim) pinger(l *link) {
 	for {
 		select {
 		case <-l.closed:
+			s.down(l, false) // a no-op unless l is still the live link
 			return
 		case <-t.C:
 		}
@@ -467,13 +556,13 @@ func (s *shim) pinger(l *link) {
 			}
 		}
 		if missed >= 2 {
-			s.down(l)
+			s.down(l, true)
 			return
 		}
 		id := s.privateID("ping")
 		last = l.expect(id)
 		if err := l.send(request(id, PingMethod, nil)); err != nil {
-			s.down(l)
+			s.down(l, false)
 			return
 		}
 	}
@@ -481,12 +570,16 @@ func (s *shim) pinger(l *link) {
 
 // link is one connection to hold's socket.
 type link struct {
-	conn   net.Conn
-	wmu    sync.Mutex
-	mu     sync.Mutex
-	waits  map[string]chan json.RawMessage
+	conn  net.Conn
+	wmu   sync.Mutex
+	mu    sync.Mutex
+	waits map[string]chan json.RawMessage
+	busy  bool
+	// dmu orders delivery to the agent: lines the server sends before the
+	// link is up wait in early, and setUp passes them on first.
+	dmu    sync.Mutex
 	up     bool
-	busy   bool
+	early  [][]byte
 	closed chan struct{}
 	once   sync.Once
 }
@@ -502,10 +595,19 @@ func (l *link) close() {
 	})
 }
 
-func (l *link) setUp() {
-	l.mu.Lock()
+// maxEarly bounds what a server may send before the link is up.
+const maxEarly = 64
+
+func (l *link) setUp(s *shim) {
+	l.dmu.Lock()
+	defer l.dmu.Unlock()
+	for _, line := range l.early {
+		if m, ok := parse(line); ok {
+			s.fromLaptop(line, m)
+		}
+	}
+	l.early = nil
 	l.up = true
-	l.mu.Unlock()
 }
 
 func (l *link) wasBusy() bool {
@@ -571,7 +673,7 @@ func asRaw(v any) json.RawMessage {
 }
 
 // readLoop takes lines from the laptop: private responses to their
-// waiters, and, once the link is up, the rest to the agent.
+// waiters, and the rest to the agent, held until the link is up.
 func (l *link) readLoop(s *shim) {
 	lr := newLineReader(l.conn)
 	for {
@@ -603,18 +705,14 @@ func (l *link) readLoop(s *shim) {
 				continue
 			}
 		}
-		l.mu.Lock()
-		up := l.up
-		l.mu.Unlock()
-		if up {
+		l.dmu.Lock()
+		if l.up {
 			s.fromLaptop(line, m)
+		} else if len(l.early) < maxEarly {
+			l.early = append(l.early, append([]byte{}, line...))
 		}
+		l.dmu.Unlock()
 	}
 	l.close()
-	s.mu.Lock()
-	live := s.link == l
-	s.mu.Unlock()
-	if live {
-		s.down(l)
-	}
+	s.down(l, false) // a no-op unless l is still the live link
 }

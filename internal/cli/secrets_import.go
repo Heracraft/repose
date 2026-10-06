@@ -303,8 +303,8 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 // (or --yes); a no sets the others.
 func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions) error {
 	values := map[string]string{}
-	if _, notes := collectMCP(e.HomeDir, gitRepoRoot(e.Cwd), nil, values); len(notes) > 0 {
-		return exitf(ExitGeneric, "%s", notes[0])
+	if _, err := collectMCP(e.HomeDir, gitRepoRoot(e.Cwd), nil, values); err != nil {
+		return exitf(ExitGeneric, "Could not read your Claude Code MCP servers: %s.", strings.TrimSuffix(err.Error(), "."))
 	}
 	if len(values) == 0 {
 		_, _ = fmt.Fprintln(e.Out, "Your laptop's Claude Code MCP servers hold no tokens to set.")

@@ -234,16 +234,41 @@ func (m *mcpEnd) serve(r io.Reader) {
 				p.stop()
 			}
 		case mcpshim.FrameReady:
+			// The machine's strings reach the terminal: only names this
+			// laptop forwards, and an error with no control characters.
 			var rd mcpshim.Ready
-			if json.Unmarshal(f.Payload, &rd) == nil && m.onReady != nil {
+			if json.Unmarshal(f.Payload, &rd) == nil && m.onReady != nil && m.known(rd.Name) {
+				rd.Error = terminalText(rd.Error)
 				m.onReady(rd)
 			}
 		case mcpshim.FrameGone:
-			if m.onGone != nil {
-				m.onGone(string(f.Payload))
+			if name := string(f.Payload); m.onGone != nil && m.known(name) {
+				m.onGone(name)
 			}
 		}
 	}
+}
+
+// known reports whether name is one this laptop forwards.
+func (m *mcpEnd) known(name string) bool {
+	_, ok := m.defs[name]
+	return ok
+}
+
+// terminalText drops control characters, C1 included, and keeps at most
+// 300 bytes, so a string from the machine cannot move the cursor, set the
+// clipboard or fake a prompt on the laptop's terminal.
+func terminalText(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > 300 {
+		s = strings.ToValidUTF8(s[:300], "")
+	}
+	return s
 }
 
 func (m *mcpEnd) saidHello() bool {
@@ -301,9 +326,11 @@ func (m *mcpEnd) open(id uint32, name string) {
 			n++
 		}
 	}
+	_, taken := m.procs[id]
 	m.mu.Unlock()
-	// One more than the hold's cap: the cache fill's own stream.
-	if !ok || n > mcpshim.MaxSessions {
+	// One more than the hold's cap: the cache fill's own stream. An id
+	// already in use is refused, so the map holds every server started.
+	if !ok || taken || n > mcpshim.MaxSessions {
 		_ = m.fw.Write(mcpshim.FrameClose, id, nil)
 		return
 	}
@@ -336,19 +363,22 @@ func (m *mcpEnd) open(id uint32, name string) {
 		_ = m.fw.Write(mcpshim.FrameClose, id, nil)
 		return
 	}
-	p := &mcpProc{id: id, name: name, cmd: cmd, in: make(chan []byte, 256), ended: make(chan struct{}), end: m}
+	p := &mcpProc{id: id, name: name, cmd: cmd, in: mcpshim.NewQueue(), ended: make(chan struct{}), end: m}
 	m.mu.Lock()
 	m.procs[id] = p
 	m.mu.Unlock()
 	go func() {
-		for b := range p.in {
+		for {
+			b, ok := p.in.Next()
+			if !ok {
+				break
+			}
 			if _, err := stdin.Write(b); err != nil {
+				p.in.Abort()
 				break
 			}
 		}
 		_ = stdin.Close()
-		for range p.in {
-		}
 	}()
 	go func() {
 		br := bufio.NewReaderSize(stdout, 64<<10)
@@ -366,8 +396,10 @@ func (m *mcpEnd) open(id uint32, name string) {
 		_ = cmd.Wait()
 		close(p.ended)
 		m.mu.Lock()
-		_, still := m.procs[id]
-		delete(m.procs, id)
+		still := m.procs[id] == p
+		if still {
+			delete(m.procs, id)
+		}
 		m.mu.Unlock()
 		p.closeIn()
 		if still {
@@ -382,24 +414,14 @@ type mcpProc struct {
 	name  string
 	cmd   *exec.Cmd
 	end   *mcpEnd
-	in    chan []byte
+	in    *mcpshim.Queue // to the server's stdin; never blocks the frame loop
 	buf   []byte
 	agent string
 	ended chan struct{}
-
-	mu     sync.Mutex
-	closed bool
-	once   sync.Once
+	once  sync.Once
 }
 
-func (p *mcpProc) closeIn() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.closed {
-		p.closed = true
-		close(p.in)
-	}
-}
+func (p *mcpProc) closeIn() { p.in.Close() }
 
 // feed takes bytes from the machine, line by line: a ping is answered
 // here, everything else goes to the server's stdin.
@@ -420,11 +442,10 @@ func (p *mcpProc) feed(b []byte) {
 			continue
 		}
 		p.notice(line)
-		p.mu.Lock()
-		if !p.closed {
-			p.in <- line
+		if !p.in.Push(line) {
+			p.stop() // a server that stopped reading its stdin
+			return
 		}
-		p.mu.Unlock()
 	}
 }
 
@@ -585,6 +606,22 @@ func holdMCP(ctx context.Context, t sshTarget, names []string, end func(io.Write
 	}
 	served := make(chan struct{})
 	go func() { m.serve(stdout); close(served) }()
+	go func() {
+		// The keepalive: status on the machine tells a laptop that went
+		// away from one that is still connected (mcpshim.FrameAlive).
+		t := time.NewTicker(mcpshim.AliveEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-served:
+				return
+			case <-t.C:
+				if m.fw.Write(mcpshim.FrameAlive, 0, nil) != nil {
+					return
+				}
+			}
+		}
+	}()
 	waited := make(chan error, 1)
 	go func() { <-served; waited <- cmd.Wait() }()
 	select {

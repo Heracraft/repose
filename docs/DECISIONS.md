@@ -13147,6 +13147,7 @@ request whose system prompt holds the guide and `<mcp_servers>` listing
 `mcp__chrome_devtools` and `mcp__playwright` (codemode exposure); with
 the off-switch entry the list holds `mcp__chrome_devtools` alone; the
 `before_agent_start` hook still receives `systemPromptOptions.sections`.
+
 **I-555. repose keeps one MCP list per machine and renders it into each agent's own config.**
 (mcp-registry, 2026-10-06; amends I-246) The carry of the laptop's
 Claude Code servers and `repose mcp forward` each have to reach five
@@ -13211,6 +13212,15 @@ write (I-486, extended by I-556) takes the same `~/.claude.json.lock`,
 so all three repose writers of the file hold Claude Code's lock.
 *Amended by I-558:* the status's `from` is `repose` for the platform and
 `machine` for a server the user added, in place of `machine` and `yours`.
+Review fixes on the same branch: a root `mcp_servers = { ... }` inline
+table takes no appended `[mcp_servers.NAME]` (Codex refuses that file,
+though BurntSushi/toml accepts it), so each new name is held and warned
+once. opencode reads comments and trailing commas in its `.json` files
+(1.18.34), so the same-name check reads `opencode.json` that way, and a
+commented `config.json` is left as written with one warning per held
+change. A `~/.codex/config.toml` symlink gets `notify` through the link
+when its target is a writable file; for a read-only target
+(home-manager's store) agent-setup names the missing `notify` on stderr.
 
 **I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
 with credentials replaced by secret references.** (mcp-carry,
@@ -13295,6 +13305,17 @@ configs (owner decision O5; deferred); writing the checkout's
 Not covered here: the guest VM test feeding a golden payload to
 `repose-agent-setup` (needs the dev box and I-555's renderer), and an
 OAuth sign-in end to end while attached.
+Review fixes on the same branch: a `NAME=VALUE` argument (docker `-e`,
+`--env=`, `env`) is templated by the env map's rules; a JWT counts as a
+token though it is dotted, and `jwt` joins the secret words for flags,
+env keys and query names; a Windows `cmd /c` wrapper is dropped, and a
+repository path written with backslashes matches the root git gives; an
+absolute command outside the laptop roots (`/bin/bash`, `/usr/bin/ruby`)
+runs by name on the machine and is checked like a bare one. `#mcpold`
+prints only when the laptop has a server to carry. `secrets import
+--mcp` says only that it could not read the servers when
+`~/.claude.json` fails to parse, without the carry's clause about the
+machine.
 
 **I-557. `repose mcp forward` runs laptop-bound MCP servers through a
 guest shim that answers for an absent laptop.** (mcp-forward,
@@ -13359,6 +13380,27 @@ subtest (the real hold with a fake laptop end, every agent listing the
 server, the away answer) is written and evaluated and needs the dev box
 to boot; the live check is a laptop forward called from Codex, then the
 lid closed.
+Review fixes on the same branch: while a connect is in progress (the
+first after initialize, and an immediate one after a socket closes, a
+hand-over included) the shim holds the agent's calls and sends them once
+the link is up; the list methods still answer from the cache, and after
+missed pings calls answer away at once and retries wait 5 s, as above.
+Lines the server sends between the replayed initialize and the link
+going live (roots/list, a log line) reach the agent before anything
+newer, and a link that closed before it went live is not installed.
+hold and the laptop end queue each stream without blocking their frame
+loop, up to 16 MB, and end a stream past that, so one agent or server
+that stops reading holds up no other stream's pings. The laptop end
+refuses a stream id already in use, and prints only names it forwards,
+with control characters dropped from the machine's strings. The laptop
+sends a keepalive frame `A` every 10 s; hold touches
+`/run/repose/mcp/NAME.alive`, and status shows `laptop not connected`
+once that file is 30 s old. A hold from before `A` ignores the frame, and
+a CLI from before it writes no file, so the socket alone decides, as
+before. A first forward's line keeps "Agents already running list it
+after a restart.", which the design's preview dropped: an agent reads
+its MCP config at start, so one already running has no entry for the
+new name and list_changed cannot reach it.
 
 **I-558. `repose mcp list` shows each MCP server on a machine, where it
 came from and which agents have it.** (mcp-list, 2026-10-06; amends

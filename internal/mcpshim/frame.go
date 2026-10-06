@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 // The hold's stdio carries every connection of a forward (DECISIONS I-557,
@@ -21,6 +22,9 @@ import (
 //	C  both            the stream ended (a closed socket, or the server exited)
 //	R  hold -> laptop  NAME is registered, or failed to; payload is Ready JSON
 //	G  hold -> laptop  another hold took NAME over; payload is NAME
+//	A  laptop -> hold  keepalive, every 10 s, no payload: hold touches
+//	                   /run/repose/mcp/NAME.alive for status. A hold that
+//	                   predates it ignores the frame.
 const (
 	FrameHello byte = 'H'
 	FrameOpen  byte = 'O'
@@ -28,7 +32,11 @@ const (
 	FrameClose byte = 'C'
 	FrameReady byte = 'R'
 	FrameGone  byte = 'G'
+	FrameAlive byte = 'A'
 )
+
+// AliveEvery is how often the laptop sends FrameAlive.
+const AliveEvery = 10 * time.Second
 
 // FrameVersion is the hello's payload.
 const FrameVersion = "1"

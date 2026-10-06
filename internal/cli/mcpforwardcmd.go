@@ -24,10 +24,13 @@ type MCPForwardOptions struct {
 // `repose-mcp NAME` can start.
 func mcpForwardName(n string) error {
 	if !mcpreg.ValidName(n) || mcpreg.Reserved[n] {
-		return fmt.Errorf("%q is not a server name repose can forward: letters, digits, - and _, at most 64, and not sync, run, status, hold or help", n)
+		return fmt.Errorf("%q is not a server name repose can forward: %s", n, mcpNameRule)
 	}
 	return nil
 }
+
+// mcpNameRule is what a forwarded server's name may be.
+const mcpNameRule = "letters, digits, - and _, at most 64, and not sync, run, status, hold or help"
 
 // mcpDefs is each NAME's definition on this laptop.
 func mcpDefs(home, repoDir string, opts MCPForwardOptions) (map[string]laptopMCP, error) {
@@ -95,6 +98,21 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 	}
 	var mu sync.Mutex
 	ready, failed := 0, 0
+	toldCtrlC := false
+	// settled says how to end the forward once every name has an answer,
+	// whichever answer comes last; a single name says it on its own line.
+	settled := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if toldCtrlC || ready+failed < len(defs) || ready == 0 {
+			return ""
+		}
+		toldCtrlC = true
+		if ready == 1 {
+			return "Ctrl-C ends it."
+		}
+		return "Ctrl-C ends the forwards."
+	}
 	ui := mcpForwardUI{
 		ready: func(r mcpshim.Ready, again bool) {
 			if again {
@@ -111,14 +129,15 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 			}
 			mu.Lock()
 			ready++
-			last := ready+failed == len(defs)
 			mu.Unlock()
-			if len(defs) == 1 {
-				l += " Ctrl-C ends it."
+			c := settled()
+			if c != "" && len(defs) == 1 {
+				l += " " + c
+				c = ""
 			}
 			out(l)
-			if len(defs) > 1 && last {
-				out("Ctrl-C ends the forwards.")
+			if c != "" {
+				out(c)
 			}
 		},
 		failed: func(name, reason, tail string) {
@@ -127,9 +146,12 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 			mu.Unlock()
 			l := fmt.Sprintf("%s did not start on this laptop: %s.", name, strings.TrimSuffix(reason, "."))
 			if tail != "" {
-				l += " It said: " + tail
+				l += " It said: " + terminalText(tail)
 			}
 			errOut(l)
+			if c := settled(); c != "" {
+				out(c)
+			}
 		},
 		gone: func(name string) {
 			out(fmt.Sprintf("%s: another forward to %s took it over.", name, slug))
@@ -197,7 +219,7 @@ func runSessionMCP(ctx context.Context, t sshTarget, names []string, home, repoD
 	defs := map[string]laptopMCP{}
 	for _, n := range names {
 		if err := mcpForwardName(n); err != nil {
-			say("repose could not forward an MCP server: [mcp] forward names " + err.Error() + ".")
+			say(fmt.Sprintf("repose could not forward %q from [mcp] forward in config.toml: a name is %s.", n, mcpNameRule))
 			continue
 		}
 		d, err := findLaptopMCP(home, repoDir, n)

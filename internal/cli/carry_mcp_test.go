@@ -118,6 +118,22 @@ func TestClassifyMCPServer(t *testing.T) {
 			want: `{"headers":{"X-Api":"${H_X_API}","Content-Type":"application/json"}}`, secrets: []string{"H_X_API"}},
 		{desc: "plain flags", name: "fp", server: `{"command":"npx","args":["-y","@modelcontextprotocol/server-everything","--auth-type","oauth","--session-name","foo","--private-mode","true","--keyboard","us","--transport=stdio"]}`,
 			want: `{"args":["-y","@modelcontextprotocol/server-everything","--auth-type","oauth","--session-name","foo","--private-mode","true","--keyboard","us","--transport=stdio"]}`},
+		{desc: "docker -e NAME=VALUE", name: "pg", server: `{"command":"docker","args":["run","-i","--rm","-e","POSTGRES_PASSWORD=NEVERsupersecret","-e","DEBUG=1","mcp/postgres"]}`,
+			want: `{"args":["run","-i","--rm","-e","POSTGRES_PASSWORD=${POSTGRES_PASSWORD}","-e","DEBUG=1","mcp/postgres"]}`, secrets: []string{"POSTGRES_PASSWORD"}},
+		{desc: "--env=NAME=VALUE", name: "envflag", server: `{"command":"docker","args":["run","--env=API_KEY=NEVERabc123","x"]}`,
+			want: `{"args":["run","--env=API_KEY=${API_KEY}","x"]}`, secrets: []string{"API_KEY"}},
+		{desc: "jwt positional", name: "jw", server: `{"command":"npx","args":["-y","srv","eyJNEVERhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123"]}`,
+			want: `{"args":["-y","srv","${JW_TOKEN}"]}`, secrets: []string{"JW_TOKEN"}},
+		{desc: "jwt in url path", name: "jw2", server: `{"type":"http","url":"https://h.example.com/mcp/eyJNEVERhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123"}`,
+			want: `{"url":"https://h.example.com/mcp/${JW2_TOKEN}"}`, secrets: []string{"JW2_TOKEN"}},
+		{desc: "jwt flag", name: "jw3", server: `{"command":"npx","args":["srv","--jwt=NEVERshort"]}`,
+			want: `{"args":["srv","--jwt=${JW3_JWT}"]}`, secrets: []string{"JW3_JWT"}},
+		{desc: "windows cmd /c", name: "linear", server: `{"command":"cmd","args":["/c","npx","-y","@linear/mcp"]}`,
+			want: `{"command":"npx","args":["-y","@linear/mcp"]}`},
+		{desc: "absolute system command", name: "sh", server: `{"command":"/bin/bash","args":["-c","npx -y some-mcp"]}`,
+			want: `{"command":"bash","args":["-c","npx -y some-mcp"]}`},
+		{desc: "absolute command the machine may lack", name: "rb", server: `{"command":"/usr/bin/ruby","args":["server.rb"]}`,
+			want: `{"command":"ruby"}`, cmd: "ruby"},
 		{desc: "env key with a newline", name: "nl", server: `{"command":"npx","args":["x"],"env":{"A\n#mcpold":"/Users/me/x"}}`, skip: "reads A#mcpold from your laptop"},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -153,6 +169,18 @@ func TestClassifyMCPServer(t *testing.T) {
 				t.Fatalf("cmd = %q, want %q", v.cmd, tc.cmd)
 			}
 		})
+	}
+}
+
+// A Windows laptop writes repository paths with backslashes; git gives
+// the root with slashes. Both are the checkout.
+func TestClassifyMCPWindowsRepoPath(t *testing.T) {
+	v, _ := classifyMCPServer(`C:\Users\me`, "C:/Users/me/code/repo", "local", mustJSON(t, `{"command":"node","args":["C:\\Users\\me\\code\\repo\\server.js"]}`))
+	if v.skip != "" || v.drop {
+		t.Fatalf("skip=%q drop=%v, want it carried", v.skip, v.drop)
+	}
+	if b, _ := json.Marshal(v.server["args"]); string(b) != `["@@REPOSE_CHECKOUT@@/server.js"]` {
+		t.Fatalf("args = %s", b)
 	}
 }
 
@@ -572,6 +600,29 @@ func TestCarryMCPServers(t *testing.T) {
 	}
 	if bytes.Contains(stream.Bytes(), []byte("NEVER-")) {
 		t.Fatal("a NEVER- marker is in the carry stream")
+	}
+}
+
+// A laptop with no MCP servers on a base without repose-mcp: the part
+// still travels, but no line says servers are waiting.
+func TestCarryMCPNoServersOldBase(t *testing.T) {
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	home := t.TempDir() // no ~/.claude.json
+	t.Setenv("REPOSE_SECRETS_DIR", t.TempDir())
+	mc, notes := buildMCPCarry(home, f.local, testSlug, "", nil)
+	if mc == nil || len(notes) > 0 {
+		t.Fatalf("carry = %+v, notes %v", mc, notes)
+	}
+	_, o, err := syncCredentialsAndCarry(ctx, f.target, home, f.local, credSyncOptions{}, carryOptions{MCP: mc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(o.Sent) == 0 {
+		t.Fatal("nothing sent")
+	}
+	if o.MCPOld || len(o.mcpLines()) != 0 {
+		t.Fatalf("lines for a laptop with no servers: %v", o.mcpLines())
 	}
 }
 
