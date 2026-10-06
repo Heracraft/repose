@@ -4,13 +4,14 @@
 #   interpreter is /lib64/ld-linux-x86-64.so.2 (prisma engines, biome,
 #   esbuild's and turbo's npm binaries, playwright's own browsers, anything
 #   a curl | sh installer drops) runs with the libraries below.
-# - The pinned nixpkgs registry (I-218): `nixpkgs` in the flake registry
-#   and NIX_PATH is the base's own nixpkgs source, which is in the closure,
-#   so `nix profile add nixpkgs#air` evaluates offline and substitutes
-#   from cache.nixos.org at the base's revision. `nixpkgs.flake.source` is
-#   set by the flake (lib.nixosSystem does it for the runner; the
-#   guestBase module does it for the VM tests); this module only refuses a
-#   base without it.
+# - The pinned nixpkgs registry (I-218, I-531): `nixpkgs` in the flake
+#   registries and NIX_PATH is the base's own nixpkgs source, which is in
+#   the closure, so `nix profile add nixpkgs#air` evaluates offline and
+#   substitutes from cache.nixos.org at the base's revision, and a flake
+#   input that names `nixpkgs` locks offline to the same revision.
+#   `nixpkgs.flake.source` is set by the flake (lib.nixosSystem does it
+#   for the runner; the guestBase module does it for the VM tests); this
+#   module only refuses a base without it.
 # - command-not-found (I-219): an unknown command names the nixpkgs
 #   package that has it and the two ways to add it, from a prebuilt
 #   nix-index database (nix-index-database's small, /bin-only index), so a
@@ -113,6 +114,23 @@ let
   };
 in
 {
+  options.repose.nixpkgsLocked = lib.mkOption {
+    type = lib.types.nullOr (lib.types.submodule {
+      options = {
+        rev = lib.mkOption { type = lib.types.str; };
+        narHash = lib.mkOption { type = lib.types.str; };
+        lastModified = lib.mkOption { type = lib.types.int; };
+      };
+    });
+    default = null;
+    description = ''
+      The base's nixpkgs as its flake input locked it (rev, narHash,
+      lastModified of github:NixOS/nixpkgs). The flake sets it; with null,
+      the global registry points `nixpkgs` at the source path instead,
+      which locks too but as a path a laptop cannot fetch.
+    '';
+  };
+
   options.repose.nixIndexPackage = lib.mkOption {
     type = lib.types.nullOr lib.types.package;
     default = null;
@@ -136,12 +154,37 @@ in
     # path already in the closure (nixos/modules/misc/nixpkgs-flake.nix).
     nixpkgs.flake.setFlakeRegistry = true;
     nixpkgs.flake.setNixPath = true;
-    # No global registry: nix otherwise downloads channels.nixos.org's
-    # flake-registry.json before resolving any `nixpkgs#`, even with the
-    # system entry present, and hangs about a minute when it cannot. The
-    # cost: other indirect names (`templates#`, `home-manager#`) need a
-    # `github:` URL in the guest.
-    nix.settings.flake-registry = "";
+    # No channels: NIX_PATH is `nixpkgs=flake:nixpkgs` alone, so
+    # `nix-shell -p` stops warning that root's channels directory does not
+    # exist, and `nix-channel` is gone (I-532).
+    nix.channel.enable = false;
+    # A global registry of one entry, written here: the default one is
+    # downloaded from channels.nixos.org before resolving any `nixpkgs#`,
+    # and without network that hung about a minute (I-218). Nix 2.34 locks
+    # a flake's indirect inputs (`inputs.nixpkgs.url = "nixpkgs"`, or
+    # `outputs = { self, nixpkgs }` with no inputs) against the global
+    # registry only, never the system one, so an empty global registry
+    # failed those with "cannot find flake 'flake:nixpkgs'" (I-531). The
+    # entry is the base's own revision with its narHash, which nix finds
+    # in the store, so the lock is made offline and names a github: URL
+    # that works on a laptop and in CI. Other indirect names
+    # (`templates#`, `home-manager#`) still need a `github:` URL.
+    nix.settings.flake-registry = pkgs.writeText "flake-registry.json" (builtins.toJSON {
+      version = 2;
+      flakes = [{
+        from = { type = "indirect"; id = "nixpkgs"; };
+        to =
+          if cfg.nixpkgsLocked != null then {
+            type = "github";
+            owner = "NixOS";
+            repo = "nixpkgs";
+            inherit (cfg.nixpkgsLocked) rev narHash lastModified;
+          } else {
+            type = "path";
+            path = config.nixpkgs.flake.source;
+          };
+      }];
+    });
 
     environment.systemPackages = [ notFound ]
       ++ lib.optional (cfg.nixIndexPackage != null) cfg.nixIndexPackage;

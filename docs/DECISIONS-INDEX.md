@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-565 entries.
+571 entries.
 
 ## Scope
 
@@ -303,7 +303,7 @@ pointer, not a summary.
 - **I-226** Request log lines name the route, the user and the client — 2026-09-23; L4815
 - **I-220** The menu takes any nixpkgs package by attribute path, and `repose config add/remove` edit it — L4826
 - **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4869
-- **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; L4925
+- **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; amended by I-531; amended by I-532; amended by I-534; L4925
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; amended by I-517; L4974
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L5007
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5044
@@ -597,3 +597,9 @@ pointer, not a summary.
 - **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14137
 - **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14163
 - **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14176
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14196
+- **I-530** dev is a trusted nix user — 2026-10-06; L14235
+- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14249
+- **I-532** The guest has no nix channels — 2026-10-06; L14270
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14281
+- **I-534** The guest has man pages — 2026-10-06; L14317
