@@ -288,9 +288,11 @@ func claudeLaptopHome(t *testing.T, plugins bool) string {
 		".claude/commands/tls.key":              `NEVER-DOT-KEY`,
 		".claude/skills/deploy/aws-credentials": `NEVER-SKILL-CREDENTIALS`,
 		".claude/output-styles/cert.p12":        `NEVER-P12`,
-		".claude.json":                          `{"oauthAccount":"NEVER-CLAUDE-JSON"}`,
-		".ssh/id_ed25519":                       "NEVER-SSH-KEY",
-		".gemini/oauth_creds.json":              `NEVER-GEMINI`,
+		".claude.json": `{"oauthAccount":"NEVER-CLAUDE-JSON","userID":"NEVER-CLAUDE-USER-ID","projects":{"/x":{"history":["NEVER-CLAUDE-PROJECT-HISTORY"]}},` +
+			// MCP servers travel templated (I-556); their credentials never.
+			`"mcpServers":{"lin":{"type":"http","url":"https://mcp.linear.app/mcp","headers":{"Authorization":"Bearer NEVER-MCP-BEARER"}},"pg":{"command":"npx","args":["-y","pg"],"env":{"DATABASE_URL":"postgres://u:NEVER-MCP-PASS@db/x"}}}}`,
+		".ssh/id_ed25519":          "NEVER-SSH-KEY",
+		".gemini/oauth_creds.json": `NEVER-GEMINI`,
 	}
 	for rel, body := range files {
 		p := filepath.Join(home, rel)
@@ -333,7 +335,8 @@ func TestCarryClaudeNeverCarriesSecrets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, o, err := syncCredentialsAndCarry(ctx, f.target, home, f.local, credSyncOptions{}, carryOptions{TZ: "UTC", Claude: cc, Markers: parseMarkers(string(out))})
+		mc, _ := buildMCPCarry(home, "", testSlug, "", nil)
+		_, o, err := syncCredentialsAndCarry(ctx, f.target, home, f.local, credSyncOptions{}, carryOptions{TZ: "UTC", Claude: cc, MCP: mc, Markers: parseMarkers(string(out))})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -366,12 +369,17 @@ func TestCarryClaudeNeverCarriesSecrets(t *testing.T) {
 	for _, never := range []string{"NEVER-CLAUDE-CREDS", "NEVER-NESTED-CREDS", "NEVER-TRANSCRIPT", "NEVER-HISTORY", "NEVER-TASK-LIST", "NEVER-SNAPSHOT", "NEVER-FILE-HISTORY", "NEVER-PLUGIN-CACHE", "NEVER-STATSIG", "NEVER-CLAUDE-JSON", "NEVER-SSH-KEY", "NEVER-GEMINI",
 		"NEVER-ENV-API-KEY", "NEVER-ENV-MCP", "NEVER-API-KEY-HELPER", "NEVER-AWS-REFRESH", "NEVER-AWS-EXPORT", "NEVER-OTEL-HELPER", "NEVER-FORCE-LOGIN",
 		"NEVER-MKT-TOKEN", "NEVER-STATUSLINE", "NEVER-PERM-BEARER", "NEVER-HOOK-PASS",
-		"NEVER-SKILL-ENV", "NEVER-AGENT-KEY", "NEVER-PEM", "NEVER-DOT-KEY", "NEVER-SKILL-CREDENTIALS", "NEVER-P12"} {
+		"NEVER-SKILL-ENV", "NEVER-AGENT-KEY", "NEVER-PEM", "NEVER-DOT-KEY", "NEVER-SKILL-CREDENTIALS", "NEVER-P12",
+		"NEVER-CLAUDE-USER-ID", "NEVER-CLAUDE-PROJECT-HISTORY", "NEVER-MCP-BEARER", "NEVER-MCP-PASS"} {
 		if bytes.Contains(stream.Bytes(), []byte(never)) {
 			t.Errorf("%s is in the carry stream", never)
 		}
 	}
 	t.Logf("carry stream: %d bytes, none of the never-carried markers in it; sent %v", stream.Len(), o.Sent)
+	// The MCP servers arrived, as references to secrets (I-556).
+	if b, _ := os.ReadFile(filepath.Join(f.guestHome, ".repose/mcp/laptop.json")); !strings.Contains(string(b), "Bearer ${LIN_TOKEN}") || !strings.Contains(string(b), "${DATABASE_URL}") {
+		t.Errorf("laptop.json:\n%s", b)
+	}
 	for _, rel := range []string{".claude/CLAUDE.md", ".claude/keybindings.json", ".claude/skills/deploy/SKILL.md", ".claude/agents/reviewer.md", ".claude/commands/fix.md", ".claude/hooks/notify.sh"} {
 		if !fileExists(filepath.Join(f.guestHome, rel)) {
 			t.Errorf("%s did not arrive", rel)
@@ -446,7 +454,8 @@ func TestClaudeSettingsFailureAndDroppedHookOncePerChange(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, o, err := syncCredentialsAndCarry(ctx, f.target, home, f.local, credSyncOptions{}, carryOptions{TZ: "UTC", Claude: cc, Markers: parseMarkers(string(out))})
+		mc, _ := buildMCPCarry(home, "", testSlug, "", nil)
+		_, o, err := syncCredentialsAndCarry(ctx, f.target, home, f.local, credSyncOptions{}, carryOptions{TZ: "UTC", Claude: cc, MCP: mc, Markers: parseMarkers(string(out))})
 		if err != nil {
 			t.Fatal(err)
 		}

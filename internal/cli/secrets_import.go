@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -169,6 +170,9 @@ type SecretsImportOptions struct {
 	ProjectArg string
 	File       string // "-" is stdin
 	DryRun     bool
+	// MCP sets the secrets the MCP carry templated, from the laptop's
+	// Claude Code config (I-556); File is then unused.
+	MCP bool
 }
 
 func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -178,23 +182,32 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 		Short: "Set a secret for every NAME=VALUE in a .env file (default ./.env; - reads stdin)",
 		Long: "Reads FILE (./.env by default, - for stdin) in the dotenv format and sets each NAME=VALUE\n" +
 			"in it as a secret of the project, replacing one of the same name. Names are checked before\n" +
-			"anything is sent; values are never printed. --dry-run lists what would be set.",
-		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -",
+			"anything is sent; values are never printed. --dry-run lists what would be set.\n\n" +
+			"With --mcp it sets the secrets your carried MCP servers need instead, from the tokens in\n" +
+			"your laptop's Claude Code config, for this folder's project.",
+		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ProjectArg = g.project
 			opts.File = ".env"
 			if len(args) == 1 {
+				if opts.MCP {
+					return exitf(ExitUsage, "--mcp reads your laptop's Claude Code config, not a file; leave out %s.", args[0])
+				}
 				opts.File = args[0]
 			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
+			if opts.MCP {
+				return SecretsImportMCPCmd(cmd.Context(), e, opts)
+			}
 			return SecretsImportCmd(cmd.Context(), e, opts, os.Stdin)
 		},
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "list the names that would be set, and send nothing")
+	cmd.Flags().BoolVar(&opts.MCP, "mcp", false, "set the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config, for this project only")
 	return cmd
 }
 
@@ -266,5 +279,95 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 		where = "pushed to the running machine"
 	}
 	_, _ = fmt.Fprintf(e.Out, "Set %d on %s from %s (%s): %s\n", len(set), project.Slug, from, where, strings.Join(set, ", "))
+	return nil
+}
+
+// SecretsImportMCPCmd implements `repose secrets import --mcp` (I-556):
+// it reads the laptop's Claude Code MCP servers again, as the carry does
+// (user scope, and local scope for this folder's repository), and sets
+// each secret the carry made from a literal value to that value. Values
+// stay in memory and go through the same PUT as `secrets set`; only
+// names are printed. Like the file import, it never prompts.
+func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions) error {
+	values := map[string]string{}
+	if _, notes := collectMCP(e.HomeDir, gitRepoRoot(e.Cwd), nil, values); len(notes) > 0 {
+		return exitf(ExitGeneric, "%s", notes[0])
+	}
+	if len(values) == 0 {
+		_, _ = fmt.Fprintln(e.Out, "Your laptop's Claude Code MCP servers hold no tokens to set.")
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for n := range values {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	entries := make([]dotenvEntry, len(names))
+	for i, n := range names {
+		entries[i] = dotenvEntry{Name: n, Value: values[n]}
+	}
+	if err := validateMCPImport(entries); err != nil {
+		return err
+	}
+	project, err := requireProject(ctx, e, opts.ProjectArg)
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	metas, err := e.Client.ListSecrets(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	for _, m := range metas {
+		existing[m.Name] = true
+	}
+	label := func(n string) string {
+		if existing[n] {
+			return n + " (replaced)"
+		}
+		return n
+	}
+	const from = "your laptop's MCP servers"
+	if opts.DryRun {
+		l := make([]string, len(names))
+		for i, n := range names {
+			l[i] = label(n)
+		}
+		_, _ = fmt.Fprintf(e.Out, "Would set %d on %s from %s: %s\nNothing sent (--dry-run).\n", len(names), project.Slug, from, strings.Join(l, ", "))
+		return nil
+	}
+	var set []string
+	pushed := false
+	for _, en := range entries {
+		res, err := e.Client.PutSecret(ctx, project.ID, en.Name, []byte(en.Value))
+		if err != nil {
+			if len(set) > 0 {
+				_, _ = fmt.Fprintf(e.ErrOut, "Set before the failure: %s. Running the import again sets them all.\n", strings.Join(set, ", "))
+			}
+			return stepFailed("set "+en.Name, err, "")
+		}
+		pushed = pushed || (res != nil && res.Pushed)
+		set = append(set, label(en.Name))
+	}
+	where := "delivered at the next start"
+	if pushed {
+		where = "pushed to the running machine"
+	}
+	_, _ = fmt.Fprintf(e.Out, "Set %d on %s from %s (%s): %s\n", len(set), project.Slug, from, where, strings.Join(set, ", "))
+	return nil
+}
+
+// validateMCPImport refuses a value over the api's limit before anything
+// is sent. The names are the carry's own and always valid.
+func validateMCPImport(entries []dotenvEntry) error {
+	var bad []string
+	for _, en := range entries {
+		if len(en.Value) > secretMaxBytes {
+			bad = append(bad, en.Name+"'s value is over 64 KB")
+		}
+	}
+	if len(bad) > 0 {
+		return exitf(ExitUsage, "Nothing imported:\n  %s", strings.Join(bad, "\n  "))
+	}
 	return nil
 }

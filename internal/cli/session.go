@@ -51,6 +51,12 @@ type sessionOptions struct {
 	Bridge bool `json:"bridge,omitempty"`
 	// BridgeAllow is `--bridge-allow`: the bridge's allowlist (I-311).
 	BridgeAllow []string `json:"bridge_allow,omitempty"`
+	// Checkout is the extra checkout's name (I-480), "" for the
+	// machine's own: where the MCP carry files local-scope servers.
+	Checkout string `json:"checkout,omitempty"`
+	// MCPOff is logins.skip naming mcp: the carry sends an empty list
+	// (I-556).
+	MCPOff bool `json:"mcp_off,omitempty"`
 }
 
 // startSessionHelper starts the helper for the attach that follows, and
@@ -168,6 +174,12 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 		co.Claude = cc
 		warnings = append(warnings, cc.Notes...)
 	}
+	mc, notes := buildMCPCarry(opts.HomeDir, opts.RepoDir, opts.Slug, opts.Checkout, nil)
+	warnings = append(warnings, notes...)
+	if mc != nil && opts.MCPOff {
+		mc = mc.off()
+	}
+	co.MCP = mc
 	p := newGuestPayload()
 	sent, err := addCarry(p, co)
 	if err != nil {

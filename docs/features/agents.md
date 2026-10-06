@@ -230,11 +230,70 @@ referenced with `${VAR}` in the MCP config.
 
 What does not work: servers bound to the laptop, such as Apple Notes, Xcode,
 iMessage, desktop automation, Claude in Chrome, and filesystem servers
-pointed at laptop paths. They are unsupported in the first release
-(DECISIONS R2-14). The CLI does not sync `~/.claude.json` because its
-project-scoped entries are keyed on absolute laptop paths that do not exist
-in the guest; a user who wants an MCP in the guest adds it there, or in the
-repo's `.mcp.json`, which syncs with the repo.
+pointed at laptop paths (DECISIONS R2-14). A user who wants an MCP server
+only in the guest adds it there, or in the repo's `.mcp.json`, which syncs
+with the repo.
+
+### Carry of the laptop's Claude Code servers (DECISIONS I-556)
+
+`run` and `attach` carry the `mcpServers` of the laptop's `~/.claude.json`
+(or `$CLAUDE_CONFIG_DIR/.claude.json`): user scope, and local scope for
+the repository (`projects[<main worktree root>]`, which a linked worktree
+and a subdirectory share). Nothing else in that file is read into the
+payload. `internal/cli/carry_mcp.go` classifies each server, in order:
+
+- dropped without a word: the platform's own names and packages
+  (`playwright`, `chrome-devtools`, `@playwright/mcp`, `playwright-mcp`,
+  `chrome-devtools-mcp`), since the machine's are wired to the shared
+  browser (I-246);
+- left on the laptop with a short reason, named once: a name outside
+  `^[A-Za-z0-9_-]{1,64}$`, a `type` other than stdio/http/sse/ws, an Apple
+  app (`applescript`, `apple-`, `imessage`, `xcode`, `iterm`, `macos`,
+  `osascript`, `shortcuts` in the command or arguments), a URL on
+  `localhost`, `*.local`, `*.ts.net`, a loopback, private, link-local or
+  `100.64/10` address, `headersHelper` or `oauth.clientSecretHelper`, an
+  absolute command or argument under the laptop's home or a macOS or
+  Homebrew location (`docker -v /Users/...` and `${HOME}/x` included), an
+  env value that is such a path;
+- carried, templated: a launcher's absolute path (`~/.nvm/.../npx`) becomes
+  its base name; a path under the repository becomes
+  `@@REPOSE_CHECKOUT@@`; every literal credential becomes `${NAME}`: URL
+  user info and credential-named query parameters, `Authorization:
+  Bearer|Basic|Token <literal>`, a header, flag or env key named like a
+  credential, a value `secretIn` matches or with a 20-character token run
+  (headers and env only), `oauth.clientSecret`. An env key keeps its own
+  name when it is a valid secret name and not one an agent or the shell
+  reads for itself (`ANTHROPIC_*`, `CLAUDE_CODE_*`, `OPENAI_API_KEY`,
+  `CODEX_*`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, `GITHUB_TOKEN`, `GH_TOKEN`,
+  `VERCEL_TOKEN`, `OPENCODE_*`, `REPOSE*`, `BASH_ENV`, `ENV`); everything
+  else is `<SERVER>_<SUFFIX>`, upper case, `MCP_` in front of a digit. Two
+  servers with different values under one name: the second takes its
+  server prefix. The comparison is in memory.
+
+The hash covers the templated list only, so a rotated laptop token sends
+nothing. The guest script writes `~/.repose/mcp/laptop.json`
+(guest-conventions.md) and no agent file; `repose-mcp sync` renders it at
+each agent start, so a running agent sees a change after a restart, as on
+the laptop. The run prints, once per change: the servers left on the
+laptop, the secrets the machine lacks (with `repose secrets import --mcp`
+when the laptop had the value), the commands it lacks, and, on a base
+without `repose-mcp`, that the servers arrive with the next base. A
+same-name server the user added on the machine is theirs; the renderer
+keeps it.
+
+`logins.skip = ["mcp"]` (`repose secrets choose --off mcp`) sends empty
+scopes, on `run` and on `attach`, and the next render removes only what
+repose rendered. `repose secrets import --mcp` reads the laptop config
+again, resolves each name the carry templated to its laptop value in
+memory, and sets them through the secrets PUT for the folder's project;
+it never prompts, like the file import, and refuses a FILE argument.
+
+The agent window's trust write (I-486) also copies the laptop's
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository
+where the guest's entry has none, and Claude Code's "New MCP server found
+in this project" dialog stops `run` from typing its prompt (outside
+`bypassPermissions` that dialog would otherwise take the Enter).
 
 ### Not built: `repose mcp forward NAME`
 
@@ -262,6 +321,7 @@ pane-idle heuristic, AgentState), 05 (events ingest), 07 (`--agent`,
 
 ## Deferred
 
-`repose mcp forward`. Syncing `~/.claude.json` with path rewriting. Agents
+`repose mcp forward`. Carrying the laptop's Codex, Gemini CLI and opencode
+MCP configs (only Claude Code's travels, I-556). Agents
 beyond the five (DECISIONS R2-11: anything nixpkgs does not package is a
 package the platform maintains).

@@ -18,7 +18,7 @@ func runTrust(t *testing.T, home, dir string) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not on PATH")
 	}
-	cmd := exec.Command("bash", "-c", claudeTrustScript(dir)+"echo started")
+	cmd := exec.Command("bash", "-c", claudeTrustScript(dir, mcpApprovals{})+"echo started")
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	out, err := cmd.CombinedOutput()
 	if err != nil || strings.TrimSpace(string(out)) != "started" {
@@ -133,16 +133,16 @@ func TestClaudeTrustScript(t *testing.T) {
 // front of claude's new-window, in the folder the window gets, and in
 // front of no other agent's.
 func TestAgentWindowCommandTrustsOnlyForClaude(t *testing.T) {
-	c := agentWindowCommand("proj", "", "claude-2", "~/proj-worktree-1", "claude")
+	c := agentWindowCommand("proj", "", "claude-2", "~/proj-worktree-1", "claude", mcpApprovals{})
 	if !strings.Contains(c, "cd ~/proj-worktree-1 ") || !strings.Contains(c, "hasTrustDialogAccepted") || !strings.HasSuffix(c, "tmux new-window -t proj -n claude-2 -c ~/proj-worktree-1 -d 'claude'") {
 		t.Fatalf("claude in a worktree: %s", c)
 	}
-	c = agentWindowCommand("proj", "", "claude", "", "claude")
+	c = agentWindowCommand("proj", "", "claude", "", "claude", mcpApprovals{})
 	if !strings.Contains(c, `cd "$repose_co" `) || strings.Index(c, "repose_co=") > strings.Index(c, "hasTrustDialogAccepted") {
 		t.Fatalf("claude in the guest's checkout: %s", c)
 	}
 	for _, a := range []string{"codex", "opencode", "gemini", "pi", "cat"} {
-		if c := agentWindowCommand("proj", "", a, "~/proj", a); strings.Contains(c, ".claude.json") {
+		if c := agentWindowCommand("proj", "", a, "~/proj", a, mcpApprovals{}); strings.Contains(c, ".claude.json") {
 			t.Fatalf("%s touches ~/.claude.json: %s", a, c)
 		}
 	}
@@ -192,7 +192,7 @@ func TestPromptNotTypedIntoTrustDialog(t *testing.T) {
 	// tmux shows a wrapper's name, and the deadline still checks.
 	defer func(d time.Duration) { paneIdleTimeout = d }(paneIdleTimeout)
 	paneIdleTimeout = 2 * time.Second
-	err := startAgentWindow(ctx, f.target, testSlug, "cat", "~/"+testSlug, script, "the prompt", false, nil)
+	err := startAgentWindow(ctx, f.target, testSlug, "cat", "~/"+testSlug, script, "the prompt", false, nil, mcpApprovals{})
 	if err == nil {
 		t.Fatal("the prompt was sent into the trust dialog")
 	}

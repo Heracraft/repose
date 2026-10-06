@@ -264,7 +264,10 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 // fastAttachHelper is the session helper's options for attachFast: the
 // same as the full path's, --bridge included (I-305).
 func fastAttachHelper(e *Env, guess *Project, target sshTarget, tz, explicit string, bridge bool) sessionOptions {
-	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge}
+	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge, Checkout: target.Checkout}
+	if skip, _, _ := e.Cfg.loginSkip(guess.Slug); skip[mcpLogin] {
+		helper.MCPOff = true // I-556
+	}
 	if root := gitRepoRoot(e.Cwd); root != "" && explicit == "" {
 		// Guessed from this checkout's remote: the checkout is the
 		// project's own, whose git config the carry takes.

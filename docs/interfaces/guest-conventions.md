@@ -128,8 +128,13 @@ the attach opens is `<name>`. guestd reads none of this.
   is not valid JSON alone. It needs `jq` on the guest's PATH and is best
   effort; the window starts either way. A pane that settles on Claude
   Code's trust dialog anyway gets no prompt: `run` says so and attaches
-  (with `--no-attach`, exits 1). Nothing else writes that key, and the
-  laptop's `~/.claude.json` is never carried.
+  (with `--no-attach`, exits 1). Nothing else writes that key. The same
+  write fills `enabledMcpjsonServers` and `disabledMcpjsonServers` for
+  that folder from the laptop's answers for the repository, where the
+  guest's entry has none (DECISIONS I-556), and Claude Code's "New MCP
+  server found in this project" dialog stops the prompt the way the trust
+  dialog does. Of the laptop's `~/.claude.json` only its MCP servers
+  travel, through `~/.repose/mcp/laptop.json` (carry table below).
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
   history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga
@@ -336,6 +341,7 @@ state and is named once.
 | `enabledPlugins` from a marketplace | installed by `~/.repose/claude-plugins.sh` (started with `setsid -f`, reads `~/.repose/claude-plugins.json`) with `claude plugin marketplace add` / `claude plugin install`, reporting through `tmux display-message` | marker `claude-plugins`, written only when every install worked |
 | gitignored `.env` / `.env.*` files in the checkout, outside dependency directories, up to 1 MB (DECISIONS I-197; `run` only) | the same relative path under `/home/dev/<slug>/`, dev 0600, mtime kept; a guest file with a newer mtime is kept (`#kept <path>`) | written at the end of the sync's apply script, after the checkout; marker `env` |
 | the laptop's global tools and the project's commands (DECISIONS I-221, I-222; `run` only) | `/home/dev/.repose/tools-wanted.json`, then `repose-tools-install plan` (base, `nix/guest/base/tools-carry.nix`) | see "Tools carry"; marker `tools`, written by the installer when a pass over the list ends |
+| the laptop's Claude Code MCP servers: `mcpServers` of `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and `projects["<main worktree root>"].mcpServers` (DECISIONS I-556) | `/home/dev/.repose/mcp/laptop.json` (dir 0700, file 0600, temp file and rename): `{"version":1,"user":{NAME:server},"projects":{"<checkout, symlinks resolved>":{NAME:server}},"skipped":[{"name","reason"}],"secrets":{SECRET:[NAME,...]}}`. Servers are Claude-shaped with every literal credential replaced by `${SECRET}` on the laptop and `@@REPOSE_CHECKOUT@@` replaced by the checkout's path in the guest; user scope is replaced whole, this checkout's project entry replaced and other checkouts' kept, `secrets` recomputed from every `${NAME}` without a default. No agent file is written: `repose-mcp sync` renders it at each agent start. The reply carries `#mcpleft NAME (reason)`, `#mcpsecret SECRET SERVER,... [laptop]` for a secret without `/run/repose/secrets/SECRET`, `#mcpcmd SERVER BIN`, and `#mcpold` when `repose-mcp` is missing | markers `claude-mcp` and `claude-mcp-project`, suffixed `:old` on a base without `repose-mcp` (the CLI treats both as current); `logins.skip = ["mcp"]` sends empty scopes |
 | markers | `/home/dev/.repose/carry/<item>` | the hash of the laptop input last applied; the probe prints them as `#marker <item> <hash>`, and `#marker tools-notices waiting` while `~/.repose/tools-notices` is non-empty |
 | the tool logins' files (DECISIONS I-224) | `/home/dev/.repose/creds-paths`, one expanded path per line | written with marker `creds` after the logins; the probe prints `#credsmissing` when one of them is gone, and the logins are sent again |
 | the last completed sync's key (DECISIONS I-224) | `.git/repose-synced-key` in the checkout | hex sha256 of what the laptop sent; emptied before the apply touches the checkout, written at its end; the probe prints `#synckey`, `#head` and `#headref` |
