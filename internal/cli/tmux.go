@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -131,8 +132,8 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 // For claude, the same ssh first marks that folder trusted in
 // ~/.claude.json (claudeTrustScript, I-486), and a trust dialog that shows
 // anyway is never typed into: the error is an *agentDialogError.
-func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func()) error {
-	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary), nil); err != nil {
+func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func(), appr mcpApprovals) error {
+	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary, appr), nil); err != nil {
 		return err
 	}
 	if attachOnly {
@@ -150,13 +151,13 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 
 // agentWindowCommand is the shell startAgentWindow runs to open the
 // window, with claude's trust flag set first.
-func agentWindowCommand(slug, extra, windowName, dir, binary string) string {
+func agentWindowCommand(slug, extra, windowName, dir, binary string, appr mcpApprovals) string {
 	prefix, cdir := "", dir
 	if dir == "" {
 		prefix, cdir = checkoutVar(slug, extra), `"$repose_co"`
 	}
 	if binary == "claude" {
-		prefix += claudeTrustScript(cdir)
+		prefix += claudeTrustScript(cdir, appr)
 	}
 	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, shQuote(binary))
 }
@@ -174,16 +175,35 @@ func agentWindowCommand(slug, extra, windowName, dir, binary string) string {
 // file is written only when the flag is not already true, atomically, and
 // never when it is not valid JSON. Best effort: the window starts whatever
 // happens here, and waitPaneIdle catches a dialog that shows anyway.
-func claudeTrustScript(dir string) string {
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_cj="$HOME/.claude.json" && {
+// appr, the laptop's .mcp.json answers for the repository, adds to
+// enabledMcpjsonServers and disabledMcpjsonServers each server the guest
+// has no answer for in either list, so the .mcp.json dialog does not take
+// the prompt either (I-556). Claude Code writes both lists empty into
+// every project it opens, so an empty list is no answer; an answer given
+// on the machine is kept. The write holds Claude Code's own lock, the
+// directory ~/.claude.json.lock, as repose-mcp sync and agent-setup do
+// (I-555): a lock older than 10 s is taken over, and after 5 s of waiting
+// nothing is written.
+func claudeTrustScript(dir string, appr mcpApprovals) string {
+	a := "{}"
+	if !appr.empty() {
+		if b, err := json.Marshal(appr); err == nil {
+			a = string(b)
+		}
+	}
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_cj="$HOME/.claude.json" && repose_ta=%s && repose_lk="$repose_cj.lock" && repose_n=0 && until mkdir "$repose_lk" 2>/dev/null; do
+    if [ "$(( $(date +%%s) - $(stat -c %%Y "$repose_lk" 2>/dev/null || date +%%s) ))" -gt 10 ] && rmdir "$repose_lk" 2>/dev/null; then continue; fi
+    repose_n=$((repose_n + 1)); [ "$repose_n" -lt 100 ] || break; sleep 0.05
+  done && [ "$repose_n" -lt 100 ] && {
   if [ ! -s "$repose_cj" ]; then
-    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq -n --arg p "$repose_tp" '{projects: {($p): {hasTrustDialogAccepted: true}}}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
-  elif jq -e --arg p "$repose_tp" '(.projects // {})[$p].hasTrustDialogAccepted != true' "$repose_cj" >/dev/null 2>&1; then
-    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" '.projects[$p].hasTrustDialogAccepted = true' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
+    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq -n --arg p "$repose_tp" --argjson a "$repose_ta" '{projects: {($p): ({hasTrustDialogAccepted: true} + $a)}}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
+  elif jq -e --arg p "$repose_tp" --argjson a "$repose_ta" '(.projects // {})[$p] as $e | ($e.hasTrustDialogAccepted != true) or (((($e // {}).enabledMcpjsonServers // []) + (($e // {}).disabledMcpjsonServers // [])) as $h | [$a[][] | select(. as $n | $h | index([$n]) | not)] | length > 0)' "$repose_cj" >/dev/null 2>&1; then
+    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" --argjson a "$repose_ta" '.projects[$p] |= ((. // {}) | .hasTrustDialogAccepted = true | reduce ($a | to_entries[] | .key as $k | .value[] | {k: $k, n: .}) as $x (.; if (((.enabledMcpjsonServers // []) + (.disabledMcpjsonServers // [])) | index([$x.n])) then . else .[$x.k] = ((.[$x.k] // []) + [$x.n]) end))' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
   fi
   [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
+  rmdir "$repose_lk"
 }; } >/dev/null 2>&1 || true
-`, dir)
+`, dir, shQuote(a))
 }
 
 // agentDialogs are lines a Claude Code dialog shows that a typed prompt
@@ -194,13 +214,23 @@ var agentDialogs = []string{
 	"Yes, I trust this folder",
 	"Is this a project you created or one you trust",
 	"Do you trust the files in this folder?",
+	mcpjsonDialog,
 }
 
-// agentDialogError says the agent's pane settled on a dialog, so the
-// prompt was not typed.
-type agentDialogError struct{}
+// mcpjsonDialog is the line of Claude Code's dialog for a server in the
+// checkout's .mcp.json it has no answer for, shown outside
+// bypassPermissions (2.1.283). Its default leaves the server off, so a
+// typed Enter would answer it (I-556).
+const mcpjsonDialog = "New MCP server found in this project"
 
-func (*agentDialogError) Error() string {
+// agentDialogError says the agent's pane settled on a dialog, so the
+// prompt was not typed. MCP is the .mcp.json dialog; else folder trust.
+type agentDialogError struct{ MCP bool }
+
+func (e *agentDialogError) Error() string {
+	if e.MCP {
+		return "Claude Code is asking whether to use an MCP server from the checkout's .mcp.json"
+	}
 	return "Claude Code is asking whether you trust the folder it started in"
 }
 
@@ -212,6 +242,12 @@ func paneShowsDialog(capture string) bool {
 		}
 	}
 	return false
+}
+
+// dialogError is the *agentDialogError for a capture paneShowsDialog
+// matched.
+func dialogError(capture string) *agentDialogError {
+	return &agentDialogError{MCP: strings.Contains(capture, mcpjsonDialog)}
 }
 
 // waitPaneIdle polls pane_current_command until it names binary and its
@@ -251,7 +287,7 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 			if string(capture) == lastCapture {
 				if !stableSince.IsZero() && time.Since(stableSince) >= paneIdleWait {
 					if paneShowsDialog(string(capture)) {
-						return &agentDialogError{}
+						return dialogError(string(capture))
 					}
 					return nil
 				}
@@ -267,7 +303,7 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 		lastCapture = string(capture)
 		if time.Now().After(deadline) {
 			if paneShowsDialog(string(capture)) {
-				return &agentDialogError{}
+				return dialogError(string(capture))
 			}
 			return nil // best effort: send the prompt anyway rather than hang forever
 		}

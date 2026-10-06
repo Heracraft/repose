@@ -217,9 +217,12 @@ writeShellApplication {
       fi
       # A link (home-manager, a dotfiles repo) belongs to whatever made
       # it: rewriting would replace the link with a file.
+      # repose-mcp sync leaves it alone too, and still records what Codex
+      # would get in ~/.repose/mcp/agents/codex.json.
       if [ -L "$cfg" ]; then
         echo "repose-agent-setup: $cfg is a link; leaving it alone" >&2
         exec 9>&-
+        mcp_sync codex
         return 0
       fi
       if [ ! -e "$cfg" ]; then

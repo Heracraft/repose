@@ -128,11 +128,17 @@ An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
 Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
 
-Never copied: your login, conversation history, `~/.claude.json`, and anything named like a key or credential.
+Never copied: your login, conversation history, anything in `~/.claude.json` besides your MCP servers, and anything named like a key or credential.
 
 ## MCP servers
 
-Every agent on the machine has the browser tools `playwright` and `chrome-devtools` ([Browser](/docs/machine#browser)). To turn one off, change that agent's own config on the machine:
+Every agent on the machine has the browser tools `playwright` and `chrome-devtools` ([Browser](/docs/machine#browser)). In place of Claude in Chrome, `repose browser bridge` lends those tools your laptop's Chrome, logins included; see [Lend the agents your Chrome](/docs/your-chrome).
+
+`run` and `attach` copy the MCP servers you added with `claude mcp add` on your laptop, at user scope and for this project, to every agent on the machine. Tokens stay on your laptop: each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or set each with `repose secrets set NAME`. Secrets belong to one project, so a server you use in three projects needs its secret set in each. A server that signs in with OAuth needs a sign-in with `/mcp` in Claude Code on the machine. Servers that need your laptop stay there, and `run` names them once: Apple apps, a program or files on your laptop, a server on `localhost` or your own network. `repose secrets choose --off mcp` stops the copy.
+
+HTTP servers (Linear, Sentry, Notion, GitHub and the like) and stdio servers that only need `npx` and a token work on the machine. Add one there with the agent's own command, such as `claude mcp add`, or commit it in the repository's `.mcp.json`.
+
+Each time an agent starts, repose writes the machine's servers into that agent's own config: `~/.claude.json`, `~/.codex/config.toml`, `~/.config/opencode/config.json` and a Gemini CLI extension named `repose-mcp`. opencode, Gemini CLI and pi get the browser tools from their system configs instead. An entry you edit is yours, and repose leaves it as you left it. A server you add under a name repose uses replaces repose's, except in opencode, which merges the two field by field; give yours another name there. An entry you delete comes back at the next start, so turn a server off with the agent's own switch:
 
 | Agent       | Turn `playwright` off                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------ |
@@ -142,15 +148,7 @@ Every agent on the machine has the browser tools `playwright` and `chrome-devtoo
 | Gemini CLI  | `{"mcp": {"excluded": ["playwright"]}}` in `~/.gemini/settings.json`                                   |
 | pi          | `{"mcpServers": {"playwright": {"command": "playwright-mcp", "enabled": false}}}` in `~/.pi/agent/mcp.json` |
 
-A server you add under one of these names replaces the machine's, except in opencode, which merges the two field by field; give yours another name there.
-
-When `~/.codex/config.toml` is a symlink, as home-manager makes it, repose leaves it alone, and Codex gets neither browser tool until you add `[mcp_servers.playwright]` and `[mcp_servers.chrome-devtools]` there yourself. `/etc/repose/mcp.json` has their commands.
-
-HTTP servers (Linear, Sentry, Notion, GitHub and the like) and stdio servers that only need `npx` and a token work on the machine. Store the token as a secret and refer to it as `${VAR}`. MCP servers you added on your laptop with `claude mcp add` at user scope live in `~/.claude.json`, which isn't copied. Add servers on the machine with `claude mcp add`, or commit them in the repository's `.mcp.json`.
-
-Each time an agent starts, repose writes the machine's servers into that agent's own config: `~/.claude.json`, `~/.codex/config.toml`, `~/.config/opencode/config.json` and a Gemini CLI extension named `repose-mcp`. An entry you edit there is yours, and repose leaves it as you left it. A server you define in `~/.config/opencode/opencode.json` keeps repose's server of that name out of opencode. An entry you delete comes back at the next start, so turn a server off with the agent's own switch, such as `enabled = false` in its table in `~/.codex/config.toml`.
-
-Servers that need your laptop (Apple Notes, Xcode, desktop automation, Claude in Chrome) don't work on the machine. The browser tools are covered in [The machine](/docs/machine#browser); `repose browser bridge` lends the machine's browser tools your laptop's Chrome, logins included, which covers most of what Claude in Chrome would; see [Lend the agents your Chrome](/docs/your-chrome).
+When `~/.codex/config.toml` is a symlink, as home-manager makes it, repose leaves it alone, and Codex gets none of the machine's servers until you add their tables there yourself. `~/.repose/mcp/agents/codex.json` on the machine lists what repose would have written.
 
 ## What agents are told about the machine
 

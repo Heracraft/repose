@@ -183,3 +183,36 @@ func TestCodexHeldWarnsOncePerChange(t *testing.T) {
 		t.Fatalf("after the change, again: %q", got)
 	}
 }
+
+// TestCodexLinkLeftAlone: a ~/.codex/config.toml that is a symlink stays a
+// link with its target unchanged, quietly; agents/codex.json still holds
+// what Codex would get.
+func TestCodexLinkLeftAlone(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+	target := filepath.Join(root, "real.toml")
+	writeFile(t, target, "notify = [\"mine\"]\n")
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, ".codex/config.toml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}`)
+	var b bytes.Buffer
+	Sync(p, []string{"codex"}, &b)
+	if b.String() != "" {
+		t.Fatalf("stderr: %q", b.String())
+	}
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config.toml is no longer a link: %v", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "notify = [\"mine\"]\n" {
+		t.Fatalf("target changed: %q", got)
+	}
+	view, err := os.ReadFile(filepath.Join(home, ".repose/mcp/agents/codex.json"))
+	if err != nil || !strings.Contains(string(view), "linear") {
+		t.Fatalf("agents/codex.json: %s %v", view, err)
+	}
+}

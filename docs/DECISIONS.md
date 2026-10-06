@@ -4366,6 +4366,9 @@ I-196 carries config, and the Claude login question is open (proposal item
 contradict themselves on the path and on whether managed hooks combine
 with user hooks); a laptop-wins overwrite (guest "don't ask again" and
 `/model` write to the same file).
+*Amended by I-556:* the `mcpServers` of `~/.claude.json` (user scope and
+the run's repository under `projects`) now travel, templated; every other
+key of that file stays excluded.
 
 **I-197. Gitignored `.env` files travel over SSH at `run`.** This reverses
 the rule in `features/sync-at-launch.md` that ignored files never travel.
@@ -7395,6 +7398,10 @@ hooks, and a shared hook would let an agent in one project run commands
 in every other project of the user. The worst an agent can do with the
 shared file is read the token (it can already, in its own guest) or
 corrupt it, which signs the user out everywhere until the next `/login`.
+*Amended by I-556:* Claude Code also keeps MCP OAuth tokens in this file
+(`mcpOAuth`), so a `/mcp` sign-in on one machine is in the shared file,
+and an agent on any of the user's machines can read it, as it can the
+Claude login.
 
 First-run onboarding (theme, then "Select login method") shows even when
 the shared file holds a valid login and does not skip on Esc, so
@@ -13188,4 +13195,96 @@ secret's digest, so `claude`, `gemini` and `opencode mcp list` showing it
 connected means each agent's own launch delivered the secret; Codex and
 pi list without starting servers, so the test runs the command each one's
 config names and calls the tool. A tool call through each agent itself
-needs a logged-in model and is left to the dev-box run.
+needs a logged-in model and is left to the dev-box run. At integration
+with I-553: on a base with `repose-mcp`, `repose-agent-setup codex` writes
+only `notify` under the flock, releases it, and runs sync, which writes
+the platform tables; its own append is the fallback for a base without
+`repose-mcp`. A `~/.codex/config.toml` that is a symlink is edited by
+neither, since the rename would replace the link; sync still records
+what Codex would get in `agents/codex.json`. The CLI's folder trust
+write (I-486, extended by I-556) takes the same `~/.claude.json.lock`,
+so all three repose writers of the file hold Claude Code's lock.
+
+**I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
+with credentials replaced by secret references.** (mcp-carry,
+2026-10-06; amends I-196 and I-278) Users fill Claude Code's MCP list on
+the laptop with `claude mcp add`, and found an empty list on the
+machine: I-196 kept `~/.claude.json` home because its project entries
+are keyed on laptop paths and its values hold tokens. Both can be
+handled. The CLI reads only `mcpServers` (user scope) and
+`projects[<main worktree root>].mcpServers` (local scope, keyed as Claude
+Code keys it, so a linked worktree and a subdirectory find it) from
+`~/.claude.json` or `$CLAUDE_CONFIG_DIR/.claude.json`, with a scanner that
+skips every other value undecoded (a 5 MB file costs about 15 ms). The
+classifier (`internal/cli/carry_mcp.go`; features/agents.md "MCP") drops
+the platform's own servers, leaves behind with a one-word reason those
+that need the laptop (an Apple app, a program, files or an env path on
+the laptop, a URL on loopback, the LAN, `*.local`, `*.ts.net` or
+`100.64/10`, a `headersHelper` or `clientSecretHelper`), rewrites a
+launcher's absolute path to its name and paths under the repository to
+`@@REPOSE_CHECKOUT@@`, and replaces every literal credential with
+`${NAME}` before anything is hashed or packed (I-211). Headers are where
+a server's key goes, so every header value is templated except a short
+list of plain ones (`Accept`, `Content-Type`, `User-Agent` and the like),
+in `headers` and in a `--header "Name: value"` argument (mcp-remote);
+arguments, URL path segments and query values are templated when they
+read like a token on their own (a provider prefix such as `sk-`, or 20
+token characters with a letter and a digit), so a positional key or a
+Zapier-style URL with its secret in the path stays home. Flags are judged
+by their last word (`--api-key`, `--auth`), so `--auth-type oauth` keeps
+its value. An env key keeps its
+own name unless an agent reads that name for its own login
+(`ANTHROPIC_*`, `OPENAI_API_KEY`, `GITHUB_TOKEN` and the like): a secret
+by that name would be in every agent's environment, and Claude Code then
+asks to use the API key, which takes `run`'s prompt and moves the user to
+API billing. Two different laptop values under one name give the second
+its server's prefix, compared in memory, with the number placed after the
+64-character cut. No value reaches the payload, a marker or a line; a
+rotated laptop token sends nothing. The hash leaves out the tools carry's
+bins (the guest's command check filters them), so `run` and `attach`
+compute the same marker.
+
+The guest keeps the list in `~/.repose/mcp/laptop.json` (schema in
+guest-conventions.md, shared with I-555's reader), written by the carry's
+guest script, which replaces the placeholder with the checkout's real
+path, replaces user scope whole and this checkout's project entry only,
+and recomputes `secrets` from every `${NAME}` without a default. The carry
+never writes an agent file; `repose-mcp sync` renders the list at each
+agent start (I-555), so `~/.claude.json` has no new writer and a server
+the user added on the machine under the same name stays theirs. Two
+markers, `claude-mcp` and `claude-mcp-project`; on a base without
+`repose-mcp` the guest writes them with `:old` and the CLI treats both as
+current, so the base line prints once and the file waits for the base
+that reads it. Lines print once per change: the servers left on the
+laptop, the secrets the machine lacks, the commands it lacks, the old
+base. The `mcp` row in `repose secrets choose` (`logins.skip`) sends empty
+scopes, on `attach` as well as `run`. `repose secrets import --mcp` (owner
+decision O4) reads the laptop config again, resolves each templated name
+to its laptop value in memory and sets it through the secrets PUT, the
+one home named secrets have. The carry chose those names, and an env key
+keeps its own (`DATABASE_URL`), which may be a secret the project already
+has for another use: so it asks once before replacing one (`--yes` skips
+the question, a no sets only the others), unlike the file import, whose
+names the user wrote. `--dry-run` lists names, and a FILE argument is
+refused. Secrets belong
+to one project, so a server used in three projects needs it in each.
+
+OAuth servers carry `clientId`, `callbackPort` and the like, never a
+token; `clientSecret` is templated. On the machine Claude Code keeps MCP
+OAuth tokens in `~/.claude/.credentials.json`, the I-278 login share,
+whose text now says so. With `.mcp.json` arriving through the sync,
+Claude Code outside `bypassPermissions` shows "New MCP server found in
+this project" with "continue without" preselected, and `run`'s Enter would
+answer it (seen with 2.1.283): the dialog joins `agentDialogs`, so `run`
+stops typing and says so, and the I-486 trust write copies the laptop's
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
+adding each server the guest answers in neither list: Claude Code writes
+both lists empty into every project it opens, so an empty list is no
+answer. *Rejected:* writing agent configs from the
+carry (a second unlocked writer of `~/.claude.json`, and format
+translation in the CLI); carrying Codex, Gemini CLI and opencode laptop
+configs (owner decision O5; deferred); writing the checkout's
+`.claude/settings.local.json` (it sits in the user's working tree).
+Not covered here: the guest VM test feeding a golden payload to
+`repose-agent-setup` (needs the dev box and I-555's renderer), and an
+OAuth sign-in end to end while attached.

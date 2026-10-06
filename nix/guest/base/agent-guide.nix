@@ -20,8 +20,10 @@
 #   Claude Code  ~/.claude.json mcpServers, merged from /etc/repose/mcp.json
 #                by repose-agent-setup (managed-mcp.json would take
 #                exclusive control and refuse `claude mcp add`)
-#   Codex        ~/.codex/config.toml [mcp_servers.NAME], appended by
-#                repose-agent-setup when the name is absent: a same-name
+#   Codex        ~/.codex/config.toml [mcp_servers.NAME], written by
+#                `repose-mcp sync codex` (I-555), or appended by
+#                repose-agent-setup on a base without it, when the name is
+#                absent: a same-name
 #                user table with `url` beside a system-layer `command`
 #                stops Codex from loading its config
 #   opencode     /etc/opencode/opencode.json `mcp`, type local, no `enabled`

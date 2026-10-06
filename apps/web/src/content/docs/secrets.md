@@ -32,6 +32,8 @@ DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 
 Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
+The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). `repose secrets import --mcp` sets those secrets from the tokens on your laptop, for the project of the folder you run it in. It asks once before it replaces a secret the project already has; `--yes` replaces without asking, and `--dry-run` lists the names.
+
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 
 On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. A change, a removal included, reaches a running machine within seconds. Each command an agent runs after that sees it, and so does each new shell or tmux window. A program already running, such as a dev server or a shell you have open, keeps the old value until you restart it (`exec $SHELL` in a shell). The refresh comes from bash, so a command an agent runs with `sh` (`sh -c`, a `#!/bin/sh` script) keeps the values the agent started with.
@@ -79,7 +81,7 @@ repose used to copy this login. If an earlier `repose run` copied it, the next `
 
 ### Choose what is copied
 
-The logins in the table above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)). To keep some of them on your laptop, run `repose secrets choose`:
+The logins in the table above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)) and your Claude Code MCP servers ([Agents](/docs/agents#mcp-servers)). To keep some of them on your laptop, run `repose secrets choose`:
 
 ```
 $ repose secrets choose
@@ -90,6 +92,7 @@ space toggles, enter saves, q leaves
   [x] codex     Codex CLI login
   [ ] opencode  opencode login (not logged in on this laptop)
   [x] env       gitignored .env files (2 in this checkout)
+  [x] mcp       Claude Code MCP servers (tokens stay on the laptop)
 ```
 
 Or name them, which also works in scripts:
@@ -101,7 +104,7 @@ repose secrets choose --on env
 
 The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip = [...]` under `[logins]`, and applies to every project. `--project NAME` gives one project its own list, saved under `[projects.NAME.logins]`, and `repose secrets choose --reset --project NAME` sends it back to the shared list. repose never sees the list.
 
-The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. Snapshots taken before then still hold the copy; revoke that token where you created it.
+The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays. Snapshots taken before then still hold the copy; revoke that token where you created it.
 
 Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a token as described below.
 

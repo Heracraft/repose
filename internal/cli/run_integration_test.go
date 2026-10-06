@@ -374,7 +374,7 @@ func TestPromptSendAndSecondWindowNaming(t *testing.T) {
 			t.Fatalf("window %d = %q othersOpen=%v, want %q/%v", i+1, name, othersOpen, want, i > 0)
 		}
 		prompt := "prompt number " + want
-		if err := startAgentWindow(ctx, f.target, testSlug, name, "~/"+testSlug, "cat", prompt, false, nil); err != nil {
+		if err := startAgentWindow(ctx, f.target, testSlug, name, "~/"+testSlug, "cat", prompt, false, nil, mcpApprovals{}); err != nil {
 			t.Fatalf("startAgentWindow %s: %v", name, err)
 		}
 		if pane, err := waitForCapture(ctx, f.target, testSlug, name, prompt); err != nil {
@@ -545,7 +545,7 @@ func TestRunWorktree(t *testing.T) {
 	if st := mustRun(t, dir, "git", "status", "--porcelain"); st != "" {
 		t.Fatalf("the copied .env files show in the worktree's status: %q", st)
 	}
-	if err := startAgentWindow(ctx, f.target, testSlug, wt.Window, wt.Dir, "cat", "in the worktree", false, nil); err != nil {
+	if err := startAgentWindow(ctx, f.target, testSlug, wt.Window, wt.Dir, "cat", "in the worktree", false, nil, mcpApprovals{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := waitForCapture(ctx, f.target, testSlug, wt.Window, "in the worktree"); err != nil {

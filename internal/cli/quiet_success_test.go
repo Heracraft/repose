@@ -45,6 +45,11 @@ var quietAllowed = map[string]string{
 	"run.go:failedStart:Fix it with `repose config edit --projec":                 "a failure: the config did not build",
 	"temp.go:tempSessionEnded:Could not destroy %s (%s). It goes at it":           "a failure",
 	"run.go:runRun:Another %s window is open; two agents sh":                      "a warning: two agents are about to edit one tree",
+	"carry_mcp.go:mcpLines: repose mcp forward NAME runs one from h":              "unblocks: a server was left on the laptop (I-556)",
+	"carry_mcp.go:mcpLines: Set it from your laptop's value with re":              "unblocks: a carried server lacks its secret (I-556)",
+	"carry_mcp.go:mcpLines: Set them from your laptop's values with":              "unblocks: carried servers lack their secrets (I-556)",
+	"carry_mcp.go:mcpLines: Set each with repose secrets set NAME.":               "unblocks: carried servers lack their secrets (I-556)",
+	"carry_mcp.go:mcpLines: from your laptop's values with repose s":              "unblocks: carried servers lack their secrets (I-556)",
 }
 
 // quietFailureCalls are the calls whose string arguments are a failure or

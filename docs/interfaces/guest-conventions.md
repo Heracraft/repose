@@ -59,7 +59,7 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
 | `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425) |
-| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them; the source for Claude Code and Codex (through `repose-agent-setup`) and for the VM tests. The other agents get the same servers in their own system layer, rows below (DECISIONS I-553) |
+| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them; the source for Claude Code and Codex (through `repose-mcp sync`, or `repose-agent-setup` on a base without it) and for the VM tests. The other agents get the same servers in their own system layer, rows below (DECISIONS I-553) |
 | `/etc/opencode/opencode.json` `mcp` | the platform MCP servers as `{type: "local", command: [CMD, ARGS...]}`, never `enabled`, so a user's `enabled: false` in `~/.config/opencode/opencode.json` turns one off (I-553) |
 | `/etc/gemini-cli/system-defaults.json` | Gemini CLI's system defaults: `mcpServers` with the platform servers (`command` and `args` only) and `security.folderTrust.enabled: false`, since Gemini disables every MCP server in a folder it was not told to trust (I-553). A copied file, root 0644, in a root 0755 directory: Gemini skips a system file whose resolved directory is not root-owned or is group-writable, which a store symlink is |
 | `/etc/repose/pi-extension.js` | pi's machine guide extension (I-243), which also calls `pi.registerMcpServer` for each server in `/etc/repose/mcp.json` and, once present, `~/.repose/mcp/agents/pi.json`, each call guarded on its own (I-554) |
@@ -128,12 +128,19 @@ the attach opens is `<name>`. guestd reads none of this.
   worktree, another checkout), the CLI sets
   `projects["<folder, symlinks resolved>"].hasTrustDialogAccepted` to
   `true` in `~/.claude.json` when it is not already `true`, keeping every
-  other key, writing atomically with mode 0600, and leaving a file that
-  is not valid JSON alone. It needs `jq` on the guest's PATH and is best
+  other key, writing atomically with mode 0600 while it holds Claude
+  Code's lock `~/.claude.json.lock` (taken over after 10 s, given up after
+  5 s of waiting, as `repose-mcp sync` does, I-555), and leaving a file
+  that is not valid JSON alone. It needs `jq` on the guest's PATH and is best
   effort; the window starts either way. A pane that settles on Claude
   Code's trust dialog anyway gets no prompt: `run` says so and attaches
-  (with `--no-attach`, exits 1). Nothing else writes that key, and the
-  laptop's `~/.claude.json` is never carried.
+  (with `--no-attach`, exits 1). Nothing else writes that key. The same
+  write fills `enabledMcpjsonServers` and `disabledMcpjsonServers` for
+  that folder from the laptop's answers for the repository, where the
+  guest's entry has none (DECISIONS I-556), and Claude Code's "New MCP
+  server found in this project" dialog stops the prompt the way the trust
+  dialog does. Of the laptop's `~/.claude.json` only its MCP servers
+  travel, through `~/.repose/mcp/laptop.json` (carry table below).
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
   history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga
@@ -178,11 +185,14 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      servers itself, with the same rule. Every write agent-setup makes to
      `~/.claude.json` holds Claude Code's lock `~/.claude.json.lock`.
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
-     unless a `notify` key exists, and an `[mcp_servers.NAME]` table
-     (`command`, `args`) for each server in `/etc/repose/mcp.json` whose
-     NAME the parsed file lacks (I-553), under `flock
-     ~/.repose/mcp/.lock`; a table under that name, the user's own or one
-     they changed, stays, and a file that does not parse is left alone.
+     unless a `notify` key exists, under `flock ~/.repose/mcp/.lock`.
+     Its MCP servers, the platform's included, are `repose-mcp sync
+     codex`'s; on a base without `repose-mcp`, agent-setup appends an
+     `[mcp_servers.NAME]` table (`command`, `args`) for each server in
+     `/etc/repose/mcp.json` whose NAME the parsed file lacks (I-553),
+     under the same lock. A table under that name, the user's own or one
+     they changed, stays; a file that does not parse is left alone, and so
+     is a file that is a symlink (sync too).
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
      absent, and replaced only while its sha256 is one an earlier base
      installed (I-481); the `repose-agent-hooks` user unit also runs this
@@ -310,7 +320,10 @@ edited by whole tables, from a `[mcp_servers.NAME]` header to the line
 before the next header outside `mcp_servers.NAME.*`; a name held in
 another form (dotted keys, an inline table) is left alone with a warning,
 printed again only when the value `sync` would write changes, and an edit that does not parse back to exactly the intended servers is
-not written. A file that is not valid JSON or TOML is left alone. The
+not written. A `~/.codex/config.toml` that is a symlink is not edited
+(home-manager or a dotfiles repo made it; the rename would replace the
+link); `agents/codex.json` still records what Codex would get. A file
+that is not valid JSON or TOML is left alone. The
 Gemini CLI extension directory is repose's by name and is removed when
 nothing is rendered for it.
 
@@ -455,6 +468,7 @@ state and is named once.
 | `enabledPlugins` from a marketplace | installed by `~/.repose/claude-plugins.sh` (started with `setsid -f`, reads `~/.repose/claude-plugins.json`) with `claude plugin marketplace add` / `claude plugin install`, reporting through `tmux display-message` | marker `claude-plugins`, written only when every install worked |
 | gitignored `.env` / `.env.*` files in the checkout, outside dependency directories, up to 1 MB (DECISIONS I-197; `run` only) | the same relative path under `/home/dev/<slug>/`, dev 0600, mtime kept; a guest file with a newer mtime is kept (`#kept <path>`) | written at the end of the sync's apply script, after the checkout; marker `env` |
 | the laptop's global tools and the project's commands (DECISIONS I-221, I-222; `run` only) | `/home/dev/.repose/tools-wanted.json`, then `repose-tools-install plan` (base, `nix/guest/base/tools-carry.nix`) | see "Tools carry"; marker `tools`, written by the installer when a pass over the list ends |
+| the laptop's Claude Code MCP servers: `mcpServers` of `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and `projects["<main worktree root>"].mcpServers` (DECISIONS I-556) | `/home/dev/.repose/mcp/laptop.json` (dir 0700, file 0600, temp file and rename): `{"version":1,"user":{NAME:server},"projects":{"<checkout, symlinks resolved>":{NAME:server}},"skipped":[{"name","reason"}],"secrets":{SECRET:[NAME,...]}}`. Servers are Claude-shaped with every literal credential replaced by `${SECRET}` on the laptop and `@@REPOSE_CHECKOUT@@` replaced by the checkout's path in the guest; user scope is replaced whole, this checkout's project entry replaced and other checkouts' kept, `secrets` recomputed from every `${NAME}` without a default. No agent file is written: `repose-mcp sync` renders it at each agent start. The reply carries `#mcpleft NAME (reason)`, `#mcpsecret SECRET SERVER,... [laptop]` for a secret without `/run/repose/secrets/SECRET`, `#mcpcmd SERVER BIN`, and `#mcpold` when `repose-mcp` is missing | markers `claude-mcp` and `claude-mcp-project`, suffixed `:old` on a base without `repose-mcp` (the CLI treats both as current); `logins.skip = ["mcp"]` sends empty scopes |
 | markers | `/home/dev/.repose/carry/<item>` | the hash of the laptop input last applied; the probe prints them as `#marker <item> <hash>`, and `#marker tools-notices waiting` while `~/.repose/tools-notices` is non-empty |
 | the tool logins' files (DECISIONS I-224) | `/home/dev/.repose/creds-paths`, one expanded path per line | written with marker `creds` after the logins; the probe prints `#credsmissing` when one of them is gone, and the logins are sent again |
 | the last completed sync's key (DECISIONS I-224) | `.git/repose-synced-key` in the checkout | hex sha256 of what the laptop sent; emptied before the apply touches the checkout, written at its end; the probe prints `#synckey`, `#head` and `#headref` |
