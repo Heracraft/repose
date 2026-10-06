@@ -26,7 +26,7 @@ The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in t
 
 Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
 
-Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python uv downloads (`uv python install 3.12` or `uv venv --managed-python`).
+Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
 ## Installing more
 
@@ -63,7 +63,7 @@ The last line only appears when other packages have a command by that name. Inst
 Installing 2 of your tools in the background: air, portless
 ```
 
-Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`. A tool from `cargo install` first gets rustup a default toolchain, stable with the minimal profile, when it has none.
+Each comes from nixpkgs when nixpkgs has it, so its version can differ from your laptop's; otherwise your laptop's version is installed with its own package manager. If a tool fails to install, the next `run` says so; the log is `~/.repose/tools-install.log` on the machine. A Node major version pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) is installed and made the default `node`. Before a tool's `cargo install`, rustup gets stable (minimal profile) as its default toolchain if it has none.
 
 Ruby and Java versions work the same way. A Ruby version in `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and a Java version in `.tool-versions`, `.java-version` or `.sdkmanrc` (the first found of each), is installed from nixpkgs and made the default `ruby` or `java`. nixpkgs has one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), not every patch release: the machine gets the same minor or major as your pin, or the closest newer one when nixpkgs doesn't have it, and `repose scan` tells you which. A Ruby 3.2.2 pin gets Ruby 3.3. JRuby and TruffleRuby pins are ignored. Gems install into `~/.local/share/gem`. A Ruby whose own Bundler is older than its RubyGems (3.4 today) also gets Bundler 2.7 there; a `Gemfile.lock` that says `BUNDLED WITH` 2.6 still runs the old Bundler, which prints `already initialized constant` warnings, until `bundle update --bundler`.
 

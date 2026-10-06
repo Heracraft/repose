@@ -1002,7 +1002,7 @@ in
           assert "rustup: stable (minimal profile) is the default toolchain" in guest.succeed("cat /home/dev/.repose/tools-install.log")
           guest.succeed("rm /home/dev/.local/bin/rustup /home/dev/.local/bin/cargo /home/dev/.local/bin/fake-crate /home/dev/.repose/tools-wanted.json")
 
-      with subtest("I-417:a boot sets the old /tmp aside in one rename and deletes it after"):
+      with subtest("I-417: a boot sets the old /tmp aside in one rename and deletes it after"):
           guest.succeed("sudo -u dev mkdir -p /tmp/stale && sudo -u dev sh -c 'for i in $(seq 2000); do : > /tmp/stale/f$i; done'")
           guest.shutdown()
           guest.start()

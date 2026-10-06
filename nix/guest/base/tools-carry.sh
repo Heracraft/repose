@@ -302,25 +302,31 @@ cargo_toolchain() {
 }
 
 # ruby_bundler installs Bundler 2.7 into GEM_HOME for a ruby whose
-# RubyGems is 3.7 or newer (I-524): its default Bundler 2.6 redefines
-# RubyGems constants and prints a screen of warnings on every `bundle`.
-# --env-shebang, so the `bundle` in GEM_HOME runs whichever ruby is
-# first on PATH after a later pin.
+# RubyGems is 3.7 or newer and whose own Bundler is older than 2.7
+# (I-524): nixpkgs's ruby_3_4 pairs RubyGems 3.7 with Bundler 2.6, which
+# redefines RubyGems constants and prints a screen of warnings on every
+# `bundle`. A Ruby with Bundler 2.7 or newer (ruby_4_0 has 4.0) gets
+# nothing. --env-shebang, so the `bundle` in GEM_HOME runs whichever ruby
+# is first on PATH after a later pin.
 ruby_bundler() {
   local gv bv
   gv=$(bash -lc 'gem --version' 2>/dev/null) || return 0
-  [ "$(printf '%s\n3.7\n' "$gv" | sort -V | head -n 1)" = 3.7 ] || return 0
-  bv=$(bash -lc "gem list -i bundler -v '~> 2.7' >/dev/null && bundle -v" 2>/dev/null | sed -n 's/^Bundler version //p')
-  if [ -z "$bv" ]; then
-    reason=
-    if ! attempt timeout 600 bash -lc "gem install --no-document --env-shebang bundler -v '~> 2.7'"; then
-      notice "Could not install Bundler 2.7 for Ruby: $reason"
-      return 0
-    fi
-    bv=$(bash -lc 'bundle -v' 2>/dev/null | sed -n 's/^Bundler version //p')
+  version_at_least "$gv" 3.7 || return 0
+  bv=$(bash -lc 'bundle -v' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
+  [ -z "$bv" ] || ! version_at_least "$bv" 2.7 || return 0
+  reason=
+  if ! attempt timeout 600 bash -lc "gem install --no-document --env-shebang bundler -v '~> 2.7'"; then
+    notice "Could not install Bundler 2.7 for Ruby: $reason"
+    return 0
   fi
+  bv=$(bash -lc 'bundle -v' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
   printf '%s\n' "$bv" > "$state/bundler"
   logline "ruby: bundler ${bv:-?} in GEM_HOME"
+}
+
+# version_at_least A B: dotted version A is B or newer.
+version_at_least() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
 }
 
 notice() {
@@ -337,7 +343,11 @@ runtime_pass() {
   want=$(runtime_want "$lang")
   [ -n "$want" ] || return 0
   cur=$(runtime_version "$lang")
-  [ "$cur" != "$want" ] || return 0
+  if [ "$cur" = "$want" ]; then
+    # A Ruby an earlier pass pinned, before I-524: it gets its Bundler now.
+    if [ "$lang" = ruby ] && [ -s "$state/ruby" ]; then ruby_bundler; fi
+    return 0
+  fi
   profile_wins "$lang" || return 0 # plan said so already
   attr=$(runtime_attr "$lang" "$want")
   prev=$(cat "$state/$lang" 2>/dev/null || true)

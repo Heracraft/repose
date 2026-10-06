@@ -13151,10 +13151,16 @@ RubyGems 3.7.2 and a default Bundler 2.6.9, which redefines RubyGems
 constants: `bundle -v` printed 18 "already initialized constant
 Gem::Platform" warnings and `bundle exec` 36. `-W:no-deprecated` does not
 hide them and `-W0` hides every warning. With Bundler 2.7 there are none.
-After the tools carry makes a pinned Ruby the default, it installs
-`bundler '~> 2.7'` into `GEM_HOME` with `--env-shebang` when that Ruby's
-RubyGems is 3.7 or newer and no 2.7 is present, records the version in
+After the tools carry makes a pinned Ruby the default, or finds one an
+earlier pass pinned already the default, it installs `bundler '~> 2.7'`
+into `GEM_HOME` with `--env-shebang` when that Ruby's RubyGems is 3.7 or
+newer and the `bundle` it runs is older than 2.7 (ruby_4_0, with RubyGems
+3.7.2 and Bundler 4.0.20, gets nothing), records the version in
 `~/.repose/tools/bundler`, and on failure says so once and goes on. A
 `Gemfile.lock` with `BUNDLED WITH` 2.6 still switches to the old Bundler;
 `bundle update --bundler` moves it. No VM assertion: the test VM has no
-bundler gem offline; checked with stand-in gem and bundle.
+bundler gem offline. Checked on kanali against nixpkgs's ruby_3_4 (2.7.2
+installed, then `bundle -v` printed one line; a second call installed
+nothing) and ruby_4_0 (nothing installed). A guest whose Ruby an earlier
+pass pinned gets Bundler at the next pass, which runs when the laptop's
+tool list changes.
