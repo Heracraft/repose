@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    }
+  }
+}

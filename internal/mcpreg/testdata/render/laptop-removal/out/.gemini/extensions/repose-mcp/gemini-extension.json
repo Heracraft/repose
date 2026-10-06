@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "keep": {
+      "type": "http",
+      "url": "https://keep.example/mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

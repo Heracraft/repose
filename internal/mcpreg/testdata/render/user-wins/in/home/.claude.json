@@ -1,0 +1,8 @@
+{
+  "numStartups": 12345678901234567890,
+  "mcpServers": {
+    "playwright": {"type": "stdio", "command": "my-playwright", "args": []},
+    "chrome-devtools": {"type": "stdio", "command": "chrome-devtools-mcp", "args": ["--headless"]}
+  },
+  "projects": {"/home/dev/app": {"hasTrustDialogAccepted": true}}
+}

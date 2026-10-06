@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "-y",
+        "linear-mcp@2"
+      ],
+      "command": "npx",
+      "env": {
+        "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+      }
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-525 entries.
+526 entries.
 
 ## Scope
 
@@ -331,7 +331,7 @@ pointer, not a summary.
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6021
 - **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; L6038
 - **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; L6086
-- **I-246** The agents' browser is one headed Chromium on the desktop's display, shared by both MCP servers over CDP, and the desktop only views it — 2026-09-24; L6127
+- **I-246** The agents' browser is one headed Chromium on the desktop's display, shared by both MCP servers over CDP, and the desktop only views it — 2026-09-24; amended by I-555; L6127
 - **I-256** Vercel and portless stay menu entries, voice mode is not a repose feature, and a quick path to production stays deferred — 2026-09-25; L6199
 - **I-257** The terms say a machine is not for serving production traffic to others — 2026-09-25; L6221
 - **I-252** `repose paste` sends the laptop's clipboard image to the guest and pastes its path; one direction, no socket — 2026-09-25; partly superseded by I-280; L6237
@@ -557,3 +557,4 @@ pointer, not a summary.
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
 - **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; L13069
 - **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13114
+- **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; L13138

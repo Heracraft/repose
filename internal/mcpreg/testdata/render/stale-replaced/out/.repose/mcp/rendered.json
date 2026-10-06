@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp@2"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          },
+          "type": "stdio"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp@2"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          }
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "linear": {
+          "command": [
+            "npx",
+            "-y",
+            "linear-mcp@2"
+          ],
+          "environment": {
+            "LINEAR_TOKEN": "{env:LINEAR_TOKEN}"
+          },
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp@2"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          }
+        }
+      }
+    }
+  }
+}
