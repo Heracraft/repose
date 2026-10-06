@@ -5,7 +5,7 @@ section: Using repose
 order: 12
 ---
 
-Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. You log in as `dev`, which has passwordless `sudo`. Your checkout is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots. See [Where the checkout is](/docs/sync#where-the-checkout-is).
+Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name. You log in as `dev`, which has passwordless `sudo`. Your checkout is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots. See [Where the checkout is](/docs/sync#where-the-checkout-is).
 
 | Size    | vCPU | Memory | Disk  |
 | ------- | ---- | ------ | ----- |

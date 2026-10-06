@@ -183,6 +183,11 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := os.MkdirAll(s.paths.RunDir(), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", s.paths.RunDir(), err)
 	}
+	// Before serving, so hostd's first command finds the secrets loadable
+	// (DECISIONS I-475). A failure is logged; WriteSecrets rewrites it all.
+	if err := s.secrets.Restore(ctx); err != nil {
+		s.log.Warn("could not rebuild the secrets refresh file", "event", "write_secrets", "error_code", sysdep.CodeOf(err))
+	}
 	if err := s.hooks.Listen(); err != nil {
 		return err
 	}

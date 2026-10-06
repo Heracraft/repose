@@ -310,6 +310,30 @@ func (w *Watcher) refreshTmux(ctx context.Context) {
 	}
 	w.mu.Unlock()
 
+	// The OOM priority covers every pane of the session, not only each
+	// window's active one (DECISIONS I-200): an agent in a split pane, or
+	// in an inactive pane of the shell window, is protected too. The
+	// windows' own panes above stay in, so a failed list-panes protects no
+	// less than before.
+	if serverUp {
+		all, err := w.tmux.listPanes(ctx, session)
+		if err != nil {
+			w.log.Warn("could not list tmux panes",
+				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
+		}
+		for _, pane := range all {
+			if _, ok := panes[pane.PID]; ok {
+				continue
+			}
+			for _, agent := range []string{AgentOf(pane.Window), AgentByCommand(pane.Command)} {
+				if agent != "" && w.procs.treeHasAnyComm(children, pane.PID, binaries[agent]) {
+					panes[pane.PID] = agent
+					break
+				}
+			}
+		}
+	}
+
 	w.mu.Lock()
 	w.agentPanes = panes
 	w.mu.Unlock()

@@ -247,7 +247,7 @@ let
     mkdir -p "$state_dir"
     rm -f "$api_socket" "$vsock_socket"
 
-    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off"
+    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
     if [ -n "$extra_cmdline" ]; then
       cmdline="$cmdline $extra_cmdline"
     fi

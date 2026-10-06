@@ -149,6 +149,54 @@ func (h *Handler) Write(ctx context.Context, list []*guestdv1.Secret) error {
 	return nil
 }
 
+// Restore rebuilds secrets.refresh from the secret files when it is missing,
+// and mirrors the set into tmux. A guest whose secrets an older guestd wrote
+// has secrets.env and /run/repose/secrets/ but no refresh file, so after a
+// live switch onto a base with the BASH_ENV loader the loader found nothing,
+// and the tmux server, restarted by the switch, had no secrets for new
+// windows until the next write (DECISIONS I-475). guestd calls it once at
+// start, before serving. It does nothing when the refresh file exists or
+// there are no secret files, so a restart repeats nothing. The history
+// starts empty: a process holding a value from before keeps it, as the
+// loader does for any value it did not deliver.
+func (h *Handler) Restore(ctx context.Context) error {
+	if _, err := os.Stat(h.paths.SecretsRefresh()); err == nil || !os.IsNotExist(err) {
+		return nil
+	}
+	entries, err := os.ReadDir(h.paths.SecretsDir())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return sysdep.Errf(sysdep.CodeInternal, "list secrets directory: %w", err)
+	}
+	var list []*guestdv1.Secret
+	for _, e := range entries {
+		name := e.Name()
+		if !e.Type().IsRegular() || strings.HasPrefix(name, ".") || len(name) > MaxNameBytes || !nameRe.MatchString(name) {
+			continue
+		}
+		if _, ok := reserved[name]; ok {
+			continue
+		}
+		v, err := os.ReadFile(filepath.Join(h.paths.SecretsDir(), name))
+		if err != nil || len(v) > MaxValueBytes || bytes.IndexByte(v, 0) >= 0 {
+			continue
+		}
+		list = append(list, &guestdv1.Secret{Name: name, Value: v})
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	env, err := h.writeEnv(list)
+	if err != nil {
+		return err
+	}
+	h.pushTmux(ctx, env)
+	h.log.Info("secrets refresh rebuilt", "event", "write_secrets", "count", len(list))
+	return nil
+}
+
 func (h *Handler) ensureDirs() error {
 	if err := os.MkdirAll(h.paths.RunDir(), 0o755); err != nil {
 		return sysdep.Errf(sysdep.CodeInternal, "create run directory: %w", err)
