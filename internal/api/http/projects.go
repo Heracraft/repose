@@ -392,7 +392,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	if body.Multiplexer != nil {
-		// Checked before any other field is written, so a refusal
+		// Checked before any field is written, so a refusal here
 		// changes nothing.
 		if err := checkMultiplexer(*body.Multiplexer); err != nil {
 			return err
@@ -432,6 +432,23 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+	}
+	// Every check is above and the multiplexer is the first write: its
+	// update is guarded by state, so a destroy accepted since p was read
+	// refuses the request before any field of it is stored.
+	if body.Multiplexer != nil && *body.Multiplexer != multiplexer.Normalize(p.Multiplexer) {
+		// Stored now; project_json carries it to the guest at the next
+		// start, never sooner (I-502).
+		tag, err := s.d.Pool.Exec(ctx, "update projects set multiplexer = $2 where id = $1 and state <> 'destroying' and destroyed_at is null", p.ID, *body.Multiplexer)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errf("conflict", "%s is being destroyed", p.Slug)
+		}
+		obs.Logger(ctx, s.d.Log).Info("multiplexer changed", "event", "multiplexer_set", "project_id", p.ID.String(), "multiplexer", *body.Multiplexer)
+	}
+	if body.Class != nil {
 		if _, err := s.d.Pool.Exec(ctx, "update projects set class = $2 where id = $1 and state = 'stopped'", p.ID, *body.Class); err != nil {
 			return err
 		}
@@ -455,18 +472,6 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		if err := s.setPersonalOptOut(ctx, p, *body.PersonalOptOut); err != nil {
 			return err
 		}
-	}
-	if body.Multiplexer != nil && *body.Multiplexer != multiplexer.Normalize(p.Multiplexer) {
-		// Stored now; project_json carries it to the guest at the next
-		// start, never sooner (I-502).
-		tag, err := s.d.Pool.Exec(ctx, "update projects set multiplexer = $2 where id = $1 and state <> 'destroying' and destroyed_at is null", p.ID, *body.Multiplexer)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return errf("conflict", "%s is being destroyed", p.Slug)
-		}
-		obs.Logger(ctx, s.d.Log).Info("multiplexer changed", "event", "multiplexer_set", "project_id", p.ID.String(), "multiplexer", *body.Multiplexer)
 	}
 	if keep && p.ExpiresAt != nil {
 		// Under the row's state: once the reaper (or a DELETE) has marked

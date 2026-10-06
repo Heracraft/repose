@@ -13169,8 +13169,7 @@ field; an absent field reads as tmux everywhere. Built (mux-api): migration 0017
 PATCH in `internal/api/http/projects.go`, the gate in
 `internal/api/http/multiplexer.go` with `herdrMinBase` empty, the copy
 in `insertRestored`, `multiplexer` in `project_json`; a fork or restore
-as new gates on the base the copy keeps (the source's), which is what it
-runs. Tests: `TestMultiplexerField`, `TestMultiplexerForkCopies`,
+as new gates on the source's base (I-549). Tests: `TestMultiplexerField`, `TestMultiplexerForkCopies`,
 `TestMigrateUpDownUp`, the fakes' `TestMultiplexerGate` and
 `TestProjectJSONPassesThrough`.
 
@@ -13331,3 +13330,20 @@ the proposal measures whether herdr's idle bridge cleanup closes bridges
 to machines nobody has selected, and how many ssh-prepare calls a bridge
 retrying against a stopped machine makes; a decision to discount bridges
 would be a new entry.
+
+**I-549. A fork or restore as new gates herdr on the source's base.**
+(mux-api, 2026-10-05; amends I-502) I-502 and api.md had a fork and a
+restore as a new project gate `herdr` on the newest published base, as a
+POST does. `insertRestored` copies the source's `base_version` into the
+copy, and the copy boots on that base until a base update moves it, so
+the gate reads that version: a herdr source held on a base older than
+`herdrMinBase` gives tmux copies. A null source base reads as the newest
+published base, as for a POST. Gating on the newest base was rejected:
+the copy would keep herdr on a base without it and start tmux with no
+word why, the case the gate exists to prevent. The gate also gets a
+third message, `<slug> has no base yet; herdr needs <needs> or newer.`,
+for a PATCH on a project whose `base_version` is null, which the two
+messages I-502 listed could not word. The fake api follows: its fork
+and restore as new copy the source's base and gate on it. Tests:
+`TestMultiplexerForkCopies` (fork and restore as new, the source on and
+behind the min base), the fakes' `TestMultiplexerCopyGatesOnSourceBase`.

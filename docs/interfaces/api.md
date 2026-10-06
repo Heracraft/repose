@@ -125,7 +125,8 @@ asking for `herdr` when the base the machine would run is older than the
 first base with herdr: for a PATCH the project's `base_version` (null
 counts as older), for a POST the newest published base, and for a fork or
 a restore as a new project the base the copy keeps, which is the
-source's `base_version` (the newest published base when that is null).
+source's `base_version` (the newest published base when that is null;
+I-549).
 "Older" compares `base_versions.released_at`; a version with no row
 counts as older. The first
 base with herdr is `herdrMinBase` in `internal/api/http/multiplexer.go`;

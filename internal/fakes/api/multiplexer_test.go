@@ -66,3 +66,54 @@ func TestMultiplexerGate(t *testing.T) {
 		t.Fatalf("POST herdr: %q", h.Multiplexer)
 	}
 }
+
+// TestMultiplexerCopyGatesOnSourceBase: a fork and a restore as new keep
+// the source's base, as the real api's insertRestored does, so a herdr
+// source on a base older than the min base gives tmux copies, and one on
+// the min base gives herdr copies.
+func TestMultiplexerCopyGatesOnSourceBase(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	f.SetHerdrMinBase(baseVersion)
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "src", "class": "small", "multiplexer": "herdr"})
+	want(t, r, http.StatusCreated)
+	var src Project
+	r.json(t, &src)
+	opID(t, call(t, f, "POST", "/v1/projects/"+src.ID+"/snapshots", tok, nil))
+	r = call(t, f, "GET", "/v1/projects/"+src.ID+"/snapshots", tok, nil)
+	var snaps []Snapshot
+	r.json(t, &snaps)
+	sid := snaps[0].ID
+
+	copies := func(tag string) []Project {
+		t.Helper()
+		r := call(t, f, "POST", "/v1/projects/"+src.ID+"/fork", tok, map[string]any{"snapshot_id": sid, "name": "f-" + tag})
+		want(t, r, http.StatusAccepted)
+		var forked struct {
+			Projects []struct {
+				ProjectID string `json:"project_id"`
+			} `json:"projects"`
+		}
+		r.json(t, &forked)
+		r = call(t, f, "POST", "/v1/projects/"+src.ID+"/snapshots/"+sid+"/restore", tok, map[string]any{"as_new_project": "r-" + tag})
+		want(t, r, http.StatusAccepted)
+		var restored struct {
+			ProjectID string `json:"project_id"`
+		}
+		r.json(t, &restored)
+		return []Project{getProject(t, f, tok, forked.Projects[0].ProjectID), getProject(t, f, tok, restored.ProjectID)}
+	}
+	// Source on the min base: both copies keep herdr and the source's base.
+	for _, c := range copies("new") {
+		if c.Multiplexer != "herdr" || c.BaseVersion != baseVersion {
+			t.Fatalf("source on min base: %s got %q on %q", c.Name, c.Multiplexer, c.BaseVersion)
+		}
+	}
+	// Source held on an older base: both copies run that base, so tmux.
+	f.SetBaseVersion(src.ID, "2026.01.01")
+	for _, c := range copies("old") {
+		if c.Multiplexer != "tmux" || c.BaseVersion != "2026.01.01" {
+			t.Fatalf("source behind min base: %s got %q on %q", c.Name, c.Multiplexer, c.BaseVersion)
+		}
+	}
+}

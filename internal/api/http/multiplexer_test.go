@@ -212,9 +212,10 @@ func TestMultiplexerField(t *testing.T) {
 	}
 }
 
-// TestMultiplexerForkCopies: a fork copies the source's multiplexer, and
-// falls back to tmux when the gate would refuse herdr for the copy's base
-// (api.md "The base gate").
+// TestMultiplexerForkCopies: a fork and a restore as new copy the
+// source's multiplexer, and fall back to tmux when the gate would refuse
+// herdr for the copy's base, which is the source's (api.md "The base
+// gate").
 func TestMultiplexerForkCopies(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
@@ -252,13 +253,80 @@ func TestMultiplexerForkCopies(t *testing.T) {
 		np := r.body["projects"].([]any)[0].(map[string]any)
 		return e.do(t, tok, "GET", "/projects/"+np["project_id"].(string), nil).body
 	}
+	restoreNew := func(name string) map[string]any {
+		t.Helper()
+		r := e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"as_new_project": name, "start": false})
+		if r.status != 202 {
+			t.Fatalf("restore as new %s: %d %s", name, r.status, r.raw)
+		}
+		return e.do(t, tok, "GET", "/projects/"+r.body["project_id"].(string), nil).body
+	}
 	if p := fork("fa"); p["multiplexer"] != "herdr" {
 		t.Fatalf("fork of a herdr project: %v", p["multiplexer"])
+	}
+	if p := restoreNew("ra"); p["multiplexer"] != "herdr" || p["base_version"] != "2026.10.06" {
+		t.Fatalf("restore as new of a herdr project: %v on %v", p["multiplexer"], p["base_version"])
+	}
+	// The source held on a base released before the min base: the copies
+	// run the source's base, so the gate refuses herdr and they get tmux,
+	// though the newest base would pass.
+	if _, err := e.h.Pool.Exec(ctx, "insert into base_versions (version, nix_rev, released_at) values ('2026.10.01', 'b1', $1)", now.Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update projects set base_version = '2026.10.01' where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	if p := fork("fo"); p["multiplexer"] != "tmux" || p["base_version"] != "2026.10.01" {
+		t.Fatalf("fork of a herdr source behind the min base: %v on %v", p["multiplexer"], p["base_version"])
+	}
+	if p := restoreNew("ro"); p["multiplexer"] != "tmux" || p["base_version"] != "2026.10.01" {
+		t.Fatalf("restore as new of a herdr source behind the min base: %v on %v", p["multiplexer"], p["base_version"])
 	}
 	// The gate would refuse herdr now: the copy gets tmux, and the fork
 	// still succeeds.
 	defer httpapi.SetHerdrMinBase("")()
 	if p := fork("fb"); p["multiplexer"] != "tmux" {
 		t.Fatalf("fork under a refusing gate: %v", p["multiplexer"])
+	}
+}
+
+// TestMultiplexerPatchRefusalWritesNothing: the guarded multiplexer
+// update is the PATCH's first write, so when it matches no row (a DELETE
+// accepted after the handler read the project) the 409 leaves the
+// request's other fields unwritten. A trigger that skips the multiplexer
+// update stands in for that DELETE.
+func TestMultiplexerPatchRefusalWritesNothing(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-muxr", "muxr")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "mr", "class": "small"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	e.waitOp(t, r)
+	if _, err := e.h.Pool.Exec(ctx, "update projects set multiplexer = 'herdr', tz = 'UTC', hold_base_updates = false where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		"create function skip_mux() returns trigger language plpgsql as $$ begin return null; end $$",
+		"create trigger skip_mux before update on projects for each row when (new.multiplexer is distinct from old.multiplexer) execute function skip_mux()",
+	} {
+		if _, err := e.h.Pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer e.h.Pool.Exec(ctx, "drop trigger skip_mux on projects; drop function skip_mux()")
+	r = e.do(t, tok, "PATCH", "/projects/"+pid, map[string]any{"multiplexer": "tmux", "tz": "Europe/Paris", "hold_base_updates": true})
+	if r.status != 409 || errCode(r) != "conflict" {
+		t.Fatalf("PATCH racing a destroy: %d %s", r.status, r.raw)
+	}
+	var tz string
+	var hold bool
+	if err := e.h.Pool.QueryRow(ctx, "select tz, hold_base_updates from projects where id = $1", pid).Scan(&tz, &hold); err != nil {
+		t.Fatal(err)
+	}
+	if tz != "UTC" || hold {
+		t.Fatalf("refused PATCH wrote tz=%q hold_base_updates=%v", tz, hold)
 	}
 }

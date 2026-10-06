@@ -56,9 +56,14 @@ func checkMultiplexer(v string) *apiError {
 	return nil
 }
 
-// copyMultiplexer gives a fork or a restore as new the source's value,
-// or tmux when the gate would refuse herdr for the copy.
+// copyMultiplexer gives a fork or a restore as new the source's base, as
+// the real api's insertRestored does, and the source's multiplexer, or
+// tmux when the gate would refuse herdr on that base.
 func (f *Fake) copyMultiplexer(src, dst *project) {
+	dst.BaseVersion = src.BaseVersion
+	if n := len(dst.revisions); n > 0 {
+		dst.revisions[n-1].BaseVersion = src.BaseVersion
+	}
 	m := multiplexer.Normalize(src.Multiplexer)
 	if m == multiplexer.Herdr && f.herdrGate(dst.Slug, dst.BaseVersion, true) != nil {
 		m = multiplexer.Tmux
