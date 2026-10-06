@@ -460,7 +460,9 @@ revisions into it at boot, never over a real directory; until I-228 it
 was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 (I-228), `PKG_CONFIG_PATH` naming openssl, zlib, sqlite and libffi (I-228) and libyaml, libpq, libxml2, libxslt and libmysqlclient, with `pg_config` and `mysql_config` on PATH (I-265),
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`, `PUPPETEER_SKIP_DOWNLOAD=1`,
-`PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium).
+`PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium),
+`BROWSER` (a store-path script that prints `Open in your browser: URL`
+to stderr and exits 0; I-541).
 `GOPATH=/home/dev/go`, `CARGO_HOME=/home/dev/.cargo`,
 `RUSTUP_HOME=/home/dev/.rustup`, `BUN_INSTALL=/home/dev/.bun`,
 `DENO_INSTALL_ROOT=/home/dev/.deno`,

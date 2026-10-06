@@ -76,15 +76,16 @@ var guestCommands = map[string]string{
 // notCommands are backticked words in the guide that are names, not
 // commands: MCP servers, menu entries, the user, a .envrc line.
 var notCommands = map[string]string{
-	"dev":             "the user",
-	"localhost":       "an address",
-	"0.0.0.0":         "an address",
-	"playwright":      "an MCP server name (the command is playwright-mcp)",
-	"chrome-devtools": "an MCP server name",
-	"redis":           "a menu entry",
-	"mysql":           "a menu entry",
-	"use flake":       "a line for .envrc",
-	"flake.nix":       "a file name",
+	"dev":                  "the user",
+	"localhost":            "an address",
+	"0.0.0.0":              "an address",
+	"host.docker.internal": "a host name",
+	"playwright":           "an MCP server name (the command is playwright-mcp)",
+	"chrome-devtools":      "an MCP server name",
+	"redis":                "a menu entry",
+	"mysql":                "a menu entry",
+	"use flake":            "a line for .envrc",
+	"flake.nix":            "a file name",
 }
 
 type guideLine struct {

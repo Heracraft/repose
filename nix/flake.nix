@@ -204,10 +204,23 @@
           echo "$size" > $out
         '';
         # A base switch must never restart the tmux session unit: that ends
-        # every agent on a running guest (DECISIONS I-496).
+        # every agent on a running guest (DECISIONS I-496). Nor dockerd,
+        # the desktop or the agents' browser (I-536). A unit nixpkgs ships
+        # carries the line in its overrides.conf drop-in.
         guest-session-survives-switch = pkgs.runCommand "guest-session-survives-switch" { } ''
-          unit=${self.guestSystem.config.system.build.etc}/etc/systemd/user/repose-tmux-session.service
-          grep -qx 'X-RestartIfChanged=false' "$unit" || { echo "$unit lacks X-RestartIfChanged=false" >&2; exit 1; }
+          etc=${self.guestSystem.config.system.build.etc}/etc/systemd
+          check() {
+            local files=("$1") f
+            for f in "$1.d"/*.conf; do [ -e "$f" ] && files+=("$f"); done
+            if ! cat "''${files[@]}" | grep -x 'X-RestartIfChanged=false' >/dev/null; then
+              echo "$1 lacks X-RestartIfChanged=false" >&2; exit 1
+            fi
+          }
+          check $etc/user/repose-tmux-session.service
+          for u in docker repose-xvnc repose-openbox repose-vncconfig repose-novnc \
+            repose-novnc-proxy repose-browser repose-browser-proxy repose-browser-bridge-proxy; do
+            check $etc/system/$u.service
+          done
           touch $out
         '';
         guest-runner-builds = self.packages.${system}.guest-runner;
