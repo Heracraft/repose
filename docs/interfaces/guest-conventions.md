@@ -355,12 +355,15 @@ I-557 calls either, so the frame protocol has no older shape to keep.
     "missing": ["fooctl"], "skipped": {"gemini": "..."}, "checkout": "/home/dev/app"}]}
 ```
 
-One row per server name and source. `from` is `machine` (the platform),
+One row per server name and source. `from` is `repose` (the platform),
 `laptop` (carried; also a server the carry left on the laptop, with
-`agents` empty and its reason as `state`), `project` (a checkout's
-`.mcp.json`, Claude Code only, with `checkout`), `forward`, or `yours` (an
-entry in an agent's own config that repose did not write, including one
-under a repose name the user changed). `agents` lists the agents whose
+`agents` empty and its reason as `state`, unless a forward has the name),
+`project` (a checkout's `.mcp.json`, Claude Code only, with `checkout`),
+`forward` (also one no agent was synced for yet, with `agents` empty), or
+`machine` (an entry in an agent's own config that repose did not write,
+including one under a repose name the user changed). `repose mcp list`
+prints these rows (I-558); before I-558 the platform was `machine` and the
+user's `yours`, a shape no released CLI read. `agents` lists the agents whose
 config, with each agent's own precedence and off switches (`enabled =
 false`, Gemini CLI's `mcp.excluded`), has the server, in the order of
 `agents`. `needs` are secrets the server references without a default

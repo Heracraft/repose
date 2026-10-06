@@ -1399,6 +1399,35 @@ add NAME to [mcp] forward in config.toml. The project is the folder's, or
 	}
 	forward.Flags().BoolVar(&remove, "remove", false, "take NAME off the machine's agents")
 	root.AddCommand(forward)
+	// `repose mcp list` (DECISIONS I-558): what each agent on the machine
+	// has, read from its configs over SSH; starts no server.
+	list := &cobra.Command{
+		Use:     "list [PROJECT]",
+		Aliases: []string{"ls"},
+		Short:   "List the MCP servers the agents on a machine have, and those your laptop kept",
+		Long: `List the MCP servers the agents on a machine have, and those your laptop kept.
+
+FROM is repose (the browser tools), laptop (copied from your laptop's Claude
+Code, or kept there, with the reason in STATE), forward (repose mcp forward),
+project (a checkout's .mcp.json) or machine (added on the machine). STATE is
+empty when the server needs nothing. Piped, it prints one tab-separated line
+per server with no header. Needs the machine running.`,
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := projectFrom(args, g)
+			if err != nil {
+				return err
+			}
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return MCPListCmd(cmd.Context(), e, project)
+		},
+	}
+	list.Flags().BoolVar(&g.json, "json", false, "print JSON")
+	root.AddCommand(list)
 	return root
 }
 

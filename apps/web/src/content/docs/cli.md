@@ -174,6 +174,27 @@ The project is the folder's, or `--project`'s; NAME takes the place a PROJECT ha
 | ---------- | --------------------------------------------------------------------- |
 | `--remove` | Take NAME off the machine's agents. They drop it at their next start. |
 
+### `repose mcp list [PROJECT]`
+
+Alias `repose mcp ls`. Show each MCP server on the machine, where it came from, which agents have it, and what it lacks. It reads the agents' configs and starts no server. Needs the machine running.
+
+```
+$ repose mcp list
+NAME         FROM     AGENTS                           STATE
+playwright   repose   claude codex gemini opencode pi
+linear       laptop   claude codex gemini opencode pi  needs LIN_TOKEN
+xcode        laptop   none                             an Apple app
+notes-db     project  claude                           ~/todo-app
+apple-notes  forward  claude codex gemini opencode pi
+my-db        machine  claude
+```
+
+FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE is empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
+
+| Flag     | What it does                                                                                        |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| `--json` | Print the machine's answer as JSON: `name`, `from`, `agents`, `state` and the details behind STATE. |
+
 ### `repose cp [-r] SRC... DST`
 
 Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.

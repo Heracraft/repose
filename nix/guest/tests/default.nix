@@ -537,6 +537,8 @@ in
           row = [r for r in st["servers"] if r["name"] == "probe"]
           assert len(row) == 1 and row[0]["from"] == "laptop" and row[0]["state"] == "", st
           assert set(row[0]["agents"]) >= {"claude", "codex", "gemini", "opencode"}, row
+          pw = [r for r in st["servers"] if r["name"] == "playwright"]
+          assert pw and pw[0]["from"] == "repose", pw
           # Idempotent: a second start changes no byte.
           files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/config.json /home/dev/.repose/mcp/rendered.json"
           before = guest.succeed(f"sha256sum {files}")

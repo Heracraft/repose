@@ -294,7 +294,7 @@ server with a reference in its command or arguments, or a
 it cannot fill, is skipped for Codex alone.
 
 `repose-mcp status --json` reports, per server, where it came from, which
-agents have it and what it lacks; `repose mcp list` will show it. The
+agents have it and what it lacks; `repose mcp list` shows it (I-558). The
 layout and the commands are in `docs/interfaces/guest-conventions.md` "MCP
 registry". `repose-mcp NAME` and `repose-mcp hold` are the forward's two
 ends (below); in a base before the forward they exit 1 with "forwarding is
@@ -441,6 +441,22 @@ it reconnects with a backoff up to 30 s. A base without the forward is
 named once and not retried. Windows has no session helper, so `[mcp]
 forward` does nothing there; the foreground command needs only ssh's
 stdio.
+
+### List: `repose mcp list [PROJECT]` (DECISIONS I-558)
+
+`repose mcp list` (alias `ls`) runs `repose-mcp status --json` over the
+project's SSH connection and prints one row per server: NAME, FROM,
+AGENTS (`none` when no agent has it) and STATE. FROM is `repose` (the
+platform), `laptop` (carried, or left on the laptop with the carry's
+reason), `project` (a checkout's `.mcp.json`), `forward` or `machine`
+(added on the machine in an agent's own config). STATE is the status
+document's `state`, after the checkout path (`~/app`) for a row that
+belongs to one checkout. On a terminal it is a table with a header; piped,
+one tab-separated line per server and no header, as `secrets list`.
+`--json` prints the machine's document as it came. It reads files and
+starts no server, so it answers in the time of one SSH command. A base
+without `repose-mcp` (exit 127) gets one line: the base predates the list
+and it works after the machine's next update. Needs the machine running.
 
 ## Depends on
 

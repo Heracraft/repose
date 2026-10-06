@@ -34,7 +34,7 @@ func (r *Registry) Render(agent string) *Rendered {
 	ls, taken := r.list(agent == "claude")
 	out.Skipped = append(out.Skipped, taken...)
 	for _, l := range ls {
-		if l.From == FromMachine && agent != "claude" && agent != "codex" {
+		if l.From == FromRepose && agent != "claude" && agent != "codex" {
 			// Gemini, opencode and pi get the platform servers from their
 			// own system layers (DECISIONS I-553).
 			continue
@@ -61,7 +61,7 @@ func (r *Registry) Render(agent string) *Rendered {
 	}
 	for name, vals := range r.Platform.Retired {
 		for _, s := range vals {
-			v, reason := renderOne(agent, logical{Name: name, From: FromMachine, Server: s})
+			v, reason := renderOne(agent, logical{Name: name, From: FromRepose, Server: s})
 			if reason == "" {
 				out.Retired[name] = append(out.Retired[name], v)
 			}
@@ -194,7 +194,7 @@ func renderCodex(l logical) (any, string) {
 	s := l.Server
 	switch transport(s) {
 	case "stdio":
-		if l.From == FromMachine {
+		if l.From == FromRepose {
 			return map[string]any{"command": str(s, "command"), "args": anyStrings(strs(s["args"]))}, ""
 		}
 		v := launch(l.Name)

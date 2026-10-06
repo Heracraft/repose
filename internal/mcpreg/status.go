@@ -75,7 +75,7 @@ func ReadStatus(p Paths) (*Status, error) {
 				if w, ok := prev.Projects[checkout][name]; ok && equal(v, w) {
 					return FromLaptop
 				}
-				return FromYours
+				return FromMachine
 			}
 			if w, ok := want.User[name]; ok && equal(v, w) {
 				return want.From[name]
@@ -88,10 +88,10 @@ func ReadStatus(p Paths) (*Status, error) {
 			}
 			for _, r := range want.Retired[name] {
 				if equal(v, r) {
-					return FromMachine
+					return FromRepose
 				}
 			}
-			return FromYours
+			return FromMachine
 		}
 		for _, f := range agentEntries(p, agent, checkouts, fromOf) {
 			r := row(key(f))
@@ -110,7 +110,7 @@ func ReadStatus(p Paths) (*Status, error) {
 		if _, ok := rows[k]; ok {
 			continue
 		}
-		if l.From == FromMachine {
+		if l.From == FromRepose {
 			// pi before its MCP release, or an agent the user turned it
 			// off in: no row of its own unless someone has it.
 			continue
@@ -118,6 +118,11 @@ func ReadStatus(p Paths) (*Status, error) {
 		row(k)
 	}
 	for _, s := range reg.Laptop.Skipped {
+		if _, ok := reg.Forward[s.Name]; ok {
+			// Left on the laptop and forwarded from there: the forward's
+			// row says all of it.
+			continue
+		}
 		r := row(key{s.Name, FromLaptop, ""})
 		if r.State == "" {
 			r.State = s.Reason
@@ -160,7 +165,7 @@ func ReadStatus(p Paths) (*Status, error) {
 		for _, m := range r.Missing {
 			parts = append(parts, m+" missing")
 		}
-		if k.from != FromYours && k.from != FromProject {
+		if k.from != FromMachine && k.from != FromProject {
 			for _, agent := range Agents {
 				if contains(r.Agents, agent) {
 					continue
@@ -198,7 +203,7 @@ func ReadStatus(p Paths) (*Status, error) {
 }
 
 func fromRank(f string) int {
-	for i, x := range []string{FromMachine, FromLaptop, FromProject, FromForward, FromYours} {
+	for i, x := range []string{FromRepose, FromLaptop, FromProject, FromForward, FromMachine} {
 		if x == f {
 			return i
 		}
@@ -294,7 +299,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 		if b, ok, _ := readFile(p.etc("etc/codex/config.toml")); ok {
 			if sys, err := codexServers(string(b)); err == nil {
 				for n := range sys {
-					final[n] = found{n, FromMachine, ""}
+					final[n] = found{n, FromRepose, ""}
 				}
 			}
 		}
@@ -320,7 +325,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 		}
 		_ = readJSON(p.etc("etc/gemini-cli/system-defaults.json"), &sys) // unreadable: no system servers
 		for n := range sys.MCPServers {
-			final[n] = found{n, FromMachine, ""}
+			final[n] = found{n, FromRepose, ""}
 		}
 		exts, _ := os.ReadDir(filepath.Join(home, ".gemini", "extensions"))
 		for _, e := range exts {
@@ -328,13 +333,13 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 				if e.Name() == GeminiExtension {
 					final[n] = found{n, fromOf(n, v, ""), ""}
 				} else {
-					final[n] = found{n, FromYours, ""}
+					final[n] = found{n, FromMachine, ""}
 				}
 			}
 		}
 		settings := filepath.Join(home, ".gemini", "settings.json")
 		for n := range jsonServers(settings, "mcpServers") {
-			final[n] = found{n, FromYours, ""}
+			final[n] = found{n, FromMachine, ""}
 		}
 		var s struct {
 			MCP struct {
@@ -350,7 +355,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 		final := map[string]found{}
 		off := map[string]bool{}
 		for n, v := range jsonServers(p.etc("etc/opencode/opencode.json"), "mcp") {
-			final[n] = found{n, FromMachine, ""}
+			final[n] = found{n, FromRepose, ""}
 			off[n] = off[n] || disabled(v)
 		}
 		dir := filepath.Join(home, ".config", "opencode")
@@ -368,7 +373,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 					off[n] = true
 				}
 				if hasAny(v, "command", "url") {
-					final[n] = found{n, FromYours, ""}
+					final[n] = found{n, FromMachine, ""}
 				}
 			}
 		}
@@ -382,7 +387,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 		final := map[string]found{}
 		if b, ok, _ := readFile(p.etc("etc/repose/pi-extension.js")); ok && strings.Contains(string(b), "registerMcpServer") {
 			for n := range jsonServers(p.Platform, "mcpServers") {
-				final[n] = found{n, FromMachine, ""}
+				final[n] = found{n, FromRepose, ""}
 			}
 			for n, v := range jsonServers(p.agentFile("pi"), "mcpServers") {
 				final[n] = found{n, fromOf(n, v, ""), ""}
@@ -397,7 +402,7 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 				delete(final, n)
 				continue
 			}
-			final[n] = found{n, FromYours, ""}
+			final[n] = found{n, FromMachine, ""}
 		}
 		out = appendFound(out, final)
 	}

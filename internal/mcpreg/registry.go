@@ -4,7 +4,7 @@
 //
 // Sources, in the order a name is claimed:
 //
-//	machine   /etc/repose/mcp.json, the platform servers (I-246)
+//	repose    /etc/repose/mcp.json, the platform servers (I-246)
 //	forward   ~/.repose/mcp/forward/NAME.json, written by repose-mcp hold
 //	laptop    ~/.repose/mcp/laptop.json "user", written by the CLI's carry
 //	laptop    ~/.repose/mcp/laptop.json "projects", Claude Code local scope
@@ -34,11 +34,11 @@ var Agents = []string{"claude", "codex", "gemini", "opencode", "pi"}
 
 // Where a server comes from, as `repose-mcp status --json` reports it.
 const (
-	FromMachine = "machine" // the platform, /etc/repose/mcp.json
+	FromRepose  = "repose"  // the platform, /etc/repose/mcp.json
 	FromLaptop  = "laptop"  // carried from the laptop's Claude Code
 	FromForward = "forward" // runs on the laptop, through repose-mcp NAME
 	FromProject = "project" // a checkout's .mcp.json
-	FromYours   = "yours"   // added on the machine, in an agent's own config
+	FromMachine = "machine" // added on the machine, in an agent's own config (I-558)
 )
 
 // nameRe is a server name repose renders: what every agent accepts as a
@@ -208,7 +208,7 @@ func (r *Registry) list(perProject bool) (out []logical, taken []Skip) {
 		out = append(out, l)
 	}
 	for _, n := range sortedKeys(r.Platform.MCPServers) {
-		add(logical{Name: n, From: FromMachine, Server: r.Platform.MCPServers[n]})
+		add(logical{Name: n, From: FromRepose, Server: r.Platform.MCPServers[n]})
 	}
 	for _, n := range sortedKeys(r.Forward) {
 		add(logical{Name: n, From: FromForward})

@@ -85,13 +85,13 @@ func TestStatus(t *testing.T) {
 			t.Errorf("%s state = %q, want %q", key, s.State, state)
 		}
 	}
-	check("playwright/machine", []string{"claude", "gemini", "opencode", "pi"}, "")
+	check("playwright/repose", []string{"claude", "gemini", "opencode", "pi"}, "")
 	check("linear/laptop", []string{"claude", "codex", "gemini", "opencode", "pi"}, "needs LINEAR_TOKEN_T")
 	check("sentry/laptop", []string{"claude", "gemini", "opencode", "pi"}, "codex: an SSE server, which Codex does not take")
 	check("gone/laptop", []string{"claude", "codex", "gemini", "opencode", "pi"}, "no-such-command-repose missing")
 	check("xcode/laptop", []string{}, "an Apple app")
 	check("apple-notes/forward", []string{"claude", "codex", "gemini", "opencode", "pi"}, "laptop not connected")
-	check("mine/yours", []string{"claude"}, "")
+	check("mine/machine", []string{"claude"}, "")
 	check("notes-db/project", []string{"claude"}, "")
 	if got["notes-db/project"].Checkout != co {
 		t.Errorf("checkout = %q", got["notes-db/project"].Checkout)
@@ -99,6 +99,22 @@ func TestStatus(t *testing.T) {
 	if got["linear/laptop"].Needs[0] != "LINEAR_TOKEN_T" {
 		t.Errorf("needs = %v", got["linear/laptop"].Needs)
 	}
+	// A forward the hold holds right now has nothing to do; a carry skip
+	// of a forwarded name gives way to the forward's row; a forward no
+	// agent was synced for yet still has a row.
+	writeFile(t, filepath.Join(p.SocketDir, "apple-notes.sock"), "")
+	writeFile(t, filepath.Join(home, ".repose/mcp/forward/xcode.json"), `{"version":1,"name":"xcode"}`)
+	st, _ = ReadStatus(p)
+	got = map[string]ServerStatus{}
+	for _, s := range st.Servers {
+		got[s.Name+"/"+s.From] = s
+	}
+	check("apple-notes/forward", []string{"claude", "codex", "gemini", "opencode", "pi"}, "")
+	check("xcode/forward", []string{}, "laptop not connected")
+	if _, ok := got["xcode/laptop"]; ok {
+		t.Errorf("xcode kept its carry row beside the forward: %+v", got["xcode/laptop"])
+	}
+	_ = os.Remove(filepath.Join(home, ".repose/mcp/forward/xcode.json"))
 	// Once the secret is set, linear needs nothing.
 	writeFile(t, filepath.Join(p.SecretsDir, "LINEAR_TOKEN_T"), "x")
 	st, _ = ReadStatus(p)

@@ -152,6 +152,8 @@ Each time an agent starts, repose writes the machine's servers into that agent's
 
 When `~/.codex/config.toml` is a symlink, as home-manager makes it, repose leaves it alone, and Codex gets none of the machine's servers until you add their tables there yourself. `~/.repose/mcp/agents/codex.json` on the machine lists what repose would have written.
 
+[`repose mcp list`](/docs/cli#repose-mcp-list-project) shows each server on the machine, where it came from, which agents have it, and what it lacks.
+
 ## What agents are told about the machine
 
 Every agent on the machine is given a short guide to it: that it's a separate machine and can't reach your laptop, that the ports its servers listen on reach your laptop's `localhost`, how to install a missing tool and how you keep it (`repose config add`), Docker and databases, where your secrets are and never to print them, the browser tools, that its commits reach you with `git fetch repose`, where files you drop arrive, how to reach you, and the [limits](/docs/limits). It also points the agent at [/llms.txt](https://repose.herakraft.co/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent can tell when your CLI is older than the docs. To read the guide, on the machine:

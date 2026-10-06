@@ -13209,6 +13209,8 @@ neither, since the rename would replace the link; sync still records
 what Codex would get in `agents/codex.json`. The CLI's folder trust
 write (I-486, extended by I-556) takes the same `~/.claude.json.lock`,
 so all three repose writers of the file hold Claude Code's lock.
+*Amended by I-558:* the status's `from` is `repose` for the platform and
+`machine` for a server the user added, in place of `machine` and `yours`.
 
 **I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
 with credentials replaced by secret references.** (mcp-carry,
@@ -13357,3 +13359,34 @@ subtest (the real hold with a fake laptop end, every agent listing the
 server, the away answer) is written and evaluated and needs the dev box
 to boot; the live check is a laptop forward called from Codex, then the
 lid closed.
+
+**I-558. `repose mcp list` shows each MCP server on a machine, where it
+came from and which agents have it.** (mcp-list, 2026-10-06; amends
+I-555) Five agents list MCP servers five ways: pi's `mcp list` misses
+extension servers, Codex's starts nothing, and none of them knows which
+servers came from the laptop or why one stayed there. "Why doesn't my
+agent see linear" should take one command, so `repose mcp list
+[PROJECT]` (alias `ls`, the `list` verb `secrets` and `snapshots` use,
+owner decision O3) runs `repose-mcp status --json` over the project's
+SSH connection and prints NAME, FROM, AGENTS and STATE. STATE is the
+status document's `state`, after the checkout path for a row of one
+checkout; AGENTS is `none` for a server the carry left on the laptop.
+Piped, one tab-separated line per server with no header, as `secrets
+list`; `--json` prints the machine's document as it came, so a field a
+newer base adds reaches scripts without a CLI release. The status reads
+files and starts no server. A base without `repose-mcp` (exit 127) gets
+one line saying it predates the list and works after the machine's next
+update.
+
+Vocabulary: I-555's status called the platform `machine` and a server
+the user added on the machine `yours`. Beside `laptop`, `yours` reads as
+"from your laptop", and the design's own carry section called the user's
+entry the machine's. FROM is now `repose` for the platform and `machine` for
+the user's own; no released CLI read the old values, so no old shape is
+kept. A server the carry left on the laptop and that is now forwarded
+shows once, as `forward`, and a forward no agent was synced for yet
+still has a row. *Rejected:* a column per agent (five columns of
+yes/no hide the reason, which is the point); starting each server to
+probe it (slow, and a server that needs the laptop would fail the
+probe for the wrong reason). Not covered here: a live run against a
+machine on a real base.
