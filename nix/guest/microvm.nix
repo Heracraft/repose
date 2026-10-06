@@ -72,6 +72,8 @@ let
         repose.fragment = fragmentModule;
         repose.personal = personalModule;
         repose.prePassPkgs = prePassPkgs;
+        # `nixpkgs` in the global flake registry, locked (I-531).
+        repose.nixpkgsLocked = { inherit (nixpkgs) rev narHash lastModified; };
         # command-not-found's and nix-locate's prebuilt index (I-219).
         repose.nixIndexPackage = self.inputs.nix-index-database.packages.${system}.nix-index-with-small-db;
       }

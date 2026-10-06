@@ -13065,3 +13065,135 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-529. The guest deletes, weekly, the unused store paths only its
+overlay holds.** (base-nix-store, 2026-10-06) The guest never collected
+garbage (`nix.gc.automatic = false`, `min-free` 0, dev's profile-1..14
+never pruned). On kanali (base 2026.10.05) `/` was 40 GB and 89 to 95
+percent full, with 17 GB in `/nix/.rw-store`; of the 3,248 paths
+`nix-store --gc --print-dead` listed, 2,500 existed only in the overlay's
+upper dir, 8.6 GB, mostly flake `-source` copies of a dirty checkout
+(about 1.9 GB each), old codex and deno builds and go-modules. A
+whole-store GC (`nix.gc.automatic`, `min-free`, `nix-collect-garbage -d`)
+is unsafe here: deleting a path that also exists in the lower layer
+(`/nix/.ro-store`, the host's copy) writes an overlayfs whiteout into the
+upper dir, and the whiteout keeps hiding the host's copy. hostd registers
+earlier closures again (`--load-db` at every switch, I-67; the store view
+keeps up to 16 earlier closures and the `rev-*` roots, I-463), so a later
+switch or rollback finds a valid path with no files. kanali already has
+2,047 whiteouts from a manual GC on 2026-10-03, 1,157 of them over paths
+that are in `.ro-store`. `repose-store-gc.service` (Nice 19, idle I/O)
+runs from a weekly timer (`RandomizedDelaySec=1h`, `Persistent=true`):
+it deletes dev's profile generations older than 14 days, as dev (`nix
+profile wipe-history --older-than 14d`; the system's generations are
+hostd's), then keeps from `--print-dead` the paths whose basename exists
+in the upper dir (read from /proc/mounts as `repose-pin-profile` reads
+it), is not a character device there (a whiteout) and exists in no
+lower dir, and passes them to `nix-store --delete`, which refuses live
+paths. `nix-store --delete` refuses the whole list, deleting nothing,
+when a dead path outside the list refers to one in it (checked on a
+scratch store), so the closure of the dead paths that stay is left out;
+on kanali that removed none of the 2,500. A path that became live
+between the listing and the deletion makes the call fail, so the
+selection runs once more. The script, run on kanali with the deletion
+replaced by a listing, selected 2,534 paths (8.6 GB) in 6 s and no path
+in `.ro-store`. `nix.gc.automatic` stays false and `min-free` at its
+default. VM test `guest-base` ("I-529"): a path the guest added goes, a
+dead path in the lower layer stays with no whiteout, live paths stay.
+Follow-up, not built: guestd could remove a whiteout that hides a path
+`RegisterPaths` registers, which would repair guests a manual GC already
+damaged; it changes what the registration step writes to the overlay and
+needs its own decision.
+
+**I-530. dev is a trusted nix user.** (base-nix-store, 2026-10-06)
+`nix store info` said `Trusted: 0` and nix.conf had `trusted-users = root
+root`, so a flake's `nixConfig.extra-substituters` was dropped even with
+`--accept-flake-config` ("ignoring untrusted substituter"), and `cachix
+use` could not work. dev already has passwordless sudo (R3-13), so trust
+grants nothing dev could not take. `trusted-users = [ "root" "dev" ]`;
+`accept-flake-config` stays false, so a flake's caches apply only when
+the command asks (`nix develop --accept-flake-config`, which agents need,
+having no TTY for nix's prompt, or `--option extra-substituters URL
+--option extra-trusted-public-keys KEY`). cache.nixos.org stays the
+default; its duplicate in nix.conf (the module's default plus ours) is
+harmless and left alone. Docs: machine.md "Projects with a flake.nix",
+the agent guide. VM test `guest-devtools` checks `Trusted: 1`.
+
+**I-531. `nixpkgs` in the guest's global flake registry is the base's
+nixpkgs, locked.** (base-nix-store, 2026-10-06; amends I-218) Nix 2.34
+locks a flake's indirect inputs against the global registry only, never
+the system one, so with `flake-registry = ""` (I-218) a flake with
+`outputs = { self, nixpkgs }` and no inputs, or `inputs.nixpkgs.url =
+"nixpkgs"`, failed with "cannot find flake 'flake:nixpkgs' in the flake
+registries" in the cd hook, `nix develop` and `nix flake lock`. The
+global registry is now a file the base writes with one entry: `nixpkgs`
+to `github:NixOS/nixpkgs` at the flake input's `rev`, `narHash` and
+`lastModified`, which `repose.nixpkgsLocked` carries into the guest
+(set by `nixosModules.guestBase` and the runner). Nix finds the narHash
+in the store, so the lock is made offline: on kanali an input-less flake
+locked to `github:NixOS/nixpkgs/b1b8759...?narHash=...` with
+`--offline`, where the empty registry failed, and the lock is a URL a
+laptop and CI can fetch. Without a known rev the entry points at the
+source path (`type = "path"`), which locks but only to a path. The
+system registry keeps the path entry, so `nix profile add nixpkgs#X`
+behaves as before; `templates#` and `home-manager#` stay unresolved, as
+I-218 intends. VM test `guest-devtools` ("I-531") locks an input-less
+flake offline and checks the lock is the github entry.
+
+**I-532. The guest has no nix channels.** (base-nix-store, 2026-10-06;
+amends I-218) NIX_PATH was `nixpkgs=flake:nixpkgs:/nix/var/nix/profiles/per-user/root/channels`;
+that directory never exists in the guest, so every `nix-shell -p`
+warned that it does not exist. `nix.channel.enable = false`: NIX_PATH is
+`nixpkgs=flake:nixpkgs` alone and `nix-channel` is not installed.
+Nothing in the base runs `nix-channel` or reads a channel's
+`programs.sqlite` (command-not-found uses nix-locate, I-219). No
+`~/.nix-defexpr` link is added for `nix-env`: dev's profile is a `nix
+profile` manifest, which `nix-env -i` refuses anyway. VM test
+`guest-devtools` checks NIX_PATH and that `nix-channel` is absent.
+
+**I-533. The libraries a guest-built binary links are pinned in the
+overlay.** (base-nix-store, 2026-10-06) A binary built in the guest names
+base store paths: on kanali, a `cc` build against openssl has
+`/nix/store/...-glibc-2.42-84/lib/ld-linux-x86-64.so.2` as its
+interpreter and a RUNPATH of openssl-3.6.4, glibc-2.42-84 and
+gcc-15.3.0-lib; cgo, node-gyp and cargo builds are the same. On the host
+only the current SystemClosure and the `rev-*` roots keep those paths, a
+stop drops the guest's root, and the host GC runs weekly with
+`--delete-older-than 14d`, so after a base change and a GC such a binary
+fails with ENOENT. `repose-pin-profile` copied up only dev's profile.
+It now also copies up, at every boot and switch (the same service, which
+runs while the base's paths are still in the lower layer; a switch-time
+hook would be too late once a stop has dropped the root), the closure of
+a list fixed at eval time: the gcc wrapper's libc and `cc.lib`, and the
+runtime outputs of openssl, zlib, sqlite, libffi, libyaml, libpq,
+libxml2, libxslt and libmysqlclient (compat.nix's `PKG_CONFIG_PATH`
+set). Headers are left out: a rebuild uses the new base's wrapper. Each
+target is rooted at `/nix/var/nix/gcroots/repose-link-targets/<name>`,
+and roots from earlier bases stay, so I-529's GC never deletes them; the
+upper dir is never cleared of them. Measured on kanali with `nix
+path-info -sS`: glibc's closure is 36.0 MiB, openssl 8.9 MiB on its
+own, gcc-lib 9.8 MiB, the whole set 72.3 MiB; an unchanged path costs
+nothing (the existing `-e` test), and on kanali all but 2.1 MiB were in
+the upper dir already. All eleven are in the base closure already, so
+the closure does not grow. The service now waits for `repose-paths`
+(I-67), since before the registration `nix-store -qR` of a system path
+finds nothing. VM test `guest-base` ("I-533") builds against openssl,
+checks each linked path is copied up and rooted, and runs the binary
+from the upper copies alone (the test VM's lower layer is the host's
+read-only store, so a path cannot be taken out of it there).
+
+**I-534. The guest has man pages.** (base-nix-store, 2026-10-06; amends
+I-218) `man ls`, `man git` and `man tmux` said "No manual entry":
+`documentation.enable = false` gates every documentation option, so
+`/share/man` was never linked into the system path and no `man` output
+was installed (`man` itself comes from the laptop's tools). Now
+`documentation.enable` and `documentation.man.enable` are on, with
+`man.cache.enable` (formerly `generateCaches`), `doc`, `info`, `dev` and
+`nixos` off. Most pages were in the closure already, inside the
+packages' `out` (coreutils-full, git). The delta is the `man` outputs of
+installed packages not yet in the closure: 49 of them, 13,119,200 bytes
+of NAR (cache.nixos.org narinfo; the largest are openssl's 4.1 MB and
+systemd's 2.1 MB); man-db and its closure were in the base already.
+That is within the 6 GiB check's room (the 2026.10.05 base closure is
+6,306,239,088 bytes). VM test `guest-devtools` runs `man -w` for ls,
+git, tmux and nix.

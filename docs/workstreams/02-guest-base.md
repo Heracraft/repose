@@ -177,8 +177,9 @@ presenting `/nix/store` as the union. microvm.nix's `writableStoreOverlay`
 does this. The guest can therefore run `nix-shell` and `nix profile install`
 for things not in the host store; those go to the overlay and are the
 guest's own (and count toward its volume). The guest's `nix-daemon` runs
-with `substituters` = cache.nixos.org only, `sandbox = true`, and cannot see
-the host daemon. It builds inside its own vCPU and RAM caps, so a user
+with `substituters` = cache.nixos.org by default, `sandbox = true`, and
+cannot see the host daemon. dev is a trusted user (dev has passwordless sudo
+anyway), so a project may add its own caches (DECISIONS I-530). It builds inside its own vCPU and RAM caps, so a user
 running a heavy `nix build` in a shell affects only themselves. This is
 distinct from the config pipeline (12), where the host builds the system.
 
@@ -192,6 +193,21 @@ false`, and a guest-side `repose-pin-profile` activation hook that runs
 `nix copy --to local?root=/nix/.rw-store` for the profile closure). The VM
 test covers this: install a package into the profile, delete it from the
 "host" store, the profile still runs.
+
+A binary built in the guest (cc, cgo, node-gyp, cargo) names base store
+paths directly: the gcc wrapper's glibc as its interpreter, gcc-lib and the
+`PKG_CONFIG_PATH` libraries in its RUNPATH. `repose-pin-profile` copies
+the closures of those link targets up too, at every boot and switch, and
+roots each under `/nix/var/nix/gcroots/repose-link-targets/`, so a binary
+in a checkout keeps running after a base change and a host GC (DECISIONS
+I-533). An unchanged glibc costs nothing; a new one costs its closure in
+the upper dir (about 36 MiB for glibc, 9 MiB for openssl).
+
+The guest never runs a whole-store GC: deleting a path the lower layer also
+has leaves a whiteout in the upper dir that hides the host's copy for good.
+`repose-store-gc.timer` instead deletes, weekly, dev's profile generations
+older than 14 days and then the dead paths that exist in the upper dir
+alone (DECISIONS I-529).
 
 ### Why the fragment is home-manager, and where it lands
 

@@ -69,8 +69,12 @@ let
     environment.systemPackages = [ pkgs.openssh ];
     # A path in the host store but outside the system closure, registered
     # in the VM's database so the pin test can install it offline.
-    virtualisation.additionalPaths = [ pkgs.hello ];
+    # gcLowerProbe is registered and unrooted: a dead path in the lower
+    # layer, which repose-store-gc must leave alone (I-529).
+    virtualisation.additionalPaths = [ pkgs.hello gcLowerProbe ];
   };
+
+  gcLowerProbe = pkgs.writeText "repose-gc-lower-probe" "in the host store only\n";
 
   helloImage = pkgs.dockerTools.buildImage {
     name = "repose-hello";
@@ -474,6 +478,55 @@ in
           guest.succeed(f"diff -r {upper}/{name} {hello}")
           guest.succeed("sudo -u dev bash -lc 'hello' | grep -q Hello")
 
+      with subtest("I-533: what a guest-built binary links is copied up and rooted"):
+          guest.succeed("install -d -o dev -g dev /tmp/link")
+          guest.succeed("""cat > /tmp/link/t.c <<'EOF'
+      #include <stdio.h>
+      #include <openssl/crypto.h>
+      int main(void) { printf("%s\\n", OpenSSL_version(OPENSSL_VERSION)); return 0; }
+      EOF
+      chown dev:dev /tmp/link/t.c""")
+          guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc t.c -o t $(pkg-config --cflags --libs openssl)'")
+          interp = guest.succeed("readelf -l /tmp/link/t | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
+          runpath = guest.succeed("readelf -d /tmp/link/t | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
+          # The store paths the binary names: the interpreter's glibc and
+          # every RUNPATH entry (openssl, glibc, gcc-lib).
+          linked = sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+          assert any("-glibc-" in p for p in linked) and any("-openssl-" in p for p in linked), linked
+          guest.succeed("systemctl start repose-pin-profile.service")
+          for p in linked:
+              base = os.path.basename(p)
+              guest.succeed(f"diff -r {upper}/{base} {p}")
+              guest.succeed(f"test \"$(readlink /nix/var/nix/gcroots/repose-link-targets/{base})\" = {p}")
+          # The lower layer is the host's read-only store and cannot lose a
+          # path here, so run the binary from the upper copies alone: what
+          # it would load once the host collected the base's paths.
+          glibc = [p for p in linked if "-glibc-" in p][0]
+          libpath = ":".join(f"{upper}/{os.path.basename(p)}/lib" for p in linked)
+          out = guest.succeed(f"{upper}/{os.path.basename(glibc)}/lib/ld-linux-x86-64.so.2 --library-path {libpath} /tmp/link/t")
+          assert out.startswith("OpenSSL "), out
+
+      with subtest("I-529: repose-store-gc deletes dead paths only the upper dir holds"):
+          lower_probe = "${gcLowerProbe}"
+          lname = os.path.basename(lower_probe)
+          guest.succeed(f"test -e /nix/.ro-store/{lname}")
+          guest.fail(f"test -e {upper}/{lname}")
+          # A path the guest's daemon adds lands in the upper dir alone.
+          own = guest.succeed("echo only in the overlay > /tmp/own && nix-store --add /tmp/own").strip()
+          oname = os.path.basename(own)
+          guest.succeed(f"test -f {upper}/{oname}")
+          guest.succeed("systemctl list-timers repose-store-gc.timer | grep -q repose-store-gc")
+          guest.succeed("systemctl start repose-store-gc.service")
+          guest.fail(f"test -e {own}")
+          guest.fail(f"test -e {upper}/{oname}")
+          # The dead lower path stays, with no whiteout hiding it.
+          guest.succeed(f"test -f {lower_probe}")
+          guest.fail(f"test -c {upper}/{lname}")
+          # Live paths stay: the profile's hello and the link targets.
+          guest.succeed(f"test -d {upper}/{name}")
+          guest.succeed(f"test -x {glibc}/lib/ld-linux-x86-64.so.2")
+          guest.succeed("/tmp/link/t")
+
       with subtest("guest profile script"):
           prof = json.loads(guest.succeed("sudo -u dev repose-guest-profile"))
           assert prof["slug"] == "todo-app" and prof["dir"] == "/home/dev/factory", prof
@@ -592,6 +645,7 @@ in
       guest.start()
       guest.wait_for_unit("multi-user.target")
 
+      import json
       import shlex
 
       def dev(cmd):
@@ -646,9 +700,31 @@ in
           print(reg)
           line = [l for l in reg.splitlines() if l.startswith("system flake:nixpkgs ")]
           assert line == ["system flake:nixpkgs path:${nixpkgsSource}"], reg
-          assert "nixpkgs=flake:nixpkgs" in dev("echo $NIX_PATH")
+          nix_path = dev("echo $NIX_PATH").strip()
+          assert nix_path == "nixpkgs=flake:nixpkgs", nix_path
+          # I-532: no channels anywhere, so nix-shell has nothing to warn about.
+          assert "channels" not in nix_path, nix_path
+          guest.fail("sudo -H -u dev bash -lc 'command -v nix-channel'")
           ver = dev("timeout 120 nix eval --raw nixpkgs#hello.version")
           assert ver.strip() == "${pkgs.hello.version}", ver
+
+      with subtest("I-531: a flake that names nixpkgs without a URL locks offline"):
+          glob = [l for l in reg.splitlines() if l.startswith("global flake:nixpkgs ")]
+          assert len(glob) == 1 and glob[0].split()[2].startswith("github:NixOS/nixpkgs/"), reg
+          guest.succeed("install -d -o dev -g dev /tmp/fl")
+          guest.succeed("echo '{ outputs = { self, nixpkgs }: { v = nixpkgs.lib.version; }; }' > /tmp/fl/flake.nix && chown dev:dev /tmp/fl/flake.nix")
+          dev("cd /tmp/fl && timeout 120 nix --offline flake lock")
+          locked = json.loads(dev("cat /tmp/fl/flake.lock"))["nodes"]["nixpkgs"]["locked"]
+          assert locked["type"] == "github" and locked["owner"] == "NixOS" and locked["repo"] == "nixpkgs", locked
+          assert glob[0].split()[2].startswith("github:NixOS/nixpkgs/" + locked["rev"]), (glob, locked)
+
+      with subtest("I-530: dev is a trusted nix user"):
+          info = dev("nix store info")
+          assert "Trusted: 1" in info, info
+
+      with subtest("I-534: man pages for what is installed"):
+          for page in ["ls", "git", "tmux", "nix"]:
+              dev(f"man -w {page}")
 
       with subtest("I-219: nix-locate maps a binary to its attribute"):
           attrs = dev("nix-locate --minimal --no-group --type x --type s --whole-name --at-root /bin/cowsay")
@@ -989,6 +1065,7 @@ in
       guest.start()
       guest.wait_for_unit("multi-user.target")
 
+      import json
       import shlex
 
       def dev(cmd):
@@ -1473,6 +1550,7 @@ in
     testScript = ''
       import json
       import re
+      import json
       import shlex
       import tomllib
 
@@ -1613,6 +1691,7 @@ in
       nix.settings.substituters = lib.mkForce [ ];
     };
     testScript = ''
+      import json
       import shlex
 
       guest.start()
@@ -1786,6 +1865,7 @@ in
       };
     };
     testScript = ''
+      import json
       import json
       import shlex
 

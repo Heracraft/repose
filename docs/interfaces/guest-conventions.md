@@ -84,6 +84,8 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/nix/.rw-store` | the guest's writable store overlay (upper dir `store/`, work dir `work/`), on the thin volume |
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
+| `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
+| `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
 | `/var/log/repose/console.log` | not used; console goes to the serial device and hostd captures it |
 
 ## tmux

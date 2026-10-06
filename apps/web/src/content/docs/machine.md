@@ -22,7 +22,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Browser:** Chromium and Playwright's browsers.
 - **Everyday tools:** git, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim, direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
-The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in the `docker` group, so `docker` needs no `sudo`.
+`man` has the pages of the installed tools. The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in the `docker` group, so `docker` needs no `sudo`.
 
 Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
 
@@ -81,6 +81,10 @@ Agents start in the project's dev environment, so they and every command they ru
 - With a `flake.nix` that defines a dev shell and no `.envrc`, agents start in that dev shell. Nothing is written to the checkout: if the repository has no `flake.lock`, the one Nix makes is kept on the machine, outside the checkout.
 
 The first load builds the dev shell. A few packages from a nixpkgs the machine hasn't fetched yet take 20 to 40 seconds; anything nixpkgs has to compile takes longer. Later loads reuse it and take under a second, until `flake.nix` or `flake.lock` changes. `repose run` shows `Loading the project's dev shell` meanwhile and sends your prompt once the agent is up. If the dev shell fails to load, the agent starts without it and its window shows the error first.
+
+A flake input that names `nixpkgs` without a URL (`outputs = { self, nixpkgs }`, or `inputs.nixpkgs.url = "nixpkgs"`) locks to the machine's own nixpkgs revision, as a `github:` URL that works on your laptop too.
+
+A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`. `cachix use NAME` works too.
 
 Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
 
@@ -168,6 +172,8 @@ The machine can reach the internet. Nothing on the internet can reach the machin
 ## Memory and disk
 
 When a machine runs out of memory, something is killed. Your agents and tmux are kept to the last, so a runaway test or dev server goes first. `sudo dmesg | grep -i killed` shows what went. Headless Chromium is stopped past 1.5, 3 or 6 GB depending on size. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size).
+
+Once a week the machine deletes nix store paths nothing uses any more, and old generations of your nix profile (older than 14 days); `sudo systemctl start repose-store-gc` does it now.
 
 Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 

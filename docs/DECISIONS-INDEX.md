@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+529 entries.
 
 ## Scope
 
@@ -303,7 +303,7 @@ pointer, not a summary.
 - **I-226** Request log lines name the route, the user and the client — 2026-09-23; L4799
 - **I-220** The menu takes any nixpkgs package by attribute path, and `repose config add/remove` edit it — L4810
 - **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4853
-- **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; L4909
+- **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; amended by I-531; amended by I-532; amended by I-534; L4909
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; L4958
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L4991
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5028
@@ -555,3 +555,9 @@ pointer, not a summary.
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L13069
+- **I-530** dev is a trusted nix user — 2026-10-06; L13108
+- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L13122
+- **I-532** The guest has no nix channels — 2026-10-06; L13143
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L13154
+- **I-534** The guest has man pages — 2026-10-06; L13185

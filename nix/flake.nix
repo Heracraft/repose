@@ -124,6 +124,9 @@
         # outside it (the VM tests): `nixpkgs` in the guest's registry is
         # this flake's nixpkgs (DECISIONS I-218).
         nixpkgs.flake.source = lib.mkDefault nixpkgs.outPath;
+        # The same nixpkgs as a locked github: input for the global
+        # registry (DECISIONS I-531).
+        repose.nixpkgsLocked = lib.mkDefault { inherit (nixpkgs) rev narHash lastModified; };
         repose.nixIndexPackage = lib.mkDefault nix-index-database.packages.${system}.nix-index-with-small-db;
         repose.baseVersion = lib.mkDefault baseVersion;
         repose.guestd.package = lib.mkDefault guestd;
