@@ -129,11 +129,12 @@ let
   playwrightMcp = scoped "playwright-mcp" pkgs.reposeMcp.playwright-mcp "playwright-mcp";
   chromeDevtoolsMcp = scoped "chrome-devtools-mcp" pkgs.reposeMcp.chrome-devtools-mcp "chrome-devtools-mcp";
 
+  # /etc/repose/mcp.json: Claude Code's shape, read by repose-agent-setup
+  # for Claude Code and Codex, and by the VM tests. The other agents get
+  # the same servers from config.repose.mcpServers in their own system
+  # layer (agent-guide.nix; DECISIONS I-553).
   mcpConfig = {
-    mcpServers = {
-      playwright = { type = "stdio"; command = "playwright-mcp"; args = [ "--cdp-endpoint" cdpUrl ]; };
-      chrome-devtools = { type = "stdio"; command = "chrome-devtools-mcp"; args = [ "--browserUrl" cdpUrl ]; };
-    };
+    mcpServers = lib.mapAttrs (_: s: { type = "stdio"; inherit (s) command args; }) config.repose.mcpServers;
     # Entries earlier bases registered. repose-agent-setup replaces a
     # user's entry that is exactly one of these, since it wrote them
     # itself, and leaves any other entry alone (user entries win, I-246).
@@ -199,7 +200,26 @@ in
     CHROME_BIN = "${chromium}/bin/chromium";
   };
 
+  repose.mcpServers = {
+    playwright = { command = "playwright-mcp"; args = [ "--cdp-endpoint" cdpUrl ]; };
+    chrome-devtools = { command = "chrome-devtools-mcp"; args = [ "--browserUrl" cdpUrl ]; };
+  };
+
   environment.etc."repose/mcp.json".text = builtins.toJSON mcpConfig;
+
+  # Gemini CLI's system defaults layer, beneath the user's
+  # ~/.gemini/settings.json (DECISIONS I-553). Copied with mode 0644: Gemini
+  # skips a system file whose resolved directory is not root-owned or is
+  # group-writable, which a /nix/store symlink is. Folder trust is off: in
+  # a folder it was not told about, Gemini disables every MCP server, and
+  # agents on the machine already run without prompts (I-250).
+  environment.etc."gemini-cli/system-defaults.json" = {
+    text = builtins.toJSON {
+      mcpServers = lib.mapAttrs (_: s: { inherit (s) command args; }) config.repose.mcpServers;
+      security.folderTrust.enabled = false;
+    };
+    mode = "0644";
+  };
 
   # Fonts the pages render with (Noto Sans, Noto Sans Mono, Noto Serif;
   # Liberation for the metric-compatible Arial, Times and Courier names

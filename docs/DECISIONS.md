@@ -13065,3 +13065,73 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-553. Platform MCP servers reach every agent through the agent's own layer beneath the user's file.**
+(mcp-platform, 2026-10-06; extends I-246) The machine guide tells every
+agent to drive the browser with `playwright` and `chrome-devtools`, and
+only Claude Code had them. Each agent now gets the two where it has a
+layer the user's own file overrides, with `command` and `args` only, so
+a user's field-level override stays clean. Claude Code keeps the
+`~/.claude.json` merge from `/etc/repose/mcp.json` (I-246), because its
+`managed-mcp.json` takes exclusive control: `claude mcp add` fails with
+"enterprise MCP configuration is active" and user servers drop out of
+`claude mcp list`. opencode gets `mcp.NAME = {type: "local", command:
+[...]}` in `/etc/opencode/opencode.json`, never `enabled`, so the user's
+`enabled: false` turns one off. Gemini CLI gets `mcpServers` in
+`/etc/gemini-cli/system-defaults.json`, a copied root 0644 file in a root
+0755 directory, since Gemini skips a system file whose resolved directory
+is not root-owned or is group-writable, which a store symlink is. The
+same file turns Gemini's folder trust off (`security.folderTrust.enabled:
+false`, owner sign-off O1): in a folder it was not told to trust, Gemini
+disables every MCP server, headless runs included, and agents on the
+machine already run without prompts (I-250); a per-checkout
+`trustedFolders.json` entry would miss each folder an agent changes into.
+Codex does not use `/etc/codex/config.toml` for these: a user table of
+the same name holding `url` beside a system-layer `command` stops every
+`codex` command ("url is not supported for stdio"), and `codex mcp add`
+copies every system-layer server into the user file anyway. Instead
+`repose-agent-setup codex` appends an `[mcp_servers.NAME]` table to
+`~/.codex/config.toml` for each server the parsed file lacks, judged by
+Python's `tomllib` (as strict as Codex's parser: `yj` accepted an inline
+`mcp_servers` table extended by a later header, which Codex refuses),
+re-parses the result before the rename, and holds `flock
+~/.repose/mcp/.lock` so parallel agent starts cannot write a duplicate
+table. A table under that name, the user's own or one they changed, stays
+as it is; a file that does not parse is left for Codex to report. A later
+base that changes the args does not update a table written earlier;
+unit B's `repose-mcp sync codex` owns that by value. Evidence, run on
+kanali with the rendered files and the pinned binaries in temp homes
+(opencode and Gemini through a private mount namespace over `/etc` and
+`GEMINI_CLI_SYSTEM_DEFAULTS_PATH`): `codex mcp list --json` shows both
+enabled with the registry's args, a user `enabled = false` gives
+`"enabled": false`, a user `url` table stays the user's; `opencode mcp
+list` shows both `connected`, `playwright disabled` under the user's
+`enabled: false`; `gemini mcp list` in a fresh folder shows both
+`Connected` with no trust warning, and `Blocked` under `mcp.excluded`.
+The VM subtests in guest-base, guest-agent-guide and guest-desktop need
+the dev box.
+
+**I-554. pi moves to 1.0.4 for built-in MCP.**
+(mcp-platform, 2026-10-06) pi 0.87.1 has no MCP. 0.99 added it, with
+`pi.registerMcpServer(name, config)` for extensions taking the
+`mcp.json` entry shape, and a `~/.pi/agent/mcp.json` entry of the same
+name taking precedence. 1.0.4 rather than 1.0.3 because it fixes MCP
+sessions that left a connecting server's transport open and `--tools`
+removing MCP tools; the GitHub release asset `pi-linux-x64.tar.gz` keeps
+the layout `pi-coding-agent.nix` installs (the npm package moved to
+`@earendil-works/pi-coding-agent`; the overlay never used npm). The
+guide extension (`/etc/repose/pi-extension.js`, I-243) registers each
+server in `/etc/repose/mcp.json`, and in `~/.repose/mcp/agents/pi.json`
+once unit B writes it. Both checks are its own: an older pi without
+`registerMcpServer` returns before registering, and each call sits in
+its own try, since an invalid name or config throws and must not cost
+the guide or the other servers. `pi mcp list` does not load extensions,
+so it does not show these two; `/mcp` in a session does. The off switch
+is `{"mcpServers": {"playwright": {"command": "playwright-mcp",
+"enabled": false}}}` in `~/.pi/agent/mcp.json`: an entry with `enabled`
+alone is rejected for lacking `command`. Evidence on kanali: pi 1.0.4
+with the guide extension and a fake OpenAI-compatible model sent a
+request whose system prompt holds the guide and `<mcp_servers>` listing
+`mcp__chrome_devtools` and `mcp__playwright` (codemode exposure); with
+the off-switch entry the list holds `mcp__chrome_devtools` alone; the
+`before_agent_start` hook still receives `systemPromptOptions.sections`.

@@ -36,10 +36,10 @@
     }
   },
   "pi-coding-agent": {
-    "version": "0.87.1",
+    "version": "1.0.4",
     "x86_64-linux": {
-      "url": "https://github.com/earendil-works/pi/releases/download/v0.87.1/pi-linux-x64.tar.gz",
-      "hash": "sha256-gNeN1i1QBJoAa5gdmUxhJVvMEOcwsMJ41OoKdVkJdkw="
+      "url": "https://github.com/earendil-works/pi/releases/download/v1.0.4/pi-linux-x64.tar.gz",
+      "hash": "sha256-KExF3SjPl1oTz/avNHQd0KDNymY06L38AIOufUUuhtY="
     }
   },
   "chrome-devtools-mcp": {

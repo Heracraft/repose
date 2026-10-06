@@ -28,7 +28,14 @@
 #          whoever set the mode, since the bypass warning dialog otherwise
 #          takes that prompt the same way (I-306).
 # codex   ~/.codex/config.toml gains `notify = ["repose-hook"]` unless a
-#          `notify` key already exists.
+#          `notify` key already exists, and an [mcp_servers.NAME] table
+#          (command and args) for each platform server in
+#          /etc/repose/mcp.json whose NAME the parsed file does not have
+#          (DECISIONS I-553). A table the user changed, `enabled = false`
+#          included, is theirs and stays; a file that does not parse is
+#          left alone, and so is a file that is a symlink (home-manager,
+#          dotfiles). Runs under flock ~/.repose/mcp/.lock, since agents
+#          start in parallel and a duplicate table stops Codex.
 # opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
 #          replaced while it is byte for byte one an earlier base installed
 #          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
@@ -39,10 +46,10 @@
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
 #          ~/.pi/agent/extensions/repose-machine-guide.js -> /etc/repose/pi-extension.js.
 #          A file or directory the user put at either path is left alone.
-{ lib, writeShellApplication, jq, coreutils, util-linux, reposeOpencodePlugin }:
+{ lib, writeShellApplication, jq, python3, coreutils, util-linux, reposeOpencodePlugin }:
 writeShellApplication {
   name = "repose-agent-setup";
-  runtimeInputs = [ jq coreutils util-linux ];
+  runtimeInputs = [ jq python3 coreutils util-linux ];
   text = ''
     agent="''${1:-}"
     platform_claude=/etc/repose/claude-settings.json
@@ -139,13 +146,63 @@ writeShellApplication {
     }
 
     setup_codex() {
-      local cfg="$HOME/.codex/config.toml"
+      local cfg="$HOME/.codex/config.toml" lock="$HOME/.repose/mcp/.lock"
       mkdir -p "$HOME/.codex"
+      mkdir -p "$HOME/.repose/mcp"
+      chmod 0700 "$HOME/.repose/mcp"
+      exec 9>>"$lock"
+      if ! flock -w 5 9; then
+        echo "repose-agent-setup: $lock is held; leaving $cfg alone" >&2
+        exec 9>&-
+        return 0
+      fi
+      # A link (home-manager, a dotfiles repo) belongs to whatever made
+      # it: rewriting would replace the link with a file.
+      if [ -L "$cfg" ]; then
+        echo "repose-agent-setup: $cfg is a link; leaving it alone" >&2
+        exec 9>&-
+        return 0
+      fi
       if [ ! -e "$cfg" ]; then
         printf 'notify = ["repose-hook"]\n' | write_atomic "$cfg" 0600
       elif ! grep -Eq '^[[:space:]]*notify[[:space:]]*=' "$cfg"; then
         { printf 'notify = ["repose-hook"]\n'; cat "$cfg"; } | write_atomic "$cfg" 0600
       fi
+      codex_mcp "$cfg" || true
+      exec 9>&-
+    }
+
+    # toml_json: TOML on stdin to JSON on stdout through Python's tomllib,
+    # which is as strict as Codex's parser (an inline table extended by a
+    # later header is refused by both; yj accepts it).
+    toml_json() {
+      python3 -c 'import json, sys, tomllib; json.dump(tomllib.load(sys.stdin.buffer), sys.stdout, default=str)'
+    }
+
+    # codex_mcp <config.toml>: append a table for each platform server the
+    # parsed file has no mcp_servers entry for. Presence is judged from the
+    # parse, so an inline table or a dotted key counts; the result is
+    # parsed again before it replaces the file.
+    codex_mcp() {
+      local cfg="$1" have add
+      [ -r "$platform_mcp" ] || return 0
+      # A file that does not parse is left alone without a word: Codex
+      # names the error itself when it starts.
+      have=$(toml_json < "$cfg" 2>/dev/null) || return 0
+      if ! add=$(jq -r --argjson have "$have" '
+        (($have.mcp_servers? // {}) | if type == "object" then . else {} end) as $m
+        | .mcpServers | to_entries[] | select(.key as $k | $m | has($k) | not)
+        | "\n[mcp_servers.\(.key | if test("^[A-Za-z0-9_-]+$") then . else tojson end)]\ncommand = \(.value.command | tojson)\nargs = \(.value.args // [] | tojson)"
+      ' "$platform_mcp"); then
+        echo "repose-agent-setup: $platform_mcp did not render; leaving $cfg alone" >&2
+        return 0
+      fi
+      [ -n "$add" ] || return 0
+      # A file the tables cannot be appended to (an inline mcp_servers
+      # table) keeps its servers as the user wrote them, quietly, since the
+      # same check fails at every start.
+      { cat "$cfg"; printf '%s\n' "$add"; } | toml_json >/dev/null 2>&1 || return 0
+      { cat "$cfg"; printf '%s\n' "$add"; } | write_atomic "$cfg" 0600
     }
 
     # link_owned <link> <target>: the link is ours by name; point it at the

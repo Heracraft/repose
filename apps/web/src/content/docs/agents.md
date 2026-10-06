@@ -132,6 +132,20 @@ Never copied: your login, conversation history, `~/.claude.json`, and anything n
 
 ## MCP servers
 
+Every agent on the machine has the browser tools `playwright` and `chrome-devtools` ([Browser](/docs/machine#browser)). To turn one off, change that agent's own config on the machine:
+
+| Agent       | Turn `playwright` off                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| Claude Code | `/mcp`, then disable it (per project)                                                                  |
+| Codex CLI   | `enabled = false` under `[mcp_servers.playwright]` in `~/.codex/config.toml`                           |
+| opencode    | `{"mcp": {"playwright": {"enabled": false}}}` in `~/.config/opencode/opencode.json`                    |
+| Gemini CLI  | `{"mcp": {"excluded": ["playwright"]}}` in `~/.gemini/settings.json`                                   |
+| pi          | `{"mcpServers": {"playwright": {"command": "playwright-mcp", "enabled": false}}}` in `~/.pi/agent/mcp.json` |
+
+A server you add under one of these names replaces the machine's, except in opencode, which merges the two field by field; give yours another name there.
+
+When `~/.codex/config.toml` is a symlink, as home-manager makes it, repose leaves it alone, and Codex gets neither browser tool until you add `[mcp_servers.playwright]` and `[mcp_servers.chrome-devtools]` there yourself. `/etc/repose/mcp.json` has their commands.
+
 HTTP servers (Linear, Sentry, Notion, GitHub and the like) and stdio servers that only need `npx` and a token work on the machine. Store the token as a secret and refer to it as `${VAR}`. MCP servers you added on your laptop with `claude mcp add` at user scope live in `~/.claude.json`, which isn't copied. Add servers on the machine with `claude mcp add`, or commit them in the repository's `.mcp.json`.
 
 Servers that need your laptop (Apple Notes, Xcode, desktop automation, Claude in Chrome) don't work on the machine. The browser tools are covered in [The machine](/docs/machine#browser); `repose browser bridge` lends the machine's browser tools your laptop's Chrome, logins included, which covers most of what Claude in Chrome would; see [Lend the agents your Chrome](/docs/your-chrome).
