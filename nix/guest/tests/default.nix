@@ -442,7 +442,7 @@ in
           guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
           guest.succeed("test -S /home/dev/.config/herdr/herdr.sock")
           assert guest.execute("pgrep -u dev -c tmux")[1].strip() == "0"
-          assert guest.succeed("cat /home/dev/.config/herdr/config.toml") == '[terminal]\nshell_mode = "login"\n\n[update]\nversion_check = false\n'
+          assert guest.succeed("cat /home/dev/.config/herdr/config.toml") == '[terminal]\nshell_mode = "login"\n\n[update]\nversion_check = false\n\n[ui.toast]\ndelivery = "herdr"\n'
           assert guest.succeed("stat -c %U /home/dev/.config/herdr/config.toml").strip() == "dev"
           # The workspace sits in the checkout (factory, from I-368 above),
           # once, however often the step runs.

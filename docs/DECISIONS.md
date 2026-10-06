@@ -13696,3 +13696,16 @@ herdr shows repose's messages only with `[ui.toast] delivery =
 records who seeds it, the public docs say so and give the two lines,
 and say that drops and Ctrl+V from a laptop herdr go to herdr and copy
 nothing.
+
+**I-564. The base's herdr config turns on herdr's toast delivery.**
+(owner, 2026-10-06; settles the open part of I-542) herdr shows
+`notification show` only with `[ui.toast] delivery = "herdr"`, and its
+default is `off`, so on a stock machine every message I-509 sends
+(copied files, new forwards, the time zone) went nowhere. The owner
+chose to seed the key: `repose-herdr-config` writes it into a new
+`~/.config/herdr/config.toml` beside `shell_mode` and `version_check`.
+A file that was there before the seed is left as it is (I-501's rule:
+the file is dev's, and herdr edits it), so a machine where the user
+ran herdr by hand keeps their setting; the public docs give the two
+lines for that case. `guest-session-environment` fails when the seed
+lacks the key, and the guest-base VM test reads the seeded file.

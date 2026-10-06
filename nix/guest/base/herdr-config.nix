@@ -6,9 +6,10 @@
 { pkgs, herdr }:
 let
   # Written only when no file (or link) is there: panes start login
-  # shells as tmux's do (herdr's Linux default is non-login), and herdr
+  # shells as tmux's do (herdr's Linux default is non-login), herdr
   # does not look for releases, since the base's pinned one is the
-  # supported one. A file that exists is never changed; herdr itself edits
+  # supported one, and herdr shows notifications, which carry repose's
+  # messages (copied files, forwards, the time zone; DECISIONS I-564). A file that exists is never changed; herdr itself edits
   # it (onboarding), so it is dev's and writable.
   seedConfig = pkgs.writeText "herdr-config.toml" ''
     [terminal]
@@ -16,6 +17,9 @@ let
 
     [update]
     version_check = false
+
+    [ui.toast]
+    delivery = "herdr"
   '';
   seed = pkgs.writeShellApplication {
     name = "repose-herdr-config";

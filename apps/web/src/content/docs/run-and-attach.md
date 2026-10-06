@@ -144,14 +144,14 @@ On a herdr project the commands on this page work through herdr:
 - From herdr on your laptop (the sidebar or `herdr --remote`), a dropped file or `Ctrl+V` goes to herdr, and nothing is copied to the machine. Use `repose paste` for an image on the clipboard and [`repose cp`](/docs/sync#single-files) for a file. herdr's client over SSH, without herdr on the laptop, copies drops and pastes as tmux does.
 - If herdr has stopped on the machine, `run` and `attach` say `herdr is not running on todo-app` and exit 1. `repose stop` and `repose start` bring it back.
 
-repose's messages inside the session (the time zone, new port forwards, copied files) are herdr notifications, and herdr shows none until the machine's `~/.config/herdr/config.toml` turns them on. Add this there and run `herdr server reload-config` on the machine:
+repose's messages inside the session (the time zone, new port forwards, copied files) are herdr notifications, which the machine's `~/.config/herdr/config.toml` turns on. A `config.toml` that was there before the machine first ran herdr, for example because you ran herdr there yourself, keeps its own settings. Add this to it and run `herdr server reload-config` on the machine:
 
 ```toml
 [ui.toast]
 delivery = "herdr"
 ```
 
-Without it, a copied file is not named anywhere on herdr, and no status bar lists the forwarded ports.
+Without it, a copied file is not named anywhere on herdr.
 
 `run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
 
@@ -200,7 +200,7 @@ Claude Code shows an image as `[Image #1]`. Other agents, and the shell, get the
 - Up to 20 files and 20 MB per file. A bigger drop pastes your laptop's path unchanged, and the tmux status line says why; use [`repose cp`](/docs/sync#single-files) for large files.
 - Only you and the machine's `dev` user can read the copies. Copies older than a day, and all but the newest 50, are deleted at the next copy.
 - A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a copied path works too. Paths under system folders such as `/etc`, `/usr` and `/nix` are pasted as they are, and so are hidden files, anything in a hidden folder such as `~/.ssh`, and private keys: those are never copied. A private key is a file named `id_rsa`, `id_dsa`, `id_ecdsa` or `id_ed25519` (`.pub` files still copy), a file ending in `.pem`, `.p12`, `.pfx`, `.p8`, `.ppk`, `.jks`, `.keystore`, `.kdbx`, `.keychain` or `.keychain-db`, or a file of any name that starts with a PEM, OpenSSH or PGP private key, or with an OpenPGP secret key (`.gpg`, `.pgp`). A `.key` file is refused only when it holds such a key, so Keynote decks still copy; public keys, signatures and encrypted `.gpg` files copy too. A link counts as the file it points to, so a link to a file in `~/.ssh` isn't copied either.
-- Every copy is named on the tmux status line, for example `copied report.pdf to the machine`. If an agent asks you to paste a path, that line tells you what left your laptop. On herdr the line is a notification, which herdr shows only when you [turn its notifications on](#herdr-instead-of-tmux).
+- Every copy is named on the tmux status line, for example `copied report.pdf to the machine`. If an agent asks you to paste a path, that line tells you what left your laptop. On herdr the line is a [herdr notification](#herdr-instead-of-tmux).
 
 Any terminal that types a dropped file's path works: plain, quoted, with backslashes before spaces, or as a `file://` address.
 

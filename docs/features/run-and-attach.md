@@ -497,7 +497,8 @@ uses `display-message`; a script that does not know the multiplexer
 uses herdr when `repose-herdr-server` is active, else tmux, so a tmux
 started inside a herdr pane does not take the message.
 herdr shows them only when the guest's herdr config sets `[ui.toast]
-delivery = "herdr"` (its default is off, I-542). In the sidebar path
+delivery = "herdr"` (its default is off, I-542). The base seeds it in a
+new `config.toml` (I-564). In the sidebar path
 (rule 1) the helper runs in the CLI's own pane, and its messages print
 there. With no herdr client attached nobody sees them, as with tmux.
 

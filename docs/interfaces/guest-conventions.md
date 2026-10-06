@@ -357,7 +357,9 @@ project whose `project.json` names herdr runs its server.
   `display-message`; with no client attached nobody sees them (I-313).
   herdr shows one only when the server's config sets `[ui.toast]
   delivery = "herdr"`; with its default, `off`, the answer is `{"shown":
-  false, "reason": "disabled"}` and nothing appears (I-542).
+  false, "reason": "disabled"}` and nothing appears (I-542). The seeded
+  `config.toml` sets it (I-564); a file that was there before the seed
+  keeps its own setting.
 - **Memory and CPU** (I-505): see "Memory pressure" and "CPU weights".
 
 Old shape, one release: a guest on a base before I-501 has no herdr and

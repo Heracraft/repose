@@ -329,8 +329,10 @@
             rm "$HOME/.config/herdr/config.toml"
             $reload
             grep -q 'shell_mode = "login"' "$HOME/.config/herdr/config.toml" || fail "the seed did not come back"
+            python3 -c 'import sys,tomllib; c=tomllib.load(open(sys.argv[1],"rb")); sys.exit(c.get("ui",{}).get("toast",{}).get("delivery")!="herdr")' "$HOME/.config/herdr/config.toml" \
+              || fail "the seed does not turn on herdr's toast delivery (I-564)"
             [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 2 ] || fail "no reload after the file went away"
-            echo "login PATH guarded; herdr starts without guards or dropped names; reload on change only, seed restored"
+            echo "login PATH guarded; herdr starts without guards or dropped names; reload on change only, seed restored with toasts on"
             touch $out
           '';
         # The herdr package's install check refuses a release whose socket
