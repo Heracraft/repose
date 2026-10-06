@@ -13194,15 +13194,19 @@ answers one request per connection), refuses a peer whose `SO_PEERCRED`
 uid is not dev's (guestd is root and the path is dev's to replace), sends
 `ping` after any failed dial, `agent.list` on every refresh and
 `workspace.list` (decoded to `id` and `label`, to match checkout names)
-at most once a minute, and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
+at most once a minute and at once for a `workspace_id` the last read was
+not asked about (a failed read, or one that lacks an agent's workspace,
+waits the minute), and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
 keeps `pane_id`, `workspace_id`, `name`, `agent`, `agent_status` and
 `state_change_seq` and drops every other field, titles and the agent
 session among them; guestd never calls `session.snapshot` or
 `pane.process_info`, whose answers carry cwd, argv and cmdline (R5-3).
 States map `working` to working, `blocked` to needs_input, `idle` and
-`done` to idle, and `unknown` to unknown. A `state_change_seq` that moved
+`done` to idle, and `unknown` to unknown. A `state_change_seq` that rose
 while the status reads `idle` or `done` is a finished turn, even one
-shorter than a refresh; for gemini and pi, which have no hook, it raises
+shorter than a refresh. herdr counts the sequence per server process from
+0 and never saves it, so the first read after a failed one only records
+the sequence, and a lower one is a restart, never a finished turn; for gemini and pi, which have no hook, it raises
 the `completed` event (`<agent> went idle`) that I-49's heuristic raises
 under tmux, and for hooked agents it raises nothing, so no event arrives
 twice. A protocol below 22, or a refused dial for two refreshes on a
@@ -13211,7 +13215,7 @@ state for two refreshes before going `unknown`, so a herdr restart that
 resumes its agents shows no flap. Events only was rejected: a missed
 subscription or `events_lost` leaves a wrong state until something else
 changes. `events.subscribe` may later wake the watcher early; the poll
-stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSixFields`, `TestHerdrAgentKeys`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
+stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSixFields`, `TestHerdrAgentKeys`, `TestHerdrRestartInTheGraceSendsNoCompletion`, `TestHerdrLowerSequenceSendsNoCompletion`, `TestHerdrLabelsAreNotReadEveryRefresh`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
 
 **I-505. The herdr server and its agents get I-200's memory protection
 and run at nice -5.** (multiplexer-spec, 2026-10-05; owner decision 7;

@@ -47,7 +47,8 @@ listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
 of the rule. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
-the attach opens is `<name>`. guestd reads none of this.
+the attach opens is `<name>`. guestd reads the list only to prefix herdr
+agent keys (see "herdr", Agent keys; DECISIONS I-504).
 
 ## Filesystem
 
@@ -241,14 +242,21 @@ project whose `project.json` names herdr runs its server.
   other field is dropped unread. guestd never sends `session.snapshot`,
   `pane.process_info`, `pane.read` or anything that changes herdr's
   state. Workspace labels come from `workspace.list`, decoded to `id`
-  and `label` only, at most once a minute and on a new `workspace_id`.
+  and `label` only, at most once a minute and on a `workspace_id` the
+  last `workspace.list` was not asked about; a failed one, or one that
+  lacks an agent's workspace, waits the minute. `state_change_seq`
+  counts from 0 in each herdr server process, so the first read after a
+  failed one records it and marks no turn finished.
 - **Agent keys.** What guestd reports as an agent's window (`AgentProc`,
   `AgentEvent` and `Question` `tmux_window`, the api's `window`): the
   herdr agent `name` when set (the CLI names agents `claude`,
   `claude-2`, as tmux windows), else `<agent> <pane_id>`; prefixed
   `<checkout>/` when the agent's workspace label is a name listed in
   `~/.repose/checkouts` (I-480). When a tmux window and a herdr agent
-  give the same key in one refresh, the herdr one is `<key> (herdr)`.
+  give the same key in one refresh, the herdr one is `<key> (herdr)`; a
+  refresh that cannot read tmux keeps the window names of the last one
+  that could. Two herdr agents with one key: the first is reported, and
+  a hook from the other's pane is unresolved.
   At most 64 bytes, cut on a rune boundary. Only agents whose `agent` is
   one of the five are reported.
 - **Agent wrappers** export `HERDR_AGENT=<binary>` beside

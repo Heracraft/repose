@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/heracraft/repose/internal/guestd/sysdep"
@@ -104,7 +103,10 @@ type herdrSource struct {
 	now       func() time.Time
 	checkouts func() map[string]bool
 
-	mu sync.Mutex
+	// mu guards everything below. Panes holds it across its requests, so
+	// Resolve, which a hook waits on, takes it with lockCtx and gives up
+	// when the hook's deadline passes.
+	mu ctxMutex
 	n  uint64 // request counter for ids
 	// pinged is true after a ping answered with a protocol guestd reads;
 	// any failure clears it, so the next dial pings first.
@@ -113,11 +115,16 @@ type herdrSource struct {
 	misses int
 	// last is the previous successful read, kept for the EOF grace.
 	last []Pane
-	// seq is each pane's state_change_seq at the previous read.
+	// seq is each pane's state_change_seq at the previous read. herdr
+	// counts it per server process from 0, so a read after a failure (a
+	// restart, maybe) only records it.
 	seq map[string]uint64
 	// labels is the workspace id -> label map, read at labelsAt.
 	labels   map[string]string
 	labelsAt time.Time
+	// asked is the workspace ids the last workspace.list was asked about
+	// (in its answer, or named by an agent then), answered or not.
+	asked map[string]bool
 	// keys is pane id -> key from the previous read, for Resolve.
 	keys map[string]string
 	// lastErr is the reason of the last failure, logged on change only.
@@ -127,6 +134,7 @@ type herdrSource struct {
 func newHerdrSource(p sysdep.Paths, uid int, log *slog.Logger, now func() time.Time) *herdrSource {
 	h := &herdrSource{
 		paths: p, socket: p.HerdrSock(), uid: uid, log: log, now: now,
+		mu:  newCtxMutex(),
 		seq: map[string]uint64{}, keys: map[string]string{},
 	}
 	h.checkouts = h.readCheckouts
@@ -151,6 +159,9 @@ func (h *herdrSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	agents, err := h.readAgents(ctx)
+	// After a failed read the server may be a new process whose sequence
+	// started again at 0: this read is a baseline and marks nothing done.
+	baseline := h.misses > 0
 	if err != nil {
 		h.misses++
 		h.pinged = false
@@ -184,7 +195,9 @@ func (h *herdrSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 			state = StateUnknown
 		}
 		prev, seen := h.seq[a.PaneID]
-		done := seen && a.StateChangeSeq != prev && (a.AgentStatus == "idle" || a.AgentStatus == "done")
+		// Within one server the sequence only grows; a lower one is a
+		// restart between two refreshes.
+		done := seen && !baseline && a.StateChangeSeq > prev && (a.AgentStatus == "idle" || a.AgentStatus == "done")
 		seq[a.PaneID] = a.StateChangeSeq
 		key := h.keyOf(a, checkouts)
 		keys[a.PaneID] = key
@@ -204,7 +217,11 @@ func (h *herdrSource) Resolve(ctx context.Context, ref string) (string, bool) {
 	if !ValidHerdrRef(ref) {
 		return "", false
 	}
-	h.mu.Lock()
+	if !h.mu.lockCtx(ctx) {
+		// A refresh holds the lock on a slow herdr: the hook goes
+		// unresolved rather than past repose-hook's timeout.
+		return "", false
+	}
 	defer h.mu.Unlock()
 	if k, ok := h.keys[ref]; ok {
 		return k, true
@@ -278,17 +295,19 @@ func (h *herdrSource) readAgents(ctx context.Context) ([]herdrAgent, error) {
 var errHerdrNoSocket = errors.New("no_socket")
 
 // maybeReadLabels refreshes workspace labels at most once a minute, or at
-// once when an agent names a workspace not seen before. A machine with no
-// other checkouts needs no labels and makes no request.
+// once when an agent names a workspace the last read was not asked about.
+// A workspace still missing after that read, or a failed read, waits for
+// the minute. A machine with no other checkouts needs no labels and makes
+// no request.
 func (h *herdrSource) maybeReadLabels(ctx context.Context, agents []herdrAgent) {
 	if len(h.checkouts()) == 0 {
-		h.labels = nil
+		h.labels, h.asked = nil, nil
 		return
 	}
 	stale := h.labels == nil || h.now().Sub(h.labelsAt) >= herdrLabelsEvery
 	if !stale {
 		for _, a := range agents {
-			if _, ok := h.labels[a.WorkspaceID]; !ok && a.WorkspaceID != "" {
+			if a.WorkspaceID != "" && !h.asked[a.WorkspaceID] {
 				stale = true
 				break
 			}
@@ -299,6 +318,10 @@ func (h *herdrSource) maybeReadLabels(ctx context.Context, agents []herdrAgent) 
 	}
 	r, err := h.request(ctx, "workspace.list")
 	h.labelsAt = h.now()
+	h.asked = make(map[string]bool, len(agents))
+	for _, a := range agents {
+		h.asked[a.WorkspaceID] = true
+	}
 	if err != nil || r.Result.Type != "workspace_list" {
 		// Keys go without the prefix until the next read; the agents
 		// themselves are still reported.
@@ -310,6 +333,7 @@ func (h *herdrSource) maybeReadLabels(ctx context.Context, agents []herdrAgent) 
 	labels := make(map[string]string, len(r.Result.Workspaces))
 	for _, w := range r.Result.Workspaces {
 		labels[w.ID] = w.Label
+		h.asked[w.ID] = true
 	}
 	h.labels = labels
 }
@@ -435,4 +459,22 @@ func (h *herdrSource) noteErr(err error) {
 		return
 	}
 	h.log.Warn("could not read herdr's agents", "event", "agent_state", "reason", reason)
+}
+
+// ctxMutex is a mutex whose Lock can give up when a context ends.
+type ctxMutex chan struct{}
+
+func newCtxMutex() ctxMutex { return make(ctxMutex, 1) }
+
+func (m ctxMutex) Lock()   { m <- struct{}{} }
+func (m ctxMutex) Unlock() { <-m }
+
+// lockCtx takes the lock, or returns false when ctx ends first.
+func (m ctxMutex) lockCtx(ctx context.Context) bool {
+	select {
+	case m <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }

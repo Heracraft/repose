@@ -135,6 +135,9 @@ type Watcher struct {
 	// tmuxKeys the tmux windows' names, for hook resolution (I-506).
 	herdrKeys map[string]string
 	tmuxKeys  map[string]bool
+	// herdrDropped is the herdr pane ids the last refresh left out because
+	// an earlier pane had their key: a hook from one changes no state.
+	herdrDropped map[string]bool
 	// warned remembers which one-shot warnings have been sent, so tmux_down
 	// and docker_down are announced once rather than every five seconds.
 	warned map[string]bool
@@ -320,11 +323,21 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		tmuxKeys[p.Key] = true
 		all = append(all, p)
 	}
+	// herdr keys step aside for tmux windows. When tmux could not be read
+	// its windows stand, so the names they had at the last good read are
+	// still taken.
+	taken := tmuxKeys
+	if tmuxErr != nil {
+		taken = w.tmuxKeys
+	}
 	herdrKeys := map[string]string{}
+	herdrDropped := map[string]bool{}
 	for _, p := range herdrPanes {
-		p.Key = disambiguate(p.Key, tmuxKeys)
+		p.Key = disambiguate(p.Key, taken)
 		if live[p.Key] {
-			continue // two herdr agents with one name: the first is reported
+			// Two herdr agents with one name: the first is reported.
+			herdrDropped[p.Ref] = true
+			continue
 		}
 		live[p.Key] = true
 		herdrKeys[p.Ref] = p.Key
@@ -401,6 +414,7 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		w.tmuxKeys = tmuxKeys
 	}
 	w.herdrKeys = herdrKeys
+	w.herdrDropped = herdrDropped
 	w.mu.Unlock()
 
 	for _, e := range states {
@@ -460,24 +474,38 @@ func (w *Watcher) heuristicCompletion(ws *windowState, p Pane, now time.Time) (k
 
 // ResolveHerdr maps a hook's herdr pane id to the key its agent is reported
 // under (DECISIONS I-506): the last refresh's key, else a fresh read of
-// herdr's agents. ok is false for a pane no agent is in, and for an id that
-// is too long or holds a character outside [A-Za-z0-9:_-].
+// herdr's agents. ok is false for a pane no agent is in, for a pane whose
+// key another herdr pane holds, and for an id that is too long or holds a
+// character outside [A-Za-z0-9:_-].
 func (w *Watcher) ResolveHerdr(ctx context.Context, ref string) (string, bool) {
 	if !ValidHerdrRef(ref) {
 		return "", false
 	}
 	w.mu.Lock()
 	key, ok := w.herdrKeys[ref]
+	dropped := w.herdrDropped[ref]
 	tmuxKeys := w.tmuxKeys
 	w.mu.Unlock()
 	if ok {
 		return key, true
 	}
+	if dropped {
+		return "", false
+	}
 	base, ok := w.herdr.Resolve(ctx, ref)
 	if !ok {
 		return "", false
 	}
-	return disambiguate(base, tmuxKeys), true
+	key = disambiguate(base, tmuxKeys)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for other, k := range w.herdrKeys {
+		if k == key && other != ref {
+			// A new pane with the name of a reported one.
+			return "", false
+		}
+	}
+	return key, true
 }
 
 // WindowOfTmuxPane resolves a tmux pane id ($TMUX_PANE) to its window name.

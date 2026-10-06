@@ -31,6 +31,11 @@ type fakeHerdr struct {
 	hangup  bool              // close without answering (an EOF)
 	reqs    []string          // methods received
 	bytesIn int
+	// holdMethod, when set, makes that method's answer wait for release;
+	// held gets a value each time one is waiting.
+	holdMethod string
+	held       chan struct{}
+	release    chan struct{}
 }
 
 func newFakeHerdr(t *testing.T) *fakeHerdr {
@@ -80,7 +85,13 @@ func (f *fakeHerdr) answer(c net.Conn) {
 	_ = json.Unmarshal(line, &req)
 	f.reqs = append(f.reqs, req.Method)
 	hangup, res := f.hangup, f.answers[req.Method]
+	hold := f.holdMethod != "" && req.Method == f.holdMethod
+	held, release := f.held, f.release
 	f.mu.Unlock()
+	if hold {
+		held <- struct{}{}
+		<-release
+	}
 	if hangup {
 		return
 	}
@@ -502,5 +513,193 @@ func TestHerdrBlockedAndHooks(t *testing.T) {
 	got := agentStates(w)
 	if got["gemini"] != "gemini:needs_input" || got["claude (herdr)"] != "claude:needs_input" || got["claude"] == "claude:needs_input" {
 		t.Fatalf("agents = %v", got)
+	}
+}
+
+// A herdr restart inside the EOF grace: the new server counts
+// state_change_seq from 0 again, so an idle gemini at seq 12 reads idle
+// at seq 1. That is no turn ending, and no completion is sent.
+func TestHerdrRestartInTheGraceSendsNoCompletion(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	ctx := context.Background()
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "idle", "12"}))
+	w.Refresh(ctx)
+	f.setHangup(true)
+	for i := 0; i < HerdrGraceRefreshes; i++ {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+	}
+	f.setHangup(false)
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "idle", "1"}))
+	for i := 0; i < 2; i++ {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+	}
+	if _, events, _ := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("events = %v, want none after a restart", events)
+	}
+	// The next turn on the new server still completes.
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "done", "3"}))
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if _, events, _ := rec.snapshot(); len(events) != 1 {
+		t.Fatalf("events = %v, want one completion for the new turn", events)
+	}
+}
+
+// A restart between two refreshes, with no failed read: the sequence goes
+// down, and a lower sequence is no turn ending.
+func TestHerdrLowerSequenceSendsNoCompletion(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, rec, clk, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	ctx := context.Background()
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "", "pi", "idle", "37"}))
+	w.Refresh(ctx)
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "", "pi", "idle", "0"}))
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if _, events, _ := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("events = %v, want none for a lower sequence", events)
+	}
+}
+
+// workspace.list goes out at most once a minute while it fails or lacks
+// an agent's workspace, and at once for a workspace never asked about.
+func TestHerdrLabelsAreNotReadEveryRefresh(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, _, clk, p := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	if err := os.MkdirAll(filepath.Dir(p.CheckoutsFile()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.CheckoutsFile(), []byte("api\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		reqs, _ := f.requests()
+		n := 0
+		for _, r := range reqs {
+			if r == "workspace.list" {
+				n++
+			}
+		}
+		return n
+	}
+	ctx := context.Background()
+	// No workspace.list answer: every request fails.
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "codex", "codex", "working", "1"}))
+	for i := 0; i < 5; i++ {
+		w.Refresh(ctx)
+		clk.advance(Interval)
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("workspace.list sent %d times in 25 s while it fails, want 1", n)
+	}
+	// It answers, without w1.
+	f.set("workspace.list", `{"type":"workspace_list","workspaces":[{"workspace_id":"w2","label":"api"}]}`)
+	clk.advance(herdrLabelsEvery)
+	for i := 0; i < 5; i++ {
+		w.Refresh(ctx)
+		clk.advance(Interval)
+	}
+	if n := count(); n != 2 {
+		t.Fatalf("workspace.list sent %d times, want 2 with w1 missing from the answer", n)
+	}
+	// A workspace never asked about is read at once.
+	f.set("agent.list", agentsResult(
+		[6]string{"w1:p1", "w1", "codex", "codex", "working", "1"},
+		[6]string{"w3:p1", "w3", "pi", "pi", "working", "1"},
+	))
+	w.Refresh(ctx)
+	if n := count(); n != 3 {
+		t.Fatalf("workspace.list sent %d times, want 3 after w3 appeared", n)
+	}
+}
+
+// Two herdr agents with one key: the second is not reported, and a hook
+// from its pane changes no state, the reported agent's included.
+func TestHerdrDuplicateKeyHookResolvesToNothing(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, _, _, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	f.set("agent.list", agentsResult(
+		[6]string{"w1:p1", "w1", "claude", "claude", "working", "1"},
+		[6]string{"w2:p1", "w2", "claude", "claude", "working", "1"},
+	))
+	ctx := context.Background()
+	w.Refresh(ctx)
+	if k, ok := w.ResolveHerdr(ctx, "w1:p1"); !ok || k != "claude" {
+		t.Fatalf("ResolveHerdr(w1:p1) = %q, %v", k, ok)
+	}
+	if k, ok := w.ResolveHerdr(ctx, "w2:p1"); ok {
+		t.Fatalf("ResolveHerdr(w2:p1) = %q, want unresolved", k)
+	}
+	// A pane the refresh has not seen yet, with the reported agent's name.
+	f.set("agent.list", agentsResult(
+		[6]string{"w1:p1", "w1", "claude", "claude", "working", "1"},
+		[6]string{"w3:p1", "w3", "claude", "claude", "working", "1"},
+	))
+	if k, ok := w.ResolveHerdr(ctx, "w3:p1"); ok {
+		t.Fatalf("ResolveHerdr(w3:p1) = %q, want unresolved", k)
+	}
+}
+
+// A refresh in progress against a slow herdr holds the source; a hook for
+// a pane the last refresh did not see gives up at its own deadline.
+func TestHerdrResolveDoesNotWaitOnASlowRefresh(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, _, _, _, _ := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "gemini", "gemini", "working", "1"}))
+	f.mu.Lock()
+	f.holdMethod = "agent.list"
+	f.held = make(chan struct{}, 4)
+	f.release = make(chan struct{})
+	f.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		w.Refresh(context.Background())
+		close(done)
+	}()
+	<-f.held
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	k, ok := w.ResolveHerdr(ctx, "w9:p1")
+	if took := time.Since(start); ok || took > time.Second {
+		t.Fatalf("ResolveHerdr = %q, %v after %v; want unresolved at the deadline", k, ok, took)
+	}
+	close(f.release)
+	<-done
+}
+
+// tmux unreadable for one refresh: its claude window stands, and herdr's
+// claude keeps its suffix instead of taking the window's place.
+func TestHerdrKeyKeepsItsSuffixWhileTmuxIsUnreadable(t *testing.T) {
+	f := newFakeHerdr(t)
+	w, run, rec, clk, p := newHerdrWatcher(t, f, multiplexer.Herdr, nil)
+	tmuxSocketFile(t, p)
+	writeProc(t, p, []fakeProc{{pid: 100, ppid: 1, comm: "bash"}, {pid: 101, ppid: 100, comm: "claude"}})
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	f.set("agent.list", agentsResult([6]string{"w1:p1", "w1", "claude", "claude", "blocked", "1"}))
+	ctx := context.Background()
+	w.Refresh(ctx)
+	clk.advance(StateDebounce)
+	w.Refresh(ctx)
+	before := agentStates(w)
+	if before["claude (herdr)"] != "claude:needs_input" || before["claude"] == "" {
+		t.Fatalf("agents = %v", before)
+	}
+	statesBefore, _, _ := rec.snapshot()
+
+	run.Match["list-windows"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("setpriv: failed to set the group list")}
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if got := agentStates(w); !reflect.DeepEqual(got, before) {
+		t.Fatalf("agents with tmux unreadable = %v, want %v", got, before)
+	}
+	if k, ok := w.ResolveHerdr(ctx, "w1:p1"); !ok || k != "claude (herdr)" {
+		t.Fatalf("ResolveHerdr = %q, %v", k, ok)
+	}
+	if states, _, _ := rec.snapshot(); len(states) != len(statesBefore) {
+		t.Fatalf("states = %v, want none new", states[len(statesBefore):])
 	}
 }
