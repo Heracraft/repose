@@ -560,4 +560,4 @@ pointer, not a summary.
 - **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L13122
 - **I-532** The guest has no nix channels — 2026-10-06; L13143
 - **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L13154
-- **I-534** The guest has man pages — 2026-10-06; L13185
+- **I-534** The guest has man pages — 2026-10-06; L13190

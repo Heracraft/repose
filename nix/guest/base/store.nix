@@ -231,8 +231,14 @@ in
     deps = [ "users" ];
     text = ''
       # During a switch systemd is up; at boot the unit's own WantedBy runs it.
+      # The switch runs this before it reloads systemd, so starting the unit
+      # here would run the previous base's script, which knows nothing of
+      # this base's link targets (I-533). A transient unit runs this base's.
       if [ -d /run/systemd/system ]; then
-        ${pkgs.systemd}/bin/systemctl start --no-block repose-pin-profile.service || true
+        ${pkgs.systemd}/bin/systemd-run --no-block --collect --quiet \
+          --description="repose: copy dev's profile closure into the store overlay" \
+          -p Nice=10 -p IOSchedulingClass=idle \
+          ${pin}/bin/repose-pin-profile || true
       fi
     '';
   };

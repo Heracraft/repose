@@ -13177,7 +13177,12 @@ nothing (the existing `-e` test), and on kanali all but 2.1 MiB were in
 the upper dir already. All eleven are in the base closure already, so
 the closure does not grow. The service now waits for `repose-paths`
 (I-67), since before the registration `nix-store -qR` of a system path
-finds nothing. VM test `guest-base` ("I-533") builds against openssl,
+finds nothing. At a switch the activation script runs before
+switch-to-configuration reloads systemd, so starting
+`repose-pin-profile.service` from it ran the previous base's script,
+which knows only the previous base's targets; it starts this base's
+script as a transient unit (`systemd-run --no-block`) instead.
+VM test `guest-base` ("I-533") builds against openssl,
 checks each linked path is copied up and rooted, and runs the binary
 from the upper copies alone (the test VM's lower layer is the host's
 read-only store, so a path cannot be taken out of it there).
