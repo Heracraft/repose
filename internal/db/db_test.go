@@ -30,21 +30,27 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0016 (the subscription's introductory offer, I-497) is the newest:
-	// its two columns go, and 0015 (the personal layer, I-490), 0014 (CPU
-	// pressure, I-493), 0013 (snapshots.sha256) and 0012 stay.
+	// 0017 (projects.multiplexer, I-502) is the newest: the column goes,
+	// and 0015 (the personal layer, I-490), 0014 (CPU pressure, I-493),
+	// 0013 (snapshots.sha256) and 0012 (hosts.prev_cert_serial) stay.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name in ('intro', 'intro_until')").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("%d intro columns left after down 1 (0016)", n)
+		t.Fatal("projects.multiplexer is still there after down 1 (0017)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
 		t.Fatal("personal_revisions went with down 1 (0015 must stay)")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'projects' and column_name = 'personal_opt_out'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("projects.personal_opt_out went with down 1 (0015 must stay)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'meter_samples' and column_name in ('cpu_pressure_us', 'host_cpu_wait_us', 'mem_used')").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -69,7 +75,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0016 reverted, 0011 kept): %s", def)
+		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0017 reverted, 0011 kept): %s", def)
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {
@@ -81,6 +87,33 @@ func TestMigrateUpDownUp(t *testing.T) {
 	st, err = db.MigrateStatus(ctx, pool)
 	if err != nil || len(st.Pending) != 0 {
 		t.Fatalf("after up: %+v %v", st, err)
+	}
+	// 0017 back: every existing project reads tmux, and the check keeps
+	// out any other value.
+	var def17, mux string
+	if err := pool.QueryRow(ctx, "select column_default from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&def17); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(def17, "tmux") {
+		t.Fatalf("projects.multiplexer default %q", def17)
+	}
+	if _, err := pool.Exec(ctx, "insert into users (id, logto_sub, handle, email) values ('00000000-0000-7000-8000-0000000000aa', 'sub-mux', 'mux', 'mux@example.com')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values ('00000000-0000-7000-8000-0000000000ab', '00000000-0000-7000-8000-0000000000aa', 'm', 'm', 'small', 'stopped', 1)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "select multiplexer from projects where slug = 'm'").Scan(&mux); err != nil || mux != "tmux" {
+		t.Fatalf("a project inserted without multiplexer reads %q (%v)", mux, err)
+	}
+	if _, err := pool.Exec(ctx, "update projects set multiplexer = 'herdr' where slug = 'm'"); err != nil {
+		t.Fatalf("herdr refused: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "update projects set multiplexer = 'screen' where slug = 'm'"); err == nil {
+		t.Fatal("the check let 'screen' in")
+	}
+	if _, err := pool.Exec(ctx, "delete from projects; delete from users"); err != nil {
+		t.Fatal(err)
 	}
 	// Every migration's down script reverts cleanly all the way to empty.
 	all, err := db.MigrateDown(ctx, pool, 100)

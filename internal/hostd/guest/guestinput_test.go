@@ -44,6 +44,8 @@ func TestGuestWarningKindAndDetailAreHostWritten(t *testing.T) {
 	send("disk_high", "root filesystem is 93 percent full")
 	send("oom", "xmrig\x00\x1b[31m-very-long-process-name")
 	send("store_path_missing", "/nix/store/abc-tenant-thing")
+	// herdr_down (I-507) keeps its kind; its detail is hostd's own.
+	send("herdr_down", "/home/dev/.config/herdr/herdr.sock: connection refused")
 	warnings := func(evs []*hostdv1.Event) []*hostdv1.HostWarning {
 		var out []*hostdv1.HostWarning
 		for _, e := range evs {
@@ -53,8 +55,8 @@ func TestGuestWarningKindAndDetailAreHostWritten(t *testing.T) {
 		}
 		return out
 	}
-	got := warnings(h.waitEvents(func(e []*hostdv1.Event) bool { return len(warnings(e)) >= 4 }))
-	if len(got) != 4 {
+	got := warnings(h.waitEvents(func(e []*hostdv1.Event) bool { return len(warnings(e)) >= 5 }))
+	if len(got) != 5 {
 		t.Fatalf("warnings %v", got)
 	}
 	want := []struct{ Kind, Detail string }{
@@ -62,6 +64,7 @@ func TestGuestWarningKindAndDetailAreHostWritten(t *testing.T) {
 		{Kind: "disk_high", Detail: "guest " + gid1 + ": root filesystem is 93 percent full"},
 		{Kind: "oom", Detail: "guest " + gid1 + ": killed xmrig[31m-very-l"},
 		{Kind: "store_path_missing", Detail: "guest " + gid1},
+		{Kind: "herdr_down", Detail: "guest " + gid1},
 	}
 	for i, w := range want {
 		if got[i].Kind != w.Kind || got[i].Detail != w.Detail {

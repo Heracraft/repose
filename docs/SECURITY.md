@@ -237,6 +237,18 @@ Rules that hold regardless of convenience. Each names its failure.
   `internal/guestd` runs guestd under `strace -e openat` while it serves a
   Sample and asserts it, because a library added later that reads a command
   line would keep every other test green.
+- **guestd reads herdr's agent list, and keeps six fields of it**
+  (DECISIONS I-504). On a machine running herdr, guestd (root) connects to
+  dev's `~/.config/herdr/herdr.sock` every 5 s, refuses a peer whose
+  `SO_PEERCRED` uid is not dev's, and sends only `ping`, `agent.list` and
+  `workspace.list`. It decodes `pane_id`, `workspace_id`, `name`, `agent`,
+  `agent_status` and `state_change_seq` (and a workspace's `id` and
+  `label`, used only to match checkout names) and drops the rest of each
+  answer unread, titles and agent session ids included. It never calls
+  `session.snapshot`, `pane.process_info` or `pane.read`, whose answers
+  carry cwd, argv or screen contents. herdr's hook windows
+  (`herdr:<pane_id>`) are sent by `repose-hook` from its own environment,
+  so the exception below stays the only one.
 - **The one environment guestd reads is `$TMUX_PANE` of a hook's caller.** An
   agent wrapper that POSTs to `/run/repose/hooks.sock` without naming its tmux
   window is resolved by taking the peer's pid from `SO_PEERCRED` and reading

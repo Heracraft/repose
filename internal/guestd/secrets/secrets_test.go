@@ -26,7 +26,21 @@ func newHandler(t *testing.T) (*Handler, sysdep.Paths, *sysdep.FakeRunner) {
 	// The test process is not root, so it cannot chown to dev; ownership is
 	// asserted in the NixOS VM test instead.
 	h.uid, h.gid = -1, -1
+	tmuxSocketFile(t, p, h.tmuxUID)
 	return h, p, run
+}
+
+// tmuxSocketFile stands in for dev's tmux socket under the test root:
+// pushTmux runs only when it exists (DECISIONS I-508).
+func tmuxSocketFile(t *testing.T, p sysdep.Paths, uid int) {
+	t.Helper()
+	path := p.TmuxSocket(uid)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func secret(name, value string) *guestdv1.Secret {
@@ -505,6 +519,25 @@ func TestSecretsArePushedToTmux(t *testing.T) {
 		"set-environment -g REPOSE_ENV_GEN " + genOf(t, p) + "\n"
 	if string(tmux[0].Stdin) != want {
 		t.Fatalf("tmux stdin = %q\nwant %q", tmux[0].Stdin, want)
+	}
+}
+
+// A herdr machine has no tmux socket: the write forks no tmux, and the
+// files the login shell and BASH_ENV read are still written (DECISIONS
+// I-508).
+func TestSecretsSkipTmuxWithoutItsSocket(t *testing.T) {
+	h, p, run := newHandler(t)
+	if err := os.Remove(p.TmuxSocket(h.tmuxUID)); err != nil {
+		t.Fatal(err)
+	}
+	must(t, h.Write(context.Background(), []*guestdv1.Secret{secret("A", "1")}))
+	for _, c := range run.Calls() {
+		if c.Argv[0] == "tmux" {
+			t.Fatalf("tmux ran with no tmux socket: %v", c.Argv)
+		}
+	}
+	if !strings.Contains(readEnv(t, p), "export A='1'") {
+		t.Fatal("secrets.env not written")
 	}
 }
 

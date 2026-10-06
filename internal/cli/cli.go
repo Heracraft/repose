@@ -316,6 +316,9 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
 			}
+			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -338,6 +341,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVar(&opts.NoAttach, "no-attach", false, "do not attach after starting/sending the prompt")
 	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix (repose config --global) off this machine, from now on")
+	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, ~/<slug>-worktree-<N> on branch worktree-<N>")
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
@@ -395,6 +399,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -408,6 +415,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	addTempFlag(cmd, &tempRaw)
 	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the guest's uncommitted changes before syncing")
 	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "discard the guest's uncommitted changes before syncing")
+	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }

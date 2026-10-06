@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // `repose paste` (DECISIONS I-252): the image on the laptop's clipboard
@@ -195,9 +197,10 @@ func newPasteCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "paste [PROJECT]",
 		Short: "Send the image on the clipboard to the machine and paste its path into the agent's prompt",
 		Long: `Copy the image on this computer's clipboard to /tmp/repose-paste/ on the
-machine and paste its path into the tmux session's active pane, where
-Claude Code attaches it. --window NAME pastes into that window instead;
---print only prints the path.
+machine and paste its path into the active pane (tmux) or the focused
+pane (herdr), where Claude Code attaches it. --window NAME pastes into
+that window, or that herdr agent's pane, instead; --print only prints
+the path.
 
 The clipboard is read with pngpaste or osascript on macOS, wl-paste on
 Wayland and xclip on X11.`,
@@ -219,7 +222,7 @@ Wayland and xclip on X11.`,
 			return PasteCmd(cmd.Context(), e, opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Window, "window", "", "paste into this tmux window (name or index) instead of the current one")
+	cmd.Flags().StringVar(&opts.Window, "window", "", "paste into this tmux window (name or index), or this herdr agent's pane, instead of the current one")
 	cmd.Flags().BoolVar(&opts.Print, "print", false, "copy the image and print its path on the machine; paste nothing")
 	return cmd
 }
@@ -253,7 +256,13 @@ func PasteCmd(ctx context.Context, e *Env, opts PasteOptions) error {
 	}
 	now := time.Now().UTC()
 	guestPath := pasteGuestDir + "/" + now.Format("20060102-150405") + fmt.Sprintf("-%03d.png", now.Nanosecond()/1e6)
-	out, err := runSSH(ctx, target, pasteScript(project.Slug, guestPath, opts), bytes.NewReader(img))
+	m := muxer(tmuxMux{})
+	if !opts.Print {
+		if m, err = muxFor(ctx, target, project); err != nil {
+			return err
+		}
+	}
+	out, err := runSSH(ctx, target, pasteScriptWith(m, project.Slug, guestPath, opts), bytes.NewReader(img))
 	var se *sshError
 	if errors.As(err, &se) {
 		switch se.ExitCode {
@@ -263,6 +272,12 @@ func PasteCmd(ctx context.Context, e *Env, opts PasteOptions) error {
 			where := project.Slug + "'s tmux session"
 			if opts.Window != "" {
 				where = fmt.Sprintf("window %s in %s", opts.Window, where)
+			}
+			if m.Name() == multiplexer.Herdr {
+				where = "focused pane in herdr on " + project.Slug
+				if opts.Window != "" {
+					where = fmt.Sprintf("herdr agent %s on %s", opts.Window, project.Slug)
+				}
 			}
 			return exitf(ExitGeneric, "Saved %s on %s, but could not paste the path: no %s. Paste it yourself, or pass --window.", guestPath, project.Slug, where)
 		}
@@ -304,28 +319,28 @@ const (
 )
 
 // pasteScript saves stdin as guestPath and, unless opts.Print, pastes the
-// path into the target pane and prints that pane's window name. The
-// directory is dev's own, 0700, and not a symlink (it is in the shared
-// /tmp); files are 0600. Old pastes go first: over a day old, or past the
-// newest pasteKeep. The path goes in with paste-buffer -p, a bracketed
-// paste when the program asked for one, the way a terminal delivers a
-// dropped file; send-keys would type it key by key. list-panes, not
-// display-message, finds the pane: display-message falls back to the
-// current pane when the target window does not exist.
+// path into the target pane of the tmux session and prints that pane's
+// window name; pasteScriptWith on the machine's multiplexer.
 func pasteScript(slug, guestPath string, opts PasteOptions) string {
+	return pasteScriptWith(tmuxMux{}, slug, guestPath, opts)
+}
+
+// pasteScriptWith saves stdin as guestPath and, unless opts.Print, has m
+// paste the path into the focused terminal (or opts.Window) and print
+// where. The directory is dev's own, 0700, and not a symlink (it is in
+// the shared /tmp); files are 0600. Old pastes go first: over a day old,
+// or past the newest pasteKeep. On tmux the path goes in with
+// paste-buffer -p, a bracketed paste when the program asked for one, the
+// way a terminal delivers a dropped file; send-keys would type it key by
+// key. list-panes, not display-message, finds the pane: display-message
+// falls back to the current pane when the target window does not exist.
+// On herdr it is `herdr pane send-text` (I-509), with no Enter.
+func pasteScriptWith(m muxer, slug, guestPath string, opts PasteOptions) string {
 	var b strings.Builder
 	b.WriteString(pasteSaveScript(guestPath))
 	if opts.Print {
 		return b.String()
 	}
-	t := "=" + slug + ":"
-	if opts.Window != "" {
-		t += opts.Window
-	}
-	fmt.Fprintf(&b, `p=$(tmux list-panes -t %s -F '#{?pane_active,#{pane_id},}' 2>/dev/null | grep .) || exit %d
-tmux set-buffer -b repose-paste -- "$f" || exit 1
-tmux paste-buffer -p -d -b repose-paste -t "$p" || exit 1
-tmux display-message -p -t "$p" '#{window_name}'
-`, shQuote(t), pasteExitNoPane)
+	b.WriteString(m.PasteScript(slug, opts.Window))
 	return b.String()
 }

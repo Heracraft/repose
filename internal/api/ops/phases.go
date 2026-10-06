@@ -18,6 +18,7 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // Phase names. An op's phases are fixed at enqueue by the Plan functions.
@@ -261,7 +262,10 @@ func (e *Engine) delivery(ctx context.Context, p *store.Project, u *store.User) 
 	if p.RemoteURL != nil {
 		remote = *p.RemoteURL
 	}
-	pj, err := json.Marshal(map[string]any{"project_id": p.ID.String(), "slug": p.Slug, "name": p.Name, "remote_url": remote, "user_handle": u.Handle, "class": p.Class, "tz": tz})
+	pj, err := json.Marshal(map[string]any{"project_id": p.ID.String(), "slug": p.Slug, "name": p.Name, "remote_url": remote, "user_handle": u.Handle, "class": p.Class, "tz": tz,
+		// What the guest's start runs (I-502, I-503); an older guestd
+		// ignores the key and starts tmux.
+		"multiplexer": multiplexer.Normalize(p.Multiplexer)})
 	if err != nil {
 		return nil, err
 	}

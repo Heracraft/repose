@@ -47,6 +47,10 @@ var userEnvVars = []string{
 // Env bundles what almost every command needs: config, the API client,
 // and the laptop-local caches (docs/interfaces/cli-config.md).
 type Env struct {
+	// listed is the account's projects as connect's slow path read
+	// them, for the laptop herdr's reconcile (I-510); nil until then.
+	listed []Project
+
 	Dir     string // ~/.config/repose
 	Cfg     Config
 	Client  *Client

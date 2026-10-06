@@ -130,3 +130,30 @@ func TestFakeHostAgainstApiStub(t *testing.T) {
 	}
 	t.Fatalf("samples=%d logs=%d events=%d", stub.samples, stub.logs, len(stub.events))
 }
+
+// TestProjectJSONPassesThrough: the fake keeps the project_json each
+// CreateGuest and StartGuest delivered, so api tests can read the
+// `multiplexer` the guest's next start gets (I-502, I-503); a StartGuest
+// without one keeps the last.
+func TestProjectJSONPassesThrough(t *testing.T) {
+	f := New(Options{FakeClosure: "/nix/store/fake"})
+	gid := "0192aaaa-0000-7000-8000-000000000001"
+	r := f.Execute(&hostdv1.Command{CommandId: "c1", Cmd: &hostdv1.Command_CreateGuest{CreateGuest: &hostdv1.CreateGuest{
+		GuestId: gid, ProjectId: "p1", Class: "small", ProjectJson: []byte(`{"slug":"a","multiplexer":"tmux"}`)}}})
+	if !r.Ok {
+		t.Fatalf("create: %v", r.Error)
+	}
+	if g := f.Guests()[0]; string(g.ProjectJSON) != `{"slug":"a","multiplexer":"tmux"}` {
+		t.Fatalf("after create: %s", g.ProjectJSON)
+	}
+	f.Execute(&hostdv1.Command{CommandId: "c2", Cmd: &hostdv1.Command_StopGuest{StopGuest: &hostdv1.StopGuest{GuestId: gid}}})
+	f.Execute(&hostdv1.Command{CommandId: "c3", Cmd: &hostdv1.Command_StartGuest{StartGuest: &hostdv1.StartGuest{GuestId: gid, ProjectJson: []byte(`{"slug":"a","multiplexer":"herdr"}`)}}})
+	if g := f.Guests()[0]; string(g.ProjectJSON) != `{"slug":"a","multiplexer":"herdr"}` {
+		t.Fatalf("after start: %s", g.ProjectJSON)
+	}
+	f.Execute(&hostdv1.Command{CommandId: "c4", Cmd: &hostdv1.Command_StopGuest{StopGuest: &hostdv1.StopGuest{GuestId: gid}}})
+	f.Execute(&hostdv1.Command{CommandId: "c5", Cmd: &hostdv1.Command_StartGuest{StartGuest: &hostdv1.StartGuest{GuestId: gid}}})
+	if g := f.Guests()[0]; string(g.ProjectJSON) != `{"slug":"a","multiplexer":"herdr"}` {
+		t.Fatalf("a bare start lost it: %s", g.ProjectJSON)
+	}
+}

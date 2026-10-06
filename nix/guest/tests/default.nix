@@ -208,6 +208,12 @@ let
 
   # I-264: a tmux server on /etc/tmux.conf, a pane in raw mode that asks
   # for extended keys and records its input, then Shift+Enter and Enter.
+  # Asks the running herdr server for a live handoff, the request
+  # `herdr update --handoff` sends after it installs (I-560).
+  herdrHandoff = pkgs.writeShellScript "herdr-handoff" ''
+    echo '{"id":"t","method":"server.live_handoff","params":{}}' \
+      | ${pkgs.socat}/bin/socat -t 20 - UNIX-CONNECT:/home/dev/.config/herdr/herdr.sock
+  '';
   tmuxKeysProbe = pkgs.writeShellScript "tmux-keys-probe" ''
     set -eu
     t() { ${pkgs.tmux}/bin/tmux -L keysprobe -f /etc/tmux.conf "$@"; }
@@ -328,6 +334,11 @@ in
       with subtest("tmux session from project.json"):
           guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
           guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+          # Nothing starts a session on its own (no path unit, I-503):
+          # SetupProject starts the unit project.json names, as here.
+          guest.succeed("sleep 2; ! sudo -u dev tmux ls")
+          guest.succeed("test ! -e /etc/systemd/user/repose-tmux-session.path")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
           guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
           # No checkout yet (I-368): the session works in the home directory,
           # and nothing is made under the slug.
@@ -336,6 +347,42 @@ in
           guest.succeed("test ! -e /home/dev/todo-app")
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev"
           guest.succeed("grep -Eq 'set-clipboard +on' /etc/tmux.conf && grep -Eq 'mouse +off' /etc/tmux.conf && grep -Eq 'history-limit +50000' /etc/tmux.conf")
+
+      with subtest("I-551: the session comes back after the tmux server exits"):
+          # `exit` in the last window ends the server, as kill-server does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          # Gone for the 5 s I-352's check after an attach needs.
+          guest.succeed("! sudo -u dev tmux has-session -t =todo-app")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          # The attach the CLI runs finds it (a client needs a terminal:
+          # script gives it one, and the detach ends it).
+          guest.succeed("sudo -u dev env TERM=xterm-256color script -qec 'tmux attach -t todo-app \\; detach-client' /dev/null")
+          # A stop is not undone.
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user stop repose-tmux-session.service")
+          guest.succeed("sleep 7; ! sudo -u dev tmux has-session -t =todo-app")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+
+      with subtest("I-560: a session on a tmux server outside the unit is not restarted"):
+          def user_q(cmd):
+              return guest.succeed(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}").strip()
+          guest.succeed("sudo -u dev tmux kill-server")
+          # In the 5 s wait, a tmux started outside the unit (over ssh,
+          # as here from the test's shell) takes the slug.
+          guest.succeed("sudo -u dev tmux new-session -d -s todo-app")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-failed repose-tmux-session.service", timeout=30)
+          n = user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service")
+          guest.succeed("sleep 12")
+          assert user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service") == n, "the unit kept restarting"
+          guest.succeed("sudo -u dev tmux has-session -t =todo-app")
+          # A server that dies by a signal (SIGKILL is the OOM kill) comes
+          # back as an exit does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+          guest.succeed("kill -KILL $(sudo -u dev tmux display-message -p '#{pid}')")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          assert user_q("systemctl --user is-active repose-tmux-session.service") == "active"
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
@@ -367,6 +414,79 @@ in
           keys = guest.succeed("cat /tmp/keys")
           print(keys)
           assert keys.split()[:8] == ["033", "[", "1", "3", ";", "2", "u", "\\r"], keys
+
+      with subtest("I-501, I-503: one session unit, chosen by project.json"):
+          import json
+          def mux_is(m):
+              return guest.execute(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 repose-multiplexer-is {m}")[0]
+          def unit_state(u):
+              return guest.execute(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active {u}")[1].strip()
+          def project(extra):
+              guest.succeed(f"""echo '{{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"{extra}}}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+          def user(cmd):
+              return guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}")
+          guest.succeed("test -x /run/current-system/sw/bin/herdr")
+          print(guest.succeed("herdr status client --json"))
+          # tmux runs: the herdr unit's condition refuses while it does.
+          assert mux_is("tmux") == 0 and mux_is("herdr") != 0
+          project(',"multiplexer":"herdr"')
+          assert mux_is("herdr") != 0, "herdr allowed while the tmux unit runs"
+          user("systemctl --user start repose-herdr-server.service")
+          assert unit_state("repose-herdr-server.service") == "inactive"
+          # The next start: tmux gone, herdr chosen.
+          user("systemctl --user stop repose-tmux-session.service")
+          assert mux_is("tmux") != 0 and mux_is("herdr") == 0
+          user("systemctl --user start repose-tmux-session.service")
+          assert unit_state("repose-tmux-session.service") == "inactive"
+          user("systemctl --user start repose-herdr-server.service")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
+          guest.succeed("test -S /home/dev/.config/herdr/herdr.sock")
+          assert guest.execute("pgrep -u dev -c tmux")[1].strip() == "0"
+          assert guest.succeed("cat /home/dev/.config/herdr/config.toml") == '[terminal]\nshell_mode = "login"\n\n[update]\nversion_check = false\n\n[ui.toast]\ndelivery = "herdr"\n'
+          assert guest.succeed("stat -c %U /home/dev/.config/herdr/config.toml").strip() == "dev"
+          # The workspace sits in the checkout (factory, from I-368 above),
+          # once, however often the step runs.
+          user("repose-herdr-workspace")
+          ws = json.loads(user("herdr workspace list"))["result"]["workspaces"]
+          assert [w["label"] for w in ws] == ["factory"], ws
+          panes = json.loads(user("herdr pane list"))["result"]["panes"]
+          assert any(p.get("cwd") == "/home/dev/factory" for p in panes), panes
+          assert unit_state("repose-tmux-session.service") == "inactive"
+          # A changed config.toml is the user's.
+          guest.succeed("echo '# mine' >> /home/dev/.config/herdr/config.toml")
+          user("systemctl --user restart repose-herdr-server.service")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
+          guest.succeed("grep -qx '# mine' /home/dev/.config/herdr/config.toml")
+          # The server starts without the profile guards, so each pane's
+          # shell loads the current environment (I-563).
+          main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
+          assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
+          # I-560: a live handoff keeps the unit and every pane; a server
+          # that stops comes back with its workspaces.
+          pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
+          user(f"herdr pane run {pane} 'sleep 4242'")
+          guest.wait_until_succeeds("pgrep -u dev -fx 'sleep 4242'", timeout=10)
+          old = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          print(user("${herdrHandoff}"))
+          guest.succeed("sleep 8")
+          assert unit_state("repose-herdr-server.service") == "active"
+          guest.succeed("pgrep -u dev -fx 'sleep 4242'")
+          new = guest.succeed("pgrep -u dev -x herdr").split()
+          assert old not in new and len(new) == 1, (old, new)
+          user("herdr server stop")
+          guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
+          guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q factory", timeout=40)
+          assert unit_state("repose-herdr-server.service") == "active"
+          # Back to tmux for the subtests below.
+          user("systemctl --user stop repose-herdr-server.service")
+          project("")
+          assert mux_is("tmux") == 0
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
+          # Every wrapped agent tells herdr who it is (I-501).
+          for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
+              guest.succeed(f"grep -q 'HERDR_AGENT=' /run/current-system/sw/bin/{cmd}")
 
       with subtest("agent binaries and wrappers"):
           for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
@@ -534,6 +654,7 @@ in
       guest.succeed("printf 'TZ=Europe/Berlin\nREPOSE_PROJECT=todo-app\n' > /etc/repose/env")
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
       guest.succeed("mkdir -p /tmp/p && cp -r ${guestParts}/. /tmp/p && chmod -R u+w /tmp/p && chown -R dev:dev /tmp/p")
 
@@ -800,6 +921,7 @@ in
 
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
 
       # `repose run` reaches the guest over SSH and starts an agent with
@@ -1748,6 +1870,7 @@ in
       guest.succeed("printf 'TZ=UTC\\nREPOSE_PROJECT=todo-app\\n' > /etc/repose/env")
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
       guest.succeed("ssh-keygen -q -t ed25519 -N ''' -f /root/ca && ssh-keygen -q -t ed25519 -N ''' -f /root/user")
       guest.succeed("install -m 0644 /root/ca.pub /run/repose/user_ca.pub")

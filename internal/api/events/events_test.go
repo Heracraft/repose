@@ -390,8 +390,13 @@ func TestHostWarningKindsAreAFixedSet(t *testing.T) {
 		ing.OnEvent(ctx, store.NewID(), &hostdv1.Event{EventId: fmt.Sprintf("w%d", i), Ev: &hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: fmt.Sprintf("kind-%d", i), Detail: "line one\nline two" + strings.Repeat("x", 5000)}}})
 	}
 	ing.OnEvent(ctx, store.NewID(), &hostdv1.Event{EventId: "w-pool", Ev: &hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: "pool_high", Detail: "91% of the thin pool is used"}}})
-	if n := testutil.CollectAndCount(m.HostWarningsTotal); n != 2 {
-		t.Fatalf("%d warning series, want 2 (other, pool_high)", n)
+	// herdr_down is a guest kind of its own (I-507), not "other".
+	ing.OnEvent(ctx, store.NewID(), &hostdv1.Event{EventId: "w-herdr", Ev: &hostdv1.Event_HostWarning{HostWarning: &hostdv1.HostWarning{Kind: "herdr_down", Detail: "guest 0192"}}})
+	if n := testutil.CollectAndCount(m.HostWarningsTotal); n != 3 {
+		t.Fatalf("%d warning series, want 3 (other, pool_high, herdr_down)", n)
+	}
+	if got := testutil.ToFloat64(m.HostWarningsTotal.WithLabelValues("herdr_down")); got != 1 {
+		t.Fatalf("herdr_down %v", got)
 	}
 	if got := testutil.ToFloat64(m.HostWarningsTotal.WithLabelValues("other")); got != 500 {
 		t.Fatalf("other %v", got)

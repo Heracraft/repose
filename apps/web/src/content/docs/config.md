@@ -111,11 +111,13 @@ An example:
 
 `home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
 
+On a machine that runs herdr, a `~/.config/herdr/config.toml` you write with `xdg.configFile` replaces the one the machine starts with, and herdr can't save its own settings into it. Put `shell_mode = "login"` under `[terminal]` in yours, or new panes start shells that skip your `~/.bash_profile`. A running herdr reads the file again after each apply.
+
 The file is a home-manager module, not a flake. A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 Once you edit the Nix by hand, the menu and `repose config add` are off for that project, because they can't read arbitrary Nix. Applying from the menu later replaces your file.
 
-What the file can't do: set NixOS system options other than the database services under `repose.system`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
+What the file can't do: set NixOS system options other than the database services under `repose.system`, define a user service whose name starts with `repose-`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
 
 ## Your machine.nix
 
@@ -175,3 +177,5 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 Every change is saved as a revision. `repose config show --revisions` lists them with any errors, and the dashboard can re-apply an earlier one. `repose logs --kind build` shows the last build's log.
 
 The platform updates the base (agents, tools, kernel) about once a week. Each project is rebuilt on the new base and switched in place. If your configuration doesn't build on it, the project stays where it was and you get a notification. To hold a project on its current base, tick **Hold base updates** on its Config page.
+
+herdr ([herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux)) is in every base from the one that added it. A project on an older base, held or not yet rebuilt, can't switch to herdr: `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.06 or newer.`, naming the two bases. Untick **Hold base updates** and let it update first.

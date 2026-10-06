@@ -195,6 +195,7 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 		if err != nil {
 			return nil, err
 		}
+		syncHerdrMachines(ctx, params.Projects, false, nil) // I-510: removes here; run and attach add
 		return &certResult{Path: certPath, AliasProblem: problem}, nil
 	}
 
@@ -222,6 +223,7 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 		return nil, err
 	}
 	stopMasters(ctx, sd, params.Projects)
+	syncHerdrMachines(ctx, params.Projects, false, nil) // I-510: removes here; run and attach add
 	return &certResult{Path: certPath, AliasProblem: problem}, nil
 }
 

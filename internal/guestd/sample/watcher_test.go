@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -86,7 +88,22 @@ func newWatcherFixture(t *testing.T, procs []fakeProc) (*Watcher, *sysdep.FakeRu
 	clk := &clock{t: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}
 	docker := &sysdep.FakeDocker{Up: true, Containers: 2}
 	w := NewWatcher(p, run, docker, fixedSlug("todo-app"), rec, quietLog(), clk.now)
+	tmuxSocketFile(t, p)
 	return w, run, rec, clk, p
+}
+
+// tmuxSocketFile stands in for dev's tmux socket: the tmux source forks
+// tmux only when it exists.
+func tmuxSocketFile(t *testing.T, p sysdep.Paths) {
+	t.Helper()
+	uid, _ := sysdep.DevIdentity()
+	path := p.TmuxSocket(uid)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAgentOf(t *testing.T) {
@@ -365,12 +382,37 @@ func TestAnUnexpectedTmuxFailureIsReportedNotSwallowed(t *testing.T) {
 		ExitCode: 1,
 		Stderr:   []byte("setpriv: failed to set the group list"),
 	}
-	_, _, err := w.tmux.listWindows(context.Background(), "todo-app")
+	_, _, err := w.tmux.client.listWindows(context.Background(), "todo-app")
 	if err == nil {
 		t.Fatal("an unexpected tmux failure was reported as an empty window list")
 	}
 	if !strings.Contains(err.Error(), "other") {
 		t.Fatalf("err = %v, want a classified reason", err)
+	}
+}
+
+// A tmux that cannot be read keeps its windows and lets the cache age, as
+// before the herdr source: the sample goes partial after CacheStale.
+func TestAnUnreadableTmuxLetsTheCacheAge(t *testing.T) {
+	procs := []fakeProc{{pid: 100, ppid: 1, comm: "bash"}, {pid: 101, ppid: 100, comm: "claude"}}
+	w, run, rec, clk, _ := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	run.Match["list-windows"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("setpriv: failed to set the group list")}
+	for i := 0; i < 4; i++ {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+	}
+	sig, fresh := w.Signals()
+	if fresh {
+		t.Fatal("the cache is fresh though tmux has not been read for four refreshes")
+	}
+	if len(sig.GetAgents()) != 1 {
+		t.Fatalf("agents = %v, want the claude window kept", sig.GetAgents())
+	}
+	if states, _, _ := rec.snapshot(); containsState(states, "claude/claude="+StateUnknown) {
+		t.Fatalf("states = %v: a tmux read failure announced the window gone", states)
 	}
 }
 

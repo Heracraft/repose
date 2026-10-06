@@ -15,6 +15,7 @@
     ./docker.nix
     ./caches.nix
     ./tmux.nix
+    ./herdr.nix
     ./tools.nix
     ./shell.nix
     ./devtools.nix

@@ -141,6 +141,14 @@ let
       (lib.filter (p: lib.hasInfix "\"" p) sessionPath);
   carriedVars = lib.filterAttrs (n: _: !(reservedVars ? ${n})) sessionVars;
 
+  # A user unit home-manager writes to ~/.config/systemd/user wins over the
+  # base's unit of the same name in /etc/systemd/user, so a fragment could
+  # replace repose-tmux-session or repose-herdr-server, the units every
+  # agent runs in. The repose- prefix is the base's (DECISIONS I-563).
+  unitRefusals = map
+    (n: "systemd.user.services.${n}: not allowed in a fragment; names starting with repose- belong to the machine")
+    (lib.filter (lib.hasPrefix "repose-") (builtins.attrNames hm.systemd.user.services));
+
   # Sourced by /etc/profile.d/repose.sh (env.nix): every login and
   # interactive shell, and every agent wrapper, whose tmux server may have
   # started before this configuration was applied. Same quoting as
@@ -271,6 +279,10 @@ in
       {
         assertion = sessionRefusals == [ ];
         message = lib.concatStringsSep "\n" sessionRefusals;
+      }
+      {
+        assertion = unitRefusals == [ ];
+        message = lib.concatStringsSep "\n" unitRefusals;
       }
     ];
   } // allowed;

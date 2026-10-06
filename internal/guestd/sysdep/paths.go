@@ -5,7 +5,10 @@
 // without a guest.
 package sysdep
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"strconv"
+)
 
 // Paths resolves every path in docs/interfaces/guest-conventions.md under an
 // optional root. Tests pass a temp directory as the root; a real guest passes
@@ -88,8 +91,24 @@ func (p Paths) ProjectDir(slug string) string { return p.join("home", "dev", slu
 // I-368).
 func (p Paths) CheckoutFile() string { return p.join("home", "dev", ".repose", "checkout") }
 
+// CheckoutsFile is /home/dev/.repose/checkouts: the machine's other
+// checkouts, one directory name per line, written by the CLI (DECISIONS
+// I-480). guestd reads it to prefix a herdr agent's key (I-504).
+func (p Paths) CheckoutsFile() string { return p.join("home", "dev", ".repose", "checkouts") }
+
 // ProjectJSON is /home/dev/.repose/project.json.
 func (p Paths) ProjectJSON() string { return p.join("home", "dev", ".repose", "project.json") }
+
+// TmuxSocket is dev's default tmux socket, /tmp/tmux-<uid>/default (the
+// base turns tmux's secure socket off, nix/guest/base/tmux.nix). guestd
+// stats it before it forks tmux, so a herdr machine pays no fork.
+func (p Paths) TmuxSocket(uid int) string {
+	return p.join("tmp", "tmux-"+strconv.Itoa(uid), "default")
+}
+
+// HerdrSock is herdr's api socket in dev's config directory
+// (internal/multiplexer.HerdrSocket, DECISIONS I-504).
+func (p Paths) HerdrSock() string { return p.join("home", "dev", ".config", "herdr", "herdr.sock") }
 
 // EtcDir is /etc/repose.
 func (p Paths) EtcDir() string { return p.join("etc", "repose") }

@@ -1,6 +1,6 @@
 ---
 title: Run and attach
-description: Start agents, move around the tmux session, get back to it later, and connect with SSH or an editor.
+description: Start agents, move around the tmux session or herdr, get back to it later, and connect with SSH or an editor.
 section: Using repose
 order: 10
 ---
@@ -112,11 +112,52 @@ Each machine has one tmux session. Its first window, `shell`, opens in your chec
 | `c`     | New window with a shell.                        |
 | `[`     | Scroll back. Arrow keys or Page Up; `q` leaves. |
 
+Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later. A temporary machine is destroyed instead when you leave its last window from `repose attach` or `repose run`; left any other way, it waits for its expiry.
+
 tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. If you want tmux's mouse mode instead (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
 
 Shift+Enter starts a new line in Claude Code instead of sending the prompt, when your terminal reports modified keys to tmux (xterm's modifyOtherKeys; Ghostty, WezTerm, iTerm2 and xterm do, Apple's Terminal doesn't). If Shift+Enter still sends the prompt, type `\` and then Enter, or press Ctrl+J. Links an agent prints are clickable in terminals that support links (OSC 8), and a program in the current window can send escape sequences through tmux to your terminal.
 
 Terminals with 24-bit colour (Ghostty, kitty, WezTerm, iTerm2, Alacritty, foot, or any that sets `COLORTERM=truecolor`) get it; Apple's Terminal before macOS 26 gets 256 colours. tmux sets your terminal's title to the machine's host name and the session.
+
+## herdr instead of tmux
+
+A machine can run its terminals in [herdr](https://herdr.dev), a multiplexer made for coding agents, in place of tmux. Pick it when you create the project, or switch one you have:
+
+```
+repose run --multiplexer herdr
+```
+
+The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise. A [temporary machine](/docs/lifecycle#temporary-machines) always runs tmux.
+
+A switch takes effect at the next start. A running machine keeps its current multiplexer and its agents until it stops:
+
+```
+$ repose run --multiplexer herdr
+todo-app uses herdr from its next start; tmux runs until then.
+```
+
+On a herdr project the commands on this page work through herdr:
+
+- `repose run "prompt"` opens a tab in the checkout's workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under the repository in herdr's sidebar.
+- `repose attach` from a terminal inside herdr on your laptop opens nothing new: the machine is in herdr's sidebar, and the command prints `todo-app is in herdr's sidebar.` and keeps port forwards and the browser bridge going until you press Ctrl-C. Elsewhere, with herdr 0.9.0 or newer installed, it opens `herdr --remote todo-app.repose`. Without herdr on the laptop, it runs herdr's client on the machine over SSH.
+- `repose ps` lists herdr's agents with their workspace and state. `repose paste` sends the image's path to the focused pane, or to an agent's pane with `--window NAME`.
+- `repose status` shows `herdr` after the size.
+- From herdr on your laptop (the sidebar or `herdr --remote`), a dropped file or `Ctrl+V` goes to herdr, and nothing is copied to the machine. Use `repose paste` for an image on the clipboard and [`repose cp`](/docs/sync#single-files) for a file. herdr's client over SSH, without herdr on the laptop, copies drops and pastes as tmux does.
+- If herdr has stopped on the machine, `run` and `attach` say `herdr is not running on todo-app` and exit 1. `repose stop` and `repose start` bring it back.
+
+repose's messages inside the session (the time zone, new port forwards, copied files) are herdr notifications, which the machine's `~/.config/herdr/config.toml` turns on. A `config.toml` that was there before the machine first ran herdr, for example because you ran herdr there yourself, keeps its own settings. Add this to it and run `herdr server reload-config` on the machine:
+
+```toml
+[ui.toast]
+delivery = "herdr"
+```
+
+Without it, a copied file is not named anywhere on herdr.
+
+`run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
+
+A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it. The [herdr tutorial](/docs/tutorial-herdr) walks through a first project.
 
 ## See what's running, run one command
 
@@ -161,7 +202,7 @@ Claude Code shows an image as `[Image #1]`. Other agents, and the shell, get the
 - Up to 20 files and 20 MB per file. A bigger drop pastes your laptop's path unchanged, and the tmux status line says why; use [`repose cp`](/docs/sync#single-files) for large files.
 - Only you and the machine's `dev` user can read the copies. Copies older than a day, and all but the newest 50, are deleted at the next copy.
 - A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a copied path works too. Paths under system folders such as `/etc`, `/usr` and `/nix` are pasted as they are, and so are hidden files, anything in a hidden folder such as `~/.ssh`, and private keys: those are never copied. A private key is a file named `id_rsa`, `id_dsa`, `id_ecdsa` or `id_ed25519` (`.pub` files still copy), a file ending in `.pem`, `.p12`, `.pfx`, `.p8`, `.ppk`, `.jks`, `.keystore`, `.kdbx`, `.keychain` or `.keychain-db`, or a file of any name that starts with a PEM, OpenSSH or PGP private key, or with an OpenPGP secret key (`.gpg`, `.pgp`). A `.key` file is refused only when it holds such a key, so Keynote decks still copy; public keys, signatures and encrypted `.gpg` files copy too. A link counts as the file it points to, so a link to a file in `~/.ssh` isn't copied either.
-- Every copy is named on the tmux status line, for example `copied report.pdf to the machine`. If an agent asks you to paste a path, that line tells you what left your laptop.
+- Every copy is named on the tmux status line, for example `copied report.pdf to the machine`. If an agent asks you to paste a path, that line tells you what left your laptop. On herdr the line is a [herdr notification](#herdr-instead-of-tmux).
 
 Any terminal that types a dropped file's path works: plain, quoted, with backslashes before spaces, or as a `file://` address.
 
@@ -191,6 +232,7 @@ repose run --no-sync          # a new machine without your checkout
 repose run --size xl          # size of a new project
 repose run --name scratch     # a project by name, made if missing
 repose run --temp             # a new machine, gone after 24 hours
+repose run --multiplexer herdr # herdr, from the next start
 repose run --project todo-app # a project other than this checkout's
 ```
 
@@ -218,6 +260,8 @@ mosh doesn't work: it needs a UDP connection straight to the machine, and the on
 ## When the machine stops
 
 A stop ends every process, agents included. After the next start, the tmux session has a fresh `shell` window and the agents' windows are gone. To continue a Claude Code conversation, run `claude --resume` in the checkout and pick it.
+
+On a herdr project, herdr puts its workspaces and tabs back at the start and resumes each agent that has herdr's integration (Claude Code, Codex, opencode and pi) in the conversation it was in.
 
 ## Timing
 

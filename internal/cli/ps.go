@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // `repose ps` (DECISIONS I-274): the project's tmux windows, the way
@@ -17,6 +19,58 @@ import (
 // connection runs `tmux list-windows`; the command column is tmux's
 // pane_current_command, the process name only, never its arguments. The
 // output goes to the user's own terminal and nowhere else.
+
+// PsAgent is one herdr agent, `repose ps --json`'s element on a herdr
+// project (I-509): no cwd, no title.
+type PsAgent struct {
+	Workspace string `json:"workspace"`
+	Agent     string `json:"agent"`
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Focused   bool   `json:"focused"`
+}
+
+// herdrPsRows is herdr's agents with their workspaces' labels, in
+// herdr's order.
+func herdrPsRows(st herdrState) []PsAgent {
+	labels := st.workspaceLabel()
+	rows := []PsAgent{}
+	for _, a := range st.Agents {
+		rows = append(rows, PsAgent{Workspace: labels[a.WorkspaceID], Agent: a.Agent, Name: a.Name, State: a.Status, Focused: a.Focused})
+	}
+	return rows
+}
+
+// psHerdr is `repose ps` on a machine that runs herdr: `herdr agent
+// list` and `herdr workspace list` in one ssh.
+func psHerdr(ctx context.Context, e *Env, target sshTarget, slug string) error {
+	st, err := herdrListState(ctx, target, slug)
+	if err != nil {
+		return stepFailed("list the herdr agents on "+slug, err, "")
+	}
+	rows := herdrPsRows(st)
+	switch {
+	case e.JSON:
+		return writeJSONOut(e.Out, rows)
+	case e.Quiet:
+		for _, r := range rows {
+			if r.Name != "" {
+				_, _ = fmt.Fprintln(e.Out, r.Name)
+			}
+		}
+		return nil
+	}
+	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "WORKSPACE\tAGENT\tNAME\tSTATE")
+	for _, r := range rows {
+		mark := " "
+		if r.Focused {
+			mark = "*"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s%s\t%s\n", orDash(r.Workspace), r.Agent, orDash(r.Name), mark, orDash(r.State))
+	}
+	return tw.Flush()
+}
 
 // PsWindow is one tmux window, also `repose ps --json`'s element.
 type PsWindow struct {
@@ -85,10 +139,12 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 	var quiet bool
 	cmd := &cobra.Command{
 		Use:   "ps [PROJECT]",
-		Short: "List the project's tmux windows: what runs in each and when it last printed",
+		Short: "List the project's tmux windows or herdr agents: what runs in each",
 		Long: "Lists the tmux windows of PROJECT (this checkout's, by default): each window's number and\n" +
 			"name, the program in its active pane (its name only), and when the window last printed\n" +
-			"something. The current window, the one `repose attach` opens on, is marked with *.",
+			"something. The current window, the one `repose attach` opens on, is marked with *.\n\n" +
+			"On a machine that runs herdr it lists herdr's agents instead: the workspace, the agent,\n" +
+			"its name and its state, with the focused one marked *.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -107,8 +163,8 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 			return PsCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the windows as JSON")
-	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the window names, one per line")
+	cmd.Flags().Bool("json", false, "print the windows (or herdr agents) as JSON")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the window (or herdr agent) names, one per line")
 	return cmd
 }
 
@@ -124,6 +180,13 @@ func PsCmd(ctx context.Context, e *Env, projectArg string) error {
 	target, err := connect(ctx, e, project)
 	if err != nil {
 		return err
+	}
+	mux, err := muxFor(ctx, target, project)
+	if err != nil {
+		return err
+	}
+	if mux.Name() == multiplexer.Herdr {
+		return psHerdr(ctx, e, target, project.Slug)
 	}
 	out, err := runSSH(ctx, target, psScript(project.Slug), nil)
 	var se *sshError

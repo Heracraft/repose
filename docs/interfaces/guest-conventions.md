@@ -28,7 +28,10 @@ non-empty directory or not a directory; it writes the name to
 checkout the rule finds. The sync that made the checkout replaces the
 session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
-to `tmux attach`, so new windows open there.
+to `tmux attach`, so new windows open there. On a herdr machine the sync runs
+`repose-herdr-workspace` instead (see "herdr"), only when the command
+exists and `repose-herdr-server` is active, and herdr's tabs open in
+the workspace's directory.
 
 ### Other checkouts
 
@@ -45,7 +48,8 @@ listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
 of the rule. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
-the attach opens is `<name>`. guestd reads none of this.
+the attach opens is `<name>`. guestd reads only the list of names, to
+prefix a herdr agent's key with its checkout (see "herdr", I-504).
 
 ## Filesystem
 
@@ -54,7 +58,9 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a fork, a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
 | `/home/dev/.repose/checkout` | one line, the checkout's directory name under `/home/dev` (`[A-Za-z0-9._-]`, no leading dot, no `/`), written by the CLI's first sync (I-368); absent on a machine with no checkout and on one set up before I-368 |
 | `/home/dev/<checkout>-worktree-<N>` | a git worktree of the checkout on branch `worktree-<N>`, made by `repose run --worktree` (DECISIONS I-253, I-342); see "tmux". Worktrees made before I-342 are `/home/dev/<slug>-<window>` on `repose/<window>` and stay as they are |
-| `/home/dev/.repose/project.json` | `{project_id, slug, name, remote_url, user_handle, class, tz}` written by guestd at SetupProject |
+| `/home/dev/.repose/project.json` | `{project_id, slug, name, remote_url, user_handle, class, tz, multiplexer}` written by guestd at SetupProject. `multiplexer` (`tmux` or `herdr`, DECISIONS I-502) is added by the api from migration 0017 on; an absent key, or any value other than `herdr`, means tmux to guestd, both session units and the CLI, which is how a file from an older api is read |
+| `/home/dev/.config/herdr/config.toml` | herdr's config, seeded by the base when absent (see "herdr"); the user's from then on |
+| `/home/dev/.config/herdr/herdr.sock` | herdr's API socket, dev's, made by `herdr server`; guestd connects to it (see "herdr") |
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
 | `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425) |
@@ -90,10 +96,26 @@ the attach opens is `<name>`. guestd reads none of this.
 
 - Server socket is the default for user `dev`.
 - Session name = project slug, created by the user unit
-  `repose-tmux-session.service` (started by a path unit once
-  `/home/dev/.repose/project.json` exists, and by guestd at SetupProject)
-  with window `shell` in the checkout (`repose-checkout`; `/home/dev`
-  when there is none, I-368). Running it again is a no-op.
+  `repose-tmux-session.service` with window `shell` in the checkout
+  (`repose-checkout`; `/home/dev` when there is none, I-368). Running it
+  again is a no-op. guestd starts it at SetupProject when `project.json`
+  names tmux (DECISIONS I-503; see "Session units"). Until I-503 a path
+  unit also started it once `project.json` existed; a base with I-503 has
+  no path unit, and a guestd from before I-503 still starts this unit by
+  name, which is right for every project on such a base.
+- When the tmux server exits on a running machine (`exit` in the last
+  window, `tmux kill-server`), the unit starts it again after 5 s
+  (`RestartSec=5s`, DECISIONS I-551), which the path unit used to do at
+  once. The wait lets the CLI's check after an attach on a temporary
+  machine (I-352) find the session gone. `Restart=on-success` with
+  `RestartForceExitStatus=SIGKILL SIGSEGV SIGABRT SIGBUS` also brings
+  back a server that crashed or was OOM-killed (I-560). A start the
+  `ExecCondition` skipped, a `systemctl stop` and a failed start are not
+  restarted. `repose-tmux-session`, run by the unit, exits 3 (a failed
+  start) when the slug's session belongs to a tmux server outside the
+  unit's cgroup (one started over ssh during the 5 s), so the unit does
+  not start again every 5 s with nothing to supervise; run by hand it
+  skips that check.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names
@@ -171,6 +193,196 @@ the attach opens is `<name>`. guestd reads none of this.
   (`SendEnv`), for bases older than this rule whose `update-environment`
   still lists it.
 
+## Session units (DECISIONS I-503)
+
+| Unit (dev's user manager) | Multiplexer | Started by |
+|---|---|---|
+| `repose-tmux-session.service` | `tmux` | guestd's `SetupProject`, after it writes `project.json` |
+| `repose-herdr-server.service` | `herdr` | the same |
+
+- guestd starts exactly one: the unit for `project.json`'s `multiplexer`,
+  normalized (absent or unknown is tmux; `internal/multiplexer.Unit`).
+  `start` of an active unit is a no-op, so a repeated `SetupProject` is
+  too.
+- Both units carry `ExecCondition=repose-multiplexer-is <tmux|herdr>`.
+  The script exits 0 when `jq -r '.multiplexer // "tmux"'` on
+  `~/.repose/project.json` (any value other than `herdr` read as `tmux`)
+  equals its argument and the other unit is not active, and exits 1
+  otherwise (2 for an argument other than `tmux` or `herdr`); systemd
+  treats an exit from 1 to 254 as a skipped start, which `systemctl
+  start` reports as success. With no `project.json` it exits 1 for
+  both.
+- Neither unit is wanted by `default.target` and no path unit exists:
+  nothing starts a session before `SetupProject` writes this boot's file.
+  Once started, each unit brings its server back 5 s after it exits
+  (I-551, I-560; see "tmux" and the herdr Server bullet).
+- Neither starts its server through a login shell (I-563). Each reads
+  the login PATH from `repose-login-path`, which runs `bash -lc` as dev
+  with an empty environment (`HOME`, `USER`, `LOGNAME` only), stdin from
+  `/dev/null` and a 10 s limit, and prints the PATH it printed after a
+  `__repose_login_path=` marker line; it prints nothing when no marker
+  came back (a profile that runs `exec zsh`), and the unit keeps its own
+  PATH. tmux sets that PATH with `set-environment -g`; herdr's server
+  starts with it. `nix flake check`'s `guest-session-environment` covers
+  both.
+- A fragment or machine.nix may not define a `systemd.user.services`
+  unit whose name starts with `repose-`; one in
+  `~/.config/systemd/user` would replace the base's (I-563).
+- Both have `restartIfChanged = false` (I-496); `nix flake check`'s
+  `guest-session-survives-switch` asserts `X-RestartIfChanged=false` on
+  each.
+- A change of `multiplexer` reaches the guest at its next start (I-502).
+  Until then the running unit stays, and the condition keeps the other
+  from starting.
+
+## herdr (DECISIONS I-501, I-504..I-509, I-551)
+
+Every guest has herdr from the base, whatever its multiplexer; only a
+project whose `project.json` names herdr runs its server.
+
+- **Package.** `herdr` from `nix/overlay/agents/herdr.nix`, upstream's
+  static-pie x86-64 release pinned in `nix/overlay/agents/versions.json`
+  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, the agents'
+  shape) and moved by `scripts/bump-agents.sh`.
+  The derivation's install check runs `herdr status client --json` and
+  fails unless `endpoint_protocol_generation == 1` and `protocol >= 22`.
+  It is in `environment.systemPackages`, so
+  `/run/current-system/sw/bin/herdr` resolves (a laptop herdr's remote
+  discovery looks there). `/etc/repose/agents.json` gains no entry:
+  herdr is not an agent.
+- **Server.** `repose-herdr-server.service`: `Type=simple`, `ExecStart`
+  is `repose-herdr-start` (I-563), which sets PATH to
+  `repose-login-path`'s answer (see "Session units"), unsets
+  `__NIXOS_SET_ENVIRONMENT_DONE`, `__ETC_PROFILE_DONE`,
+  `__HM_SESS_VARS_SOURCED` and every name in
+  `/etc/repose/session-vars.names`, and execs `herdr server` from that
+  PATH (the base's when none is found), `EnvironmentFile=-/etc/repose/env`,
+  `KillMode=control-group`, `TasksMax=infinity`, no `CPUWeight` (I-505).
+  On start herdr restores `~/.config/herdr/session.json` and resumes
+  agents whose integration recorded a session, with no client attached.
+  herdr's panes run in this unit's cgroup, so (I-560):
+  `OOMPolicy=continue` (an OOM kill in a pane leaves the server and the
+  other panes); `ExitType=cgroup` (a live handoff, `herdr update
+  --handoff`, starts the new server as a child of the old one and the
+  old one exits 0; the unit stays up and every pane keeps running);
+  `ExecStartPost=repose-herdr-watch &`, which kills what is left of the
+  cgroup once no process named herdr whose parent is dev's systemd runs
+  in it (a crash, `herdr server stop`), checking every 5 s; and
+  `Restart=always`, `RestartSec=5s`, `StartLimitBurst=5` in
+  `StartLimitIntervalSec=60`, so a stopped or crashed server is back 5 s
+  later with its workspaces, and one that cannot start stays failed
+  after five tries until the next start.
+- **Workspace.** `ExecStartPost=-repose-herdr-workspace` (a failure
+  never stops the server). The command, as dev: when `herdr workspace
+  list` (herdr prints its JSON answer) has no workspace whose label is
+  the checkout's directory name (`basename "$(repose-checkout)"`; `home`
+  when the machine has none), it runs `herdr workspace create --cwd
+  "$(repose-checkout)" --label <that name> --no-focus`. It exits 0 at
+  once when `repose-herdr-server.service` is neither active nor
+  activating, waits at most 10 s of wall time for herdr to answer (each
+  `workspace list` capped at 2 s; exit 0 when it never does), gives the
+  create at most 5 s, exits 1 only when the create fails, and is safe to
+  run again (I-551). The CLI runs it after the first sync in place of the tmux
+  `respawn-pane` (see "The checkout"); on a base without it the CLI skips
+  the step. Another checkout's workspace (I-480) is labelled with that
+  checkout's name and is made by the CLI when it first opens a tab there.
+- **Seeded config.** When `~/.config/herdr/config.toml` is absent (no
+  file and no link), the server unit's `ExecStartPre` writes `[terminal]`
+  `shell_mode = "login"` and `[update]` `version_check = false`, owned by
+  dev with mode 0644 (herdr edits the file itself after onboarding). A
+  file that exists is never changed; one a machine.nix or fragment
+  manages is a read-only link that replaces the seed, and carries
+  `shell_mode = "login"` itself or gets non-login panes. After every
+  home-manager activation `repose-herdr-reload` (`home-manager-dev`'s
+  `ExecStartPost`, I-563) runs as dev: when `~/.config/herdr/herdr.sock`
+  exists it runs the seed, and when the file's SHA-256 differs from the
+  one in `~/.local/state/repose/herdr-conf.sha256` it runs `herdr server
+  reload-config`; it always records the digest and never fails.
+  `herdr update` in a guest installs to `~/.local/bin`, and a herdr in
+  `home.packages` lands in `/etc/profiles/per-user/dev/bin`; both come
+  before the base's on PATH and the server runs that one. The docs say
+  the base's release is the supported one. The running server keeps the old binary
+  until it restarts; `herdr update --handoff` moves it to the new one and
+  keeps every pane (see Server).
+- **Socket use by guestd** (I-504). guestd, as root, connects to
+  `/home/dev/.config/herdr/herdr.sock` once per 5 s refresh, and only
+  after `stat` finds a socket there. herdr answers one request per
+  connection: guestd writes one line and reads one line, capped at
+  1 MiB, then closes. It reads the peer's `SO_PEERCRED` before writing
+  and closes without writing when the uid is not 1000. Requests, each a
+  JSON object on one line:
+  `{"id":"g<n>","method":"ping","params":{}}` after a failed or first
+  dial (answer `result.type == "pong"` with `version` and `protocol`;
+  below 22 the source counts as down), and
+  `{"id":"g<n>","method":"agent.list","params":{}}` (answer
+  `result.type == "agent_list"`, `result.agents[]`). guestd's decoder
+  holds only `pane_id`, `workspace_id`, `name`, `agent`, `agent_status`
+  (`idle|working|blocked|done|unknown`), `state_change_seq` and
+  `completion_seq` (absent unless the current idle state finished a
+  turn; I-561); every other field is dropped unread. A herdr before 0.9.2,
+  which has no `completion_seq`, reports no finished turns, and states still come
+  through. guestd never sends `session.snapshot`,
+  `pane.process_info`, `pane.read` or anything that changes herdr's
+  state. Workspace labels come from `workspace.list`, decoded to `id`
+  and `label` only, at most once a minute and on a `workspace_id` the
+  last `workspace.list` was not asked about; a failed one, or one that
+  lacks an agent's workspace, waits the minute. A `completion_seq` above
+  the previous read's for that pane is a finished turn. Both sequences
+  count from 0 in each herdr server process, so the first read after a
+  failed one records them and marks no turn finished, and a lower
+  `state_change_seq` is a restart (I-561).
+- **Agent keys.** What guestd reports as an agent's window (`AgentProc`,
+  `AgentEvent` and `Question` `tmux_window`, the api's `window`): the
+  herdr agent `name` when set (the CLI names agents `claude`,
+  `claude-2`, as tmux windows), else `<agent> <pane_id>`; prefixed
+  `<checkout>/` when the agent's workspace label is a name listed in
+  `~/.repose/checkouts` (I-480). When a tmux window and a herdr agent
+  give the same key in one refresh, the herdr one is `<key> (herdr)`; a
+  refresh that cannot read tmux keeps the window names of the last one
+  that could. Two herdr agents with one key: the first is reported, and
+  a hook from the other's pane is unresolved. A key that passes between
+  a tmux window and a herdr agent drops its recorded hook; a herdr
+  agent whose key changes keeps its hook (I-561).
+  At most 64 bytes, cut on a rune boundary. Only agents whose `agent` is
+  one of the five are reported.
+- **Agent wrappers** export `HERDR_AGENT=<binary>` beside
+  `REPOSE_HOOK_AGENT` (see "Agent wrappers"), so herdr detects the agent
+  whatever its argv0. `repose-agent-setup <agent>` runs `herdr
+  integration install <agent>` with the base's herdr for claude, codex,
+  opencode and pi when `HERDR_ENV=1` and `herdr integration status` has
+  no `<agent>: current` line (not installed, outdated or needing
+  repair); best effort, silent, at most 10 s a step, never blocking the
+  agent. A hook the laptop carried is replaced when it is older than the
+  base's herdr expects or needs repair; a newer one is kept, since herdr
+  reports any version at or above its own as `current` (I-560).
+- **Hooks** (I-506). Inside a herdr pane `repose-hook`, `repose-notify`
+  and `repose-ask` send `window: "herdr:<$HERDR_PANE_ID>"` when
+  `REPOSE_AGENT_WINDOW` is empty, `$TMUX_PANE` is unset and
+  `HERDR_ENV=1`. guestd resolves it to the agent key above; an
+  unresolved one is relayed under the agent's name and changes no state.
+- **Environment** (I-508, I-563). herdr has no `set-environment`.
+  `WriteSecrets` pushes into tmux only when `/tmp/tmux-1000/default`
+  exists. The server's environment has no NixOS or home-manager profile
+  guard and no session variable, so each pane's shell, login or not,
+  runs `/etc/set-environment` and `/etc/profile.d/repose.sh` and gets the
+  current session variables, secrets, TZ and PATH, and each bash command
+  gets secrets from `BASH_ENV`. A variable a switch dropped is in no new
+  pane. The CLI's TZ push writes `/etc/repose/env` only.
+- **Messages.** The CLI's and the session helper's one-line messages use
+  `herdr notification show repose --body "<text>"` where tmux uses
+  `display-message`; with no client attached nobody sees them (I-313).
+  herdr shows one only when the server's config sets `[ui.toast]
+  delivery = "herdr"`; with its default, `off`, the answer is `{"shown":
+  false, "reason": "disabled"}` and nothing appears (I-542). The seeded
+  `config.toml` sets it (I-564); a file that was there before the seed
+  keeps its own setting.
+- **Memory and CPU** (I-505): see "Memory pressure" and "CPU weights".
+
+Old shape, one release: a guest on a base before I-501 has no herdr and
+no `repose-herdr-server.service`; the api refuses herdr for it
+(`base_update_needed`, api.md), and the CLI treats a missing unit as
+tmux.
+
 ## Agent wrappers
 
 Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
@@ -199,8 +411,10 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/repose-machine-guide.js`
      → `/etc/repose/pi-extension.js`. A stale link of that name is
      repointed; anything else at the path is left alone.
-2. Set `TERM=tmux-256color` (when inside tmux), `COLORTERM=truecolor`, and
-   `REPOSE_HOOK_AGENT=<binary>` so `repose-hook` knows who called it.
+2. Set `TERM=tmux-256color` (when inside tmux), `COLORTERM=truecolor`,
+   `REPOSE_HOOK_AGENT=<binary>` so `repose-hook` knows who called it, and
+   `HERDR_AGENT=<binary>` (I-501), which herdr reads to detect the agent
+   and tmux ignores.
 3. Load the checkout's dev environment into its own process
    (`nix/overlay/agents/devshell.sh`, DECISIONS I-259), from the working
    directory up: the `.envrc` direnv finds (running `direnv allow` on it
@@ -249,7 +463,8 @@ never blocks an agent. Mapping:
 | any | a payload that already has `agent` and `kind` | passed through | |
 
 Anything else is dropped silently. `window` is the tmux window name of the
-caller's `$TMUX_PANE` when set.
+caller's `$TMUX_PANE` when set; else, with `HERDR_ENV=1`,
+`herdr:<$HERDR_PANE_ID>` (I-506); else absent.
 
 ## Messages and questions (DECISIONS I-244)
 
@@ -267,7 +482,8 @@ repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
   so every shell an agent starts inherits it), else the first of the five
   agents found by process name (`/proc/<pid>/comm`, never arguments) among
   the caller's ancestors, else `shell`. The window is
-  `REPOSE_AGENT_WINDOW`, else guestd's `$TMUX_PANE` lookup.
+  `REPOSE_AGENT_WINDOW`, else guestd's `$TMUX_PANE` lookup, else
+  `herdr:<$HERDR_PANE_ID>` in a herdr pane (I-506).
 - `repose-notify` POSTs `/notify` and returns at once. The message (1 KB)
   goes to the owner's channels as kind `agent_message` and counts against
   the project's notification cap (30 an hour, `features/notifications.md`).
@@ -345,7 +561,7 @@ state and is named once.
 |---|---|---|
 | the laptop's `git config --global --list --includes`, run in the checkout, minus the I-195 denylist and the keys that hold a secret (I-211), plus the checkout's own `user.name`/`user.email` | `/home/dev/.config/git/repose-carried` (dev 0644, replaced whole by rename) | `/home/dev/.gitconfig` starts with `[include] path = ~/.config/git/repose-carried`, added once, so the guest's own keys after it win. Path values missing in the guest and a `core.pager`/`core.editor` not on PATH are removed from the file and named once. When `~/.gitconfig` is a symlink (home-manager) nothing is added and the CLI says what to add |
 | `core.excludesFile`'s contents | `/home/dev/.config/git/ignore` | git's default excludes file |
-| the laptop's zone | `TZ=` in `/etc/repose/env`, tmux global and per-session `TZ` | see "tmux" |
+| the laptop's zone | `TZ=` in `/etc/repose/env`, tmux global and per-session `TZ` | see "tmux"; on a herdr machine `/etc/repose/env` only (I-508) |
 | the laptop CLI's version (DECISIONS I-412) | `/home/dev/.repose/cli-version`, one line, as `repose --version` names it | marker `cli-version`; the machine guide tells agents to read it; absent until a CLI with I-412 has run or attached |
 | `~/.claude/CLAUDE.md`, `keybindings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, and the scripts under `~/.claude` that `settings.json` runs (DECISIONS I-196) | the same paths under `/home/dev/.claude/`, copied onto what is there (`cp -R`, modes kept) | one marker per file or directory (`claude-claude-md`, `claude-skills`, `claude-scripts`, ...) |
 | `~/.claude/settings.json` | `/home/dev/.claude/settings.json`, merged by `internal/cli/claude_merge.jq` with the base's `jq`: guest file as the base, laptop's on top (without `env`, `apiKeyHelper`, `aws*`/`gcp*`, `otelHeadersHelper`, `forceLoginMethod`, removed on the laptop, I-211) with its home rewritten to `/home/dev`, `permissions.allow/deny/ask` unioned, `repose-hook` entries stripped from both and `/etc/repose/claude-settings.json`'s appended, hooks and `statusLine` whose command does not resolve dropped. Written as `settings.json.tmp`, checked with `jq empty`, the old file kept as `settings.json.repose-prev`, renamed into place. An invalid guest file is left alone | marker `claude-settings` |
@@ -436,7 +652,13 @@ report the version.
 guestd owns `oom_score_adj` for `dev`'s processes and re-applies it every
 5 s: -800 for the tmux server (`tmux: server`) and for each agent
 window's agent process (the shallowest process in the window's tree whose
-name or executable is the agent's binary), and 0 for any other `dev`
+name or executable is the agent's binary), -800 for the herdr server (the
+process named `herdr` in `repose-herdr-server.service` whose parent is
+dev's `systemd --user`) and for each process in its tree whose name or
+executable is one of the five agents' binaries, the shallowest per
+branch (I-505; `node` is left out there, and Gemini CLI runs as `node`
+(I-46), so under herdr it gets no -800 until herdr reports a pane's
+root pid, I-535), and 0 for any other `dev`
 process holding a negative value (it inherited the agent's or the tmux
 server's on fork: a dev server an agent started, a pane's shell). A
 positive value the user set is left alone, and nothing is ever killed or
@@ -454,6 +676,14 @@ every pane holding every vCPU, keystrokes and screen updates still get
 the CPU first. Nothing is capped: a weight only matters while the
 machine is full. A process that wants to stay out of the way can still
 use `nice`.
+
+herdr's panes run in the server's own cgroup, so its unit has no
+`CPUWeight`. guestd sets nice -5 on every thread in
+`/proc/<herdr server>/task` beside the OOM write, every 5 s, leaving a
+thread already at -5 or lower alone (I-505). Panes the server forks
+after that inherit the server thread's nice; guestd sets panes' and
+agents' nice back to 0 when it finds them below 0, as it does for
+`oom_score_adj`.
 
 ## Users and privileges
 

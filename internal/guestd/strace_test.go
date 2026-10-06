@@ -8,11 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
+	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/vsockrpc"
 )
 
@@ -26,7 +28,23 @@ import (
 // made in the privacy policy, and a library added later that reads a process
 // command line would keep every unit test green.
 func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
-	_, devSock, hookSock, tracePath, stop := tracedGuestd(t)
+	// A herdr project with herdr answering (I-504): the agent list, the
+	// herdr server's tree for the OOM and nice pass, and a hook naming a
+	// herdr pane are all in the trace.
+	var herdrSock string
+	var herdrAnswered *atomic.Int32
+	_, devSock, hookSock, tracePath, stop := tracedGuestd(t, func(root string) {
+		p := sysdep.Paths{Root: root}
+		mustMkdir(t, filepath.Dir(p.ProjectJSON()))
+		mustWrite(t, p.ProjectJSON(), `{"slug":"strace-app","multiplexer":"herdr"}`)
+		herdrSock = p.HerdrSock()
+		if len(herdrSock) >= 108 {
+			return // sun_path: the temp root is too deep for the socket
+		}
+		mustMkdir(t, filepath.Dir(herdrSock))
+		herdrAnswered = serveHerdrAt(t, herdrSock, `{"type":"agent_list","agents":[`+
+			`{"pane_id":"w1:p1","workspace_id":"w1","name":"claude","agent":"claude","agent_status":"working","state_change_seq":1,"cwd":"/home/dev/x"}]}`)
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -49,8 +67,13 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 
 	// A hook that names its own window: the TMUX_PANE lookup must not happen.
 	postHook(t, hookSock, `{"agent":"claude","kind":"completed","summary":"x","window":"claude"}`)
+	// One from a herdr pane: resolved through herdr's socket, no environ.
+	postHook(t, hookSock, `{"agent":"claude","kind":"completed","summary":"x","window":"herdr:w1:p1"}`)
 	time.Sleep(300 * time.Millisecond)
 	stop()
+	if herdrAnswered != nil && herdrAnswered.Load() == 0 {
+		t.Error("guestd never asked the fake herdr, so the trace proves nothing about the herdr path")
+	}
 
 	cmdlines, environs := procOpens(t, tracePath)
 	if len(cmdlines) > 0 {
@@ -88,7 +111,7 @@ func TestStraceReadsEnvironOnlyForTheHookPaneLookup(t *testing.T) {
 // real one, and returns the trace path and a stop function. The whole process
 // group is killed on stop: strace -f leaves its child running otherwise, and a
 // leaked guestd would outlive the test.
-func tracedGuestd(t *testing.T) (root, devSock, hookSock, tracePath string, stop func()) {
+func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookSock, tracePath string, stop func()) {
 	t.Helper()
 	strace, err := exec.LookPath("strace")
 	if err != nil {
@@ -100,6 +123,9 @@ func tracedGuestd(t *testing.T) (root, devSock, hookSock, tracePath string, stop
 	// anything, so the fake root's /proc is the real /proc.
 	if err := os.Symlink("/proc", filepath.Join(root, "proc")); err != nil {
 		t.Fatalf("link /proc into the test root: %v", err)
+	}
+	for _, f := range prep {
+		f(root)
 	}
 	devSock = filepath.Join(root, "run", "repose", "guestd.sock")
 	hookSock = filepath.Join(root, "run", "repose", "hooks.sock")

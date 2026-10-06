@@ -84,6 +84,7 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 		_, _ = fmt.Fprintf(e.Out, "%s is already stopped. Disk is still billed.\n", project.Slug)
 		return nil
 	}
+	busy := busyAgents(project)
 	pr := e.newProgress()
 	defer pr.Fail()
 	var opID string
@@ -124,12 +125,45 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 	} else {
 		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Disk is still billed.\n", p.Slug, fmtElapsed(pr.Total()))
 	}
+	if busy != "" {
+		_, _ = fmt.Fprintf(e.Out, "Interrupted %s.\n", busy)
+	}
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
 		// with last_error set; say so rather than implying a snapshot.
 		_, _ = fmt.Fprintf(e.ErrOut, "Note: %s.\n", reason)
 	}
 	return nil
+}
+
+// busyAgents names the agents the project's newest sample shows in the
+// middle of a turn or waiting for an answer, as "claude (working) and
+// codex-2 (needs input)", or "" when none is. A stop ends them
+// (features/stop-start-destroy.md); an idle agent loses nothing, so it is
+// not named. The line states what the stop did and names no command
+// (DECISIONS I-500, I-484): `claude --resume` is on the docs page.
+func busyAgents(p *Project) string {
+	if p == nil || p.State != "running" || p.Signals == nil {
+		return ""
+	}
+	var names []string
+	for _, a := range p.Signals.Agents {
+		var state string
+		switch a.State {
+		case "working":
+			state = "working"
+		case "needs_input":
+			state = "needs input"
+		default:
+			continue
+		}
+		name := a.Window
+		if name == "" {
+			name = a.Agent
+		}
+		names = append(names, fmt.Sprintf("%s (%s)", name, state))
+	}
+	return joinNames(names)
 }
 
 // destroyPrompt is the confirmation the owner asked for (2026-09-23):
@@ -186,6 +220,8 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 		return err
 	}
 	closeMaster(ctx, e, project.Slug)
+	// The laptop herdr's entry for the machine goes with it (I-510).
+	forgetHerdrMachine(ctx, project.Slug)
 	if forgetReposeRemote(gitRepoRoot(e.Cwd), project.Slug) {
 		// The machine this checkout's `repose` remote pointed at is going
 		// away (I-272); what was fetched from it stays.

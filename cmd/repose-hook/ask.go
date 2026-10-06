@@ -97,7 +97,7 @@ type subOpts struct {
 // `repose-ask "ok to push?" --options yes,no` works as well as the flags
 // first; `--` ends flag parsing.
 func parseSub(args []string, ask bool) (subOpts, error) {
-	o := subOpts{agent: callerAgentName(), socket: socketDefault(), window: os.Getenv("REPOSE_AGENT_WINDOW")}
+	o := subOpts{agent: callerAgentName(), socket: socketDefault(), window: windowDefault()}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {

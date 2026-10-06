@@ -46,8 +46,8 @@ picks another for one prompt.
 | Claude Code | `claude` | `claude` | `Notification` and `Stop` hooks in `~/.claude/settings.json` run `repose-hook`: finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
 | opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 1 and OpenCode 2, I-481) sends finished (`session.idle`; V2 `session.execution.succeeded`), needs input (`permission.asked`), error (`session.error`; V2 `session.execution.failed`) | `~/.local/share/opencode/auth.json` synced from the laptop |
 | Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished only | `~/.codex/auth.json` synced from the laptop |
-| Gemini CLI | `gemini` | `gemini` | no hook; tmux pane-idle heuristic | `GEMINI_API_KEY` named secret, or log in on the machine |
-| pi | `pi` | `pi` | no hook; tmux pane-idle heuristic | provider API key as a named secret |
+| Gemini CLI | `gemini` | `gemini` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |
+| pi | `pi` | `pi` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | provider API key as a named secret |
 
 `repose-agent-setup` (`nix/overlay/agents/agent-setup.nix`) writes these
 entries each time the agent starts. It adds its entry only when none running
@@ -72,7 +72,15 @@ Each binary is wrapped by `nix/overlay/agents/wrap.nix` to:
 1. Run `repose-agent-setup`, which writes its hook configuration so completion and needs-input
    events go to `repose-hook`, which POSTs to `/run/repose/hooks.sock`.
    The patch is idempotent and preserves the user's other hooks.
-2. Export `TERM=tmux-256color` and `COLORTERM=truecolor` so the TUIs render.
+   Inside a herdr pane (`HERDR_ENV=1`) it also installs herdr's own
+   integration for claude, codex, opencode and pi with the base's herdr
+   when `herdr integration status` does not list it as current, so herdr
+   sees the agent's state and resumes it after a restart (DECISIONS
+   I-501). herdr has no integration for gemini.
+2. Export `TERM=tmux-256color` (inside tmux) and `COLORTERM=truecolor` so
+   the TUIs render, `REPOSE_HOOK_AGENT` for `repose-hook`, and
+   `HERDR_AGENT` with the agent's name, which herdr reads to detect the
+   agent whatever its `argv0` and tmux ignores.
 3. Exec the real binary with all arguments.
 
 `repose-hook` always exits 0. A hook that fails must never block an agent,

@@ -37,6 +37,8 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               started_at, stopped_at, destroyed_at,
               expires_at null,  -- a temporary project's end (0010, I-347)
               personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
+              multiplexer text not null default 'tmux'
+                check (multiplexer in ('tmux','herdr')),  -- what the next start runs (0017, I-502)
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null)
 

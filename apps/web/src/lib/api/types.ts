@@ -231,6 +231,9 @@ export interface Project {
 	expires_at?: string;
 	/** The account's machine.nix is kept off this machine (I-490). */
 	personal_opt_out?: boolean;
+	/** What runs the machine's terminals from its next start (I-502).
+	 * Absent from an older api, which means tmux. */
+	multiplexer?: 'tmux' | 'herdr';
 }
 
 /** GET /projects/destroyed (I-167): a destroyed project that can still be restored. */

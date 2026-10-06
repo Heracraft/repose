@@ -9,7 +9,7 @@ All under `~/.config/repose/` (respecting `$XDG_CONFIG_HOME`), mode 0700.
 | `idle-noted.json` | cache: `{"<project_id>": "<idle.since>"}` for the other projects' idle stretches `run` and `attach` have already mentioned (DECISIONS I-262), so each stretch is mentioned once; rewritten to the projects idle now, minus the one being attached. Regenerable; deleting it costs one repeated mention. Mode 0600. |
 | `carry-hashes.json` | cache: `{"<abs laptop path>": {"size", "mtime_ns", "sha256"}}` for the Claude files the carry reads (I-196), so a run whose Claude config did not change reads none of them; entries not used by the last carry are dropped. Holds hashes only, never contents. Regenerable; deleting it costs one re-read. Mode 0600 (DECISIONS I-211). |
 | `repo-config.json` | `{"<project_id>": {"sha256", "revision_id"}}`: the hash of the `repose.nix` `run` or `sync` last sent from the project's checkout and the revision it made (DECISIONS I-489). The same file is not sent again while that revision builds, is built or applied; after it failed, the run names the error instead. Hashes only, never the file. Regenerable; deleting it costs one resend. Mode 0600. |
-| `config.toml` | `api_url` (default prod), `default_class`, `default_agent`, `sync.exclude` (extra gitignore-style patterns; a `[sync]` table with `exclude = [...]`, or the older quoted key `"sync.exclude"`, I-241), `logto_issuer` (default the owner's Logto), `logto_client_id` (default the App ID of the `repose-cli` application there; DECISIONS I-99), `logins.skip` (a `[logins]` table: the logins `run` leaves on the laptop, of `gh`, `codex`, `opencode`, `env`; absent means copy everything), `projects` (`[projects.NAME.logins]` with `skip`, the project's own list, replacing `logins.skip` for the project of that name; DECISIONS I-422). `repose secrets choose` writes the two `skip` keys, rewriting only its own table. |
+| `config.toml` | `api_url` (default prod), `default_class`, `default_agent`, `default_multiplexer` (`tmux` or `herdr`, the multiplexer of projects `run` creates, a temporary one excepted, which takes tmux, I-542; absent means the CLI picks, see `features/run-and-attach.md` "Choosing the multiplexer"; any other value fails the load naming the key; DECISIONS I-502. A CLI before I-502 ignores the key), `sync.exclude` (extra gitignore-style patterns; a `[sync]` table with `exclude = [...]`, or the older quoted key `"sync.exclude"`, I-241), `logto_issuer` (default the owner's Logto), `logto_client_id` (default the App ID of the `repose-cli` application there; DECISIONS I-99), `logins.skip` (a `[logins]` table: the logins `run` leaves on the laptop, of `gh`, `codex`, `opencode`, `env`; absent means copy everything), `projects` (`[projects.NAME.logins]` with `skip`, the project's own list, replacing `logins.skip` for the project of that name; DECISIONS I-422). `repose secrets choose` writes the two `skip` keys, rewriting only its own table. |
 | `machine.nix` | the user's own file, never a cache: the personal layer (DECISIONS I-490), a home-manager module. `run` pushes it (`PUT /me/config` with `base_revision_id`) when its SHA-256 differs from `machine.nix.state`'s and the account's revision is still the state's; it is rewritten from the account when unchanged here and changed there; `repose config --global` edits, pushes and creates it (from the account's copy, else a template). `logout --purge` keeps it. |
 | `machine.nix.state` | `{api, revision_id, sha256}`: the account revision and the text's SHA-256 the last push or pull left both sides on, for the `api` it names (another api ignores it). Deleting it makes the next run compare the texts instead: equal is agreement, different with an account copy is refused as both changed. Mode 0600. |
 
@@ -39,6 +39,31 @@ A `repose` remote with any other URL is the user's and is never
 changed; `repose.remoteNoted = true` records that the CLI has said so
 once. `destroy` removes the section (not the fetched `refs/remotes/repose/*`)
 when it points at the destroyed project (DECISIONS I-272).
+
+**The laptop's herdr** (DECISIONS I-510). When `herdr` 0.9.0 or newer
+is on the laptop's PATH and `~/.ssh/config` includes repose's file, the
+CLI keeps herdr's machine list in step with the account: it runs
+`herdr machine list --json`, `herdr machine add <slug>.repose --label
+<slug> --remote-session default` (stdin from `/dev/null`) and `herdr
+machine remove <id>`, and never edits herdr's files itself. It owns
+exactly the entries whose target is `<slug>.repose` for any slug: one
+for a running herdr project that has none is added, one whose slug is no
+live project of the account is removed, so is each entry past the first
+for one live slug (the enabled one kept when there is one), and every
+other entry, a disabled one included, is left as it is. A temporary
+project is never added. Each add holds `herdr-sidebar.lock` in this
+directory (an advisory lock, no contents, unlocked on Windows) and reads
+the list again under it, so two commands at once add one entry. `run`,
+`attach` and `sync` add and remove; one that read no project list from
+the api (the fast attach, I-223) adds its own project and removes
+nothing; a certificate refresh only removes, since `ssh-prepare` may run
+it in a process that ends before an add could finish (I-542). An add that fails prints
+`Could not add <slug> to herdr's sidebar: <herdr's last line>` once per
+command. A herdr older than 0.9.0, or a `machine list` that fails, makes
+the reconcile do nothing and say nothing. The CLI reads `HERDR_ENV`
+(set to `1` by herdr in its panes) to pick herdr for a new project and to
+choose the attach path; it is not a user setting and is not in
+`userEnvVars`.
 
 Remote URL normalisation: strip scheme and `git@`, replace `:` after host
 with `/`, strip trailing `.git`, lowercase the whole result (DECISIONS
