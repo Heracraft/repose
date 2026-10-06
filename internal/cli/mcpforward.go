@@ -222,15 +222,30 @@ func newMCPEnd(defs map[string]laptopMCP, w io.Writer) *mcpEnd {
 	return &mcpEnd{defs: defs, fw: mcpshim.NewFrameWriter(w), procs: map[uint32]*mcpProc{}, tails: map[string]string{}}
 }
 
+// errMCPNotFrames is a hold whose output does not start with its hello:
+// something on the machine printed first (a shell startup file that
+// writes for commands run over ssh).
+var errMCPNotFrames = errors.New("the machine printed text before repose-mcp hold started; a shell startup file there that prints for commands run over ssh does this")
+
 // serve reads frames from the hold until it ends, then stops every
-// server it started.
-func (m *mcpEnd) serve(r io.Reader) {
+// server it started. It returns nil at the end of the hold's output, and
+// an error for output that is not frames.
+func (m *mcpEnd) serve(r io.Reader) error {
 	defer m.stopAll()
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
 		f, err := mcpshim.ReadFrame(br)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		if err != nil {
-			return
+			if !m.saidHello() {
+				return errMCPNotFrames
+			}
+			return err
+		}
+		if !m.saidHello() && f.Type != mcpshim.FrameHello {
+			return errMCPNotFrames
 		}
 		switch f.Type {
 		case mcpshim.FrameHello:
@@ -587,19 +602,24 @@ func sortedStringKeys(m map[string]string) []string {
 
 // mcpHoldCommand is the hold as the remote command. Names are checked
 // against mcpreg.ValidName before they get here, so they need no quoting.
-func mcpHoldCommand(names []string, remove bool) string {
+func mcpHoldCommand(names []string, flag string) string {
 	c := "repose-mcp hold "
-	if remove {
-		c += "--remove "
+	if flag != "" {
+		c += flag + " "
 	}
 	return c + strings.Join(names, " ")
 }
 
 // mcpSSHArgs is the hold's ssh: a connection of its own, so the hold ends
-// with the command and not with the ControlMaster (I-149).
-func mcpSSHArgs(t sshTarget, names []string) []string {
+// with the command and not with the ControlMaster (I-149). An attach's
+// forward holds with --wait, so two attaches share a name.
+func mcpSSHArgs(t sshTarget, names []string, attach bool) []string {
 	args := append(ownConnection(), t.Args...)
-	return append(args, mcpHoldCommand(names, false))
+	flag := ""
+	if attach {
+		flag = "--wait"
+	}
+	return append(args, mcpHoldCommand(names, flag))
 }
 
 // mcpOldHoldText is what the hold of a base before the forward printed.
@@ -608,9 +628,12 @@ const mcpOldHoldText = "forwarding is not built in this base"
 // errMCPOldBase is a machine whose base has no forward.
 var errMCPOldBase = errors.New("the machine's base predates repose mcp forward")
 
+// mcpHoldStarted, when set (tests), is told of each hold's ssh process.
+var mcpHoldStarted func(*os.Process)
+
 // holdMCP runs one hold until ctx ends or the ssh does.
-func holdMCP(ctx context.Context, t sshTarget, names []string, end func(io.Writer) *mcpEnd) (*mcpEnd, error) {
-	cmd := exec.Command("ssh", mcpSSHArgs(t, names)...)
+func holdMCP(ctx context.Context, t sshTarget, names []string, attach bool, end func(io.Writer) *mcpEnd) (*mcpEnd, error) {
+	cmd := exec.Command("ssh", mcpSSHArgs(t, names, attach)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -625,8 +648,12 @@ func holdMCP(ctx context.Context, t sshTarget, names []string, end func(io.Write
 	if err := cmd.Start(); err != nil {
 		return m, &sshError{ExitCode: -1, Err: err}
 	}
+	if mcpHoldStarted != nil {
+		mcpHoldStarted(cmd.Process)
+	}
 	served := make(chan struct{})
-	go func() { m.serve(stdout); close(served) }()
+	var serveErr error
+	go func() { serveErr = m.serve(stdout); close(served) }()
 	go func() {
 		// The keepalive: status on the machine tells a laptop that went
 		// away from one that is still connected (mcpshim.FrameAlive).
@@ -644,7 +671,21 @@ func holdMCP(ctx context.Context, t sshTarget, names []string, end func(io.Write
 		}
 	}()
 	waited := make(chan error, 1)
-	go func() { <-served; waited <- cmd.Wait() }()
+	go func() {
+		<-served
+		// The hold ends with its stdin; one whose output stopped making
+		// sense still holds it, and this end no longer reads.
+		_ = stdin.Close()
+		exited := make(chan error, 1)
+		go func() { exited <- cmd.Wait() }()
+		select {
+		case err := <-exited:
+			waited <- err
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+			waited <- <-exited
+		}
+	}()
 	select {
 	case err = <-waited:
 	case <-ctx.Done():
@@ -658,6 +699,9 @@ func holdMCP(ctx context.Context, t sshTarget, names []string, end func(io.Write
 		return m, ctx.Err()
 	}
 	m.stopAll()
+	if errors.Is(serveErr, errMCPNotFrames) {
+		return m, serveErr
+	}
 	if err == nil {
 		return m, nil
 	}
@@ -679,7 +723,14 @@ type mcpForwardUI struct {
 	failed func(name, reason, tail string)
 	gone   func(name string)
 	call   func(agent, server, tool string)
-	lost   func()
+	// lost is a connection that dropped, once per outage: the hold that
+	// follows says ready again, or the next lost is a new outage.
+	lost func()
+	// attach is an attach's forward: holds with --wait.
+	attach bool
+	// running, when set, is asked after a reconnect fails: an error (the
+	// machine stopped) ends the forward with it.
+	running func() error
 }
 
 // errMCPNothingLeft is a forward with no name left: each failed to start
@@ -708,7 +759,7 @@ func runMCPForward(ctx context.Context, t sshTarget, defs map[string]laptopMCP, 
 		}
 		sort.Strings(names)
 		started := time.Now()
-		m, err := holdMCP(ctx, t, names, func(w io.Writer) *mcpEnd {
+		m, err := holdMCP(ctx, t, names, ui.attach, func(w io.Writer) *mcpEnd {
 			e := newMCPEnd(defs, w)
 			e.onCall = ui.call
 			wasAgain := again
@@ -717,6 +768,10 @@ func runMCPForward(ctx context.Context, t sshTarget, defs map[string]laptopMCP, 
 					amu.Lock()
 					delete(active, r.Name)
 					amu.Unlock()
+					if r.Where == mcpshim.WhereMachine {
+						ui.failed(r.Name, machineFailure+r.Error, "")
+						return
+					}
 					ui.failed(r.Name, r.Error, e.tail(r.Name))
 					return
 				}
@@ -733,7 +788,7 @@ func runMCPForward(ctx context.Context, t sshTarget, defs map[string]laptopMCP, 
 		if ctx.Err() != nil {
 			return nil
 		}
-		if errors.Is(err, errMCPOldBase) {
+		if errors.Is(err, errMCPOldBase) || errors.Is(err, errMCPNotFrames) {
 			return err
 		}
 		amu.Lock()
@@ -749,7 +804,15 @@ func runMCPForward(ctx context.Context, t sshTarget, defs map[string]laptopMCP, 
 		if time.Since(started) > 30*time.Second {
 			backoff = time.Second
 		}
-		ui.lost()
+		if m != nil && m.saidHello() {
+			// A hold that ran: this is a new outage.
+			ui.lost()
+		} else if ui.running != nil {
+			// A reconnect that failed: a stopped machine ends it.
+			if rerr := ui.running(); rerr != nil {
+				return rerr
+			}
+		}
 		if sleepOrDone(ctx, backoff) != nil {
 			return nil
 		}

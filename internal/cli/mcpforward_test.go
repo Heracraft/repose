@@ -282,6 +282,7 @@ func TestMCPEndProcesses(t *testing.T) {
 	go func() { end.serve(toEndR); close(served) }()
 	fl := readFrames(fromEndR)
 	fw := mcpshim.NewFrameWriter(toEndW)
+	_ = fw.Write(mcpshim.FrameHello, 0, []byte(mcpshim.FrameVersion))
 	send := func(id uint32, v any) {
 		b, _ := json.Marshal(v)
 		if err := fw.Data(id, append(b, '\n')); err != nil {
@@ -352,6 +353,7 @@ func TestMCPEndMachineStrings(t *testing.T) {
 	served := make(chan struct{})
 	go func() { end.serve(toEndR); close(served) }()
 	fw := mcpshim.NewFrameWriter(toEndW)
+	_ = fw.Write(mcpshim.FrameHello, 0, []byte(mcpshim.FrameVersion))
 	_ = fw.Write(mcpshim.FrameReady, 0, mcpshim.ReadyFrame(mcpshim.Ready{Name: "probe", Error: "bad\x1b]52;c;aGk=\x07 start\u009b2J"}))
 	_ = fw.Write(mcpshim.FrameReady, 0, mcpshim.ReadyFrame(mcpshim.Ready{Name: "\x1b[2Kfake"}))
 	_ = fw.Write(mcpshim.FrameGone, 0, []byte("\x1b[2Jother"))
@@ -363,6 +365,30 @@ func TestMCPEndMachineStrings(t *testing.T) {
 	want := []string{"ready probe bad]52;c;aGk= start2J", "gone probe"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// Output that does not start with the hold's hello is not frames: serve
+// says so instead of reading on; output after a hello that ends is the
+// hold's end.
+func TestMCPEndNotFrames(t *testing.T) {
+	end := newMCPEnd(map[string]laptopMCP{}, io.Discard)
+	if err := end.serve(strings.NewReader("Welcome to the machine\n")); !errors.Is(err, errMCPNotFrames) {
+		t.Errorf("text: %v", err)
+	}
+	var b bytes.Buffer
+	fw := mcpshim.NewFrameWriter(&b)
+	_ = fw.Write(mcpshim.FrameReady, 0, []byte("{}"))
+	if err := newMCPEnd(map[string]laptopMCP{}, io.Discard).serve(&b); !errors.Is(err, errMCPNotFrames) {
+		t.Errorf("a frame before the hello: %v", err)
+	}
+	b.Reset()
+	_ = fw.Write(mcpshim.FrameHello, 0, []byte(mcpshim.FrameVersion))
+	if err := newMCPEnd(map[string]laptopMCP{}, io.Discard).serve(&b); err != nil {
+		t.Errorf("hello then the end: %v", err)
+	}
+	if err := newMCPEnd(map[string]laptopMCP{}, io.Discard).serve(strings.NewReader("")); err != nil {
+		t.Errorf("nothing at all (an old base's 127): %v", err)
 	}
 }
 
@@ -568,10 +594,13 @@ func (a *shimAgent) callUntil(tool string, within time.Duration, notes *[]string
 
 // The forward end to end, through a real ssh and the fake guest: the hold
 // registers the server, an agent's call through the shim reaches a
-// process on the laptop and is reported there; with the forward gone the
-// next call is a tool error within 25 s; a new forward makes calls work
-// again and tells the agent the tools changed; a second forward of the
-// same NAME takes over from the first.
+// process on the laptop and is reported there; with the forward ended
+// (Ctrl-C: the ssh closes, the hold removes the socket and the link
+// closes, so the shim answers away at once; TestMCPForwardLaptopSilent
+// covers a laptop that stops answering without closing) the next call is
+// a tool error; a new forward makes calls work again and tells the agent
+// the tools changed; a second forward of the same NAME takes over from
+// the first.
 func TestMCPForwardEndToEnd(t *testing.T) {
 	target, home := mcpGuest(t)
 	first := startForward(t, target, helperDef(t, "probe", "pid,pings"))
@@ -623,6 +652,163 @@ func TestMCPForwardEndToEnd(t *testing.T) {
 	third.want(t, "claude called probe.pid", 5*time.Second)
 }
 
+// A laptop that goes silent without closing anything (it slept: the ssh
+// stops reading, the machine's sshd keeps the connection for minutes and
+// the hold keeps the socket) makes the call in flight, and the next one,
+// a tool error within 25 s, from the shim's missed pings alone.
+func TestMCPForwardLaptopSilent(t *testing.T) {
+	target, home := mcpGuest(t)
+	var pmu sync.Mutex
+	var procs []*os.Process
+	mcpHoldStarted = func(p *os.Process) { pmu.Lock(); procs = append(procs, p); pmu.Unlock() }
+	t.Cleanup(func() { mcpHoldStarted = nil })
+	fr := startForward(t, target, helperDef(t, "probe", "pid,hang"))
+	fr.want(t, "ready probe 2 new=true changed=false", 60*time.Second)
+	a := startShimAgent(t, home, "probe")
+	var notes []string
+	a.callUntil("pid", 20*time.Second, &notes, func(text string, isErr bool) bool { _, err := strconv.Atoi(text); return !isErr && err == nil })
+
+	pmu.Lock()
+	ssh := procs[len(procs)-1]
+	pmu.Unlock()
+	if err := ssh.Signal(syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ssh.Signal(syscall.SIGCONT) }) // so the forward can end
+	start := time.Now()
+	text, isErr := a.call("hang", &notes)
+	took := time.Since(start)
+	if !isErr || text != mcpshim.AwayText("probe") {
+		t.Fatalf("call while the laptop is silent = %q isError=%v", text, isErr)
+	}
+	if took > 25*time.Second {
+		t.Errorf("away after %s, want within 25 s", took)
+	}
+	t.Logf("away answer %s after the laptop went silent", took.Round(time.Millisecond))
+	start = time.Now()
+	if text, isErr := a.call("pid", &notes); !isErr || text != mcpshim.AwayText("probe") || time.Since(start) > 2*time.Second {
+		t.Errorf("next call = %q isError=%v after %s, want away at once", text, isErr, time.Since(start))
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("REPOSE_MCP_SOCKET_DIR"), "probe.sock")); err != nil {
+		t.Errorf("the hold let go of the socket, so this did not test silence: %v", err)
+	}
+}
+
+// A connection that drops says so once, however many reconnects fail;
+// after each failed one the forward asks whether the machine still runs,
+// and ends with that answer when it does not (exit 5, not a line every
+// 30 s forever).
+func TestMCPForwardOutageSaidOnce(t *testing.T) {
+	target, _ := mcpGuest(t)
+	var pmu sync.Mutex
+	var procs []*os.Process
+	mcpHoldStarted = func(p *os.Process) { pmu.Lock(); procs = append(procs, p); pmu.Unlock() }
+	t.Cleanup(func() { mcpHoldStarted = nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan string, 64)
+	checks := 0
+	stopped := exitf(ExitGuestNotRunning, "todo-app is stopped.")
+	ui := mcpForwardUI{
+		ready:  func(r mcpshim.Ready, again bool) { events <- "ready" },
+		failed: func(name, reason, tail string) { events <- "failed " + reason },
+		gone:   func(string) {},
+		call:   func(string, string, string) {},
+		lost:   func() { events <- "lost" },
+		running: func() error {
+			checks++
+			events <- "check"
+			if checks == 2 {
+				return stopped
+			}
+			return nil
+		},
+	}
+	done := make(chan error, 1)
+	go func() { done <- runMCPForward(ctx, target, map[string]laptopMCP{"probe": helperDef(t, "probe", "pid")}, ui) }()
+	if e := <-events; e != "ready" {
+		t.Fatalf("first event %q", e)
+	}
+	// From now on the machine answers nothing: every reconnect fails.
+	fakeMCPStatus(t, "exit 1\n")
+	pmu.Lock()
+	_ = procs[0].Kill()
+	pmu.Unlock()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the forward did not end on a stopped machine")
+	}
+	if err != stopped {
+		t.Errorf("err = %v", err)
+	}
+	close(events)
+	var seen []string
+	for e := range events {
+		seen = append(seen, e)
+	}
+	if got := strings.Join(seen, " "); got != "lost check check" {
+		t.Errorf("events %q, want one lost and a check per failed reconnect", got)
+	}
+}
+
+// An attach's forward holds with --wait; `repose mcp forward` does not.
+func TestMCPHoldWaitForAttach(t *testing.T) {
+	tg := sshTarget{Args: []string{"x.repose"}}
+	if a := mcpSSHArgs(tg, []string{"notes"}, true); a[len(a)-1] != "repose-mcp hold --wait notes" {
+		t.Errorf("attach: %q", a[len(a)-1])
+	}
+	if a := mcpSSHArgs(tg, []string{"notes", "figma"}, false); a[len(a)-1] != "repose-mcp hold notes figma" {
+		t.Errorf("forward: %q", a[len(a)-1])
+	}
+}
+
+// A failure the machine reports names the machine, never the laptop.
+func TestMCPFailedLine(t *testing.T) {
+	if l := mcpFailedLine("todo-app", "notes", machineFailure+"cannot listen on notes's socket: bind: no space left on device", ""); l != "notes: todo-app could not take the forward: cannot listen on notes's socket: bind: no space left on device." {
+		t.Errorf("machine: %q", l)
+	}
+	if l := mcpFailedLine("todo-app", "notes", "the server ended before it answered", "Error: \x1b[31mno token"); l != "notes did not start on this laptop: the server ended before it answered. It said: Error: [31mno token" {
+		t.Errorf("laptop: %q", l)
+	}
+}
+
+// SIGHUP (the terminal closed) and SIGTERM end the forward's context, so
+// the servers in their own process groups are stopped with it.
+func TestForwardEndsOnHangup(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGHUP, syscall.SIGTERM} {
+		ctx, stop := endOnHangup(context.Background())
+		if err := syscall.Kill(os.Getpid(), sig); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+			t.Errorf("%v did not end the forward", sig)
+		}
+		stop()
+	}
+}
+
+// Text on the hold's stdout before its hello (a shell startup file on the
+// machine that prints for ssh commands) ends the forward with a line that
+// says so, instead of hanging.
+func TestMCPForwardTextBeforeHello(t *testing.T) {
+	target, _ := mcpGuest(t)
+	fakeMCPStatus(t, "echo 'Welcome to the machine'\nexec cat >/dev/null\n")
+	fr := startForward(t, target, helperDef(t, "probe", "pid"))
+	select {
+	case err := <-fr.done:
+		if !errors.Is(err, errMCPNotFrames) {
+			t.Errorf("err = %v", err)
+		}
+		fr.done <- nil
+	case <-time.After(20 * time.Second):
+		t.Fatal("the forward hung on text before the hello")
+	}
+}
+
 // --remove takes the registration away and names what was not there.
 func TestMCPForwardRemove(t *testing.T) {
 	target, home := mcpGuest(t)
@@ -643,12 +829,11 @@ func TestMCPForwardRemove(t *testing.T) {
 	}
 }
 
-// A machine whose base predates the forward says so, and is not retried.
+// A machine whose base predates the forward (no repose-mcp: the shell's
+// 127, as on every base before this one) says so, and is not retried.
 func TestMCPForwardOldBase(t *testing.T) {
 	target, _ := mcpGuest(t)
-	bin := t.TempDir()
-	_ = os.WriteFile(filepath.Join(bin, "repose-mcp"), []byte("#!/bin/sh\necho 'repose-mcp: forwarding is not built in this base' >&2\nexit 1\n"), 0o755)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	hideCommand(t, "repose-mcp")
 	fr := startForward(t, target, helperDef(t, "probe", "pid"))
 	select {
 	case err := <-fr.done:

@@ -405,12 +405,28 @@ func (s *shim) connect() bool {
 	s.mu.Unlock()
 	c, err := net.DialTimeout("unix", s.sock, 2*time.Second)
 	if err != nil {
+		// No forward holds the socket: later calls answer at once.
+		s.mu.Lock()
+		s.away = true
+		s.mu.Unlock()
 		return s.settle(nil)
 	}
 	l := newLink(c)
 	go l.readLoop(s)
+	// The laptop end answers pings itself, so a replay that waits on a
+	// slow server start still hears them; a laptop that sleeps behind a
+	// hold sshd has not reaped yet does not, and the connect ends after
+	// two misses instead of the whole replayWait.
+	stopPings := make(chan struct{})
+	go s.pingDuringConnect(l, stopPings)
+	defer close(stopPings)
 	fail := func() bool {
 		l.close()
+		// Calls during the next tries answer at once, as for a laptop
+		// that went away.
+		s.mu.Lock()
+		s.away = true
+		s.mu.Unlock()
 		return s.settle(nil)
 	}
 	s.mu.Lock()
@@ -538,36 +554,58 @@ func (s *shim) settle(l *link) bool {
 	}
 }
 
-// pinger marks the link down after two pings in a row go unanswered.
+// pingDuringConnect closes l when the laptop goes silent before stop,
+// which ends the connect's waits on it.
+func (s *shim) pingDuringConnect(l *link, stop chan struct{}) {
+	if s.watchPings(l, stop) {
+		l.close()
+	}
+}
+
+// pinger marks the link down when the laptop goes silent.
 func (s *shim) pinger(l *link) {
-	t := time.NewTicker(pingEvery.get())
+	if s.watchPings(l, nil) {
+		s.down(l, true)
+		return
+	}
+	s.down(l, false) // l closed: a no-op unless l is still the live link
+}
+
+// watchPings pings through l every half pingEvery and reports true when
+// nothing answered for two pingEvery (the laptop slept: about 20 s, where
+// sshd takes 2 minutes), false when l closed or stop closed first.
+func (s *shim) watchPings(l *link, stop chan struct{}) bool {
+	half := pingEvery.get() / 2
+	t := time.NewTicker(half)
 	defer t.Stop()
-	var last chan json.RawMessage
-	missed := 0
+	heard := time.Now()
+	var waiting []chan json.RawMessage
 	for {
 		select {
+		case <-stop:
+			return false
 		case <-l.closed:
-			s.down(l, false) // a no-op unless l is still the live link
-			return
+			return false
 		case <-t.C:
 		}
-		if last != nil {
+		var still []chan json.RawMessage
+		for _, ch := range waiting {
 			select {
-			case <-last:
-				missed = 0
+			case <-ch:
+				heard = time.Now()
 			default:
-				missed++
+				still = append(still, ch)
 			}
 		}
-		if missed >= 2 {
-			s.down(l, true)
-			return
+		waiting = still
+		if time.Since(heard) >= 2*pingEvery.get() {
+			return true
 		}
 		id := s.privateID("ping")
-		last = l.expect(id)
-		if err := l.send(request(id, PingMethod, nil)); err != nil {
-			s.down(l, false)
-			return
+		waiting = append(waiting, l.expect(id))
+		if l.send(request(id, PingMethod, nil)) != nil {
+			l.close()
+			return false
 		}
 	}
 }

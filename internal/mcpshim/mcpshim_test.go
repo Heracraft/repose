@@ -72,11 +72,13 @@ type fakeServer struct {
 	rootsAnswer string
 	// closeFirst closes the first connection right after its tools/list.
 	closeFirst bool
-	mu         sync.Mutex
-	inits      []json.RawMessage
-	sawPing    bool
-	conns      []net.Conn
-	callsSeen  int
+	// stalled accepts and never answers anything, pings included.
+	stalled   bool
+	mu        sync.Mutex
+	inits     []json.RawMessage
+	sawPing   bool
+	conns     []net.Conn
+	callsSeen int
 }
 
 func (f *fakeServer) listen(t *testing.T, path string) net.Listener {
@@ -119,8 +121,20 @@ func (f *fakeServer) handle(c io.ReadWriteCloser) {
 			return
 		}
 		m, _ := parse(line)
+		if f.stalled {
+			continue // a hold whose laptop sleeps: nothing answers
+		}
 		if m.Method == "initialize" && f.initDelay > 0 {
-			time.Sleep(f.initDelay) // a laptop server that starts slowly
+			// A laptop server that starts slowly; the laptop end still
+			// answers pings meanwhile.
+			go func() {
+				time.Sleep(f.initDelay)
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				f.inits = append(f.inits, m.Params)
+				_, _ = c.Write(result(m.ID, map[string]any{"protocolVersion": f.version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "probe", "version": "1"}}))
+			}()
+			continue
 		}
 		f.mu.Lock()
 		switch m.Method {
@@ -578,5 +592,33 @@ func TestFetchRefusesNullInitialize(t *testing.T) {
 	_, _, _, err := fetch(a)
 	if err == nil || !strings.Contains(err.Error(), "no result object") {
 		t.Errorf("fetch = %v", err)
+	}
+}
+
+// A hold that holds the socket for a laptop that sleeps (sshd has not
+// reaped it yet) answers nothing: the call waiting on the connect gets
+// the away text after two missed pings, well before replayWait, and the
+// next call answers at once.
+func TestShimStalledHoldAnswersAway(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	writeCache(t, p, "notes", "2025-06-18", "search")
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, stalled: true}
+	srv.listen(t, p.SocketPath("notes"))
+	a := startShim(t, p, "notes")
+	a.initialize("2025-06-18")
+	start := time.Now()
+	a.send(3, "tools/call", map[string]any{"name": "search"})
+	text, isErr := callText(t, a.next(3*time.Second))
+	if !isErr || text != AwayText("notes") {
+		t.Fatalf("call = %q isError=%v", text, isErr)
+	}
+	if d := time.Since(start); d > replayWait.get()/2 {
+		t.Errorf("away after %s; replayWait is %s", d, replayWait.get())
+	}
+	start = time.Now()
+	a.send(4, "tools/call", map[string]any{"name": "search"})
+	if text, isErr := callText(t, a.next(time.Second)); !isErr || text != AwayText("notes") || time.Since(start) > 200*time.Millisecond {
+		t.Errorf("next call = %q isError=%v after %s, want away at once", text, isErr, time.Since(start))
 	}
 }

@@ -63,7 +63,14 @@ type Ready struct {
 	// Changed is a tool list that differs from the cached one.
 	Changed bool   `json:"changed,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Where is WhereMachine for an Error on the machine's side (its
+	// socket, its cache file); empty is the laptop's server. A hold that
+	// predates it never sets it.
+	Where string `json:"where,omitempty"`
 }
+
+// WhereMachine is Ready.Where for a failure on the machine.
+const WhereMachine = "machine"
 
 // ReadFrame reads one frame.
 func ReadFrame(r io.Reader) (Frame, error) {

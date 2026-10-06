@@ -23,9 +23,12 @@ if ! cmp -s "$t/mcp/new.json" "$o"; then
   chmod 600 "$o.tmp"
   mv -f "$o.tmp" "$o"
 fi
+# The directories an agent's PATH has beyond this shell's; tests set
+# REPOSE_TOOL_DIRS (space-separated, may be empty) instead.
+tool_dirs=${REPOSE_TOOL_DIRS-"$HOME/.nix-profile/bin /etc/profiles/per-user/$(id -un)/bin /run/current-system/sw/bin $HOME/.npm-global/bin $HOME/.local/bin $HOME/go/bin $HOME/.cargo/bin"}
 have() {
   command -v "$1" >/dev/null 2>&1 && return 0
-  for p in "$HOME/.nix-profile/bin" "/etc/profiles/per-user/$(id -un)/bin" /run/current-system/sw/bin "$HOME/.npm-global/bin" "$HOME/.local/bin" "$HOME/go/bin" "$HOME/.cargo/bin"; do
+  for p in $tool_dirs; do
     [ -x "$p/$1" ] && return 0
   done
   return 1

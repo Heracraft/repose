@@ -53,6 +53,21 @@ my-db        machine  claude
 	if b.String() != wantPiped {
 		t.Errorf("piped:\n%q\nwant:\n%q", b.String(), wantPiped)
 	}
+	// Names come from any checkout's .mcp.json: escape sequences and tabs
+	// never reach the terminal, in either form.
+	evil := []mcpreg.ServerStatus{{Name: "x\x1b]0;PWNED\x07\x1b[2J\ty", From: "project", Agents: []string{"claude"}, Checkout: "/home/dev/a\x1b[31m", State: "s\x9b1m"}}
+	for _, tty := range []bool{true, false} {
+		b.Reset()
+		if err := writeMCPList(&b, evil, tty); err != nil {
+			t.Fatal(err)
+		}
+		if strings.ContainsAny(b.String(), "\x1b\x07\u009b") || strings.Count(b.String(), "\t") > 3*len(evil) {
+			t.Errorf("tty=%v: %q", tty, b.String())
+		}
+		if !strings.Contains(b.String(), "x]0;PWNED[2Jy") {
+			t.Errorf("tty=%v: name lost its printable part: %q", tty, b.String())
+		}
+	}
 	// A checkout outside the home keeps its path; a state follows it.
 	if got := mcpState(mcpreg.ServerStatus{Checkout: "/srv/app", State: "needs X"}); got != "/srv/app; needs X" {
 		t.Errorf("state = %q", got)
@@ -106,7 +121,7 @@ func TestMCPListOverSSH(t *testing.T) {
 // that does not parse passes the machine's reason on.
 func TestMCPListOldBase(t *testing.T) {
 	target, _ := mcpGuest(t)
-	fakeMCPStatus(t, "echo 'sh: repose-mcp: command not found' >&2\nexit 127\n")
+	hideCommand(t, "repose-mcp") // the shell's own 127
 	var out bytes.Buffer
 	e := &Env{Out: &out, ErrOut: &bytes.Buffer{}}
 	err := mcpListOn(context.Background(), e, target, "todo-app")

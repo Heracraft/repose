@@ -453,6 +453,7 @@ func TestBuildMCPCarryIsFast(t *testing.T) {
 func TestCarryMCPServers(t *testing.T) {
 	f := newSyncFixture(t)
 	ctx := context.Background()
+	hideCommand(t, "repose-mcp") // the base line below is an old base's
 	home := t.TempDir()
 	secrets := t.TempDir()
 	if err := os.WriteFile(filepath.Join(secrets, "SET_ALREADY"), []byte("x"), 0o600); err != nil {
@@ -610,6 +611,7 @@ func TestCarryMCPServers(t *testing.T) {
 func TestCarryMCPNoServersOldBase(t *testing.T) {
 	f := newSyncFixture(t)
 	ctx := context.Background()
+	hideCommand(t, "repose-mcp")
 	home := t.TempDir() // no ~/.claude.json
 	t.Setenv("REPOSE_SECRETS_DIR", t.TempDir())
 	mc, notes := buildMCPCarry(home, f.local, testSlug, "", nil)
@@ -858,5 +860,31 @@ func TestPrintableLongUnicodeName(t *testing.T) {
 	want := []string{"0 " + strings.Repeat("服", 21) + " (its name has characters other than letters, digits, - and _)", "1 xcode (an Apple app)"}
 	if !reflect.DeepEqual(left, want) {
 		t.Errorf("left = %q, want %q", left, want)
+	}
+}
+
+// On a base with repose-mcp the carry prints no base line and its marker
+// has no ":old", whatever the host running the test has.
+func TestCarryMCPNewBase(t *testing.T) {
+	f := newSyncFixture(t)
+	hideCommand(t, "repose-mcp")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "repose-mcp"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REPOSE_TOOL_DIRS", bin)
+	home := t.TempDir()
+	t.Setenv("REPOSE_SECRETS_DIR", t.TempDir())
+	writeClaudeJSON(t, home, map[string]any{"mcpServers": map[string]any{"s": map[string]any{"command": "npx", "args": []any{"-y", "s"}}}})
+	mc, _ := buildMCPCarry(home, f.local, testSlug, "", nil)
+	_, o, err := syncCredentialsAndCarry(context.Background(), f.target, home, f.local, credSyncOptions{}, carryOptions{MCP: mc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.MCPOld {
+		t.Errorf("base line on a base with repose-mcp: %v", o.mcpLines())
+	}
+	if m, _ := os.ReadFile(filepath.Join(f.guestHome, ".repose/carry/claude-mcp")); strings.HasSuffix(strings.TrimSpace(string(m)), ":old") || len(m) == 0 {
+		t.Errorf("marker %q", m)
 	}
 }

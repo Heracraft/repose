@@ -313,3 +313,102 @@ func TestHoldKeepalive(t *testing.T) {
 		t.Errorf("keepalive file left behind: %v", err)
 	}
 }
+
+// The probe a waiting hold sends is answered by the hold itself: no
+// stream opens, so no server starts on the laptop.
+func TestHoldProbeStartsNoServer(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true}
+	fl, _, _ := startHold(t, p, srv, "notes")
+	readyOf(t, fl)
+	fl.mu.Lock()
+	before := fl.opens
+	fl.mu.Unlock()
+	if !holderLive(p.SocketPath("notes")) {
+		t.Fatal("a serving hold is not live")
+	}
+	time.Sleep(100 * time.Millisecond)
+	fl.mu.Lock()
+	after := fl.opens
+	fl.mu.Unlock()
+	if after != before {
+		t.Errorf("the probe opened %d streams", after-before)
+	}
+	if holderLive(p.SocketPath("figma")) {
+		t.Error("a missing socket is live")
+	}
+	// A socket file a dead hold left is not live.
+	l, err := net.Listen("unix", p.SocketPath("stale"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = l.Close()
+	if holderLive(p.SocketPath("stale")) {
+		t.Error("a stale socket file is live")
+	}
+}
+
+// Two attaches forward one name with --wait: the second waits while the
+// first serves, says nothing, and takes the name when the first ends. A
+// `repose mcp forward` (no --wait) takes it from a waiting hold, which
+// takes it back once that forward ends, with no gone frame.
+func TestHoldWaitKeepsNameWhileAnyAttachLives(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true}
+	fl1, laptop1, code1 := startHold(t, p, srv, "--wait", "notes")
+	readyOf(t, fl1)
+	fl2, laptop2, _ := startHold(t, p, srv, "--wait", "notes")
+	select {
+	case r := <-fl2.ready:
+		t.Fatalf("the second attach took the name while the first serves: %+v", r)
+	case n := <-fl1.gone:
+		t.Fatalf("the first attach lost %s", n)
+	case <-time.After(500 * time.Millisecond):
+	}
+	_ = laptop1.Close() // the first attach ends
+	<-code1
+	if r := readyOf(t, fl2); r.Error != "" {
+		t.Fatalf("second ready = %+v", r)
+	}
+	a := startShim(t, p, "notes")
+	a.initialize("2025-06-18")
+	waitFor(t, func() bool {
+		a.send(2, "tools/call", map[string]any{"name": "search"})
+		text, _ := callText(t, a.next(2*time.Second))
+		return text == "called search"
+	})
+	// An explicit forward takes over; the attach's hold waits quietly.
+	fl3, laptop3, code3 := startHold(t, p, srv, "notes")
+	readyOf(t, fl3)
+	select {
+	case n := <-fl2.gone:
+		t.Fatalf("a waiting hold sent gone for %s", n)
+	case <-time.After(500 * time.Millisecond):
+	}
+	_ = laptop3.Close()
+	<-code3
+	if r := readyOf(t, fl2); r.Error != "" {
+		t.Fatalf("taken back: %+v", r)
+	}
+	waitFor(t, func() bool { return holderLive(p.SocketPath("notes")) })
+	_ = laptop2.Close()
+}
+
+// A failure on the machine's side says so in the ready frame.
+func TestHoldListenFailureIsTheMachines(t *testing.T) {
+	fast(t)
+	p := testPaths(t)
+	// A directory where the socket goes: listen cannot replace it.
+	if err := os.MkdirAll(p.SocketPath("notes")+"/x", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	srv := &fakeServer{version: "2025-06-18", tools: []string{"search"}, pings: true}
+	fl, _, _ := startHold(t, p, srv, "notes")
+	r := readyOf(t, fl)
+	if r.Where != WhereMachine || !strings.HasPrefix(r.Error, "cannot listen on notes's socket") {
+		t.Errorf("ready = %+v", r)
+	}
+}

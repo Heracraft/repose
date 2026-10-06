@@ -54,10 +54,12 @@ func mcpListOn(ctx context.Context, e *Env, target sshTarget, slug string) error
 
 // writeMCPList prints one row per server: a table with a header on a
 // terminal, else one tab-separated line per server, as `secrets list`.
+// Every field passes terminalText: names come from any checkout's
+// .mcp.json, which a cloned repository writes.
 func writeMCPList(w io.Writer, servers []mcpreg.ServerStatus, tty bool) error {
 	if !tty {
 		for _, s := range servers {
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, s.From, mcpAgents(s), mcpState(s)); err != nil {
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", terminalText(s.Name), terminalText(s.From), mcpAgents(s), mcpState(s)); err != nil {
 				return err
 			}
 		}
@@ -71,7 +73,7 @@ func writeMCPList(w io.Writer, servers []mcpreg.ServerStatus, tty bool) error {
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NAME\tFROM\tAGENTS\tSTATE")
 	for _, s := range servers {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, s.From, mcpAgents(s), mcpState(s))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", terminalText(s.Name), terminalText(s.From), mcpAgents(s), mcpState(s))
 	}
 	_ = tw.Flush() // writes to memory
 	// An empty STATE leaves the padding of AGENTS at the end of its line.
@@ -90,17 +92,17 @@ func mcpAgents(s mcpreg.ServerStatus) string {
 	if len(s.Agents) == 0 {
 		return "none"
 	}
-	return strings.Join(s.Agents, " ")
+	return terminalText(strings.Join(s.Agents, " "))
 }
 
 // mcpState is the row's state, after the checkout a project server belongs
 // to, so two checkouts' servers of one name tell apart.
 func mcpState(s mcpreg.ServerStatus) string {
-	state := strings.ReplaceAll(s.State, "\t", " ")
+	state := terminalText(strings.ReplaceAll(s.State, "\t", " "))
 	if s.Checkout == "" {
 		return state
 	}
-	co := s.Checkout
+	co := terminalText(s.Checkout)
 	if rest, ok := strings.CutPrefix(co, guestHome+"/"); ok {
 		co = "~/" + rest
 	}

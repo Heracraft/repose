@@ -1,6 +1,7 @@
 package mcpshim
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -43,11 +44,15 @@ func Hold(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return hold(mcpreg.DefaultPaths(home), args, stdin, stdout, stderr)
 }
 
-const holdUsage = "usage: repose-mcp hold NAME...\n       repose-mcp hold --remove NAME...\n"
+const holdUsage = "usage: repose-mcp hold [--wait] NAME...\n       repose-mcp hold --remove NAME...\n"
 
 func hold(p mcpreg.Paths, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	remove := len(args) > 0 && args[0] == "--remove"
 	if remove {
+		args = args[1:]
+	}
+	wait := !remove && len(args) > 0 && args[0] == "--wait"
+	if wait {
 		args = args[1:]
 	}
 	var names []string
@@ -69,7 +74,9 @@ func hold(p mcpreg.Paths, args []string, stdin io.Reader, stdout, stderr io.Writ
 	if remove {
 		return removeForwards(p, names, stdout, stderr)
 	}
-	return newHolder(p, stdin, stdout, stderr).run(names)
+	h := newHolder(p, stdin, stdout, stderr)
+	h.wait = wait
+	return h.run(names)
 }
 
 // removeForwards deletes each forward/NAME.json and syncs. Names with no
@@ -106,6 +113,10 @@ type holder struct {
 	serving map[string]bool
 	// done closes when the laptop's side ends.
 	done chan struct{}
+	// wait is --wait, the attach's forward: take NAME only while no
+	// other live hold serves it, and take it back when that one ends
+	// or hands over, instead of ending (DECISIONS I-557).
+	wait bool
 }
 
 // stream is one connection carried to the laptop.
@@ -234,8 +245,9 @@ func (h *holder) live(name string) int {
 	return n
 }
 
-// open carries conn to the laptop as a new stream for name.
-func (h *holder) open(name string, conn net.Conn, internal bool) {
+// open carries conn to the laptop as a new stream for name; first is what
+// was already read from conn.
+func (h *holder) open(name string, conn net.Conn, internal bool, first []byte) {
 	s := &stream{name: name, conn: conn, q: NewQueue(), internal: internal}
 	h.mu.Lock()
 	h.next++
@@ -264,6 +276,10 @@ func (h *holder) open(name string, conn net.Conn, internal bool) {
 		h.drop(id)
 		return
 	}
+	if len(first) > 0 && h.fw.Data(id, first) != nil {
+		h.drop(id)
+		return
+	}
 	go func() {
 		buf := make([]byte, chunk)
 		for {
@@ -288,8 +304,88 @@ func (h *holder) open(name string, conn net.Conn, internal bool) {
 }
 
 // serveName registers name and serves its socket until the laptop's side
-// ends or another hold takes the socket.
+// ends or another hold takes the socket. With --wait it first waits for
+// no other live hold to serve name, and after a takeover waits again.
 func (h *holder) serveName(name string) {
+	for {
+		if h.wait && !h.waitFree(name) {
+			return
+		}
+		if !h.serveOnce(name) || !h.wait {
+			return
+		}
+	}
+}
+
+// waitFree waits until no live hold answers on name's socket; false when
+// the laptop's side ended first.
+func (h *holder) waitFree(name string) bool {
+	t := time.NewTicker(watchEvery.get())
+	defer t.Stop()
+	for holderLive(h.p.SocketPath(name)) {
+		select {
+		case <-h.done:
+			return false
+		case <-t.C:
+		}
+	}
+	select {
+	case <-h.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// holderLive asks the socket's hold whether it serves: a probe line it
+// answers itself, so no server starts on the laptop. A hold at its cap
+// answers busy, which is live too.
+func holderLive(path string) bool {
+	c, err := net.DialTimeout("unix", path, time.Second)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = c.Close() }()
+	_ = c.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := c.Write(notification(probeMethod)); err != nil {
+		return false
+	}
+	_, err = newLineReader(c).next()
+	return err == nil
+}
+
+// probeMethod is the line a waiting hold sends to ask whether a hold
+// serves a socket; the hold answers it and opens no stream.
+const probeMethod = "$/repose/holder"
+
+// firstLineWait bounds how long hold waits for a connection's first line;
+// a shim sends its replayed initialize at once.
+var firstLineWait = newDur(30 * time.Second)
+
+// accept reads a connection's first line: the probe is answered here,
+// anything else opens a stream that starts with it.
+func (h *holder) accept(name string, c net.Conn) {
+	_ = c.SetReadDeadline(time.Now().Add(firstLineWait.get()))
+	br := bufio.NewReaderSize(c, chunk)
+	line, err := br.ReadBytes('\n')
+	if err != nil && len(line) == 0 {
+		_ = c.Close()
+		return
+	}
+	_ = c.SetReadDeadline(time.Time{})
+	if m, ok := parse(bytes.TrimSpace(line)); ok && m.Method == probeMethod {
+		_, _ = c.Write(notification(probeMethod))
+		_ = c.Close()
+		return
+	}
+	first := append(line, make([]byte, br.Buffered())...)
+	_, _ = io.ReadFull(br, first[len(line):])
+	h.open(name, c, false, first)
+}
+
+// serveOnce is one registration of name: it reports whether another hold
+// took the socket over.
+func (h *holder) serveOnce(name string) bool {
 	r := h.fill(name)
 	var l net.Listener
 	var mine os.FileInfo
@@ -297,7 +393,7 @@ func (h *holder) serveName(name string) {
 		var err error
 		l, mine, err = h.listen(name)
 		if err != nil {
-			r = Ready{Name: name, Error: "cannot listen on the machine: " + err.Error()}
+			r = Ready{Name: name, Error: "cannot listen on " + name + "'s socket: " + err.Error(), Where: WhereMachine}
 		}
 	}
 	if l != nil {
@@ -306,7 +402,7 @@ func (h *holder) serveName(name string) {
 	}
 	_ = h.fw.Write(FrameReady, 0, ReadyFrame(r))
 	if l == nil {
-		return
+		return false
 	}
 	path := h.p.SocketPath(name)
 	go func() {
@@ -320,7 +416,7 @@ func (h *holder) serveName(name string) {
 				_ = c.Close()
 				continue
 			}
-			h.open(name, c, false)
+			go h.accept(name, c)
 		}
 	}()
 	t := time.NewTicker(watchEvery.get())
@@ -333,15 +429,18 @@ func (h *holder) serveName(name string) {
 				_ = os.Remove(path)
 				_ = os.Remove(h.p.AlivePath(name))
 			}
-			return
+			return false
 		case <-t.C:
 			if fi, err := os.Stat(path); err != nil || !os.SameFile(fi, mine) {
 				// Another hold bound the name (a newer forward of it):
 				// hand over, ending this one's shims so they reconnect.
+				// A waiting hold says nothing and waits to take it back.
 				_ = l.Close()
 				h.endName(name)
-				_ = h.fw.Write(FrameGone, 0, []byte(name))
-				return
+				if !h.wait {
+					_ = h.fw.Write(FrameGone, 0, []byte(name))
+				}
+				return true
 			}
 		}
 	}
@@ -395,7 +494,7 @@ func (h *holder) listen(name string) (net.Listener, os.FileInfo, error) {
 // writes forward/NAME.json.
 func (h *holder) fill(name string) Ready {
 	a, b := net.Pipe()
-	h.open(name, a, true)
+	h.open(name, a, true, nil)
 	defer func() { _ = b.Close() }()
 	_ = b.SetDeadline(time.Now().Add(fillWait.get()))
 	init, version, tools, err := fetch(b)
@@ -415,7 +514,7 @@ func (h *holder) fill(name string) Ready {
 		f.Tools = []json.RawMessage{}
 	}
 	if err := mcpreg.WriteForward(h.p, f); err != nil {
-		return Ready{Name: name, Error: "cannot write ~/.repose/mcp/forward/" + name + ".json: " + err.Error()}
+		return Ready{Name: name, Error: "cannot write ~/.repose/mcp/forward/" + name + ".json: " + err.Error(), Where: WhereMachine}
 	}
 	r := Ready{Name: name, Tools: len(tools), New: !had}
 	if had && old != nil {

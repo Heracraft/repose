@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/heracraft/repose/internal/mcpreg"
@@ -61,6 +63,30 @@ func toolCount(n int) string {
 	return fmt.Sprintf("%d tools", n)
 }
 
+// mcpFailedLine is a server that did not start: on the laptop, with its
+// last stderr line, or on the machine (machineFailure).
+func mcpFailedLine(slug, name, reason, tail string) string {
+	if r, ok := strings.CutPrefix(reason, machineFailure); ok {
+		return fmt.Sprintf("%s: %s could not take the forward: %s.", name, slug, strings.TrimSuffix(r, "."))
+	}
+	l := fmt.Sprintf("%s did not start on this laptop: %s.", name, strings.TrimSuffix(reason, "."))
+	if tail != "" {
+		l += " It said: " + terminalText(tail)
+	}
+	return l
+}
+
+// endOnHangup is ctx ended also by SIGHUP (the terminal closed) and
+// SIGTERM, so the laptop's servers, in process groups of their own that
+// those signals never reach, are stopped with the forward.
+func endOnHangup(ctx context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(ctx, syscall.SIGHUP, syscall.SIGTERM)
+}
+
+// machineFailure prefixes a failed reason that happened on the machine
+// (mcpshim.Ready.Where), as the laptop end passes it to failed.
+const machineFailure = "machine: "
+
 // mcpOldBaseLine is a machine whose base has no forward.
 func mcpOldBaseLine(slug string) string {
 	return fmt.Sprintf("The base of %s predates the MCP forward; it works after the machine's next update.", slug)
@@ -85,6 +111,8 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 	if opts.Remove {
 		return mcpRemove(ctx, target, slug, opts.Names)
 	}
+	ctx, stopSignals := endOnHangup(ctx)
+	defer stopSignals()
 	var outMu sync.Mutex
 	out := func(s string) {
 		outMu.Lock()
@@ -144,11 +172,7 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 			mu.Lock()
 			failed++
 			mu.Unlock()
-			l := fmt.Sprintf("%s did not start on this laptop: %s.", name, strings.TrimSuffix(reason, "."))
-			if tail != "" {
-				l += " It said: " + terminalText(tail)
-			}
-			errOut(l)
+			errOut(mcpFailedLine(slug, name, reason, tail))
 			if c := settled(); c != "" {
 				out(c)
 			}
@@ -158,6 +182,10 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 		},
 		call: func(agent, server, tool string) { out(fmt.Sprintf("%s called %s.%s", agent, server, tool)) },
 		lost: func() { errOut(fmt.Sprintf("Lost the connection to %s; reconnecting.", slug)) },
+		running: func() error {
+			_, err := requireRunningProject(ctx, e, slug)
+			return err
+		},
 	}
 	err = runMCPForward(ctx, target, defs, ui)
 	switch {
@@ -168,6 +196,10 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 		return nil
 	case errors.Is(err, errMCPOldBase):
 		return exitf(ExitGeneric, "%s", mcpOldBaseLine(slug))
+	case errors.Is(err, errMCPNotFrames):
+		return exitf(ExitGeneric, "Could not forward to %s: %s.", slug, err)
+	case errors.As(err, new(*exitError)):
+		return err // the machine stopped (exit 5), from running
 	case errors.Is(err, errMCPNothingLeft):
 		mu.Lock()
 		defer mu.Unlock()
@@ -182,7 +214,7 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 // mcpRemove is --remove: forward/NAME.json goes, and the agents drop NAME
 // at their next start.
 func mcpRemove(ctx context.Context, t sshTarget, slug string, names []string) error {
-	out, err := runSSH(ctx, t, mcpHoldCommand(names, true), nil)
+	out, err := runSSH(ctx, t, mcpHoldCommand(names, "--remove"), nil)
 	if err != nil {
 		var se *sshError
 		if errors.As(err, &se) && (se.ExitCode == 127 || strings.Contains(se.Stderr, mcpOldHoldText)) {
@@ -206,6 +238,8 @@ func mcpRemove(ctx context.Context, t sshTarget, slug string, names []string) er
 // the attach, for as long as it lasts. Success says nothing; a server that
 // did not start, or a name this laptop lacks, says so through tmux.
 func runSessionMCP(ctx context.Context, t sshTarget, names []string, home, repoDir string, say func(string), alive func() bool) {
+	ctx, stopSignals := endOnHangup(ctx)
+	defer stopSignals()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -235,11 +269,16 @@ func runSessionMCP(ctx context.Context, t sshTarget, names []string, home, repoD
 	err := runMCPForward(ctx, t, defs, mcpForwardUI{
 		ready: func(mcpshim.Ready, bool) {},
 		failed: func(name, reason, _ string) {
+			if r, ok := strings.CutPrefix(reason, machineFailure); ok {
+				say(fmt.Sprintf("The machine could not take the forward of MCP server %s: %s.", name, strings.TrimSuffix(r, ".")))
+				return
+			}
 			say(fmt.Sprintf("MCP server %s did not start on your laptop: %s.", name, strings.TrimSuffix(reason, ".")))
 		},
-		gone: func(string) {},
-		call: func(string, string, string) {},
-		lost: func() {},
+		gone:   func(string) {},
+		call:   func(string, string, string) {},
+		lost:   func() {},
+		attach: true,
 	})
 	switch {
 	case ctx.Err() != nil, err == nil, errors.Is(err, errMCPNothingLeft):
