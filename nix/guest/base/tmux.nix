@@ -68,9 +68,11 @@ in
       set -g mouse off
       # 24-bit colour only to terminals that have it (DECISIONS I-515): the
       # TERMs below, whose terminfo the base ships (I-512), and any client
-      # whose ssh sent COLORTERM=truecolor (the CLI does when the laptop
-      # sets it), which tmux 3.7 takes as RGB for that client. Others,
-      # Apple's Terminal before macOS 26 among them, get 256 colours.
+      # started with COLORTERM=truecolor, which tmux 3.7 takes as RGB for
+      # that client. PAM gives every ssh session truecolor; the CLI's
+      # attach unsets it when the laptop's COLORTERM does not say so.
+      # Others, Apple's Terminal before macOS 26 among them, get 256
+      # colours.
       set -as terminal-features ",xterm-ghostty:RGB,xterm-kitty:RGB,alacritty:RGB,wezterm:RGB,foot*:RGB,*-direct:RGB"
       set -g focus-events on
       # Modified keys reach the program in the pane (DECISIONS I-264):

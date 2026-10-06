@@ -559,7 +559,7 @@ pointer, not a summary.
 - **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13089
 - **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L13117
 - **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L13154
-- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13186
-- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13205
-- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13226
-- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13243
+- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13190
+- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13209
+- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13230
+- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13247

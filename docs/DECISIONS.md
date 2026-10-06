@@ -13173,8 +13173,12 @@ after the client's variables (a second sshd on this guest with
 SendEnv=COLORTERM` gave the shell `truecolor`). So the CLI's attach
 command starts with `unset COLORTERM; ` when the laptop's `COLORTERM` is
 not `truecolor` or `24bit` (`attachColour`, `internal/cli/run.go`), and
-the `tmux attach` client then has RGB only by its TERM. New windows still
-get `truecolor` from `/etc/set-environment`. `ssh <slug>.repose` and
+the `tmux attach` client then has RGB only by its TERM. Panes still get
+`COLORTERM=truecolor`: tmux 3.7c sets it in every pane it starts, even
+after `update-environment` marks the session's `-COLORTERM` (checked: a
+new window in a session attached without `COLORTERM` printed
+`truecolor`). A base switch leaves a running tmux server on the options
+it started with (I-496), so a machine gets these at its next start. `ssh <slug>.repose` and
 `repose ssh` are not changed: there is no tmux client on the way, and a
 login shell sets `COLORTERM` again. `set -g set-titles on` with
 `set-titles-string "#h: #S"` puts the machine and session in the
