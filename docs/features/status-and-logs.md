@@ -27,8 +27,12 @@ in `error`, gets one more line saying why and what to run.)
 On a herdr project (DECISIONS I-509) the header reads `todo-app   large
 herdr   running ...` and the sessions line is `sessions 1   docker 0`:
 herdr's clients arrive over SSH and are in `sessions`. The `herdr` word
-is what runs now, read from the guest; a project switched while running
-shows its old multiplexer until its next start.
+is what runs now, read from the guest in the same ssh that lists the
+listening processes (`systemctl --user -q is-active
+repose-herdr-server`); a project switched while running shows its old
+multiplexer until its next start. When the guest does not answer within
+that ssh's few seconds, the word comes from the project's stored
+`multiplexer`.
 
 ```
 $ repose logs                    # console, last 200 lines, follow with -f

@@ -197,6 +197,10 @@ func skipCheckout(ctx context.Context, t sshTarget, localRepoDir string, opts Sy
 // directory, since the machine had no checkout then (I-368). Only a shell
 // sitting idle in the home directory is replaced; anything else is left
 // as it is. "" on every other sync.
+//
+// On a machine that runs herdr it runs repose-herdr-workspace instead,
+// which gives herdr a workspace in the new checkout (guest-conventions.md
+// "herdr", Workspace); a base without that command skips the step.
 func freshShellScript(slug string, probe guestProbe) string {
 	if !probe.created {
 		return ""
@@ -204,7 +208,8 @@ func freshShellScript(slug string, probe guestProbe) string {
 	w := shQuote("=" + slug + ":shell")
 	return fmt.Sprintf(`repose_p=$(tmux display-message -p -t %[1]s '#{pane_current_path} #{pane_current_command}' 2>/dev/null || true)
 case "$repose_p" in "$HOME bash"|"$HOME -bash"|"$HOME sh") tmux respawn-pane -k -t %[1]s -c %[2]s 2>/dev/null || true ;; esac
-`, w, homeShell(probe.checkout))
+if command -v repose-herdr-workspace >/dev/null 2>&1 && %[3]s; then repose-herdr-workspace >/dev/null 2>&1 || true; fi
+`, w, homeShell(probe.checkout), muxProbeScript)
 }
 
 // dirtyTreeError is 07-cli.md §6's exit 6, carrying the file list for the

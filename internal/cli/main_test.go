@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -28,6 +29,11 @@ func TestMain(m *testing.M) {
 	// A developer who moved their Claude config would otherwise have the
 	// carry tests read it instead of the test home's ~/.claude.
 	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
+	// A test run from a herdr pane would pick herdr for new projects,
+	// and the developer's own herdr must never see a test's reconcile
+	// (I-510): tests that want a laptop herdr set lookHerdr themselves.
+	_ = os.Unsetenv("HERDR_ENV")
+	lookHerdr = func(string) (string, error) { return "", exec.ErrNotFound }
 	code := m.Run()
 	_ = os.RemoveAll(home)
 	os.Exit(code)

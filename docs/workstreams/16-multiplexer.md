@@ -270,7 +270,7 @@ Does not build: anything outside `internal/cli`, `cmd/repose`,
 
 Checklist:
 
-- [ ] Unit tests for the pick order (flag, config, `HERDR_ENV`, temp,
+- [x] Unit tests for the pick order (flag, config, `HERDR_ENV`, temp,
       gate fallback), the PATCH on switch and the switch line, the three
       attach paths chosen by environment and laptop herdr version, the
       reconcile (add for a running herdr project; remove only
@@ -278,23 +278,24 @@ Checklist:
       host survives; a disabled one stays disabled; a temp machine never
       added; herdr older than 0.9.0 or a failing `machine list` does
       nothing).
-- [ ] The herdr ssh scripts tested against the 0.9.3 binary in a local
+- [x] The herdr ssh scripts tested against the 0.9.3 binary in a local
       herdr server (agent start, prompt, list, pane send-text,
       workspace create, worktree open) with outputs pasted.
-- [ ] `go test ./internal/cli -run Docs` passes with `cli.md`;
+- [x] `go test ./internal/cli -run Docs` passes with `cli.md`;
       `docs/CHECKLIST.md` greps run; `go test ./internal/cli/...` green
       but TestCarryGitConfig and TestToolsCarryOldBase.
-- [ ] Live, after the base and api ship: from a fresh laptop config with
+- [ ] (open: needs the release that ships mux-api, mux-base, mux-guestd
+      and sets herdrMinBase) Live, after the base and api ship: from a fresh laptop config with
       `default_multiplexer = "herdr"`, `repose run "say done"` shows the
       reply; `repose ps` lists it; `--worktree` groups under the
       repository in herdr; attach with and without a laptop herdr and
       from inside a laptop herdr pane; a temporary herdr machine is
       destroyed after its last pane closes; `herdr machine list --json`
       before and after `run` and `rm`.
-- [ ] S5 measurements (I-510, I-511): ssh-prepare api calls over 30
+- [ ] (open: needs the same release) S5 measurements (I-510, I-511): ssh-prepare api calls over 30
       minutes with a laptop herdr open on a stopped machine; bridges
       open to unselected machines after herdr's idle cleanup.
-- [ ] Dashboard captures of a herdr project at 1440 and 390, light and
+- [x] Dashboard captures of a herdr project at 1440 and 390, light and
       dark, at 1x.
 
 ## 4. Who owns which shared file

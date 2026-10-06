@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // The listening processes `repose status PROJECT` shows for a running
@@ -36,13 +38,16 @@ type listeningProc struct {
 	HasPID bool
 }
 
-const statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"`
+// statusProcsScript also says what runs the machine's terminals now
+// (I-509), after "#mux": "herdr", or nothing for tmux.
+var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"; echo '#mux'; ` + muxProbeScript + ` && echo herdr`
 
 var ssUsers = regexp.MustCompile(`users:\(\("((?:[^"\\]|\\.)*)",pid=(\d+)`)
 
 // parseStatusProcs joins ss's listeners (the forwardable ones, as
 // auto-forward sees them) with ps's age and memory by pid.
 func parseStatusProcs(out string) []listeningProc {
+	out, _, _ = strings.Cut(out, "#mux")
 	ssPart, psPart, _ := strings.Cut(out, "#ps")
 	type psRow struct {
 		age time.Duration
@@ -134,12 +139,23 @@ func writeListening(w io.Writer, procs []listeningProc) {
 // (ControlMaster=no), so a status does not hold a gateway session for
 // ControlPersist's ten minutes.
 func guestListening(ctx context.Context, t sshTarget) []listeningProc {
+	procs, _ := guestListeningMux(ctx, t)
+	return procs
+}
+
+// guestListeningMux is guestListening and the multiplexer that runs now
+// (I-509): "herdr", "tmux", or "" when the guest did not answer.
+func guestListeningMux(ctx context.Context, t sshTarget) ([]listeningProc, string) {
 	ctx, cancel := context.WithTimeout(ctx, statusProcsTimeout)
 	defer cancel()
 	args := append([]string{"-o", "ControlMaster=no", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes"}, t.Args...)
 	out, err := runSSH(ctx, sshTarget{Args: args}, statusProcsScript, nil)
-	if err != nil {
-		return nil
+	if err != nil && !strings.Contains(string(out), "#mux") {
+		return nil, ""
 	}
-	return parseStatusProcs(string(out))
+	mux := multiplexer.Tmux
+	if _, m, ok := strings.Cut(string(out), "#mux"); ok && strings.TrimSpace(m) == multiplexer.Herdr {
+		mux = multiplexer.Herdr
+	}
+	return parseStatusProcs(string(out)), mux
 }

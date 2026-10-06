@@ -13318,7 +13318,16 @@ AGENT, NAME, STATE; no cwd, no title), `paste` sends the path with
 `herdr pane send-text` to the focused pane, messages use `herdr
 notification show repose --body`, and a temporary machine ends when its attach returns
 and herdr reports no panes. A client nested inside the user's herdr was
-rejected. A tmux project behaves as before.
+rejected. A tmux project behaves as before. Built (mux-cli): the seam is
+`internal/cli/mux.go` (the interface is `muxer`, since the package
+`internal/multiplexer` holds the name), `mux_tmux.go` and `mux_herdr.go`;
+the probe is `muxFor`. Checked by `TestHerdrScriptsAgainstHerdr` (the
+guest scripts run with bash against a herdr 0.9.3 server:
+workspace create, tab create, agent start, agent prompt, agent list,
+pane send-text, worktree open, the focus step), `TestHerdrAttachPath`
+(the three paths by `HERDR_ENV`, a temporary machine, the laptop
+herdr's version and the alias), `TestHerdrStatePick`,
+`TestParseHerdrStateDropsCwd` and `TestStatusNamesHerdr`.
 
 **I-510. The CLI keeps the laptop herdr's machine list for repose's
 machines.** (multiplexer-spec, 2026-10-05; owner decision 5) When `herdr`
@@ -13334,7 +13343,13 @@ target is anything else. An entry made by hand or by the tutorial for
 `<slug>.repose` is repose's from then on. A disabled entry stays
 disabled, a stopped machine's entry stays, and a temporary machine is
 never added. Registration behind a config key was rejected: the sidebar
-is where a herdr user looks for the machine.
+is where a herdr user looks for the machine. Built (mux-cli):
+`internal/cli/herdr_catalog.go`. Checked by `TestPlanHerdrCatalog`,
+`TestSyncHerdrMachinesRunsHerdrsCommands`,
+`TestSyncHerdrMachinesAddFailsOnce`, `TestSyncHerdrMachinesDoesNothing`
+(herdr 0.8.5, a failing list, no Include line, no herdr),
+`TestForgetHerdrMachine` and `TestEnsureEntry`; where adds run is
+I-542.
 
 **I-511. A laptop herdr's SSH bridge counts as someone at the machine.**
 (multiplexer-spec, 2026-10-05; owner decision 8) A laptop herdr keeps an
@@ -13612,3 +13627,72 @@ condition that holds when the 10 minutes pass is sent then. Built:
 `oneShot` in `internal/guestd/sample`; `TestSetupDoneOnlyAfterSetup`,
 `TestHerdrDownWaitsForSetup`, `TestHerdrDownFlapSendsOncePerRepeat`,
 `TestHerdrProjectWarnsHerdrDown`.
+would be a new entry. Built (mux-cli): nothing in the CLI
+counts sessions; the public docs say a sidebar entry holds the machine
+in use (lifecycle "Idle machines", run-and-attach, the herdr tutorial).
+The stage 5 measurements wait for the release that ships herdr.
+
+**I-542. The multiplexer probe runs only for a prompt or an attach; a
+certificate refresh only removes sidebar entries; herdr's notifications
+need its toast delivery on.** (mux-cli, 2026-10-05; narrows I-509,
+I-510) Three things the contracts left open met the code. First, the
+probe (`systemctl --user -q is-active repose-herdr-server`) is one more
+ssh, and `repose sync` and `run --no-attach` with no prompt need no
+answer: they ask nothing, and the sidebar takes the project's stored
+`multiplexer` for them; `TestRunStartedGuestFirstConnectionIsTheProbe`
+still counts two ssh commands. `repose status` reads the answer in the
+ssh it already makes for listening processes. Second, `ensureCert` is
+also run by `repose ssh-prepare`, which ssh starts and which exits as
+soon as the files are written, so a background `herdr machine add` there
+would be killed half done: the certificate refresh removes entries and
+adds none, and `run`, `attach` and `sync` add (`sync` waits up to 30 s
+for its adds). Third, herdr 0.9.3 shows `notification show` only when
+`[ui.toast] delivery = "herdr"` is in the server's config; its default,
+`off`, answers `reason: "disabled"`. The CLI sends the messages I-509
+names either way; whether the base seeds that key is mux-base's call
+and is not made here.
+
+Review of mux-cli added four more (amends I-509, I-510). A temporary
+machine runs tmux only: I-352 destroys it when the last terminal closes,
+and herdr 0.9.3 with a client attached opens a fresh workspace and shell
+as soon as its last pane closes (`ensure_default_workspace`), so a herdr
+session never reaches zero panes and the machine would wait out its
+expiry. `--temp` takes tmux from `default_multiplexer` as from
+`HERDR_ENV`, `--temp --multiplexer herdr` exits 2, and `--multiplexer
+herdr` on a temporary project exits 2 naming `repose keep`. Telling an
+idle shell from a running job would need herdr's process info, whose
+answer carries argv, which R5-3 keeps out of reach. Second, the sidebar
+reconcile adds other projects by their stored `multiplexer`: the api has
+no other answer, and probing each would cost an ssh per project. A
+project switched to herdr while it runs tmux can therefore enter the
+sidebar before its next start, and herdr's `machine add` prepares the
+remote and starts a herdr server there, beside tmux and outside the
+unit, until the stop. The current project is added only on the guest's
+answer, or, on a `sync` that asks nothing, by the value it had before
+that same command switched it while running. Third, a failed add's line
+is held while an attach owns the terminal and printed after it returns.
+Fourth, the public docs name the test for a CLI that knows herdr
+(`repose run --help` lists `--multiplexer`) rather than a version, which
+is not known before the conductor tags the release; the release notes
+name the version.
+
+A second review pass added five (amends I-509, I-510). The probe reads
+the unit's `ActiveState`, this boot's `multiplexer` in `project.json`
+and whether tmux answers, in the same one ssh: `active`, `activating`
+(the restart wait) and `reloading` are herdr, a tmux that answers is
+tmux, a boot that named herdr with neither exits 1 (`herdr is not
+running on <slug>`) instead of attaching to a tmux server that is not
+there, and an ssh that failed takes the stored value. A command that
+read no project list (the fast attach, a `run` whose connection was
+already up) reconciles its own project alone, adding and never
+removing, so I-223's fast attach makes no api call for the sidebar.
+Each add reads herdr's list again under `herdr-sidebar.lock` in the
+config directory, since herdr's `machine add --label` makes a second
+entry for a target it has; the reconcile removes all but one entry per
+live slug. An attach that execs ssh in place of the CLI waits up to
+10 s for adds in flight, which the exec would kill halfway. The guest's
+herdr shows repose's messages only with `[ui.toast] delivery =
+"herdr"`, which no base seeds yet; until mux-base or the conductor
+records who seeds it, the public docs say so and give the two lines,
+and say that drops and Ctrl+V from a laptop herdr go to herdr and copy
+nothing.

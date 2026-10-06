@@ -21,7 +21,7 @@ Every machine has five coding agents installed, unmodified:
 repose run --agent codex "port the build scripts to bun"
 ```
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window. However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window, or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux). However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 ## Let it run without asking
 

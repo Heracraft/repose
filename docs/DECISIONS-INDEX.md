@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-543 entries.
+544 entries.
 
 ## Scope
 
@@ -565,13 +565,14 @@ pointer, not a summary.
 - **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L13252
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L13267
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13278
-- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; L13297
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; L13323
-- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13339
-- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L13350
-- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13366
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13414
-- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; L13481
-- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13538
-- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13557
-- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L13593
+- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; L13297
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; L13332
+- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13354
+- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L13365
+- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13381
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13429
+- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; L13496
+- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13553
+- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13572
+- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L13608
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L13635

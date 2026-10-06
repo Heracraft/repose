@@ -6,6 +6,8 @@ import (
 	"io"
 	"text/tabwriter"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // StatusCmd implements `repose status [PROJECT] [--json]` (07-cli.md §5.7).
@@ -17,13 +19,31 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 	if e.JSON {
 		return writeJSONOut(e.Out, project)
 	}
+	// The guest's answer (listeners, and what runs its terminals, I-509)
+	// is asked beside the api's reads.
+	type guestAnswer struct {
+		procs []listeningProc
+		mux   string
+	}
+	guest := make(chan guestAnswer, 1)
+	if project.State == "running" {
+		go func() {
+			procs, mux := guestListeningMux(ctx, e.target(project.Slug))
+			guest <- guestAnswer{procs, mux}
+		}()
+	} else {
+		guest <- guestAnswer{}
+	}
 	route, _ := e.Client.ProjectRoute(ctx, project.ID)
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
-	writeStatusLines(e.Out, project, route, snaps, events)
-	if project.State == "running" {
-		writeListening(e.Out, guestListening(ctx, e.target(project.Slug)))
+	g := <-guest
+	mux := g.mux
+	if mux == "" {
+		mux = multiplexer.Normalize(project.Multiplexer)
 	}
+	writeStatusLinesMux(e.Out, project, route, snaps, events, mux)
+	writeListening(e.Out, g.procs)
 	return nil
 }
 
@@ -106,7 +126,14 @@ func orDash(s string) string {
 }
 
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
-	_, _ = fmt.Fprintln(w, statusFirstLine(p))
+	writeStatusLinesMux(w, p, route, snaps, events, multiplexer.Normalize(p.Multiplexer))
+}
+
+// writeStatusLinesMux is writeStatusLines with the multiplexer that runs
+// now: herdr is named after the size, and its sessions line has no tmux
+// clients, since herdr's arrive over SSH (I-509).
+func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event, mux string) {
+	_, _ = fmt.Fprintln(w, statusFirstLineMux(p, mux))
 	if r := abuseStopReason(p); r != "" {
 		// DECISIONS I-239: the platform stopped it, and says why.
 		_, _ = fmt.Fprintf(w, "  %s\n", r)
@@ -142,7 +169,11 @@ func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, e
 		if p.Signals.DockerContainers > docker {
 			docker = p.Signals.DockerContainers
 		}
-		_, _ = fmt.Fprintf(w, "  sessions %d   tmux clients %d   docker %d\n", p.Signals.SSHSessions, p.Signals.TmuxClients, docker)
+		if mux == multiplexer.Herdr {
+			_, _ = fmt.Fprintf(w, "  sessions %d   docker %d\n", p.Signals.SSHSessions, docker)
+		} else {
+			_, _ = fmt.Fprintf(w, "  sessions %d   tmux clients %d   docker %d\n", p.Signals.SSHSessions, p.Signals.TmuxClients, docker)
+		}
 		if guestdDead(p) {
 			_, _ = fmt.Fprintf(w, "  the environment's agent (guestd) is not answering; `repose start %s` restarts it\n", p.Slug)
 		}
@@ -157,8 +188,17 @@ func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, e
 }
 
 func statusFirstLine(p *Project) string {
-	return fmt.Sprintf("%-10s %-6s %-9s %-7s %-20s today %s  month %s",
-		p.Slug, p.Class, p.State, uptime(p), agentState(p), runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
+	return statusFirstLineMux(p, multiplexer.Normalize(p.Multiplexer))
+}
+
+// statusFirstLineMux names herdr after the size; tmux is not named.
+func statusFirstLineMux(p *Project, mux string) string {
+	class := fmt.Sprintf("%-6s", p.Class)
+	if mux == multiplexer.Herdr {
+		class += " herdr "
+	}
+	return fmt.Sprintf("%-10s %s %-9s %-7s %-20s today %s  month %s",
+		p.Slug, class, p.State, uptime(p), agentState(p), runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
 }
 
 // runHours renders running seconds as `2h14m` under a day and whole hours

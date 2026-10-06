@@ -43,13 +43,13 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose run` in the checkout starts a stopped machine too.
+The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
 ## Idle machines
 
-A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine; it tells you instead:
+A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is not idle while that herdr runs. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine; it tells you instead:
 
 ```
 $ repose ls
@@ -177,6 +177,7 @@ Not a git repository, so nothing was synced.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
+- A temporary machine always runs tmux, whatever `default_multiplexer` says. herdr opens a new shell when its last tab closes, so the session would never end. `--temp --multiplexer herdr` stops with an error, and so does `--multiplexer herdr` on a temporary machine until `repose keep` makes it a normal one.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project limit](/docs/limits#projects) and plan while it exists, like any other.
 

@@ -793,7 +793,8 @@ save_hooks
 // own commands (checked against 2.1.278, the base's version on
 // 2026-09-23: `claude plugin list --json`, `claude plugin marketplace
 // list --json`, `claude plugin marketplace add <source>`, `claude plugin
-// install <name>@<marketplace>`). It says what happened in tmux and
+// install <name>@<marketplace>`). It says what happened in tmux (or
+// herdr, I-509) and
 // writes its marker only when every install worked, so a failure is
 // tried again on the next carry.
 func claudePluginsScript(hash string) string {
@@ -817,7 +818,9 @@ done
 msg=""
 [ -n "$ok" ] && msg="Installed Claude plugins:$ok."
 [ -n "$bad" ] && msg="$msg Could not install:$bad (claude plugin install in the guest says why)."
-if [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then
+if [ -n "$msg" ] && ` + muxProbeScript + `; then
+  herdr notification show repose --body "$msg" >/dev/null 2>&1 || true
+elif [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then
   s=$(tmux list-sessions -F '#{session_name}' | head -n 1)
   tmux display-message -d 6000 -t "=$s:" "$msg" 2>/dev/null || true
 fi
