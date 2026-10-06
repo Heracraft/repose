@@ -128,9 +128,10 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 // "~/<name>", a worktree's "~/<name>-worktree-<N>" (I-253), or "" to find
 // the checkout in the guest (checkoutVar, I-368). onLoading, when not nil, is
 // called once if the wrapper says it is loading the dev environment.
-// For claude, the same ssh first marks that folder trusted in
-// ~/.claude.json (claudeTrustScript, I-486), and a trust dialog that shows
-// anyway is never typed into: the error is an *agentDialogError.
+// For claude, gemini and codex, the same ssh first marks that folder
+// trusted in the agent's own file (agentTrustScript, I-486, I-544), and a
+// trust dialog that shows anyway is never typed into: the error is an
+// *agentDialogError.
 func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func()) error {
 	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary), nil); err != nil {
 		return err
@@ -149,15 +150,13 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 }
 
 // agentWindowCommand is the shell startAgentWindow runs to open the
-// window, with claude's trust flag set first.
+// window, with the agent's folder trust set first.
 func agentWindowCommand(slug, extra, windowName, dir, binary string) string {
 	prefix, cdir := "", dir
 	if dir == "" {
 		prefix, cdir = checkoutVar(slug, extra), `"$repose_co"`
 	}
-	if binary == "claude" {
-		prefix += claudeTrustScript(cdir)
-	}
+	prefix += agentTrustScript(binary, cdir)
 	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, shQuote(binary))
 }
 
@@ -186,22 +185,108 @@ func claudeTrustScript(dir string) string {
 `, dir)
 }
 
-// agentDialogs are lines a Claude Code dialog shows that a typed prompt
-// must not answer: its folder trust dialog, in the wording of 2.1.283 and
-// of earlier releases. Matching them only stops the CLI from typing; it
-// never presses a key in the dialog (I-486, I-283's rejected answer).
+// agentTrustScript is the shell that marks dir trusted for the agent
+// binary starts, or "" for an agent without a folder trust dialog
+// (opencode, pi).
+func agentTrustScript(binary, dir string) string {
+	switch binary {
+	case "claude":
+		return claudeTrustScript(dir)
+	case "gemini":
+		return geminiTrustScript(dir)
+	case "codex":
+		return codexTrustScript(dir)
+	}
+	return ""
+}
+
+// geminiTrustScript is shell, run before tmux starts gemini in dir (a
+// shell word, as for claudeTrustScript), that sets "<dir, symlinks
+// resolved>": "TRUST_FOLDER" in ~/.gemini/trustedFolders.json, the file
+// Gemini CLI (0.61) reads to skip its "Do you trust the files in this
+// folder?" dialog, which otherwise takes the prompt `repose run` types
+// (I-544). Folder trust stays on for every other folder. A DO_NOT_TRUST
+// the user chose for this exact folder is replaced, as claude's refusal
+// is; every other key is kept. Written only when the value is not already
+// TRUST_FOLDER, atomically, never when the file is not valid JSON. Best
+// effort, like claudeTrustScript.
+func geminiTrustScript(dir string) string {
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_gj="$HOME/.gemini/trustedFolders.json" && {
+  if [ ! -s "$repose_gj" ]; then
+    mkdir -p "$HOME/.gemini" && repose_tt=$(mktemp "$repose_gj.XXXXXX") && jq -n --arg p "$repose_tp" '{($p): "TRUST_FOLDER"}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_gj"
+  elif jq -e --arg p "$repose_tp" 'type == "object" and .[$p] != "TRUST_FOLDER"' "$repose_gj" >/dev/null 2>&1; then
+    repose_tt=$(mktemp "$repose_gj.XXXXXX") && jq --arg p "$repose_tp" '.[$p] = "TRUST_FOLDER"' "$repose_gj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_gj"
+  fi
+  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
+}; } >/dev/null 2>&1 || true
+`, dir)
+}
+
+// codexTrustScript is shell, run before tmux starts codex in dir, that
+// appends a [projects."<dir, symlinks resolved>"] table with trust_level =
+// "trusted" to ${CODEX_HOME:-~/.codex}/config.toml, which Codex (0.157)
+// reads to skip its "Trust this folder?" screen; that screen's default is
+// "Trust and continue", so the Enter `repose run` types trusts the folder
+// and the prompt is lost (I-544). Nothing is written when the file already
+// has a table for that folder in either quoting, whatever its trust_level,
+// so the user's "untrusted" stays. Only paths of the checkout's character
+// set ([A-Za-z0-9._/-]) are written, since TOML would need escapes for
+// others. Atomic and best effort, like claudeTrustScript.
+func codexTrustScript(dir string) string {
+	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && case "$repose_tp" in *[!A-Za-z0-9._/-]*) false ;; esac && repose_xd="${CODEX_HOME:-$HOME/.codex}" && repose_xc="$repose_xd/config.toml" && {
+  if ! grep -qF -e "[projects.\"$repose_tp\"]" -e "[projects.'$repose_tp']" "$repose_xc" 2>/dev/null; then
+    mkdir -p "$repose_xd" && repose_tt=$(mktemp "$repose_xc.XXXXXX") && { if [ -s "$repose_xc" ]; then cat "$repose_xc" && [ -z "$(tail -c1 "$repose_xc")" ] || echo; fi; printf '\n[projects."%%s"]\ntrust_level = "trusted"\n' "$repose_tp"; } > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_xc"
+  fi
+  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
+}; } >/dev/null 2>&1 || true
+`, dir)
+}
+
+// agentDialogs are lines an agent's dialog shows that a typed prompt
+// must not answer: Claude Code's folder trust dialog, in the wording of
+// 2.1.283 and of earlier releases; Gemini CLI's (0.61, the same line as
+// an earlier Claude Code); Codex's (0.157). Matching them only stops the
+// CLI from typing; it never presses a key in the dialog (I-486, I-544,
+// I-283's rejected answer).
 var agentDialogs = []string{
 	"Yes, I trust this folder",
 	"Is this a project you created or one you trust",
 	"Do you trust the files in this folder?",
+	"Trust this folder? Codex",
+}
+
+// agentDisplayNames are the names the CLI's messages give the agents
+// (docs/features/agents.md).
+var agentDisplayNames = map[string]string{
+	"claude":   "Claude Code",
+	"codex":    "Codex",
+	"opencode": "opencode",
+	"gemini":   "Gemini CLI",
+	"pi":       "pi",
+}
+
+// agentDisplayName is binary's name in a message: its product name, or
+// binary itself for one the CLI does not ship.
+func agentDisplayName(binary string) string {
+	if n, ok := agentDisplayNames[binary]; ok {
+		return n
+	}
+	return binary
 }
 
 // agentDialogError says the agent's pane settled on a dialog, so the
-// prompt was not typed.
-type agentDialogError struct{}
+// prompt was not typed. agent is the binary that showed it.
+type agentDialogError struct{ agent string }
 
-func (*agentDialogError) Error() string {
-	return "Claude Code is asking whether you trust the folder it started in"
+func (e *agentDialogError) Error() string {
+	return agentDisplayName(e.agent) + " is asking whether you trust the folder it started in"
+}
+
+// paneRuns reports whether a pane whose pane_current_command is current
+// is running binary. Gemini CLI is a node script, so its pane shows
+// "node" (I-544).
+func paneRuns(binary, current string) bool {
+	return current == binary || (binary == "gemini" && current == "node")
 }
 
 // paneShowsDialog reports whether capture holds one of agentDialogs.
@@ -214,7 +299,7 @@ func paneShowsDialog(capture string) bool {
 	return false
 }
 
-// waitPaneIdle polls pane_current_command until it names binary and its
+// waitPaneIdle polls pane_current_command until it names binary (paneRuns) and its
 // captured content has not changed for paneIdleWait. While the pane
 // carries devShellLoadingOption the agent has not started yet, and the
 // wait goes on past paneIdleTimeout, up to devShellLoadTimeout (I-259).
@@ -247,11 +332,11 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 			if limit := start.Add(devShellLoadTimeout); deadline.After(limit) {
 				deadline = limit
 			}
-		} else if current == binary {
+		} else if paneRuns(binary, current) {
 			if string(capture) == lastCapture {
 				if !stableSince.IsZero() && time.Since(stableSince) >= paneIdleWait {
 					if paneShowsDialog(string(capture)) {
-						return &agentDialogError{}
+						return &agentDialogError{agent: binary}
 					}
 					return nil
 				}
@@ -267,7 +352,7 @@ func waitPaneIdle(ctx context.Context, t sshTarget, slug, windowName, binary str
 		lastCapture = string(capture)
 		if time.Now().After(deadline) {
 			if paneShowsDialog(string(capture)) {
-				return &agentDialogError{}
+				return &agentDialogError{agent: binary}
 			}
 			return nil // best effort: send the prompt anyway rather than hang forever
 		}

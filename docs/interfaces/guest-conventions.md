@@ -58,8 +58,9 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
 | `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425) |
-| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them |
-| `/etc/repose/agent-guide.md` | the machine guide agents read, rendered from `nix/guest/base/agent-guide.md` (DECISIONS I-243); the same text is `/etc/claude-code/CLAUDE.md` (Claude Code's managed memory), `developer_instructions` in `/etc/codex/config.toml`, the file named by `instructions` in `/etc/opencode/opencode.json`, and `GEMINI.md` in `/etc/repose/gemini-extension/`; `/etc/repose/pi-extension.js` reads it at each pi run |
+| `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers` and the opencode setup into `~/.config/opencode/opencode.json` `mcp` (I-545), and `repose_retired`: the entries earlier bases registered (both `--headless`), which a merge replaces when a user's entry is exactly one of them (in opencode's shape for opencode). The same servers are `[mcp_servers.*]` in `/etc/codex/config.toml` and `mcpServers` in `/etc/repose/gemini-extension/gemini-extension.json` |
+| `/etc/repose/agent-guide.md` | the machine guide agents read, rendered from `nix/guest/base/agent-guide.md` (DECISIONS I-243); the same text is `/etc/claude-code/CLAUDE.md` (Claude Code's managed memory), `developer_instructions` in `/etc/codex/config.toml` (whose top-level keys before it are `approval_policy = "never"`, `sandbox_mode = "danger-full-access"` and `check_for_update_on_startup = false`, I-546; a key in `~/.codex/config.toml` wins), the file named by `instructions` in `/etc/opencode/opencode.json`, and `GEMINI.md` in `/etc/repose/gemini-extension/`; `/etc/repose/pi-extension.js` reads it at each pi run |
+| `/etc/gemini-cli/system-defaults.json` | Gemini CLI's defaults layer, a root 0444 file (not a link into `/nix/store`, which Gemini CLI refuses): `general.enableAutoUpdate` and `general.enableAutoUpdateNotification` false (I-543); user and workspace settings win |
 | `/etc/repose/agents.json` | `{<agent>: {binary, version, hook}}` for every shipped agent, for `repose status --verbose` |
 | `/etc/profile.d/repose.sh` | sources `/etc/repose/env`, then the named secrets through `/etc/repose/bash-env.sh` (or `/run/repose/secrets.env` when no `secrets.refresh` exists yet), exports `DISPLAY=:99` while the X display `:99` is up (the agents' browser or the desktop viewer runs), prepends the user bin dirs to `PATH` |
 | `/etc/ssh/principals/dev` | the accepted certificate principals (the project id), written by guestd `SetPrincipals` |
@@ -130,6 +131,17 @@ the attach opens is `<name>`. guestd reads none of this.
   Code's trust dialog anyway gets no prompt: `run` says so and attaches
   (with `--no-attach`, exits 1). Nothing else writes that key, and the
   laptop's `~/.claude.json` is never carried.
+- Gemini CLI's and Codex's folder trust (I-544), the same way before
+  `gemini` or `codex` starts: `~/.gemini/trustedFolders.json` gets
+  `"<folder, symlinks resolved>": "TRUST_FOLDER"` when the value is not
+  already that (other keys kept, a file that is not a JSON object left
+  alone, mode 0600, atomic); `${CODEX_HOME:-~/.codex}/config.toml` gets
+  `[projects."<folder>"]` with `trust_level = "trusted"` appended when it
+  has no table for that folder in either quoting (a folder path with
+  characters outside `[A-Za-z0-9._/-]` is skipped). A pane that settles
+  on either agent's trust dialog gets no prompt, and the message names
+  the agent. `run` waits for a gemini pane whose `pane_current_command`
+  is `node`.
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
   history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga
@@ -174,15 +186,25 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      unless a `notify` key exists.
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
      absent, and replaced only while its sha256 is one an earlier base
-     installed (I-481); the `repose-agent-hooks` user unit also runs this
-     at login, for an OpenCode 2 started outside the wrapper.
+     installed (I-481); `~/.config/opencode/opencode.json` `mcp` gains
+     the servers from `/etc/repose/mcp.json` as `{type: "local", command:
+     [command, args...], enabled: true}`, user entries winning on a name
+     clash except one equal to a `repose_retired` entry in that shape; a
+     file that is a symlink, or not plain JSON, is left alone (I-545); the
+     `repose-agent-hooks` user unit also runs this at login, for an
+     OpenCode 2 started outside the wrapper.
    - `gemini`, `pi`: no hook (guestd's pane-idle heuristic reports for
      them); the machine guide is linked in as an extension (I-243):
      `~/.gemini/extensions/repose-machine-guide` →
      `/etc/repose/gemini-extension`, and
      `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/repose-machine-guide.js`
      → `/etc/repose/pi-extension.js`. A stale link of that name is
-     repointed; anything else at the path is left alone.
+     repointed; anything else at the path is left alone. For `gemini`,
+     once per home (marker `~/.local/state/repose/gemini-npm-removed`), a
+     `@google/gemini-cli` package in `${NPM_CONFIG_PREFIX:-~/.npm-global}`
+     and its `bin/gemini` link are removed: an earlier base's Gemini CLI
+     updated itself there, ahead of this wrapper on PATH (I-543). The
+     `repose-agent-hooks` user unit runs `gemini` setup at login too.
 2. Set `TERM=tmux-256color` (when inside tmux), `COLORTERM=truecolor`, and
    `REPOSE_HOOK_AGENT=<binary>` so `repose-hook` knows who called it.
 3. Load the checkout's dev environment into its own process
@@ -212,7 +234,13 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    leaving the folder unloads it. A cold load blocks the prompt; Ctrl-C
    ends it and the shell stays without it until it leaves the folder or
    `flake.nix` changes.
-4. Exec the real binary with `"$@"`.
+4. Exec the real binary with `"$@"`. For `codex` started interactively
+   (no arguments, a first argument that is an option, `resume`, `fork`),
+   `--no-daemon` is added when a managed app-server daemon runs whose
+   environment stamp, `${CODEX_HOME:-~/.codex}/app-server-daemon/repose-env`
+   (sha256 of `DIRENV_DIR` and `PATH` after step 3), differs from this
+   start's; with no daemon running the stamp is written and Codex starts
+   one as usual (I-547). pi runs with `PI_SKIP_VERSION_CHECK=1` (I-543).
 
 `repose-hook` takes the agent from `REPOSE_HOOK_AGENT` or `--agent`
 (`REPOSE_AGENT` is accepted for one release, DECISIONS I-58) and the socket

@@ -1442,6 +1442,28 @@ in
           guest.succeed("sudo -u dev repose-agent-setup claude")
           assert json.loads(guest.succeed("cat /home/dev/.claude.json")) == u
 
+      with subtest("I-545: opencode gets the platform servers; the user's own entries stay"):
+          oc_shape = lambda e: {"type": "local", "command": [e["command"]] + e["args"], "enabled": True}
+          guest.succeed("""sudo -u dev sh -c 'mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json' <<'EOF'
+      {"model": "x/y", "mcp": {
+        "playwright": {"type": "local", "command": ["playwright-mcp", "--headless"], "enabled": true},
+        "chrome-devtools": {"type": "local", "command": ["my-devtools"], "enabled": true},
+        "mine": {"type": "remote", "url": "https://example.com/mcp"}
+      }}
+      EOF""")
+          guest.succeed("sudo -u dev repose-agent-setup opencode")
+          o = json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))
+          assert o["mcp"]["playwright"] == oc_shape(reg["playwright"]), o
+          assert o["mcp"]["chrome-devtools"]["command"] == ["my-devtools"], o
+          assert o["mcp"]["mine"]["type"] == "remote" and o["model"] == "x/y", o
+          guest.succeed("sudo -u dev repose-agent-setup opencode")
+          assert json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json")) == o
+          guest.succeed("sudo -u dev rm ~/.config/opencode/opencode.json && sudo -u dev repose-agent-setup opencode")
+          o = json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))
+          assert o["mcp"] == {k: oc_shape(v) for k, v in reg.items()}, o
+          listed = guest.succeed("sudo -H -u dev bash -lc 'cd /tmp && opencode mcp list 2>&1'")
+          assert "playwright" in listed and "chrome-devtools" in listed, listed
+
       with subtest("headless chromium renders a page"):
           guest.succeed("sudo -u dev bash -lc 'cd /home/dev && chromium --headless --disable-gpu --no-first-run --screenshot=/home/dev/a.png --window-size=800,600 file:///home/dev/site/magenta.html' 2>&1 | tail -5")
           size = int(guest.succeed("stat -c %s /home/dev/a.png").strip())
@@ -1485,7 +1507,7 @@ in
       def has(cmd):
           return guest.execute(f"sudo -H -u dev bash -lc {shlex.quote('command -v ' + cmd)}")[0] == 0
 
-      source = open("${../base/agent-guide.md}").read()
+      source = open("${../base/agent-guide.md}").read().replace("@playwrightVersion@", "${pkgs.playwright-driver.version}")
       commands = [l.split() for l in open("${../base/agent-guide.commands}") if l.strip() and not l.startswith("#")]
 
       with subtest("rendered from the source: comments dropped, needs lines follow the guest"):
@@ -1514,11 +1536,24 @@ in
           assert guest.succeed("cat /etc/claude-code/CLAUDE.md") == guide
           assert guest.succeed("cat /etc/repose/gemini-extension/GEMINI.md") == guide
           codex = tomllib.loads(guest.succeed("cat /etc/codex/config.toml"))
-          assert codex == {"developer_instructions": guide}, codex
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          mcp = {k: {"command": v["command"], "args": v["args"]} for k, v in reg.items()}
+          # I-546 defaults as top-level keys, the guide, and the platform
+          # MCP servers (I-545); nothing else.
+          assert codex == {
+              "approval_policy": "never",
+              "sandbox_mode": "danger-full-access",
+              "check_for_update_on_startup": False,
+              "developer_instructions": guide,
+              "mcp_servers": mcp,
+          }, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
           assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
+          assert "mcp" not in oc, "the managed opencode layer would override the user's servers"
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
+          assert ext["mcpServers"] == mcp, ext
+          assert "${pkgs.playwright-driver.version}" in guide and "@playwrightVersion@" not in guide, guide
           guest.succeed("grep -q /etc/repose/agent-guide.md /etc/repose/pi-extension.js")
 
       with subtest("every command the guide names is on the machine"):
@@ -1560,6 +1595,21 @@ in
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
           after = dev("cd ~ && sha256sum " + " ".join(files))
           assert before == after, (before, after)
+
+      with subtest("I-543: Gemini CLI and pi never update themselves"):
+          assert guest.succeed("stat -c '%F %U %a' /etc/gemini-cli/system-defaults.json").strip() == "regular file root 444"
+          d = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))
+          assert d == {"general": {"enableAutoUpdate": False, "enableAutoUpdateNotification": False}}, d
+          dev("! test -e ~/.npm-global/bin/gemini")
+          guest.succeed("grep -qa PI_SKIP_VERSION_CHECK ${pkgs.reposeAgents.pi-coding-agent.unwrapped}/bin/pi")
+          # A Gemini CLI an earlier base let update itself into npm's
+          # prefix is removed once; one installed after that stays.
+          g = "/tmp/gh/.npm-global"
+          dev(f"mkdir -p {g}/bin {g}/lib/node_modules/@google/gemini-cli && echo '{{\"name\":\"@google/gemini-cli\"}}' > {g}/lib/node_modules/@google/gemini-cli/package.json && ln -s ../lib/node_modules/@google/gemini-cli/bundle/gemini.js {g}/bin/gemini")
+          dev(f"HOME=/tmp/gh NPM_CONFIG_PREFIX={g} repose-agent-setup gemini")
+          dev(f"! test -L {g}/bin/gemini && ! test -e {g}/lib/node_modules/@google/gemini-cli && test -e /tmp/gh/.local/state/repose/gemini-npm-removed")
+          dev(f"mkdir -p {g}/lib/node_modules/@google/gemini-cli && echo '{{\"name\":\"@google/gemini-cli\"}}' > {g}/lib/node_modules/@google/gemini-cli/package.json")
+          dev(f"HOME=/tmp/gh NPM_CONFIG_PREFIX={g} repose-agent-setup gemini && test -e {g}/lib/node_modules/@google/gemini-cli/package.json")
 
       with subtest("gemini and pi links: idempotent, a user's file at the path is left alone"):
           assert dev("readlink ~/.gemini/extensions/repose-machine-guide").strip() == "/etc/repose/gemini-extension"

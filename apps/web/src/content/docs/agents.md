@@ -21,6 +21,8 @@ Every machine has five coding agents installed, unmodified:
 repose run --agent codex "port the build scripts to bun"
 ```
 
+All five get new versions with platform updates.
+
 To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window. However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 ## Let it run without asking
@@ -41,26 +43,21 @@ To start in another mode, set `defaultMode` in `~/.claude/settings.json`, on you
 
 Claude Code also starts with its fullscreen renderer, which fills the tmux window and scrolls inside itself. To draw inline instead, set `"tui": "default"` in `~/.claude/settings.json` on your laptop or the machine, or run `/tui default` in Claude Code. Your value is kept.
 
-The other agents ask as they normally do unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
+Codex CLI starts the same way: no approval prompts and full access to the machine. To start it otherwise, set both `approval_policy` and `sandbox_mode` in `~/.codex/config.toml` on the machine; setting only one keeps the machine's value for the other.
 
-**Codex CLI:** in `~/.codex/config.toml` on the machine:
-
-```toml
-approval_policy = "never"
-sandbox_mode = "danger-full-access"
-```
+opencode, Gemini CLI and pi ask as they normally do unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
 
 ## Web search
 
 | Agent       | Web search                                           |
 | ----------- | ---------------------------------------------------- |
 | Claude Code | Built in.                                            |
-| Codex CLI   | Built in, from a cache unless set otherwise (below). |
+| Codex CLI   | Built in, live (below).                              |
 | Gemini CLI  | Built in (Google Search).                            |
 | opencode    | Off unless you turn it on, below.                    |
 | pi          | None built in. It can still fetch pages with `curl`. |
 
-**Codex** searches a cache of pages by default, and live in `danger-full-access`. Set `web_search = "live"` in `~/.codex/config.toml` for live results, or `"disabled"` to turn it off.
+**Codex** searches live, since it runs in `danger-full-access` on the machine. Set `web_search = "cached"` in `~/.codex/config.toml` to search a cache of pages instead, or `"disabled"` to turn it off.
 
 **opencode** offers its `websearch` tool only with its own Zen provider, or when `OPENCODE_ENABLE_EXA` is `1`. Set it once as a secret and every opencode on the machine can search, through Exa's public endpoint, with no key:
 

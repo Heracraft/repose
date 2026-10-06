@@ -13065,3 +13065,158 @@ removed). The other user units (`repose-tools-carry`,
 `repose-npm-registry`, `repose-agent-hooks`) are one-shot jobs that hold
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
+
+**I-543. Gemini CLI and pi never update themselves on a guest.**
+(base-agents-config, 2026-10-06) Gemini CLI 0.61.0's installation check
+takes a package in `/nix/store` for an npm install, and
+`general.enableAutoUpdate` defaults to true, so its first interactive
+start ran `npm install -g @google/gemini-cli@<latest>` into
+`~/.npm-global` (0.62.0 on kanali). That prefix is ahead of
+`/run/current-system/sw/bin` on PATH, so from then on `gemini` skipped
+the repose wrapper: no TERM fix, no secrets or `REPOSE_PROJECT` in a
+`repose run` window, no `repose-agent-setup`, no dev shell, no
+`REPOSE_HOOK_AGENT`. Reproduced on kanali with a temp HOME and
+`NPM_CONFIG_PREFIX`: "Update successful! The new version will be used on
+your next run." and `bin/gemini` in the prefix. The base now writes
+`/etc/gemini-cli/system-defaults.json`, Gemini CLI's defaults layer
+(user and workspace settings win), with `enableAutoUpdate` and
+`enableAutoUpdateNotification` false, as a root 0444 file
+(`environment.etc` with `mode`): a link into `/nix/store` is refused
+("Security Warning: Skipping system defaults file ... is insecure",
+the store is mode 1775), and Gemini CLI checks every ancestor. With the
+same file at a root path, the same start left the prefix empty.
+`settings.json` (the system override layer) was not used, since a user
+could not turn the update back on. This holds while `system.etc.overlay`
+is off; with the overlay, `/etc` files would be links into the store
+again. `repose-agent-setup gemini` removes, once per home (marker
+`~/.local/state/repose/gemini-npm-removed`), a `@google/gemini-cli`
+package in `${NPM_CONFIG_PREFIX:-~/.npm-global}` and its `bin/gemini`
+link, and the `repose-agent-hooks` user unit runs it at login, since a
+shadowed wrapper never runs. The cost: a user who installed Gemini CLI
+there on purpose before this base loses it once and reinstalls; one
+installed after the marker stays. pi 0.87.1 printed "New version 1.0.4
+is available. Run pi update" at every start, and `pi update` fails
+("pi cannot self-update this installation", exit 1); its wrapper now
+sets `PI_SKIP_VERSION_CHECK=1`, as `claude-code.nix` and `opencode.nix`
+turn their updaters off. `PI_TELEMETRY` is left as it is; a telemetry
+default needs its own decision. VM test `guest-agent-guide` checks the
+file's type, owner and mode, the pi variable, and the one-time removal.
+
+**I-544. The CLI marks the folder it starts Gemini CLI or Codex in as trusted.**
+(base-agents-config, 2026-10-06; amends I-486) Gemini CLI asks "Do you
+trust the files in this folder?" on its first start in a folder
+(`security.folderTrust.enabled` defaults to true). That line is in
+`agentDialogs` from Claude Code's older wording, so `repose run --agent
+gemini "prompt"` refused to type the prompt and printed "Claude Code is
+asking whether you trust the folder". Every checkout and `--worktree`
+folder is new to it. Codex 0.157 shows "Trust this folder? Codex can
+read, edit, and run files here" (checked on kanali in a fresh git repo,
+with and without full access); its default is "Trust and continue", so
+the Enter `run` types trusted the folder and the prompt was lost. As
+I-486 does for Claude Code, the same SSH command that opens the window
+now writes the agent's own trust record for the folder, symlinks
+resolved: `"<dir>": "TRUST_FOLDER"` in `~/.gemini/trustedFolders.json`
+(jq, atomic, 0600, other keys kept, a file that is not a JSON object
+left alone), and an appended `[projects."<dir>"]` table with
+`trust_level = "trusted"` in `${CODEX_HOME:-~/.codex}/config.toml` when
+the file has no table for that folder in either quoting (a user's
+`untrusted` stays; a path with characters TOML would need escapes for is
+skipped). Checked on kanali: Gemini CLI started in a folder so marked
+went straight to its prompt, and Codex in a folder whose table was
+written by hand started without the screen; a worktree of a trusted
+repository is trusted by Codex already. Folder trust stays on
+machine-wide, the scope I-486 rejected. `agentDialogs` gains Codex's
+line, the dialog message names the agent ("Gemini CLI is asking ..."),
+and `waitPaneIdle` accepts `pane_current_command` `node` for gemini,
+which is a node script; before, a gemini pane never matched and `run`
+waited out the 30 s timeout before typing.
+
+**I-545. The platform MCP servers reach Codex, opencode and Gemini CLI.**
+(base-agents-config, 2026-10-06; extends I-246) `/etc/repose/mcp.json`
+(playwright and chrome-devtools on the shared browser at 9224) was merged
+only into `~/.claude.json`; `codex mcp list`, `opencode mcp list` and
+`gemini mcp list` showed none, while the guide told agents to use them.
+From the same data: `[mcp_servers.<name>]` tables (command, args) in
+`/etc/codex/config.toml`, the system layer a user's
+`~/.codex/config.toml` overrides; `mcpServers` in the Gemini extension
+the base already links into `~/.gemini/extensions/repose-machine-guide`,
+which avoids Gemini CLI's check on files under `/etc`; and for opencode,
+`repose-agent-setup opencode` merges `{type: "local", command: [command,
+args...], enabled: true}` into `~/.config/opencode/opencode.json` `mcp`
+by the rule of the Claude merge (user entries win on a name clash, an
+entry equal to a `repose_retired` one in this shape is replaced; a
+symlinked or non-JSON file is left alone). Not
+`/etc/opencode/opencode.json`: that is opencode's managed layer, which a
+user cannot override. pi has no MCP client. Checked on kanali: `codex
+mcp list` with the rendered table lists both, `gemini mcp list` shows
+both "Connected" in a trusted folder (Gemini disables MCP servers in an
+untrusted one, which I-544 covers for `run`), `opencode mcp list` both
+connected. Both servers attach to the browser on their first call, so
+registering them starts no browser. The guide and `/docs/machine#browser`
+name the four agents.
+
+**I-546. Codex starts without approvals, with full access and no update check.**
+(base-agents-config, 2026-10-06; amends I-250 and I-495) I-250 gave
+Claude Code bypass mode by default and left Codex at its defaults,
+assuming a TOML merge into the user's file would be needed. It is not:
+`/etc/codex/config.toml` is Codex's lowest config layer and a key in
+`~/.codex/config.toml` overrides it key by key. Codex 0.157.1 started
+with approval `OnRequest`, a workspace-write, no-network sandbox, and an
+update check at startup that nagged about 0.160.1 (an update the store
+package cannot take). The base's file now starts with
+`approval_policy = "never"`, `sandbox_mode = "danger-full-access"` and
+`check_for_update_on_startup = false`, before `developer_instructions`
+and the I-545 tables (in TOML a key after a table header belongs to the
+table). A guest is a VM an agent may wreck (I-250's reasoning), and a
+Codex that asks in a `repose run` window waits until someone attaches.
+With `danger-full-access`, Codex runs commands without its bwrap
+sandbox, so I-495's bundled bwrap matters only to a user who sets
+another `sandbox_mode`. To opt out, set both `approval_policy` and
+`sandbox_mode` in `~/.codex/config.toml`; setting one keeps the
+machine's value of the other. Codex's web search is live in this mode,
+and `/docs/agents` says so. The guest-agent-guide VM test now parses the
+whole file.
+
+**I-547. An interactive Codex in another dev environment runs without the shared daemon.**
+(base-agents-config, 2026-10-06; amends I-487) Interactive Codex 0.157
+runs its turns in the managed app-server daemon, whose environment is
+the one its first start had; the app-server protocol has no environment
+field on ThreadStart or TurnStart. A second interactive `codex`, started
+in another directory with `AUDIT_MARK=second`, ran its turn's command
+with `MARK=first` and the first daemon's PATH (seen in the base audit
+with a logged-in turn). The wrapper loads the checkout's dev shell (I-259) and then execs
+Codex, so a second checkout or a worktree got the first one's dev shell.
+`-c features.daemon_auto_start=false` does not help once a daemon runs;
+`--no-daemon` does, for top-level `codex`, `resume` and `fork`. The
+daemon stays on (the owner's I-487 choice). The codex wrapper, after the
+dev shell load, hashes `DIRENV_DIR` and `PATH` into a key. With no
+daemon running (`app-server-daemon/daemon.pid` names no live
+`app-server` process) it writes the key to
+`${CODEX_HOME:-~/.codex}/app-server-daemon/repose-env`, and the daemon
+this start brings up has that environment. With one running whose stamp
+differs, an interactive start (no arguments, a first argument that is an
+option, `resume`, `fork`) gets `--no-daemon`; `exec`, `app-server`,
+`agents` and the other subcommands are left alone, and so is an
+invocation that already has `--no-daemon`. Checked on kanali with the
+built wrapper: the first start had no flag, a start with another PATH
+got `--no-daemon`, `resume` in the first environment had none and in the
+other got `resume --no-daemon`. A daemon started before this base has no
+stamp, so starts get `--no-daemon` until it exits. Secrets are not at
+issue: they reach commands through `BASH_ENV` (I-475).
+
+**I-548. The guide and docs say which Playwright browsers a guest has.**
+(base-agents-config, 2026-10-06) The guide said "Its browsers are
+installed; skip `npx playwright install`" and `/docs/machine` said test
+suites run without it. The overlay builds `reposePlaywrightBrowsers`
+with Firefox and WebKit off, so `~/.cache/ms-playwright` holds
+chromium-1243, its headless shell and ffmpeg: with Playwright 1.63
+Firefox and WebKit fail with "Executable doesn't exist", and with 1.55
+Chromium does too. WebKit cannot run on a guest (nix-ld lacks gstreamer
+and the rest, and its ICU is 74 where the guest has 78); those libraries
+are not added. The guide now renders the version from
+`pkgs.playwright-driver.version` ("Playwright 1.63.0's Chromium is
+installed") and says to run `npx playwright install chromium` or
+`npx playwright install firefox` once, without `--with-deps`, for
+another release or Firefox. `/docs/machine` says the same with the
+version written out, which moves by hand with a nixpkgs bump of
+playwright-driver.

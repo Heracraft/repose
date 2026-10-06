@@ -32,7 +32,46 @@ let
     _repose_devshell ${bin}
     unset -f _repose_devshell _repose_devshell_done _repose_devshell_flake \
       _repose_devshell_flake_root _repose_devshell_shadow _repose_devshell_prompt
+    ${pkgs.lib.optionalString (bin == "codex") codexDaemon}
     exec ${pkg}/bin/${bin} "$@"
+  '';
+
+  # Interactive Codex runs its turns in a shared app-server daemon whose
+  # environment is the one its first start had, so a codex started in
+  # another checkout or worktree ran its commands with the first one's
+  # dev shell PATH (DECISIONS I-547). The daemon stays on (I-487); an
+  # interactive start whose dev environment (PATH and the direnv
+  # directory) differs from the running daemon's gets --no-daemon. The
+  # stamp is written when no daemon runs, so it names the environment of
+  # the daemon this start brings up. exec, app-server and the other
+  # subcommands are left as they are.
+  codexDaemon = ''
+    repose_mode=
+    if [ $# -eq 0 ]; then
+      repose_mode=top
+    else
+      case "$1" in -*) repose_mode=top ;; resume|fork) repose_mode=sub ;; esac
+    fi
+    for repose_a in "$@"; do [ "$repose_a" = --no-daemon ] && repose_mode=; done
+    if [ -n "$repose_mode" ]; then
+      repose_cd="''${CODEX_HOME:-$HOME/.codex}/app-server-daemon"
+      repose_key=$(printf '%s\n%s\n' "''${DIRENV_DIR-}" "$PATH" | ${pkgs.coreutils}/bin/sha256sum)
+      repose_key=''${repose_key%% *}
+      repose_pid=$(${pkgs.gnused}/bin/sed -n 's/^{"pid":\([0-9][0-9]*\).*/\1/p' "$repose_cd/daemon.pid" 2>/dev/null) || repose_pid=
+      if [ -n "$repose_pid" ] && ${pkgs.gnugrep}/bin/grep -qa app-server "/proc/$repose_pid/cmdline" 2>/dev/null; then
+        if [ "$(${pkgs.coreutils}/bin/cat "$repose_cd/repose-env" 2>/dev/null)" != "$repose_key" ]; then
+          if [ "$repose_mode" = top ]; then
+            set -- --no-daemon "$@"
+          else
+            repose_a=$1; shift; set -- "$repose_a" --no-daemon "$@"
+          fi
+        fi
+      else
+        { ${pkgs.coreutils}/bin/mkdir -p "$repose_cd" && printf '%s\n' "$repose_key" > "$repose_cd/repose-env"; } 2>/dev/null || true
+      fi
+      unset repose_cd repose_key repose_pid
+    fi
+    unset repose_mode repose_a
   '';
 in
 pkgs.symlinkJoin {

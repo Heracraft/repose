@@ -34,11 +34,24 @@
 #          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
 #          repose-agent-hooks user unit runs this at login too, so an
 #          OpenCode 2 the user installed reports without the wrapper.
+#          ~/.config/opencode/opencode.json `mcp` gains the platform servers
+#          from /etc/repose/mcp.json as {type: "local", command: [command,
+#          args...], enabled: true}, by the same rule as ~/.claude.json's
+#          mcpServers (I-545): user entries win on a name clash, except one
+#          equal to a retired entry in that shape; a symlinked file is left
+#          alone. Not the managed
+#          /etc/opencode/opencode.json, which a user could not override.
 # gemini, pi: no hooks (guestd's pane-idle heuristic reports for them); the
 #          machine guide (DECISIONS I-243) is linked in as an extension:
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
 #          ~/.pi/agent/extensions/repose-machine-guide.js -> /etc/repose/pi-extension.js.
 #          A file or directory the user put at either path is left alone.
+#          gemini, once per home: a Gemini CLI that updated itself into
+#          npm's global prefix (bases before I-543) is removed, bin/gemini
+#          and lib/node_modules/@google/gemini-cli, when that package is
+#          @google/gemini-cli; it sat ahead of this wrapper on PATH. The
+#          marker ~/.local/state/repose/gemini-npm-removed keeps a Gemini
+#          CLI the user installs there later.
 { lib, writeShellApplication, jq, coreutils, util-linux, reposeOpencodePlugin }:
 writeShellApplication {
   name = "repose-agent-setup";
@@ -165,6 +178,43 @@ writeShellApplication {
 
     setup_gemini() {
       link_owned "$HOME/.gemini/extensions/repose-machine-guide" /etc/repose/gemini-extension
+      local prefix="''${NPM_CONFIG_PREFIX:-$HOME/.npm-global}" marker="$HOME/.local/state/repose/gemini-npm-removed"
+      local pkgdir="$prefix/lib/node_modules/@google/gemini-cli"
+      [ -e "$marker" ] && return 0
+      if [ "$(jq -r '.name? // empty' "$pkgdir/package.json" 2>/dev/null)" = "@google/gemini-cli" ]; then
+        if [ -L "$prefix/bin/gemini" ] && [ "$(readlink "$prefix/bin/gemini")" = ../lib/node_modules/@google/gemini-cli/bundle/gemini.js ]; then
+          rm -f "$prefix/bin/gemini"
+        fi
+        rm -rf "$pkgdir"
+        echo "repose-agent-setup: removed the Gemini CLI that updated itself into $prefix; gemini is the machine's again" >&2
+      fi
+      mkdir -p "$(dirname "$marker")" && : > "$marker"
+    }
+
+    # setup_opencode_mcp: the platform MCP servers in the user's
+    # opencode.json, by the rule of the ~/.claude.json merge (I-545).
+    setup_opencode_mcp() {
+      local cfg="$HOME/.config/opencode/opencode.json" merged
+      [ -r "$platform_mcp" ] || return 0
+      # A link is a file another tool manages (home-manager's points into
+      # /nix/store); replacing it with a file would fight that tool.
+      [ -L "$cfg" ] && return 0
+      mkdir -p "$(dirname "$cfg")"
+      [ -s "$cfg" ] || jq -n '{ "$schema": "https://opencode.ai/config.json" }' | write_atomic "$cfg" 0644
+      if ! jq -e 'type == "object" and ((.mcp // {}) | type) == "object"' "$cfg" >/dev/null 2>&1; then
+        echo "repose-agent-setup: $cfg is not plain JSON with an mcp object; leaving it alone" >&2
+        return 0
+      fi
+      merged=$(jq -s '
+        def oc: { type: "local", command: ([.command] + (.args // [])), enabled: true };
+        .[0] as $u | .[1] as $p
+        | (($u.mcp // {}) | with_entries(
+            .key as $k | .value as $v
+            | select(any((($p.repose_retired // {})[$k] // [])[]; oc == $v) | not))) as $kept
+        | $u | .mcp = (($p.mcpServers | map_values(oc)) + $kept)' "$cfg" "$platform_mcp") || return 0
+      if [ "$merged" != "$(jq . "$cfg")" ]; then
+        printf '%s\n' "$merged" | write_atomic "$cfg" "$(stat -c %a "$cfg")"
+      fi
     }
 
     setup_pi() {
@@ -177,6 +227,7 @@ writeShellApplication {
     opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49"
 
     setup_opencode() {
+      setup_opencode_mcp
       local dir="$HOME/.config/opencode/plugins" have
       mkdir -p "$dir"
       if [ ! -e "$dir/repose.js" ]; then

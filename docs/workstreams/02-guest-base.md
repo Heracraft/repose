@@ -242,7 +242,7 @@ agent runs headless Chromium, nothing is displayed and nothing is started.
 | Agent | Version in the overlay | Mechanism | Verified how |
 |---|---|---|---|
 | Claude Code | nixpkgs `claude-code` at the flake lock | `hooks.Notification` and `hooks.Stop` in `~/.claude/settings.json` run `repose-hook`; payload on stdin | VM test feeds a recorded `Stop` payload through `repose-hook` and asserts the `AgentEvent` on the socket |
-| Codex CLI | nixpkgs `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`; payload as `argv[1]` | wrapper adds the key; mapping of `agent-turn-complete` in `repose-hook` |
+| Codex CLI | nixpkgs `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`; payload as `argv[1]`. `/etc/codex/config.toml` sets `approval_policy = "never"`, `sandbox_mode = "danger-full-access"`, `check_for_update_on_startup = false` and the platform MCP servers, below the user's file (DECISIONS I-546, I-545) | wrapper adds the key; mapping of `agent-turn-complete` in `repose-hook`; guest-agent-guide VM test parses `/etc/codex/config.toml` |
 | opencode | nixpkgs `opencode` | plugin `~/.config/opencode/plugins/repose.js` on `session.idle`, `session.error`, `permission.updated` | plugin installed by the wrapper; the event names are the ones opencode's plugin API documents and are not exercised against a live session here (no provider key on the dev box), so guestd's heuristic remains the fallback |
 | Gemini CLI | nixpkgs `gemini-cli` (marked for removal upstream: Google replaced it with Antigravity CLI; the overlay keeps it until 12 decides) | pane-idle heuristic in guestd | none needed |
 | pi | nixpkgs `pi-coding-agent` | pane-idle heuristic in guestd | none needed |

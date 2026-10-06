@@ -19,12 +19,12 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Languages:** Node.js 24 with npm and pnpm, Python 3.12 with uv, Go, and rustup (run `rustup default stable` once).
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
-- **Browser:** Chromium and Playwright's browsers.
+- **Browser:** Chromium, and Playwright's Chromium.
 - **Everyday tools:** git, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim, direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in the `docker` group, so `docker` needs no `sudo`.
 
-Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
+Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's Chromium and Firefox, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
 
 ## Installing more
 
@@ -129,13 +129,13 @@ This quick tunnel needs no Cloudflare account and prints a random `trycloudflare
 
 ## Browser
 
-Claude Code on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
+Claude Code, Codex, opencode and Gemini CLI on the machine have two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
 
 ```
 repose run "screenshot each signup step with playwright"
 ```
 
-Playwright test suites run without `npx playwright install`.
+Playwright 1.63's Chromium is installed. For another Playwright release, or for Firefox, run `npx playwright install chromium` or `npx playwright install firefox` once, without `--with-deps`. WebKit doesn't run on the machine.
 
 To watch the browser or use it yourself (a captcha, a passkey):
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-523 entries.
+529 entries.
 
 ## Scope
 
@@ -335,7 +335,7 @@ pointer, not a summary.
 - **I-256** Vercel and portless stay menu entries, voice mode is not a repose feature, and a quick path to production stays deferred — 2026-09-25; L6199
 - **I-257** The terms say a machine is not for serving production traffic to others — 2026-09-25; L6221
 - **I-252** `repose paste` sends the laptop's clipboard image to the guest and pastes its path; one direction, no socket — 2026-09-25; partly superseded by I-280; L6237
-- **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; L6286
+- **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; amended by I-546; L6286
 - **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; L6338
 - **I-253** Any number of agent windows in one guest, and `repose run --worktree` puts one in its own git worktree beside the checkout — 2026-09-25; partly superseded by I-342; L6353
 - **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; L6403
@@ -545,13 +545,19 @@ pointer, not a summary.
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12623
 - **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12688
 - **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; L12728
-- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; amended by I-495; L12749
+- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; amended by I-495; amended by I-547; L12749
 - **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12789
-- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; L12815
+- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; amended by I-544; L12815
 - **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12865
 - **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; L12897
 - **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L12958
 - **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L12985
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; L13003
-- **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13021
+- **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; amended by I-546; L13021
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13048
+- **I-543** Gemini CLI and pi never update themselves on a guest — 2026-10-06; L13069
+- **I-544** The CLI marks the folder it starts Gemini CLI or Codex in as trusted — 2026-10-06; L13105
+- **I-545** The platform MCP servers reach Codex, opencode and Gemini CLI — 2026-10-06; L13134
+- **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13158
+- **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13180
+- **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13207
