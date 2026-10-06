@@ -37,8 +37,9 @@
   ];
 
   system.stateVersion = "26.11";
-  # Lowest priority: the runner passes the real name on the kernel line and
-  # the NixOS test driver names its nodes itself.
+  # Lowest priority: hostd and the runner name the guest after its project on
+  # the kernel line (systemd.hostname=, which wins over /etc/hostname,
+  # DECISIONS I-550), and the NixOS test driver names its nodes itself.
   networking.hostName = lib.mkOverride 1100 "repose-guest";
   time.timeZone = lib.mkDefault "UTC";
   i18n.defaultLocale = "C.UTF-8";

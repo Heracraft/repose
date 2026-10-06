@@ -856,7 +856,12 @@ exist with `vnet_hdr` (`ip tuntap add NAME mode tap user hostd vnet_hdr`);
 the runner uses one queue pair. Memory is `shared=on` (virtio-fs needs it);
 the volume is opened `direct=on` (O_DIRECT, DECISIONS I-230).
 The kernel line gets `ip=<ip>::<gateway>:<netmask>:<hostname>:eth0:off`,
-which the guest turns into its static network configuration.
+which the guest turns into its static network configuration, and
+`systemd.hostname=<hostname>`, which systemd applies over the closure's
+`/etc/hostname` (`repose-guest`). hostd renders the same line with the
+project slug as `<hostname>` when the slug is a DNS label, and leaves the
+name field empty and `systemd.hostname=` out otherwise, so the guest keeps
+`repose-guest` (DECISIONS I-550).
 
 ## The Claude login share (DECISIONS I-278)
 

@@ -314,6 +314,14 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
 		}
 	}
+	var splitPanes []tmuxPane
+	if tmuxUp && tmuxErr == nil {
+		var err error
+		if splitPanes, err = w.tmux.client.listPanes(ctx, w.slugs.Slug()); err != nil {
+			w.log.Warn("could not list tmux panes",
+				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
+		}
+	}
 	herdrPanes, herdrUp, _ := w.herdr.Panes(ctx)
 
 	// Only SetupProject starts the session unit, so before it neither
@@ -466,6 +474,22 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		delete(w.hooks, name)
 	}
 	if tmuxErr == nil {
+		// The OOM priority covers every pane of the session, not only each
+		// agent window's active one (DECISIONS I-200): an agent in a split
+		// pane, or in an inactive pane of the shell window, is protected
+		// too. The windows' own panes above stay in, so a failed
+		// list-panes protects no less than before.
+		for _, pane := range splitPanes {
+			if _, ok := panes[pane.PID]; ok {
+				continue
+			}
+			for _, agent := range []string{AgentOf(pane.Window), AgentByCommand(pane.Command)} {
+				if agent != "" && w.procs.treeHasAnyComm(children, pane.PID, binaries[agent]) {
+					panes[pane.PID] = agent
+					break
+				}
+			}
+		}
 		w.agentPanes = panes
 		w.tmuxKeys = tmuxKeys
 	}

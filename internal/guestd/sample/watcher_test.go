@@ -501,3 +501,60 @@ func TestAnAgentInAWindowWithAnotherName(t *testing.T) {
 		}
 	}
 }
+
+// I-200 covers every pane of the session. list-windows names only each
+// window's active pane; the claude window here has a second claude pane
+// and a vite pane, and the shell window has claude in its inactive pane.
+// All three claudes get OOMProtected and the vite stays at 0.
+func TestOOMPriorityCoversSplitPanes(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 50, ppid: 1, comm: "tmux: server", uid: 1000},
+		{pid: 100, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 101, ppid: 100, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+		{pid: 110, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 111, ppid: 110, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+		{pid: 120, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 121, ppid: 120, comm: "node", uid: 1000, exe: "node"},
+		{pid: 200, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 210, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 211, ppid: 210, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+	}
+	w, run, _, _, p := newWatcherFixture(t, procs)
+	adj := map[int]int{101: 0, 111: 0, 121: -800, 211: 0}
+	for pid, v := range adj {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte(fmt.Sprintf("%d\n", v)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, pid := range []int{50, 100, 110, 120, 200, 210} {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte("0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run.Match["list-windows"] = tmuxOutput(
+		[4]string{"claude", "100", "claude", "0"},
+		[4]string{"shell", "200", "bash", "0"},
+	)
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	run.Match["list-panes"] = sysdep.RunResult{Stdout: []byte(
+		"claude\t100\tclaude\nclaude\t110\tclaude\nclaude\t120\tnode\nshell\t200\tbash\nshell\t210\tclaude\n")}
+
+	w.Refresh(context.Background())
+
+	want := map[int]int{101: OOMProtected, 111: OOMProtected, 211: OOMProtected, 121: 0, 50: OOMProtected, 100: 0, 210: 0}
+	for pid, v := range want {
+		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
+		if got := strings.TrimSpace(string(b)); got != fmt.Sprint(v) {
+			t.Errorf("pid %d oom_score_adj = %s, want %d", pid, got, v)
+		}
+	}
+	var sawPanes bool
+	for _, c := range run.Calls() {
+		if strings.Join(c.Argv, " ") == "tmux list-panes -s -t todo-app -F #{window_name}\t#{pane_pid}\t#{pane_current_command}" {
+			sawPanes = true
+		}
+	}
+	if !sawPanes {
+		t.Error("list-panes -s was not run for the project session")
+	}
+}

@@ -700,6 +700,8 @@ in
     nodes.guest = { ... }: {
       imports = [ node ];
       environment.systemPackages = [ pkgs.python3 ];
+      # What hostd puts on the kernel line for project todo-app (I-550).
+      boot.kernelParams = [ "systemd.hostname=todo-app" ];
     };
     testScript = ''
       guest.start()
@@ -710,6 +712,10 @@ in
       guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
       guest.succeed("mkdir -p /tmp/p && cp -r ${guestParts}/. /tmp/p && chmod -R u+w /tmp/p && chown -R dev:dev /tmp/p")
+
+      with subtest("I-550: systemd.hostname= on the kernel line names the guest over /etc/hostname"):
+          assert guest.succeed("hostname").strip() == "todo-app"
+          assert guest.succeed("cat /etc/hostname").strip() != "todo-app"
 
       with subtest("I-215: nothing of the system listens where auto-forward would pick it up"):
           listeners = guest.succeed("ss -Hltn")

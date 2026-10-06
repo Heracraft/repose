@@ -188,6 +188,50 @@ func (t tmuxClient) listWindows(ctx context.Context, session string) ([]tmuxWind
 	return out, true, nil
 }
 
+// tmuxPane is one row of `tmux list-panes -s`.
+type tmuxPane struct {
+	Window  string
+	PID     int
+	Command string
+}
+
+// listPanes returns every pane of the project's session, in every window.
+// list-windows reports only each window's active pane, so an agent in a
+// split pane would be missed (DECISIONS I-200).
+func (t tmuxClient) listPanes(ctx context.Context, session string) ([]tmuxPane, error) {
+	const format = "#{window_name}\t#{pane_pid}\t#{pane_current_command}"
+	res, err := t.run.Run(ctx, sysdep.RunSpec{
+		Argv:      []string{"tmux", "list-panes", "-s", "-t", session, "-F", format},
+		User:      "dev",
+		Env:       sysdep.DevEnv(t.paths, "dev"),
+		MaxOutput: 64 << 10,
+	})
+	if err != nil {
+		return nil, sysdep.Errf(sysdep.CodeInternal, "list tmux panes: %w", err)
+	}
+	if res.ExitCode != 0 {
+		reason := tmuxFailure(string(res.Stderr))
+		if reason == "server_down" || reason == "session_missing" {
+			return nil, nil
+		}
+		return nil, sysdep.Errf(sysdep.CodeInternal,
+			"list tmux panes: tmux exited %d (%s)", res.ExitCode, reason)
+	}
+	var out []tmuxPane
+	for _, line := range strings.Split(strings.TrimRight(string(res.Stdout), "\n"), "\n") {
+		parts := strings.Split(line, "\t")
+		if len(parts) < 3 {
+			continue
+		}
+		pid, err := strconv.Atoi(parts[1])
+		if err != nil {
+			continue
+		}
+		out = append(out, tmuxPane{Window: parts[0], PID: pid, Command: parts[2]})
+	}
+	return out, nil
+}
+
 // listClients counts attached tmux clients for the session.
 func (t tmuxClient) listClients(ctx context.Context, session string) (uint32, bool, error) {
 	res, err := t.run.Run(ctx, sysdep.RunSpec{

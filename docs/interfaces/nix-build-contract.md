@@ -184,7 +184,9 @@ hostd boots the guest from the closure directly (DECISIONS I-27): it needs
 `<out>/kernel`, `<out>/initrd`, `<out>/init` and `<out>/kernel-params`,
 which every NixOS toplevel has. Anything microvm.nix needs on the kernel
 command line must be in `boot.kernelParams`; hostd appends `init=`,
-`console=ttyS0` and `ip=<guest>::<gateway>:<netmask>::eth0:off`.
+`console=ttyS0`, `ip=<guest>::<gateway>:<netmask>:<hostname>:eth0:off`
+and, when the project slug is a DNS label, `systemd.hostname=<hostname>`
+(DECISIONS I-550).
 
 ## Fixtures and the test corpus
 

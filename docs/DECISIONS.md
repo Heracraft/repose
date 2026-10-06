@@ -4417,6 +4417,10 @@ server before an agent. `repose status` lists listening processes with
 their age and memory, and guestd's `oom` warning names what was killed.
 *Rejected:* idle reaping (it eventually kills the one server someone
 needed).
+*Made during implementation* (base-hostd-guestd, 2026-10-06): "agent
+window" covers every pane of the session; guestd finds agents with
+`tmux list-panes -s`, since `list-windows` reports only each window's
+active pane and left claude in a split pane at 0.
 
 **I-201. `repose cp`.** `repose cp <project>:<path> <local>` and the
 reverse, a thin wrapper over scp with the project resolved as other
@@ -12112,6 +12116,20 @@ run in any `/proc/*/cmdline`; VM subtests in `nix/guest/tests/guestd.nix` (a
 `systemd-run` parent as dev that sets its own value, then `WriteSecrets`)
 and `nix/guest/tests/default.nix` (a tmux window opened over ssh, and a
 login shell).
+*Made during implementation* (base-hostd-guestd, 2026-10-06): a guest whose
+secrets an older guestd wrote had no `secrets.refresh` after the live
+switch onto this base, so the loader did nothing, and the switch restarted
+the tmux session before guestd, so `tmux new-window` (how `repose run`
+starts agents) gave agents no secrets until the next write. guestd now
+rebuilds the refresh file at start, before serving, when it is missing
+and `/run/repose/secrets/` holds files: the set is read from those files
+and goes through the same path as a write (a new generation, no earlier
+values, then `secrets.refresh` and `secrets.env`), then to tmux. It does
+nothing when the refresh file exists. `/etc/profile.d/repose.sh` keeps
+its `secrets.env` fallback, and the loader gets none: the old
+`secrets.env` has no `REPOSE_ENV_GEN`, so a loader that sourced it would
+override an `.envrc` on every command, the first version's bug. Test:
+`TestRestoreRebuildsTheRefreshFileAfterALiveSwitch`.
 
 **I-476. Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin.**
 (secrets-env, 2026-10-04) Loading secrets alone cannot take away a
@@ -14329,3 +14347,24 @@ systemd's 2.1 MB); man-db and its closure were in the base already.
 That is within the 6 GiB check's room (the 2026.10.05 base closure is
 6,306,239,088 bytes). VM test `guest-devtools` runs `man -w` for ls,
 git, tmux and nix.
+**I-550. A guest's hostname is its project's slug.**
+(base-hostd-guestd, 2026-10-06) Every guest called itself `repose-guest`
+(`hostname`, the shell prompt, `t3 pair`'s "Pairing with"). hostd
+rendered `ip=<ip>::<gateway>:<netmask>::eth0:off` with the name field
+empty, and filling it alone would change nothing: the closure writes
+`/etc/hostname` from `networking.hostName`, and systemd applies that over
+the kernel's name. hostd now sets `ch.Spec.Hostname` to the project slug
+when it is a DNS label (a-z, 0-9 and `-`, 1 to 63 characters, no
+leading or trailing `-`) and renders it in the `ip=` name field and as
+`systemd.hostname=<slug>`, which systemd prefers over `/etc/hostname`.
+An empty or invalid slug renders neither, so the guest keeps
+`repose-guest`, as NixOS test nodes and slugless guests do; the closure
+stays the same for every guest (no per-guest `networking.hostName`).
+Create, start, restore and a rebuild all render the line from the
+recorded `project_slug`, so a guest gets the name at its next boot. The
+runner's `bin/run` passes `systemd.hostname=` too.
+*Rejected:* a per-guest `networking.hostName` (one closure per project);
+`hostnamectl hostname` from guestd (`/etc/hostname` is a read-only store
+link). Tests: `TestCmdlineHostname`, `TestCmdlineHostnameFallback`,
+`TestCreateReachesRunningWithEverythingWired` and
+`TestSnapshotRestoreRoundTrip` read `ch.args`.

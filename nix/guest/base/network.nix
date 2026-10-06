@@ -1,5 +1,5 @@
 # One interface, eth0, static address from the kernel command line
-# (`ip=<guest>::<gateway>:255.255.252.0::eth0:off`, set by the runner from
+# (`ip=<guest>::<gateway>:255.255.252.0:<hostname>:eth0:off`, set by the runner from
 # hostd's arguments). systemd-network-generator turns that line into a
 # .network unit at boot, so nothing per guest is baked into the closure.
 # DNS is public resolvers: guests cannot reach the host, so there is no host
