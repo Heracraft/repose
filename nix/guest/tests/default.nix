@@ -456,6 +456,43 @@ in
           assert "Permission denied" in err, err
           guest.fail("ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /root/user root@127.0.0.1 id")
 
+      with subtest("I-512: terminfo for the TERMs laptops attach with"):
+          for term in ["xterm-ghostty", "xterm-kitty", "alacritty", "wezterm", "foot"]:
+              guest.succeed(f"sudo -u dev bash -lc 'infocmp {term}' >/dev/null")
+          guest.succeed("sudo -u dev env TERM=xterm-kitty bash -lc clear")
+
+      with subtest("I-515: 24-bit colour only to terminals that have it; titles name the machine"):
+          overrides = guest.succeed("sudo -H -u dev tmux show-options -s terminal-overrides")
+          assert ":Tc" not in overrides, overrides
+          features = guest.succeed("sudo -H -u dev tmux show-options -s terminal-features")
+          for f in ["xterm-ghostty:RGB", "xterm-kitty:RGB", "alacritty:RGB", "wezterm:RGB", "foot*:RGB", "*-direct:RGB"]:
+              assert f in features, features
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles").strip() == "on"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #S"
+
+      with subtest("I-513, I-514: login shells read ~/.bashrc last; ls, vi, history and fzf"):
+          guest.succeed("cat > /home/dev/.bashrc <<'EOF'\nexport REPOSE_RC_MARK=read\nalias rcprobe='echo alias-ok'\nalias ll='echo user-ll'\nEOF\nchown dev:dev /home/dev/.bashrc")
+          # A new tmux window: a login bash, as every pane is.
+          guest.succeed("sudo -H -u dev tmux new-window -d -t todo-app -n rcprobe")
+          guest.succeed("sudo -H -u dev tmux send-keys -t todo-app:rcprobe 'echo mark=$REPOSE_RC_MARK; rcprobe; ll' Enter")
+          guest.wait_until_succeeds("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe | grep -q '^alias-ok' && sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe | grep -q '^user-ll'", timeout=30)
+          pane = guest.succeed("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe")
+          assert "mark=read" in pane, pane
+          guest.succeed("sudo -H -u dev tmux kill-window -t todo-app:rcprobe")
+          # An SSH shell.
+          guest.succeed("ssh-keygen -q -s /root/ca -I 'user:heracraft' -n 0192e4b0-0000-7000-8000-000000000001 -V -1m:+12h /root/user.pub")
+          ssh = "ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o CertificateFile=/root/user-cert.pub -i /root/user dev@127.0.0.1"
+          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
+          print(out)
+          for want in ["mark=read", "alias-ok", "user-ll", "alias ls='ls --color=tty'", "hist=100000", "histappend", "function"]:
+              assert want in out, out
+          assert "/bin/vi" in out and "/bin/vim" in out, out
+          # A user's ~/.bash_profile decides for itself.
+          guest.succeed("install -o dev -g dev /dev/null /home/dev/.bash_profile")
+          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK'\" 2>/dev/null")
+          assert "mark=read" not in out, out
+          guest.succeed("rm /home/dev/.bash_profile /home/dev/.bashrc")
+
       with subtest("store overlay and profile pinning"):
           mounts = guest.succeed("mount | grep -E 'ro-store|rw-store|/nix/store'")
           assert "overlay" in mounts, mounts
@@ -694,6 +731,39 @@ in
           assert "reposenosuchcommand: command not found" in out, out
           assert "nixpkgs#" not in out, out
           assert "status=127" in out, out
+
+      with subtest("I-516: an agent's bash -c gets the hint; a script file and sh do not"):
+          # BASH_ENV is what an agent's environment carries (env.nix); sudo
+          # drops it, so it is set again here.
+          agent = "sudo -H -u dev env BASH_ENV=/etc/repose/bash-env.sh"
+          out = guest.succeed(agent + " bash -c 'cowsay hi; echo status=$?' 2>&1")
+          print(out)
+          assert "  nix profile add nixpkgs#cowsay  install it on this machine" in out, out
+          assert "status=127" in out, out
+          guest.succeed("printf 'cowsay hi\\necho status=$?\\n' > /tmp/cnf-script.sh && chmod 0755 /tmp/cnf-script.sh")
+          out = guest.succeed(agent + " bash /tmp/cnf-script.sh 2>&1")
+          assert "nixpkgs#" not in out and "status=127" in out, out
+          out = guest.succeed(agent + " sh -c 'cowsay hi; echo status=$?' 2>&1")
+          assert "nixpkgs#" not in out and "status=127" in out, out
+
+      with subtest("I-517: package managers, pip and cron get their own hint; no test attributes"):
+          out = guest.succeed("sudo -H -u dev bash -ic 'apt-get install jq' 2>&1 || true")
+          print(out)
+          lines = [l for l in out.splitlines() if l.strip()]
+          i = lines.index("apt-get: command not found")
+          assert lines[i + 1] == "  nix profile add nixpkgs#NAME  install a package on this machine", out
+          assert lines[i + 2] == "  repose config add NAME        keep it on every rebuild (run this on your laptop)", out
+          assert "nixpkgs#apt" not in out, out
+          out = guest.succeed("sudo -H -u dev bash -ic 'pip install requests' 2>&1 || true")
+          print(out)
+          assert "python3 -m venv .venv" in out and "uv tool install NAME" in out, out
+          assert "Packages.pip" not in out, out
+          out = guest.succeed("sudo -H -u dev bash -ic crontab 2>&1 || true")
+          assert "/docs/machine#scheduled-jobs" in out and "mcron" not in out, out
+          # vim is neovim now (I-514), so the handler is asked directly.
+          out = guest.succeed("sudo -H -u dev bash -lc 'repose-command-not-found vim' 2>&1 || true")
+          print(out)
+          assert "tests." not in out, out
 
       with subtest("I-219: a command being installed says so"):
           guest.succeed("echo cowsay > /run/user/1000/repose-installing && chown dev:dev /run/user/1000/repose-installing")

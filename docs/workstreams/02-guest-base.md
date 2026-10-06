@@ -31,6 +31,9 @@ runner using the host's shared store. Everything in
   library set, `nixpkgs` in the registry and NIX_PATH pinned to the base's
   own nixpkgs (no global registry), and the command-not-found handler
   with `nix-locate` from nix-index-database's prebuilt index.
+- `nix/guest/base/shell.nix` (I-512 to I-514): terminfo for Ghostty and
+  kitty, `~/.bashrc` in login shells, history settings, fzf key bindings,
+  starship's `command_timeout` and its `STARSHIP_CONFIG` reset.
 - `nix/guest/base/compat.nix` (I-228): what ecosystem tools that download
   their own binaries need beyond nix-ld: the Prisma engines redirect on
   127.0.0.1:850 and `PRISMA_ENGINES_MIRROR`, Playwright's writable
@@ -55,8 +58,9 @@ runner using the host's shared store. Everything in
   collide with `10.64.0.0/12`; `dev` in `docker`; `docker compose` plugin.
 - `nix/guest/base/tmux.nix`: system tmux config at `/etc/tmux.conf` with
   the settings in guest-conventions (`set -g set-clipboard on`, `mouse off` since I-364,
-  `history-limit 50000`, `default-terminal tmux-256color`, `terminal-
-  overrides ",*:Tc"`, `escape-time 10`, `focus-events on`), and a
+  `history-limit 50000`, `default-terminal tmux-256color`, RGB
+  `terminal-features` per TERM in place of `*:Tc` (I-515), `escape-time 10`,
+  `focus-events on`), and a
   `repose-tmux-session.service` (user unit for `dev`, started at boot via
   `loginctl enable-linger dev`) that creates the session named after the
   slug from `project.json`. guestd's `SetupProject` is what writes

@@ -26,4 +26,5 @@ repose-notify needs
 rustup
 sh
 sudo
+systemctl
 uv

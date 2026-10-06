@@ -13245,3 +13245,199 @@ installed, then `bundle -v` printed one line; a second call installed
 nothing) and ruby_4_0 (nothing installed). A guest whose Ruby an earlier
 pass pinned gets Bundler at the next pass, which runs when the laptop's
 tool list changes.
+**I-512. The base ships terminfo for Ghostty's and kitty's own TERM.**
+(base-shell-terminal, 2026-10-05; extends I-264) `repose run` and
+`repose attach` pass the laptop's `TERM` to the guest unchanged
+(`internal/cli/run.go` attachTmux), and I-264 names `xterm-ghostty` and
+`xterm-kitty` among the TERMs laptops present. ncurses has entries for
+alacritty, wezterm and foot but not for those two, so on base 2026.10.05
+`infocmp xterm-ghostty` and `infocmp xterm-kitty` failed,
+`TERM=xterm-ghostty tmux attach` refused with "missing or unsuitable
+terminal: xterm-ghostty" and `TERM=xterm-kitty clear` printed "unknown
+terminal type". `nix/guest/base/shell.nix` adds `pkgs.ghostty.terminfo`
+and `pkgs.kitty.terminfo` to the system packages: 5,024 and 4,520 bytes,
+no references (`nix path-info -rsS` against cache.nixos.org), where
+`/run/current-system/sw/share/terminfo` is on `TERMINFO_DIRS`, which
+sudo keeps. With them on `TERMINFO_DIRS`, `infocmp` prints
+`xterm-ghostty|ghostty|Ghostty` and `xterm-kitty|KovIdTTY`, and
+`TERM=xterm-ghostty tput colors` prints 256. guest-base asserts
+`infocmp` for the five TERMs and `TERM=xterm-kitty clear`.
+*Rejected:* `environment.enableAllTerminfo`, which pulls every
+terminal's terminfo output and grows with nixpkgs.
+
+**I-513. A login bash reads ~/.bashrc when the user has no login file of their own.**
+(base-shell-terminal, 2026-10-05; makes the `~/.bashrc` advice of I-227
+(the PATH entry, "Not covered by a static dir"), troubleshooting.md and
+agents.md true) Every tmux pane, ssh shell and editor terminal on a guest
+is a login bash. A login bash reads `/etc/profile` (which sources
+`/etc/bashrc`) and then the first of `~/.bash_profile`, `~/.bash_login`
+and `~/.profile`, never `~/.bashrc`, and `dev` has none of the three. So
+a `~/.bashrc` written by nvm, sdkman, conda or the OpenCode installer
+was never read: with a temp HOME whose `.bashrc` exported a marker,
+`bash -l -i` did not see it and `bash -i` did. The last lines of
+`/etc/bashrc`'s interactive part (`programs.bash.interactiveShellInit`
+at `lib.mkOrder 2000`, after the base's aliases, starship, zoxide,
+direnv and the I-488 dev shell hook) now source `~/.bashrc` in a login
+shell when it is readable, there is no `~/.bash_profile` or
+`~/.bash_login`, and `~/.profile` does not mention bashrc. A user who
+has one of those decides for themselves. Last so that what the file sets
+wins over the base: an alias `ll` in `~/.bashrc` replaces the base's.
+Nothing is written to `/home/dev`. Checked with the evaluated
+`/etc/bashrc` in a temp HOME: the marker, an alias and `HISTSIZE=42`
+from `~/.bashrc` arrive in a login shell, and none of them with an empty
+`~/.bash_profile` or a `~/.profile` that sources `~/.bashrc`. guest-base
+checks a new tmux window and `ssh ... bash -lic`. *Rejected:*
+`programs.bash.loginShellInit`, which runs in `/etc/profile` before
+`/etc/bashrc`'s interactive part, so the base's init would override the
+user's settings; writing a `~/.bash_profile` into the home, which a
+machine that has one already would not get and a user's own would
+conflict with.
+
+**I-514. Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim.**
+(base-shell-terminal, 2026-10-05) Five settings of the base's bash.
+- `ls` is GNU ls again (NixOS's `ls --color=tty`). The base aliased it to
+  `eza -al --group-directories-first --no-permissions --no-user`. With a
+  stdin that is not a terminal and no path, eza reads its file list from
+  stdin, so a `while read` loop that called `ls` swallowed the loop's
+  input; `ls -lt` failed with "a value is required for --time" and
+  `ls -ltr` with "invalid value 'r'"; `ls -l` showed no mode bits and no
+  owner. `ll` is now `eza -al --group-directories-first` (permissions
+  and owner kept); `la` and `lt` are unchanged. *Rejected:* a `[ -t 0 ]`
+  wrapper, which still differs from ls in its flags.
+- History: `shopt -s histappend` and, when unset, `HISTSIZE=100000`,
+  `HISTFILESIZE=200000` and `HISTCONTROL=ignoredups`, first in
+  `/etc/bashrc`'s interactive part so `~/.bashrc` may change them. A
+  machine lives for months and kept 500 lines, and each pane's exit
+  rewrote the file with its own history. `ignoredups` rather than
+  `ignoreboth`: a command typed with a leading space is still kept.
+- `programs.fzf.keybindings` and `fuzzyCompletion`: fzf was installed
+  but Ctrl-R was bash's own search. `FZF_DEFAULT_COMMAND` stays unset:
+  fzf 0.74's walker already skips `.git` and `node_modules`.
+- starship: `command_timeout = 2000`. A cold `starship prompt` in a large
+  checkout took 0.86 s and printed `[WARN] Executing command ".../node"
+  timed out` above the prompt with the default 500 ms. A user's
+  `~/.config/starship.toml` replaces the whole file. And the module
+  exported `STARSHIP_CONFIG=<the system file>` when the user had no file
+  at the shell's start, so a nested shell (`exec bash`, `nix develop`, an
+  editor's terminal) inherited the path and kept ignoring a
+  `~/.config/starship.toml` written since. A line before the module's
+  unsets it when it still names the system file and the user's file
+  exists; the path is computed from the final settings as the module
+  does, so it is the same store path.
+- `programs.neovim.viAlias` and `vimAlias`: `which vi vim` found
+  nothing, while `internal/cli/carry_tools.go` counts both as base
+  commands, so a laptop's vim was never carried and a carried
+  `core.editor=vim` failed. The wrapper gains two symlinks (384 bytes).
+guest-base asserts each in `ssh ... bash -lic`.
+
+**I-515. tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title.**
+(base-shell-terminal, 2026-10-05; amends I-264's `/etc/tmux.conf`)
+`/etc/tmux.conf` had `set -ga terminal-overrides ",*:Tc"`, so tmux sent
+`38;2` to every client and never turned a pane's 24-bit colour into the
+nearest of 256 for a terminal without it, Apple's Terminal on macOS 15
+and earlier among them. Panes keep `COLORTERM=truecolor` (env.nix), so
+programs emit 24-bit colour; tmux decides per client what reaches the
+laptop. `*:Tc` is gone, and `terminal-features` gains
+`xterm-ghostty:RGB,xterm-kitty:RGB,alacritty:RGB,wezterm:RGB,foot*:RGB,*-direct:RGB`
+(terminfo for all of them since I-512). tmux 3.7 also gives a client RGB
+when the client's own `COLORTERM` is `truecolor` or `24bit` (checked
+with tmux 3.7c: a client with `TERM=xterm-256color` lists `RGB` in
+`client_termfeatures` with `COLORTERM=truecolor` and not without it;
+`TERM=alacritty` lists it either way). The planned way to carry the
+laptop's `COLORTERM` was `ssh -o SendEnv=COLORTERM`, which the guest's
+sshd (`AcceptEnv`) and the gateway allow. It does not work: the guest's
+PAM environment sets `COLORTERM DEFAULT="truecolor"` and sshd applies it
+after the client's variables (a second sshd on this guest with
+`AcceptEnv COLORTERM`, `UsePAM yes`: `COLORTERM=foo ssh -o
+SendEnv=COLORTERM` gave the shell `truecolor`). So the CLI's attach
+command starts with `unset COLORTERM; ` when the laptop's `COLORTERM` is
+not `truecolor` or `24bit` (`attachColour`, `internal/cli/run.go`), and
+the `tmux attach` client then has RGB only by its TERM. Panes still get
+`COLORTERM=truecolor`: tmux 3.7c sets it in every pane it starts, even
+after `update-environment` marks the session's `-COLORTERM` (checked: a
+new window in a session attached without `COLORTERM` printed
+`truecolor`). A base switch leaves a running tmux server on the options
+it started with (I-496), so a machine gets these at its next start. `ssh <slug>.repose` and
+`repose ssh` are not changed: there is no tmux client on the way, and a
+login shell sets `COLORTERM` again. `set -g set-titles on` with
+`set-titles-string "#h: #S"` puts the machine and session in the
+laptop's tab title. guest-base checks the options of the running
+server. *Rejected:* `if-shell` on `TERM_PROGRAM`, evaluated once in the
+server and never sent over ssh; dropping `COLORTERM` from the session
+variables, which would take 24-bit colour from every pane.
+
+**I-516. An agent's bash -c names the package of a missing command.**
+(base-shell-terminal, 2026-10-05; extends I-219 and I-475) The
+command-not-found handler was defined only in `/etc/bashrc`'s
+interactive part. Agents run each command as `bash -c` with
+`BASH_ENV=/etc/repose/bash-env.sh` and got bash's bare "command not
+found", while the agent guide says that typing a missing command prints
+the package that has it. `bash-env.sh` now defines
+`command_not_found_handle` (calling `repose-command-not-found`, then
+`return 127`) when `BASH_VERSION` and `BASH_EXECUTION_STRING` are set and
+no handler is defined yet. `BASH_EXECUTION_STRING` is set only for a
+`-c` string, so `./configure`, a script file and `sh -c` keep bash's
+plain message. The block sits before the file's restore of the shell
+options and `$_`, so I-475's promises hold: it prints nothing, `$_` is
+the caller's, `$?` is 0, xtrace stays off while it runs. Checked live:
+`BASH_ENV=<new file> bash -c 'figlet hi; echo status=$?'` prints the
+I-249 hint and `status=127`; the same in a script file and in `sh -c`
+prints the plain line; `bash -c 'echo $_'` still prints the caller's
+`$_`. guest-devtools asserts the three cases.
+
+**I-517. The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself.**
+(base-shell-terminal, 2026-10-05; amends I-219, keeps I-249's layout)
+`repose-command-not-found` took nix-locate's first attribute as found:
+`apt-get install jq` suggested `nixpkgs#apt`, `yum` and `dnf` suggested
+`python313Packages.dnf4`, `vim` listed
+`tests.vim.test-all-plugins-have-vimPlugin-true`, and `pip` suggested
+`python314Packages.pip`, which installs for another interpreter than the
+base's python3 and outside its nix-ld wrapper. Now: attributes that
+start with `tests.` are dropped, and top-level attributes come before
+nested ones. `apt`, `apt-get`, `aptitude`, `dpkg`, `yum`, `dnf`, `apk`,
+`pacman`, `zypper`, `brew`, `port` and `snap` print the not-found line
+and the two I-249 lines with `NAME` in place of a package. `pip` and
+`pip3` print `python3 -m venv .venv && . .venv/bin/activate` (a virtual
+environment, with pip in it) and `uv tool install NAME`, not `uv venv`,
+which makes an environment without pip. `crontab`, `cron`, `crond` and
+`at` print one line pointing at /docs/machine#scheduled-jobs (I-518)
+instead of `mcron`, which has no daemon here. machine.md's example now
+shows I-249's lines as the handler prints them, on one line each.
+guest-devtools asserts apt-get's and pip's output, crontab's link and no
+`tests.` in vim's.
+
+**I-518. A scheduled job is a systemd user timer; the base has no cron.**
+(base-shell-terminal, 2026-10-05) No cron daemon is installed, and the
+not-found hint offered `mcron`, so a job set up that way never ran. User
+timers work: `dev` lingers, so its user manager runs with nobody
+attached, user units get the full PATH (I-227), and unit files in
+`~/.config/systemd/user` are in `/home/dev` and survive a stop. A
+transient `systemd-run --user --on-calendar` unit lives in `/run` and is
+gone after a stop, so the docs show unit files: `NAME.service` with
+`Type=oneshot` and `ExecStart=/run/current-system/sw/bin/bash -lc
+'CMD'` (a login shell, so the job gets the secrets and the project's
+variables), `NAME.timer` with `OnCalendar=daily`, `Persistent=true`
+(a run missed while the machine was stopped happens at the next start)
+and `WantedBy=timers.target`, enabled with `systemctl --user
+daemon-reload && systemctl --user enable --now NAME.timer`. machine.md
+"Scheduled jobs" and the agent guide say so. *Rejected:* installing
+cronie, a second scheduler beside systemd's with its own environment.
+
+**I-519. home.shellAliases from machine.nix or repose.nix reach every shell.**
+(base-shell-terminal, 2026-10-05; amends I-488 and I-490) `/docs/config`
+and `docs/features/config-examples/personal/machine.nix` show
+`home.shellAliases`, and no alias appeared: home-manager writes aliases
+into the `~/.bashrc` it manages, and its `programs.bash.enable` is off on
+the guest (`nix/guest/microvm.nix`). `contract.nix` carried
+`home.sessionVariables` and `home.sessionPath` (I-488) but not aliases.
+It now sets `programs.bash.shellAliases`, `programs.zsh.shellAliases` and
+`programs.fish.shellAliases` from `home.shellAliases`, each at
+`lib.mkOverride 90`, so a user's alias of a name the base defines (`ll`)
+wins without `mkForce`. *Not carried:* `programs.bash.initExtra` and the
+other shells' init options. The base already initialises starship,
+zoxide, direnv and fzf, and enabling home-manager's bash to run initExtra
+would initialise them a second time and take over `~/.bashrc`. Shell
+code goes in `~/.bashrc`, which every bash now reads (I-513); config.md
+says initExtra is not carried. `checks.fragment-examples` asserts that the
+personal example's `gs` and `ll` are in the composed system's
+`/etc/bashrc`.

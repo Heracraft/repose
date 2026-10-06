@@ -66,7 +66,14 @@ in
       # copy and scrollback work as they do outside tmux. A user who wants
       # tmux's mouse puts `set -g mouse on` in ~/.tmux.conf.
       set -g mouse off
-      set -ga terminal-overrides ",*:Tc"
+      # 24-bit colour only to terminals that have it (DECISIONS I-515): the
+      # TERMs below, whose terminfo the base ships (I-512), and any client
+      # started with COLORTERM=truecolor, which tmux 3.7 takes as RGB for
+      # that client. PAM gives every ssh session truecolor; the CLI's
+      # attach unsets it when the laptop's COLORTERM does not say so.
+      # Others, Apple's Terminal before macOS 26 among them, get 256
+      # colours.
+      set -as terminal-features ",xterm-ghostty:RGB,xterm-kitty:RGB,alacritty:RGB,wezterm:RGB,foot*:RGB,*-direct:RGB"
       set -g focus-events on
       # Modified keys reach the program in the pane (DECISIONS I-264):
       # Shift+Enter is a newline in Claude Code, not a submit. tmux asks
@@ -97,6 +104,9 @@ in
       # status bar's own colours rather than tmux's yellow, which read as
       # a warning each time a dev server started.
       set -g message-style "bg=green,fg=black"
+      # The laptop's tab or window title names the machine and session.
+      set -g set-titles on
+      set -g set-titles-string "#h: #S"
       set -g status-right '#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}"#{=21:pane_title}" #(date "+%%H:%%M %%d-%%b-%%y")'
     '';
   };

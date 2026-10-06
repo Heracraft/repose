@@ -20,9 +20,9 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
 - **Browser:** Chromium and Playwright's browsers.
-- **Everyday tools:** git, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim, direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
+- **Everyday tools:** git, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
-The shell is bash with the starship prompt, and `ls` is `eza -al`. `dev` is in the `docker` group, so `docker` needs no `sudo`.
+The shell is bash with the starship prompt. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines. Your `~/.bashrc` is read in tmux windows, SSH shells and your editor's terminal, after the machine's own settings, so what it sets wins. `dev` is in the `docker` group, so `docker` needs no `sudo`.
 
 Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
 
@@ -48,8 +48,7 @@ Type a command the machine doesn't have and it tells you which package has it an
 $ air
 air: command not found
   nix profile add nixpkgs#air  install it on this machine
-  repose config add air        keep it on every rebuild
-                               (run this on your laptop)
+  repose config add air        keep it on every rebuild (run this on your laptop)
 Other packages with air: air-formatter
 ```
 
@@ -98,6 +97,35 @@ Your own shells get the same dev shell. In `repose ssh`, `ssh todo-app.repose`, 
 - With an `.envrc`, it loads once the file is allowed: repose allows it the first time an agent or `repose exec` starts there, or you run `direnv allow`. One you denied stays out. With `use flake` in it, direnv keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
 
 This works in any checkout or worktree in your home folder. To keep agents and your shells out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
+
+## Scheduled jobs
+
+The machine has no cron. A systemd timer runs a job on a schedule, with nobody attached, and keeps running after a stop and start because its files live in your home directory. For a job named `backup`, write two files on the machine:
+
+```ini
+# ~/.config/systemd/user/backup.service
+[Service]
+Type=oneshot
+ExecStart=/run/current-system/sw/bin/bash -lc 'cd ~/myapp && ./scripts/backup.sh'
+```
+
+```ini
+# ~/.config/systemd/user/backup.timer
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Then turn it on:
+
+```
+systemctl --user daemon-reload && systemctl --user enable --now backup.timer
+```
+
+The job runs with the same `PATH`, secrets and variables as a login shell. `Persistent=true` runs a job missed while the machine was stopped when it next starts. `systemctl --user list-timers` shows when each runs next, and `journalctl --user -u backup` shows its output.
 
 ## Ports
 

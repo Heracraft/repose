@@ -70,7 +70,7 @@ the attach opens is `<name>`. guestd reads none of this.
 | `/run/repose/secrets.env` | first line `export REPOSE_ENV_GEN=<16 hex>` (changes when the set of exported secrets does, and only then), then one `export NAME='...'` line per current secret; 0400 dev (DECISIONS I-475) |
 | `/run/repose/secrets.refresh` | first line `# repose-env-gen <16 hex>`, then one POSIX sh line per name guestd exports or exported before: `case ${NAME+s$NAME} in ''\|s'earlier1'\|...) export NAME='current' ;; esac` for a current secret, `case ${NAME+s$NAME} in s'earlier1'\|...) unset NAME ;; esac` for a removed one, and last `export REPOSE_ENV_GEN=<gen>`; 0400 dev; holds up to 16 earlier values per name, a removed name's included, until the guest restarts (I-475, I-476) |
 | `/run/repose/secrets.state` | JSON `{"gen", "current": {NAME: base64}, "earlier": {NAME: [base64, ...]}}`: the current generation and values, and per name the values exported before, distinct, oldest first, at most 16; root 0600; guestd reads it back after a restart (I-475) |
-| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475) |
+| `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475); in a `bash -c` string (`BASH_EXECUTION_STRING` set) it also defines `command_not_found_handle` (`repose-command-not-found`, exit 127) unless one is defined, which runs a program only when a command is missing (I-219, I-516) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
@@ -132,8 +132,13 @@ the attach opens is `<name>`. guestd reads none of this.
   laptop's `~/.claude.json` is never carried.
 - `/etc/tmux.conf`: `set -g set-clipboard on`, `set -g mouse off` (DECISIONS I-364;
   `~/.tmux.conf` may turn it on), `set -g
-  history-limit 50000`, `set -g default-terminal tmux-256color`, `set -ga
-  terminal-overrides ",*:Tc"`, `set -s escape-time 10`, `set -g
+  history-limit 50000`, `set -g default-terminal tmux-256color`, `set -as
+  terminal-features
+  ",xterm-ghostty:RGB,xterm-kitty:RGB,alacritty:RGB,wezterm:RGB,foot*:RGB,*-direct:RGB"`
+  (no `*:Tc`: 24-bit colour goes to those TERMs and to a client whose
+  `COLORTERM` is `truecolor` or `24bit`; the CLI's attach unsets the
+  guest's `COLORTERM` when the laptop's says neither, I-515), `set -g
+  set-titles on`, `set -g set-titles-string "#h: #S"`, `set -s escape-time 10`, `set -g
   focus-events on`, `set -g update-environment "DISPLAY SSH_AUTH_SOCK
   SSH_CONNECTION LANG COLORTERM"` (no `TZ`: an attach from a terminal
   without one would clear the session's zone), and since DECISIONS I-264
@@ -146,6 +151,17 @@ the attach opens is `<name>`. guestd reads none of this.
   pane). What types into a pane (`send-keys`, guestd's prompt delivery)
   is unaffected: text and an unmodified Enter (`\r`) are the same bytes
   in every mode.
+- Terminfo: the base has entries for every `TERM` I-264 names
+  (`xterm-256color`, `xterm-ghostty`, `xterm-kitty`, `alacritty`,
+  `wezterm`, `foot`) under `/run/current-system/sw/share/terminfo`
+  (I-512).
+- Shell: a login bash sources `~/.bashrc` last in `/etc/bashrc` when
+  there is no `~/.bash_profile` or `~/.bash_login` and `~/.profile` does
+  not mention bashrc (I-513). `ls` is GNU ls; `ll`, `la`, `lt` run eza;
+  `histappend`, `HISTSIZE=100000`, `HISTFILESIZE=200000`,
+  `HISTCONTROL=ignoredups` when unset; fzf key bindings and completion;
+  `vi` and `vim` are neovim (I-514). A fragment's `home.shellAliases` are
+  bash, zsh and fish aliases at priority 90 (I-519).
 - `TZ` in tmux: the global environment's `TZ` is the project's zone, set
   by `repose-tmux-session` from `/etc/repose/env` when it creates the
   session, and set again (global and every session) by the CLI on each
