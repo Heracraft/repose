@@ -14520,8 +14520,7 @@ and its file is gone since, that the account still has it
 (`missing_noted` in machine.nix.state keeps it to once).
 `config --global apply` with no file names `apply /dev/null` as the way
 to remove it when the account has one. The docs gain the removal steps,
-that `home.shellAliases` needs `programs.bash.enable = true` (home-manager
-writes `~/.bashrc` only then; the example lacked it, so its aliases were
-built and never loaded), and that a tmux config reaches the running
+the starship sentence (the machine already runs starship, so a prompt
+needs only its config file; aliases work through I-519), and that a tmux config reaches the running
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
