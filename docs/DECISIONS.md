@@ -14084,3 +14084,18 @@ the file is dev's, and herdr edits it), so a machine where the user
 ran herdr by hand keeps their setting; the public docs give the two
 lines for that case. `guest-session-environment` fails when the seed
 lacks the key, and the guest-base VM test reads the seeded file.
+
+**I-565. The herdr config seed gives back the file home-manager moved
+aside.** (herdr, 2026-10-06; amends I-563, from nix-demo's notes on
+machine.nix) herdr reads one config file with no system layer, so the
+base cannot keep its settings in /etc and still let a user's file win;
+the seed stays in `~/.config/herdr/config.toml`. home-manager
+(`backupFileExtension = "repose-bak"`, microvm.nix) moves a real file to
+`config.toml.repose-bak` when a machine.nix starts managing it, and
+refuses the next activation while that backup exists. Before this, a
+machine.nix that managed the file, dropped it, then managed it again
+failed the third switch: `repose-herdr-reload` had seeded a new file
+over the gap and the old backup was still there. Now, when the file is
+gone and a regular `.repose-bak` is beside it, the seed moves the
+backup back and writes nothing new. `guest-session-environment` covers
+the take-over, the release and the restore.

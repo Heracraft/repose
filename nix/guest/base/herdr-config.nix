@@ -1,5 +1,5 @@
 # The seeded ~/.config/herdr/config.toml and the reload after a
-# home-manager switch (DECISIONS I-501, I-563). herdr.nix runs the seed
+# home-manager switch (DECISIONS I-501, I-563, I-565). herdr.nix runs the seed
 # before the server starts; microvm.nix runs the reload after each
 # home-manager activation, where repose-tmux-reload does the same for tmux
 # (I-552).
@@ -31,6 +31,16 @@ let
         exit 0
       fi
       mkdir -p "$dir"
+      # home-manager moves a real file aside to config.toml.repose-bak
+      # when a machine.nix starts managing config.toml, and refuses the
+      # next activation while that backup exists. When the machine.nix
+      # stops managing it, the file it moved aside comes back, so a later
+      # machine.nix that manages it again finds no backup in the way.
+      bak="$cfg.repose-bak"
+      if [ -f "$bak" ] && [ ! -L "$bak" ]; then
+        mv -n "$bak" "$cfg"
+        exit 0
+      fi
       tmp=$(mktemp -p "$dir" .config.toml.XXXXXX)
       cat ${seedConfig} > "$tmp"
       chmod 0644 "$tmp"

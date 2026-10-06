@@ -332,6 +332,19 @@
             python3 -c 'import sys,tomllib; c=tomllib.load(open(sys.argv[1],"rb")); sys.exit(c.get("ui",{}).get("toast",{}).get("delivery")!="herdr")' "$HOME/.config/herdr/config.toml" \
               || fail "the seed does not turn on herdr's toast delivery (I-564)"
             [ "$(grep -c 'server reload-config' "$HOME/herdr.log")" = 2 ] || fail "no reload after the file went away"
+            # home-manager took the file over (moved it to .repose-bak) and
+            # then let it go: the backup comes back and no backup is left to
+            # make the next activation refuse.
+            cfg="$HOME/.config/herdr/config.toml"
+            echo 'theme = "mine"' > "$cfg"
+            mv "$cfg" "$cfg.repose-bak"
+            ln -s /dev/null "$cfg"
+            $reload
+            [ -L "$cfg" ] || fail "the seed replaced a file home-manager manages"
+            rm "$cfg"
+            $reload
+            grep -qx 'theme = "mine"' "$cfg" || fail "the file home-manager moved aside did not come back"
+            [ ! -e "$cfg.repose-bak" ] || fail "a .repose-bak is left to block the next activation"
             echo "login PATH guarded; herdr starts without guards or dropped names; reload on change only, seed restored with toasts on"
             touch $out
           '';
