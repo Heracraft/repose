@@ -39,11 +39,26 @@ func applyGemini(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 }
 
 // applyOpencode merges want into ~/.config/opencode/config.json `mcp`,
-// which opencode loads beneath the user's opencode.json: a server of the
-// same name there wins field by field in opencode itself, and an entry in
-// config.json is repose's only while it equals what repose wrote.
+// which opencode loads beneath the user's opencode.json. opencode merges a
+// server of the same name field by field, so repose renders no name the
+// user's opencode.json or opencode.jsonc defines: the user's entry wins
+// whole. An entry in config.json is repose's only while it equals what
+// repose wrote.
 func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
-	path := filepath.Join(p.Home, ".config", "opencode", "config.json")
+	dir := filepath.Join(p.Home, ".config", "opencode")
+	path := filepath.Join(dir, "config.json")
+	theirs := map[string]bool{}
+	for _, f := range []string{"opencode.json", "opencode.jsonc"} {
+		for n := range jsonServers(filepath.Join(dir, f), "mcp") {
+			theirs[n] = true
+		}
+	}
+	user := map[string]any{}
+	for n, v := range want.User {
+		if !theirs[n] {
+			user[n] = v
+		}
+	}
 	b, exists, err := readFile(path)
 	if err != nil {
 		warn("cannot read ~/.config/opencode/config.json: " + err.Error())
@@ -59,7 +74,7 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
 		return prev
 	}
-	changes, owned := plan(rawMap(servers), want.User, prev.User, want.Retired)
+	changes, owned := plan(rawMap(servers), user, prev.User, want.Retired)
 	rec := &agentRecord{}
 	if len(owned) > 0 {
 		rec.User = owned

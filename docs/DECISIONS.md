@@ -13093,7 +13093,15 @@ user-file tables owned by value, because a user's same-name `url` table
 beside a system-layer stdio entry stops Codex from loading at all.
 opencode's entries go to `config.json`, which opencode loads beneath the
 user's `opencode.json`, and not through `OPENCODE_CONFIG`, which
-outranks the user's file. Writes to `~/.claude.json` take Claude Code's
+outranks the user's file; opencode merges a same-name server there field
+by field (opencode 1.18.34, `opencode debug config`), so sync renders no
+name the user's `opencode.json` or `opencode.jsonc` defines. The
+launcher's server env replaces an inherited variable of the same name
+rather than adding a second copy, which glibc's getenv, and so Node,
+would ignore. A missing command is reported as written, since its
+expansion may hold a secret. A Codex name repose cannot edit warns once
+per value (`held` in `rendered.json`), since sync runs at every start.
+Writes to `~/.claude.json` take Claude Code's
 own `~/.claude.json.lock` (a directory, proper-lockfile), held under
 5 s, taken over after 10 s as Claude Code does, and agent-setup's other
 writes to the file take it too; every sync runs under `flock
@@ -13105,6 +13113,10 @@ itself. `repose-mcp status --json` reports each server's source, agents
 and needs for `repose mcp list`. `repose-mcp NAME` and `repose-mcp hold`
 route to `internal/mcpshim`, which in this base exits 1 with
 "forwarding is not built in this base"; the forward replaces it (I-557).
-Not covered here: the guest-base VM subtest (real `codex`, `claude`,
-`gemini`, `opencode` listing the server, and a tool call through the
-launcher returning the secret's digest) needs the dev box.
+Not covered here: the guest-base VM subtest needs the dev box. In it the
+probe server refuses to start unless its env and argument hash to the
+secret's digest, so `claude`, `gemini` and `opencode mcp list` showing it
+connected means each agent's own launch delivered the secret; Codex and
+pi list without starting servers, so the test runs the command each one's
+config names and calls the tool. A tool call through each agent itself
+needs a logged-in model and is left to the dev-box run.

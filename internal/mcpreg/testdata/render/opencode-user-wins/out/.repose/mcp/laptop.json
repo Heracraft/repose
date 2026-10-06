@@ -1,0 +1,1 @@
+{"version":1,"user":{"foo":{"type":"http","url":"https://foo.example/mcp","headers":{"A":"${FOO_T}"}},"bar":{"type":"http","url":"https://bar.example/mcp"},"baz":{"type":"http","url":"https://baz.example/mcp"}}}

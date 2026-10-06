@@ -252,7 +252,9 @@ writer, and it holds Claude Code's own lock.
 
 An entry is repose's only while it holds what repose wrote; a user who
 edits one owns it from then on, and a user's server of the same name wins
-(I-246's rule, now for every agent). Deleting a server repose renders
+(I-246's rule, now for every agent). opencode merges same-name servers
+field by field, so a name in the user's `opencode.json` or
+`opencode.jsonc` keeps repose's entry out of `config.json` entirely. Deleting a server repose renders
 brings it back at the next start; each agent's own off switch (`enabled =
 false` in Codex and opencode, `mcp.excluded` in Gemini CLI, `/mcp` in
 Claude Code) turns it off.

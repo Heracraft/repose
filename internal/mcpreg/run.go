@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 )
 
 // LaunchError is why `repose-mcp run NAME` cannot start NAME, with the
@@ -31,22 +32,32 @@ func Prepare(p Paths, name string) (path string, argv, env []string, err error) 
 	if transport(s) != "stdio" {
 		return "", nil, nil, &LaunchError{1, "repose-mcp: " + name + " is a remote server; agents reach it by its URL"}
 	}
-	cmd := Expand(str(s, "command"), p.SecretsDir)
+	raw := str(s, "command")
+	cmd := Expand(raw, p.SecretsDir)
 	path, xerr := exec.LookPath(cmd)
 	if xerr != nil {
-		return "", nil, nil, &LaunchError{127, "repose-mcp: " + name + " needs " + cmd + ", which the machine lacks"}
+		// raw, not cmd: the expanded command may hold a secret's value.
+		return "", nil, nil, &LaunchError{127, "repose-mcp: " + name + " needs " + raw + ", which the machine lacks"}
 	}
 	argv = []string{cmd}
 	for _, a := range strs(s["args"]) {
 		argv = append(argv, Expand(a, p.SecretsDir))
 	}
-	env = os.Environ()
 	extra := strMap(s["env"])
 	keys := make([]string, 0, len(extra))
 	for k := range extra {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	// A name the server sets replaces the inherited one: execve passes
+	// duplicates through, and glibc getenv (so Node) reads the first.
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, over := extra[k]; over {
+			continue
+		}
+		env = append(env, kv)
+	}
 	for _, k := range keys {
 		env = append(env, k+"="+Expand(extra[k], p.SecretsDir))
 	}

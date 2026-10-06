@@ -14,6 +14,11 @@
         "linear": {
           "url": "https://old.linear.app/mcp"
         }
+      },
+      "held": {
+        "linear": {
+          "url": "https://mcp.linear.app/mcp"
+        }
       }
     },
     "gemini": {

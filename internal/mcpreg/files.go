@@ -92,6 +92,10 @@ type renderedFile struct {
 type agentRecord struct {
 	User     map[string]any            `json:"user,omitempty"`
 	Projects map[string]map[string]any `json:"projects,omitempty"`
+	// Held is, per name, the value sync could not write because the file
+	// holds that name in a form repose does not edit (Codex dotted keys or
+	// an inline table). Sync warns again only when that value changes.
+	Held map[string]any `json:"held,omitempty"`
 }
 
 func readRendered(p Paths) *renderedFile {
@@ -122,6 +126,54 @@ func rawMap(o *object) map[string]any {
 	out := make(map[string]any, len(o.keys))
 	for _, k := range o.keys {
 		out[k] = json.RawMessage(o.vals[k])
+	}
+	return out
+}
+
+// stripJSONC turns JSONC (opencode.jsonc) into JSON: comments become
+// spaces and a comma before } or ] goes. Strings are left as they are.
+func stripJSONC(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		switch {
+		case c == '"':
+			j := i + 1
+			for j < len(b) && b[j] != '"' {
+				if b[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			if j >= len(b) {
+				return append(out, b[i:]...)
+			}
+			out = append(out, b[i:j+1]...)
+			i = j
+		case c == '/' && i+1 < len(b) && b[i+1] == '/':
+			for i < len(b) && b[i] != '\n' {
+				i++
+			}
+			out = append(out, '\n')
+		case c == '/' && i+1 < len(b) && b[i+1] == '*':
+			i += 2
+			for i+1 < len(b) && !(b[i] == '*' && b[i+1] == '/') {
+				i++
+			}
+			i++
+			out = append(out, ' ')
+		case c == '}' || c == ']':
+			k := len(out) - 1
+			for k >= 0 && (out[k] == ' ' || out[k] == '\t' || out[k] == '\n' || out[k] == '\r') {
+				k--
+			}
+			if k >= 0 && out[k] == ',' {
+				out[k] = ' '
+			}
+			out = append(out, c)
+		default:
+			out = append(out, c)
+		}
 	}
 	return out
 }

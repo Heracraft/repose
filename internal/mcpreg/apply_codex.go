@@ -32,6 +32,7 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 		return prev
 	}
 	changes, owned := plan(cur, want.User, prev.User, want.Retired)
+	held := map[string]any{}
 	expect := map[string]any{}
 	for k, v := range cur {
 		expect[k] = v
@@ -48,7 +49,11 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 			text, ok = replaceTable(text, c.name, "")
 		}
 		if !ok {
-			warn(fmt.Sprintf("~/.codex/config.toml holds mcp_servers.%s in a form repose does not edit; leaving it alone", c.name))
+			// Warned once per value: agent-setup syncs before every start.
+			if h, seen := prev.Held[c.name]; !seen || !equal(h, c.want) {
+				warn(fmt.Sprintf("~/.codex/config.toml holds mcp_servers.%s in a form repose does not edit; leaving it alone", c.name))
+			}
+			held[c.name] = c.want
 			if c.act != actAdd {
 				// The old value stays, and stays repose's.
 				owned[c.name] = cur[c.name]
@@ -64,6 +69,9 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 	rec := &agentRecord{}
 	if len(owned) > 0 {
 		rec.User = owned
+	}
+	if len(held) > 0 {
+		rec.Held = held
 	}
 	if text == string(b) {
 		return rec

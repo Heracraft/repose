@@ -256,7 +256,7 @@ and agent-setup skips it).
 | `laptop.json` | the CLI's carry (unit C of the MCP design) | `{"version":1, "user": {NAME: SERVER}, "projects": {"<checkout real path>": {NAME: SERVER}}, "skipped": [{"name","reason"}], "secrets": {SECRET: [NAME,...]}}`; SERVER is a Claude Code `mcpServers` value, `{type?, command, args, env}` or `{type: http\|sse\|ws, url, headers, oauth}`, with `${NAME}` in place of every credential. Every key but `version` may be absent |
 | `forward/NAME.json` | `repose-mcp hold` (the forward) | `{"version":1, "name", "protocolVersion", "initialize", "tools", "updated"}`; its presence registers NAME, whatever the rest holds |
 | `agents/<agent>.json` | `sync` | what repose renders for that agent: `{"mcpServers": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "skipped"?: [{"name","reason"}]}`; pi's machine guide extension reads `agents/pi.json` |
-| `rendered.json` | `sync` | `{"version":1, "agents": {AGENT: {"user": {NAME: entry}, "projects"?: {path: {NAME: entry}}}}}`: the entries sync last left in each agent's config as repose's |
+| `rendered.json` | `sync` | `{"version":1, "agents": {AGENT: {"user": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "held"?: {NAME: entry}}}}`: the entries sync last left in each agent's config as repose's; `held` is what sync could not write under a name Codex holds in a form repose does not edit, so the warning comes once per value |
 | `.lock` | `sync` | `flock` held around every sync, for every agent (agents start in parallel, and `hold` syncs too) |
 
 Sources claim a name in this order, and a later source's server of a
@@ -290,9 +290,11 @@ entry of that name, or has exactly the value in `rendered.json`, the value
 `sync` would write now, or one of `mcp.json`'s `repose_retired` values for
 it; it removes an entry only when its value is one of those and the
 registry no longer has it. Anything else under a name is the user's and
-stays; for opencode and Gemini CLI, a server of the same name in the
-user's own `opencode.json` or `settings.json` also wins in the agent
-itself. `~/.claude.json` is written under Claude Code's own lock, the
+stays; for Gemini CLI, a server of the same name in the user's own
+`settings.json` also wins in the agent itself. opencode merges a
+`config.json` server into a same-name one in `opencode.json` field by
+field, so `sync` renders no name the user's `opencode.json` or
+`opencode.jsonc` defines, and removes its own entry of that name. `~/.claude.json` is written under Claude Code's own lock, the
 directory `~/.claude.json.lock` (proper-lockfile): `sync` waits up to 5 s,
 takes over a lock older than 10 s, re-reads the file once it holds it,
 and removes the lock on every path; `repose-agent-setup`'s other writes to
@@ -300,7 +302,7 @@ the file take the same lock. Codex's TOML is judged from its parse and
 edited by whole tables, from a `[mcp_servers.NAME]` header to the line
 before the next header outside `mcp_servers.NAME.*`; a name held in
 another form (dotted keys, an inline table) is left alone with a warning,
-and an edit that does not parse back to exactly the intended servers is
+printed again only when the value `sync` would write changes, and an edit that does not parse back to exactly the intended servers is
 not written. A file that is not valid JSON or TOML is left alone. The
 Gemini CLI extension directory is repose's by name and is removed when
 nothing is rendered for it.

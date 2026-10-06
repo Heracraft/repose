@@ -73,8 +73,9 @@ writeShellApplication {
       local lock="$HOME/.claude.json.lock" n=0 age rc=0
       until mkdir "$lock" 2>/dev/null; do
         age=$(( $(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s) ))
-        if [ "$age" -gt 10 ]; then
-          rmdir "$lock" 2>/dev/null || true
+        # A stale lock that will not go (a file, a full or foreign
+        # directory) counts toward the 5 s like a live one.
+        if [ "$age" -gt 10 ] && rmdir "$lock" 2>/dev/null; then
           continue
         fi
         n=$((n + 1))

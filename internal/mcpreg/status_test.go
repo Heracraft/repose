@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -115,7 +116,10 @@ func TestPrepare(t *testing.T) {
 	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{
 	  "probe":{"command":"sh","args":["-c","${PROBE_TOKEN}"],"env":{"T":"${PROBE_TOKEN}","R":"${PROBE_REGION:-eu}"}},
 	  "remote":{"type":"http","url":"https://x"},
-	  "absent":{"command":"no-such-command-repose"}}}`)
+	  "absent":{"command":"no-such-command-repose"},
+	  "hidden":{"command":"${PROBE_TOKEN}/bin/mcp"},
+	  "override":{"command":"sh","env":{"REPOSE_DUP_T":"server"}}}}`)
+	t.Setenv("REPOSE_DUP_T", "agent")
 	path, argv, env, err := Prepare(p, "probe")
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +141,35 @@ func TestPrepare(t *testing.T) {
 	_, _, _, err = Prepare(p, "missing")
 	if err.Error() != "repose-mcp: missing is not in ~/.repose/mcp/laptop.json" {
 		t.Errorf("message %q", err)
+	}
+	// A command missing after expansion is named as written, never with
+	// the secret's value in it.
+	_, _, _, err = Prepare(p, "hidden")
+	if err == nil || err.Error() != "repose-mcp: hidden needs ${PROBE_TOKEN}/bin/mcp, which the machine lacks" {
+		t.Errorf("hidden: %v", err)
+	}
+	st, serr := ReadStatus(p)
+	if serr != nil {
+		t.Fatal(serr)
+	}
+	for _, s := range st.Servers {
+		if s.Name == "hidden" && (!reflect.DeepEqual(s.Missing, []string{"${PROBE_TOKEN}/bin/mcp"}) || strings.Contains(s.State, "s3cret")) {
+			t.Errorf("hidden status %+v", s)
+		}
+	}
+	// The server's env replaces an inherited name: one copy, the server's.
+	_, _, env, err = Prepare(p, "override")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dup []string
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "REPOSE_DUP_T=") {
+			dup = append(dup, kv)
+		}
+	}
+	if !reflect.DeepEqual(dup, []string{"REPOSE_DUP_T=server"}) {
+		t.Errorf("REPOSE_DUP_T copies %v", dup)
 	}
 }
 

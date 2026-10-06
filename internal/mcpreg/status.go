@@ -140,9 +140,12 @@ func ReadStatus(p Paths) (*Status, error) {
 			if s := laptopServer(k.name, k.checkout); s != nil {
 				r.Needs = Needs(s, p.SecretsDir)
 				if transport(s) == "stdio" {
-					cmd := Expand(str(s, "command"), p.SecretsDir)
+					// Missing names the command as written: the expanded
+					// form may hold a secret's value.
+					raw := str(s, "command")
+					cmd := Expand(raw, p.SecretsDir)
 					if _, err := exec.LookPath(cmd); err != nil && cmd != "" {
-						r.Missing = []string{cmd}
+						r.Missing = []string{raw}
 					}
 				}
 			}
@@ -227,6 +230,9 @@ func jsonServers(path, key string) map[string]any {
 	b, ok, _ := readFile(path)
 	if !ok {
 		return nil
+	}
+	if strings.HasSuffix(path, ".jsonc") {
+		b = stripJSONC(b)
 	}
 	doc, err := parseObject(b)
 	if err != nil {

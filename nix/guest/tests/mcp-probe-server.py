@@ -2,7 +2,10 @@
 
 One tool, `probe`, answers with the sha256 of the PROBE_TOKEN environment
 variable and of the first argument, so a test sees that a secret reached
-the server without the value ever being printed.
+the server without the value ever being printed. With a second argument
+(a sha256), the server exits before the handshake unless both digests
+equal it, so an agent that lists the server as connected started it with
+the secret in its environment and its arguments.
 """
 
 import hashlib
@@ -17,6 +20,11 @@ def digest(v):
 
 def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if len(sys.argv) > 2:
+        want = sys.argv[2]
+        if digest(os.environ.get("PROBE_TOKEN")) != want or digest(arg) != want:
+            sys.stderr.write("probe: the secret did not arrive\n")
+            sys.exit(1)
     for line in sys.stdin:
         try:
             msg = json.loads(line)

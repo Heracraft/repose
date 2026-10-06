@@ -88,7 +88,7 @@ func keysOf(m map[string]string) []string {
 
 // TestRenderGolden syncs every agent from each case's in/home and compares
 // the whole home, plus stderr, with out/. A second sync must change no
-// byte and print the same warnings.
+// byte and print nothing: each warning comes once per change.
 func TestRenderGolden(t *testing.T) {
 	cases, err := os.ReadDir("testdata/render")
 	if err != nil {
@@ -136,7 +136,10 @@ func TestRenderGolden(t *testing.T) {
 			var stderr2 bytes.Buffer
 			Sync(p, Agents, &stderr2)
 			again := snapshot(t, home)
-			again["stderr"] = stderr2.String()
+			if stderr2.Len() != 0 {
+				t.Errorf("second sync printed:\n%s", stderr2.String())
+			}
+			again["stderr"] = got["stderr"]
 			for rel, w := range got {
 				if again[rel] != w {
 					t.Errorf("second sync changed %s:\n%s\nfirst:\n%s", rel, again[rel], w)
@@ -146,5 +149,37 @@ func TestRenderGolden(t *testing.T) {
 				t.Errorf("second sync left %d files, first %d", len(again), len(got))
 			}
 		})
+	}
+}
+
+// TestCodexHeldWarnsOncePerChange: a name Codex holds in dotted form warns
+// at the first sync, not at the next, and again when the value repose
+// would write changes.
+func TestCodexHeldWarnsOncePerChange(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+	writeFile(t, filepath.Join(home, ".codex/config.toml"), "mcp_servers.linear.url = \"https://old.linear.app/mcp\"\n")
+	writeFile(t, filepath.Join(home, ".repose/mcp/rendered.json"), `{"version":1,"agents":{"codex":{"user":{"linear":{"url":"https://old.linear.app/mcp"}}}}}`)
+	laptop := func(url string) {
+		writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{"linear":{"type":"http","url":"`+url+`"}}}`)
+	}
+	sync := func() string {
+		var b bytes.Buffer
+		Sync(p, []string{"codex"}, &b)
+		return b.String()
+	}
+	laptop("https://a.example/mcp")
+	if got := sync(); !strings.Contains(got, "mcp_servers.linear") {
+		t.Fatalf("first sync: %q", got)
+	}
+	if got := sync(); got != "" {
+		t.Fatalf("second sync: %q", got)
+	}
+	laptop("https://b.example/mcp")
+	if got := sync(); !strings.Contains(got, "mcp_servers.linear") {
+		t.Fatalf("after the change: %q", got)
+	}
+	if got := sync(); got != "" {
+		t.Fatalf("after the change, again: %q", got)
 	}
 }

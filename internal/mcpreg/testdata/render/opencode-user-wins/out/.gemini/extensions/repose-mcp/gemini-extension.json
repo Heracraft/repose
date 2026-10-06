@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "bar": {
+      "type": "http",
+      "url": "https://bar.example/mcp"
+    },
+    "baz": {
+      "type": "http",
+      "url": "https://baz.example/mcp"
+    },
+    "foo": {
+      "headers": {
+        "A": "${FOO_T}"
+      },
+      "type": "http",
+      "url": "https://foo.example/mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}
