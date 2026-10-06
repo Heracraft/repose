@@ -212,11 +212,14 @@ in
   # skips a system file whose resolved directory is not root-owned or is
   # group-writable, which a /nix/store symlink is. Folder trust is off: in
   # a folder it was not told about, Gemini disables every MCP server, and
-  # agents on the machine already run without prompts (I-250).
+  # agents on the machine already run without prompts (I-250). Self-update
+  # is off: Gemini updated itself into ~/.npm-global, which shadowed the
+  # repose wrapper (I-543). This file is the only definition of it.
   environment.etc."gemini-cli/system-defaults.json" = {
     text = builtins.toJSON {
       mcpServers = lib.mapAttrs (_: s: { inherit (s) command args; }) config.repose.mcpServers;
       security.folderTrust.enabled = false;
+      general = { enableAutoUpdate = false; enableAutoUpdateNotification = false; };
     };
     mode = "0644";
   };
