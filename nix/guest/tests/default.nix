@@ -803,6 +803,40 @@ in
           guest.fail("sudo -H -u dev bash -lc 'command -v postgres'")
           guest.fail("sudo -H -u dev bash -lc 'command -v initdb'")
 
+      with subtest("I-525: git-lfs is installed and its filter is in the system config"):
+          assert dev("git lfs version").startswith("git-lfs/"), "git lfs version"
+          assert dev("git config --system filter.lfs.process").strip() == "git-lfs filter-process"
+          assert dev("git config --system filter.lfs.required").strip() == "true"
+          # A carried filter.lfs.required=true no longer fails the add.
+          dev("rm -rf /tmp/lfs && git init -q /tmp/lfs && cd /tmp/lfs && echo '*.bin filter=lfs diff=lfs merge=lfs -text' > .gitattributes && head -c 64 /dev/urandom > a.bin && git add . && git -c user.name=t -c user.email=t@e commit -qm lfs")
+          assert "oid sha256:" in dev("cd /tmp/lfs && git cat-file -p HEAD:a.bin")
+
+      with subtest("I-526: gh is the system credential helper by name, and store-path helpers go"):
+          for h in ["https://github.com", "https://gist.github.com"]:
+              assert dev(f"git config --system credential.{h}.helper").strip() == "!gh auth git-credential", h
+          act = guest.succeed("grep -o '/nix/store/[^ ]*nixos-activation-start' /etc/systemd/user/nixos-activation.service").strip()
+          cleanup = guest.succeed(f"grep -o '/nix/store/[^ ]*/bin/repose-gh-helper-cleanup' {act}").strip()
+          dev("cp ~/.gitconfig /tmp/gitconfig.keep 2>/dev/null || :; for h in https://github.com https://gist.github.com; do git config --global --add credential.$h.helper \"\"; git config --global --add credential.$h.helper '!/nix/store/0000-gh-2.100.0/bin/.gh-wrapped auth git-credential'; done; git config --global --add credential.https://example.com.helper store")
+          dev(cleanup)
+          dev(cleanup)
+          left = dev("git config --global --get-regexp '^credential' || true")
+          assert left.strip() == "credential.https://example.com.helper store", left
+          dev("if [ -f /tmp/gitconfig.keep ]; then cp /tmp/gitconfig.keep ~/.gitconfig; else git config --global --unset credential.https://example.com.helper; fi")
+
+      with subtest("I-527: git defaults for a fresh HOME"):
+          assert dev("git config --system init.defaultBranch").strip() == "main"
+          assert dev("git config --system push.autoSetupRemote").strip() == "true"
+          assert dev("git config --system pull.rebase").strip() == "false"
+          assert dev("rm -rf /tmp/br && git init -q /tmp/br && git -C /tmp/br symbolic-ref --short HEAD").strip() == "main"
+
+      with subtest("I-528: gpg-agent has a pinentry that exists"):
+          conf = guest.succeed("cat /etc/gnupg/gpg-agent.conf")
+          prog = [l.split(None, 1)[1] for l in conf.splitlines() if l.startswith("pinentry-program ")]
+          assert len(prog) == 1, conf
+          guest.succeed(f"test -x {prog[0]}")
+          dev("rm -rf /tmp/gnupg-t && install -d -m 700 /tmp/gnupg-t && echo pw | GNUPGHOME=/tmp/gnupg-t gpg --batch --pinentry-mode loopback --passphrase-fd 0 --symmetric -o /tmp/gnupg-t/x.gpg /etc/hostname && GNUPGHOME=/tmp/gnupg-t gpgconf --kill gpg-agent")
+          assert "GPG_TTY=/dev/" in guest.succeed("script -qc 'sudo -H -u dev bash -ic \"env | grep ^GPG_TTY=\"' /dev/null")
+
       with subtest("I-218: nix-ld runs a prebuilt foreign ELF"):
           interp = guest.succeed("readelf -l ${foreignElf}/bin/foreign | grep 'program interpreter'")
           assert "/lib64/ld-linux-x86-64.so.2" in interp, interp

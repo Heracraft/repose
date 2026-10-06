@@ -20,7 +20,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
 - **Browser:** Chromium and Playwright's browsers.
-- **Everyday tools:** git, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
+- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 The shell is bash with the starship prompt. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines. Your `~/.bashrc` is read in tmux windows, SSH shells and your editor's terminal, after the machine's own settings, so what it sets wins. `dev` is in the `docker` group, so `docker` needs no `sudo`.
 

@@ -18,6 +18,7 @@
     ./herdr.nix
     ./tools.nix
     ./shell.nix
+    ./git.nix
     ./devtools.nix
     ./tools-carry.nix
     ./compat.nix

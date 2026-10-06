@@ -237,8 +237,9 @@ func buildCredentialsAndCarry(homeDir, repoDir string, opts credSyncOptions, co 
 		lines = append(lines,
 			"git config --global --replace-all url.https://github.com/.insteadOf git@github.com: '^git@github\\.com:$'",
 			"git config --global --replace-all url.https://github.com/.insteadOf ssh://git@github.com/ '^ssh://git@github\\.com/$'",
-			"git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'")
-		hashParts = append(hashParts, []byte("gh-helper-2"))
+			"git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'",
+			"git config --global --replace-all credential.https://gist.github.com.helper '!gh auth git-credential'")
+		hashParts = append(hashParts, []byte("gh-helper-3"))
 	}
 	if len(lines) > 0 {
 		hash := carryHash(hashParts...)

@@ -296,8 +296,10 @@ type guestProbe struct {
 // make a stash or reset reach into a submodule, and a repository using
 // Git LFS in a guest without git-lfs would fail every add and stash
 // (filter.lfs.required=false stores the file as it is instead: the
-// fingerprint only has to be stable). repose_dirty is the dirty list,
-// submodules included.
+// fingerprint only has to be stable). GIT_LFS_SKIP_SMUDGE=1 keeps the
+// guest's git-lfs (I-525) from downloading objects, or waiting on LFS
+// credentials, in a sync's checkout: LFS files stay pointer files until
+// `git lfs pull`. repose_dirty is the dirty list, submodules included.
 //
 // repose_fp fingerprints the checkout as it stands: HEAD and the tree
 // `git add -A` would record (index, working tree and every untracked file
@@ -312,7 +314,8 @@ type guestProbe struct {
 // made it "failed"). The apply stores it after laying down the laptop's
 // diff and untracked files; the next probe compares, so the tree the sync
 // itself made dirty is not taken for an agent's work.
-const syncedFP = `repose_c="-c status.showUntrackedFiles=normal -c submodule.recurse=false -c filter.lfs.required=false"
+const syncedFP = `export GIT_LFS_SKIP_SMUDGE=1
+repose_c="-c status.showUntrackedFiles=normal -c submodule.recurse=false -c filter.lfs.required=false"
 repose_git() { git $repose_c "$@"; }
 repose_dirty() { repose_git status --porcelain --ignore-submodules=none; }
 repose_tab=$(printf '\t')

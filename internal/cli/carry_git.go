@@ -102,9 +102,38 @@ func gitDenied(key string) bool {
 	return false
 }
 
-// gitCommandKeys are values whose first word is a program the guest must
-// have on its PATH.
-var gitCommandKeys = map[string]bool{"core.pager": true, "core.editor": true}
+// gitCommandKey reports whether a carried value is a command whose first
+// word is a program the guest must have on its PATH: an editor, a pager,
+// a diff filter or driver, a merge driver. A pager.<cmd> that is a git
+// boolean is no command. filter.<x>.clean and .smudge are left out on
+// purpose: a filter the guest lacks fails the add or checkout, with
+// filter.<x>.required, rather than committing what the filter would have
+// changed (git-crypt's plaintext); I-195 as amended by I-525.
+func gitCommandKey(lk, value string) bool {
+	switch lk {
+	case "core.pager", "core.editor", "sequence.editor", "interactive.difffilter", "diff.external":
+		return true
+	}
+	section, sub, name := splitGitKey(lk)
+	switch {
+	case section == "diff" && sub != "":
+		return name == "textconv" || name == "command"
+	case section == "merge" && sub != "":
+		return name == "driver"
+	case section == "pager" && sub == "":
+		return !gitBool(value)
+	}
+	return false
+}
+
+// gitBool is a value git reads as a boolean.
+func gitBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "false", "yes", "no", "on", "off", "1", "0", "":
+		return true
+	}
+	return false
+}
 
 // gitCheck is one value the guest must confirm before it is kept.
 type gitCheck struct {
@@ -167,7 +196,7 @@ func buildGitCarry(repoDir, homeDir string) (*gitCarry, error) {
 		kept = append(kept, e)
 		switch {
 		case !e.HasValue:
-		case gitCommandKeys[lk]:
+		case gitCommandKey(lk, e.Value):
 			gc.Checks = append(gc.Checks, gitCheck{Key: e.Key, Kind: "cmd", Value: e.Value})
 		case strings.HasPrefix(e.Value, "/") || strings.HasPrefix(e.Value, "~/"):
 			gc.Checks = append(gc.Checks, gitCheck{Key: e.Key, Kind: "path", Value: e.Value})
@@ -302,7 +331,7 @@ func addGitPart(p *guestPayload, gc *gitCarry, opts carryOptions) (bool, error) 
 }
 
 // gitPartScript is the guest half of I-195: drop what would not work
-// here (a path the guest lacks, a pager or editor not on its PATH), put
+// here (a path the guest lacks, a command not on its PATH), put
 // the file in place by rename, and include it from ~/.gitconfig once,
 // first, so the guest's own keys come after it and win. The first time,
 // an identity the old credential sync wrote straight into ~/.gitconfig
