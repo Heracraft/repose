@@ -1065,7 +1065,6 @@ in
       guest.start()
       guest.wait_for_unit("multi-user.target")
 
-      import json
       import shlex
 
       def dev(cmd):
@@ -1550,7 +1549,6 @@ in
     testScript = ''
       import json
       import re
-      import json
       import shlex
       import tomllib
 
@@ -1691,7 +1689,6 @@ in
       nix.settings.substituters = lib.mkForce [ ];
     };
     testScript = ''
-      import json
       import shlex
 
       guest.start()
@@ -1865,7 +1862,6 @@ in
       };
     };
     testScript = ''
-      import json
       import json
       import shlex
 
