@@ -15901,3 +15901,108 @@ Docs and fits at 390/360"; routes.spec.ts "/account redirects
 permanently to /settings"; settings-account.spec.ts "settings carries the
 account section first and no heading twice"; machine-nix.spec.ts follows
 the Config page's link to `/settings#machine-nix`.
+
+**I-596. On herdr, the sync that makes the checkout closes the idle
+`home` workspace, as tmux respawns its `shell` window.** (herdr-run-fixes,
+2026-10-07; owner's dogfood note "why does `repose run` attach both the
+home folder and the checkout folder"; amends I-509) A new machine boots
+before its first sync, so `repose-herdr-server`'s workspace step finds
+no checkout and makes `home` in `/home/dev`; the sync then makes the
+checkout and runs the step again, which adds the checkout's workspace.
+Both stayed, and the laptop's sidebar showed two workspaces for one
+project. tmux had the same start and moves its idle `shell` window into
+the checkout (`respawn-pane`); herdr cannot move a workspace, so the CLI
+closes it instead: after the sync's workspace step, and in every
+`repose run PROMPT` in the checkout (which mends a machine made before
+this), each workspace labelled `home` that is one tab with one pane whose
+shell runs nothing in the foreground goes, once the checkout's own
+workspace exists. The idle test is `herdr pane process-info`'s
+foreground process group against the shell's pid, read on the guest by
+jq, nothing printed; a workspace running anything stays. The sync's step
+also runs while the unit is `activating` (the server's own step may
+still wait for herdr then), where it used to skip. *Rejected:* never
+making `home` (a machine with no checkout needs a workspace, and herdr
+makes one in the home directory on the first client anyway); closing
+`home` whatever runs in it (a user's dev server in it would die). Built:
+`herdrTidyShell` in `internal/cli/mux_herdr.go`, called by
+`freshShellScript` (`sync.go`) and `herdrStartScript`. Checked by
+`TestHerdrScriptsAgainstHerdr` against herdr 0.9.3 (a busy `home` stays,
+an idle one goes).
+
+**I-597. In herdr the machine's own checkout is the workspace
+`checkout`.** (herdr-run-fixes, 2026-10-07; owner's dogfood note
+"`repose run` inside `recruiting` gives `Recruiting > recruiting` on the
+sidebar"; amends I-509 and I-501's workspace step) The laptop herdr's
+sidebar shows the machine, labelled with the slug (I-510), and its
+workspaces under it; the agents list shows machine, workspace and tab on
+one row. The checkout's workspace was labelled with its directory name,
+which is the slug for nearly every project, so the project showed twice.
+Each level now says one thing: the machine is the project, the workspace
+says which folder (`checkout` for the machine's own, another checkout's
+name for `--on`, I-480; `home` with no checkout; a worktree's from
+`herdr worktree open`, grouped under `checkout`), and the tab is the
+agent (`claude`, `claude-2`). `repose ps`'s WORKSPACE column shows the
+same labels. Contract change, old shape for one release: a base before
+this labels the checkout's workspace with the directory name. The base's
+`repose-herdr-workspace` and the CLI (the sync's step and each prompt)
+rename a workspace with that label to `checkout` when there is no
+`checkout`, keeping its tabs and agents; the CLI counts it as the
+checkout's for the shared-tree warning until then; and once `checkout`
+exists, an idle duplicate with the old label (an old base's step at a
+start) is closed as I-596 closes `home`. guestd reads labels only to
+prefix agents of listed checkouts (I-504), and `checkout` is never one
+the CLI lists (the checkout itself never is). *Rejected:* labelling the
+sidebar's machine with something other than the slug (the slug is the
+name every command takes); leaving the workspace unlabelled (herdr's
+own label is the repository's name, the same repetition); the branch
+(herdr shows it on the row below). Built: `herdrCheckoutLabel`,
+`herdrLabelShell`, `herdrRenameShell` in `internal/cli/mux_herdr.go`;
+`nix/guest/base/herdr.nix`'s workspace step; the VM test `guest-base`
+asserts `checkout` and the rename (not run here: VM tests do not boot
+in a guest). Checked by
+`TestHerdrStateCheckoutLabel` and `TestHerdrScriptsAgainstHerdr` (herdr
+0.9.3: the old label renamed, `ps` rows under `checkout`), and the
+built `repose-herdr-workspace` run against herdr 0.9.3 (fresh,
+again, old label: one `checkout` each time).
+
+**I-598. A herdr attach stops at Ctrl-C, waits once for the sidebar's
+add, and says what keeps it running.** (herdr-run-fixes, 2026-10-07;
+owner's dogfood note "`repose run --multiplexer=herdr` hangs and leaves
+something pending in the terminal"; amends I-509, I-510, I-542) From
+code, four ways the command sat with no output and Ctrl-C did nothing.
+(1) The herdr attach ran on `context.Background()`: the focus step (30
+s), the sidebar's lock and `herdr machine add` (60 s) never saw the
+command's Ctrl-C, which the CLI's handler swallowed, and the attach went
+on to print the sidebar line and wait for a second Ctrl-C. The attach
+now takes the command's context (`attachReq.Ctx`); Ctrl-C before a
+client or the helper holds the terminal ends the command with
+`Interrupted.`, exit 130, and kills the laptop herdr commands it ran;
+the lock is taken with a cancellable poll (`lockFileCtx`). (2) In rule 1
+the attach's `ensureEntry` queued on the lock behind the background
+reconcile's add of the same machine, then, when that add failed, ran a
+second add of up to a minute. Adds in one process are now one per slug
+(`herdrInFlight`): a second caller waits for the first, an add that
+failed is not tried again in that command, and a wait past half a
+second shows `Adding <slug> to herdr's sidebar` on stderr. (3) Rule 1
+waited for Ctrl-C even with nothing to keep up (forwards off, no bridge),
+and never started MCP forwards; it now returns once the carry is done
+when nothing lasts, counts MCP forwards as lasting, and its line says
+how it ends: `<slug> is in herdr's sidebar. Ctrl-C ends its forwards.`.
+(4) After the first Ctrl-C the CLI kept its handler, so while the
+forwards were taken down (up to 10 s of ssh) a second Ctrl-C did
+nothing; the top-level handler now goes after the first, and a second
+Ctrl-C ends the process, as in any program. Code that must restore the
+terminal (the input proxy, hidden prompts, the herdr client's wait)
+keeps its own handler. And rule 2 puts the terminal back as herdr found
+it (`term.GetState` before, `Restore` after) and, when herdr died by a
+signal, turns off the alternate screen, hidden cursor, mouse reporting,
+bracketed paste and the kitty keyboard protocol, which a herdr killed
+mid-connect (a Ctrl-C before its own handler) left on. Not changed: the
+exec path's 10 s wait for adds (it runs only with the input proxy off),
+and the probe, which counts `activating` as herdr (I-542). Not
+reproduced: the owner's laptop is unreachable, so which of these the
+owner hit is inferred; the manual check is in the herdr-run-fixes
+commit. Checked by `TestEnsureEntryStopsAtCtrlC` (Ctrl-C while another
+process holds the lock returns at once), `TestEnsureEntryJoinsTheBackgroundAdd`
+(one add, the phase line; after a failure, no second add),
+`TestRunHelperForegroundEnds`, `TestEnsureEntry`, `TestHerdrRemoteChild`.

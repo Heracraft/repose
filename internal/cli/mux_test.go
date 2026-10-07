@@ -313,7 +313,8 @@ case "$1" in
 machine)
   case "$2" in
   list) [ -f "$d/listfail" ] && exit 1; cat "$d/machines.json" ;;
-  add) [ -f "$d/addfail" ] && { echo 'Preparing remote...' >&2; echo 'ssh: connect to host gone.repose: refused' >&2; exit 1; }
+  add) [ -f "$d/addslow" ] && sleep "$(cat "$d/addslow")"
+    [ -f "$d/addfail" ] && { echo 'Preparing remote...' >&2; echo 'ssh: connect to host gone.repose: refused' >&2; exit 1; }
     if [ -f "$d/addwrites" ]; then sleep 0.3; jq --arg t "$3" '. + [{"id":"new","label":"x","target":$t,"session":"default","enabled":true}]' "$d/machines.json" > "$d/m.tmp" && mv "$d/m.tmp" "$d/machines.json"; fi
     exit 0 ;;
   remove) exit 0 ;;
@@ -545,18 +546,167 @@ func TestEnsureEntry(t *testing.T) {
 	l := newFakeLaptopHerdr(t, "herdr 0.9.3", catalogMachines)
 	lh := laptopHerdr()
 	e := &Env{ErrOut: &discardWriter{}, Out: &discardWriter{}}
-	if !lh.ensureEntry(e, "todo-app") {
+	ctx := context.Background()
+	if ok, _ := lh.ensureEntry(ctx, e, "todo-app"); !ok {
 		t.Fatal("todo-app has an enabled entry")
 	}
-	if lh.ensureEntry(e, "paused") {
+	if ok, _ := lh.ensureEntry(ctx, e, "paused"); ok {
 		t.Fatal("a disabled entry was taken as the sidebar")
 	}
-	if !lh.ensureEntry(e, "fresh") {
+	if ok, _ := lh.ensureEntry(ctx, e, "fresh"); !ok {
 		t.Fatal("fresh was not added")
 	}
 	calls := strings.Join(l.calls(t), "\n")
 	if strings.Count(calls, "machine add") != 1 || !strings.Contains(calls, "machine add fresh.repose --label fresh --remote-session default") || strings.Contains(calls, "enable") {
 		t.Fatalf("calls %q", calls)
+	}
+}
+
+// The rule-1 attach beside the background reconcile (I-598): the add
+// the reconcile started is waited for, not run a second time; a wait
+// past a moment shows as a phase line; and after a failed add the
+// attach does not run herdr's add again.
+func TestEnsureEntryJoinsTheBackgroundAdd(t *testing.T) {
+	l := newFakeLaptopHerdr(t, "herdr 0.9.3", `[]`)
+	if err := os.WriteFile(filepath.Join(l.dir, "addslow"), []byte("1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l.touch(t, "addwrites")
+	herdrAddFailed = sync.Map{}
+	var errOut bytes.Buffer
+	e := &Env{Client: &Client{}, ErrOut: &errOut, Out: io.Discard, listed: []Project{{ID: "p1", Slug: "fresh", State: "running", Multiplexer: "herdr"}}}
+	release := e.herdrSyncFor(context.Background(), &e.listed[0], true)
+	defer release()
+	for i := 0; ; i++ { // until the reconcile's add is running
+		if _, ok := herdrInFlight.Load("fresh"); ok {
+			break
+		}
+		if i > 200 {
+			t.Fatal("the reconcile started no add")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	lh := laptopHerdr()
+	ok, err := lh.ensureEntry(context.Background(), e, "fresh")
+	if err != nil || !ok {
+		t.Fatalf("ensureEntry: %v %v", ok, err)
+	}
+	waitHerdrAdds(10 * time.Second)
+	if n := strings.Count(strings.Join(l.calls(t), "\n"), "machine add fresh.repose"); n != 1 {
+		t.Fatalf("%d adds: %q", n, l.calls(t))
+	}
+	if got := errOut.String(); got != "Adding fresh to herdr's sidebar...\n" {
+		t.Fatalf("stderr %q", got)
+	}
+
+	// A failed add, then the attach: one add, one line, no sidebar.
+	l2 := newFakeLaptopHerdr(t, "herdr 0.9.3", `[]`)
+	l2.touch(t, "addfail")
+	herdrAddFailed = sync.Map{}
+	errOut.Reset()
+	e.listed = []Project{{ID: "p2", Slug: "gone", State: "running", Multiplexer: "herdr"}}
+	e.herdrSyncFor(context.Background(), &e.listed[0], true)()
+	waitHerdrAdds(10 * time.Second)
+	if ok, err := laptopHerdr().ensureEntry(context.Background(), e, "gone"); ok || err != nil {
+		t.Fatalf("after a failed add: %v %v", ok, err)
+	}
+	if n := strings.Count(strings.Join(l2.calls(t), "\n"), "machine add"); n != 1 {
+		t.Fatalf("%d adds after a failure: %q", n, l2.calls(t))
+	}
+	if strings.Count(errOut.String(), "Could not add gone") != 1 {
+		t.Fatalf("stderr %q", errOut.String())
+	}
+}
+
+// Ctrl-C while the attach waits on another process's sidebar add (the
+// lock held) ends the wait at once with the context's error, where it
+// used to sit out the other add and the attach went on (I-598).
+func TestEnsureEntryStopsAtCtrlC(t *testing.T) {
+	newFakeLaptopHerdr(t, "herdr 0.9.3", `[]`)
+	herdrAddFailed = sync.Map{}
+	dir, err := configDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := lockFile(filepath.Join(dir, herdrLockName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(300*time.Millisecond, cancel)
+	e := &Env{ErrOut: io.Discard, Out: io.Discard}
+	start := time.Now()
+	ok, err := laptopHerdr().ensureEntry(ctx, e, "fresh")
+	if ok || !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v %v", ok, err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %s after Ctrl-C", d)
+	}
+}
+
+// Rule 1 with nothing that lasts returns at once instead of waiting for
+// a Ctrl-C that ends nothing; a Ctrl-C that came before it ends it at
+// once; and the line says what keeps the command running (I-598).
+func TestRunHelperForegroundEnds(t *testing.T) {
+	e := &Env{ErrOut: io.Discard, Out: io.Discard}
+	done := make(chan struct{})
+	go func() {
+		_ = runHelperForeground(context.Background(), e, sessionOptions{Slug: "todo-app"})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("nothing to run, and it waited")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done = make(chan struct{})
+	go func() {
+		_ = runHelperForeground(ctx, e, sessionOptions{Slug: "todo-app", Forward: true, Target: []string{"-o", "BatchMode=yes", "nowhere.invalid"}})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("a Ctrl-C before the helper did not end it")
+	}
+	if got := sidebarLine("todo-app", sessionOptions{Forward: true}); got != "todo-app is in herdr's sidebar. Ctrl-C ends its forwards." {
+		t.Fatal(got)
+	}
+	if got := sidebarLine("todo-app", sessionOptions{Carry: true}); got != "todo-app is in herdr's sidebar." {
+		t.Fatal(got)
+	}
+}
+
+// The machine's own checkout is the `checkout` workspace (I-597), and a
+// workspace with its old label (the folder's name) still counts as it
+// for the shared-tree warning.
+func TestHerdrStateCheckoutLabel(t *testing.T) {
+	out := `#label checkout
+#alias todo-app
+#agents {"result":{"agents":[{"agent":"claude","name":"claude","workspace_id":"w1"}]}}
+#workspaces {"result":{"workspaces":[{"workspace_id":"w1","label":"todo-app"}]}}
+`
+	st, err := parseHerdrState(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Label != "checkout" || st.Alias != "todo-app" {
+		t.Fatalf("%+v", st)
+	}
+	if n, others := st.pick("claude"); n != "claude-2" || !others {
+		t.Fatalf("pick %q %v", n, others)
+	}
+	for _, script := range []string{herdrStateScript("todo-app", ""), herdrStartScript(agentStart{Slug: "todo-app", Agent: "claude", Name: "claude", Dir: "~/todo-app"}, "")} {
+		if !strings.Contains(script, "repose_l="+herdrCheckoutLabel) {
+			t.Fatalf("no checkout label in %q", script)
+		}
 	}
 }
 

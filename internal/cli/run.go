@@ -301,7 +301,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// session has ended goes at once (I-352).
 		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
 		defer e.keepTokenFresh()()
-		return mux.Attach(e, attachReq{Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
+		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
 	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).

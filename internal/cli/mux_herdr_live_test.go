@@ -88,11 +88,52 @@ while IFS= read -r l; do printf '%s\n' "$l" >> `+typed+`; echo "> "; done
 		t.Fatal(out)
 	}
 
-	out, err := run(herdrStateScript("todo-app", ""))
+	// The first boot came before the checkout: the server made `home`
+	// there, and a base before I-597 then labelled the checkout's
+	// workspace with the folder's name. The tidy step (the sync's, and the
+	// prompt's below) renames that one to `checkout` and closes `home`
+	// once it is an idle shell, never while it runs something (I-596,
+	// I-597).
+	labels := func() string {
+		t.Helper()
+		out, err := run(`herdr workspace list | jq -r '[.result.workspaces[].label] | join(",")'`)
+		must(err)
+		return strings.TrimSpace(out)
+	}
+	out, err := run(`herdr workspace create --cwd "$HOME" --label home --no-focus | jq -r '.result.root_pane.pane_id'`)
+	must(err)
+	homePane := strings.TrimSpace(out)
+	_, err = run(`herdr workspace create --cwd "$HOME/todo-app" --label todo-app --no-focus`)
+	must(err)
+	_, err = run(`herdr pane send-text ` + homePane + ` 'sleep 300' && herdr pane send-keys ` + homePane + ` Enter`)
+	must(err)
+	herdrWaitFor(t, func() bool {
+		out, _ := run(`herdr pane process-info --pane ` + homePane + ` | jq -r '.result.process_info | .foreground_process_group_id != .shell_pid'`)
+		return strings.TrimSpace(out) == "true"
+	})
+	tidy := herdrMainVar("todo-app") + herdrRenameShell + herdrTidyShell
+	_, err = run(tidy)
+	must(err)
+	if got := labels(); got != "home,checkout" {
+		t.Fatalf("with a busy home: %q", got)
+	}
+	_, err = run(`herdr pane send-text ` + homePane + ` "$(printf '\003')"`)
+	must(err)
+	herdrWaitFor(t, func() bool {
+		out, _ := run(`herdr pane process-info --pane ` + homePane + ` | jq -r '.result.process_info | .foreground_process_group_id == .shell_pid'`)
+		return strings.TrimSpace(out) == "true"
+	})
+	// The old label again (a start on a base before I-597): the prompt's
+	// script renames nothing (checkout is there) and closes the idle
+	// duplicate and home.
+	_, err = run(`herdr workspace create --cwd "$HOME/todo-app" --label todo-app --no-focus`)
+	must(err)
+
+	out, err = run(herdrStateScript("todo-app", ""))
 	must(err)
 	st, err := parseHerdrState(out)
 	must(err)
-	if st.Label != "todo-app" || len(st.Agents) != 0 {
+	if st.Label != herdrCheckoutLabel || st.Alias != "todo-app" || len(st.Agents) != 0 {
 		t.Fatalf("empty state %+v", st)
 	}
 	name, others := st.pick("claude")
@@ -105,6 +146,9 @@ while IFS= read -r l; do printf '%s\n' "$l" >> `+typed+`; echo "> "; done
 	must(err)
 	if marker(out, "pane") == "" || marker(out, "start") != "idle" {
 		t.Fatalf("start: %q", out)
+	}
+	if got := labels(); got != "checkout" {
+		t.Fatalf("after the first prompt: %q", got)
 	}
 	// Agent prompt: the stand-in shows no working state, so herdr says
 	// stalled; the text is typed all the same.
@@ -120,7 +164,7 @@ while IFS= read -r l; do printf '%s\n' "$l" >> `+typed+`; echo "> "; done
 	st, err = parseHerdrState(out)
 	must(err)
 	rows := herdrPsRows(st)
-	if len(rows) != 1 || rows[0].Workspace != "todo-app" || rows[0].Agent != "claude" || rows[0].Name != "claude" {
+	if len(rows) != 1 || rows[0].Workspace != herdrCheckoutLabel || rows[0].Agent != "claude" || rows[0].Name != "claude" {
 		t.Fatalf("ps rows %+v", rows)
 	}
 	if name, others := st.pick("claude"); name != "claude-2" || !others {
@@ -183,7 +227,7 @@ herdr pane list | jq -r --arg w "$w" 'first(.result.panes[] | select(.focused an
 	}
 	out, err = run(`herdr workspace list | jq -r '.result.workspaces[] | select(.focused) | .label'`)
 	must(err)
-	if strings.TrimSpace(out) != "notes" && strings.TrimSpace(out) != "todo-app" {
+	if strings.TrimSpace(out) != "notes" && strings.TrimSpace(out) != herdrCheckoutLabel {
 		t.Fatalf("focused %q", out)
 	}
 	if _, err := run(herdrFocusScript("todo-app", "missing", "")); herdrExit(err) != 2 {

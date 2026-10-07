@@ -17,12 +17,13 @@ let
   multiplexerIs = import ./multiplexer-is.nix { inherit pkgs; };
 
   # repose-herdr-workspace: the herdr counterpart of tmux's `shell`
-  # window. When the running herdr server has no workspace labelled with
-  # the checkout's directory name (`home` on a machine with no checkout),
-  # it creates one there without taking focus. The server unit runs it
-  # after start; the CLI runs it after the first sync. Exits 0 when herdr
-  # is not running, and is safe to run again. At most 10 s waiting for
-  # herdr and 5 s for the create.
+  # window. When the running herdr server has no workspace labelled
+  # `checkout` (`home` on a machine with no checkout), it creates one in
+  # the checkout without taking focus; a workspace with the label a base
+  # before I-597 gave it, the checkout's directory name, is renamed
+  # instead. The server unit runs it after start; the CLI runs it after
+  # the first sync. Exits 0 when herdr is not running, and is safe to run
+  # again. At most 10 s waiting for herdr and 5 s for the create.
   workspace = pkgs.writeShellApplication {
     name = "repose-herdr-workspace";
     runtimeInputs = [ herdr checkout pkgs.jq pkgs.systemd pkgs.coreutils ];
@@ -53,14 +54,25 @@ let
         exit 0
       fi
       dir=$(repose-checkout)
+      old=
       if [ "$dir" = "''${HOME:-/home/dev}" ]; then
         label=home
       else
-        label=$(basename "$dir")
+        label=checkout
+        old=$(basename "$dir")
       fi
       if printf '%s' "$list" | jq -e --arg l "$label" \
         '[.result.workspaces[]? | select(.label == $l)] | length > 0' >/dev/null 2>&1; then
         exit 0
+      fi
+      # The label before I-597: the workspace is the checkout's, renamed
+      # with its tabs and agents.
+      if [ -n "$old" ] && [ "$old" != home ] && [ "$old" != checkout ]; then
+        id=$(printf '%s' "$list" | jq -r --arg l "$old" \
+          'first(.result.workspaces[]? | select(.label == $l) | .workspace_id) // empty' 2>/dev/null || true)
+        if [ -n "$id" ] && timeout 5 herdr workspace rename "$id" checkout >/dev/null 2>&1; then
+          exit 0
+        fi
       fi
       if ! timeout 5 herdr workspace create --cwd "$dir" --label "$label" --no-focus >/dev/null; then
         echo "repose-herdr-workspace: herdr could not create the workspace $label" >&2

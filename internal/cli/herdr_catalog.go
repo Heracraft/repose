@@ -158,18 +158,58 @@ const herdrLockName = "herdr-sidebar.lock"
 // reconcile says nothing about it, as for its own list.
 var errHerdrList = errors.New("herdr machine list failed")
 
+// herdrAddCall is one addOnce in flight in this process.
+type herdrAddCall struct {
+	done    chan struct{}
+	enabled bool
+	err     error
+}
+
+// herdrInFlight holds the addOnce in flight per slug: a second caller in
+// the same process (the attach's ensureEntry beside the background
+// reconcile, which starts first) waits for that one instead of queueing
+// on the lock for a second list and, after a failure, a second add of
+// up to a minute (DECISIONS I-598).
+var herdrInFlight sync.Map
+
 // addOnce adds slug unless herdr has an entry for it, reading the list
 // again under a lock every repose process takes for its adds: herdr's
 // `machine add --label` makes a second entry for the same target, so two
 // commands at once (two panes, or ensureEntry beside a background add)
-// would each add one. enabled is the entry's state.
+// would each add one. enabled is the entry's state. A caller whose ctx
+// ends stops waiting at once, for the lock or for the add.
 func (h *laptopHerdrCLI) addOnce(ctx context.Context, slug string) (enabled bool, err error) {
+	c := &herdrAddCall{done: make(chan struct{})}
+	if v, loaded := herdrInFlight.LoadOrStore(slug, c); loaded {
+		w := v.(*herdrAddCall)
+		select {
+		case <-w.done:
+			return w.enabled, w.err
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	}
+	defer func() {
+		c.enabled, c.err = enabled, err
+		herdrInFlight.Delete(slug)
+		close(c.done)
+	}()
+	return h.addLocked(ctx, slug)
+}
+
+func (h *laptopHerdrCLI) addLocked(ctx context.Context, slug string) (bool, error) {
 	if dir, derr := configDir(); derr == nil && os.MkdirAll(dir, 0o700) == nil {
-		if unlock, lerr := lockFile(filepath.Join(dir, herdrLockName)); lerr == nil {
+		unlock, lerr := lockFileCtx(ctx, filepath.Join(dir, herdrLockName))
+		if lerr == nil {
 			defer unlock()
+		} else if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
 	}
 	entries, err := h.machines(ctx)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
 	if err != nil {
 		return false, errHerdrList
 	}
@@ -293,16 +333,69 @@ func forgetHerdrMachine(ctx context.Context, slug string) {
 // ensureEntry is the attach's part (rule 1 of the attach rule): true
 // when slug has an enabled entry, adding one now when it has none. An
 // entry the user disabled stays disabled, and the attach takes another
-// path.
-func (h *laptopHerdrCLI) ensureEntry(e *Env, slug string) bool {
+// path. An add the background reconcile has running is waited for, not
+// run again, and one that already failed in this process is not tried
+// again (I-598). A wait past a moment shows as a phase line on stderr,
+// and Ctrl-C (ctx) ends it at once with ctx's error.
+func (h *laptopHerdrCLI) ensureEntry(ctx context.Context, e *Env, slug string) (bool, error) {
 	if herdrCatalogReady() == nil {
-		return false
+		return false, nil
 	}
-	enabled, err := h.addOnce(context.Background(), slug)
-	if err != nil && !errors.Is(err, errHerdrList) {
-		sayHerdrAddFailed(func(s string) { e.warn("%s", s) }, slug, err)
+	type answer struct {
+		enabled bool
+		err     error
 	}
-	return err == nil && enabled
+	got := make(chan answer, 1)
+	go func() {
+		if _, failed := herdrAddFailed.Load(slug); failed {
+			en, ok, err := h.entry(ctx, slug)
+			if err == nil && !ok {
+				err = errHerdrList // nothing to add again; the failure was said
+			}
+			got <- answer{en, err}
+			return
+		}
+		en, err := h.addOnce(ctx, slug)
+		got <- answer{en, err}
+	}()
+	var a answer
+	select {
+	case a = <-got:
+	case <-time.After(herdrEntryQuiet):
+		var pr *progress
+		if !e.JSON {
+			pr = newProgress(e.ErrOut, e.TTY)
+		}
+		pr.Phase("Adding "+slug+" to herdr's sidebar", "")
+		a = <-got
+		pr.End()
+	}
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if a.err != nil && !errors.Is(a.err, errHerdrList) {
+		sayHerdrAddFailed(func(s string) { e.warn("%s", s) }, slug, a.err)
+	}
+	return a.err == nil && a.enabled, nil
+}
+
+// herdrEntryQuiet is how long ensureEntry waits before it shows that it
+// is waiting: an entry that is there answers in a few milliseconds.
+const herdrEntryQuiet = 500 * time.Millisecond
+
+// entry is slug's entry in herdr's list: whether there is one and
+// whether it is enabled.
+func (h *laptopHerdrCLI) entry(ctx context.Context, slug string) (enabled, found bool, err error) {
+	entries, err := h.machines(ctx)
+	if err != nil {
+		return false, false, errHerdrList
+	}
+	for _, m := range entries {
+		if ownedSlug(m) == slug {
+			return m.Enabled, true, nil
+		}
+	}
+	return false, false, nil
 }
 
 // heldLines holds warning lines while an attach owns the terminal, so a
