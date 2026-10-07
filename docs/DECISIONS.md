@@ -14584,9 +14584,12 @@ it. Now:
   -m "repose run: last sync" --pathspec-from-file`) before laying the
   laptop's current work down. The whole-tree fingerprint stays for the
   common case and is written only when no guest change was kept, since
-  a kept change is not the sync's; a fingerprint that moved after the
-  probe now falls back to the per-path stash instead of exit 6, as the
-  overlap check already ran on the tree as it was.
+  a kept change is not the sync's. When it still matches in the apply,
+  the whole tree is the last sync's: it is stashed whole and the overlap
+  check is skipped, which is also how a guest an older CLI synced (a
+  fingerprint and no per-path record) gets its first sync with this one.
+  A fingerprint that moved after the probe falls back to the per-path
+  check and stash instead of exit 6.
 - `--stash-remote` and `--discard-remote` keep their meaning (all of the
   guest's changes, no check). `repose run` syncs only into a checkout with
   no commit (I-367), and its first sync goes through the same check.
@@ -14605,7 +14608,8 @@ repose` hint after it, "Delete it there if it should go" and the
 `TestSyncRefusesNamingTheOverlap`, `TestSyncWithOnlyUntrackedGuestFilesElsewhere`,
 `TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds`,
 `TestSyncRefusesOverTheOldPathOfAGuestRename`,
-`TestSyncRefusalNamesOnlyTheOverlap`, `TestSyncCommandSyncsAnExistingCheckout`.
+`TestSyncRefusalNamesOnlyTheOverlap`, `TestSyncCommandSyncsAnExistingCheckout`,
+`TestSyncStashesAnOlderSyncsChangesWithoutTheRecord`.
 Interfaces: guest-conventions.md (`.git/repose-synced-paths`). Needs a CLI
 release; the agent guide line of I-574 needs a base publish.
 *Rejected:* comparing in the laptop (it cannot see a merge's tree, nor
@@ -14621,7 +14625,8 @@ hand, and an agent that did not notice would have committed on a
 detached `HEAD`, which `git fetch repose` does not bring back. I-150
 detaches so that an agent's work is never moved off its branch; a merge
 keeps it there and puts the laptop's work on the branch too. The apply,
-after the fetch, merges when the guest is on that branch, `git
+after the fetch, merges when the guest is on that branch with no merge,
+rebase, cherry-pick or revert of its own in progress, `git
 merge-tree --write-tree` finds no conflict, the guest's commits since
 the merge base touch none of the laptop's own paths (I-573's `paths`; a
 merge would put the agent's version under the laptop's uncommitted
@@ -14637,8 +14642,10 @@ main has commits that could not be merged with yours, so it was left as
 it is and the machine is on 4f2a9c1, detached. `git fetch repose`
 brings that branch here.``), and the agent guide now says what a detached
 checkout after a sync means and what to do before committing. A merge
-that fails after it started is aborted and falls back to the detached
-checkout. `TestSyncMergesADivergedGuestBranch`,
+the sync started that fails is aborted and falls back to the detached
+checkout; a merge the agent left in progress is never aborted.
+`TestSyncMergesADivergedGuestBranch`,
+`TestSyncDoesNotMergeOrAbortDuringTheAgentsMerge`,
 `TestSyncLeavesAConflictingGuestBranchAlone`,
 `TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork`,
 `TestSyncMergesBesideTheGuestsUncommittedFiles`. *Rejected:* rebasing

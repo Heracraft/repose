@@ -612,5 +612,5 @@ pointer, not a summary.
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
 - **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L14545
-- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L14615
-- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L14650
+- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L14619
+- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L14657

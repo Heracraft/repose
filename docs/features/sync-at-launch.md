@@ -183,7 +183,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
 - Checkout: the laptop's branch is created in the guest, or
   fast-forwarded when the guest's copy is behind. When the guest's branch
   has commits the laptop does not (an agent committed and nobody pulled)
-  and the guest is on that branch, the laptop's commit is merged into it
+  and the guest is on that branch with no merge, rebase, cherry-pick or
+  revert of its own in progress, the laptop's commit is merged into it
   (DECISIONS I-574) when `git merge-tree --write-tree` finds no conflict,
   the guest's commits since the merge base leave every one of the
   laptop's own paths alone, and git has a committer identity: `git merge

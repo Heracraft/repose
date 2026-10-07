@@ -201,3 +201,62 @@ func TestSyncMergesBesideTheGuestsUncommittedFiles(t *testing.T) {
 	wantFile(t, f.guestRepo(), "q2.yml", "q2\n")
 	wantFile(t, f.guestRepo(), "laptop.go", "package laptop\n")
 }
+
+// A guest an older CLI synced has the last sync's fingerprint and no
+// per-path record. Its own changes, untouched since, are still the last
+// sync's: stashed whole, not taken for an agent's and refused.
+func TestSyncStashesAnOlderSyncsChangesWithoutTheRecord(t *testing.T) {
+	f := newSyncFixture(t)
+	writeAt(t, f.local, "README.md", "laptop edit\n")
+	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	record := strings.TrimSpace(mustRun(t, f.guestRepo(), "git", "rev-parse", "--git-path", "repose-synced-paths"))
+	if !filepath.IsAbs(record) {
+		record = filepath.Join(f.guestRepo(), record)
+	}
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, f.local, "README.md", "laptop edit, later\n")
+
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	if !s.StashedLastSync || s.GuestKept != 0 {
+		t.Fatalf("summary %+v", s)
+	}
+	wantFile(t, f.guestRepo(), "README.md", "laptop edit, later\n")
+}
+
+// An agent in the middle of a merge of its own: the sync makes no merge
+// and aborts nothing, so the agent's staged merge result stays.
+func TestSyncDoesNotMergeOrAbortDuringTheAgentsMerge(t *testing.T) {
+	f := newSyncFixture(t)
+	g := f.guestRepo()
+	mustRun(t, g, "git", "checkout", "-q", "-b", "side")
+	writeAt(t, g, "side.txt", "side\n")
+	mustRun(t, g, "git", "add", "side.txt")
+	mustRun(t, g, "git", "commit", "-q", "-m", "side")
+	mustRun(t, g, "git", "checkout", "-q", "main")
+	writeAt(t, g, "agent.go", "package agent\n")
+	mustRun(t, g, "git", "add", "agent.go")
+	mustRun(t, g, "git", "commit", "-q", "-m", "agent's commit")
+	mustRun(t, g, "git", "merge", "-q", "--no-commit", "--no-ff", "side")
+	writeAt(t, f.local, "laptop.go", "package laptop\n")
+	mustRun(t, f.local, "git", "add", "laptop.go")
+	mustRun(t, f.local, "git", "commit", "-q", "-m", "laptop's commit")
+
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if s.Merged || !s.Diverged {
+		t.Fatalf("summary %+v", s)
+	}
+	wantFile(t, g, "side.txt", "side\n")
+	if st := mustRun(t, g, "git", "status", "--porcelain"); !strings.Contains(st, "A  side.txt") {
+		t.Fatalf("guest status %q, want the agent's staged side.txt", st)
+	}
+}

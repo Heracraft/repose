@@ -1038,7 +1038,9 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 	_, _ = fmt.Fprintf(&b, "repose_target=%s\nrepose_merge=\n", head)
 	if branch != "" {
 		br := shQuote("refs/heads/" + branch)
-		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify %[1]s) && ! git merge-base --is-ancestor "$cur" %[2]s && [ "$(git symbolic-ref -q HEAD || true)" = %[1]s ] && git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then
+		// Never while the guest is in the middle of a merge, rebase,
+		// cherry-pick or revert of its own: that is the agent's to finish.
+		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify %[1]s) && ! git merge-base --is-ancestor "$cur" %[2]s && [ "$(git symbolic-ref -q HEAD || true)" = %[1]s ] && ! repose_busy && git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then
   if repose_mt=$(git merge-tree --write-tree --no-messages "$cur" %[2]s 2>/dev/null) && repose_mb=$(git merge-base "$cur" %[2]s) && ! repose_touches "$repose_mb" "$cur"; then
     repose_target=$(printf '%%s\n' "$repose_mt" | head -n 1)
     repose_merge=yes
@@ -1046,9 +1048,20 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 fi
 `, br, head)
 	}
+	// The probe found nothing but the last sync's own changes: if the
+	// tree is still exactly as that sync left it (its fingerprint, which
+	// a guest synced by an older CLI has without the per-path record),
+	// all of it goes to the stash and there is nothing to check.
+	whole := len(probe.dirty) > 0 && probe.syncedOnly && !opts.StashRemote && !opts.DiscardRemote
+	if whole {
+		b.WriteString("repose_whole=\nif [ \"$(repose_fp)\" = \"$(cat \"$repose_synced\" 2>/dev/null)\" ]; then repose_whole=yes; fi\n")
+	}
 	if !opts.StashRemote && !opts.DiscardRemote {
 		// Exit 3 naming each path the guest changed that the sync would
 		// write; nothing has been touched yet (I-573).
+		if whole {
+			b.WriteString("[ -n \"$repose_whole\" ] || ")
+		}
 		b.WriteString("repose_guard \"$repose_target\"\n")
 	}
 	b.WriteString(applyCarryHere)
@@ -1059,13 +1072,13 @@ fi
 	case opts.StashRemote:
 		b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run'"))
 		b.WriteString("repose_git stash push -q -u -m 'repose run'\n")
-	case len(probe.dirty) > 0 && probe.syncedOnly:
+	case whole:
 		// The last sync's own changes and nothing else, which the laptop
 		// still has (or has replaced): stashed whole, not thrown away, so
 		// a write that lands after this check is still recoverable. If
 		// the tree moved since the probe, only the paths the last sync
 		// left as they were go to the stash (I-210, I-573).
-		b.WriteString("if [ \"$(repose_fp)\" = \"$(cat \"$repose_synced\" 2>/dev/null)\" ]; then\n")
+		b.WriteString("if [ -n \"$repose_whole\" ]; then\n")
 		b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run: last sync'\n" + pruneSyncStashes))
 		b.WriteString("repose_git stash push -q -u -m 'repose run: last sync'\necho '#stashedsync'\n" + pruneSyncStashes)
 		b.WriteString("else\nrepose_stash_own\nfi\n")
@@ -1094,7 +1107,7 @@ fi
   if git merge-base --is-ancestor "$cur" %[2]s; then repose_git checkout -q -B %[1]s %[2]s
   elif [ -n "$repose_merge" ] && repose_git merge -q --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures --no-gpg-sign -m %[3]s %[2]s >/dev/null 2>&1; then echo '#merged'
   else
-    if git rev-parse -q --verify MERGE_HEAD >/dev/null; then git merge --abort; fi
+    if [ -n "$repose_merge" ] && git rev-parse -q --verify MERGE_HEAD >/dev/null; then git merge --abort; fi
     repose_git checkout -q --detach %[2]s; echo '#diverged'
   fi
 else
@@ -1144,8 +1157,11 @@ func overlapFiles(stderr string) []string {
 }
 
 // syncGuardFns are the apply's overlap check and its record of what the
-// sync left (I-573). They need bash (read with an empty delimiter) and gawk (NUL records),
-// which the base has; $t is the unpacked payload, whose `paths` lists,
+// sync left (I-573). They need bash (read with an empty delimiter) and
+// gawk (NUL records), which the base has: repose_awk calls gawk by name,
+// so an awk earlier on the user's PATH (busybox, mawk) is not used.
+// repose_busy: whether a merge, rebase, cherry-pick or revert is in
+// progress. $t is the unpacked payload, whose `paths` lists,
 // NUL-separated, every path the laptop's own work writes: both sides of
 // its staged and unstaged diffs, its untracked files and its bundled
 // submodules.
@@ -1172,9 +1188,16 @@ func overlapFiles(stderr string) []string {
 // repose_touches BASE TIP: whether the commits BASE..TIP change any of
 // the laptop's paths, which would put a merge's version under the
 // laptop's uncommitted work.
-var syncGuardFns = `repose_hash() {
-  if [ -e "$1/.git" ]; then (cd "$1" && repose_fp1)
-  elif [ -L "$1" ]; then printf 'l:%s\n' "$(readlink "$1")"
+var syncGuardFns = `repose_awk() { if command -v gawk >/dev/null 2>&1; then gawk "$@"; else awk "$@"; fi; }
+repose_busy() {
+  for f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+    [ ! -e "$(git rev-parse --git-path "$f")" ] || return 0
+  done
+  return 1
+}
+repose_hash() {
+  if [ -e "$1/.git" ]; then (cd "./$1" && repose_fp1)
+  elif [ -L "$1" ]; then printf 'l:%s\n' "$(readlink -- "$1")"
   elif [ -f "$1" ]; then git hash-object --no-filters -- "$1" 2>/dev/null || echo '?'
   elif [ -e "$1" ]; then echo '?'
   else echo -
@@ -1202,13 +1225,13 @@ repose_guard() {
   repose_git status --porcelain=v1 -z -uall --ignore-submodules=none > "$t/st"
   repose_own > "$t/own"
   : > "$t/ownd"; : > "$t/kept"; : > "$t/overlap"
-  awk -v RS='\0' -v ownd="$t/ownd" -v kept="$t/kept" -v overlap="$t/overlap" '
+  repose_awk -v RS='\0' -v ownd="$t/ownd" -v kept="$t/kept" -v overlap="$t/overlap" '
     FILENAME == ARGV[1] { if ($0 == "") next; w[$0] = 1; n = split($0, a, "/"); d = a[1]; for (i = 2; i <= n; i++) { wd[d] = 1; d = d "/" a[i] } next }
     FILENAME == ARGV[2] { if ($0 != "") own[$0] = 1; next }
     {
-      if (orig) { orig = 0; p = $0 } else { if ($0 == "") next; x = substr($0, 1, 1); p = substr($0, 4); if (x == "R" || x == "C") orig = 1 }
+      if (orig) { orig = 0; p = $0 } else { if ($0 == "") next; xy = substr($0, 1, 2); p = substr($0, 4); if (xy ~ /[RC]/) orig = 1 }
       sub(/\/$/, "", p)
-      if (p in own) { printf "%s\n", p > ownd; next }
+      if (p in own) { printf "%s%c", p, 0 > ownd; next }
       hit = (p in w) || (p in wd)
       n = split(p, a, "/"); d = a[1]
       for (i = 2; i <= n && !hit; i++) { if (d in w) hit = 1; d = d "/" a[i] }
@@ -1222,16 +1245,16 @@ repose_guard() {
 }
 repose_stash_own() {
   [ -s "$t/ownd" ] || return 0
-  while IFS= read -r p; do
-    if [ -e "$p/.git" ]; then (cd "$p" && repose_git stash push -q -u -m 'repose run: last sync') || exit 1; fi
+  while IFS= read -r -d '' p; do
+    if [ -e "$p/.git" ]; then (cd "./$p" && repose_git stash push -q -u -m 'repose run: last sync') || exit 1; fi
   done < "$t/ownd"
-  GIT_LITERAL_PATHSPECS=1 git $repose_c stash push -q -u -m 'repose run: last sync' --pathspec-from-file="$t/ownd"
+  GIT_LITERAL_PATHSPECS=1 git $repose_c stash push -q -u -m 'repose run: last sync' --pathspec-from-file="$t/ownd" --pathspec-file-nul
   echo '#stashedsync'
 ` + pruneSyncStashes + `}
 repose_touches() {
   [ -s "$t/paths" ] || return 1
   git diff --name-only -z --no-renames "$1" "$2" -- > "$t/agent"
-  awk -v RS='\0' '
+  repose_awk -v RS='\0' '
     FILENAME == ARGV[1] { if ($0 == "") next; a[$0] = 1; n = split($0, s, "/"); d = s[1]; for (i = 2; i <= n; i++) { ad[d] = 1; d = d "/" s[i] } next }
     {
       if ($0 == "") next

@@ -109,7 +109,7 @@ too:
 
 Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
 
-If the agent committed on the branch and your laptop has new commits of its own, the sync merges your laptop's commit into the machine's branch, so the branch has both. It makes that merge only when git can make it without a conflict and the agent's commits leave your uncommitted files alone. Otherwise the sync checks out your laptop's commit detached, leaves the agent's branch where it is, and says so. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
+If the agent committed on the branch and your laptop has new commits of its own, the sync merges your laptop's commit into the machine's branch, so the branch has both. It makes that merge only when git can make it without a conflict, the agent's commits leave your uncommitted files alone, and the agent is not in the middle of a merge or rebase of its own. Otherwise the sync checks out your laptop's commit detached, leaves the agent's branch where it is, and says so. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
 
 ## Getting work back
 

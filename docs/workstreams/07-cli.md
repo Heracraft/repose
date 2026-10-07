@@ -348,7 +348,8 @@ $ repose run
       list, and `paths`: every path the laptop's own work writes, NUL
       separated): `git fetch` from the bundle; when the guest is on
       `<branch>` and it has commits the laptop lacks, decide on a merge
-      (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
+      (DECISIONS I-574: no merge, rebase, cherry-pick or revert in
+      progress, `git merge-tree --write-tree` clean, the guest's
       commits since the merge base leave `paths` alone, a committer
       identity); without `--stash-remote` or `--discard-remote`, the
       overlap check of `features/sync-at-launch.md` (I-573: the guest's
