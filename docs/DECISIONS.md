@@ -14596,7 +14596,19 @@ reader wrote; a chunk goes through O_DIRECT when the filesystem block,
 the device size and the chunk allow it, through the page cache
 otherwise or when the direct read fails. Reading around the page cache
 also stops a snapshot from filling the host's page cache with a guest's
-disk. zstd stays at `-T4`: the guests share those cores. Expected: a
+disk. Eight 4 MiB buffers per stream would have made the nightly
+`hostd snapshot-all`, which starts every running guest's snapshot at
+once, hold 32 MiB per guest (1.3 GB for 40); reads are bounded host-wide
+instead: `maxChunkReads` (32 chunks, 128 MiB) slots shared by every
+snapshot stream in hostd, each chunk holding one from its read until it
+is emitted, with buffers from a pool taken only under a slot. A lone
+stop still reads eight at a time; a stream's head chunk is always its
+own, so no stream waits on another's slots forever. `read_wait_ms`
+counts the wait for a slot too. The number of snapshots at once stays
+unbounded, as before: nothing caps `snapshot-all`, and a cap there
+would queue a user's stop behind other guests' nightly snapshots, a
+trade left for its own decision. zstd stays at `-T4`: the guests share
+those cores. Expected: a
 stop the size of waterville's in about 11 s instead of 24; to be checked
 on host-01 after the hostd switch. Phase timings, durations only:
 `snapshot done` gains `freeze_ms` and `read_wait_ms` (how long the
@@ -14613,7 +14625,8 @@ equal the old serial reader's, including unaligned ranges, a range
 past the device and an unaligned device size, and restore to the
 source), `TestParallelSnapshotReadStopsOnAFailedRead`,
 `TestParallelSnapshotReadStopsWhenTheWriterFails`,
-`TestStopLogsItsPhases`. *Not done:* incremental snapshots (I-404).
+`TestSnapshotReadsShareAHostBound` (ten streams at once hold at most
+32 chunks and each stream equals the serial one), `TestStopLogsItsPhases`. *Not done:* incremental snapshots (I-404).
 
 **I-572. A guest's shutdown waits at most 10 s for dev's user
 manager.** (found with I-571, 2026-10-07) The only unit any guest console on host-01

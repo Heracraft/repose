@@ -3,9 +3,11 @@ package snapshot
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"math/rand/v2"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -606,4 +609,91 @@ func TestParallelSnapshotReadStopsWhenTheWriterFails(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("writeExtents hung after its writer failed")
 	}
+}
+
+// slowWriter takes its bytes a little at a time, like a zstd that falls
+// behind: the streams writing to it fill their reads ahead.
+type slowWriter struct{ n int }
+
+func (s *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(time.Millisecond)
+	s.n += len(p)
+	return len(p), nil
+}
+
+// TestSnapshotReadsShareAHostBound: many snapshot streams at once hold
+// at most maxChunkReads chunks between them, so the nightly snapshot of
+// every guest cannot hold snapshotReaders buffers per guest, and each
+// stream still comes out whole and right (DECISIONS I-571).
+func TestSnapshotReadsShareAHostBound(t *testing.T) {
+	const size = 32 << 20 // eight chunks: a stream can fill its snapshotReaders
+	src := patterned(size, 11)
+	p := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(p, src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l := &usedLayout{blockSize: 4096, blocks: size / 4096, used: [][2]uint64{{0, size}}}
+	want := sha256.Sum256(serialExtents(t, src, size, l))
+
+	streams := 2*maxChunkReads/snapshotReaders + 2 // more than the bound has room for
+	chunkReadsPeak.Store(0)
+	outs := make([]hash.Hash, streams)
+	errs := make([]error, streams)
+	var start, wg sync.WaitGroup
+	start.Add(1)
+	for i := range streams {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f, err := os.Open(p)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer func() { _ = f.Close() }()
+			outs[i] = sha256.New()
+			start.Wait()
+			// Reads pile up ahead of the slow writer until a bound
+			// stops them.
+			sw := &slowWriter{}
+			bw := &teeWriter{a: outs[i], b: sw}
+			_, errs[i] = writeExtents(f, nil, size, l, bw)
+		}()
+	}
+	start.Done()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Minute):
+		t.Fatal("concurrent snapshot streams did not finish")
+	}
+	for i := range streams {
+		if errs[i] != nil {
+			t.Fatalf("stream %d: %v", i, errs[i])
+		}
+		if got := outs[i].Sum(nil); !bytes.Equal(got, want[:]) {
+			t.Fatalf("stream %d differs from the serial stream", i)
+		}
+	}
+	peak := chunkReadsPeak.Load()
+	if peak > maxChunkReads {
+		t.Fatalf("%d chunks held at once, bound %d", peak, maxChunkReads)
+	}
+	if peak <= snapshotReaders {
+		t.Fatalf("%d chunks held at once with %d streams: the streams did not read side by side", peak, streams)
+	}
+	if n := chunkReadsInUse.Load(); n != 0 || len(chunkSlots) != 0 {
+		t.Fatalf("%d chunks (%d slots) still held after every stream ended", n, len(chunkSlots))
+	}
+}
+
+// teeWriter writes to a, then b.
+type teeWriter struct{ a, b io.Writer }
+
+func (w *teeWriter) Write(p []byte) (int, error) {
+	if _, err := w.a.Write(p); err != nil {
+		return 0, err
+	}
+	return w.b.Write(p)
 }

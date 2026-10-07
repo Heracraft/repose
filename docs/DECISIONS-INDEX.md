@@ -613,4 +613,4 @@ pointer, not a summary.
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L14545
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L14572
-- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L14618
+- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L14631

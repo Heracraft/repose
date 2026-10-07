@@ -268,7 +268,8 @@ done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
 - `format: extents`: time should follow `used_bytes` (reading) and
   `bytes` (the upload). Slow with little data means the disk or Blob is
   slow; `iostat -x 1` during the next one. `read_wait_ms` is how long the
-  stream waited for the device and `freeze_ms` the freeze, LVM snapshot
+  stream waited for the device, or for one of the 32 chunk slots every
+  snapshot on the host shares (the nightly run starts them all at once), and `freeze_ms` the freeze, LVM snapshot
   and thaw (I-571): with `read_wait_ms` close to `duration_ms` the disk set the pace (another
   guest's writes share it); well under it, zstd or the upload did.
   I-571's probe read and compressed 900 MB/s on host-01; before it,

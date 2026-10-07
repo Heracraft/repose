@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
@@ -205,11 +207,61 @@ func (l *usedLayout) usedBytes() uint64 {
 // (DECISIONS I-571).
 const snapshotReaders = 8
 
+// maxChunkReads bounds the chunks read at once across every snapshot
+// stream in hostd, and so the chunk buffers held: 32 of 4 MiB is
+// 128 MiB. A lone stop's snapshot still gets its snapshotReaders; the
+// nightly `hostd snapshot-all` starts every running guest's snapshot at
+// once, and 40 streams of 8 would have held 1.3 GB (DECISIONS I-571).
+const maxChunkReads = 32
+
+// chunkSlots holds one token per chunk being read or waiting to be
+// emitted, in any stream. A stream's head chunk is always one it holds
+// and its read needs no slot to finish, so every stream makes progress
+// while others wait for slots.
+var chunkSlots = make(chan struct{}, maxChunkReads)
+
+// chunkBufs keeps the aligned chunk buffers between uses; a buffer is
+// taken only while its chunk holds a slot.
+var chunkBufs = sync.Pool{New: func() any {
+	b := alignedBuffer(extentChunk)
+	return &b
+}}
+
+// chunkReadsInUse and chunkReadsPeak count the slots held now and the
+// most ever held at once, for the bound's test.
+var chunkReadsInUse, chunkReadsPeak atomic.Int64
+
+// acquireChunk waits for a slot and returns a buffer for it, or nil when
+// quit closes first.
+func acquireChunk(quit <-chan struct{}) *[]byte {
+	select {
+	case chunkSlots <- struct{}{}:
+	case <-quit:
+		return nil
+	}
+	n := chunkReadsInUse.Add(1)
+	for {
+		p := chunkReadsPeak.Load()
+		if n <= p || chunkReadsPeak.CompareAndSwap(p, n) {
+			break
+		}
+	}
+	return chunkBufs.Get().(*[]byte)
+}
+
+// releaseChunk returns b to the pool and frees its slot.
+func releaseChunk(b *[]byte) {
+	chunkBufs.Put(b)
+	chunkReadsInUse.Add(-1)
+	<-chunkSlots
+}
+
 // extentRead is one chunk of a used range: read by a reader goroutine,
 // emitted in order by writeExtents.
 type extentRead struct {
 	off  uint64
 	n    int
+	bufp *[]byte // from acquireChunk; released once emitted
 	buf  []byte
 	got  int
 	runs [][2]int // the maximal runs of non-zero pieces in buf[:got]
@@ -240,35 +292,35 @@ func writeExtentsTimed(dev, direct *os.File, size uint64, l *usedLayout, w io.Wr
 	if _, err := bw.Write(hdr[:]); err != nil {
 		return 0, err
 	}
-	free := make(chan []byte, snapshotReaders)
-	for range snapshotReaders {
-		free <- alignedBuffer(extentChunk)
-	}
+	// own bounds this stream's chunks out at once; chunkSlots, every
+	// stream's together.
+	own := make(chan struct{}, snapshotReaders)
 	queue := make(chan *extentRead, snapshotReaders)
 	quit := make(chan struct{})
 	// The producer hands out chunks in order, each read by its own
-	// goroutine into a free buffer; at most snapshotReaders are out at
-	// once, since each holds a buffer until it is emitted.
+	// goroutine into a buffer that holds a slot until it is emitted; at
+	// most snapshotReaders are out at once in this stream, and
+	// maxChunkReads in all.
 	go func() {
 		defer close(queue)
 		for _, r := range l.used {
 			end := min(r[1], size) // a filesystem never extends past its device
 			for off := r[0]; off < end; {
 				select {
-				case <-quit:
-					return
-				default:
-				}
-				var buf []byte
-				select {
-				case buf = <-free:
+				case own <- struct{}{}:
 				case <-quit:
 					return
 				}
+				bufp := acquireChunk(quit)
+				if bufp == nil {
+					<-own
+					return
+				}
+				buf := *bufp
 				n := int(min(uint64(len(buf)), end-off))
-				j := &extentRead{off: off, n: n, buf: buf, done: make(chan struct{})}
+				j := &extentRead{off: off, n: n, bufp: bufp, buf: buf, done: make(chan struct{})}
 				go readChunk(dev, direct, j)
-				queue <- j // never blocks for long: the queue holds as many as there are buffers
+				queue <- j // never blocks: the queue holds as many as own allows
 				off += uint64(n)
 			}
 		}
@@ -287,13 +339,18 @@ func writeExtentsTimed(dev, direct *os.File, size uint64, l *usedLayout, w io.Wr
 		return err
 	}
 	var werr error
-	for j := range queue {
+	for {
+		// Waiting for the next chunk is waiting for its read, or for a
+		// slot when other snapshots hold all of them: the disk, or the
+		// host's share of it.
+		t0 := time.Now()
+		j, ok := <-queue
+		if !ok {
+			break
+		}
+		<-j.done
 		if waited != nil {
-			t0 := time.Now()
-			<-j.done
 			*waited += time.Since(t0)
-		} else {
-			<-j.done
 		}
 		if werr == nil {
 			if j.err != nil {
@@ -311,7 +368,8 @@ func writeExtentsTimed(dev, direct *os.File, size uint64, l *usedLayout, w io.Wr
 				close(quit) // the producer stops; the chunks already out are waited for here
 			}
 		}
-		free <- j.buf
+		releaseChunk(j.bufp)
+		<-own
 	}
 	if werr != nil {
 		return read, werr
