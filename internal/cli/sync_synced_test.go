@@ -296,7 +296,8 @@ func TestSyncedProbeWritesNoObjects(t *testing.T) {
 	if _, err := syncGuest(ctx, f.target, f.local, testSlug, SyncOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(f.guestRepo(), "agent.txt"), []byte("brand new content 8d1f\n"), 0o644); err != nil {
+	// At a path the laptop writes too, so the run is refused (I-573).
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("brand new content 8d1f\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop, later\n"), 0o644); err != nil {

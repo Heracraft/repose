@@ -53,8 +53,8 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 	if !s.GuestAhead || s.Unchanged || n != 1 {
 		t.Fatalf("guestAhead=%v unchanged=%v ssh=%d", s.GuestAhead, s.Unchanged, n)
 	}
-	// git status names the untracked directory once: README.md and gen/.
-	want := "Nothing new to sync. The machine has changes your laptop doesn't have (2 files); `repose sync --stash-remote` puts them in git stash and lays your laptop's work over them."
+	// Every file counts, each of gen/'s 26 too (I-573).
+	want := "Nothing new to sync. The machine has changes your laptop doesn't have (27 files)."
 	if s.String() != want {
 		t.Fatalf("summary = %q\nwant      %q", s.String(), want)
 	}
@@ -98,7 +98,7 @@ func TestSyncLeavesTheGuestsCommitsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.GuestAhead || s.Detached || s.String() != "Nothing new to sync. The machine has commits your laptop doesn't have; `git fetch repose` brings them to your laptop." {
+	if !s.GuestAhead || s.Detached || s.String() != "Nothing new to sync. The machine has commits your laptop doesn't have." {
 		t.Fatalf("summary %+v %q", s, s.String())
 	}
 	if got := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD"); got != agentHead {
@@ -109,12 +109,19 @@ func TestSyncLeavesTheGuestsCommitsAlone(t *testing.T) {
 	}
 }
 
-// With new laptop work, the refusal says what `repose sync` does, what is on the
-// machine (eight names, then a count) and the three ways on.
-func TestSyncRefusalSaysWhatSyncDoes(t *testing.T) {
+// With new laptop work at paths the machine changed too, the refusal
+// names only those paths (eight, then a count) and the two flags; the
+// machine's changes elsewhere are not listed (I-573).
+func TestSyncRefusalNamesOnlyTheOverlap(t *testing.T) {
 	f := syncedWithALaptopEdit(t)
 	for i := 0; i < 27; i++ {
 		if err := os.WriteFile(filepath.Join(f.guestRepo(), fmt.Sprintf("agent%02d.txt", i)), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The laptop adds ten of the agent's 27 paths, with its own content.
+	for i := 0; i < 10; i++ {
+		if err := os.WriteFile(filepath.Join(f.local, fmt.Sprintf("agent%02d.txt", i)), []byte("laptop\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -124,30 +131,32 @@ func TestSyncRefusalSaysWhatSyncDoes(t *testing.T) {
 	_, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
 	wantDirtyRefusal(t, err)
 	msg := err.(*exitError).msg
-	want := "`repose sync` copies your laptop's work onto the machine. It doesn't restart or rebuild anything.\n" +
-		"The machine has uncommitted changes your laptop doesn't have (28 files), probably an agent's:\n" +
-		"  README.md\n  agent00.txt\n  agent01.txt\n  agent02.txt\n  agent03.txt\n  agent04.txt\n  agent05.txt\n  agent06.txt\n" +
-		"  and 20 more\n" +
-		"Your laptop has new work as well, so syncing now would write over them. Nothing was changed. Pick one:\n" +
-		"  repose attach                  look at the machine first\n" +
-		"  repose sync --stash-remote     put the machine's changes in git stash, then sync\n" +
-		"  repose sync --discard-remote   throw the machine's changes away, then sync"
+	want := "Not synced: the machine changed 10 files that your laptop changed too:\n" +
+		"  agent00.txt\n  agent01.txt\n  agent02.txt\n  agent03.txt\n  agent04.txt\n  agent05.txt\n  agent06.txt\n  agent07.txt\n" +
+		"  and 2 more\n" +
+		"`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away."
 	if msg != want {
 		t.Fatalf("message:\n%s\nwant:\n%s", msg, want)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "laptop\n" {
 		t.Fatalf("README.md changed by a refused run: %q", b)
 	}
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "agent00.txt")); string(b) != "x\n" {
+		t.Fatalf("agent00.txt changed by a refused run: %q", b)
+	}
 }
 
 func TestDirtyTreeErrorShortListHasNoCount(t *testing.T) {
-	msg := (&dirtyTreeError{files: []string{" M a.go", "?? b/", "M  c.go"}}).Error()
-	if !strings.Contains(msg, "(3 files)") || !strings.Contains(msg, "\n  a.go\n  b/\n  c.go\n") || strings.Contains(msg, "more") {
+	msg := (&dirtyTreeError{files: []string{"a.go", "b/c.go", "d.go"}}).Error()
+	if !strings.Contains(msg, "changed 3 files") || !strings.Contains(msg, "\n  a.go\n  b/c.go\n  d.go\n") || strings.Contains(msg, "more") {
 		t.Fatalf("message:\n%s", msg)
+	}
+	if msg := (&dirtyTreeError{files: []string{"a.go"}}).Error(); !strings.HasPrefix(msg, "Not synced: the machine changed 1 file that") {
+		t.Fatalf("one file:\n%s", msg)
 	}
 	nine := make([]string, 9)
 	for i := range nine {
-		nine[i] = fmt.Sprintf("?? f%d", i)
+		nine[i] = fmt.Sprintf("f%d", i)
 	}
 	if msg := (&dirtyTreeError{files: nine}).Error(); strings.Contains(msg, "more") || !strings.Contains(msg, "  f8\n") {
 		t.Fatalf("nine files are listed in full:\n%s", msg)
@@ -176,7 +185,7 @@ func TestSyncLeavesItAloneWhenOnlyTheMachineChanged(t *testing.T) {
 	if err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
 		t.Fatalf("second runRun: %v", err)
 	}
-	if !strings.Contains(out.String(), "Nothing new to sync. The machine has changes your laptop doesn't have (1 file); `repose sync --stash-remote`") {
+	if !strings.Contains(out.String(), "Nothing new to sync. The machine has changes your laptop doesn't have (1 file).\n") {
 		t.Fatalf("output = %q", out.String())
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "agent\n" {

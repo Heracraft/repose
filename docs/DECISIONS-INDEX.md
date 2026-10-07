@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-596 entries.
+599 entries.
 
 ## Scope
 
@@ -66,7 +66,7 @@ pointer, not a summary.
 - **R3-19** Agents come from a platform-owned overlay bumped on a schedule, not nixpkgs — L199
 - **R3-13** Fixed guest user `dev`, passwordless sudo, project at `/home/dev/<project>` — L203
 - **R3-14 + R4-10** A prompt starts the agent's TUI in a tmux window named after the agent; a second `run` with a prompt opens another window with a warning — partly amended by I-509; L208
-- **R3-12** Sync refuses if the guest tree is dirty and offers stash or discard — L213
+- **R3-12** Sync refuses if the guest tree is dirty and offers stash or discard — amended by I-573; L213
 - **R3-11** Projects are keyed on git remote plus user with `--name` override; nothing committed to the repo — L216
 
 ## Control plane and operations
@@ -242,9 +242,9 @@ pointer, not a summary.
 - **I-162** mkfs leaves the inode tables to the guest's lazy init — 2026-09-23; L3382
 - **I-163** An op enqueued in one api process wakes the driver in the other through NOTIFY — 2026-09-23; L3400
 - **I-149** The CLI has its own passphrase-less key, and one SSH connection per command — 2026-09-23; L3421
-- **I-150** The laptop sends its commits to the guest; the guest never fetches origin during a sync — 2026-09-23; amended by I-422; L3453
+- **I-150** The laptop sends its commits to the guest; the guest never fetches origin during a sync — 2026-09-23; amended by I-422; amended by I-574; L3453
 - **I-151** The CLI proves the `<slug>.repose` alias works and says exactly how to fix it when not — 2026-09-23; L3499
-- **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; L3517
+- **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; amended by I-575; L3517
 - **I-153** The CLI says what actually happened: the true state, why, and the next command — 2026-09-23; L3532
 - **I-154** Long commands show live phases — 2026-09-23; L3567
 - **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-557; L3584
@@ -293,7 +293,7 @@ pointer, not a summary.
 - **I-207** `repose status` reads the listening processes from the guest over SSH; the OOM priority is -800, set by guestd on the agent process only, and resets only negative values — 2026-09-23; L4515
 - **I-208** The caches live at one fixed address on every host; npm is pointed at them through `~/.npmrc`, not `npm_config_registry`; npm's fallback is an nginx front — 2026-09-23; L4549
 - **I-209** guestd's paths are absolute on a real guest — 2026-09-23; L4596
-- **I-210** A guest tree that is exactly what the last sync left is not dirty — 2026-09-23; amended by I-525; L4609
+- **I-210** A guest tree that is exactly what the last sync left is not dirty — 2026-09-23; amended by I-525; amended by I-573; L4609
 - **I-211** The carry leaves every secret on the laptop, by key as well as by file — 2026-09-23; L4664
 - **I-212** On a session, the gateway relays the exit status before the EOF, and answers the guest's channel keepalive itself — 2026-09-23; L4718
 - **I-213** An agent's process is found by its nix wrapper name too, and the OOM warning names what the kernel killed — 2026-09-23; L4747
@@ -327,7 +327,7 @@ pointer, not a summary.
 - **I-242** A feature without user docs is not done, and a test says so — 2026-09-24; L5903
 - **I-243** Every agent in the guest is told what the machine offers, from one source, without a word written into the user's files — 2026-09-24; L5941
 - **I-247** The laptop's ssh-agent is never forwarded; GitHub pushes go over HTTPS with the carried gh login — 2026-09-24; L5985
-- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; L6024
+- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; L6024
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6056
 - **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; L6073
 - **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; L6121
@@ -423,7 +423,7 @@ pointer, not a summary.
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9079
 - **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; L9094
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9110
-- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; L9129
+- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; L9129
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9152
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9179
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9200
@@ -628,3 +628,6 @@ pointer, not a summary.
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L15333
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15360
 - **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15419
+- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L15436
+- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15533
+- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L15591

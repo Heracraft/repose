@@ -84,40 +84,44 @@ If the machine changed since your last sync (usually an agent's edits or commits
 
 ```text
 Nothing new to sync. The machine has changes your laptop doesn't
-have (27 files); `repose sync --stash-remote` puts them in git
-stash and lays your laptop's work over them.
+have (27 files).
 ```
 
-If your laptop does have new work, copying it would write over the machine's changes, so the sync stops, changes nothing and exits with code 6:
+When your laptop has new work, the sync writes only the files that work touches: the ones your new commits change, your uncommitted changes and your untracked files. The machine's changes to any other file stay where they are, and the summary counts them:
 
 ```text
-`repose sync` copies your laptop's work onto the machine.
-It doesn't restart or rebuild anything.
-The machine has uncommitted changes your laptop doesn't have
-(27 files), probably an agent's:
-  src/auth.ts
-  src/routes/login.ts
-  src/routes/logout.ts
-  src/session.ts
-  src/session.test.ts
-  package.json
-  pnpm-lock.yaml
-  notes.md
-  and 19 more
-Your laptop has new work as well, so syncing now would write over
-them. Nothing was changed. Pick one:
-  repose attach                  look at the machine first
-  repose sync --stash-remote     put the machine's changes in git
-                                 stash, then sync
-  repose sync --discard-remote   throw the machine's changes away,
-                                 then sync
+Synced: 2 modified, 1 untracked (6 new commits); kept the machine's
+changes to 3 files
 ```
 
-`--stash-remote` keeps the machine's changes in `git stash` there, named `repose run`. `--discard-remote` throws them away.
+If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names those files and exits with code 6:
+
+```text
+Not synced: the machine changed 2 files that your laptop changed
+too:
+  src/session.ts
+  notes.md
+`repose sync --stash-remote` stashes the machine's changes first;
+`--discard-remote` throws them away.
+```
+
+`--stash-remote` keeps all of the machine's uncommitted changes in `git stash` there, named `repose run`. `--discard-remote` throws them all away.
+
+A file the agent creates while the sync runs, at a path where your laptop sends an untracked file, is overwritten.
+
+If the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect on the machine, the sync stops before it changes anything and exits with code 6:
+
+```text
+Not synced: the machine's checkout is in the middle of a git rebase.
+Finish or abort it there, or run `repose sync --discard-remote` to
+throw it away with the machine's other changes.
+```
+
+`--stash-remote` stops there too: a stash can't hold a merge or rebase in progress.
 
 Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
 
-If the agent committed on the branch and your laptop has new commits of its own, the sync checks out your laptop's commit detached and leaves the agent's branch where it is. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
+If the agent committed on your branch and your laptop has new commits of its own, the sync merges your laptop's commit into the machine's copy of that branch, so the branch has both. This happens even when the machine is on another branch: the checkout moves to your branch, as every sync does, and the other branch keeps its commits. It makes that merge only when git can make it without a conflict and the agent's commits leave your uncommitted files alone. The merge commit carries your laptop's git name and email. Otherwise the sync checks out your laptop's commit detached, leaves the agent's branches where they are, and says so. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
 
 ## Getting work back
 
@@ -180,6 +184,6 @@ The checkout must be a git repository with at least one commit and full history.
 
 It says so before it creates or starts a machine, so a refused run costs nothing. `repose run` in a directory that isn't a repository makes a machine without syncing and says `Not a git repository, so nothing was synced.` `repose sync` there refuses.
 
-A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `--name` picks another name.
+A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `--name` picks another name. To sync it into a machine you already have, run `repose sync job` once: from then on a plain `repose sync` there uses `job`. If you press `Ctrl-C` after a sync created a machine and before it connected, that directory doesn't keep the machine, and the CLI names it so you can remove it with `repose rm`.
 
 For a repository on github.com over about 20 MB, the first sync has the machine clone the history from GitHub and sends only what GitHub doesn't have. If that clone fails, the CLI sends everything itself.
