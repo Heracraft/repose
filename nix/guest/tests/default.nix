@@ -2594,11 +2594,14 @@ in
   # deletes those (they are not this guest's), and the next start brings
   # them back.
   guest-store-whiteouts = mkTest "guest-store-whiteouts" {
-    nodes.guest = { ... }: {
+    nodes.guest = { lib, ... }: {
       imports = [ node ];
       # The upper dir on the disk, as on a real guest's volume, so the
       # whiteouts outlive a restart.
       virtualisation.writableStoreUseTmpfs = false;
+      # Nothing here needs Docker, and under nested KVM its containerd
+      # start times out and the unit restarts until the boot does too.
+      virtualisation.docker.enable = lib.mkForce false;
     };
     testScript = ''
       import os
