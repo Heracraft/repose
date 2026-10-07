@@ -103,8 +103,12 @@ component must emit:
   `boot_fallback` (a start whose boot fell back, I-590), `op_console`
   (a failed boot's console not stored; never its text, I-592).
 - gateway: `session_open`, `session_close`, `auth_fail` (reason enum:
-  `bad_cert|expired|revoked|wrong_principal|stopped|not_found`),
-  `route_fail`, `dial_fail`.
+  `bad_cert|expired|revoked|wrong_principal|stopped|not_found`; since
+  I-599 also `counted` and, when it counts towards the source's ban,
+  `failures`; at most 2 a second with 60 at once, the dropped ones counted
+  in the next line's `suppressed`), `auth_ban` (a source banned:
+  `source_prefix`, `failures`, `window_s`, `ban_s`; at most one every 10 s
+  with 20 at once, I-599), `route_fail`, `dial_fail`.
 - cli: only to a local file `~/.config/repose/cli.log` at debug level when
   `--verbose`; nothing is shipped from laptops.
 

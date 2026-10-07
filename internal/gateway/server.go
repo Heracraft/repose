@@ -106,6 +106,9 @@ type Gateway struct {
 	routes  *routeCache
 	certs   *certCache
 	limiter *limiter
+	// authLog and banLog bound the auth_fail and auth_ban lines (I-599).
+	authLog *logBucket
+	banLog  *logBucket
 	conns   connCounter
 	preAuth connCounter
 	users   *keyedCounter
@@ -180,6 +183,8 @@ func New(cfg Config) (*Gateway, error) {
 		routes:   newRouteCache(cfg.Clock),
 		certs:    newCertCache(cfg.Clock),
 		limiter:  newLimiter(cfg.MaxAuthPerIP, cfg.Clock),
+		authLog:  newLogBucket(authLogRate, authLogBurst, cfg.Clock),
+		banLog:   newLogBucket(banLogRate, banLogBurst, cfg.Clock),
 		conns:    connCounter{max: cfg.MaxConns},
 		preAuth:  connCounter{max: cfg.MaxPreAuth},
 		users:    newKeyedCounter(cfg.MaxConnsPerUser),
@@ -339,7 +344,24 @@ type connState struct {
 	// "certificate required" after a banner already sent is not shown, and
 	// neither is the same banner twice (I-189).
 	told string
+	// ownCert is set once the client offered a current certificate of the
+	// user whose login it asked for (CA, validity, revocation and handle
+	// checked). A connection refused after that is refused for the
+	// project, not for who is asking, and does not count towards the
+	// source's ban (I-599).
+	ownCert bool
 }
+
+// The auth log budget (I-599): auth_fail lines at 2 a second with 60 at
+// once, auth_ban lines at 1 every 10 seconds with 20 at once; a ban is
+// one line per source per ban, so the second budget only binds under a
+// scan from many sources.
+const (
+	authLogRate  = 2
+	authLogBurst = 60
+	banLogRate   = 0.1
+	banLogBurst  = 20
+)
 
 // authRecord is one accepted certificate's route and identity.
 type authRecord struct {
@@ -373,7 +395,7 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 		return
 	}
 	if !g.preAuth.acquire() {
-		g.limiter.endAuth(src, false)
+		g.limiter.endAuth(src, authRefused) // the gateway's budget, not the source's doing
 		g.refuseEarly(ctx, c, ResultBusy, MsgBusy, prefix)
 		return
 	}
@@ -385,14 +407,22 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 	// concurrent auth *attempts*), not the whole relay; release it here so a
 	// user's own many connections are not throttled against each other.
 	g.preAuth.release()
-	g.limiter.endAuth(src, err != nil)
+	outcome := authOK
+	switch {
+	case err != nil && st.ownCert:
+		outcome = authRefused
+	case err != nil:
+		outcome = authFailed
+	}
+	failures, banned := g.limiter.endAuth(src, outcome)
 	if err != nil {
 		_ = c.Close() // already failing; nothing to report to
 		if st.result == "" {
 			st.result = "handshake"
 		}
-		if st.result != ResultNoCert || g.log.Enabled(ctx, slog.LevelDebug) {
-			g.log.Info("authentication failed", "event", "auth_fail", "reason", st.result, "source_prefix", prefix)
+		g.logAuthFail(st.result, prefix, outcome == authFailed, failures)
+		if banned {
+			g.logBan(prefix, failures)
 		}
 		return
 	}
@@ -433,6 +463,40 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 	}
 	defer g.users.release(rec.user)
 	sess.run(ctx)
+}
+
+// logAuthFail writes the auth_fail line of a refused connection, within
+// the log budget (I-599). counted says whether the failure counts towards
+// the source's ban, failures how many it has in the window then. Only the
+// source's prefix is logged, never its address.
+func (g *Gateway) logAuthFail(reason, prefix string, counted bool, failures int) {
+	ok, dropped := g.authLog.take()
+	if !ok {
+		return
+	}
+	attrs := []any{"event", "auth_fail", "reason", reason, "source_prefix", prefix, "counted", counted}
+	if counted {
+		attrs = append(attrs, "failures", failures, "ban_at", banFailures)
+	}
+	if dropped > 0 {
+		attrs = append(attrs, "suppressed", dropped)
+	}
+	g.log.Info("authentication failed", attrs...)
+}
+
+// logBan writes the auth_ban line when a source's failures start a ban,
+// within its own budget (I-599).
+func (g *Gateway) logBan(prefix string, failures int) {
+	ok, dropped := g.banLog.take()
+	if !ok {
+		return
+	}
+	attrs := []any{"event", "auth_ban", "source_prefix", prefix, "failures", failures,
+		"window_s", int(banWindow.Seconds()), "ban_s", int(banDuration.Seconds())}
+	if dropped > 0 {
+		attrs = append(attrs, "suppressed", dropped)
+	}
+	g.log.Warn("source banned after repeated authentication failures", attrs...)
 }
 
 // refuseRelay answers an authenticated connection that has no relay slot.
@@ -488,7 +552,11 @@ func (g *Gateway) serverConfig(ctx context.Context, st *connState) *ssh.ServerCo
 
 // fail records the result and returns the banner error.
 func (g *Gateway) fail(st *connState, result, message string) (*ssh.Permissions, error) {
-	st.result = result
+	// The plain key ssh offers after a refused certificate does not hide
+	// the refusal that mattered from the log line (I-599).
+	if st.result == "" || result != ResultNoCert {
+		st.result = result
+	}
 	g.cfg.Metrics.AuthFailTotal.WithLabelValues(result).Inc()
 	if message == st.told || (st.told != "" && result == ResultNoCert) {
 		message = ""
@@ -547,6 +615,9 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	if !ok || certHandle != handle {
 		return g.fail(st, ResultWrongPrincipal, MsgWrongPrincipal)
 	}
+	// The user's own current certificate: what follows refuses the
+	// project, not the client (I-599).
+	st.ownCert = true
 	login := slug + "." + handle
 	started := g.cfg.Clock()
 	route, err := g.routes.Lookup(ctx, g.cfg.API, login)
