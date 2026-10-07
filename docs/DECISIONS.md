@@ -16055,3 +16055,44 @@ began, before a resize's start failed (2026-10-07 17:38Z); a start's
 switch of the running machine is its own phase ("Switching <project> to
 its new system"). This paragraph is part of I-590.
 TestStartFromErrorSaysRestarting, TestResizeClassPrintsNoSuccessBeforeTheStartFails.
+
+**I-599. A refusal of the user's own certificate does not count towards
+the gateway's per-source ban, and failures and bans are logged.**
+(lifecycle-errors, 2026-10-07; amends ssh-gateway.md step 1 and I-435's
+ban.) From 20:12Z, when the owner stopped kanali, to about 20:36Z the dev
+box (one address for several agents) could not reach any project:
+`kex_exchange_identification: ... repose gateway: too many authentication
+attempts from your address`. Every `ssh kanali.repose` against the
+stopped project offered a valid certificate, got the `kanali is stopped`
+banner, and failed the handshake, and the gateway counted every failed
+handshake towards the ban (20 in 10 minutes, then 10 minutes refused),
+so a laptop retrying its own stopped project, or one whose project id
+changed in an rm and restore (kanali 01a0ef90 to 01a11778, so the old
+certificate's principal no longer matched), locked itself out of every
+project. Nothing was logged: OpenSSH offers the plain key after the
+refused certificate, the connection's recorded result became `no_cert`,
+which was logged at debug only, and the ban had no line at all. Now a
+connection on which the client offered the user's own current
+certificate (signed by the User CA, within validity, not revoked, its
+`key_id` handle the login's) and that was then refused for the project
+(a state other than running, no such project, a principal from before a
+restore, the control plane away, the guest's host unreachable) ends
+`refused`: it neither counts nor clears earlier failures. Everything
+else counts as before: no certificate, another CA, expired, revoked,
+another user's handle, a bad login, a broken handshake. The decision is
+made at the key query, before the client proves it holds the key; a
+third party holding a copy of a user's certificate could make
+uncounted attempts that can never authenticate, still bound by the 4
+handshakes per source, the 10 s auth timeout and the edge's 20 new
+connections a second. The connection's log result keeps the refusal
+that mattered (a later `no_cert` from the plain key does not replace
+it), and `auth_fail` is written at info for every refusal with
+`counted` and, for a counted one, `failures`, within a budget of 2 lines
+a second and 60 at once whose dropped lines are counted in the next
+line's `suppressed`; a ban writes `auth_ban` (warn) with `source_prefix`
+(the /24 or /48, never the address), `failures`, `window_s`, `ban_s`,
+within 1 line every 10 s and 20 at once. A connection turned away for the
+gateway's own pre-auth budget no longer clears the source's failures.
+TestOwnCertificateRefusalsNeverBanTheSource,
+TestFailuresStillBanAndTheBanIsLogged, TestLimiterRefusalsNeitherCountNorClear,
+TestLogBucketBoundsAndReportsDrops.

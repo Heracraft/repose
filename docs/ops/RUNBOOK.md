@@ -315,7 +315,14 @@ More than one auth failure per second at the gateway.
 1. Grafana gateway dashboard: failures by `reason`. `no_cert` or `bad_ca`
    in volume from one source is a scan; the gateway rate-limits per source
    IP after 20 failures (fail2ban-style, built in) and refuses further auth
-   for 10 minutes. Nothing to do unless it persists for hours; then add the
+   for 10 minutes. Each counted failure is an `auth_fail` line with
+   `"counted":true` and the source's `failures`, and the ban an `auth_ban`
+   line with its `source_prefix` (I-599). A user's own certificate refused
+   for its project (stopped, gone, a principal from before a restore, the
+   api away) is `"counted":false` and never bans; a user who reports the
+   one-line `too many authentication attempts` refusal from a known
+   address is behind a source that failed 20 times without a certificate
+   of theirs. Nothing to do unless it persists for hours; then add the
    source to the edge NSG deny list. `route_error` in volume means the
    gateway cannot reach the api (see "Gateway relay failures").
 2. `expired` in volume means the CLI's silent refresh is broken for many
@@ -343,7 +350,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
-| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
+| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
 | `login name must be <project>.<user>` | a malformed SSH login name | the user's SSH config is wrong; `repose run` rewrites it |
 
 A relay ends when its certificate is revoked or expires (I-436):

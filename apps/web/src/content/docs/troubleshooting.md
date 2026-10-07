@@ -31,6 +31,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It shows the same error the editor got, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``; connecting never starts one.
 
+**`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
+
 **`Guest is running but SSH did not answer in 60s.`** `repose stop` and then `repose start` restart it.
 
 ## Machine state
