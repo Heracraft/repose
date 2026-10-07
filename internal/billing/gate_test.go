@@ -180,20 +180,29 @@ func TestGateEveryReason(t *testing.T) {
 func TestLimitsFor(t *testing.T) {
 	u := &store.User{ProjectLimit: 3, XLLimit: 0, BillingStatus: "none"}
 	l := billing.LimitsFor(u, nil)
-	if l.Projects != 3 || l.XL != 0 || l.MemoryGB != 8 || l.Plan != nil {
+	// users.project_limit below the cap does not lower it (I-569).
+	if l.Projects != billing.ProjectCap || l.XL != 0 || l.MemoryGB != 8 || l.Plan != nil {
 		t.Fatalf("no plan: %+v", l)
 	}
 	l = billing.LimitsFor(u, &billing.Sub{Plan: "plus", Status: "active"})
-	if l.Projects != 25 || l.XL != 1 || l.MemoryGB != 16 || l.DiskGB != 250 || l.EgressGB != 500 || l.Plan.ID != "plus" {
+	if l.Projects != billing.ProjectCap || l.XL != 1 || l.MemoryGB != 16 || l.DiskGB != 250 || l.EgressGB != 500 || l.Plan.ID != "plus" {
 		t.Fatalf("plus: %+v", l)
 	}
 	l = billing.LimitsFor(u, &billing.Sub{Plan: "pro", Status: "active"})
-	if l.Projects != 50 || l.XL != 1 || l.MemoryGB != 32 || l.DiskGB != 500 || l.EgressGB != 1000 || l.Plan.ID != "pro" {
+	if l.Projects != billing.ProjectCap || l.XL != 1 || l.MemoryGB != 32 || l.DiskGB != 500 || l.EgressGB != 1000 || l.Plan.ID != "pro" {
 		t.Fatalf("pro: %+v", l)
 	}
 	l = billing.LimitsFor(u, &billing.Sub{Plan: "solo", Status: "trialing"})
-	if l.Projects != 10 || l.XL != 0 {
+	if l.Projects != billing.ProjectCap || l.XL != 0 {
 		t.Fatalf("solo: %+v", l)
+	}
+	// Above the cap, users.project_limit raises it, with a plan or without.
+	high := &store.User{ProjectLimit: billing.ProjectCap + 50, BillingStatus: "exempt"}
+	if l := billing.LimitsFor(high, nil); l.Projects != billing.ProjectCap+50 {
+		t.Fatalf("raised, exempt: %+v", l)
+	}
+	if l := billing.LimitsFor(high, &billing.Sub{Plan: "solo", Status: "active"}); l.Projects != billing.ProjectCap+50 {
+		t.Fatalf("raised, solo: %+v", l)
 	}
 	l = billing.LimitsFor(u, &billing.Sub{Plan: "plus", Status: "canceled"})
 	if l.Plan != nil {

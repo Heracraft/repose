@@ -41,10 +41,27 @@ export function errorText(err: unknown, fallback: string): string {
 	if (err instanceof ApiError) {
 		if (err.code === 'internal')
 			return `${fallback} The API failed on its side; try again shortly.`;
-		return err.message;
+		return projectLimitText(err) ?? err.message;
 	}
 	if (err instanceof NetworkError) return 'Cannot reach the API.';
 	return fallback;
+}
+
+/**
+ * The account's project cap refusal (400 invalid, detail.reason
+ * project_limit, DECISIONS I-569) in the CLI's words, so a restore here
+ * and `repose run` there say the same; undefined for any other error.
+ */
+export function projectLimitText(err: unknown): string | undefined {
+	if (!(err instanceof ApiError) || err.code !== 'invalid') return undefined;
+	const d = err.detail;
+	if (d?.reason !== 'project_limit') return undefined;
+	const have = Number(d.projects);
+	const limit = Number(d.limit);
+	const requested = d.requested === undefined ? 1 : Number(d.requested);
+	if (requested <= 1)
+		return `You have ${have} of the ${limit} projects an account can have, running or stopped. Destroy one first.`;
+	return `You have ${have} of the ${limit} projects an account can have, running or stopped, and ${requested} more would make ${have + requested}. Destroy some first.`;
 }
 
 /**

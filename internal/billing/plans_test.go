@@ -1,6 +1,7 @@
 package billing_test
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -38,12 +39,12 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 		}
 	}
 	doc := string(b)
-	for _, want := range []string{"$0.05 a GB", "10 on Solo, 25 on Plus, 50 on Pro", "four times the", "Seven days free"} {
+	for _, want := range []string{"$0.05 a GB", fmt.Sprintf("%d projects per account", billing.ProjectCap), "four times the", "Seven days free"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("PRICING.md no longer says %q", want)
 		}
 	}
-	if billing.OveragePerGBCents != 5 || billing.EgressHardStopMultiplier != 4 || billing.Solo.ProjectLimit != 10 || billing.Plus.ProjectLimit != 25 || billing.Pro.ProjectLimit != 50 || billing.Solo.TrialDays != 7 {
+	if billing.OveragePerGBCents != 5 || billing.EgressHardStopMultiplier != 4 || billing.ProjectCap != 100 || billing.Solo.TrialDays != 7 {
 		t.Errorf("plans.go constants drifted from PRICING.md")
 	}
 	// The introductory price is a sentence under the table (DECISIONS I-497).

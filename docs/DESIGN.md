@@ -57,8 +57,9 @@ write Nix.
 - A project is pinned to one host for its lifetime. It moves only by restore
   from snapshot onto another host.
 
-Each user's project count and per-size limits are enforced in the API, not the
-host: a new account may run 3 projects and 1 XL until they have paid an invoice.
+Each user's limits are enforced in the API, not the host: the plan's memory
+caps what runs at once, its disk caps what is kept, and one cap of 100
+projects per account, running or stopped, bounds abuse (DECISIONS I-569).
 
 ## 4. Hosts
 
@@ -432,7 +433,9 @@ disk and 250 GB of egress; Plus, $59, buys 16 GB, 250 GB and 500 GB;
 Pro, $99, buys 32 GB, 500 GB and 1000 GB (I-362). A first Solo
 subscription pays $20 and has 100 GB of egress for its first three months
 (I-497).
-Projects are unlimited while stopped (10, 25 and 50 in all); egress past the
+A plan sells no project count: a stopped project costs only its disk, and
+one cap of 100 projects per account, running or stopped and the same on
+every plan, bounds abuse (I-569); egress past the
 allowance is $0.05 a GB as one line on the next invoice, and at four times
 the allowance the machines stop for the period. Paddle is the merchant of
 record, so tax is its problem. `PRICING.md` has the rules, the cost floor
@@ -470,8 +473,8 @@ Ship everything, invade nothing.
   nothing yet (an OTLP endpoint env var, unset), Prometheus metrics.
 - Abuse response on an account is manual in the first release:
   `repose-admin suspend <user>` stops guests and freezes billing. Rate
-  limits: 200 Mbit/s egress shaping, 10 projects per user, 3 until first
-  paid invoice. Three things are automatic and never touch the account
+  limits: 200 Mbit/s egress shaping, 100 projects per account, running or
+  stopped (I-569). Three things are automatic and never touch the account
   (DECISIONS I-238..I-240): a guest cannot connect out to tcp 25 or the
   mining pools' default ports, and its new outbound flows are limited to
   200 a second (dropped past it, counted, alerted); a guest whose process

@@ -16,6 +16,8 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
                                     -- projection of subscriptions.status; 'none' is no plan yet
               has_card bool, trial_credit_cents bigint, project_limit int, xl_limit int,
               suspended_at, suspended_reason text, cancelled_at, deleted_at)
+              -- project_limit raises the account's project cap above 100 and
+              -- never lowers it (I-569)
               -- trial_credit_cents is a projection of credit_ledger maintained by a
               -- trigger inside the same transaction as the ledger row; the balance of
               -- record is sum(credit_ledger.cents) (09 §5.3)

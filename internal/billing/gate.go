@@ -191,11 +191,11 @@ func joinAnd(s []string) string {
 	return strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
 }
 
-// Limits is the `limits` block of /me: the plan's project count, whether
-// xl fits, memory, disk and egress. An exempt account, or one without a
-// plan, has the operator-set users.project_limit and xl_limit and the
-// Solo plan's other numbers, which is what an operator's own account
-// works within (I-16).
+// Limits is the `limits` block of /me: the account's project cap
+// (running or stopped, the same on every plan, I-569), whether xl fits,
+// memory, disk and egress. An exempt account, or one without a plan, has
+// the operator-set xl_limit and the Solo plan's other numbers, which is
+// what an operator's own account works within (I-16).
 type Limits struct {
 	Projects int
 	XL       int
@@ -214,9 +214,9 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 		if p.AllowsXL() {
 			xl = 1
 		}
-		return Limits{Projects: p.ProjectLimit, XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Plan: &p}
+		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Plan: &p}
 	}
-	l := Limits{Projects: u.ProjectLimit, XL: u.XLLimit, MemoryGB: Solo.MemoryGB, DiskGB: Solo.DiskGB, EgressGB: Solo.EgressGB}
+	l := Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: u.XLLimit, MemoryGB: Solo.MemoryGB, DiskGB: Solo.DiskGB, EgressGB: Solo.EgressGB}
 	if u.BillingStatus == "exempt" {
 		// An exempt account is not gated on memory or disk; its limits
 		// block says what the biggest plan would allow.

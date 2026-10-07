@@ -157,9 +157,11 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 	}
 }
 
-// The project count is the plan's: a Solo account at 10 projects is
-// refused a create, a fork and a restore with the same 400.
-func TestPlanProjectLimit(t *testing.T) {
+// The project cap is the account's, the same on every plan, and counts
+// stopped projects (I-569): a Solo account with 100 stopped projects is
+// refused a create with 400 project_limit, an upgrade does not raise it,
+// and a destroy frees a slot.
+func TestProjectCap(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	tok := e.signIn(t, "sub-count", "count-dev")
@@ -168,19 +170,25 @@ func TestPlanProjectLimit(t *testing.T) {
 	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-count'").Scan(&uid); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 10; i++ {
-		if _, err := e.h.Pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values (gen_random_uuid(), $1, $2, $2, 'small', 'stopped', 1073741824)", uid, fmt.Sprintf("p%d", i)); err != nil {
+	// 1 MiB volumes keep the plan's disk out of it.
+	for i := 0; i < billing.ProjectCap; i++ {
+		if _, err := e.h.Pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values (gen_random_uuid(), $1, $2, $2, 'small', 'stopped', 1048576)", uid, fmt.Sprintf("p%d", i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "eleventh", "class": "small"})
-	if r.status != 400 || errCode(r) != "invalid" || r.body["error"].(map[string]any)["detail"].(map[string]any)["limit"] != float64(10) || !strings.Contains(errMessage(r), "you have 10 of 10 projects") {
-		t.Fatalf("eleventh: %d %s", r.status, r.raw)
+	want := fmt.Sprintf("you have %d of the %d projects an account can have, running or stopped; destroy one first", billing.ProjectCap, billing.ProjectCap)
+	for _, plan := range []string{"solo", "pro"} {
+		e.subscribe(t, "sub-count", plan)
+		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "one-more", "class": "small"})
+		if r.status != 400 || errCode(r) != "invalid" || errDetail(r, "reason") != "project_limit" || r.body["error"].(map[string]any)["detail"].(map[string]any)["limit"] != float64(billing.ProjectCap) || errMessage(r) != want {
+			t.Fatalf("one more on %s: %d %s", plan, r.status, r.raw)
+		}
 	}
-	e.subscribe(t, "sub-count", "plus")
-	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "eleventh", "class": "small"})
-	if r.status != 201 {
-		t.Fatalf("eleventh on Plus: %d %s", r.status, r.raw)
+	if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'destroying' where user_id = $1 and slug = 'p0'", uid); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "one-more", "class": "small"}); r.status != 201 {
+		t.Fatalf("after a destroy: %d %s", r.status, r.raw)
 	}
 }
 
@@ -315,7 +323,7 @@ func TestBillingRoutes(t *testing.T) {
 		t.Fatalf("overview subscription: %v", sub)
 	}
 	usage := r.body["usage"].(map[string]any)
-	if usage["memory_gb"] != float64(8) || usage["egress_included_gb"] != float64(250) || usage["project_limit"] != float64(10) {
+	if usage["memory_gb"] != float64(8) || usage["egress_included_gb"] != float64(250) || usage["project_limit"] != float64(billing.ProjectCap) {
 		t.Fatalf("usage: %v", usage)
 	}
 	// Upgrade to plus, then cancel and resume, then the portal and invoices.

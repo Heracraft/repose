@@ -86,7 +86,10 @@ test('with no plan and seats free, the three plan cards are shown from GET /bill
 	await expect(pro.getByText('32 GB: two xl, four large, or any mix')).toBeVisible();
 	await expect(pro.getByText('500 GB', { exact: true })).toBeVisible();
 	await expect(pro.getByText('1 TB', { exact: true })).toBeVisible();
-	await expect(pro.getByText('50', { exact: true })).toBeVisible();
+	// No project count: plans sell memory, disk and egress (I-569).
+	await expect(
+		page.getByRole('list', { name: 'Plans' }).locator('dt', { hasText: /^Projects$/ })
+	).toHaveCount(0);
 	// h2 under the page's h1: the cards are the page's sections, and an h3
 	// here skipped a level.
 	await expect(page.getByRole('list', { name: 'Plans' }).locator('h2')).toHaveText([
@@ -200,7 +203,7 @@ test('an invited user sees the held seat and the plan cards', async ({ page }) =
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeDisabled();
 });
 
-test('a trial shows the first charge date, the usage bars and the project count', async ({
+test('a trial shows the first charge date and the usage bars, and no project count', async ({
 	page
 }) => {
 	await setBilling({ mode: 'trial', plan: 'solo', egress_gb: 300 });
@@ -212,7 +215,9 @@ test('a trial shows the first charge date, the usage bars and the project count'
 	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
 	await expect(egress).toContainText('300 GB of 100 GB');
 	await expect(egress).toContainText('Over by 200 GB: $10.00 on the next invoice at $0.05 a GB.');
-	await expect(page.getByTestId('projects-count')).toContainText('of 10');
+	// Plans sell no project count (I-569): no meter, no row on the cards.
+	await expect(page.getByTestId('projects-count')).toHaveCount(0);
+	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
 });
 
 test('an active plan shows its renewal, receipts through Paddle, and invoices with PDF links', async ({

@@ -227,6 +227,15 @@ func exitCodeFor(err error, stderr io.Writer) int {
 			// I-269): the user is on the waitlist and gets an email.
 			_, _ = fmt.Fprintln(stderr, waitlistedMessage(apiErr))
 			return ExitCapacity
+		case "invalid":
+			// One wording for the project cap whichever command met it
+			// (I-569); fork says the same before it snapshots.
+			if have, limit, n, ok := projectLimitOf(apiErr); ok {
+				_, _ = fmt.Fprintln(stderr, projectLimitMessage(have, limit, n))
+				return ExitGeneric
+			}
+			_, _ = fmt.Fprintf(stderr, "%s: %s\n", apiErr.Code, apiErr.Message)
+			return ExitGeneric
 		case "rate_limited":
 			// Only after the client waited out rateLimitBudget (I-187).
 			_, _ = fmt.Fprintln(stderr, "The api is refusing this account's requests for now: too many in the last minute (a dashboard tab or another repose command may be polling). Try again in a minute; `repose status` shows where things stand.")

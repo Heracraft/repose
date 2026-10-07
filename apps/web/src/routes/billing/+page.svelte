@@ -308,10 +308,6 @@
 						<dt class="whitespace-nowrap text-ink-muted">Egress a month</dt>
 						<dd>{allowance(intro(p) && p.intro_egress_gb ? p.intro_egress_gb : p.egress_gb)}</dd>
 					</div>
-					<div class="flex justify-between gap-4">
-						<dt class="whitespace-nowrap text-ink-muted">Projects</dt>
-						<dd>{p.project_limit}</dd>
-					</div>
 				</dl>
 				<p class="mt-4 text-sm text-pretty text-ink-muted">
 					{p.trial_days} days free, card at checkout, cancel any time.
@@ -484,16 +480,6 @@
 						? `Over by ${gbs(billing.usage.egress_gb - billing.usage.egress_included_gb)}: ${money(billing.usage.overage_cents)} on the next invoice at $0.05 a GB.`
 						: undefined}
 				/>
-				<!-- A meter like the three above, figure right and bar under,
-				     so the four limits read as one list. -->
-				<div data-testid="projects-count">
-					<Meter
-						label="Projects"
-						used={billing.usage.projects}
-						limit={billing.usage.project_limit}
-						format={String}
-					/>
-				</div>
 			</div>
 
 			<div class="mt-6 flex flex-wrap gap-x-5 gap-y-2 border-t pt-4 border-rule">

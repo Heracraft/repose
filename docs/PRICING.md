@@ -2,8 +2,9 @@
 
 A monthly plan through Paddle, chosen before the first machine starts, with
 a card at checkout and a week free. A plan buys memory that may run at once,
-disk that may be allocated, and egress for the month; projects are
-unlimited while stopped. The shape is flat because the pitch is "the agent
+disk that may be allocated, and egress for the month; a plan sells no
+project count, and a stopped project costs only its disk (DECISIONS
+I-569). The shape is flat because the pitch is "the agent
 keeps working after the laptop closes", and an hourly meter told people to
 stop machines at night (DECISIONS I-289, superseding R2-12, R4-7, R4-8,
 I-77, I-179 to I-185 and I-205; the hourly design is kept in
@@ -67,8 +68,13 @@ What a plan means, in rules:
   allowance (1 TB on Solo, 2 TB on Plus, 4 TB on Pro) the user's machines are stopped
   for the rest of the period with `detail.reason = egress_limit` and an
   `egress_stopped` email; that is the stolen-card ceiling, not a price.
-- **Projects.** 10 on Solo, 25 on Plus, 50 on Pro, live or stopped; disk bounds it
-  anyway. Destroyed projects and their 30-day snapshots are free.
+- **Projects.** No count on any plan: memory caps what runs and disk caps
+  what is kept, so a user stops one project and starts another within the
+  plan. One abuse bound, 100 projects per account (running or stopped,
+  the same on every plan and without one), stops a runaway script; it is
+  in the Limits doc, not on the pricing page or the plan cards, and an
+  operator can raise it for one account (DECISIONS I-569). Destroyed
+  projects and their 30-day snapshots are free.
 
 Example: a Solo user with a `large` running all month, a 40 GB disk, and
 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus

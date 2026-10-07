@@ -8,7 +8,7 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { restoreProject } from '$lib/api/client';
-	import { ApiError } from '$lib/api/errors';
+	import { ApiError, projectLimitText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { dateTime, relativeTime } from '$lib/format';
 	import {
@@ -102,7 +102,7 @@
 				err.detail?.reason === 'name_taken'
 			) {
 				nameError = `A project called ${String(err.detail?.name ?? name)} already exists; pick another name.`;
-			} else if (err instanceof ApiError && err.code === 'invalid') {
+			} else if (err instanceof ApiError && err.code === 'invalid' && !projectLimitText(err)) {
 				nameError = err.message;
 			} else {
 				toastApiError(err, 'Could not restore the project.');

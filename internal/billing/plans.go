@@ -15,16 +15,15 @@ package billing
 // TestPlansMatchPricingDoc parses the doc's table and fails when they
 // disagree.
 type Plan struct {
-	ID           string // solo | plus | pro
-	Name         string
-	PriceCents   int64
-	Currency     string
-	TrialDays    int
-	Seats        int
-	MemoryGB     int // may run at once
-	DiskGB       int // may be allocated
-	EgressGB     int // a period
-	ProjectLimit int
+	ID         string // solo | plus | pro
+	Name       string
+	PriceCents int64
+	Currency   string
+	TrialDays  int
+	Seats      int
+	MemoryGB   int // may run at once
+	DiskGB     int // may be allocated
+	EgressGB   int // a period
 	// IntroCents and IntroMonths are the introductory price: a first
 	// subscription pays IntroCents for its first IntroMonths charges after
 	// the trial, then PriceCents. Zero is no introductory price. Paddle
@@ -39,13 +38,29 @@ type Plan struct {
 // The three plans (DECISIONS I-362), and Solo's introductory price
 // (DECISIONS I-497).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroCents: 2000, IntroMonths: 3, IntroEgressGB: 100}
-	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25}
-	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, IntroCents: 2000, IntroMonths: 3, IntroEgressGB: 100}
+	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500}
+	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000}
 )
 
 // Plans lists the plans in the order the dashboard shows them.
 var Plans = []Plan{Solo, Plus, Pro}
+
+// ProjectCap is how many live projects, running or stopped, an account
+// may have, on every plan and without one (DECISIONS I-569). It is an
+// abuse bound, not a price: memory caps what runs and disk caps what is
+// kept, so a plan sells no project count. users.project_limit can raise
+// it for one account and never lowers it (AccountProjectCap).
+const ProjectCap = 100
+
+// AccountProjectCap is the account's project cap: ProjectCap, or the
+// operator-set users.project_limit when that is higher. Values below
+// ProjectCap were set when the limit was a plan's and counted stopped
+// projects (6 for the owner, 3 and 10 for early accounts), so they no
+// longer bind.
+func AccountProjectCap(userLimit int) int {
+	return max(ProjectCap, userLimit)
+}
 
 const (
 	// EgressHardStopMultiplier is how far past the allowance a period's

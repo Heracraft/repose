@@ -556,7 +556,7 @@ func TestMe(t *testing.T) {
 		} `json:"limits"`
 	}
 	r.json(t, &me)
-	if me.ID != CannedUser.ID || me.Handle != "heracraft" || me.Email != "dev@example.com" || me.Billing.Status != "exempt" || me.Limits.Projects != 50 || me.Limits.XL != 1 {
+	if me.ID != CannedUser.ID || me.Handle != "heracraft" || me.Email != "dev@example.com" || me.Billing.Status != "exempt" || me.Limits.Projects != ProjectCap || me.Limits.XL != 1 {
 		t.Fatalf("me: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
@@ -792,8 +792,8 @@ func TestDestroyDelay(t *testing.T) {
 	defer f.Close()
 	a := mkProject(t, f, tok, "a", "")
 	c := mkProject(t, f, tok, "c", "")
-	// Fill the account to its limit (billing off: Pro's, I-289).
-	for i := 2; i < planByID("pro").ProjectLimit; i++ {
+	// Fill the account to its cap (I-569).
+	for i := 2; i < ProjectCap; i++ {
 		mkProject(t, f, tok, "p"+strconv.Itoa(i), "")
 	}
 	opID(t, call(t, f, "POST", "/v1/projects/"+a.ID+"/snapshots", tok, nil))

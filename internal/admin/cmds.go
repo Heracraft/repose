@@ -881,7 +881,7 @@ func (e *Env) users(ctx context.Context, args []string) error {
 		for _, u := range users {
 			var n int
 			_ = e.pool.QueryRow(ctx, "select count(*) from projects where user_id = $1 and destroyed_at is null", u.ID).Scan(&n)
-			rows = append(rows, []string{u.Handle, u.ID.String(), u.BillingStatus, strconv.FormatBool(u.HasCard), strconv.Itoa(n), fmt.Sprintf("%d/%d", u.ProjectLimit, u.XLLimit), fmtTime(u.SuspendedAt), fmtTime(&u.CreatedAt)})
+			rows = append(rows, []string{u.Handle, u.ID.String(), u.BillingStatus, strconv.FormatBool(u.HasCard), strconv.Itoa(n), fmt.Sprintf("%d/%d", billing.AccountProjectCap(u.ProjectLimit), u.XLLimit), fmtTime(u.SuspendedAt), fmtTime(&u.CreatedAt)})
 		}
 		e.table(rows)
 		return nil
@@ -895,7 +895,7 @@ func (e *Env) users(ctx context.Context, args []string) error {
 		}
 		projects, _ := store.ListUserProjects(ctx, e.pool, u.ID)
 		rows := [][]string{{"handle", u.Handle}, {"id", u.ID.String()}, {"billing", u.BillingStatus}, {"has_card", strconv.FormatBool(u.HasCard)},
-			{"trial_credit_cents", strconv.FormatInt(u.TrialCreditCents, 10)}, {"limits", fmt.Sprintf("%d projects, %d xl", u.ProjectLimit, u.XLLimit)},
+			{"trial_credit_cents", strconv.FormatInt(u.TrialCreditCents, 10)}, {"limits", fmt.Sprintf("%d projects, %d xl", billing.AccountProjectCap(u.ProjectLimit), u.XLLimit)},
 			{"suspended", fmtTime(u.SuspendedAt)}, {"cancelled", fmtTime(u.CancelledAt)}, {"projects", strconv.Itoa(len(projects))}}
 		for _, p := range projects {
 			rows = append(rows, []string{"  " + p.Slug, p.Class + " " + p.State + " " + p.ID.String()})
@@ -1012,7 +1012,7 @@ func (e *Env) users(ctx context.Context, args []string) error {
 		return err
 	case "limits":
 		fs, err := flagsFor("limits", args[1:], func(fs *flag.FlagSet) {
-			fs.Int("projects", -1, "project limit")
+			fs.Int("projects", -1, fmt.Sprintf("project cap, running or stopped; only above the %d every account has", billing.ProjectCap))
 			fs.Int("xl", -1, "xl limit")
 		})
 		if err != nil || fs.NArg() < 1 {
@@ -1026,6 +1026,10 @@ func (e *Env) users(ctx context.Context, args []string) error {
 		xl := fs.Lookup("xl").Value.(flag.Getter).Get().(int)
 		if pl < 0 {
 			pl = u.ProjectLimit
+		} else if pl < billing.ProjectCap {
+			// The cap is an abuse bound every account has; suspend an
+			// account to stop it instead (I-569).
+			return fmt.Errorf("--projects %d is below the %d projects every account has; it can only raise an account's cap", pl, billing.ProjectCap)
 		}
 		if xl < 0 {
 			xl = u.XLLimit
@@ -1034,7 +1038,7 @@ func (e *Env) users(ctx context.Context, args []string) error {
 			return err
 		}
 		_, err = e.audited(ctx, "user_limits", u.Handle, map[string]any{"projects": pl, "xl": xl})
-		_, _ = fmt.Fprintf(e.Stdout, "%s: %d projects, %d xl\n", u.Handle, pl, xl)
+		_, _ = fmt.Fprintf(e.Stdout, "%s: %d projects, %d xl\n", u.Handle, billing.AccountProjectCap(pl), xl)
 		return err
 	}
 	return fmt.Errorf("%w: users %s", ErrUsage, args[0])

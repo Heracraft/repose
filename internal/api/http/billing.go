@@ -36,7 +36,7 @@ func (s *Server) gate(r *http.Request, u *store.User, req billing.Request) error
 	return err
 }
 
-// limits is the user's plan limits, for the project count and xl checks
+// limits is the user's limits, for the project cap (I-569)
 // (billing.LimitsFor).
 func (s *Server) limits(r *http.Request, u *store.User) (billing.Limits, error) {
 	sub, err := billing.LiveSubscription(r.Context(), s.d.Pool, u.ID)

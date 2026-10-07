@@ -97,16 +97,20 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if err != nil {
 		return err
 	}
-	// The limit is the api's to enforce, for all N at once; asking first
-	// only spares a snapshot that nothing would use.
+	// The cap is the api's to enforce, for all N at once; asking first
+	// only spares a snapshot that nothing would use. It counts running
+	// and stopped projects alike (I-569).
 	if me, err := e.Client.GetMe(ctx); err == nil && me.Limits.Projects > 0 {
-		if projects, err := e.Client.ListProjects(ctx); err == nil && len(projects)+opts.Count > me.Limits.Projects {
-			whose := "your account's limit"
-			if me.Billing.Plan != nil {
-				whose = planName(*me.Billing.Plan) + "'s limit"
+		if projects, err := e.Client.ListProjects(ctx); err == nil {
+			have := 0
+			for _, p := range projects {
+				if p.State != "destroying" {
+					have++
+				}
 			}
-			return exitf(ExitGeneric, "You have %d of %d projects (%s), and %d more would make %d. Destroy some (`repose ls` lists them), or upgrade your plan at https://repose.herakraft.co/billing.",
-				len(projects), me.Limits.Projects, whose, opts.Count, len(projects)+opts.Count)
+			if have+opts.Count > me.Limits.Projects {
+				return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
+			}
 		}
 	}
 
@@ -154,7 +158,14 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if err != nil {
 		pr.Fail()
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
+		// The api's cap refusal (a create elsewhere since the check
+		// above, or /me unreadable) in the words every command uses.
+		if errors.As(err, &apiErr) {
+			if have, limit, n, ok := projectLimitOf(apiErr); ok {
+				return exitf(ExitGeneric, "%s", projectLimitMessage(have, limit, n))
+			}
+		}
+		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
 			return exitf(ExitGeneric, "Could not fork %s: %s. Nothing was created.", src.Slug, strings.TrimSuffix(humaneMessage(apiErr.Message), "."))
 		}
 		return err

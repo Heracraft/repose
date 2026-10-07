@@ -135,7 +135,7 @@ func (u Usage) JSON() map[string]any {
 		"running_gb": u.RunningGB, "memory_gb": u.Plan.MemoryGB,
 		"disk_allocated_gb": u.DiskAllocatedGB, "disk_gb": u.Plan.DiskGB,
 		"egress_gb": float64(u.EgressBytes) / (1 << 30), "egress_included_gb": u.EgressIncludedGB,
-		"overage_cents": u.OverageCents, "projects": u.Projects, "project_limit": u.Plan.ProjectLimit,
+		"overage_cents": u.OverageCents, "projects": u.Projects, "project_limit": ProjectCap,
 		"period_start": u.Period.Start, "period_end": u.Period.End,
 	}
 }

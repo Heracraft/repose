@@ -167,11 +167,12 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
 }
 
 // countsTowardLimit is the SQL condition for a project that counts toward
-// the user's project and xl limits: not destroyed, and not being
-// destroyed either, so `repose rm` frees the slot at once (DECISIONS
-// I-300). A project in error after a failed destroy still counts: its
-// volume is still on the host. The name and remote stay taken until the
-// destroy finishes (the unique indexes on live rows).
+// the account's project cap (billing.ProjectCap, I-569): running or
+// stopped, not destroyed, and not being destroyed either, so `repose rm`
+// frees the slot at once (DECISIONS I-300). A project in error after a
+// failed destroy still counts: its volume is still on the host. The name
+// and remote stay taken until the destroy finishes (the unique indexes on
+// live rows).
 const countsTowardLimit = "destroyed_at is null and state <> 'destroying'"
 
 func (s *Server) userProject(r *http.Request) (*store.Project, error) {
@@ -182,15 +183,17 @@ func (s *Server) userProject(r *http.Request) (*store.Project, error) {
 	return store.GetUserProject(r.Context(), s.d.Pool, userFrom(r.Context()).ID, id)
 }
 
-// projectLimitError is the 400 a create, restore or fork past the plan's
-// project count answers (api.md POST /projects/:id/fork).
+// projectLimitError is the 400 a create, restore or fork past the
+// account's project cap answers (api.md POST /projects/:id/fork, I-569).
+// detail.reason lets the CLI say it in its own words; the message is the
+// whole sentence for a client that prints it as it is.
 func projectLimitError(have, limit, requested int) error {
+	detail := map[string]any{"reason": "project_limit", "limit": limit, "projects": have}
 	if requested <= 1 {
-		return withDetail(errf("invalid", "you have %d of %d projects; destroy one, or upgrade your plan at https://repose.herakraft.co/billing", have, limit),
-			map[string]any{"limit": limit, "projects": have})
+		return withDetail(errf("invalid", "you have %d of the %d projects an account can have, running or stopped; destroy one first", have, limit), detail)
 	}
-	return withDetail(errf("invalid", "you have %d of %d projects, and %d more would make %d; destroy some, or upgrade your plan at https://repose.herakraft.co/billing", have, limit, requested, have+requested),
-		map[string]any{"limit": limit, "projects": have, "requested": requested})
+	detail["requested"] = requested
+	return withDetail(errf("invalid", "you have %d of the %d projects an account can have, running or stopped, and %d more would make %d; destroy some first", have, limit, requested, have+requested), detail)
 }
 
 // abuseGate refuses to start a project on hold after three miner stops in
