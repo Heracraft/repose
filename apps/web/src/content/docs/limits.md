@@ -21,7 +21,7 @@ We let people in, in the order they joined, as seats free up or we add a server.
 
 ## Egress
 
-Data your machines send to the internet is counted against the month's allowance (250 GB on Solo, 500 GB on Plus, 1 TB on Pro), then $0.05 per GB. At four times the allowance your machines are stopped until the month turns, with an email. Incoming data, and your own SSH traffic through the gateway, don't count.
+Data your machines send to the internet is counted against the month's allowance (250 GB on Solo, 100 GB during its [$20 introductory months](/docs/billing), 500 GB on Plus, 1 TB on Pro), then $0.05 per GB. At four times the allowance your machines are stopped until the month turns, with an email. Incoming data, and your own SSH traffic through the gateway, don't count.
 
 ## Network
 

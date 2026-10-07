@@ -13166,8 +13166,9 @@ $20, "For 3 months, then $29 and 250 GB egress" and 100 GB of egress to
 an eligible account; a trial reads
 "Trial. First charge of $20 on DATE; $29 a month from DATE." and an
 active subscription inside the three months "Active. Renews DATE at $20;
-$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with the same
-line, and the user docs' pricing page carries the sentence under the
+$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with "First 3
+months for new subscribers, then $29 and 250 GB egress", since everyone
+sees it, a returning account too; and the user docs' pricing page carries the sentence under the
 table. The fake api models it, with `intro_used` to make a returning
 account.
 *Not checked here.* Against Paddle's sandbox: that a transaction with a
