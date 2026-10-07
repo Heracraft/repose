@@ -483,7 +483,7 @@ measures them):
 
 ```
 $ repose status
-todo-app   large   running   2h14m   claude: working   today $0.31   month $12.40
+todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
   host eastus/h-01   ip 10.64.0.7   disk 8.1/40 GB   snapshot 6h ago
   sessions 1   tmux clients 1   docker 2
   last event 12m ago: claude completed "ran tests, 3 failures fixed"

@@ -119,11 +119,17 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 	// says what the stop did: how long it took and the snapshot's size,
 	// which is what that time went on (DECISIONS I-570). The snapshot's id
 	// is for `repose snapshots`, where it is used.
+	// The stop op's result names the snapshot it recorded; an api that
+	// does not say leaves the newest snapshot, when it is a stop's and the
+	// project carries no error (a failed snapshot sets one, I-158).
 	snapBytes := int64(-1)
-	if snapshot && projectReason(p) == "" {
-		if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
-			if latest := newestSnapshot(snaps); latest != nil && latest.Reason == "stop" {
-				snapBytes = latest.Bytes
+	if snapshot {
+		snapID, _ := op.Result["snapshot_id"].(string)
+		if snapID != "" || projectReason(p) == "" {
+			if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
+				if s := stopSnapshot(snaps, snapID); s != nil {
+					snapBytes = s.Bytes
+				}
 			}
 		}
 	}
@@ -310,6 +316,23 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 // newestSnapshot is the most recent of snaps, or nil. The api lists them
 // newest first and the fake api oldest first; v0.1.5 took the last one,
 // which on the real api was the oldest (DECISIONS I-166).
+// stopSnapshot is the snapshot a stop took: the one with id, or, with
+// no id, the newest when a stop took it.
+func stopSnapshot(snaps []Snapshot, id string) *Snapshot {
+	if id != "" {
+		for i := range snaps {
+			if snaps[i].ID == id {
+				return &snaps[i]
+			}
+		}
+		return nil
+	}
+	if s := newestSnapshot(snaps); s != nil && s.Reason == "stop" {
+		return s
+	}
+	return nil
+}
+
 func newestSnapshot(snaps []Snapshot) *Snapshot {
 	var best *Snapshot
 	for i := range snaps {

@@ -13,9 +13,9 @@ To act on a project from elsewhere, name it: `repose attach todo-app`, `repose s
 
 ```
 $ repose ls
-PROJECT    CLASS  STATE    UP     AGENTS           TODAY  MONTH
-todo-app   large  running  2h14m  claude: working  $0.31  $18.40
-api-v2     xl     stopped  -      -                $0.00  $41.02
+PROJECT   CLASS  STATE    UP     AGENTS           TODAY  MONTH
+todo-app  large  running  2h14m  claude: working  2h14m  41h
+api-v2    xl     stopped  -      -                0h     63h
 ```
 
 AGENTS lists each agent in the machine's tmux session with its state: `working`, `idle` or `needs_input` (waiting on a permission prompt). One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it.

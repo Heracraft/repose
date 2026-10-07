@@ -1,7 +1,7 @@
 # Status and logs
 
-`repose status` answers "what is it doing and what is it costing" in one
-screen. `repose logs` shows the guest's console, the last build, or the
+`repose status` answers "what is it doing and how long has it run" in
+one screen. `repose logs` shows the guest's console, the last build, or the
 operations history. The dashboard shows the same data with history.
 
 ## What the user sees
@@ -9,11 +9,11 @@ operations history. The dashboard shows the same data with history.
 ```
 $ repose ls
 PROJECT   CLASS  STATE    UP     AGENTS           TODAY  MONTH
-todo-app  large  running  2h14m  claude: working  $0.31  $18.40
-api-v2    xl     stopped  -      -                $0.00  $41.02
+todo-app  large  running  2h14m  claude: working  2h14m  41h
+api-v2    xl     stopped  -      -                0h     63h
 
 $ repose status todo-app          # or --project todo-app, or from the checkout
-todo-app   large  running   2h14m   claude: working      today $0.31   month $18.40
+todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
   host host-01   ip 10.100.0.12   disk 6.2 GB/40.0 GB   snapshot 11h8m ago
   sessions 1   tmux clients 1   docker 0
   last event 14m ago: claude completed "Added auth flow"
@@ -53,9 +53,9 @@ project as their argument (`repose logs izma -f`, I-155).
 Status:
 
 - `repose ls` lists every non-destroyed project with class, state,
-  uptime since the last `running` transition, per-agent state, and cost
-  today and month to date in dollars from `usage_hours` plus the current
-  partial hour estimated at the class rate. `repose status` prints the
+  uptime since the last `running` transition, per-agent state, and running
+  hours today and month to date from `usage_hours` (I-289: nothing is
+  priced by the hour). `repose status` prints the
   same columns for one project, then its detail lines.
 - Agent state per window comes from guestd's latest `AgentState`
   (`working`, `idle`, `needs_input`, `unknown`) and is at most 60 seconds
@@ -104,11 +104,10 @@ this describes, and it is narrower than an earlier draft of this section
 promised, DECISIONS I-96):
 
 - `/projects`: one row per project — name, class, state, uptime, agent
-  state, cost today, cost this month. The same figures as `status`, from
+  state, running hours today and this month. The same figures as `status`, from
   the same `usage_hours` rows. Not sortable, and no sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
-  signals, cost (today, this month, and the month projected at the
-  current run rate), disk with a resize control, events newest first, the
+  signals, usage (running hours today and this month), disk with a resize control, events newest first, the
   last build with a link to the config page, and snapshots with restore
   and restore-as-new. Start, Stop, Resize and Destroy are the header
   actions; Destroy makes you type the slug.

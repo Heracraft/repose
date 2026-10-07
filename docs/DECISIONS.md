@@ -14553,11 +14553,13 @@ total whether it runs or not (billing.md). This amends I-484, which kept
 too: nobody types a 36-character id from a stop line, and `repose
 snapshots` lists it where it is used. The size stays, since it is what
 the stop's time went on. `repose stop` prints `Stopped NAME in 11s with
-a 2.1 GB snapshot.`, `Stopped NAME in 6s.` with `--no-snapshot`, and
-`NAME is already stopped.`; the size is printed only when the newest
-snapshot is a stop's and the project carries no error, so a stop whose
-snapshot failed (I-158, which says so on stderr) never shows an older
-snapshot's size. The same false claim went from the other places that
+a 2.1 GB snapshot.`, `Stopped NAME in 6.2s.` with `--no-snapshot`, and
+`NAME is already stopped.`; the size is that of the snapshot the stop
+op's result names (`snapshot_id`, which the api has set since
+recordSnapshot), so a stop whose snapshot failed (I-158, which says so
+on stderr) never shows an older snapshot's size. With an api that names
+none, the newest snapshot is used when a stop took it and the project
+carries no error. The same false claim went from the other places that
 carried it: `repose fork`'s footer after its table ("billed like any
 project", cut whole under I-484), its `--help`, and the public docs
 (lifecycle, index, cli, machine: "costs only its disk", "billed like
