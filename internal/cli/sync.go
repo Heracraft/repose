@@ -211,7 +211,14 @@ func skipCheckout(ctx context.Context, t sshTarget, localRepoDir string, opts Sy
 //
 // On a machine that runs herdr it runs repose-herdr-workspace instead,
 // which gives herdr a workspace in the new checkout (guest-conventions.md
-// "herdr", Workspace); a base without that command skips the step.
+// "herdr", Workspace), then gives that workspace the label `checkout`
+// when a base before I-597 named it after the folder, and closes the
+// `home` workspace when it is one idle shell (I-596): the server made it
+// at the first boot, before this sync made the checkout. A base without
+// the command skips the step; it runs in a subshell, since its variables
+// are the scripts' usual names. The unit counts as running while it is
+// activating too: the server's own workspace step may still be waiting
+// for herdr then.
 func freshShellScript(slug string, probe guestProbe) string {
 	if !probe.created {
 		return ""
@@ -219,8 +226,10 @@ func freshShellScript(slug string, probe guestProbe) string {
 	w := shQuote("=" + slug + ":shell")
 	return fmt.Sprintf(`repose_p=$(tmux display-message -p -t %[1]s '#{pane_current_path} #{pane_current_command}' 2>/dev/null || true)
 case "$repose_p" in "$HOME bash"|"$HOME -bash"|"$HOME sh") tmux respawn-pane -k -t %[1]s -c %[2]s 2>/dev/null || true ;; esac
-if command -v repose-herdr-workspace >/dev/null 2>&1 && %[3]s; then repose-herdr-workspace >/dev/null 2>&1 || true; fi
-`, w, homeShell(probe.checkout), muxProbeScript)
+`, w, homeShell(probe.checkout)) + `if command -v repose-herdr-workspace >/dev/null 2>&1 && ` + herdrUpScript + `; then (
+repose-herdr-workspace >/dev/null 2>&1 || true
+` + herdrMainVar(slug) + herdrRenameShell + herdrTidyShell + `) || true; fi
+`
 }
 
 // dirtyTreeError is 07-cli.md §6's exit 6: the guest changed files that

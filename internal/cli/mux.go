@@ -74,6 +74,9 @@ type agentStart struct {
 
 // attachReq is everything an attach needs.
 type attachReq struct {
+	// Ctx is the command's context: Ctrl-C ends it. The herdr attach
+	// follows it until the client or the helper owns the terminal.
+	Ctx     context.Context
 	Target  sshTarget
 	Project *Project // Slug always; ExpiresAt when known
 	Window  string   // the agent `run PROMPT` just started, "" for the session
@@ -177,6 +180,11 @@ func muxFromProbe(a muxProbeAnswer, err error, p *Project) (muxer, error) {
 // muxProbeScript exits 0 only when the herdr session unit runs: the
 // condition the guest-side scripts (messages, sync, status) test.
 var muxProbeScript = "systemctl --user -q is-active " + multiplexer.HerdrUnit + " 2>/dev/null"
+
+// herdrUpScript exits 0 when the herdr session unit is in one of
+// herdrUp's states: running, or about to (activating covers the server's
+// own workspace step and Restart's wait).
+var herdrUpScript = `case "$(systemctl --user show -p ActiveState --value ` + multiplexer.HerdrUnit + ` 2>/dev/null)" in active|activating|reloading) true ;; *) false ;; esac`
 
 // muxByName is the multiplexer for a stored or remembered value.
 func muxByName(name string) muxer {

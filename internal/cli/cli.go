@@ -36,8 +36,14 @@ func Execute(version string) int {
 	// Ctrl-C cancels the command's context, so a spinner line is cleared
 	// and child ssh processes are ended, instead of the process dying
 	// mid-line.
+	// The first Ctrl-C is the command's to handle; after it the handler
+	// goes, so a second one ends a command whose cleanup is stuck (the
+	// forwards' teardown, a slow ssh) the way it ends any program
+	// (DECISIONS I-598). Code that must restore the terminal (the input
+	// proxy, a hidden prompt, a herdr client) holds its own handler.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	go func() { <-ctx.Done(); stop() }()
 	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return ExitOK

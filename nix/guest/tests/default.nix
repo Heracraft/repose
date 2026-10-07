@@ -516,10 +516,16 @@ in
           assert guest.succeed("cat /home/dev/.config/herdr/config.toml") == '[terminal]\nshell_mode = "login"\n\n[update]\nversion_check = false\n\n[ui.toast]\ndelivery = "herdr"\n'
           assert guest.succeed("stat -c %U /home/dev/.config/herdr/config.toml").strip() == "dev"
           # The workspace sits in the checkout (factory, from I-368 above),
-          # once, however often the step runs.
+          # labelled `checkout` (I-597), once, however often the step runs.
           user("repose-herdr-workspace")
           ws = json.loads(user("herdr workspace list"))["result"]["workspaces"]
-          assert [w["label"] for w in ws] == ["factory"], ws
+          assert [w["label"] for w in ws] == ["checkout"], ws
+          # A workspace with the old label (the folder's name) is renamed,
+          # not doubled.
+          user(f"herdr workspace rename {ws[0]['workspace_id']} factory")
+          user("repose-herdr-workspace")
+          ws = json.loads(user("herdr workspace list"))["result"]["workspaces"]
+          assert [w["label"] for w in ws] == ["checkout"], ws
           panes = json.loads(user("herdr pane list"))["result"]["panes"]
           assert any(p.get("cwd") == "/home/dev/factory" for p in panes), panes
           assert unit_state("repose-tmux-session.service") == "inactive"
