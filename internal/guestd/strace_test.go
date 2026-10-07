@@ -69,6 +69,11 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 	postHook(t, hookSock, `{"agent":"claude","kind":"completed","summary":"x","window":"claude"}`)
 	// One from a herdr pane: resolved through herdr's socket, no environ.
 	postHook(t, hookSock, `{"agent":"claude","kind":"completed","summary":"x","window":"herdr:w1:p1"}`)
+	// A slow runner under -race reaches herdr later than 300 ms after
+	// the hook; wait for the ask, then let the trace settle.
+	for end := time.Now().Add(10 * time.Second); herdrAnswered != nil && herdrAnswered.Load() == 0 && time.Now().Before(end); {
+		time.Sleep(50 * time.Millisecond)
+	}
 	time.Sleep(300 * time.Millisecond)
 	stop()
 	if herdrAnswered != nil && herdrAnswered.Load() == 0 {

@@ -74,6 +74,11 @@ let
     (refusal "user-unit-repose-name"
       { systemd.user.services.repose-herdr-server.Service.ExecStart = "/bin/true"; }
       "systemd.user.services.repose-herdr-server: not allowed in a fragment")
+    # The base's own npm unit stays the base's; the menu's repose-npm-<tool>
+    # installs are allowed, which TestRealNixAllEntriesEvaluate proves.
+    (refusal "user-unit-repose-npm-registry"
+      { systemd.user.services.repose-npm-registry.Service.ExecStart = "/bin/true"; }
+      "systemd.user.services.repose-npm-registry: not allowed in a fragment")
     # The message itself is asserted by internal/menu's
     # TestRealNixMissingPackage (tryEval cannot see it).
     (refusal "menu-missing-package"

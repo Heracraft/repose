@@ -599,40 +599,40 @@ pointer, not a summary.
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14456
 - **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L14504
 - **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14571
-- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14628
-- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14647
-- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14683
-- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L14710
-- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14775
-- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14788
-- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14802
-- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14821
-- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14847
-- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14860
-- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14884
-- **I-530** dev is a trusted nix user — 2026-10-06; L14923
-- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14937
-- **I-532** The guest has no nix channels — 2026-10-06; L14958
-- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14969
-- **I-534** The guest has man pages — 2026-10-06; L15005
-- **I-550** A guest's hostname is its project's slug — 2026-10-06; L15020
-- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15041
-- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L15072
-- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L15099
-- **I-539** dev may ptrace its own processes — 2026-10-05; L15115
-- **I-540** The browser has CJK fonts — 2026-10-05; L15124
-- **I-541** `BROWSER` prints the URL — 2026-10-05; L15142
-- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15151
-- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L15201
-- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15309
-- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L15333
-- **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15360
-- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15419
-- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L15436
-- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15533
-- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L15591
-- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L15636
-- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15743
-- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L15774
-- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; L15845
-- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; L15870
+- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14633
+- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14652
+- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14688
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L14715
+- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14780
+- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14793
+- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14807
+- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14826
+- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14852
+- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14865
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14889
+- **I-530** dev is a trusted nix user — 2026-10-06; L14928
+- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14942
+- **I-532** The guest has no nix channels — 2026-10-06; L14963
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14974
+- **I-534** The guest has man pages — 2026-10-06; L15010
+- **I-550** A guest's hostname is its project's slug — 2026-10-06; L15025
+- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15046
+- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L15077
+- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L15104
+- **I-539** dev may ptrace its own processes — 2026-10-05; L15120
+- **I-540** The browser has CJK fonts — 2026-10-05; L15129
+- **I-541** `BROWSER` prints the URL — 2026-10-05; L15147
+- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15156
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L15206
+- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15314
+- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L15338
+- **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15365
+- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15424
+- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L15441
+- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15538
+- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L15596
+- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L15641
+- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15748
+- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L15779
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; L15850
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; L15875

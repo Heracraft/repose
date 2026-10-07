@@ -14612,7 +14612,12 @@ reload-config`. It never fails the switch.
 systemd reads before `/etc/systemd/user`, so a fragment's
 `systemd.user.services.repose-herdr-server` (or `repose-tmux-session`)
 would replace the base's. The contract now refuses any
-`systemd.user.services` name that starts with `repose-`.
+`systemd.user.services` name that starts with `repose-`, except a
+`repose-npm-` name the base does not define: the menu's npm installs
+(Vercel, portless) write `repose-npm-<tool>` units, and saved project
+files carry those names, so refusing them failed every such project's
+build (`TestRealNixAllEntriesEvaluate`, CI on b34301e3, 2026-10-07).
+`repose-npm-registry`, the base's own, stays refused.
 
 A `config.toml` that machine.nix manages is a read-only link and
 replaces the seeded file; it keeps herdr's defaults for anything it
