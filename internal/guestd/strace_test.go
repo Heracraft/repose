@@ -41,6 +41,14 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 		if len(herdrSock) >= 108 {
 			return // sun_path: the temp root is too deep for the socket
 		}
+		if uid, _ := sysdep.DevIdentity(); os.Getuid() != uid {
+			// guestd answers a herdr socket only when its peer is dev
+			// (uid from the host's dev user, else 1000); a CI runner is
+			// someone else, so the herdr half runs only where the test
+			// user is dev's uid, as on a dev box or guest.
+			t.Logf("herdr half skipped: test uid %d, dev uid %d", os.Getuid(), uid)
+			return
+		}
 		mustMkdir(t, filepath.Dir(herdrSock))
 		herdrAnswered = serveHerdrAt(t, herdrSock, `{"type":"agent_list","agents":[`+
 			`{"pane_id":"w1:p1","workspace_id":"w1","name":"claude","agent":"claude","agent_status":"working","state_change_seq":1,"cwd":"/home/dev/x"}]}`)
