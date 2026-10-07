@@ -369,6 +369,11 @@ pkgs.testers.runNixOSTest {
         server = guest.succeed("pgrep -x 'tmux: server'").strip().split()[0]
         guest.wait_until_succeeds(f"test $(cat /proc/{claude}/oom_score_adj) = -800", timeout=30)
         guest.wait_until_succeeds(f"test $(cat /proc/{server}/oom_score_adj) = -800", timeout=30)
+        # I-576: this node's user manager runs at upstream's 100; guestd
+        # writes -900 to it, as to a manager a base update has not
+        # restarted.
+        manager = guest.succeed("systemctl show -p MainPID --value user@${toString devUID}.service").strip()
+        guest.wait_until_succeeds(f"test $(cat /proc/{manager}/oom_score_adj) = -900", timeout=30)
         # A dev server started in a window forks from the tmux server and
         # inherits its -800; guestd puts it back to 0 within a refresh.
         guest.succeed(

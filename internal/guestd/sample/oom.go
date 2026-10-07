@@ -14,10 +14,12 @@ import (
 // oom_score_adj is inherited on fork, so a value set once on an agent
 // would also protect every dev server the agent starts; and the `dev`
 // user can raise its own value but never lower it. So guestd (root) owns
-// it and re-applies it on every refresh: OOMProtected for the tmux server
-// and for each agent window's agent process, and 0 for any other process
-// of dev's that inherited a negative value, so a vite an agent started is
-// back to the kernel's ordinary choice within one refresh. Nothing is
+// it and re-applies it on every refresh: OOMProtected for the tmux server,
+// the keystroke path (I-576: dev's sshd-session, the tmux and herdr
+// clients) and each agent window's agent process, OOMUserManager for dev's
+// user manager, and 0 for any other process of dev's that inherited a
+// negative value, so a vite an agent started, or a command run over SSH,
+// is back to the kernel's ordinary choice within one refresh. Nothing is
 // ever killed or stopped by guestd; the kernel's OOM killer decides, and
 // the existing `oom` warning names what it killed.
 //
@@ -29,8 +31,27 @@ import (
 // can still be stopped by the kernel rather than hang the guest.
 const OOMProtected = -800
 
+// OOMUserManager is dev's user manager's value, the one its unit sets
+// (nix/guest/base/keystroke-path.nix): when the kernel kills it, systemd
+// stops user@1000.service and with it the tmux server and every pane
+// (kanali, 2026-10-05, at upstream's 100). guestd writes it too, so a
+// manager started before the base that sets it is protected without a
+// restart.
+const OOMUserManager = -900
+
 // tmuxServerComm is the name tmux's server process gives itself.
 const tmuxServerComm = "tmux: server"
+
+// keystrokeComms are the processes between the laptop's keyboard and the
+// tmux or herdr server (I-576): the session half of sshd that runs as dev
+// (sshd hands its unit's -800 to the session on fork, and its children
+// inherit it), the tmux client a `tmux attach` runs, and herdr's client
+// and server (one binary).
+var keystrokeComms = map[string]bool{
+	"sshd-session":  true,
+	"tmux: client":  true,
+	herdrServerComm: true,
+}
 
 // agentPIDs returns, for each agent window's pane, the agent's own
 // process: the shallowest process on each branch of the pane's tree whose
@@ -69,9 +90,10 @@ type oomChange struct {
 	To   int
 }
 
-// applyOOM sets oom_score_adj on dev's processes: OOMProtected for the
-// tmux server, the herdr servers and the agents, 0 for any other that has
-// a negative value.
+// applyOOM sets oom_score_adj on dev's processes: OOMUserManager for
+// dev's user manager (`systemd` whose parent is pid 1), OOMProtected for
+// the tmux server, the herdr servers, the keystroke path and the agents,
+// 0 for any other that has a negative value.
 // A positive value the user chose (choom) is left alone. It writes only
 // what differs.
 func (r *procReader) applyOOM(devUID int, agents, herdrServers map[int]bool) []oomChange {
@@ -88,7 +110,7 @@ func (r *procReader) applyOOM(devUID int, agents, herdrServers map[int]bool) []o
 		if procUID(filepath.Join(dir, "status")) != devUID {
 			continue
 		}
-		comm, _, _, ok := r.readStat(e.Name())
+		comm, ppid, ok := r.commAndParent(e.Name())
 		if !ok {
 			continue
 		}
@@ -104,7 +126,9 @@ func (r *procReader) applyOOM(devUID int, agents, herdrServers map[int]bool) []o
 		}
 		want := cur
 		switch {
-		case agents[pid] || herdrServers[pid] || comm == tmuxServerComm:
+		case comm == "systemd" && ppid == 1:
+			want = OOMUserManager
+		case agents[pid] || herdrServers[pid] || comm == tmuxServerComm || keystrokeComms[comm]:
 			want = OOMProtected
 		case cur < 0:
 			want = 0

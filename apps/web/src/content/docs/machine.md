@@ -209,7 +209,7 @@ The machine can reach the internet over TCP and UDP. Nothing on the internet can
 
 ## Memory and disk
 
-When a machine runs out of memory, something is killed. Your agents and the tmux or herdr server are kept to the last, so a runaway test or dev server goes first. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
+When a machine runs out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
 
 Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now.
 

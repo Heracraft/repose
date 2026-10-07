@@ -401,6 +401,57 @@ in
           soft = guest.succeed("su - dev -c 'ulimit -Sn'").strip().splitlines()[-1]
           assert soft == "524288", soft
 
+      with subtest("I-576: the keystroke path outlives a memory hog in a pane"):
+          def adj(pid):
+              return int(guest.succeed(f"cat /proc/{pid}/oom_score_adj").strip())
+          manager = guest.succeed("systemctl show -p MainPID --value user@1000.service").strip()
+          assert adj(manager) == -900, adj(manager)
+          # The manager's units start at 0, not upstream's manager + 100.
+          unit = guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemd-run --user --wait --pipe --quiet cat /proc/self/oom_score_adj").strip()
+          assert unit == "0", unit
+          assert guest.succeed("systemctl show -p OOMScoreAdjust --value sshd.service").strip() == "-800"
+          # This node runs fake-guestd, so the tmux server and its panes
+          # keep the 0 their unit gives them (upstream's was 200); guestd's
+          # -800 on the server is the guestd test's I-200 subtest.
+          server = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
+          assert adj(server) == 0, adj(server)
+          pane = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pane_pid}'").strip()
+          assert adj(pane) == 0, adj(pane)
+          # A child's protection is capped by its parent's; the slices'
+          # values rely on memory_recursiveprot (systemd's mount option).
+          guest.succeed("grep -E '^cgroup2 /sys/fs/cgroup .*memory_recursiveprot' /proc/mounts")
+          # MemoryLow, in bytes, on each slice and unit of the path.
+          def low(path):
+              return int(guest.succeed(f"cat /sys/fs/cgroup/{path}/memory.low").strip())
+          M = 1024 * 1024
+          assert low("system.slice") == 176 * M
+          assert low("system.slice/sshd.service") == 16 * M
+          assert low("system.slice/guestd.service") == 64 * M
+          assert low("system.slice/systemd-journald.service") == 64 * M
+          assert low("user.slice") == 128 * M
+          assert low("user.slice/user-1000.slice") == 128 * M
+          assert low("user.slice/user-1000.slice/user@1000.service") == 64 * M
+          assert low("user.slice/user-1000.slice/user@1000.service/app.slice") == 48 * M
+          assert low("user.slice/user-1000.slice/user@1000.service/app.slice/repose-tmux-session.service") == 48 * M
+          assert guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p OOMPolicy --value repose-tmux-session.service").strip() == "continue"
+          # nixpkgs' kernels have CONFIG_LRU_GEN and turn it on.
+          assert guest.succeed("cat /sys/kernel/mm/lru_gen/min_ttl_ms").strip() == "1000"
+          # The test framework panics the VM on an OOM (panic_on_oom=2);
+          # a real guest does not.
+          guest.succeed("sysctl -w vm.panic_on_oom=0")
+          # A pane that takes every byte: the kernel kills it, and the
+          # manager, the tmux server and the session are still there.
+          guest.succeed("echo 'b = []' > /tmp/hog.py && echo 'while True: b.append(b\"x\" * (64 << 20))' >> /tmp/hog.py && chmod 644 /tmp/hog.py")
+          guest.succeed("sudo -u dev tmux new-window -d -t todo-app -n hog 'python3 /tmp/hog.py'")
+          guest.wait_until_succeeds("dmesg | grep -q 'Killed process [0-9]* (python3'", timeout=180)
+          print(guest.succeed("dmesg | grep -E 'Killed process|invoked oom-killer'"))
+          assert guest.succeed("systemctl show -p MainPID --value user@1000.service").strip() == manager
+          assert guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip() == server
+          guest.succeed("sudo -u dev tmux has-session -t =todo-app")
+          guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal)\\)'")
+          guest.execute("sudo -u dev tmux kill-window -t todo-app:hog")
+          guest.succeed("sysctl -w vm.panic_on_oom=2")
+
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev/factory"
@@ -1232,6 +1283,14 @@ in
           assert "nixpkgs#" not in out and "status=127" in out, out
           out = guest.succeed(agent + " sh -c 'cowsay hi; echo status=$?' 2>&1")
           assert "nixpkgs#" not in out and "status=127" in out, out
+          # I-577: with a PATH that lacks the helper, the handler still
+          # answers once; it used to call itself, one bash deeper each time.
+          out = guest.succeed(agent + " PATH=${pkgs.coreutils}/bin timeout 60 ${pkgs.bash}/bin/bash -c 'cowsay hi; echo status=$?' 2>&1")
+          print(out)
+          assert "  nix profile add nixpkgs#cowsay  install it on this machine" in out, out
+          assert "status=127" in out and "fork" not in out, out
+          interactive = guest.succeed("grep -c 'bin/repose-command-not-found' /etc/bashrc").strip()
+          assert int(interactive) >= 1, interactive
 
       with subtest("I-517: package managers, pip and cron get their own hint; no test attributes"):
           out = guest.succeed("sudo -H -u dev bash -ic 'apt-get install jq' 2>&1 || true")

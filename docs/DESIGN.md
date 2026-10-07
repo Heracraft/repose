@@ -157,6 +157,12 @@ of user config:
   3.12, uv, go, rustup, just, ripgrep, jq, gh, git, direnv with nix-direnv,
   starship, zoxide, eza, a C toolchain and everyday CLIs (I-218).
 - `fs.inotify.max_user_watches=1048576`, `max_user_instances=1024`.
+- Under load, what a user types gets through first. The SSH session
+  scopes and the tmux server run at ten times a pane's CPU weight. When
+  memory runs out, the kernel kills rather than thrashes, and the SSH
+  session, the tmux server, dev's user manager, guestd and journald are
+  the last killed and the last paged out; the largest build or dev
+  server goes first, and agents are kept (DECISIONS I-200, I-494, I-576).
 - `TZ` and `LANG=C.UTF-8` set from the user's profile; `TZ` defaults to the
   laptop's zone as reported by the CLI at project creation.
 - Fluent Bit is *not* in the guest. Console output goes to hostd over the

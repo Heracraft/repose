@@ -843,7 +843,7 @@ report the version.
   `npm_config_registry` is **not** set: npm lets it beat a project's
   `.npmrc`.
 
-## Memory pressure (DECISIONS I-200)
+## Memory pressure (DECISIONS I-200, I-576)
 
 guestd owns `oom_score_adj` for `dev`'s processes and re-applies it every
 5 s: -800 for the tmux server (`tmux: server`) and for each agent
@@ -854,13 +854,45 @@ dev's `systemd --user`) and for each process in its tree whose name or
 executable is one of the five agents' binaries, the shallowest per
 branch (I-505; `node` is left out there, and Gemini CLI runs as `node`
 (I-46), so under herdr it gets no -800 until herdr reports a pane's
-root pid, I-535), and 0 for any other `dev`
-process holding a negative value (it inherited the agent's or the tmux
-server's on fork: a dev server an agent started, a pane's shell). A
-positive value the user set is left alone, and nothing is ever killed or
-stopped by guestd. `dev` cannot lower its own value, which is why root
-owns this. When the kernel does kill something, guestd's `oom` warning
-names it.
+root pid, I-535), -800 for the keystroke path (I-576: `dev`'s
+`sshd-session`, every `tmux: client`, every `herdr` process), -900 for
+`dev`'s user manager (`systemd` whose parent is pid 1), and 0 for any
+other `dev` process holding a negative value (it inherited the agent's,
+the tmux server's or the SSH session's on fork: a dev server an agent
+started, a pane's shell, a `repose exec` command). A positive value the
+user set is left alone, and nothing is ever killed or stopped by guestd.
+`dev` cannot lower its own value, which is why root owns this. When the
+kernel does kill something, guestd's `oom` warning names it.
+
+The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
+`user@.service` `OOMScoreAdjust=-900`, the user manager's
+`DefaultOOMScoreAdjust=0` (upstream gives its units the manager's value
+plus 100), `sshd.service` `OOMScoreAdjust=-800` (sshd hands it to each
+session it forks), guestd -900 and journald upstream's -250.
+`repose-tmux-session.service` has `OOMPolicy=continue`. MGLRU's
+`/sys/kernel/mm/lru_gen/min_ttl_ms` is 1000: the kernel runs its OOM
+killer when it cannot keep the pages touched in the last second.
+
+`MemoryLow` (reclaimed last; soft, and only what the cgroup uses):
+
+| cgroup | MemoryLow |
+|---|---|
+| `system.slice` | 176M |
+| `sshd.service` | 16M |
+| `guestd.service` | 64M |
+| `systemd-journald.service` | 64M |
+| `systemd-logind.service` | 16M |
+| `dbus-broker.service` | 16M |
+| `user.slice`, `user-1000.slice` | 128M |
+| each `session-N.scope` | 32M |
+| `user@1000.service` | 64M |
+| `app.slice` (dev's) | 48M |
+| `repose-tmux-session.service` | 48M |
+
+The same values on every size. A slice carries the sum of its protected
+children: the kernel caps a child's protection at its parent's.
+`repose-herdr-server.service` has none, since its panes share its
+cgroup.
 
 ## CPU weights (DECISIONS I-494)
 

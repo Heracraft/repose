@@ -98,6 +98,11 @@ jobs:
         run: go test -run 'TestRealNix' -v ./internal/hostd/nixbuild/ ./internal/menu/
       - name: fragment contract and examples
         run: nix build --no-link ./nix#checks.x86_64-linux.fragment-contract ./nix#checks.x86_64-linux.fragment-examples
+      # Reads the guest's unit texts and runs each command-not-found
+      # handler under a process limit (DECISIONS I-576, I-577); it builds
+      # no part of the guest system.
+      - name: guest keystroke path
+        run: nix build --no-link -L ./nix#checks.x86_64-linux.guest-keystroke-path
       # The agent overlay, built and pushed to the platform cache
       # (DECISIONS I-46) when the Cachix token is configured; hosts then
       # substitute the agents instead of fetching upstream.

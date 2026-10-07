@@ -15197,3 +15197,136 @@ the starship sentence (the machine already runs starship, so a prompt
 needs only its config file; aliases work through I-519), and that a tmux config reaches the running
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
+
+**I-576. When a machine runs out of memory, the SSH session, the tmux
+server and dev's user manager are the last things killed and the last
+paged out, and the kernel kills instead of thrashing.** (guest-oom-keystroke,
+2026-10-07; amends I-200, I-494 and I-505) kanali (large, base
+2026.10.05) on 2026-10-05, times EDT, from its journal: from 20:39 to
+20:54 guestd's `tmux list-*` calls timed out ("run setpriv: context
+deadline exceeded", 164 times) and journald hung until its watchdog
+killed it at 20:53:20 ("Watchdog timeout (limit 3min)"; the unit had
+"19.8G read from disk" over 23 hours with a 39.8M memory peak), and
+again at 21:14:44; the page cache was about 10 MB and nothing was
+OOM-killed. That was the gap in the CPU chart. At 21:31 to 21:32 the
+kernel killed, in order, chromium, a 128 kB pane `bash` at
+`oom_score_adj` 200, dev's user dbus-broker at 200, then dev's user
+manager (`systemd`, pid 616, 1.7 MB, at 100) and `(sd-pam)`, and only
+then a 319 MB `claude` at 0. The manager's death stopped
+`user@1000.service`, which ended the tmux server and every pane. The
+scores explain the order: upstream runs `user@.service` at
+`OOMScoreAdjust=100` and gives the manager's units its value plus 100,
+and the kernel adds adj/1000 of RAM plus swap to a process's badness, so
+on 8 GB with 2 GB of zram a process at 100 counts as 1 GB more than it
+holds and one at 200 as 2 GB. The task dump at 21:32:06 had 926 `bash`
+(2.6 GB, I-577) and 26 `MainThread` (2.3 GB resident, 1.2 GB swapped:
+node; most in parent and child pairs, the shape of Gemini CLI, plus
+Playwright MCP), 5
+claude (1.3 GB) and 275,462 pages (1.07 GB) of unreclaimable slab.
+
+Now, in `nix/guest/base/keystroke-path.nix`:
+- `user@.service` runs at `OOMScoreAdjust=-900`, and user.conf sets
+  `DefaultOOMScoreAdjust=0`, so the manager's units (the tmux server,
+  user dbus, repose's user services) start at 0 instead of 200 and are
+  ranked by size. The template already has `restartIfChanged = false`, so this
+  takes effect at the machine's next start; guestd writes -900 to the
+  running manager (`systemd` of dev's whose parent is pid 1) at each
+  refresh meanwhile.
+- `sshd.service` runs at `OOMScoreAdjust=-800`. OpenSSH sets its
+  listener to -1000 and gives every forked session the unit's value
+  back, so `sshd-session` (root's and dev's) runs at -800. guestd keeps
+  dev's `sshd-session`, every `tmux: client` and every `herdr` process
+  (server and client) at -800, and puts every other process of dev's
+  holding a negative value back to 0 within 5 s, as I-200 does for panes:
+  the login shell, a `repose exec` command, a `repose code` server.
+- `MemoryLow` on each cgroup of the path and on each slice above it,
+  since a child's protection is capped by its parent's: sshd.service 16M,
+  guestd.service 64M, systemd-journald.service 64M, systemd-logind 16M,
+  dbus-broker 16M, system.slice 176M; each `session-N.scope` 32M (beside
+  I-494's CPU weight), `user@1000.service` 64M, `user-1000.slice` and
+  user.slice 128M; in the user manager app.slice and
+  `repose-tmux-session.service` 48M. The budget is fixed, not a share of
+  RAM: on kanali the tmux server's cgroup holds 4 MB (12 MB peak), sshd
+  6, guestd 21 (54 peak), journald 43, a session with herdr 13 (60 peak),
+  and none of that grows with the size. 304 MB in all, 7.4 percent of
+  small's 4 GB, and only memory those cgroups use is protected.
+- `repose-tmux-session.service` gets `OOMPolicy=continue`. The default,
+  `stop`, would stop the unit (and with `KillMode=control-group` the
+  server and every pane) when the kernel kills a `#()` or `run-shell` job
+  in its cgroup.
+- MGLRU's `min_ttl_ms` is 1000 (tmpfiles `w-`): when the kernel cannot
+  keep the pages touched in the last second, it runs the OOM killer
+  instead of evicting them. 20:39 to 20:54 becomes one kill of the
+  largest process not protected. The kernel's documentation names 1000
+  ms as the value that removes intolerable lag.
+Checked by flake check `guest-keystroke-path` (unit texts, user.conf,
+the tmpfiles line), guest-base's I-576 subtest (live values,
+`memory_recursiveprot` on the cgroup mount, and a python memory hog in a
+pane killed while the manager, the tmux server and the session stay)
+and the guestd test's I-200 subtest (guestd writes -900 to a manager
+running at upstream's 100).
+
+*Rejected:*
+- systemd-oomd on app.slice (`ManagedOOMMemoryPressure=kill`). oomd
+  kills a whole cgroup and each tmux pane is one scope, holding the
+  agent and everything it started (kanali: claude, gopls and two `go
+  run` servers in one `tmux-spawn-*.scope`), so it would kill the agent
+  with its build, the opposite of I-200; it does not read
+  `oom_score_adj`. `ManagedOOMSwap=kill` would fire on a healthy
+  machine: kanali's 2 GB of zram sat 97 percent full with 4.7 GB
+  available. oomd stays as NixOS ships it, running and watching nothing.
+- earlyoom. It ranks by the same `oom_score` and would act earlier than
+  the kernel, but it is a daemon that has to be scheduled and paged in
+  during the thrash it is meant to stop; `min_ttl_ms` is the kernel's own
+  check in kswapd.
+- A positive `OOMScoreAdjust` on panes or app.slice. A flat bonus on
+  every pane process is what upstream's 200 was: it made 128 kB shells
+  outrank a 300 MB process, and each such kill freed nothing. At 0, the
+  kernel takes the largest.
+- `MemoryMin`. It is never reclaimed, so unused protection (spread to
+  sibling cgroups by `memory_recursiveprot`) would bring OOM kills
+  sooner on small; `MemoryLow` gives way only when nothing else is left.
+- `MemoryLow` on `repose-herdr-server.service`: herdr's panes share its
+  cgroup, so it would protect their builds.
+- `TasksMax` per pane. The pids controller counts threads, and a JVM or a
+  test runner holds thousands; I-577 removes the one fork storm seen.
+- journald rate limits. guestd wrote one line every 5 s during the hang;
+  journald was waiting on the disk for its own file pages, which
+  `MemoryLow` keeps.
+
+*CPU, the owner's question* ("leave some CPU for ssh+tmux and force
+that?"): I-494's `CPUWeight=1000` on each session scope and the tmux
+server already gives them ten times a pane's share the moment the CPU is
+contended, and nothing while it is not. A reservation (`AllowedCPUs`
+keeping a vCPU off panes, or `CPUQuota` on app.slice) would take half of
+small's two vCPUs from builds on an idle machine and would not have
+helped here: the 20:39 hang was processes waiting on page-ins (guestd's
+`setpriv` exec timed out, journald read 19.8 GB), not waiting for a CPU.
+*Revisit when:* a keystroke still lags with memory free and every core
+busy (then I-494's `io.weight`), or the I-494 load test shows the weight
+is not enough.
+
+**I-577. The command-not-found handler calls its helper by path and
+cannot call itself.** (guest-oom-keystroke, 2026-10-07; amends I-516) bash
+runs `command_not_found_handle` in a forked child, and an unknown command
+inside the handler calls the handler again in a grandchild. I-516's
+handler in `bash-env.sh` called `repose-command-not-found` through PATH,
+so a `bash -c` with BASH_ENV and a PATH without the helper forked one
+bash per level until memory ran out. That happened on kanali at 21:29 on
+2026-10-05: a review session ran `env PATH=<coreutils>
+BASH_ENV=nix/guest/base/bash-env.sh bash -c 'cowsayzz hi'` from the
+unreleased branch, and the 21:32:06 OOM task dump shows 926 `bash` with
+consecutive pids from 1308773, each a little larger than the last
+(total_vm from 1996 to 3005 pages), 2.6 GB in all, which is what pushed
+the machine into I-576's kills. Reproduced on kanali under `prlimit
+--nproc`: main's file ends in "fork: Resource temporarily unavailable",
+the fixed one prints `cowsayzz: command not found` and `status=127`. The
+handler now unsets itself first (a no-op outside its own child) and runs
+`/run/current-system/sw/bin/repose-command-not-found` when it exists,
+else prints `NAME: command not found`; the interactive bash, zsh and
+fish handlers call the helper's store path. Flake check
+`guest-keystroke-path` runs each of the four handlers (bash-env.sh's,
+and the interactive bash, zsh and fish ones with a stub at the helper's
+store path) with a PATH that lacks the helper, under `ulimit -u 128`,
+and expects one answer and status 127; CI builds it.
+No shipped base had I-516's handler.
