@@ -13,11 +13,23 @@ let
       ln -s ${pkgs.postgresql}/bin/$b $out/bin/$b
     done
   '';
+  # yarn and yarnpkg from the corepack the system's `corepack` is (I-520):
+  # `corepack enable` cannot write its shims next to node in the store.
+  # Each runs the version a project's packageManager pins, else yarn 1.
+  # pnpm stays nixpkgs's.
+  yarnCorepack = pkgs.runCommand "yarn-corepack" { } ''
+    mkdir -p $out/bin
+    dist=${pkgs.lib.getOutput "corepack" pkgs.nodejs-slim_24}/lib/node_modules/corepack/dist
+    for b in yarn yarnpkg; do
+      test -x $dist/$b.js
+      ln -s $dist/$b.js $out/bin/$b
+    done
+  '';
 in
 with pkgs; [
   curl wget jq ripgrep fd bat fzf tree unzip zstd htop
   git gh just
-  nodejs_24 pnpm python312 uv go rustup
+  nodejs_24 pnpm yarnCorepack python312 uv go rustup
   tmux openssh
   eza zoxide starship direnv nix-direnv
   neovim

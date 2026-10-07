@@ -71,7 +71,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 
-**A program you installed isn't on `PATH`.** Installs with npm, pnpm, `go install`, `cargo install`, uv, pip `--user`, bun, deno, gem and composer are on `PATH` in new shells. Open a new tmux window. Tools that manage `PATH` from their own shell setup (nvm, pyenv, rbenv) need that setup in `~/.bashrc`.
+**A program you installed isn't on `PATH`.** Installs with npm, pnpm, `go install`, `cargo install`, uv, bun, deno, gem and composer are on `PATH` in new shells. Open a new tmux window. Tools that manage `PATH` from their own shell setup (nvm, pyenv, rbenv) need that setup in `~/.bashrc`.
 
 **Processes get killed, or the machine is slow under load.** It ran out of memory: `sudo dmesg | grep -i killed` names what the kernel stopped. Stop what you don't need (`repose status` lists dev servers still listening), or give the machine more memory with `repose resize --size large` or `--size xl`, which restarts it. See [Changing the size](/docs/machine#changing-the-size).
 
@@ -93,6 +93,14 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place. Until then, start it with `codex --no-daemon`.
 
 **`bundled bubblewrap digest mismatch` when Codex runs a command.** Base 2026.10.05 ships Codex with a sandbox helper it refuses. The next platform update fixes it in place. Until then, run `nix profile add nixpkgs#bubblewrap` on the machine; Codex uses that one instead.
+
+**`no server running` on `repose attach` to a herdr project.** Your repose CLI is older than 0.1.31 and attaches to tmux. [Update](/docs/install#update) it.
+
+**herdr on the machine is newer or older than expected.** The machine runs the herdr release its base ships. `herdr update` on the machine installs another one into `~/.local/bin`, which comes first on the PATH and is not what repose tests against; `rm ~/.local/bin/herdr` and a `repose stop` and `start` go back to the base's.
+
+**`herdr is not running on todo-app`.** herdr's server on the machine stopped, and `run`, `attach`, `ps` and `paste` stop rather than open tmux in its place. `repose stop todo-app` and `repose start todo-app` start it again, with its workspaces and tabs.
+
+**`Could not add todo-app to herdr's sidebar`.** herdr's own `machine add` failed, and the rest of the line is its message. Check that `ssh todo-app.repose true` works from a plain terminal; `run` and `attach` try again each time.
 
 **An agent seems stuck.** Attach and look; it's usually waiting on a permission prompt. See [Let it run without asking](/docs/agents#let-it-run-without-asking).
 

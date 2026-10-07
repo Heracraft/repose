@@ -31,6 +31,9 @@ runner using the host's shared store. Everything in
   library set, `nixpkgs` in the registry and NIX_PATH pinned to the base's
   own nixpkgs (no global registry), and the command-not-found handler
   with `nix-locate` from nix-index-database's prebuilt index.
+- `nix/guest/base/shell.nix` (I-512 to I-514): terminfo for Ghostty and
+  kitty, `~/.bashrc` in login shells, history settings, fzf key bindings,
+  starship's `command_timeout` and its `STARSHIP_CONFIG` reset.
 - `nix/guest/base/compat.nix` (I-228): what ecosystem tools that download
   their own binaries need beyond nix-ld: the Prisma engines redirect on
   127.0.0.1:850 and `PRISMA_ENGINES_MIRROR`, Playwright's writable
@@ -52,15 +55,22 @@ runner using the host's shared store. Everything in
 - `nix/guest/base/docker.nix`: `virtualisation.docker.enable`, `storageDriver
   = "overlay2"`, daemon `log-driver json-file` with `max-size 50m`,
   `default-address-pools` set to `172.20.0.0/14` so container networks never
-  collide with `10.64.0.0/12`; `dev` in `docker`; `docker compose` plugin.
+  collide with `10.64.0.0/12`; `bip 172.20.0.1/24` and `dns [172.20.0.1]`,
+  resolved's stub there (I-537); `live-restore`, and `docker.service` with
+  `restartIfChanged = false` (I-536); `dev` in `docker`; `docker compose`
+  plugin.
 - `nix/guest/base/tmux.nix`: system tmux config at `/etc/tmux.conf` with
   the settings in guest-conventions (`set -g set-clipboard on`, `mouse off` since I-364,
-  `history-limit 50000`, `default-terminal tmux-256color`, `terminal-
-  overrides ",*:Tc"`, `escape-time 10`, `focus-events on`), and a
+  `history-limit 50000`, `default-terminal tmux-256color`, RGB
+  `terminal-features` per TERM in place of `*:Tc` (I-515), `escape-time 10`,
+  `focus-events on`), and a
   `repose-tmux-session.service` (user unit for `dev`, started at boot via
   `loginctl enable-linger dev`) that creates the session named after the
-  slug from `project.json`. guestd's `SetupProject` is what writes
-  `project.json` first; the unit waits on a path unit for that file.
+  slug from `project.json`. guestd's `SetupProject` writes this boot's
+  `project.json` and then starts the session unit its `multiplexer`
+  names; no path unit exists, and the unit's `ExecCondition` is
+  `repose-multiplexer-is tmux` (DECISIONS I-503). The unit starts the
+  tmux server again 5 s after it exits (I-551).
 - `nix/guest/base/agents.nix`: installs the five agents from
   `nix/overlay/agents/` (overlay in `nix/overlay/agents/default.nix`,
   wrappers in `nix/overlay/agents/wrap.nix`) plus `repose-hook`. Also
@@ -74,8 +84,11 @@ runner using the host's shared store. Everything in
   are npm packages; packaged with `buildNpmPackage`, pinned) and registered
   in `/etc/repose/mcp.json`, which the Claude wrapper merges into the
   user-scope MCP config on first run with `--headless` flags. Fonts:
-  `noto-fonts`, `noto-fonts-color-emoji`, `liberation_ttf`, fontconfig
-  enabled so screenshots render text.
+  `noto-fonts`, `noto-fonts-cjk-sans` (variable OTC only, I-540),
+  `noto-fonts-color-emoji`, `liberation_ttf`, fontconfig enabled so
+  screenshots render text. `BROWSER` names a script that prints the URL
+  (I-541). The desktop and browser units set `restartIfChanged = false`
+  (I-536).
 - `nix/guest/base/desktop.nix`: TigerVNC's Xvnc (the X display and the
   VNC server in one, `repose-xvnc.service` on `:99` and `127.0.0.1:5900`),
   `openbox`, `websockify` serving the viewer page repose ships
@@ -87,7 +100,9 @@ runner using the host's shared store. Everything in
   display is running (a profile snippet checks the socket). I-33, I-292.
 - `nix/guest/base/sysctl.nix`: `fs.inotify.max_user_watches = 1048576`,
   `fs.inotify.max_user_instances = 1024`, `fs.file-max = 2097152`,
-  `net.core.somaxconn = 4096`, `vm.swappiness = 10`, and a 2 GB zram swap
+  `net.core.somaxconn = 4096`, `vm.swappiness = 10`,
+  `kernel.yama.ptrace_scope = 0` (I-539), open files 524288 soft and hard
+  for the user manager and dev's PAM logins (I-538), and a 2 GB zram swap
   (`repose-zram-swap.service`, off the boot's critical chain, DECISIONS
   I-231; it was `zramSwap.enable`) so a build that briefly exceeds RAM
   degrades rather than OOM-kills the agent.
@@ -109,9 +124,13 @@ runner using the host's shared store. Everything in
   the guest and `base_version` in the api agree.
 - `nix/guest/base/network.nix`: systemd-networkd, one interface `eth0`
   matching the virtio MAC, static address from the kernel command line
-  (`ip=10.64.x.y::10.64.x.1:255.255.252.0::eth0:off` set by hostd in the
-  runner), DNS `1.1.1.1 8.8.8.8` (guests cannot reach the host, so no host
-  resolver), `networking.firewall.enable = false` (the host enforces policy;
+  (`ip=10.64.x.y::10.64.x.1:255.255.252.0:<slug>:eth0:off` set by hostd
+  in the runner, and `systemd.hostname=<slug>`; an empty or invalid
+  slug leaves the name field empty and adds no `systemd.hostname`,
+  I-550), DNS `1.1.1.1 8.8.8.8` (guests cannot reach the host, so no host
+  resolver) through resolved, whose stub also listens on `172.20.0.1` for
+  containers (I-537), no LLMNR or mDNS (I-215),
+  `networking.firewall.enable = false` (the host enforces policy;
   a guest firewall would only confuse `repose open`).
 - `nix/guest/base/boot.nix`: `boot.kernelPackages` = latest LTS from
   nixpkgs, `boot.kernelModules = [ "overlay" "br_netfilter" "nf_tables"
@@ -177,8 +196,9 @@ presenting `/nix/store` as the union. microvm.nix's `writableStoreOverlay`
 does this. The guest can therefore run `nix-shell` and `nix profile install`
 for things not in the host store; those go to the overlay and are the
 guest's own (and count toward its volume). The guest's `nix-daemon` runs
-with `substituters` = cache.nixos.org only, `sandbox = true`, and cannot see
-the host daemon. It builds inside its own vCPU and RAM caps, so a user
+with `substituters` = cache.nixos.org by default, `sandbox = true`, and
+cannot see the host daemon. dev is a trusted user (dev has passwordless sudo
+anyway), so a project may add its own caches (DECISIONS I-530). It builds inside its own vCPU and RAM caps, so a user
 running a heavy `nix build` in a shell affects only themselves. This is
 distinct from the config pipeline (12), where the host builds the system.
 
@@ -192,6 +212,21 @@ false`, and a guest-side `repose-pin-profile` activation hook that runs
 `nix copy --to local?root=/nix/.rw-store` for the profile closure). The VM
 test covers this: install a package into the profile, delete it from the
 "host" store, the profile still runs.
+
+A binary built in the guest (cc, cgo, node-gyp, cargo) names base store
+paths directly: the gcc wrapper's glibc as its interpreter, gcc-lib and the
+`PKG_CONFIG_PATH` libraries in its RUNPATH. `repose-pin-profile` copies
+the closures of those link targets up too, at every boot and switch, and
+roots each under `/nix/var/nix/gcroots/repose-link-targets/`, so a binary
+in a checkout keeps running after a base change and a host GC (DECISIONS
+I-533). An unchanged glibc costs nothing; a new one costs its closure in
+the upper dir (about 36 MiB for glibc, 9 MiB for openssl).
+
+The guest never runs a whole-store GC: deleting a path the lower layer also
+has leaves a whiteout in the upper dir that hides the host's copy for good.
+`repose-store-gc.timer` instead deletes, weekly, dev's profile generations
+older than 14 days and then the dead paths that exist in the upper dir
+alone (DECISIONS I-529).
 
 ### Why the fragment is home-manager, and where it lands
 

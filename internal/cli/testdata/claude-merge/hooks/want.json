@@ -6,6 +6,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "echo guest-made"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
             "command": "echo laptop-stop"
           }
         ]

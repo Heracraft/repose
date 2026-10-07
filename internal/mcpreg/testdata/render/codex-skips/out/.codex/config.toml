@@ -1,0 +1,5 @@
+[mcp_servers.sentry]
+url = "https://mcp.sentry.dev/mcp"
+bearer_token_env_var = "SENTRY_TOKEN"
+http_headers = { X-Plain = "yes" }
+env_http_headers = { X-Org = "SENTRY_ORG" }

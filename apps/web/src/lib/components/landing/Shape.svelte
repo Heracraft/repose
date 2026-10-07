@@ -5,9 +5,7 @@
   (the --sh-* tokens in routes/layout.css): two greys, ink and the blue
   accent, nothing else. Each shape has one main tone (neutral or accent); its other parts stay grey or ink, so a
   group is mostly grey with a spot of colour, the way the pictures are
-  (docs/LANDING.md, "Shape language"). The star is Gemini's
-  sparkle (marks.ts), so the one form is both a shape and an agent's
-  mark. The sphere is the internet, flat like the rest; with meridians it
+  (docs/LANDING.md, "Shape language"). The sphere is the internet, flat like the rest; with meridians it
   carries the hero globe's lines in paper, so the footer's sphere and the
   hero's globe are one drawing. Always decorative, so always aria-hidden.
 -->
@@ -17,7 +15,6 @@
 		| 'halves'
 		| 'asterisk'
 		| 'ring'
-		| 'star'
 		| 'arch'
 		| 'sphere'
 		| 'leaf'
@@ -32,7 +29,6 @@
 		halves: 'neutral',
 		asterisk: 'neutral',
 		ring: 'accent',
-		star: 'accent',
 		arch: 'neutral',
 		sphere: 'neutral',
 		leaf: 'neutral',
@@ -47,8 +43,6 @@
 </script>
 
 <script lang="ts">
-	import { SPARKLE } from '$lib/components/illustrations/marks';
-
 	let {
 		kind,
 		tone,
@@ -85,8 +79,6 @@
 		<circle cx="50" cy="50" r="50" fill="var(--main)" />
 		<circle cx="50" cy="50" r="30" fill="var(--sh-paper)" />
 		<circle cx="50" cy="50" r="14" fill="var(--sh-ink)" />
-	{:else if kind === 'star'}
-		<path d={SPARKLE} transform="translate(-2 -2) scale(4.3333)" fill="var(--main)" />
 	{:else if kind === 'arch'}
 		<path d="M8 100 V44 A42 42 0 0 1 92 44 V100 Z" fill="var(--main)" />
 		<path d="M29 100 V46 A21 21 0 0 1 71 46 V100 Z" fill="var(--sh-ink)" />

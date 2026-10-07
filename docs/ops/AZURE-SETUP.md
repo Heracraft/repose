@@ -129,7 +129,7 @@ a day.
     live key unless given `--live`. `/tmp/paddle.env` is the block to paste
     into the api's Coolify environment (both `api` and `api-grpc`):
     `PADDLE_PRICE_SOLO`, `PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`,
-    `PADDLE_PRODUCT_OVERAGE`,
+    `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`,
     `PADDLE_WEBHOOK_SECRET`; add `PADDLE_API_KEY` and `PADDLE_CLIENT_TOKEN`
     from the dashboard beside them. Coolify restarts the app itself. Delete
     the file afterwards: it holds the webhook secret.

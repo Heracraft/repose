@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "linear": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "linear"
+      ],
+      "type": "local"
+    },
+    "sentry": {
+      "headers": {
+        "Authorization": "Bearer {env:SENTRY_TOKEN}"
+      },
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp"
+    }
+  },
+  "skipped": [
+    {
+      "name": "both",
+      "reason": "needs the secrets BOTH_KEY, BOTH_ORG"
+    },
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

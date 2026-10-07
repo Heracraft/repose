@@ -1611,6 +1611,8 @@ func (x *Ready) GetBootId() string {
 	return ""
 }
 
+// tmux_window in AgentEvent, AgentState and Question is a tmux window name
+// or a herdr agent key, at most 64 bytes (DECISIONS I-504).
 type AgentEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -1797,14 +1799,15 @@ func (x *Warning) GetDetail() string {
 // state cancelled|expired when the asker gives up. text is capped at 1 KB,
 // options at 3 of 64 bytes each. state "" means open.
 type Question struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	QuestionId    string                 `protobuf:"bytes,1,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
-	Agent         string                 `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
-	TmuxWindow    string                 `protobuf:"bytes,3,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
-	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
-	Options       []string               `protobuf:"bytes,5,rep,name=options,proto3" json:"options,omitempty"`
-	TimeoutS      uint32                 `protobuf:"varint,6,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
-	State         string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	QuestionId string                 `protobuf:"bytes,1,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
+	Agent      string                 `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	// A tmux window name or a herdr agent key, at most 64 bytes (I-504).
+	TmuxWindow    string   `protobuf:"bytes,3,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	Text          string   `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Options       []string `protobuf:"bytes,5,rep,name=options,proto3" json:"options,omitempty"`
+	TimeoutS      uint32   `protobuf:"varint,6,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
+	State         string   `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

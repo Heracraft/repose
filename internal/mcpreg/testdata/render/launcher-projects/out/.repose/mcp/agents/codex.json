@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "db": {
+      "args": [
+        "run",
+        "db"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    }
+  },
+  "skipped": [
+    {
+      "name": "db",
+      "reason": "another server has this name"
+    }
+  ]
+}

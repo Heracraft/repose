@@ -169,7 +169,12 @@ let
     exit 1
   '';
 
+  # restartIfChanged: a base switch never restarts the display under the
+  # agents' browser or a user's viewer; the units stop on their own when
+  # unneeded or idle, and start from the new base next time (DECISIONS
+  # I-536).
   common = {
+    restartIfChanged = false;
     serviceConfig = {
       User = "dev";
       Group = "dev";
@@ -250,6 +255,7 @@ in
 
   systemd.services.repose-novnc-proxy = {
     description = "repose desktop: proxy 6080 to the viewer, starting the chain";
+    restartIfChanged = false;
     requires = [ "repose-novnc.service" ];
     after = [ "repose-novnc.service" ];
     serviceConfig = {

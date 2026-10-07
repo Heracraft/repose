@@ -396,3 +396,27 @@ func TestForwarderCoalescesMessages(t *testing.T) {
 		t.Fatalf("capped wait: %q", *said)
 	}
 }
+
+// On a machine with no tmux session (a herdr machine) the publish script
+// still writes the forward list and exits 0, so runForwards takes it as
+// published and the next one waits for the heartbeat.
+func TestForwardPublishWithNoTmuxServer(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("no tmux")
+	}
+	f, _, _, ss := fakeForwarder(nil)
+	*ss = "LISTEN 0 1 127.0.0.1:3000 0.0.0.0:*\n"
+	if _, err := f.sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	cmd := exec.Command("bash", "-c", f.publishScript())
+	cmd.Env = append(os.Environ(), "HOME="+home, "TMUX_TMPDIR="+t.TempDir(), "TMUX=")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("publish with no tmux server: %v %s", err, out)
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".repose", "forwards", f.id))
+	if err != nil || strings.TrimSpace(string(b)) != "3000" {
+		t.Errorf("forward list = %q, %v", b, err)
+	}
+}

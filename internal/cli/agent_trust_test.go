@@ -142,7 +142,7 @@ func TestCodexTrustScript(t *testing.T) {
 func TestAgentWindowCommandTrustsPerAgent(t *testing.T) {
 	files := map[string]string{"claude": ".claude.json", "codex": "config.toml"}
 	for _, a := range []string{"claude", "gemini", "codex", "opencode", "pi", "cat"} {
-		c := agentWindowCommand("proj", "", a, "~/proj-worktree-1", a)
+		c := agentWindowCommand("proj", "", a, "~/proj-worktree-1", a, mcpApprovals{})
 		if !strings.HasSuffix(c, "tmux new-window -t proj -n "+a+" -c ~/proj-worktree-1 -d '"+a+"'") {
 			t.Fatalf("%s: %s", a, c)
 		}
@@ -154,7 +154,7 @@ func TestAgentWindowCommandTrustsPerAgent(t *testing.T) {
 		if _, ok := files[a]; ok && !strings.Contains(c, "cd ~/proj-worktree-1 ") {
 			t.Fatalf("%s trusts another folder: %s", a, c)
 		}
-		c = agentWindowCommand("proj", "", a, "", a)
+		c = agentWindowCommand("proj", "", a, "", a, mcpApprovals{})
 		if _, ok := files[a]; ok && (!strings.Contains(c, `cd "$repose_co" `) || strings.Index(c, "repose_co=") > strings.Index(c, files[a])) {
 			t.Fatalf("%s in the guest's checkout: %s", a, c)
 		}
@@ -196,6 +196,24 @@ func TestPaneRuns(t *testing.T) {
 	} {
 		if got := paneRuns(c.binary, c.current); got != c.want {
 			t.Errorf("paneRuns(%q, %q) = %v", c.binary, c.current, got)
+		}
+	}
+}
+
+// TestHerdrStartScriptTrustsPerAgent: herdr's start script writes the
+// same per-agent folder trust as the tmux window, in the tab's folder,
+// before the tab opens.
+func TestHerdrStartScriptTrustsPerAgent(t *testing.T) {
+	files := map[string]string{"claude": ".claude.json", "codex": "config.toml"}
+	for _, a := range []string{"claude", "gemini", "codex", "opencode", "pi"} {
+		c := herdrStartScript(agentStart{Slug: "proj", Agent: a, Name: a, Dir: "~/proj-worktree-1", Prompt: "p"}, "")
+		for agent, f := range files {
+			if got, want := strings.Contains(c, f), agent == a; got != want {
+				t.Fatalf("%s: mentions %s = %v, want %v: %s", a, f, got, want, c)
+			}
+		}
+		if f, ok := files[a]; ok && (!strings.Contains(c, `cd "$repose_d" `) || strings.Index(c, f) > strings.Index(c, "herdr tab create")) {
+			t.Fatalf("%s: trust not written in the tab's folder before the tab: %s", a, c)
 		}
 	}
 }

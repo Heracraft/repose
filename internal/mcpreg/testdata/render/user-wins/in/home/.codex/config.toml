@@ -1,0 +1,4 @@
+notify = ["repose-hook"]
+
+[mcp_servers.playwright]
+url = "https://example.com/mcp"

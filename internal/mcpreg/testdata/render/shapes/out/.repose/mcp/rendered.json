@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "argref": {
+          "args": [
+            "run",
+            "argref"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "withdefault": {
+          "args": [
+            "run",
+            "withdefault"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        }
+      },
+      "projects": {
+        "/home/dev/app": {
+          "linear": {
+            "command": "other"
+          },
+          "localdb": {
+            "args": [
+              "/home/dev/app/db"
+            ],
+            "command": "pg-mcp",
+            "type": "stdio"
+          }
+        },
+        "/home/dev/lib": {
+          "localdb": {
+            "args": [
+              "/home/dev/lib/db"
+            ],
+            "command": "pg-mcp",
+            "type": "stdio"
+          }
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "argref": {
+          "args": [
+            "run",
+            "argref"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "localdb": {
+          "args": [
+            "run",
+            "localdb"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "notion": {
+          "bearer_token_env_var": "NOTION_TOKEN",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "withdefault": {
+          "args": [
+            "run",
+            "withdefault"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "argref": {
+          "args": [
+            "run",
+            "argref"
+          ],
+          "command": "repose-mcp"
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "localdb": {
+          "args": [
+            "/home/dev/app/db"
+          ],
+          "command": "pg-mcp"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "withdefault": {
+          "args": [
+            "run",
+            "withdefault"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "argref": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "argref"
+          ],
+          "type": "local"
+        },
+        "linear": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "linear"
+          ],
+          "type": "local"
+        },
+        "localdb": {
+          "command": [
+            "pg-mcp",
+            "/home/dev/app/db"
+          ],
+          "type": "local"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer {env:NOTION_TOKEN}"
+          },
+          "type": "remote",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "withdefault": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "withdefault"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "argref": {
+          "args": [
+            "run",
+            "argref"
+          ],
+          "command": "repose-mcp"
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "localdb": {
+          "args": [
+            "/home/dev/app/db"
+          ],
+          "command": "pg-mcp"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "withdefault": {
+          "args": [
+            "run",
+            "withdefault"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}

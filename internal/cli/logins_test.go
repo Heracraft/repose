@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -393,5 +394,40 @@ func TestRunEnvOffRemovesCopiesWithoutSyncing(t *testing.T) {
 	}
 	if s := sync(true, true); s.EnvRemoved != 0 {
 		t.Fatalf("second run removed %d", s.EnvRemoved)
+	}
+}
+
+// A gh login copied from the laptop sets gh as the helper for github.com
+// and gist.github.com and the two SSH-URL rewrites, each once however
+// often it runs (I-247, I-526).
+func TestSyncCredentialsGhHelpers(t *testing.T) {
+	f := newSyncFixture(t)
+	home := t.TempDir()
+	hosts := filepath.Join(home, ".config", "gh", "hosts.yml")
+	if err := os.MkdirAll(filepath.Dir(hosts), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hosts, []byte("github.com:\n    oauth_token: NEVER-GH-TOKEN\n    user: dev\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guestGit := func(args ...string) []string {
+		t.Helper()
+		out, _ := exec.Command("git", append([]string{"config", "--file", filepath.Join(f.guestHome, ".gitconfig")}, args...)...).Output()
+		return strings.Fields(strings.TrimSpace(string(out)))
+	}
+	for run := 0; run < 2; run++ {
+		// No markers passed, so the second run sends the lines again.
+		if _, _, err := syncCredentialsAndCarry(context.Background(), f.target, home, f.local, credSyncOptions{}, carryOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range []string{"https://github.com", "https://gist.github.com"} {
+			got := strings.Join(guestGit("--get-all", "credential."+h+".helper"), " ")
+			if got != "!gh auth git-credential" {
+				t.Errorf("run %d: credential.%s.helper = %q", run+1, h, got)
+			}
+		}
+		if got := guestGit("--get-all", "url.https://github.com/.insteadOf"); strings.Join(got, " ") != "git@github.com: ssh://git@github.com/" {
+			t.Errorf("run %d: insteadOf = %q", run+1, got)
+		}
 	}
 }

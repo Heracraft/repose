@@ -237,8 +237,9 @@ func buildCredentialsAndCarry(homeDir, repoDir string, opts credSyncOptions, co 
 		lines = append(lines,
 			"git config --global --replace-all url.https://github.com/.insteadOf git@github.com: '^git@github\\.com:$'",
 			"git config --global --replace-all url.https://github.com/.insteadOf ssh://git@github.com/ '^ssh://git@github\\.com/$'",
-			"git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'")
-		hashParts = append(hashParts, []byte("gh-helper-2"))
+			"git config --global --replace-all credential.https://github.com.helper '!gh auth git-credential'",
+			"git config --global --replace-all credential.https://gist.github.com.helper '!gh auth git-credential'")
+		hashParts = append(hashParts, []byte("gh-helper-3"))
 	}
 	if len(lines) > 0 {
 		hash := carryHash(hashParts...)
@@ -270,6 +271,11 @@ func buildCredentialsAndCarry(homeDir, repoDir string, opts credSyncOptions, co 
 	// "git" is named when the carried git config holds the identity,
 	// whether or not its part travels (I-195), after the logins.
 	copied = append(copied, gitID...)
+	if opts.Skip[mcpLogin] && co.MCP != nil {
+		// Off in `repose secrets choose`: an empty list travels, so the
+		// guest drops what an earlier run carried (I-556).
+		co.MCP = co.MCP.off()
+	}
 	sent, err := addCarry(p, co)
 	if err != nil {
 		return nil, err

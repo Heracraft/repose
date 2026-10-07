@@ -3,8 +3,9 @@
 # the guest-devtools VM test drops a program into each and checks it
 # resolves. A directory that does not exist costs nothing.
 [
-  ".local/bin" # uv tool, pipx, pip --user, stack, cabal, claude's own installer
-  ".local/share/pnpm" # pnpm add -g (PNPM_HOME)
+  ".local/bin" # uv tool, pipx (if installed), stack, cabal, claude's own installer
+  ".local/share/pnpm/bin" # pnpm 11+ add -g (I-520)
+  ".local/share/pnpm" # pnpm 10 add -g (PNPM_HOME), a corepack pin
   ".npm-global/bin" # npm i -g, yarn v1 global (NPM_CONFIG_PREFIX)
   "go/bin" # go install (GOPATH)
   ".cargo/bin" # cargo install, rustup's proxies (CARGO_HOME)

@@ -9,7 +9,24 @@
     "fs.file-max" = 2097152;
     "net.core.somaxconn" = 4096;
     "vm.swappiness" = 10;
+    # Any process of dev's may attach to another of dev's (`strace -p`,
+    # `gdb -p`, py-spy). The guest has one user, who has passwordless
+    # sudo, and the VM is the boundary; Landlock (Codex) and the bwrap PID
+    # namespaces still confine the agents. yama stays loaded (boot.nix,
+    # I-231) so the knob exists (DECISIONS I-539).
+    "kernel.yama.ptrace_scope" = 0;
   };
+
+  # Open files: 524288 soft as well as hard for the tmux session, its panes
+  # and every user service (the user manager's soft default was 1024, and
+  # Python in a pane failed with EMFILE near 1021 while the agents' own
+  # shells had 524288), and for SSH, `repose exec` and `repose code`
+  # sessions through PAM. System daemons keep systemd's defaults
+  # (DECISIONS I-538).
+  systemd.user.settings.Manager.DefaultLimitNOFILE = "524288:524288";
+  security.pam.loginLimits = [
+    { domain = "dev"; type = "soft"; item = "nofile"; value = "524288"; }
+  ];
 
   # The same swap zramSwap made (zstd, half the RAM up to 2 GiB, priority 5),
   # set up by a unit of ours instead of zram-generator's (DECISIONS I-231).

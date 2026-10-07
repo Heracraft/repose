@@ -33,7 +33,7 @@ ssh todo-app.repose 'npx -y t3@latest pair'
 ```
 
 ```text
-Pairing with repose-guest (http://127.0.0.1:3773).
+Pairing with todo-app (http://127.0.0.1:3773).
 Pairing URL: http://localhost:3773/pair#token=...
 Expires: ...
 ```

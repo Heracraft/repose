@@ -48,11 +48,16 @@ type PlanDef struct {
 	DiskGB       int    `json:"disk_gb"`
 	EgressGB     int    `json:"egress_gb"`
 	ProjectLimit int    `json:"project_limit"`
+	// IntroPriceCents and IntroMonths are the introductory price; 0 for
+	// none (DECISIONS I-497).
+	IntroPriceCents int64 `json:"intro_price_cents"`
+	IntroMonths     int   `json:"intro_months"`
+	IntroEgressGB   int   `json:"intro_egress_gb"`
 }
 
 // Plans is docs/PRICING.md's table.
 var Plans = []PlanDef{
-	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10},
+	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroPriceCents: 2000, IntroMonths: 3, IntroEgressGB: 100},
 	{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25},
 	{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50},
 }
@@ -138,6 +143,9 @@ type BillingState struct {
 	EgressGB *float64 `json:"egress_gb,omitempty"`
 	// Invoices replaces the list; nil keeps it, an empty list empties it.
 	Invoices *[]Invoice `json:"invoices,omitempty"`
+	// IntroUsed marks the account as having had a subscription before, so
+	// it gets no introductory price (DECISIONS I-497).
+	IntroUsed *bool `json:"intro_used,omitempty"`
 }
 
 type billingState struct {
@@ -154,6 +162,7 @@ type billingState struct {
 	waitlist      *WaitlistPlace
 	egressGB      float64
 	invoices      *[]Invoice
+	introUsed     bool
 	checkouts     map[string]string // transaction id -> plan
 	txnSeq        int
 }
@@ -329,6 +338,9 @@ func (f *Fake) SetBillingState(s BillingState) error {
 	if s.EgressGB != nil {
 		f.bill.egressGB = *s.EgressGB
 	}
+	if s.IntroUsed != nil {
+		f.bill.introUsed = *s.IntroUsed
+	}
 	if s.Invoices != nil {
 		list := *s.Invoices
 		f.bill.invoices = &list
@@ -383,11 +395,28 @@ func (f *Fake) hasSubscription() bool {
 	return false
 }
 
+// currentPlan is the subscription's plan as it applies to this period:
+// with the introductory egress allowance while the offer runs (I-497).
 func (f *Fake) currentPlan() *PlanDef {
 	if !f.hasSubscription() {
 		return nil
 	}
-	return planByID(f.bill.plan)
+	p := planByID(f.bill.plan)
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	if f.introRuns(&cp) && cp.IntroEgressGB > 0 {
+		cp.EgressGB = cp.IntroEgressGB
+	}
+	return &cp
+}
+
+// introRuns reports whether the subscription is inside its introductory
+// offer: a plan with one, on an account that had no subscription before.
+// The fake's period always starts inside the offer's months.
+func (f *Fake) introRuns(p *PlanDef) bool {
+	return p.IntroMonths > 0 && !f.bill.introUsed
 }
 
 func (f *Fake) subscriptionEnd() time.Time {
@@ -549,6 +578,9 @@ type subscriptionView struct {
 	TrialEnd      *time.Time `json:"trial_end"`
 	CancelAt      *time.Time `json:"cancel_at"`
 	ScheduledPlan *string    `json:"scheduled_plan"`
+	// NextChargeCents and IntroUntil as the api answers them (I-497).
+	NextChargeCents *int64     `json:"next_charge_cents"`
+	IntroUntil      *time.Time `json:"intro_until"`
 }
 
 type usageView struct {
@@ -569,12 +601,13 @@ type planView struct {
 }
 
 type billingResp struct {
-	Subscription *subscriptionView `json:"subscription"`
-	Usage        usageView         `json:"usage"`
-	Plans        []planView        `json:"plans"`
-	Seats        Seats             `json:"seats"`
-	Waitlist     *WaitlistPlace    `json:"waitlist"`
-	Paddle       struct {
+	Subscription  *subscriptionView `json:"subscription"`
+	Usage         usageView         `json:"usage"`
+	Plans         []planView        `json:"plans"`
+	IntroEligible bool              `json:"intro_eligible"`
+	Seats         Seats             `json:"seats"`
+	Waitlist      *WaitlistPlace    `json:"waitlist"`
+	Paddle        struct {
 		Environment string `json:"environment"`
 		ClientToken string `json:"client_token"`
 	} `json:"paddle"`
@@ -598,6 +631,23 @@ func (f *Fake) subscriptionOf() *subscriptionView {
 	if f.bill.scheduledPlan != "" {
 		s := f.bill.scheduledPlan
 		v.ScheduledPlan = &s
+	}
+	// A Solo subscription on an account that had none before carries the
+	// introductory price for IntroMonths charges after the trial.
+	if v.NextBilledAt != nil {
+		cents := plan.PriceCents
+		if f.introRuns(plan) {
+			start := f.bill.periodStart
+			if f.bill.trialEnd != nil {
+				start = *f.bill.trialEnd
+			}
+			until := start.AddDate(0, plan.IntroMonths, 0)
+			v.IntroUntil = &until
+			if v.NextBilledAt.Before(until) {
+				cents = plan.IntroPriceCents
+			}
+		}
+		v.NextChargeCents = &cents
 	}
 	return v
 }
@@ -675,6 +725,7 @@ func (f *Fake) getBilling(w http.ResponseWriter, r *http.Request) *apiError {
 	out.Usage = f.usageOf(u)
 	out.Seats = f.seatsOf()
 	out.Waitlist = f.bill.waitlist
+	out.IntroEligible = !f.hasSubscription() && !f.bill.introUsed
 	out.Paddle.Environment = FakeEnvironment
 	out.Paddle.ClientToken = FakeClientToken
 	for _, p := range Plans {

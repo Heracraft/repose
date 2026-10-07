@@ -35,7 +35,7 @@ Credentials: gh
 Ready in 14s.
 ```
 
-You're now in a shell on the machine, in `/home/dev/your-project` (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. The shell runs inside tmux.
+You're now in a shell on the machine, in `/home/dev/your-project` (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. The shell runs inside tmux. If you use [herdr](https://herdr.dev), run `repose run --multiplexer herdr` instead and the machine runs herdr ([herdr on your machine](/docs/tutorial-herdr)).
 
 ## 3. Log in to Claude Code on the machine
 

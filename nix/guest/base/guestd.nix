@@ -1,7 +1,8 @@
 # guestd: the in-guest daemon (workstream 04). This module only runs it and
 # prepares the paths it needs (guest-conventions.md "Filesystem"):
-# /run/repose (tmpfs, part of /run), /run/repose/secrets (0700 dev), and the
-# hooks socket directory. guestd creates hooks.sock itself. The binary comes
+# /run/repose (tmpfs, part of /run), /run/repose/secrets (0700 dev),
+# /run/repose/mcp (0700 dev, the forward's sockets), and the hooks socket
+# directory. guestd creates hooks.sock itself. The binary comes
 # from the flake's packages.guestd through `repose.guestd.package`.
 { config, lib, pkgs, ... }:
 {
@@ -15,6 +16,8 @@
       "d /run/repose 0755 root root -"
       "d /run/repose/secrets 0700 dev dev -"
       "d /run/repose/desktop 0700 dev dev -"
+      # repose-mcp hold's sockets, one per forwarded MCP server (I-557).
+      "d /run/repose/mcp 0700 dev dev -"
     ];
 
     systemd.services.guestd = {

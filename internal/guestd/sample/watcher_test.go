@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -86,7 +88,22 @@ func newWatcherFixture(t *testing.T, procs []fakeProc) (*Watcher, *sysdep.FakeRu
 	clk := &clock{t: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}
 	docker := &sysdep.FakeDocker{Up: true, Containers: 2}
 	w := NewWatcher(p, run, docker, fixedSlug("todo-app"), rec, quietLog(), clk.now)
+	tmuxSocketFile(t, p)
 	return w, run, rec, clk, p
+}
+
+// tmuxSocketFile stands in for dev's tmux socket: the tmux source forks
+// tmux only when it exists.
+func tmuxSocketFile(t *testing.T, p sysdep.Paths) {
+	t.Helper()
+	uid, _ := sysdep.DevIdentity()
+	path := p.TmuxSocket(uid)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAgentOf(t *testing.T) {
@@ -365,12 +382,37 @@ func TestAnUnexpectedTmuxFailureIsReportedNotSwallowed(t *testing.T) {
 		ExitCode: 1,
 		Stderr:   []byte("setpriv: failed to set the group list"),
 	}
-	_, _, err := w.tmux.listWindows(context.Background(), "todo-app")
+	_, _, err := w.tmux.client.listWindows(context.Background(), "todo-app")
 	if err == nil {
 		t.Fatal("an unexpected tmux failure was reported as an empty window list")
 	}
 	if !strings.Contains(err.Error(), "other") {
 		t.Fatalf("err = %v, want a classified reason", err)
+	}
+}
+
+// A tmux that cannot be read keeps its windows and lets the cache age, as
+// before the herdr source: the sample goes partial after CacheStale.
+func TestAnUnreadableTmuxLetsTheCacheAge(t *testing.T) {
+	procs := []fakeProc{{pid: 100, ppid: 1, comm: "bash"}, {pid: 101, ppid: 100, comm: "claude"}}
+	w, run, rec, clk, _ := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	run.Match["list-windows"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("setpriv: failed to set the group list")}
+	for i := 0; i < 4; i++ {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+	}
+	sig, fresh := w.Signals()
+	if fresh {
+		t.Fatal("the cache is fresh though tmux has not been read for four refreshes")
+	}
+	if len(sig.GetAgents()) != 1 {
+		t.Fatalf("agents = %v, want the claude window kept", sig.GetAgents())
+	}
+	if states, _, _ := rec.snapshot(); containsState(states, "claude/claude="+StateUnknown) {
+		t.Fatalf("states = %v: a tmux read failure announced the window gone", states)
 	}
 }
 
@@ -457,5 +499,62 @@ func TestAnAgentInAWindowWithAnotherName(t *testing.T) {
 		if got := AgentByCommand(comm); got != want {
 			t.Errorf("AgentByCommand(%q) = %q, want %q", comm, got, want)
 		}
+	}
+}
+
+// I-200 covers every pane of the session. list-windows names only each
+// window's active pane; the claude window here has a second claude pane
+// and a vite pane, and the shell window has claude in its inactive pane.
+// All three claudes get OOMProtected and the vite stays at 0.
+func TestOOMPriorityCoversSplitPanes(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 50, ppid: 1, comm: "tmux: server", uid: 1000},
+		{pid: 100, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 101, ppid: 100, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+		{pid: 110, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 111, ppid: 110, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+		{pid: 120, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 121, ppid: 120, comm: "node", uid: 1000, exe: "node"},
+		{pid: 200, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 210, ppid: 50, comm: "bash", uid: 1000},
+		{pid: 211, ppid: 210, comm: ".claude-wrapped", uid: 1000, exe: ".claude-wrapped"},
+	}
+	w, run, _, _, p := newWatcherFixture(t, procs)
+	adj := map[int]int{101: 0, 111: 0, 121: -800, 211: 0}
+	for pid, v := range adj {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte(fmt.Sprintf("%d\n", v)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, pid := range []int{50, 100, 110, 120, 200, 210} {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte("0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run.Match["list-windows"] = tmuxOutput(
+		[4]string{"claude", "100", "claude", "0"},
+		[4]string{"shell", "200", "bash", "0"},
+	)
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	run.Match["list-panes"] = sysdep.RunResult{Stdout: []byte(
+		"claude\t100\tclaude\nclaude\t110\tclaude\nclaude\t120\tnode\nshell\t200\tbash\nshell\t210\tclaude\n")}
+
+	w.Refresh(context.Background())
+
+	want := map[int]int{101: OOMProtected, 111: OOMProtected, 211: OOMProtected, 121: 0, 50: OOMProtected, 100: 0, 210: 0}
+	for pid, v := range want {
+		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
+		if got := strings.TrimSpace(string(b)); got != fmt.Sprint(v) {
+			t.Errorf("pid %d oom_score_adj = %s, want %d", pid, got, v)
+		}
+	}
+	var sawPanes bool
+	for _, c := range run.Calls() {
+		if strings.Join(c.Argv, " ") == "tmux list-panes -s -t todo-app -F #{window_name}\t#{pane_pid}\t#{pane_current_command}" {
+			sawPanes = true
+		}
+	}
+	if !sawPanes {
+		t.Error("list-panes -s was not run for the project session")
 	}
 }

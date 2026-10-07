@@ -556,9 +556,19 @@ func bridgeStop(t sshTarget, slug, tmuxLine string) {
 	_ = runSSHOK(ctx, t, cmd)
 }
 
-// tmuxIfAttached is a shell command that shows msg on the session's
-// clients if it has any, and does nothing otherwise.
-func tmuxIfAttached(slug, msg string) string {
-	return fmt.Sprintf("if tmux list-clients -t %s -F x 2>/dev/null | grep -q .; then tmux display-message -d 4000 -t %s %s; fi",
-		shQuote("="+slug), shQuote("="+slug+":"), shQuote(strings.ReplaceAll(msg, "#", "##")))
+// tmuxIfAttached is a shell command that shows msg to whoever is
+// attached, and does nothing when nobody is: on the tmux session's
+// clients, or, with no tmux server and herdr running, as a herdr
+// notification (I-509). It serves callers that do not know the machine's
+// multiplexer; guestMessageScript is the same thing by its other name.
+func tmuxIfAttached(slug, msg string) string { return guestMessageScript(slug, msg) }
+
+// guestMessageScript is shell that shows msg on whichever multiplexer the
+// machine runs, without asking first: herdr's notification when the
+// herdr session unit runs (muxFor's test), else tmux's clients. Asking
+// herdr first matters: a tmux started by hand inside a herdr pane would
+// otherwise take every message, and show none.
+func guestMessageScript(slug, msg string) string {
+	return fmt.Sprintf("if %s; then %s; else %s; fi",
+		muxProbeScript, herdrMux{}.MessageScript(slug, msg), tmuxMux{}.MessageScript(slug, msg))
 }

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

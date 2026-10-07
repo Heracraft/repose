@@ -1,0 +1,48 @@
+{
+  "mcpServers": {
+    "db": {
+      "args": [],
+      "command": "pg-mcp",
+      "env": {
+        "DATABASE_URL": "${DB_URL}"
+      }
+    },
+    "edited": {
+      "args": [],
+      "command": "edited-mcp",
+      "env": {
+        "EDITED_TOKEN": "${EDITED_TOKEN}"
+      }
+    },
+    "linear": {
+      "args": [
+        "-y",
+        "linear-mcp"
+      ],
+      "command": "npx",
+      "env": {
+        "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+      }
+    },
+    "notion": {
+      "headers": {
+        "Authorization": "Bearer ${NOTION_TOKEN}"
+      },
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "plain": {
+      "args": [
+        "run",
+        "plain"
+      ],
+      "command": "repose-mcp"
+    }
+  },
+  "skipped": [
+    {
+      "name": "db",
+      "reason": "another server has this name"
+    }
+  ]
+}

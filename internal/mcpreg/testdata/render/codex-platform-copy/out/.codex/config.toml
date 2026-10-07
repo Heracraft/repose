@@ -1,0 +1,12 @@
+notify = ["repose-hook"]
+
+[mcp_servers.playwright]
+command = "playwright-mcp"
+args = ["--cdp-endpoint", "http://127.0.0.1:9224"]
+
+[mcp_servers.chrome-devtools]
+command = "chrome-devtools-mcp"
+args = ["--browserUrl", "http://127.0.0.1:9224"]
+
+[mcp_servers.mine]
+command = "my-mcp"

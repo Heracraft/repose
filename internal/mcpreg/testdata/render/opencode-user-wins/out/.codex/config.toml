@@ -1,0 +1,9 @@
+[mcp_servers.bar]
+url = "https://bar.example/mcp"
+
+[mcp_servers.baz]
+url = "https://baz.example/mcp"
+
+[mcp_servers.foo]
+url = "https://foo.example/mcp"
+env_http_headers = { A = "FOO_T" }

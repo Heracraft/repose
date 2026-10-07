@@ -21,6 +21,7 @@ import (
 	"github.com/heracraft/repose/internal/api/temp"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/multiplexer"
 	"github.com/heracraft/repose/internal/obs"
 )
 
@@ -114,6 +115,9 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		"running_seconds_today": x.runningToday, "running_seconds_month": x.runningMonth,
 		"last_snapshot_at": x.lastSnapshot, "host_unreachable": p.HostUnreachable, "last_error": p.LastError, "tz": p.TZ,
 		"personal_opt_out": p.PersonalOptOut,
+		// What the next start runs (I-502); a running machine may still
+		// run the other one until it stops.
+		"multiplexer": multiplexer.Normalize(p.Multiplexer),
 	}
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
@@ -216,9 +220,18 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// PersonalOptOut keeps the account's machine.nix off this
 		// machine (repose run --no-personal, DECISIONS I-490).
 		PersonalOptOut bool `json:"personal_opt_out"`
+		// Multiplexer is tmux (the default) or herdr (DECISIONS I-502).
+		Multiplexer *string `json:"multiplexer"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
+	}
+	mux := multiplexer.Tmux
+	if body.Multiplexer != nil {
+		if err := checkMultiplexer(*body.Multiplexer); err != nil {
+			return err
+		}
+		mux = *body.Multiplexer
 	}
 	var expiresAt *time.Time
 	if body.ExpiresIn != nil {
@@ -255,6 +268,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if body.Agent != nil {
 		agent = *body.Agent
 	}
+	if mux == multiplexer.Herdr {
+		// The new machine's first build takes the newest base.
+		if err := herdrGate(ctx, s.d.Pool, slug, nil, true); err != nil {
+			return err
+		}
+	}
 	// The compute gate (I-289): a plan, its memory for this class and its
 	// disk for the new volume. No waitlist gate here since I-290: checkout
 	// is where the seats question is answered.
@@ -284,8 +303,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut)
+		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -322,7 +341,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.d.Engine.Kick()
-	obs.Logger(ctx, s.d.Log).Info("project created", "event", "project_create", "project_id", pid.String(), "class", body.Class, "temporary", expiresAt != nil)
+	obs.Logger(ctx, s.d.Log).Info("project created", "event", "project_create", "project_id", pid.String(), "class", body.Class, "temporary", expiresAt != nil, "multiplexer", mux)
 	j, err := s.projectJSON(ctx, p, u)
 	if err != nil {
 		return err
@@ -365,11 +384,28 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		// PersonalOptOut turns the account's machine.nix off (true) or
 		// back on (false) for this machine, with a rebuild (I-490).
 		PersonalOptOut *bool `json:"personal_opt_out"`
+		// Multiplexer changes what the next start runs (I-502).
+		Multiplexer *string `json:"multiplexer"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
 	ctx := r.Context()
+	if body.Multiplexer != nil {
+		// Checked before any field is written, so a refusal here
+		// changes nothing.
+		if err := checkMultiplexer(*body.Multiplexer); err != nil {
+			return err
+		}
+		if p.State == "destroying" {
+			return errf("conflict", "%s is being destroyed", p.Slug)
+		}
+		if *body.Multiplexer == multiplexer.Herdr {
+			if err := herdrGate(ctx, s.d.Pool, p.Slug, p.BaseVersion, false); err != nil {
+				return err
+			}
+		}
+	}
 	keep := false
 	if len(body.ExpiresAt) > 0 {
 		if strings.TrimSpace(string(body.ExpiresAt)) != "null" {
@@ -396,6 +432,23 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+	}
+	// Every check is above and the multiplexer is the first write: its
+	// update is guarded by state, so a destroy accepted since p was read
+	// refuses the request before any field of it is stored.
+	if body.Multiplexer != nil && *body.Multiplexer != multiplexer.Normalize(p.Multiplexer) {
+		// Stored now; project_json carries it to the guest at the next
+		// start, never sooner (I-502).
+		tag, err := s.d.Pool.Exec(ctx, "update projects set multiplexer = $2 where id = $1 and state <> 'destroying' and destroyed_at is null", p.ID, *body.Multiplexer)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errf("conflict", "%s is being destroyed", p.Slug)
+		}
+		obs.Logger(ctx, s.d.Log).Info("multiplexer changed", "event", "multiplexer_set", "project_id", p.ID.String(), "multiplexer", *body.Multiplexer)
+	}
+	if body.Class != nil {
 		if _, err := s.d.Pool.Exec(ctx, "update projects set class = $2 where id = $1 and state = 'stopped'", p.ID, *body.Class); err != nil {
 			return err
 		}

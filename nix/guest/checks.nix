@@ -16,10 +16,21 @@ let
   # A personal layer beside a project fragment (DECISIONS I-490): both
   # enable programs.git and the lists merge.
   // {
-    personal-and-project = (compose {
-      fragmentPath = examplesDir + "/packages-and-dotfiles.nix";
-      personalPath = examplesDir + "/personal/machine.nix";
-    }).toplevel;
+    personal-and-project =
+      let
+        composed = compose {
+          fragmentPath = examplesDir + "/packages-and-dotfiles.nix";
+          personalPath = examplesDir + "/personal/machine.nix";
+        };
+        bashrc = composed.guestSystem.config.environment.etc.bashrc.text;
+      in
+      # home.shellAliases reach /etc/bashrc (DECISIONS I-519): the
+      # personal layer's gs, and its ll over the base's.
+      assert lib.assertMsg (lib.hasInfix "alias -- gs='git status --short'" bashrc)
+        "fragment-examples: personal/machine.nix's home.shellAliases.gs is not in /etc/bashrc";
+      assert lib.assertMsg (lib.hasInfix "alias -- ll='ls -la'" bashrc)
+        "fragment-examples: personal/machine.nix's ll does not replace the base's";
+      composed.toplevel;
   };
 
   # A fragment that must fail evaluation, and the text its error must carry.
@@ -59,6 +70,10 @@ let
     (refusal "session-variable-quote"
       { home.sessionVariables.GREETING = "say \"hi\""; }
       "home.sessionVariables.GREETING: a value may not contain a double quote")
+    # A user unit named like the base's would replace it (I-563).
+    (refusal "user-unit-repose-name"
+      { systemd.user.services.repose-herdr-server.Service.ExecStart = "/bin/true"; }
+      "systemd.user.services.repose-herdr-server: not allowed in a fragment")
     # The message itself is asserted by internal/menu's
     # TestRealNixMissingPackage (tryEval cannot see it).
     (refusal "menu-missing-package"

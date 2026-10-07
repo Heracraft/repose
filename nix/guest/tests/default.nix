@@ -69,8 +69,12 @@ let
     environment.systemPackages = [ pkgs.openssh ];
     # A path in the host store but outside the system closure, registered
     # in the VM's database so the pin test can install it offline.
-    virtualisation.additionalPaths = [ pkgs.hello ];
+    # gcLowerProbe is registered and unrooted: a dead path in the lower
+    # layer, which repose-store-gc must leave alone (I-529).
+    virtualisation.additionalPaths = [ pkgs.hello gcLowerProbe ];
   };
+
+  gcLowerProbe = pkgs.writeText "repose-gc-lower-probe" "in the host store only\n";
 
   helloImage = pkgs.dockerTools.buildImage {
     name = "repose-hello";
@@ -208,6 +212,12 @@ let
 
   # I-264: a tmux server on /etc/tmux.conf, a pane in raw mode that asks
   # for extended keys and records its input, then Shift+Enter and Enter.
+  # Asks the running herdr server for a live handoff, the request
+  # `herdr update --handoff` sends after it installs (I-560).
+  herdrHandoff = pkgs.writeShellScript "herdr-handoff" ''
+    echo '{"id":"t","method":"server.live_handoff","params":{}}' \
+      | ${pkgs.socat}/bin/socat -t 20 - UNIX-CONNECT:/home/dev/.config/herdr/herdr.sock
+  '';
   tmuxKeysProbe = pkgs.writeShellScript "tmux-keys-probe" ''
     set -eu
     t() { ${pkgs.tmux}/bin/tmux -L keysprobe -f /etc/tmux.conf "$@"; }
@@ -315,6 +325,8 @@ in
       with subtest("sysctls"):
           assert guest.succeed("sysctl -n fs.inotify.max_user_watches").strip() == "1048576"
           assert guest.succeed("sysctl -n fs.inotify.max_user_instances").strip() == "1024"
+          # I-539: dev may attach a debugger to its own processes.
+          assert guest.succeed("sysctl -n kernel.yama.ptrace_scope").strip() == "0"
 
       with subtest("environment in a login shell"):
           guest.succeed("printf 'TZ=Europe/Berlin\\nREPOSE_PROJECT=todo-app\\n' > /etc/repose/env")
@@ -328,6 +340,11 @@ in
       with subtest("tmux session from project.json"):
           guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
           guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+          # Nothing starts a session on its own (no path unit, I-503):
+          # SetupProject starts the unit project.json names, as here.
+          guest.succeed("sleep 2; ! sudo -u dev tmux ls")
+          guest.succeed("test ! -e /etc/systemd/user/repose-tmux-session.path")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
           guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
           # No checkout yet (I-368): the session works in the home directory,
           # and nothing is made under the slug.
@@ -336,6 +353,53 @@ in
           guest.succeed("test ! -e /home/dev/todo-app")
           assert guest.succeed("sudo -u dev repose-checkout").strip() == "/home/dev"
           guest.succeed("grep -Eq 'set-clipboard +on' /etc/tmux.conf && grep -Eq 'mouse +off' /etc/tmux.conf && grep -Eq 'history-limit +50000' /etc/tmux.conf")
+
+      with subtest("I-551: the session comes back after the tmux server exits"):
+          # `exit` in the last window ends the server, as kill-server does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          # Gone for the 5 s I-352's check after an attach needs.
+          guest.succeed("! sudo -u dev tmux has-session -t =todo-app")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          # The attach the CLI runs finds it (a client needs a terminal:
+          # script gives it one, and the detach ends it).
+          guest.succeed("sudo -u dev env TERM=xterm-256color script -qec 'tmux attach -t todo-app \\; detach-client' /dev/null")
+          # A stop is not undone.
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user stop repose-tmux-session.service")
+          guest.succeed("sleep 7; ! sudo -u dev tmux has-session -t =todo-app")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+
+      with subtest("I-560: a session on a tmux server outside the unit is not restarted"):
+          def user_q(cmd):
+              return guest.succeed(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}").strip()
+          guest.succeed("sudo -u dev tmux kill-server")
+          # In the 5 s wait, a tmux started outside the unit (over ssh,
+          # as here from the test's shell) takes the slug.
+          guest.succeed("sudo -u dev tmux new-session -d -s todo-app")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-failed repose-tmux-session.service", timeout=30)
+          n = user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service")
+          guest.succeed("sleep 12")
+          assert user_q("systemctl --user show -p NRestarts --value repose-tmux-session.service") == n, "the unit kept restarting"
+          guest.succeed("sudo -u dev tmux has-session -t =todo-app")
+          # A server that dies by a signal (SIGKILL is the OOM kill) comes
+          # back as an exit does.
+          guest.succeed("sudo -u dev tmux kill-server")
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+          guest.succeed("kill -KILL $(sudo -u dev tmux display-message -p '#{pid}')")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
+          assert user_q("systemctl --user is-active repose-tmux-session.service") == "active"
+
+      with subtest("I-538: the tmux server, its panes and a dev login get 524288 open files"):
+          pid = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
+          limits = guest.succeed(f"awk '/^Max open files/ {{print $4, $5}}' /proc/{pid}/limits").strip()
+          assert limits == "524288 524288", limits
+          pane = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pane_pid}'").strip()
+          limits = guest.succeed(f"awk '/^Max open files/ {{print $4, $5}}' /proc/{pane}/limits").strip()
+          assert limits == "524288 524288", limits
+          # su runs dev's PAM session, as sshd does for SSH, exec and code.
+          soft = guest.succeed("su - dev -c 'ulimit -Sn'").strip().splitlines()[-1]
+          assert soft == "524288", soft
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
@@ -367,6 +431,79 @@ in
           keys = guest.succeed("cat /tmp/keys")
           print(keys)
           assert keys.split()[:8] == ["033", "[", "1", "3", ";", "2", "u", "\\r"], keys
+
+      with subtest("I-501, I-503: one session unit, chosen by project.json"):
+          import json
+          def mux_is(m):
+              return guest.execute(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 repose-multiplexer-is {m}")[0]
+          def unit_state(u):
+              return guest.execute(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active {u}")[1].strip()
+          def project(extra):
+              guest.succeed(f"""echo '{{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"{extra}}}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+          def user(cmd):
+              return guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}")
+          guest.succeed("test -x /run/current-system/sw/bin/herdr")
+          print(guest.succeed("herdr status client --json"))
+          # tmux runs: the herdr unit's condition refuses while it does.
+          assert mux_is("tmux") == 0 and mux_is("herdr") != 0
+          project(',"multiplexer":"herdr"')
+          assert mux_is("herdr") != 0, "herdr allowed while the tmux unit runs"
+          user("systemctl --user start repose-herdr-server.service")
+          assert unit_state("repose-herdr-server.service") == "inactive"
+          # The next start: tmux gone, herdr chosen.
+          user("systemctl --user stop repose-tmux-session.service")
+          assert mux_is("tmux") != 0 and mux_is("herdr") == 0
+          user("systemctl --user start repose-tmux-session.service")
+          assert unit_state("repose-tmux-session.service") == "inactive"
+          user("systemctl --user start repose-herdr-server.service")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
+          guest.succeed("test -S /home/dev/.config/herdr/herdr.sock")
+          assert guest.execute("pgrep -u dev -c tmux")[1].strip() == "0"
+          assert guest.succeed("cat /home/dev/.config/herdr/config.toml") == '[terminal]\nshell_mode = "login"\n\n[update]\nversion_check = false\n\n[ui.toast]\ndelivery = "herdr"\n'
+          assert guest.succeed("stat -c %U /home/dev/.config/herdr/config.toml").strip() == "dev"
+          # The workspace sits in the checkout (factory, from I-368 above),
+          # once, however often the step runs.
+          user("repose-herdr-workspace")
+          ws = json.loads(user("herdr workspace list"))["result"]["workspaces"]
+          assert [w["label"] for w in ws] == ["factory"], ws
+          panes = json.loads(user("herdr pane list"))["result"]["panes"]
+          assert any(p.get("cwd") == "/home/dev/factory" for p in panes), panes
+          assert unit_state("repose-tmux-session.service") == "inactive"
+          # A changed config.toml is the user's.
+          guest.succeed("echo '# mine' >> /home/dev/.config/herdr/config.toml")
+          user("systemctl --user restart repose-herdr-server.service")
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
+          guest.succeed("grep -qx '# mine' /home/dev/.config/herdr/config.toml")
+          # The server starts without the profile guards, so each pane's
+          # shell loads the current environment (I-563).
+          main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
+          assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
+          # I-560: a live handoff keeps the unit and every pane; a server
+          # that stops comes back with its workspaces.
+          pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
+          user(f"herdr pane run {pane} 'sleep 4242'")
+          guest.wait_until_succeeds("pgrep -u dev -fx 'sleep 4242'", timeout=10)
+          old = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
+          print(user("${herdrHandoff}"))
+          guest.succeed("sleep 8")
+          assert unit_state("repose-herdr-server.service") == "active"
+          guest.succeed("pgrep -u dev -fx 'sleep 4242'")
+          new = guest.succeed("pgrep -u dev -x herdr").split()
+          assert old not in new and len(new) == 1, (old, new)
+          user("herdr server stop")
+          guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
+          guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q factory", timeout=40)
+          assert unit_state("repose-herdr-server.service") == "active"
+          # Back to tmux for the subtests below.
+          user("systemctl --user stop repose-herdr-server.service")
+          project("")
+          assert mux_is("tmux") == 0
+          guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
+          # Every wrapped agent tells herdr who it is (I-501).
+          for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
+              guest.succeed(f"grep -q 'HERDR_AGENT=' /run/current-system/sw/bin/{cmd}")
 
       with subtest("agent binaries and wrappers"):
           for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
@@ -430,6 +567,239 @@ in
           # I-481: a repose.js the user changed is kept.
           guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
+      with subtest("every agent has the platform MCP servers in its own layer, and its own switch turns one off (I-553, I-554)"):
+          import re, shlex
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          def dev_out(cmd, err=True):
+              return guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}" + (" 2>&1" if err else ""))
+          # Codex: tables appended to the user file by repose-agent-setup,
+          # once, with the same command and args.
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && codex mcp list --json", err=False))}
+          for n, e in reg.items():
+              assert cx[n]["enabled"] is True and cx[n]["transport"]["command"] == e["command"] and cx[n]["transport"]["args"] == e["args"], cx
+          before = guest.succeed("cat /home/dev/.codex/config.toml")
+          guest.succeed("sudo -u dev repose-agent-setup codex")
+          assert guest.succeed("cat /home/dev/.codex/config.toml") == before
+          assert before.count("[mcp_servers.playwright]") == 1, before
+          # A config.toml that is a link (home-manager) stays a link, and
+          # its target is not rewritten.
+          dev_out("mkdir -p /tmp/cxlink/.codex && printf 'notify = [\"mine\"]\\n' > /tmp/cxlink/real.toml && ln -s /tmp/cxlink/real.toml /tmp/cxlink/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink/.codex/config.toml").strip() == "/tmp/cxlink/real.toml"
+          assert guest.succeed("cat /tmp/cxlink/real.toml") == 'notify = ["mine"]\n'
+          # A link whose target lacks notify gets it through the link.
+          dev_out("mkdir -p /tmp/cxlink2/.codex && printf 'model = \"o3\"\\n' > /tmp/cxlink2/real.toml && ln -s /tmp/cxlink2/real.toml /tmp/cxlink2/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink2 repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink2/.codex/config.toml").strip() == "/tmp/cxlink2/real.toml"
+          assert guest.succeed("cat /tmp/cxlink2/real.toml") == 'notify = ["repose-hook"]\nmodel = "o3"\n'
+          assert guest.succeed("stat -c %a /tmp/cxlink2/real.toml").strip() == "644", "the target kept its mode"
+          # A target repose cannot replace (a read-only directory, as
+          # home-manager's store) is named once per target, not per start.
+          dev_out("mkdir -p /tmp/cxlink3/.codex /tmp/cxlink3/ro && printf 'model = \"o3\"\\n' > /tmp/cxlink3/ro/real.toml && chmod 555 /tmp/cxlink3/ro && ln -s /tmp/cxlink3/ro/real.toml /tmp/cxlink3/.codex/config.toml")
+          first = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          second = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          assert "links to a file repose cannot write" in first, first
+          assert "links to a file repose cannot write" not in second, second
+          assert guest.succeed("cat /tmp/cxlink3/ro/real.toml") == 'model = "o3"\n'
+          # opencode: the managed layer, type local, no enabled key.
+          oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
+          for n, e in reg.items():
+              assert oc[n] == {"type": "local", "command": [e["command"]] + e["args"]}, oc
+          # Gemini: a copied root file in a root 0755 directory, folder
+          # trust off, so a folder it was never told about connects both.
+          guest.succeed("test -f /etc/gemini-cli/system-defaults.json && ! test -L /etc/gemini-cli/system-defaults.json")
+          assert guest.succeed("stat -c %U%a /etc/gemini-cli /etc/gemini-cli/system-defaults.json").split() == ["root755", "root644"]
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && gemini mcp list")
+          for n in reg:
+              assert re.search(rf"{re.escape(n)}:.*Connected", out), out
+          assert "Security Warning" not in out and "untrusted" not in out.lower(), out
+          # pi: registered by the guide extension.
+          guest.succeed("grep -q registerMcpServer /etc/repose/pi-extension.js")
+          # Each agent's own off switch, each in a home of its own.
+          def put(path, text):
+              guest.succeed(f"sudo -u dev mkdir -p $(dirname {path}) && sudo -u dev tee {path} > /dev/null <<'EOF'\n{text}\nEOF")
+          put("/tmp/cxoff/.codex/config.toml", '[mcp_servers.playwright]\ncommand = "playwright-mcp"\nenabled = false')
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && HOME=/tmp/cxoff codex mcp list --json", err=False))}
+          assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
+          assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
+          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"playwright": {"enabled": false}}}')
+          out = dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list")
+          assert re.search(r"playwright\s+disabled", out), out
+          put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
+          assert re.search(r"playwright:.*Blocked", out), out
+
+      with subtest("the MCP registry reaches every agent with its secret (I-555)"):
+          import hashlib, shlex, tomllib
+          def toml_entry(text, name):
+              return tomllib.loads(text)["mcp_servers"][name]
+          # The registry as the carry writes it: one stdio server whose token
+          # is a ''${NAME} reference to a repose secret, in env and in args.
+          guest.succeed("install -d -m 0700 -o dev -g dev /run/repose/secrets && printf probe-secret > /run/repose/secrets/PROBE_TOKEN && chown dev:dev /run/repose/secrets/PROBE_TOKEN && chmod 0400 /run/repose/secrets/PROBE_TOKEN")
+          want = hashlib.sha256(b"probe-secret").hexdigest()
+          # The digest argument makes the server refuse to start without
+          # the secret, so "connected" below means the secret arrived.
+          probe = {"type": "stdio", "command": "python3", "args": ["${./mcp-probe-server.py}", "''${PROBE_TOKEN}", want], "env": {"PROBE_TOKEN": "''${PROBE_TOKEN}"}}
+          def write_laptop(reg):
+              guest.succeed(f"sudo -u dev sh -c 'mkdir -p ~/.repose/mcp && chmod 700 ~/.repose/mcp && cat > ~/.repose/mcp/laptop.json' <<'EOF'\n{json.dumps(reg)}\nEOF")
+          write_laptop({"version": 1, "user": {"probe": probe}})
+          agents = ["claude", "codex", "gemini", "opencode", "pi"]
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a} 2>/tmp/setup-{a}.err")
+              assert guest.succeed(f"cat /tmp/setup-{a}.err") == "", a
+          u = json.loads(guest.succeed("cat /home/dev/.claude.json"))
+          # A secret reference: Claude Code starts it through the launcher
+          # too, which reads /run/repose/secrets at each start and refuses
+          # when the secret is missing (I-555, amended).
+          assert u["mcpServers"]["probe"] == {"type": "stdio", "command": "repose-mcp", "args": ["run", "probe"]}, u["mcpServers"]
+          assert set(u["mcpServers"]) >= {"playwright", "chrome-devtools"}, u
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert '[mcp_servers.probe]\ncommand = "repose-mcp"\nargs = ["run", "probe"]\nstartup_timeout_sec = 60' in codex, codex
+          ext = json.loads(guest.succeed("cat /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json"))
+          assert ext["mcpServers"]["probe"]["command"] == "repose-mcp", ext  # a reference in args needs the launcher
+          oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))
+          assert oc["mcp"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
+          assert "probe" in json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]
+          # Each agent lists it from its own config.
+          cl = json.loads(guest.succeed("sudo -u dev bash -lc 'codex mcp list --json'"))
+          print(cl)
+          assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
+          # Claude Code, Gemini CLI and opencode start the server through
+          # the launcher while listing it; it connects only with the secret.
+          for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+              status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+              print(f"{cmd} ({status}):\n{out}")
+              bad = ["disconnected", "failed", "error", "needs auth"]
+              rows = [l.lower() for l in out.splitlines() if "probe" in l and any(w in l.lower() for w in ["connected", *bad])]
+              assert len(rows) == 1, (cmd, out)
+              assert "connected" in rows[0] and not any(w in rows[0] for w in bad), (cmd, rows)
+          # Codex and pi list without starting a server: run the command
+          # each one's config names, in that agent's environment, and call
+          # the tool. The launcher fills ''${PROBE_TOKEN} from
+          # /run/repose/secrets; the server answers with digests.
+          launches = {
+              "codex": toml_entry(codex, "probe"),
+              "pi": json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]["probe"],
+          }
+          for a, e in launches.items():
+              argv = " ".join(shlex.quote(x) for x in [e["command"], *e.get("args", [])])
+              assert "''${" not in argv, (a, e)  # a reference only the launcher fills
+              out = guest.succeed(f"sudo -u dev env -u PROBE_TOKEN bash -lc {shlex.quote(f'cd /home/dev && python3 ${./mcp-client.py} {argv} -- probe {{}}')}")
+              assert f"env={want} arg={want}" in out, (a, out)
+              assert "probe-secret" not in out, a
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "probe"]
+          assert len(row) == 1 and row[0]["from"] == "laptop" and row[0]["state"] == "", st
+          assert set(row[0]["agents"]) >= {"claude", "codex", "gemini", "opencode"}, row
+          pw = [r for r in st["servers"] if r["name"] == "playwright"]
+          assert pw and pw[0]["from"] == "repose", pw
+          # Idempotent: a second start changes no byte.
+          files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/config.json /home/dev/.repose/mcp/rendered.json"
+          before = guest.succeed(f"sha256sum {files}")
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert guest.succeed(f"sha256sum {files}") == before
+          # The laptop drops it: every agent loses it; the user's own stays.
+          guest.succeed("sudo -u dev sh -c 'cat >> ~/.codex/config.toml' <<'EOF'\n\n[mcp_servers.mine]\ncommand = \"my-mcp\"\nEOF")
+          write_laptop({"version": 1})
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert "mcp_servers.probe" not in codex and "[mcp_servers.mine]" in codex, codex
+          guest.fail("test -e /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
+          guest.fail("test -e /home/dev/.claude.json.lock")
+
+      with subtest("the carry's own payload reaches claude and codex through repose-agent-setup (I-556, design 3.2.5)"):
+          # nix/guest/tests/mcp-carry is what the CLI sends for a fixture
+          # laptop config (TestMCPCarryGoldenPayload keeps it current): run
+          # it the way ssh runs the carry, as dev with the tar on stdin.
+          out = guest.succeed("cd /home/dev && sudo -H -u dev bash -c \"$(cat ${./mcp-carry/script.sh})\" < ${./mcp-carry/payload.tar}")
+          print(out)
+          assert "#failed" not in out, out
+          assert "#mcpleft 1 notes (an Apple app)" in out, out
+          assert "#mcpsecret LINEAR_TOKEN linear laptop" in out, out
+          lj = json.loads(guest.succeed("cat /home/dev/.repose/mcp/laptop.json"))
+          assert set(lj["user"]) == {"probe", "linear"} and lj["user"]["probe"]["env"] == {"PROBE_TOKEN": "''${PROBE_TOKEN}"}, lj
+          assert guest.succeed("stat -c %a /home/dev/.repose/mcp/laptop.json").strip() == "600"
+          # linear is remote and its secret is missing: no agent gets it,
+          # since the agent would send the literal reference as its token.
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "linear" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "mcp_servers.linear" not in guest.succeed("cat /home/dev/.codex/config.toml")
+          st = json.loads(guest.succeed("sudo -u dev env -u LINEAR_TOKEN repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "linear"]
+          assert row and row[0]["agents"] == [] and row[0]["state"] == "needs LINEAR_TOKEN", st
+          # Set, it arrives at the next agent start.
+          guest.succeed("printf linear-secret > /run/repose/secrets/LINEAR_TOKEN && chown dev:dev /run/repose/secrets/LINEAR_TOKEN && chmod 0400 /run/repose/secrets/LINEAR_TOKEN")
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          status, out = guest.execute("sudo -u dev bash -lc 'cd /home/dev && timeout 120 claude mcp list' 2>&1")
+          print(out)
+          for n in ["probe", "linear", "playwright"]:
+              assert re.search(rf"^{n}: ", out, re.M), (n, out)
+          cx = {e["name"]: e for e in json.loads(guest.succeed("sudo -u dev bash -lc 'cd /tmp && codex mcp list --json'"))}
+          assert cx["probe"]["transport"]["command"] == "repose-mcp" and cx["probe"]["transport"]["args"] == ["run", "probe"], cx
+          assert cx["linear"]["transport"].get("url") == "https://mcp.linear.app/mcp" and cx["linear"]["transport"].get("bearer_token_env_var") == "LINEAR_TOKEN", cx
+          assert "notes" not in cx, cx
+          # Codex's launcher refuses to start probe without its secret.
+          guest.succeed("mv /run/repose/secrets/PROBE_TOKEN /run/repose/PROBE_TOKEN.away")
+          status, out = guest.execute("sudo -u dev env -u PROBE_TOKEN repose-mcp run probe 2>&1")
+          assert status == 1 and "probe needs the secret PROBE_TOKEN; set it with `repose secrets set PROBE_TOKEN`" in out, (status, out)
+          guest.succeed("mv /run/repose/PROBE_TOKEN.away /run/repose/secrets/PROBE_TOKEN")
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "notes"]
+          assert row and row[0]["from"] == "laptop" and row[0]["agents"] == [] and row[0]["state"] == "an Apple app", st
+          # Back to no laptop servers for the subtests that follow.
+          guest.succeed("rm /run/repose/secrets/LINEAR_TOKEN")
+          write_laptop({"version": 1})
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+
+      with subtest("a forwarded server reaches every agent, and answers while the laptop is away (I-557)"):
+          import shlex
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp").strip() == "dev 700"
+          # The real hold, with a fake laptop end on its stdio: what the
+          # laptop's ssh carries in production (no -R; the gateway relays
+          # forwarded-tcpip only, I-296).
+          guest.succeed("sudo -u dev sh -c 'cd /home/dev && nohup python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe > /tmp/fake-laptop.log 2>&1 &'")
+          ready = guest.wait_until_succeeds("grep '^ready ' /tmp/fake-laptop.log", timeout=60)
+          r = json.loads(ready.split(" ", 1)[1])
+          assert r == {"name": "fwprobe", "tools": 1, "new": True}, r
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp/fwprobe.sock").strip() == "dev 600"
+          fwd = json.loads(guest.succeed("cat /home/dev/.repose/mcp/forward/fwprobe.json"))
+          assert fwd["name"] == "fwprobe" and [t["name"] for t in fwd["tools"]] == ["where"], fwd
+          # hold synced the agents it had rendered for already.
+          assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]["fwprobe"] == {"type": "stdio", "command": "repose-mcp", "args": ["fwprobe"]}
+          assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
+          def listed(connected_word):
+              for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+                  status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+                  print(f"{cmd} ({status}):\n{out}")
+                  rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
+                  assert rows and connected_word in rows[0] and "failed" not in rows[0] and "disconnected" not in rows[0], (cmd, out)
+          listed("connected")
+          call = shlex.quote("cd /home/dev && python3 ${./mcp-client.py} repose-mcp fwprobe -- where {}")
+          out = guest.wait_until_succeeds(f"sudo -u dev bash -lc {call}", timeout=30)
+          assert "laptop" in out, out
+          # The laptop goes away: the socket goes with the hold, agents
+          # still list the server from the cache, and a call is a tool
+          # error that says what to do.
+          guest.succeed("pkill -f mcp-fake-laptop.py")
+          guest.wait_until_fails("test -e /run/repose/mcp/fwprobe.sock", timeout=15)
+          listed("connected")
+          status, out = guest.execute(f"sudo -u dev bash -lc {call} 2>&1")
+          assert status == 1 and "fwprobe runs on the user's laptop, which isn't connected" in out, (status, out)
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [x for x in st["servers"] if x["name"] == "fwprobe"]
+          assert row and row[0]["from"] == "forward" and "laptop not connected" in row[0]["state"], st
+          # --remove takes it off every agent at their next start.
+          assert guest.succeed("sudo -u dev repose-mcp hold --remove fwprobe") == ""
+          assert "fwprobe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "fwprobe" not in guest.succeed("cat /home/dev/.codex/config.toml")
+
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
       ${transcript}
@@ -456,6 +826,43 @@ in
           assert "Permission denied" in err, err
           guest.fail("ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /root/user root@127.0.0.1 id")
 
+      with subtest("I-512: terminfo for the TERMs laptops attach with"):
+          for term in ["xterm-ghostty", "xterm-kitty", "alacritty", "wezterm", "foot"]:
+              guest.succeed(f"sudo -u dev bash -lc 'infocmp {term}' >/dev/null")
+          guest.succeed("sudo -u dev env TERM=xterm-kitty bash -lc clear")
+
+      with subtest("I-515: 24-bit colour only to terminals that have it; titles name the machine"):
+          overrides = guest.succeed("sudo -H -u dev tmux show-options -s terminal-overrides")
+          assert ":Tc" not in overrides, overrides
+          features = guest.succeed("sudo -H -u dev tmux show-options -s terminal-features")
+          for f in ["xterm-ghostty:RGB", "xterm-kitty:RGB", "alacritty:RGB", "wezterm:RGB", "foot*:RGB", "*-direct:RGB"]:
+              assert f in features, features
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles").strip() == "on"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #S"
+
+      with subtest("I-513, I-514: login shells read ~/.bashrc last; ls, vi, history and fzf"):
+          guest.succeed("cat > /home/dev/.bashrc <<'EOF'\nexport REPOSE_RC_MARK=read\nalias rcprobe='echo alias-ok'\nalias ll='echo user-ll'\nEOF\nchown dev:dev /home/dev/.bashrc")
+          # A new tmux window: a login bash, as every pane is.
+          guest.succeed("sudo -H -u dev tmux new-window -d -t todo-app -n rcprobe")
+          guest.succeed("sudo -H -u dev tmux send-keys -t todo-app:rcprobe 'echo mark=$REPOSE_RC_MARK; rcprobe; ll' Enter")
+          guest.wait_until_succeeds("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe | grep -q '^alias-ok' && sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe | grep -q '^user-ll'", timeout=30)
+          pane = guest.succeed("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe")
+          assert "mark=read" in pane, pane
+          guest.succeed("sudo -H -u dev tmux kill-window -t todo-app:rcprobe")
+          # An SSH shell.
+          guest.succeed("ssh-keygen -q -s /root/ca -I 'user:heracraft' -n 0192e4b0-0000-7000-8000-000000000001 -V -1m:+12h /root/user.pub")
+          ssh = "ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o CertificateFile=/root/user-cert.pub -i /root/user dev@127.0.0.1"
+          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
+          print(out)
+          for want in ["mark=read", "alias-ok", "user-ll", "alias ls='ls --color=tty'", "hist=100000", "histappend", "function"]:
+              assert want in out, out
+          assert "/bin/vi" in out and "/bin/vim" in out, out
+          # A user's ~/.bash_profile decides for itself.
+          guest.succeed("install -o dev -g dev /dev/null /home/dev/.bash_profile")
+          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK'\" 2>/dev/null")
+          assert "mark=read" not in out, out
+          guest.succeed("rm /home/dev/.bash_profile /home/dev/.bashrc")
+
       with subtest("store overlay and profile pinning"):
           mounts = guest.succeed("mount | grep -E 'ro-store|rw-store|/nix/store'")
           assert "overlay" in mounts, mounts
@@ -474,6 +881,55 @@ in
           guest.succeed(f"diff -r {upper}/{name} {hello}")
           guest.succeed("sudo -u dev bash -lc 'hello' | grep -q Hello")
 
+      with subtest("I-533: what a guest-built binary links is copied up and rooted"):
+          guest.succeed("install -d -o dev -g dev /tmp/link")
+          guest.succeed("""cat > /tmp/link/t.c <<'EOF'
+      #include <stdio.h>
+      #include <openssl/crypto.h>
+      int main(void) { printf("%s\\n", OpenSSL_version(OPENSSL_VERSION)); return 0; }
+      EOF
+      chown dev:dev /tmp/link/t.c""")
+          guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc t.c -o t $(pkg-config --cflags --libs openssl)'")
+          interp = guest.succeed("readelf -l /tmp/link/t | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
+          runpath = guest.succeed("readelf -d /tmp/link/t | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
+          # The store paths the binary names: the interpreter's glibc and
+          # every RUNPATH entry (openssl, glibc, gcc-lib).
+          linked = sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+          assert any("-glibc-" in p for p in linked) and any("-openssl-" in p for p in linked), linked
+          guest.succeed("systemctl start repose-pin-profile.service")
+          for p in linked:
+              base = os.path.basename(p)
+              guest.succeed(f"diff -r {upper}/{base} {p}")
+              guest.succeed(f"test \"$(readlink /nix/var/nix/gcroots/repose-link-targets/{base})\" = {p}")
+          # The lower layer is the host's read-only store and cannot lose a
+          # path here, so run the binary from the upper copies alone: what
+          # it would load once the host collected the base's paths.
+          glibc = [p for p in linked if "-glibc-" in p][0]
+          libpath = ":".join(f"{upper}/{os.path.basename(p)}/lib" for p in linked)
+          out = guest.succeed(f"{upper}/{os.path.basename(glibc)}/lib/ld-linux-x86-64.so.2 --library-path {libpath} /tmp/link/t")
+          assert out.startswith("OpenSSL "), out
+
+      with subtest("I-529: repose-store-gc deletes dead paths only the upper dir holds"):
+          lower_probe = "${gcLowerProbe}"
+          lname = os.path.basename(lower_probe)
+          guest.succeed(f"test -e /nix/.ro-store/{lname}")
+          guest.fail(f"test -e {upper}/{lname}")
+          # A path the guest's daemon adds lands in the upper dir alone.
+          own = guest.succeed("echo only in the overlay > /tmp/own && nix-store --add /tmp/own").strip()
+          oname = os.path.basename(own)
+          guest.succeed(f"test -f {upper}/{oname}")
+          guest.succeed("systemctl list-timers repose-store-gc.timer | grep -q repose-store-gc")
+          guest.succeed("systemctl start repose-store-gc.service")
+          guest.fail(f"test -e {own}")
+          guest.fail(f"test -e {upper}/{oname}")
+          # The dead lower path stays, with no whiteout hiding it.
+          guest.succeed(f"test -f {lower_probe}")
+          guest.fail(f"test -c {upper}/{lname}")
+          # Live paths stay: the profile's hello and the link targets.
+          guest.succeed(f"test -d {upper}/{name}")
+          guest.succeed(f"test -x {glibc}/lib/ld-linux-x86-64.so.2")
+          guest.succeed("/tmp/link/t")
+
       with subtest("guest profile script"):
           prof = json.loads(guest.succeed("sudo -u dev repose-guest-profile"))
           assert prof["slug"] == "todo-app" and prof["dir"] == "/home/dev/factory", prof
@@ -490,6 +946,8 @@ in
     nodes.guest = { ... }: {
       imports = [ node ];
       environment.systemPackages = [ pkgs.python3 ];
+      # What hostd puts on the kernel line for project todo-app (I-550).
+      boot.kernelParams = [ "systemd.hostname=todo-app" ];
     };
     testScript = ''
       guest.start()
@@ -497,13 +955,22 @@ in
       guest.succeed("printf 'TZ=Europe/Berlin\nREPOSE_PROJECT=todo-app\n' > /etc/repose/env")
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"Europe/Berlin","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
       guest.succeed("mkdir -p /tmp/p && cp -r ${guestParts}/. /tmp/p && chmod -R u+w /tmp/p && chown -R dev:dev /tmp/p")
+
+      with subtest("I-550: systemd.hostname= on the kernel line names the guest over /etc/hostname"):
+          assert guest.succeed("hostname").strip() == "todo-app"
+          assert guest.succeed("cat /etc/hostname").strip() != "todo-app"
 
       with subtest("I-215: nothing of the system listens where auto-forward would pick it up"):
           listeners = guest.succeed("ss -Hltn")
           print(listeners)
           assert ":5355 " not in listeners, "resolved's LLMNR responder is listening"
+          udp = guest.succeed("ss -Hlun")
+          print(udp)
+          assert ":5353 " not in udp, "resolved's mDNS responder is listening"
+          assert ":5355 " not in udp, "resolved's LLMNR responder is listening"
 
       with subtest("the session starts in the project's zone; tmux does not take TZ from the client"):
           assert guest.succeed("sudo -H -u dev tmux show-environment -g TZ").strip() == "TZ=Europe/Berlin"
@@ -592,6 +1059,7 @@ in
       guest.start()
       guest.wait_for_unit("multi-user.target")
 
+      import json
       import shlex
 
       def dev(cmd):
@@ -627,12 +1095,57 @@ in
           # from the base is a linker driver named cc.
           dev("command -v cc && command -v rustup")
 
+      with subtest("I-520: pnpm's global bin dir is on PATH, yarn is corepack's"):
+          assert dev("pnpm bin -g").strip() == "/home/dev/.local/share/pnpm/bin"
+          # yarn --version downloads yarn from registry.yarnpkg.com, which
+          # the test VM cannot reach; the command and its target are what
+          # the base provides.
+          target = dev("readlink -f $(command -v yarn)").strip()
+          assert target.endswith("/lib/node_modules/corepack/dist/yarn.js"), target
+          assert target.rsplit("/dist/", 1)[0] == dev("readlink -f $(command -v corepack)").strip().rsplit("/dist/", 1)[0], target
+          dev("command -v yarnpkg")
+          assert dev("echo -n $COREPACK_ENABLE_DOWNLOAD_PROMPT") == "0"
+
       with subtest("I-218: everyday CLIs"):
           for tool in ["file", "lsof", "zip", "unzip", "dig", "nslookup", "nc", "sqlite3", "psql", "pg_dump", "openssl", "gpg", "patch", "less", "strace", "rsync", "killall", "readelf"]:
               dev(f"command -v {tool}")
           # psql only: no server binaries on PATH.
           guest.fail("sudo -H -u dev bash -lc 'command -v postgres'")
           guest.fail("sudo -H -u dev bash -lc 'command -v initdb'")
+
+      with subtest("I-525: git-lfs is installed and its filter is in the system config"):
+          assert dev("git lfs version").startswith("git-lfs/"), "git lfs version"
+          assert dev("git config --system filter.lfs.process").strip() == "git-lfs filter-process"
+          assert dev("git config --system filter.lfs.required").strip() == "true"
+          # A carried filter.lfs.required=true no longer fails the add.
+          dev("rm -rf /tmp/lfs && git init -q /tmp/lfs && cd /tmp/lfs && echo '*.bin filter=lfs diff=lfs merge=lfs -text' > .gitattributes && head -c 64 /dev/urandom > a.bin && git add . && git -c user.name=t -c user.email=t@e commit -qm lfs")
+          assert "oid sha256:" in dev("cd /tmp/lfs && git cat-file -p HEAD:a.bin")
+
+      with subtest("I-526: gh is the system credential helper by name, and store-path helpers go"):
+          for h in ["https://github.com", "https://gist.github.com"]:
+              assert dev(f"git config --system credential.{h}.helper").strip() == "!gh auth git-credential", h
+          act = guest.succeed("grep -o '/nix/store/[^ ]*nixos-activation-start' /etc/systemd/user/nixos-activation.service").strip()
+          cleanup = guest.succeed(f"grep -o '/nix/store/[^ ]*/bin/repose-gh-helper-cleanup' {act}").strip()
+          dev("cp ~/.gitconfig /tmp/gitconfig.keep 2>/dev/null || :; for h in https://github.com https://gist.github.com; do git config --global --add credential.$h.helper \"\"; git config --global --add credential.$h.helper '!/nix/store/0000-gh-2.100.0/bin/.gh-wrapped auth git-credential'; done; git config --global --add credential.https://example.com.helper store")
+          dev(cleanup)
+          dev(cleanup)
+          left = dev("git config --global --get-regexp '^credential' || true")
+          assert left.strip() == "credential.https://example.com.helper store", left
+          dev("if [ -f /tmp/gitconfig.keep ]; then cp /tmp/gitconfig.keep ~/.gitconfig; else git config --global --unset credential.https://example.com.helper; fi")
+
+      with subtest("I-527: git defaults for a fresh HOME"):
+          assert dev("git config --system init.defaultBranch").strip() == "main"
+          assert dev("git config --system push.autoSetupRemote").strip() == "true"
+          assert dev("git config --system pull.rebase").strip() == "false"
+          assert dev("rm -rf /tmp/br && git init -q /tmp/br && git -C /tmp/br symbolic-ref --short HEAD").strip() == "main"
+
+      with subtest("I-528: gpg-agent has a pinentry that exists"):
+          conf = guest.succeed("cat /etc/gnupg/gpg-agent.conf")
+          prog = [l.split(None, 1)[1] for l in conf.splitlines() if l.startswith("pinentry-program ")]
+          assert len(prog) == 1, conf
+          guest.succeed(f"test -x {prog[0]}")
+          dev("rm -rf /tmp/gnupg-t && install -d -m 700 /tmp/gnupg-t && echo pw | GNUPGHOME=/tmp/gnupg-t gpg --batch --pinentry-mode loopback --passphrase-fd 0 --symmetric -o /tmp/gnupg-t/x.gpg /etc/hostname && GNUPGHOME=/tmp/gnupg-t gpgconf --kill gpg-agent")
+          assert "GPG_TTY=/dev/" in guest.succeed("script -qc 'sudo -H -u dev bash -ic \"env | grep ^GPG_TTY=\"' /dev/null")
 
       with subtest("I-218: nix-ld runs a prebuilt foreign ELF"):
           interp = guest.succeed("readelf -l ${foreignElf}/bin/foreign | grep 'program interpreter'")
@@ -646,9 +1159,31 @@ in
           print(reg)
           line = [l for l in reg.splitlines() if l.startswith("system flake:nixpkgs ")]
           assert line == ["system flake:nixpkgs path:${nixpkgsSource}"], reg
-          assert "nixpkgs=flake:nixpkgs" in dev("echo $NIX_PATH")
+          nix_path = dev("echo $NIX_PATH").strip()
+          assert nix_path == "nixpkgs=flake:nixpkgs", nix_path
+          # I-532: no channels anywhere, so nix-shell has nothing to warn about.
+          assert "channels" not in nix_path, nix_path
+          guest.fail("sudo -H -u dev bash -lc 'command -v nix-channel'")
           ver = dev("timeout 120 nix eval --raw nixpkgs#hello.version")
           assert ver.strip() == "${pkgs.hello.version}", ver
+
+      with subtest("I-531: a flake that names nixpkgs without a URL locks offline"):
+          glob = [l for l in reg.splitlines() if l.startswith("global flake:nixpkgs ")]
+          assert len(glob) == 1 and glob[0].split()[2].startswith("github:NixOS/nixpkgs/"), reg
+          guest.succeed("install -d -o dev -g dev /tmp/fl")
+          guest.succeed("echo '{ outputs = { self, nixpkgs }: { v = nixpkgs.lib.version; }; }' > /tmp/fl/flake.nix && chown dev:dev /tmp/fl/flake.nix")
+          dev("cd /tmp/fl && timeout 120 nix --offline flake lock")
+          locked = json.loads(dev("cat /tmp/fl/flake.lock"))["nodes"]["nixpkgs"]["locked"]
+          assert locked["type"] == "github" and locked["owner"] == "NixOS" and locked["repo"] == "nixpkgs", locked
+          assert glob[0].split()[2].startswith("github:NixOS/nixpkgs/" + locked["rev"]), (glob, locked)
+
+      with subtest("I-530: dev is a trusted nix user"):
+          info = dev("nix store info")
+          assert "Trusted: 1" in info, info
+
+      with subtest("I-534: man pages for what is installed"):
+          for page in ["ls", "git", "tmux", "nix"]:
+              dev(f"man -w {page}")
 
       with subtest("I-219: nix-locate maps a binary to its attribute"):
           attrs = dev("nix-locate --minimal --no-group --type x --type s --whole-name --at-root /bin/cowsay")
@@ -683,6 +1218,39 @@ in
           assert "reposenosuchcommand: command not found" in out, out
           assert "nixpkgs#" not in out, out
           assert "status=127" in out, out
+
+      with subtest("I-516: an agent's bash -c gets the hint; a script file and sh do not"):
+          # BASH_ENV is what an agent's environment carries (env.nix); sudo
+          # drops it, so it is set again here.
+          agent = "sudo -H -u dev env BASH_ENV=/etc/repose/bash-env.sh"
+          out = guest.succeed(agent + " bash -c 'cowsay hi; echo status=$?' 2>&1")
+          print(out)
+          assert "  nix profile add nixpkgs#cowsay  install it on this machine" in out, out
+          assert "status=127" in out, out
+          guest.succeed("printf 'cowsay hi\\necho status=$?\\n' > /tmp/cnf-script.sh && chmod 0755 /tmp/cnf-script.sh")
+          out = guest.succeed(agent + " bash /tmp/cnf-script.sh 2>&1")
+          assert "nixpkgs#" not in out and "status=127" in out, out
+          out = guest.succeed(agent + " sh -c 'cowsay hi; echo status=$?' 2>&1")
+          assert "nixpkgs#" not in out and "status=127" in out, out
+
+      with subtest("I-517: package managers, pip and cron get their own hint; no test attributes"):
+          out = guest.succeed("sudo -H -u dev bash -ic 'apt-get install jq' 2>&1 || true")
+          print(out)
+          lines = [l for l in out.splitlines() if l.strip()]
+          i = lines.index("apt-get: command not found")
+          assert lines[i + 1] == "  nix profile add nixpkgs#NAME  install a package on this machine", out
+          assert lines[i + 2] == "  repose config add NAME        keep it on every rebuild (run this on your laptop)", out
+          assert "nixpkgs#apt" not in out, out
+          out = guest.succeed("sudo -H -u dev bash -ic 'pip install requests' 2>&1 || true")
+          print(out)
+          assert "python3 -m venv .venv" in out and "uv tool install NAME" in out, out
+          assert "Packages.pip" not in out, out
+          out = guest.succeed("sudo -H -u dev bash -ic crontab 2>&1 || true")
+          assert "/docs/machine#scheduled-jobs" in out and "mcron" not in out, out
+          # vim is neovim now (I-514), so the handler is asked directly.
+          out = guest.succeed("sudo -H -u dev bash -lc 'repose-command-not-found vim' 2>&1 || true")
+          print(out)
+          assert "tests." not in out, out
 
       with subtest("I-219: a command being installed says so"):
           guest.succeed("echo cowsay > /run/user/1000/repose-installing && chown dev:dev /run/user/1000/repose-installing")
@@ -719,6 +1287,7 @@ in
 
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
 
       # `repose run` reaches the guest over SSH and starts an agent with
@@ -964,6 +1533,33 @@ in
           print(guest.succeed("tail -n 12 /home/dev/.repose/tools-install.log"))
           assert guest.succeed("sudo -H -u dev bash -lc 'greet'").strip() == "greetings"
 
+      with subtest("I-522: a cargo tool gets rustup a default toolchain first"):
+          # Stand-ins ahead of rustup's proxies on the login PATH: rustup
+          # has no default until `default stable`, and cargo fails without
+          # one, as the real ones do.
+          guest.succeed("""sudo -H -u dev sh -c 'mkdir -p /home/dev/.local/bin && cd /home/dev/.local/bin && cat > rustup <<"EOF"
+      #!/bin/sh
+      echo "rustup $*" >> /tmp/rustup-calls
+      case "$1 $2" in
+        "show active-toolchain") test -f /tmp/rustup-default ;;
+        "toolchain install") : > /tmp/rustup-stable ;;
+        "default stable") test -f /tmp/rustup-stable && : > /tmp/rustup-default ;;
+      esac
+      EOF
+      cat > cargo <<"EOF"
+      #!/bin/sh
+      test -f /tmp/rustup-default || { echo "error: no default is configured" >&2; exit 1; }
+      printf "#!/bin/sh\\necho crate ok\\n" > /home/dev/.local/bin/fake-crate && chmod +x /home/dev/.local/bin/fake-crate
+      EOF
+      chmod +x rustup cargo'""")
+          guest.succeed("""sudo -H -u dev sh -c 'printf "%s" "{\\"hash\\":\\"cargo-1\\",\\"items\\":[{\\"name\\":\\"fake-crate\\",\\"manager\\":\\"cargo\\",\\"pkg\\":\\"fake-crate\\",\\"bins\\":[\\"fake-crate\\"]}]}" > /home/dev/.repose/tools-wanted.json'""")
+          guest.succeed("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 REPOSE_TOOLS_DELAY=0 bash -lc 'repose-tools-install run'")
+          calls = guest.succeed("cat /tmp/rustup-calls")
+          assert "rustup toolchain install stable --profile minimal\nrustup default stable" in calls, calls
+          assert guest.succeed("sudo -H -u dev bash -lc fake-crate").strip() == "crate ok"
+          assert "rustup: stable (minimal profile) is the default toolchain" in guest.succeed("cat /home/dev/.repose/tools-install.log")
+          guest.succeed("rm /home/dev/.local/bin/rustup /home/dev/.local/bin/cargo /home/dev/.local/bin/fake-crate /home/dev/.repose/tools-wanted.json")
+
       with subtest("I-417: a boot sets the old /tmp aside in one rename and deletes it after"):
           guest.succeed("sudo -u dev mkdir -p /tmp/stale && sudo -u dev sh -c 'for i in $(seq 2000); do : > /tmp/stale/f$i; done'")
           guest.shutdown()
@@ -1056,6 +1652,22 @@ in
           out = dev("python3 -c 'import ssl, sqlite3, sys; print(sys.executable)'")
           assert out.strip() == "/run/current-system/sw/bin/python3", out
 
+      with subtest("I-523: pipx uses the nix-ld python3"):
+          assert dev("echo -n $PIPX_DEFAULT_PYTHON") == "/run/current-system/sw/bin/python3"
+
+      with subtest("I-521: /bin/bash and /usr/bin/python3 scripts run, /etc/ssl/cert.pem is the CA bundle"):
+          guest.succeed("install -d -o dev -g dev /tmp/sb")
+          guest.succeed("printf '#!/bin/bash\\necho \"bash $BASH_VERSION\"\\n' > /tmp/sb/x.sh")
+          guest.succeed("printf '#!/usr/bin/python3\\nimport sys\\nprint(sys.executable)\\n' > /tmp/sb/p.py")
+          guest.succeed("printf 'SHELL := /bin/bash\\nall:\\n\\t@echo make $$BASH_VERSION\\n' > /tmp/sb/Makefile")
+          guest.succeed("chmod +x /tmp/sb/x.sh /tmp/sb/p.py && chown -R dev:dev /tmp/sb")
+          assert dev("/tmp/sb/x.sh").startswith("bash 5."), "#!/bin/bash"
+          assert dev("/tmp/sb/p.py").strip() == "/usr/bin/python3", "#!/usr/bin/python3"
+          assert dev("cd /tmp/sb && make -s").startswith("make 5."), "SHELL := /bin/bash"
+          dev("/usr/bin/python -c 'import ssl' && /usr/bin/bash -c true")
+          dev("test -x /usr/bin/perl || ! test -e /run/current-system/sw/bin/perl")
+          guest.succeed("test -e /etc/ssl/cert.pem && cmp /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt")
+
       with subtest("I-228: pkg-config finds the common system libraries"):
           out = dev("pkg-config --modversion openssl zlib sqlite3 libffi")
           assert len(out.split()) == 4, out
@@ -1087,6 +1699,15 @@ in
           subnet = guest.succeed("docker network inspect t -f '{{(index .IPAM.Config 0).Subnet}}'").strip()
           assert subnet.startswith("172.2") and int(subnet.split(".")[1]) in range(20, 24), subnet
           guest.succeed("docker compose version")
+      with subtest("I-536: containers outlive dockerd"):
+          assert guest.succeed("docker info -f '{{.LiveRestoreEnabled}}'").strip() == "true"
+      with subtest("I-537: containers resolve through resolved on the bridge's gateway"):
+          guest.succeed("docker run --name dns repose-hello:test")
+          path = guest.succeed("docker inspect -f '{{.ResolvConfPath}}' dns").strip()
+          conf = guest.succeed(f"cat {path}")
+          assert "nameserver 172.20.0.1" in conf, conf
+          assert "172.20.0.1:53 " in guest.succeed("ss -Hlun"), "no resolved stub on 172.20.0.1"
+          guest.succeed("docker rm dns")
     '';
   };
 
@@ -1112,9 +1733,9 @@ in
 
       reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
 
-      def mcp(server, *calls):
-          """Start the registered MCP server as dev and make the calls."""
-          e = reg[server]
+      def mcp(server, *calls, entry=None):
+          """Start the registered MCP server (or entry) as dev and make the calls."""
+          e = entry or reg[server]
           argv = [e["command"]] + e["args"] + ["--"]
           for name, args in calls:
               argv += [name, json.dumps(args)]
@@ -1216,6 +1837,21 @@ in
       with subtest("chrome-devtools MCP sees the same tab"):
           out = mcp("chrome-devtools", ("list_pages", {}))
           assert "magenta.html" in out, out
+
+      with subtest("each agent's own resolved config drives the browser (I-553)"):
+          def dev_json(cmd):
+              return json.loads(guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}"))
+          cx = dev_json("cd /tmp && codex mcp get playwright --json")["transport"]
+          oc = dev_json("cd /tmp && opencode debug config")["mcp"]["playwright"]["command"]
+          gm = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))["mcpServers"]["playwright"]
+          for agent, e in {
+              "codex": {"command": cx["command"], "args": cx["args"]},
+              "opencode": {"command": oc[0], "args": oc[1:]},
+              "gemini": gm,
+          }.items():
+              out = mcp("playwright", ("browser_navigate", {"url": page + "?" + agent}), entry=e)
+              assert "magenta.html?" + agent in out, (agent, out)
+              print(agent, [l for l in out.splitlines() if "Title" in l][:1])
 
       with subtest("software rendering: WebGL works, no GPU process relaunch loop"):
           out = mcp("playwright", ("browser_evaluate", {"function": "() => 'webgl=' + !!document.createElement('canvas').getContext('webgl')"}))
@@ -1523,6 +2159,10 @@ in
           }, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
           assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
+          # I-553: the platform MCP servers beside it; Codex gets them in
+          # the user file instead, so /etc/codex holds no mcp_servers.
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          assert set(oc["mcp"]) == set(reg) and not any("enabled" in v for v in oc["mcp"].values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
           assert "${pkgs.playwright-driver.version}" in guide and "@playwrightVersion@" not in guide, guide
@@ -1556,8 +2196,14 @@ in
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
               "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
               "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini -p hi"),
-              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "pi --provider fake --model m -p hi"),
+              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "env PATH=/tmp/pishim:$PATH pi --provider fake --model m -p hi"),
           }
+          # I-554: pi starts both platform servers, seen by wrappers on its
+          # PATH that log each start and exec the real command (the
+          # registry names them by name, not by path).
+          for b in ["playwright-mcp", "chrome-devtools-mcp"]:
+              real = dev(f"command -v {b}").strip()
+              dev(f"mkdir -p /tmp/pishim && printf '#!/bin/sh\\necho {b} >> /tmp/pi-mcp-starts\\nexec {real} \"$@\"\\n' > /tmp/pishim/{b} && chmod +x /tmp/pishim/{b}")
           sentinel = "This is a repose machine"
           for agent, (mark, env, cmd) in runs.items():
               guest.succeed("rm -rf /tmp/caps/*")
@@ -1565,6 +2211,17 @@ in
               bodies = guest.succeed("cat /tmp/caps/* 2>/dev/null || true")
               assert sentinel in bodies, f"{agent}: the guide is not in what it sent: {bodies[:3000]}"
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
+              # I-553, I-554: the platform browser tools reach the model.
+              # pi lists codemode servers by name instead of their tools.
+              # Codex (code mode) names no MCP tool in the request; its
+              # registration is checked with codex mcp list above
+              # (DECISIONS I-553).
+              tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              if tool:
+                  assert tool in bodies, f"{agent}: {tool} is not in what it sent"
+              if agent == "pi":
+                  starts = guest.succeed("cat /tmp/pi-mcp-starts 2>/dev/null || true").split()
+                  assert {"playwright-mcp", "chrome-devtools-mcp"} <= set(starts), f"pi started {starts}"
           after = dev("cd ~ && sha256sum " + " ".join(files))
           assert before == after, (before, after)
 
@@ -1649,6 +2306,7 @@ in
       guest.succeed("printf 'TZ=UTC\\nREPOSE_PROJECT=todo-app\\n' > /etc/repose/env")
       guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
       guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
       guest.wait_until_succeeds("sudo -H -u dev tmux ls | grep -q '^todo-app:'", timeout=60)
       guest.succeed("ssh-keygen -q -t ed25519 -N ''' -f /root/ca && ssh-keygen -q -t ed25519 -N ''' -f /root/user")
       guest.succeed("install -m 0644 /root/ca.pub /run/repose/user_ca.pub")

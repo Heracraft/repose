@@ -193,6 +193,8 @@ unsupported at first, `repose mcp forward` planned. Notifications: platform
 hooks for every agent plus each agent's own features.** *Rejected:* a longer
 agent list (unpackaged tools become packages you maintain); a laptop Chrome
 bridge first (only works while the laptop is open, the case being escaped).
+*Amended by I-557:* `repose mcp forward` is built, through a guest shim
+that answers for an absent laptop, in place of the `mcp-proxy` plan.
 
 **R3-19. Agents come from a platform-owned overlay bumped on a schedule, not
 nixpkgs.** *Why:* nixpkgs lags Claude Code by weeks and Gemini CLI by months;
@@ -3597,6 +3599,9 @@ Completion offers the account's slugs for the argument and for
 `--project` (the api with a two-second limit, else the cached slugs),
 and fixed values for `--agent`, `--size`, `--kind`.
 `TestPositionalProject`, `TestRunRefusesAPromptThatIsAProjectName`.
+*Amended by I-557:* `repose mcp forward` keeps `--project` as well; its
+arguments are MCP server names, and a name and a PROJECT cannot share
+positions without a guess.
 
 **I-164. A snapshot reads the blocks the filesystem uses, not the whole
 volume.** (destroy-restore, 03, 2026-09-23; owner's `repose destroy izma`,
@@ -4345,6 +4350,17 @@ guest's PATH. `core.excludesFile` travels as its contents. Replaces the
 whole file (laptop keychains, 1Password signers and https-to-ssh rewrites
 break the guest); signing through the forwarded agent (gone when the
 laptop closes, which is when agents commit).
+*Amended 2026-10-05 (base-git-gpg, I-525):* every carried value git runs
+as a command is checked against the guest's PATH, not only `core.pager`
+and `core.editor`: also `sequence.editor`, `interactive.diffFilter`,
+`diff.external`, `diff.<driver>.textconv` and `.command`,
+`merge.<driver>.driver`, and `pager.<cmd>` when its value is not a git
+boolean. A laptop's `interactive.diffFilter = delta --color-only` with no
+delta on the machine made every `git add -p` fail ("mismatched output
+from interactive.diffFilter"). `filter.<x>.clean`/`.smudge` stay
+unchecked on purpose: with `filter.<x>.required` a missing filter fails
+the add, where dropping it would commit what git-crypt would have
+encrypted.
 
 **I-196. `run` and `attach` carry the laptop's Claude Code config, and
 merge `settings.json`.** Carried: `~/.claude/CLAUDE.md`, `settings.json`,
@@ -4366,6 +4382,9 @@ I-196 carries config, and the Claude login question is open (proposal item
 contradict themselves on the path and on whether managed hooks combine
 with user hooks); a laptop-wins overwrite (guest "don't ask again" and
 `/model` write to the same file).
+*Amended by I-556:* the `mcpServers` of `~/.claude.json` (user scope and
+the run's repository under `projects`) now travel, templated; every other
+key of that file stays excluded.
 
 **I-197. Gitignored `.env` files travel over SSH at `run`.** This reverses
 the rule in `features/sync-at-launch.md` that ignored files never travel.
@@ -4406,6 +4425,10 @@ server before an agent. `repose status` lists listening processes with
 their age and memory, and guestd's `oom` warning names what was killed.
 *Rejected:* idle reaping (it eventually kills the one server someone
 needed).
+*Made during implementation* (base-hostd-guestd, 2026-10-06): "agent
+window" covers every pane of the session; guestd finds agents with
+`tmux list-panes -s`, since `list-windows` reports only each window's
+active pane and left claude in a split pane at 0.
 
 **I-201. `repose cp`.** `repose cp <project>:<path> <local>` and the
 reverse, a thin wrapper over scp with the project resolved as other
@@ -4632,6 +4655,11 @@ list of the paths the sync wrote (an agent's edit to one of them would
 look like the sync's); `git stash create` (it leaves untracked files
 out); keeping the fingerprint on the laptop (wrong after a run from a
 second laptop, as I-206 found for the carry markers).
+*Amended 2026-10-05 (base-git-gpg, I-525):* the guest has git-lfs now,
+so the sync's shell exports `GIT_LFS_SKIP_SMUDGE=1` before any git call:
+a sync's checkout leaves LFS files as pointer files and never downloads
+objects or waits on LFS credentials. `filter.lfs.required=false` stays,
+for guests on an older base and for a project that removes git-lfs.
 
 **I-211. The carry leaves every secret on the laptop, by key as well as
 by file.** (ws15-fixes, 2026-09-23; the conductor's review of workstream
@@ -4776,6 +4804,13 @@ newer `.env` is named once.** (ws/15 live fixes, 2026-09-23)
   then records the new mtime: named once per change, never on every run.
 - *Wording.* The credential notes agree in number ("1 git config entry
   that holds").
+- *Addendum (base-docker-system, 2026-10-05).* resolved's mDNS responder
+  still listened on 0.0.0.0:5353 and [::]:5353 and answered on docker0
+  and every container's veth. The base now sets
+  `services.resolved.settings.Resolve` with `LLMNR = "false"` and
+  `MulticastDNS = "false"` (`services.resolved.llmnr` worked only through
+  a rename shim), and the VM subtest asserts no `:5353` or `:5355` in
+  `ss -Hlun`. The CLI keeps skipping both ports for older bases.
 
 **I-216. The dashboard is developed against the live api and Logto, not
 the fake.** 08-dashboard.md §7 builds cmd/fakeapi and cmd/fake-logto for
@@ -7395,6 +7430,10 @@ hooks, and a shared hook would let an agent in one project run commands
 in every other project of the user. The worst an agent can do with the
 shared file is read the token (it can already, in its own guest) or
 corrupt it, which signs the user out everywhere until the next `/login`.
+*Amended by I-556:* Claude Code also keeps MCP OAuth tokens in this file
+(`mcpOAuth`), so a `/mcp` sign-in on one machine is in the shared file,
+and an agent on any of the user's machines can read it, as it can the
+Claude login.
 
 First-run onboarding (theme, then "Select login method") shows even when
 the shared file holds a valid login and does not skip on Esc, so
@@ -12096,6 +12135,20 @@ run in any `/proc/*/cmdline`; VM subtests in `nix/guest/tests/guestd.nix` (a
 `systemd-run` parent as dev that sets its own value, then `WriteSecrets`)
 and `nix/guest/tests/default.nix` (a tmux window opened over ssh, and a
 login shell).
+*Made during implementation* (base-hostd-guestd, 2026-10-06): a guest whose
+secrets an older guestd wrote had no `secrets.refresh` after the live
+switch onto this base, so the loader did nothing, and the switch restarted
+the tmux session before guestd, so `tmux new-window` (how `repose run`
+starts agents) gave agents no secrets until the next write. guestd now
+rebuilds the refresh file at start, before serving, when it is missing
+and `/run/repose/secrets/` holds files: the set is read from those files
+and goes through the same path as a write (a new generation, no earlier
+values, then `secrets.refresh` and `secrets.env`), then to tmux. It does
+nothing when the refresh file exists. `/etc/profile.d/repose.sh` keeps
+its `secrets.env` fallback, and the loader gets none: the old
+`secrets.env` has no `REPOSE_ENV_GEN`, so a loader that sourced it would
+override an `.envrc` on every command, the first version's bug. Test:
+`TestRestoreRebuildsTheRefreshFileAfterALiveSwitch`.
 
 **I-476. Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin.**
 (secrets-env, 2026-10-04) Loading secrets alone cannot take away a
@@ -12746,6 +12799,10 @@ a guest (the store's files are owned by `nobody`); `[remote]
 manage_ssh_config = false` avoids it and was checked from kanali.
 *Revisit when:* herdr can run a matching server from a binary on PATH
 across versions, or users ask for `repose status` to see herdr panes.
+*Superseded by I-501 (2026-10-05): both premises failed the live test;
+herdr ships in the base, a boot unit starts it on projects that choose
+it, and guestd reads its socket.*
+
 **I-487. The guest's Codex is a complete Codex package.** (2026-10-04)
 On base 2026.10.04.1, on a new project and on kanali, `codex` stopped at
 "this CLI has no complete local package; install a packaged Codex CLI or
@@ -13204,3 +13261,1939 @@ installed") and says to run `npx playwright install chromium` or
 another release or Firefox. `/docs/machine` says the same with the
 version written out, which moves by hand with a nixpkgs bump of
 playwright-driver.
+**I-553. Platform MCP servers reach every agent through the agent's own layer beneath the user's file.**
+(mcp-platform, 2026-10-06; extends I-246) The machine guide tells every
+agent to drive the browser with `playwright` and `chrome-devtools`, and
+only Claude Code had them. Each agent now gets the two where it has a
+layer the user's own file overrides, with `command` and `args` only, so
+a user's field-level override stays clean. Claude Code keeps the
+`~/.claude.json` merge from `/etc/repose/mcp.json` (I-246), because its
+`managed-mcp.json` takes exclusive control: `claude mcp add` fails with
+"enterprise MCP configuration is active" and user servers drop out of
+`claude mcp list`. opencode gets `mcp.NAME = {type: "local", command:
+[...]}` in `/etc/opencode/opencode.json`, never `enabled`, so the user's
+`enabled: false` turns one off. Gemini CLI gets `mcpServers` in
+`/etc/gemini-cli/system-defaults.json`, a copied root 0644 file in a root
+0755 directory, since Gemini skips a system file whose resolved directory
+is not root-owned or is group-writable, which a store symlink is. The
+same file turns Gemini's folder trust off (`security.folderTrust.enabled:
+false`, owner sign-off O1): in a folder it was not told to trust, Gemini
+disables every MCP server, headless runs included, and agents on the
+machine already run without prompts (I-250); a per-checkout
+`trustedFolders.json` entry would miss each folder an agent changes into.
+Codex does not use `/etc/codex/config.toml` for these: a user table of
+the same name holding `url` beside a system-layer `command` stops every
+`codex` command ("url is not supported for stdio"), and `codex mcp add`
+copies every system-layer server into the user file anyway. Instead
+`repose-agent-setup codex` appends an `[mcp_servers.NAME]` table to
+`~/.codex/config.toml` for each server the parsed file lacks, judged by
+Python's `tomllib` (as strict as Codex's parser: `yj` accepted an inline
+`mcp_servers` table extended by a later header, which Codex refuses),
+re-parses the result before the rename, and holds `flock
+~/.repose/mcp/.lock` so parallel agent starts cannot write a duplicate
+table. A table under that name, the user's own or one they changed, stays
+as it is; a file that does not parse is left for Codex to report. A later
+base that changes the args does not update a table written earlier;
+unit B's `repose-mcp sync codex` owns that by value. Evidence, run on
+kanali with the rendered files and the pinned binaries in temp homes
+(opencode and Gemini through a private mount namespace over `/etc` and
+`GEMINI_CLI_SYSTEM_DEFAULTS_PATH`): `codex mcp list --json` shows both
+enabled with the registry's args, a user `enabled = false` gives
+`"enabled": false`, a user `url` table stays the user's; `opencode mcp
+list` shows both `connected`, `playwright disabled` under the user's
+`enabled: false`; `gemini mcp list` in a fresh folder shows both
+`Connected` with no trust warning, and `Blocked` under `mcp.excluded`.
+The VM subtests in guest-base, guest-agent-guide and guest-desktop need
+the dev box.
+Gap fixes on the same branch: the guest-agent-guide capture run asserts
+that each agent's first request names the browser tool, and leaves Codex
+out of that assertion: Codex 0.157.1 in code mode sends the model no MCP
+tool by name (its tools reach the model through the code-mode runtime),
+so the request body has nothing to match, and Codex's registration is
+asserted from `codex mcp list --json` in guest-base instead. The guide
+tells agents they have the browser tools, "Codex not while
+`~/.codex/config.toml` is a symlink", the one case where an agent lacks
+them (I-555). Evidence from a run of the real binaries on kanali (not the
+VM) against `repose-mcp sync` output from this branch, in a temp HOME,
+with a probe stdio server that logs whether it received its secret:
+Claude Code 2.1.283 `claude mcp list` shows `playwright`,
+`chrome-devtools` and the carried probe Connected, and the probe got the
+secret through `${PROBE_TOKEN}`; Codex 0.157.1 `codex mcp list` shows all
+of them, and `codex exec` started `repose-mcp run probe`, which gave the
+probe the real value from the secret file (Codex strips the environment,
+so a `REPOSE_SECRETS_DIR` set outside does not reach the launcher; on a
+guest the default `/run/repose/secrets` applies); opencode 1.18.34 reads
+`~/.config/opencode/config.json` and the probe connected with the secret;
+Gemini CLI 0.61.0 loads `~/.gemini/extensions/repose-mcp` and the probe
+connected with the secret, once its system-defaults file with folder
+trust off sat in a root-owned directory that is not world-writable (it
+rejected one under `/var/tmp`; the guest's `/etc` qualifies); pi 1.0.4
+with the branch's `pi-extension.js` registered all four servers (named as
+`mcp__*` code-mode servers in the request to a fake model) and started
+the probe with the secret.
+
+**I-554. pi moves to 1.0.4 for built-in MCP.**
+(mcp-platform, 2026-10-06) pi 0.87.1 has no MCP. 0.99 added it, with
+`pi.registerMcpServer(name, config)` for extensions taking the
+`mcp.json` entry shape, and a `~/.pi/agent/mcp.json` entry of the same
+name taking precedence. 1.0.4 rather than 1.0.3 because it fixes MCP
+sessions that left a connecting server's transport open and `--tools`
+removing MCP tools; the GitHub release asset `pi-linux-x64.tar.gz` keeps
+the layout `pi-coding-agent.nix` installs (the npm package moved to
+`@earendil-works/pi-coding-agent`; the overlay never used npm). The
+guide extension (`/etc/repose/pi-extension.js`, I-243) registers each
+server in `/etc/repose/mcp.json`, and in `~/.repose/mcp/agents/pi.json`
+once unit B writes it. Both checks are its own: an older pi without
+`registerMcpServer` returns before registering, and each call sits in
+its own try, since an invalid name or config throws and must not cost
+the guide or the other servers. `pi mcp list` does not load extensions,
+so it does not show these two; `/mcp` in a session does. The off switch
+is `{"mcpServers": {"playwright": {"command": "playwright-mcp",
+"enabled": false}}}` in `~/.pi/agent/mcp.json`: an entry with `enabled`
+alone is rejected for lacking `command`. Evidence on kanali: pi 1.0.4
+with the guide extension and a fake OpenAI-compatible model sent a
+request whose system prompt holds the guide and `<mcp_servers>` listing
+`mcp__chrome_devtools` and `mcp__playwright` (codemode exposure); with
+the off-switch entry the list holds `mcp__chrome_devtools` alone; the
+`before_agent_start` hook still receives `systemPromptOptions.sections`.
+Gap fixes on the same branch: the guest-agent-guide capture run also
+proves pi starts both platform servers, through wrappers on its `PATH`
+that log each start and exec the real `playwright-mcp` and
+`chrome-devtools-mcp` (the registry names them by command name), instead
+of a grep for `registerMcpServer`.
+
+**I-555. repose keeps one MCP list per machine and renders it into each agent's own config.**
+(mcp-registry, 2026-10-06; amends I-246) The carry of the laptop's
+Claude Code servers and `repose mcp forward` each have to reach five
+agents with three ways of handling secrets. Writing agent files from the
+carry would put a second unlocked writer on `~/.claude.json` and spread
+format translation over the CLI and the guest. Instead the carry writes
+`~/.repose/mcp/laptop.json`, the forward writes `~/.repose/mcp/forward/NAME.json`,
+and `repose-mcp sync AGENT`, which `repose-agent-setup` runs at each agent
+start, renders them with the platform's `/etc/repose/mcp.json` into
+`~/.claude.json`, `~/.codex/config.toml`, a Gemini CLI extension named
+`repose-mcp`, `~/.config/opencode/config.json` and
+`~/.repose/mcp/agents/pi.json`. Ownership is judged by value, I-246's
+rule for every agent: an entry is repose's while it equals what
+`rendered.json` records, what sync would write now, or a
+`repose_retired` value; anything else under the name is the user's and
+stays. Codex passes stdio servers a fixed environment allowlist and
+expands nothing, so its carried stdio servers start through `repose-mcp
+run NAME`, which fills `${NAME}` from `/run/repose/secrets` and execs the
+real command. Claude Code, Gemini CLI, opencode (as `{env:NAME}`) and pi
+expand references themselves (the MCP design's critic run confirmed each
+on the pinned versions) and get the server's own shape; only a reference
+in the command or arguments, or a `${NAME:-default}`, sends theirs through
+the launcher. Codex also gets the platform servers this way, as
+user-file tables owned by value, because a user's same-name `url` table
+beside a system-layer stdio entry stops Codex from loading at all.
+opencode's entries go to `config.json`, which opencode loads beneath the
+user's `opencode.json`, and not through `OPENCODE_CONFIG`, which
+outranks the user's file; opencode merges a same-name server there field
+by field (opencode 1.18.34, `opencode debug config`), so sync renders no
+name the user's `opencode.json` or `opencode.jsonc` defines. The
+launcher's server env replaces an inherited variable of the same name
+rather than adding a second copy, which glibc's getenv, and so Node,
+would ignore. A missing command is reported as written, since its
+expansion may hold a secret. A Codex name repose cannot edit warns once
+per value (`held` in `rendered.json`), since sync runs at every start.
+Writes to `~/.claude.json` take Claude Code's
+own `~/.claude.json.lock` (a directory, proper-lockfile), held under
+5 s, taken over after 10 s as Claude Code does, and agent-setup's other
+writes to the file take it too; every sync runs under `flock
+~/.repose/mcp/.lock`, since agents start in parallel and two appends of
+one Codex table make Codex refuse its config. On a base whose
+`repose-hook` is the shell implementation there is no `repose-mcp`, and
+agent-setup keeps merging the platform servers into `~/.claude.json`
+itself. `repose-mcp status --json` reports each server's source, agents
+and needs for `repose mcp list`. `repose-mcp NAME` and `repose-mcp hold`
+route to `internal/mcpshim`, which in this base exits 1 with
+"forwarding is not built in this base"; the forward replaces it (I-557).
+Not covered here: the guest-base VM subtest needs the dev box. In it the
+probe server refuses to start unless its env and argument hash to the
+secret's digest, so `claude`, `gemini` and `opencode mcp list` showing it
+connected means each agent's own launch delivered the secret; Codex and
+pi list without starting servers, so the test runs the command each one's
+config names and calls the tool. A tool call through each agent itself
+needs a logged-in model and is left to the dev-box run. At integration
+with I-553: on a base with `repose-mcp`, `repose-agent-setup codex` writes
+only `notify` under the flock, releases it, and runs sync, which writes
+the platform tables; its own append is the fallback for a base without
+`repose-mcp`. A `~/.codex/config.toml` that is a symlink is edited by
+neither, since the rename would replace the link; sync still records
+what Codex would get in `agents/codex.json`. The CLI's folder trust
+write (I-486, extended by I-556) takes the same `~/.claude.json.lock`,
+so all three repose writers of the file hold Claude Code's lock.
+*Amended by I-558:* the status's `from` is `repose` for the platform and
+`machine` for a server the user added, in place of `machine` and `yours`.
+Review fixes on the same branch: a root `mcp_servers = { ... }` inline
+table takes no appended `[mcp_servers.NAME]` (Codex refuses that file,
+though BurntSushi/toml accepts it), so each new name is held and warned
+once. opencode reads comments and trailing commas in its `.json` files
+(1.18.34), so the same-name check reads `opencode.json` that way, and a
+commented `config.json` is left as written with one warning per held
+change. A `~/.codex/config.toml` symlink gets `notify` through the link
+when its target is a writable file; for a read-only target
+(home-manager's store) agent-setup names the missing `notify` on stderr.
+Gap fixes on the same branch: `repose-mcp run NAME` refuses to start a
+server that references a secret without a default that neither
+`/run/repose/secrets` nor the environment holds, exit 1 with one line
+naming it and `repose secrets set NAME`: started anyway, the server sent
+the literal `${LINEAR_TOKEN}` to its service as a token and the user saw
+that service's auth error (found by running the real Codex against the
+launcher). `${NAME:-default}` is unchanged. A registry file that does not
+parse, or whose `version` is newer than the base reads, costs only its
+own servers: before, one bad `laptop.json` or `forward/NAME.json` stopped
+every render, platform servers included, and since agent-setup no longer
+merges `/etc/repose/mcp.json` itself on a base with `repose-mcp`, a fresh
+Claude Code or Codex lost the browser tools. Sync names each such file on
+stderr, status lists it under `problems`, and a newer `rendered.json`
+reads as missing (only an entry equal to what sync writes now is then
+repose's). `repose-mcp status` names why an agent lacks a server sync
+meant to give it when the cause is a file sync leaves alone: a symlinked
+`~/.codex/config.toml`, a Codex name in a form repose does not edit, a
+commented opencode `config.json`. agent-setup writes `notify` into a
+symlinked Codex config's target by temp file and rename beside it, so a
+full disk or a kill cannot leave the user's dotfile half written, and
+names a target it cannot write once per target
+(`~/.repose/mcp/codex-link-warned`), not at every Codex start. Evidence:
+the real-binary run recorded in I-553.
+*Amended on the same branch (launcher for every agent):* a carried stdio
+server that references a secret now starts through `repose-mcp run` for
+Claude Code, Gemini CLI, opencode and pi as well as Codex. Running the
+real agents showed why: claude 2.1.283 started a stdio server whose env
+was `PROBE_TOKEN=${MISSING_TOKEN}` with the literal text, and a server
+started that way sends `${MISSING_TOKEN}` to its service as the token;
+`run` refuses that start with one line. The agents also fill `${NAME}`
+from their own environment, fixed when the agent started, so a secret
+set later never reached them; `run` reads `/run/repose/secrets` at each
+server start. The rule: a `${X:-default}`, or a `${X}` whose X is not
+one the machine always sets (`HOME`, `USER`, `PATH`, `XDG_*` and the
+rest of `environmentName`), in the command, an argument or an env value.
+A server without one keeps its own shape; Gemini CLI, opencode and pi
+still take the launcher for any reference in the command or arguments.
+Claude Code's entry is `{"type":"stdio","command":"repose-mcp","args":
+["run",NAME]}`, and a project entry adds its checkout, `run NAME
+CHECKOUT`, since two checkouts may each have a server of that name;
+`run NAME` resolves as before. A carried http, sse or ws server cannot
+go through `run`: while a secret it references without a default is
+missing from `/run/repose/secrets` and the environment, sync leaves it
+out of every agent with the reason `needs the secret X`, since the agent
+would send `Bearer ${X}` to the service. Sync runs at each agent start,
+so the server appears at the first start after the secret is set; the
+registry reads the secrets directory from `Paths` for this. `status`
+shows such a row with no agents and the state `needs X`. A machine an
+earlier base synced holds the native shapes that base wrote; sync
+renders that shape again for each carried server whose entry changed
+(`Rendered.Legacy`, per checkout for Claude Code's projects) and owns it
+by value like a retired platform value, so the entry is replaced even
+without `rendered.json`, while an entry the user edited stays theirs.
+Evidence (claude 2.1.283, opencode 1.18.34, gemini 0.61.0 in a temp
+HOME on kanali, recorded in the commit): `probe` connects through
+`repose-mcp run probe` in all three and the probe logs only `ok`;
+`needy` fails in each without starting, so the probe never saw a
+literal; status shows `needy` as `needs MISSING_TOKEN`. Gemini CLI drops
+`REPOSE_SECRETS_DIR` from a server's environment (its name matches its
+secret filter), which matters only in a harness; a guest uses the
+default `/run/repose/secrets`.
+
+**I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
+with credentials replaced by secret references.** (mcp-carry,
+2026-10-06; amends I-196 and I-278) Users fill Claude Code's MCP list on
+the laptop with `claude mcp add`, and found an empty list on the
+machine: I-196 kept `~/.claude.json` home because its project entries
+are keyed on laptop paths and its values hold tokens. Both can be
+handled. The CLI reads only `mcpServers` (user scope) and
+`projects[<main worktree root>].mcpServers` (local scope, keyed as Claude
+Code keys it, so a linked worktree and a subdirectory find it) from
+`~/.claude.json` or `$CLAUDE_CONFIG_DIR/.claude.json`, with a scanner that
+skips every other value undecoded (a 5 MB file costs about 15 ms). The
+classifier (`internal/cli/carry_mcp.go`; features/agents.md "MCP") drops
+the platform's own servers, leaves behind with a one-word reason those
+that need the laptop (an Apple app, a program, files or an env path on
+the laptop, a URL on loopback, the LAN, `*.local`, `*.ts.net` or
+`100.64/10`, a `headersHelper` or `clientSecretHelper`), rewrites a
+launcher's absolute path to its name and paths under the repository to
+`@@REPOSE_CHECKOUT@@`, and replaces every literal credential with
+`${NAME}` before anything is hashed or packed (I-211). Headers are where
+a server's key goes, so every header value is templated except a short
+list of plain ones (`Accept`, `Content-Type`, `User-Agent` and the like),
+in `headers` and in a `--header "Name: value"` argument (mcp-remote);
+arguments, URL path segments and query values are templated when they
+read like a token on their own (a provider prefix such as `sk-`, or 20
+token characters with a letter and a digit), so a positional key or a
+Zapier-style URL with its secret in the path stays home. Flags are judged
+by their last word (`--api-key`, `--auth`), so `--auth-type oauth` keeps
+its value. An env key keeps its
+own name unless an agent reads that name for its own login
+(`ANTHROPIC_*`, `OPENAI_API_KEY`, `GITHUB_TOKEN` and the like): a secret
+by that name would be in every agent's environment, and Claude Code then
+asks to use the API key, which takes `run`'s prompt and moves the user to
+API billing. Two different laptop values under one name give the second
+its server's prefix, compared in memory, with the number placed after the
+64-character cut. No value reaches the payload, a marker or a line; a
+rotated laptop token sends nothing. The hash leaves out the tools carry's
+bins (the guest's command check filters them), so `run` and `attach`
+compute the same marker.
+
+The guest keeps the list in `~/.repose/mcp/laptop.json` (schema in
+guest-conventions.md, shared with I-555's reader), written by the carry's
+guest script, which replaces the placeholder with the checkout's real
+path, replaces user scope whole and this checkout's project entry only,
+and recomputes `secrets` from every `${NAME}` without a default. The carry
+never writes an agent file; `repose-mcp sync` renders the list at each
+agent start (I-555), so `~/.claude.json` has no new writer and a server
+the user added on the machine under the same name stays theirs. Two
+markers, `claude-mcp` and `claude-mcp-project`; on a base without
+`repose-mcp` the guest writes them with `:old` and the CLI treats both as
+current, so the base line prints once and the file waits for the base
+that reads it. Lines print once per change: the servers left on the
+laptop, the secrets the machine lacks, the commands it lacks, the old
+base. The `mcp` row in `repose secrets choose` (`logins.skip`) sends empty
+scopes, on `attach` as well as `run`. `repose secrets import --mcp` (owner
+decision O4) reads the laptop config again, resolves each templated name
+to its laptop value in memory and sets it through the secrets PUT, the
+one home named secrets have. The carry chose those names, and an env key
+keeps its own (`DATABASE_URL`), which may be a secret the project already
+has for another use: so it asks once before replacing one (`--yes` skips
+the question, a no sets only the others), unlike the file import, whose
+names the user wrote. `--dry-run` lists names, and a FILE argument is
+refused. Secrets belong
+to one project, so a server used in three projects needs it in each.
+
+OAuth servers carry `clientId`, `callbackPort` and the like, never a
+token; `clientSecret` is templated. On the machine Claude Code keeps MCP
+OAuth tokens in `~/.claude/.credentials.json`, the I-278 login share,
+whose text now says so. With `.mcp.json` arriving through the sync,
+Claude Code outside `bypassPermissions` shows "New MCP server found in
+this project" with "continue without" preselected, and `run`'s Enter would
+answer it (seen with 2.1.283): the dialog joins `agentDialogs`, so `run`
+stops typing and says so, and the I-486 trust write copies the laptop's
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
+adding each server the guest answers in neither list: Claude Code writes
+both lists empty into every project it opens, so an empty list is no
+answer. *Rejected:* writing agent configs from the
+carry (a second unlocked writer of `~/.claude.json`, and format
+translation in the CLI); carrying Codex, Gemini CLI and opencode laptop
+configs (owner decision O5; deferred); writing the checkout's
+`.claude/settings.local.json` (it sits in the user's working tree).
+Not covered here: the guest VM test feeding a golden payload to
+`repose-agent-setup` (needs the dev box and I-555's renderer), and an
+OAuth sign-in end to end while attached.
+Review fixes on the same branch: a `NAME=VALUE` argument (docker `-e`,
+`--env=`, `env`) is templated by the env map's rules; a JWT counts as a
+token though it is dotted, and `jwt` joins the secret words for flags,
+env keys and query names; a Windows `cmd /c` wrapper is dropped, and a
+repository path written with backslashes matches the root git gives; an
+absolute command outside the laptop roots (`/bin/bash`, `/usr/bin/ruby`)
+runs by name on the machine and is checked like a bare one. `#mcpold`
+prints only when the laptop has a server to carry. `secrets import
+--mcp` says only that it could not read the servers when
+`~/.claude.json` fails to parse, without the carry's clause about the
+machine.
+Gap fixes on the same branch: the skip reasons a user reads say what to
+fix ("its name has characters other than letters, digits, - and _",
+"type X, which repose does not copy"), and `xcrun` (Xcode's
+`xcrun mcpbridge`) counts as an Apple app. The "Left on your laptop" line
+offers `repose mcp forward` only for servers forward can run (a command
+and a name it takes), naming them when only some can, since forward
+refuses an HTTP server. A name and its reason are cut separately, on a
+rune boundary, so a long non-ASCII name keeps its reason and valid UTF-8.
+A missing command's line names `repose config add PACKAGE`. The guest
+script's extra tool directories come from `REPOSE_TOOL_DIRS` when set,
+so the old-base test hides `repose-mcp` on a host that has it. The VM
+subtest design 3.2.5 asked for now exists: guest-base runs the payload
+this CLI sends for a fixture (`nix/guest/tests/mcp-carry`, kept current
+by `TestMCPCarryGoldenPayload`) and checks `claude mcp list` and `codex
+mcp list --json` after `repose-agent-setup`. Not covered still: the OAuth
+sign-in end to end while attached; the public docs say it needs an
+attach, as the callback's port reaches the laptop only through the
+attach's port forward.
+
+**I-557. `repose mcp forward` runs laptop-bound MCP servers through a
+guest shim that answers for an absent laptop.** (mcp-forward,
+2026-10-06; amends R2-14 and I-155) The carry (I-556) leaves behind the
+servers that need the laptop: an Apple app, a laptop file, a program
+only the laptop has. A forward's whole value is reaching the laptop, and
+the laptop comes and goes, so the guest side must not depend on it.
+`repose mcp forward NAME...` (owner decision O2, option A) runs in the
+foreground until Ctrl-C, like `browser bridge`; `[mcp] forward` and
+`[projects.NAME.mcp] forward` in config.toml do the same beside every
+attach through the session helper, which says nothing on success. No
+`--mcp` flag on `run` or `attach`: the config key does that without
+typing. The command takes names only and the project from the folder or
+`--project` (O6), an exception to I-155. Definitions come from the
+laptop: Claude Code's local scope, its user scope, Claude Desktop
+(macOS), Codex, Gemini CLI, or `-- COMMAND ARGS`; `${VAR}` expands from
+the laptop's environment, so tokens stay there (I-211).
+
+Transport: `ssh MACHINE repose-mcp hold NAME...` on a connection of its
+own, with the session's stdin and stdout carrying small frames (hello,
+open NAME, data, close, ready, gone). The design's `ssh -R` to a guest
+unix socket would make the guest's sshd open `forwarded-streamlocal`
+channels, which the gateway refuses (it relays `forwarded-tcpip` only,
+the reason I-296 rejected the same for the bridge); the session channel
+needs no gateway change and no Windows OpenSSH check. `hold` fills
+`~/.repose/mcp/forward/NAME.json` through the laptop (initialize and
+every `tools/list` page), runs `repose-mcp sync` for the agents already
+rendered on a first registration, and listens on
+`/run/repose/mcp/NAME.sock` (tmpfiles `0700 dev`, socket `0600`). Each
+connection becomes a stream, and the laptop starts one server process per
+stream, so each agent session gets its own, as stdio servers run
+locally; at most 8 per NAME, and a stream's end sends TERM to the
+server's process group, KILL after 2 s. The machine names a server; the
+laptop starts only what its own config says for that name. A newer hold
+of the same NAME rebinds the socket and the older one, seeing the inode
+change, hands over and says so.
+
+Agents start `repose-mcp NAME`, the shim. It answers `initialize` (with
+`capabilities.tools.listChanged`, which opencode needs to listen) and
+`tools/list` from the registration, so an agent's start never waits on
+the laptop and a server forwarded once stays listed. With the socket up
+it replays the agent's initialize to the laptop's server and passes lines
+both ways, sampling and elicitation included. It pings every 10 s and
+the laptop's end answers without the server seeing it; two misses or a
+closed socket mark the laptop away, and each later `tools/call` answers
+`isError` with a line telling the agent to ask the user to run `repose
+mcp forward NAME`, within about 20 s of a laptop going to sleep, where
+sshd alone takes 2 minutes. It retries every 5 s and sends
+`notifications/tools/list_changed` when the tools differ; Codex ignores
+that, so the CLI's line names Codex when the tools changed. The laptop
+prints one line per call, agent and tool name only. `--remove` deletes the
+registration and syncs. *Rejected:* `mcp-proxy` on the laptop (R2-14's
+plan: a Python tool on the laptop, one process shared by every agent, and
+a failed server for an agent that started while the laptop was away); a
+streamable-HTTP front in Go (the same absent-laptop failure plus
+per-session bookkeeping); `ssh -R` to a unix socket (the gateway, above);
+a detached background forward (lending a laptop resource stays visible,
+as the bridge does). Deferred: forwarding loopback HTTP servers on the
+laptop (Figma Dev Mode), where the laptop end becomes an HTTP client and
+the guest side stays as it is. Not covered here: the guest-base VM
+subtest (the real hold with a fake laptop end, every agent listing the
+server, the away answer) is written and evaluated and needs the dev box
+to boot; the live check is a laptop forward called from Codex, then the
+lid closed.
+Review fixes on the same branch: while a connect is in progress (the
+first after initialize, and an immediate one after a socket closes, a
+hand-over included) the shim holds the agent's calls and sends them once
+the link is up; the list methods still answer from the cache, and after
+missed pings calls answer away at once and retries wait 5 s, as above.
+Lines the server sends between the replayed initialize and the link
+going live (roots/list, a log line) reach the agent before anything
+newer, and a link that closed before it went live is not installed.
+hold and the laptop end queue each stream without blocking their frame
+loop, up to 16 MB, and end a stream past that, so one agent or server
+that stops reading holds up no other stream's pings. The laptop end
+refuses a stream id already in use, and prints only names it forwards,
+with control characters dropped from the machine's strings. The laptop
+sends a keepalive frame `A` every 10 s; hold touches
+`/run/repose/mcp/NAME.alive`, and status shows `laptop not connected`
+once that file is 30 s old. A hold from before `A` ignores the frame, and
+a CLI from before it writes no file, so the socket alone decides, as
+before. A first forward's line keeps "Agents already running list it
+after a restart.", which the design's preview dropped: an agent reads
+its MCP config at start, so one already running has no entry for the
+new name and list_changed cannot reach it.
+Gap fixes on the same branch: two attaches to one project used to end
+each other's `[mcp] forward`: the second hold took the socket, the first
+dropped the name for good, and when the second attach ended its hold
+removed the socket while the first attach was still open. An attach's
+forward now runs `repose-mcp hold --wait`, which takes NAME only while no
+other live hold answers on the socket (a `$/repose/holder` probe the hold
+answers itself, so no laptop server starts), and after a takeover waits
+quietly to take it back; so NAME stays forwarded while any attach lives,
+and a foreground `repose mcp forward` still takes it over and hands it
+back when it ends. The shim pings every 5 s, during a connect's replay
+too, and calls the laptop away after 20 s with no answer: a hold that
+still held the socket for a sleeping laptop made each call wait the
+replay's 60 s. A connect that fails marks the laptop away, so calls
+during the retries answer at once. A cached initialize of `null` no
+longer panics the shim, and hold refuses such a result. The laptop end
+treats output that does not start with the hold's hello as no hold (a
+shell startup file that prints), ends the forward with a line that says
+so, and once its frames stop closes the hold's stdin and kills the ssh
+after 3 s, where before it hung silently. SIGHUP and SIGTERM end the
+forward like Ctrl-C, since the servers' own process groups never get
+them. A dropped connection is named once per outage; a reconnect that
+fails asks the api whether the machine still runs and ends with exit 5
+when it stopped, where before the line repeated every 30 s forever. A
+failure on the machine's side (socket, cache file) carries `"where":
+"machine"` in the ready frame and prints as the machine's. A laptop entry
+with a `${VAR}` this shell lacks is refused before the forward starts.
+On Windows `[mcp] forward` does nothing (no session helper), and attach
+now says so in one line. `TestMCPForwardLaptopSilent` stops the forward's
+ssh with SIGSTOP, so nothing closes, and the call gets the away answer
+from missed pings alone (20.0 s); `TestMCPForwardEndToEnd`'s Ctrl-C step
+closes the socket, which its comment now says.
+
+**I-558. `repose mcp list` shows each MCP server on a machine, where it
+came from and which agents have it.** (mcp-list, 2026-10-06; amends
+I-555) Five agents list MCP servers five ways: pi's `mcp list` misses
+extension servers, Codex's starts nothing, and none of them knows which
+servers came from the laptop or why one stayed there. "Why doesn't my
+agent see linear" should take one command, so `repose mcp list
+[PROJECT]` (alias `ls`, the `list` verb `secrets` and `snapshots` use,
+owner decision O3) runs `repose-mcp status --json` over the project's
+SSH connection and prints NAME, FROM, AGENTS and STATE. STATE is the
+status document's `state`, after the checkout path for a row of one
+checkout; AGENTS is `none` for a server the carry left on the laptop.
+Piped, one tab-separated line per server with no header, as `secrets
+list`; `--json` prints the machine's document as it came, so a field a
+newer base adds reaches scripts without a CLI release. The status reads
+files and starts no server. A base without `repose-mcp` (exit 127) gets
+one line saying it predates the list and works after the machine's next
+update.
+
+Vocabulary: I-555's status called the platform `machine` and a server
+the user added on the machine `yours`. Beside `laptop`, `yours` reads as
+"from your laptop", and the design's own carry section called the user's
+entry the machine's. FROM is now `repose` for the platform and `machine` for
+the user's own; no released CLI read the old values, so no old shape is
+kept. A server the carry left on the laptop and that is now forwarded
+shows once, as `forward`, and a forward no agent was synced for yet
+still has a row. *Rejected:* a column per agent (five columns of
+yes/no hide the reason, which is the point); starting each server to
+probe it (slow, and a server that needs the laptop would fail the
+probe for the wrong reason). Not covered here: a live run against a
+machine on a real base.
+Gap fixes on the same branch: names and states pass the CLI's
+`terminalText` before printing, since a cloned repository's `.mcp.json`
+names a row; the status's `problems` print on stderr after the rows; an
+agent that lacks a server says why when a file repose leaves alone is the
+cause. *Not built:* a `codex: restart to see new tools` STATE for a
+forward whose tools changed (critic correction 9). The status reads files
+and cannot tell which running Codex sessions loaded the older list: shown
+whenever the cache changed it would stay wrong after every restart, and
+telling sessions apart means matching Codex processes' start times against
+the cache's, which is guessing. The forward's own line says it at the
+moment the tools change, which is when the user can act.
+**I-497. Solo costs $20 a month with 100 GB of egress for its first three
+months, then $29 with 250 GB, on an account's first subscription.**
+(owner, 2026-10-05: "lets make the $20 now $29 in 3 months a reality",
+then "lets cut the egress donw too"; research in
+`proposals/2026-10-04-solo-at-20.md`, option A) Amends I-289 and I-362
+(the price table stands; this adds an introductory price). While Azure
+credit pays for the hosts, the price barely changes the burn, and $20 is
+the cheapest always-on 8 GB in the market; at $29 after three months the
+plan keeps the price set for the host repose ends up on. The $27 a
+customer gives up is acquisition cost.
+*Mechanics.* `Plan` gains `IntroCents` and `IntroMonths` (Solo: 2000, 3)
+in `plans.go`, the one place prices live; PRICING.md states it in one
+sentence that `TestPlansMatchPricingDoc` parses. Paddle charges it as a
+catalog discount the bootstrap creates once: `flat`, $9 (Solo's price
+minus the introductory one), `recur: true`, `maximum_recurring_intervals:
+3`, `restrict_to` Solo's price, `custom_data.repose =
+intro-solo-2000-3`, found again by that key and that price on a rerun.
+Its id is `PADDLE_DISCOUNT_INTRO`, which `Validate` requires while a plan
+has an introductory price, so a deploy cannot promise $20 and charge $29.
+`POST /billing/checkout` puts `discount_id` on the transaction when the
+plan has an introductory price and the account has no `subscriptions` row
+in any status (`EverSubscribed`): a cancelled or returning account pays
+the full price, so the discount is not renewable by cancelling. Paddle
+starts a recurring discount after the trial, so the three discounted
+charges are the first three after the free week. Paddle applies a catalog
+discount to a checkout only when it is `enabled_for_checkout`; it has an
+auto-generated code that is never shown. Because the discount is
+restricted to Solo's price, an upgrade to Plus or Pro ends it.
+*Record.* Migration 0016 adds `subscriptions.intro` and `intro_until`:
+the webhook sets `intro` when the Paddle subscription's `discount.id` is
+`PADDLE_DISCOUNT_INTRO` and copies its `ends_at`, so code that reads a
+subscription (the gate, the overage tick, `/me`, the admin explain) needs
+no Paddle configuration. `Sub.IntroAt(t)` is true while the offer covers
+`t` (or before Paddle fixes its end). `Sub.ChargeCents(t)` is the
+introductory price then and the plan's price otherwise; the
+`trial_ending` and `payment_failed` emails and `GET /billing` use it, so
+no email says $29 before a $20 charge.
+*Egress.* While the offer runs the allowance is `IntroEgressGB` (Solo:
+100 GB), then the plan's 250 GB. `Sub.PlanFor(periodStart)` is the plan
+with that allowance for a period, and every egress reading uses it: the
+overage line ($0.05 a GB past 100 GB), the hard stop (four times, 400
+GB) in the gate and the tick, `usage.egress_included_gb`, `/me`'s
+`limits.egress_gb`, `repose-admin billing show` and `explain`. A period
+belongs to the offer when it starts before `intro_until`, so the free
+week does too. Why: on Azure 250 GB of egress costs $21.75, more than a
+$20 month, so the worst case lost money on bandwidth alone; prod measured
+28 GB for the whole fleet in two weeks, so 100 GB costs a typical user
+nothing and caps that worst case at $8.70.
+*Contract, additive.* `GET /billing`: `plans[].intro_price_cents`,
+`plans[].intro_months`, `plans[].intro_egress_gb`, `intro_eligible`, and on the subscription
+`next_charge_cents` and `intro_until`. The dashboard's plan card shows
+$20, "For 3 months, then $29 and 250 GB egress" and 100 GB of egress to
+an eligible account; a trial reads
+"Trial. First charge of $20 on DATE; $29 a month from DATE." and an
+active subscription inside the three months "Active. Renews DATE at $20;
+$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with "First 3
+months for new subscribers, then $29 and 250 GB egress", since everyone
+sees it, a returning account too; and the user docs' pricing page carries the sentence under the
+table. The fake api models it, with `intro_used` to make a returning
+account.
+*Not checked here.* Against Paddle's sandbox: that a transaction with a
+catalog discount and a trialing price completes with the discount on the
+subscription, and that the subscription's `discount.ends_at` is the end
+of the third discounted period. Both are the live check before the price
+is shown on a live key. *Rejected:* a separate $20 Solo price that the
+api moves to $29 after three charges (one more job that must run on time
+for every subscriber, and a missed run overcharges nobody but undercharges
+forever); a coupon code the user types (a field in the checkout that
+everyone without the code reads as a missed discount); founder pricing at
+$20 for life (option B: permanent loss-making seats if the hosts are
+still on Azure when the credits end).
+**I-498. The landing drops the headline's bar and the star, and links Feedback in the top bar.**
+(landing-hero-nav, 2026-10-05; owner) The owner judged the blue bar
+under "replicated" ugly: it underlined one word of a two-line serif
+headline and left a stripe ending mid-line. The headline now has no bar;
+the prices keep theirs. The star shape was Gemini's sparkle and read as
+Gemini's logo on a page that is not Gemini's, so it left the shape set
+and the footer's row, which now has seven cells. Gemini CLI's mark in
+the toolchain box is the same sparkle and stays, since there it names
+Gemini CLI. Feedback was linked only in the footer; the top bar now
+carries it after GitHub, and it stays on a phone (GitHub hides below
+640px). `docs/LANDING.md` follows.
+**I-520. pnpm 11's global bin dir is on PATH, and yarn is corepack's.**
+(base-languages, 2026-10-05; amends I-227) Base 2026.10.05 carries
+pnpm 11.27.0, which links `pnpm add -g` bins into `$PNPM_HOME/bin`, not
+`$PNPM_HOME`, and refuses when that dir is not on PATH: `pnpm add -g`
+failed with ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH and `pnpm bin -g` exited 1
+(checked on kanali). I-227's list gains `.local/share/pnpm/bin`, directly
+before `.local/share/pnpm`, which stays: a project pinning pnpm 10
+through corepack (this repository pins pnpm@10.0.0) still links into
+`PNPM_HOME`. tools-carry.sh's fallback PATH names both, and tmpfiles
+creates the new dir. `command -v yarn` found nothing, though the docs and
+agent guide named yarn v1, and I-227's advice (`corepack enable`) fails
+with EROFS, writing next to node in the store. The base now has `yarn`
+and `yarnpkg` as links to corepack's own `dist/yarn.js` and
+`dist/yarnpkg.js`, from `nodejs-slim_24`'s corepack output (`nodejs_24`
+has no such output; this one is the `corepack` the system already runs,
+so the closure grows by two links). They run the version a
+`packageManager` field pins, else yarn 1 (1.22.22 and 4.5.0 checked on
+kanali). pnpm stays nixpkgs's. `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`, so a
+first run in an agent's window does not wait on a question nobody sees.
+yarn itself is fetched from registry.yarnpkg.com, outside the server's
+cache; yarn v1's package installs use the `~/.npmrc` registry, so they go
+through it. guest-devtools asserts `pnpm bin -g` and where `yarn`
+resolves; `yarn --version` needs the network the test VM lacks.
+
+**I-521. `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist.**
+(base-languages, 2026-10-05) machine.md promises programs from other
+Linux systems run as on Ubuntu, but `/bin` had only `sh` and `/usr/bin`
+only `env`: a `#!/bin/bash` or `#!/usr/bin/python3` script exited 126
+(bad interpreter) and a Makefile with `SHELL := /bin/bash` failed with
+Error 127. compat.nix adds tmpfiles `L+` links from `/bin/bash`,
+`/usr/bin/bash`, `/usr/bin/python3`, `/usr/bin/python` and `/usr/bin/perl`
+to `/run/current-system/sw/bin`, so they follow a base switch; python3
+there is I-228's nix-ld wrapper, whose `exec -a` keeps `/usr/bin/python3`
+as `sys.executable`. `/bin/sh` and `/usr/bin/env` stay NixOS's. Not
+envfs, which resolves any path but adds a FUSE mount to the boot (I-231).
+The CPython uv downloads (python-build-standalone) has
+`openssl_cafile=/etc/ssl/cert.pem` compiled in; NixOS has no such file,
+so `urlopen("https://pypi.org")` from a `uv python install 3.11` failed
+with CERTIFICATE_VERIFY_FAILED and returned 200 with the bundle given.
+`/etc/ssl/cert.pem` is now the same source as
+`/etc/ssl/certs/ca-certificates.crt`. No `SSL_CERT_FILE` or
+`NIX_SSL_CERT_FILE` in the session: they override every program's own
+choice. Checked on kanali in a bwrap with the same links: the scripts,
+the Makefile and the uv Python's https request ran. guest-compat
+asserts each.
+
+**I-522. A carried cargo tool gets rustup a default toolchain first.**
+(base-languages, 2026-10-05) The base has rustup with no toolchain, and
+machine.md asks the user to run `rustup default stable` once. The tools
+carry's cargo fallback ran `cargo install` without one, so every crate
+from the laptop that nixpkgs lacks failed with "Could not install X".
+Before the first cargo install, tools-carry.sh now checks `rustup show
+active-toolchain`; with none it installs stable with the minimal profile
+and makes it the default, and logs that once. A laptop with
+cargo-installed crates is a Rust user's, who would run the same command;
+a default the user chose is kept. No first-boot toolchain download for
+anyone else. rust-analyzer is rustup's proxy in the base: without the
+component, `rust-analyzer --version` loops until "infinite recursion
+detected". The component is not added (another download nobody asked
+for); machine.md and the agent guide say `rustup component add
+rust-analyzer`. guest-tools-carry runs a cargo item against stand-in
+rustup and cargo that fail without a default.
+
+**I-523. Python packages go in a venv; pipx gets the nix-ld python3; Tk
+comes with a uv Python.** (base-languages, 2026-10-05; extends I-228)
+nixpkgs#pipx, which the not-found hint offers, defaults to its own
+unwrapped python3.14, so `pipx run --spec numpy` failed with
+libstdc++.so.6; `PIPX_DEFAULT_PYTHON=/run/current-system/sw/bin/python3`
+is now a session variable and pipx is not added to the base. pip stays
+out of the system python: `python3 -m pip`, ensurepip and `uv pip
+--system` are refused (externally managed), so machine.md, the
+troubleshooting page and user-bin-dirs.nix no longer list `pip install
+--user`. `PIP_USER=1` is not set: it breaks pip inside a venv. The docs
+say packages go in a venv and CLIs in `uv tool install`. The system
+python3 has no `_tkinter`; the CPython uv downloads has Tk. The docs say
+so. Adding Tk to the system python (a joined interpreter with
+`_tkinter` in lib-dynload, about 13 MB) waits for closure budget;
+`withPackages` is ruled out because it breaks I-228's venv links.
+
+**I-524. A carried Ruby with RubyGems 3.7 gets Bundler 2.7.**
+(base-languages, 2026-10-05; extends I-265) nixpkgs's ruby_3_4 has
+RubyGems 3.7.2 and a default Bundler 2.6.9, which redefines RubyGems
+constants: `bundle -v` printed 18 "already initialized constant
+Gem::Platform" warnings and `bundle exec` 36. `-W:no-deprecated` does not
+hide them and `-W0` hides every warning. With Bundler 2.7 there are none.
+After the tools carry makes a pinned Ruby the default, or finds one an
+earlier pass pinned already the default, it installs `bundler '~> 2.7'`
+into `GEM_HOME` with `--env-shebang` when that Ruby's RubyGems is 3.7 or
+newer and the `bundle` it runs is older than 2.7 (ruby_4_0, with RubyGems
+3.7.2 and Bundler 4.0.20, gets nothing), logs the version, and on
+failure says so once and goes on. Nothing is recorded: the next pass
+reads `bundle -v` again, so it installs nothing twice. A
+`Gemfile.lock` with `BUNDLED WITH` 2.6 still switches to the old Bundler;
+`bundle update --bundler` moves it. No VM assertion: the test VM has no
+bundler gem offline. Checked on kanali against nixpkgs's ruby_3_4 (2.7.2
+installed, then `bundle -v` printed one line; a second call installed
+nothing) and ruby_4_0 (nothing installed). A guest whose Ruby an earlier
+pass pinned gets Bundler at the next pass, which runs when the laptop's
+tool list changes.
+**I-512. The base ships terminfo for Ghostty's and kitty's own TERM.**
+(base-shell-terminal, 2026-10-05; extends I-264) `repose run` and
+`repose attach` pass the laptop's `TERM` to the guest unchanged
+(`internal/cli/run.go` attachTmux), and I-264 names `xterm-ghostty` and
+`xterm-kitty` among the TERMs laptops present. ncurses has entries for
+alacritty, wezterm and foot but not for those two, so on base 2026.10.05
+`infocmp xterm-ghostty` and `infocmp xterm-kitty` failed,
+`TERM=xterm-ghostty tmux attach` refused with "missing or unsuitable
+terminal: xterm-ghostty" and `TERM=xterm-kitty clear` printed "unknown
+terminal type". `nix/guest/base/shell.nix` adds `pkgs.ghostty.terminfo`
+and `pkgs.kitty.terminfo` to the system packages: 5,024 and 4,520 bytes,
+no references (`nix path-info -rsS` against cache.nixos.org), where
+`/run/current-system/sw/share/terminfo` is on `TERMINFO_DIRS`, which
+sudo keeps. With them on `TERMINFO_DIRS`, `infocmp` prints
+`xterm-ghostty|ghostty|Ghostty` and `xterm-kitty|KovIdTTY`, and
+`TERM=xterm-ghostty tput colors` prints 256. guest-base asserts
+`infocmp` for the five TERMs and `TERM=xterm-kitty clear`.
+*Rejected:* `environment.enableAllTerminfo`, which pulls every
+terminal's terminfo output and grows with nixpkgs.
+
+**I-513. A login bash reads ~/.bashrc when the user has no login file of their own.**
+(base-shell-terminal, 2026-10-05; makes the `~/.bashrc` advice of I-227
+(the PATH entry, "Not covered by a static dir"), troubleshooting.md and
+agents.md true) Every tmux pane, ssh shell and editor terminal on a guest
+is a login bash. A login bash reads `/etc/profile` (which sources
+`/etc/bashrc`) and then the first of `~/.bash_profile`, `~/.bash_login`
+and `~/.profile`, never `~/.bashrc`, and `dev` has none of the three. So
+a `~/.bashrc` written by nvm, sdkman, conda or the OpenCode installer
+was never read: with a temp HOME whose `.bashrc` exported a marker,
+`bash -l -i` did not see it and `bash -i` did. The last lines of
+`/etc/bashrc`'s interactive part (`programs.bash.interactiveShellInit`
+at `lib.mkOrder 2000`, after the base's aliases, starship, zoxide,
+direnv and the I-488 dev shell hook) now source `~/.bashrc` in a login
+shell when it is readable, there is no `~/.bash_profile` or
+`~/.bash_login`, and `~/.profile` does not mention bashrc. A user who
+has one of those decides for themselves. Last so that what the file sets
+wins over the base: an alias `ll` in `~/.bashrc` replaces the base's.
+Nothing is written to `/home/dev`. Checked with the evaluated
+`/etc/bashrc` in a temp HOME: the marker, an alias and `HISTSIZE=42`
+from `~/.bashrc` arrive in a login shell, and none of them with an empty
+`~/.bash_profile` or a `~/.profile` that sources `~/.bashrc`. guest-base
+checks a new tmux window and `ssh ... bash -lic`. *Rejected:*
+`programs.bash.loginShellInit`, which runs in `/etc/profile` before
+`/etc/bashrc`'s interactive part, so the base's init would override the
+user's settings; writing a `~/.bash_profile` into the home, which a
+machine that has one already would not get and a user's own would
+conflict with.
+
+**I-514. Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim.**
+(base-shell-terminal, 2026-10-05) Five settings of the base's bash.
+- `ls` is GNU ls again (NixOS's `ls --color=tty`). The base aliased it to
+  `eza -al --group-directories-first --no-permissions --no-user`. With a
+  stdin that is not a terminal and no path, eza reads its file list from
+  stdin, so a `while read` loop that called `ls` swallowed the loop's
+  input; `ls -lt` failed with "a value is required for --time" and
+  `ls -ltr` with "invalid value 'r'"; `ls -l` showed no mode bits and no
+  owner. `ll` is now `eza -al --group-directories-first` (permissions
+  and owner kept); `la` and `lt` are unchanged. *Rejected:* a `[ -t 0 ]`
+  wrapper, which still differs from ls in its flags.
+- History: `shopt -s histappend` and, when unset, `HISTSIZE=100000`,
+  `HISTFILESIZE=200000` and `HISTCONTROL=ignoredups`, first in
+  `/etc/bashrc`'s interactive part so `~/.bashrc` may change them. A
+  machine lives for months and kept 500 lines, and each pane's exit
+  rewrote the file with its own history. `ignoredups` rather than
+  `ignoreboth`: a command typed with a leading space is still kept.
+- `programs.fzf.keybindings` and `fuzzyCompletion`: fzf was installed
+  but Ctrl-R was bash's own search. `FZF_DEFAULT_COMMAND` stays unset:
+  fzf 0.74's walker already skips `.git` and `node_modules`.
+- starship: `command_timeout = 2000`. A cold `starship prompt` in a large
+  checkout took 0.86 s and printed `[WARN] Executing command ".../node"
+  timed out` above the prompt with the default 500 ms. A user's
+  `~/.config/starship.toml` replaces the whole file. And the module
+  exported `STARSHIP_CONFIG=<the system file>` when the user had no file
+  at the shell's start, so a nested shell (`exec bash`, `nix develop`, an
+  editor's terminal) inherited the path and kept ignoring a
+  `~/.config/starship.toml` written since. A line before the module's
+  unsets it when it still names the system file and the user's file
+  exists; the path is computed from the final settings as the module
+  does, so it is the same store path.
+- `programs.neovim.viAlias` and `vimAlias`: `which vi vim` found
+  nothing, while `internal/cli/carry_tools.go` counts both as base
+  commands, so a laptop's vim was never carried and a carried
+  `core.editor=vim` failed. The wrapper gains two symlinks (384 bytes).
+guest-base asserts each in `ssh ... bash -lic`.
+
+**I-515. tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title.**
+(base-shell-terminal, 2026-10-05; amends I-264's `/etc/tmux.conf`)
+`/etc/tmux.conf` had `set -ga terminal-overrides ",*:Tc"`, so tmux sent
+`38;2` to every client and never turned a pane's 24-bit colour into the
+nearest of 256 for a terminal without it, Apple's Terminal on macOS 15
+and earlier among them. Panes keep `COLORTERM=truecolor` (env.nix), so
+programs emit 24-bit colour; tmux decides per client what reaches the
+laptop. `*:Tc` is gone, and `terminal-features` gains
+`xterm-ghostty:RGB,xterm-kitty:RGB,alacritty:RGB,wezterm:RGB,foot*:RGB,*-direct:RGB`
+(terminfo for all of them since I-512). tmux 3.7 also gives a client RGB
+when the client's own `COLORTERM` is `truecolor` or `24bit` (checked
+with tmux 3.7c: a client with `TERM=xterm-256color` lists `RGB` in
+`client_termfeatures` with `COLORTERM=truecolor` and not without it;
+`TERM=alacritty` lists it either way). The planned way to carry the
+laptop's `COLORTERM` was `ssh -o SendEnv=COLORTERM`, which the guest's
+sshd (`AcceptEnv`) and the gateway allow. It does not work: the guest's
+PAM environment sets `COLORTERM DEFAULT="truecolor"` and sshd applies it
+after the client's variables (a second sshd on this guest with
+`AcceptEnv COLORTERM`, `UsePAM yes`: `COLORTERM=foo ssh -o
+SendEnv=COLORTERM` gave the shell `truecolor`). So the CLI's attach
+command starts with `unset COLORTERM; ` when the laptop's `COLORTERM` is
+not `truecolor` or `24bit` (`attachColour`, `internal/cli/run.go`), and
+the `tmux attach` client then has RGB only by its TERM. Panes still get
+`COLORTERM=truecolor`: tmux 3.7c sets it in every pane it starts, even
+after `update-environment` marks the session's `-COLORTERM` (checked: a
+new window in a session attached without `COLORTERM` printed
+`truecolor`). A base switch leaves a running tmux server on the options
+it started with (I-496), so a machine gets these at its next start. `ssh <slug>.repose` and
+`repose ssh` are not changed: there is no tmux client on the way, and a
+login shell sets `COLORTERM` again. `set -g set-titles on` with
+`set-titles-string "#h: #S"` puts the machine and session in the
+laptop's tab title. guest-base checks the options of the running
+server. *Rejected:* `if-shell` on `TERM_PROGRAM`, evaluated once in the
+server and never sent over ssh; dropping `COLORTERM` from the session
+variables, which would take 24-bit colour from every pane.
+
+**I-516. An agent's bash -c names the package of a missing command.**
+(base-shell-terminal, 2026-10-05; extends I-219 and I-475) The
+command-not-found handler was defined only in `/etc/bashrc`'s
+interactive part. Agents run each command as `bash -c` with
+`BASH_ENV=/etc/repose/bash-env.sh` and got bash's bare "command not
+found", while the agent guide says that typing a missing command prints
+the package that has it. `bash-env.sh` now defines
+`command_not_found_handle` (calling `repose-command-not-found`, then
+`return 127`) when `BASH_VERSION` and `BASH_EXECUTION_STRING` are set and
+no handler is defined yet. `BASH_EXECUTION_STRING` is set only for a
+`-c` string, so `./configure`, a script file and `sh -c` keep bash's
+plain message. The block sits before the file's restore of the shell
+options and `$_`, so I-475's promises hold: it prints nothing, `$_` is
+the caller's, `$?` is 0, xtrace stays off while it runs. Checked live:
+`BASH_ENV=<new file> bash -c 'figlet hi; echo status=$?'` prints the
+I-249 hint and `status=127`; the same in a script file and in `sh -c`
+prints the plain line; `bash -c 'echo $_'` still prints the caller's
+`$_`. guest-devtools asserts the three cases.
+
+**I-517. The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself.**
+(base-shell-terminal, 2026-10-05; amends I-219, keeps I-249's layout)
+`repose-command-not-found` took nix-locate's first attribute as found:
+`apt-get install jq` suggested `nixpkgs#apt`, `yum` and `dnf` suggested
+`python313Packages.dnf4`, `vim` listed
+`tests.vim.test-all-plugins-have-vimPlugin-true`, and `pip` suggested
+`python314Packages.pip`, which installs for another interpreter than the
+base's python3 and outside its nix-ld wrapper. Now: attributes that
+start with `tests.` are dropped, and top-level attributes come before
+nested ones. `apt`, `apt-get`, `aptitude`, `dpkg`, `yum`, `dnf`, `apk`,
+`pacman`, `zypper`, `brew`, `port` and `snap` print the not-found line
+and the two I-249 lines with `NAME` in place of a package. `pip` and
+`pip3` print `python3 -m venv .venv && . .venv/bin/activate` (a virtual
+environment, with pip in it) and `uv tool install NAME`, not `uv venv`,
+which makes an environment without pip. `crontab`, `cron`, `crond` and
+`at` print one line pointing at /docs/machine#scheduled-jobs (I-518)
+instead of `mcron`, which has no daemon here. machine.md's example now
+shows I-249's lines as the handler prints them, on one line each.
+guest-devtools asserts apt-get's and pip's output, crontab's link and no
+`tests.` in vim's.
+
+**I-518. A scheduled job is a systemd user timer; the base has no cron.**
+(base-shell-terminal, 2026-10-05) No cron daemon is installed, and the
+not-found hint offered `mcron`, so a job set up that way never ran. User
+timers work: `dev` lingers, so its user manager runs with nobody
+attached, user units get the full PATH (I-227), and unit files in
+`~/.config/systemd/user` are in `/home/dev` and survive a stop. A
+transient `systemd-run --user --on-calendar` unit lives in `/run` and is
+gone after a stop, so the docs show unit files: `NAME.service` with
+`Type=oneshot` and `ExecStart=/run/current-system/sw/bin/bash -lc
+'CMD'` (a login shell, so the job gets the secrets and the project's
+variables), `NAME.timer` with `OnCalendar=daily`, `Persistent=true`
+(a run missed while the machine was stopped happens at the next start)
+and `WantedBy=timers.target`, enabled with `systemctl --user
+daemon-reload && systemctl --user enable --now NAME.timer`. machine.md
+"Scheduled jobs" and the agent guide say so. With I-521's link in
+place, both write `ExecStart=/bin/bash -lc 'CMD'`, the same bash.
+*Rejected:* installing cronie, a second scheduler beside systemd's with its own environment.
+
+**I-519. home.shellAliases from machine.nix or repose.nix reach every shell.**
+(base-shell-terminal, 2026-10-05; amends I-488 and I-490) `/docs/config`
+and `docs/features/config-examples/personal/machine.nix` show
+`home.shellAliases`, and no alias appeared: home-manager writes aliases
+into the `~/.bashrc` it manages, and its `programs.bash.enable` is off on
+the guest (`nix/guest/microvm.nix`). `contract.nix` carried
+`home.sessionVariables` and `home.sessionPath` (I-488) but not aliases.
+It now sets `programs.bash.shellAliases`, `programs.zsh.shellAliases` and
+`programs.fish.shellAliases` from `home.shellAliases`, each at
+`lib.mkOverride 90`, so a user's alias of a name the base defines (`ll`)
+wins without `mkForce`. *Not carried:* `programs.bash.initExtra` and the
+other shells' init options. The base already initialises starship,
+zoxide, direnv and fzf, and enabling home-manager's bash to run initExtra
+would initialise them a second time and take over `~/.bashrc`. Shell
+code goes in `~/.bashrc`, which every bash now reads (I-513); config.md
+says initExtra is not carried. `checks.fragment-examples` asserts that the
+personal example's `gs` and `ll` are in the composed system's
+`/etc/bashrc`.
+**I-499. The Claude settings merge unions hooks per event, and takes out
+the hooks the previous laptop file added.** (herdr-fixes, 2026-10-05;
+amends I-196) The merge used jq's `*`, which replaces arrays, so any
+`SessionStart` hook in the laptop's `~/.claude/settings.json` replaced
+the guest's whole `SessionStart` list on every `run` and `attach`.
+`herdr integration install claude` writes its resume hook there
+(`bash '/home/dev/.claude/hooks/herdr-agent-state.sh' session`), so a laptop with
+one `SessionStart` hook of its own left herdr unable to restore Claude
+after a stop. Each hook event that is a list on either side is now the
+guest's groups, then the laptop's; a group both sides hold identically is
+kept once, at the laptop's place, so a second run gives the same bytes.
+A plain union would keep every hook the laptop ever had: a hook edited
+or deleted on the laptop would stay in each guest beside its
+replacement. So the merge writes the hooks this laptop file added (after
+the repose-hook strip and the missing-command drop) to
+`~/.repose/claude-laptop-hooks.json`, and the next merge removes those
+from the guest's lists before the union. A group the guest had before
+the laptop also carried the same group goes with it when the laptop
+drops it; that needs identical JSON on both sides, and we accept it.
+The `commands` pass checks the unioned hooks, so a guest hook whose
+command is missing is dropped with a note as a laptop one is. Checked
+by `TestClaudeSettingsMergeKeepsGuestHooks` (herdr's hook and a laptop
+`SessionStart` hook, a laptop change, a laptop with no hooks) and the
+`hooks` golden, whose guest-only `Stop` entry is now kept.
+
+**I-500. `repose stop` names the agents it interrupted, without a resume
+command.** (herdr-fixes, 2026-10-05; narrows features/stop-start-destroy.md
+under I-484 and I-485) The stop spec said the CLI tells you a Claude
+session can be resumed with `claude --resume` when an agent window was
+open. Nothing printed it. I-484 later ruled that a success line says
+what happened and names no next command, and I-485 that a line the
+fiftieth-time reader gains nothing from goes; `claude --resume` is a
+lesson the docs already give (run-and-attach, "When the machine
+stops"), and with herdr the agents come back on their own. What the
+stop did is still news: it ended an agent in the middle of a turn, or
+one waiting for your answer. So after the stop line the CLI prints
+`Interrupted claude (working) and claude-2 (needs input).`, built from
+the signals of the project as `stop` read it before stopping. Idle
+agents lose nothing and are not named; no busy agent, no line. The
+sample can be up to a minute old, so the line is what the machine last
+reported. Checked by `TestStopNamesInterruptedAgents`.
+
+**I-501. herdr is a supported multiplexer: in the base at a pinned
+release, started by a boot unit on projects that choose it, read by
+guestd.** (multiplexer-spec, 2026-10-05; supersedes I-482; owner
+decision 1 of `proposals/2026-10-05-session-backends.md`) I-482 rested on
+two premises the live test on `herdr-live` disproved. Any herdr from
+0.9.0 accepts a remote of endpoint protocol generation 1, so the
+laptop's version need not match the guest's (a 0.9.3 laptop added a
+0.9.0 guest in 1.1 s with no install prompt). And the server resumes
+agents with no client attached: after a stop and a start, `herdr server`
+from a user unit restored two workspaces and ran `claude --resume <id>`
+before any client connected. Its "revisit when" is met.
+`nix/overlay/agents/herdr.nix` installs upstream's static-pie x86-64
+release, pinned in `versions.json` and moved by `scripts/bump-agents.sh`
+as the other agents are (R3-19). Its install check runs `herdr status
+client --json` and fails the build unless `endpoint_protocol_generation`
+is 1 and `protocol` is at least 22, so a bad bump fails before a guest
+gets it (the I-487 lesson). The package is in `environment.systemPackages`
+on every guest, which puts it at `/run/current-system/sw/bin/herdr`
+where a laptop herdr's remote discovery looks. The user unit
+`repose-herdr-server.service` runs `herdr server` from a login bash,
+restarts on failure (a restart resumes agents), keeps
+`restartIfChanged = false` (I-496) and sets no `CPUWeight` (I-505 says
+why). The guest seeds `~/.config/herdr/config.toml` when it is absent
+with login shells (herdr's Linux default is non-login, tmux's is login)
+and no update check. tmux stays in the base and stays the default. The
+contract is `interfaces/guest-conventions.md`, "herdr". Built
+(mux-base): `nix/overlay/agents/herdr.nix` with 0.9.3 pinned, its install
+check shared as `passthru.protocolCheck` and run by the flake check
+`herdr-protocol-check` against fake binaries (generation 2, protocol 21,
+no generation and unreadable output refused); `nix/guest/base/herdr.nix`
+(the unit, `repose-herdr-workspace`, the seeded config written by
+`ExecStartPre`), `nix/guest/base/multiplexer-is.nix` shared by both
+session units, `HERDR_AGENT` in `wrap.nix`, the integration step in
+`agent-setup.nix`, and `guest-session-survives-switch` reading both unit
+files' text (no guest build) and refusing a path unit. Versions.json uses
+the agents' `x86_64-linux.url` and `.hash` keys, which
+`bump-agents-pr.sh`'s shape check requires.
+
+**I-502. One multiplexer per project: chosen at create, changed with
+`--multiplexer`, applied at the next start.** (multiplexer-spec,
+2026-10-05; owner decisions 2 to 4) The word is `multiplexer`, values
+`tmux` and `herdr`, in every place: the column `projects.multiplexer`
+(migration 0017, default `tmux`), the api's `Project.multiplexer` and the
+POST and PATCH field, the `multiplexer` key of `project.json`, the
+`default_multiplexer` key of `config.toml` and `repose run
+--multiplexer`. The repository used the word nowhere before, so one grep
+finds every use; "session" already meant SSH sessions, the session
+helper and the tmux session. A new project takes `--multiplexer`, else
+`default_multiplexer`, else herdr when the CLI runs with `HERDR_ENV=1`
+(inside a laptop herdr pane, where tmux would sit nested in the user's
+herdr), else tmux. The `HERDR_ENV` pick skips a temporary machine, which
+never enters the herdr sidebar (I-510), and a request the base gate
+refuses, which falls back to tmux. `--multiplexer` on an existing project PATCHes it and
+the value sticks, as `--no-personal` does (I-490). The guest reads
+`project.json` at each start, so a change made while the machine runs
+takes effect at its next start, and the running multiplexer and its
+agents keep going until the stop. Starting the second server at once was
+rejected: two sets of panes and two resume paths for the hours until the
+stop. The api answers a request for `herdr` with `409 conflict`,
+`detail.reason = base_update_needed`, when the project's base (for a
+POST, the newest published base) is older than the first base with
+herdr; without the gate a held base (`hold_base_updates`) would start
+tmux with no word why. A request for `tmux` is never refused. Fork and
+restore as a new project copy the source's value. Old clients ignore the
+field; an absent field reads as tmux everywhere. Built (mux-api): migration 0017, `store.Project.Multiplexer`, POST and
+PATCH in `internal/api/http/projects.go`, the gate in
+`internal/api/http/multiplexer.go` with `herdrMinBase` empty, the copy
+in `insertRestored`, `multiplexer` in `project_json`; a fork or restore
+as new gates on the source's base (I-549). Tests: `TestMultiplexerField`, `TestMultiplexerForkCopies`,
+`TestMigrateUpDownUp`, the fakes' `TestMultiplexerGate` and
+`TestProjectJSONPassesThrough`.
+
+**I-503. guestd starts the session unit `project.json` names, and the
+path unit goes.** (multiplexer-spec, 2026-10-05) The user path unit
+`repose-tmux-session.path` started tmux as soon as `project.json`
+existed, which at boot is the previous boot's file: after a switch made
+while stopped it would start the old multiplexer before `SetupProject`
+wrote the new file. guestd already started the tmux unit right after
+writing the file (I-231), so `SetupProject` now starts
+`repose-tmux-session.service` or `repose-herdr-server.service` by the
+file's `multiplexer` (absent or any other value: tmux), and the path
+unit is removed. Both units carry `ExecCondition=repose-multiplexer-is
+<name>`, which skips the start when the file names the other
+multiplexer or the other unit is active. A hand `systemctl --user start`
+of the wrong unit therefore starts nothing, and a machine switched while
+running keeps its old multiplexer until the stop. A base switch starts
+and stops no session unit (I-496). Built (mux-guestd): `ensureSession` in `internal/guestd/project`, `Handler.Multiplexer`; `TestSetupStartsTheSessionUnitProjectJSONNames`.
+
+**I-504. guestd reads herdr's agents from its socket, on every machine,
+by polling `agent.list`.** (multiplexer-spec, 2026-10-05; amends I-31,
+I-49) Agent discovery goes through one source per multiplexer and the
+watcher takes the union of both, so a machine switched while running, or
+one where you started the other multiplexer by hand, still lists its
+agents; a source whose server is absent costs a `stat`. The herdr source
+dials `/home/dev/.config/herdr/herdr.sock` once per 5 s refresh (herdr
+answers one request per connection), refuses a peer whose `SO_PEERCRED`
+uid is not dev's (guestd is root and the path is dev's to replace), sends
+`ping` after any failed dial, `agent.list` on every refresh and
+`workspace.list` (decoded to `id` and `label`, to match checkout names)
+at most once a minute, and reads one line of at most 1 MiB per answer. It forks nothing, so I-31 holds. The decoder
+keeps `pane_id`, `workspace_id`, `name`, `agent`, `agent_status` and
+`state_change_seq` and drops every other field, titles and the agent
+session among them; guestd never calls `session.snapshot` or
+`pane.process_info`, whose answers carry cwd, argv and cmdline (R5-3).
+States map `working` to working, `blocked` to needs_input, `idle` and
+`done` to idle, and `unknown` to unknown. A `state_change_seq` that moved
+while the status reads `idle` or `done` is a finished turn, even one
+shorter than a refresh; for gemini and pi, which have no hook, it raises
+the `completed` event (`<agent> went idle`) that I-49's heuristic raises
+under tmux, and for hooked agents it raises nothing, so no event arrives
+twice. A protocol below 22, or a refused dial for two refreshes on a
+herdr project, is `herdr_down` (I-507). After an EOF the panes keep their
+state for two refreshes before going `unknown`, so a herdr restart that
+resumes its agents shows no flap. Events only was rejected: a missed
+subscription or `events_lost` leaves a wrong state until something else
+changes. `events.subscribe` may later wake the watcher early; the poll
+stays the truth. Built (mux-guestd): `internal/guestd/sample/source.go` (the `Pane` and `Source` seam, `tmuxSource` statting the socket before any fork) and `herdr.go` (`herdrSource`), unioned in `Watcher.refreshPanes`; `TestHerdrWorkingThenDoneGemini`, `TestHerdrSequenceJumpGivesOneCompletion`, `TestHerdrPeerWithAnotherUIDIsRefused`, `TestHerdrEOFGrace`, `TestHerdrOldProtocolIsDown`, `TestHerdrReplyOverTheCapIsDropped`, `TestHerdrDecoderKeepsSevenFields`, `TestHerdrAgentKeys`, and `TestHerdrLiveBinary` against herdr 0.9.3 (`REPOSE_TEST_HERDR`).
+
+**I-505. The herdr server and its agents get I-200's memory protection
+and run at nice -5.** (multiplexer-spec, 2026-10-05; owner decision 7;
+amends I-200, I-494) guestd's 5 s refresh sets `oom_score_adj` -800 on
+the herdr server (the `herdr` process in `repose-herdr-server.service`
+whose parent is dev's `systemd --user`) and on every agent process in
+its tree (the shallowest process whose name or executable is one of the
+five agents' binaries), as it does for the tmux server and agent
+windows; the live test found claude at 200 under herdr. Beside that
+write, guestd sets nice -5 on every thread in `/proc/<server>/task`
+(nice is per thread on Linux), and sets any other process in the
+server's tree found below 0 back to 0, since a pane forked from a
+reniced thread inherits -5 and a build in it would get the priority
+meant for the server. `CPUWeight=1000` on the unit, I-494's
+answer for tmux, would raise every build too, because herdr's panes share
+the server's cgroup; wrapping each pane in its own scope would orphan
+panes when the server dies. The SSH `session-.scope` weight still covers
+the laptop's bridge. Closed by I-494's load test (keystroke echo with
+`stress-ng` on every core, before and after). Built (mux-guestd): `herdrServers`, `herdrAgentPIDs` and `applyNice` in `internal/guestd/sample/oom.go`; `TestHerdrServerOOMAndNice` on a fixture, `TestHerdrLiveRenice` as root against herdr 0.9.3 (a pane shell forked after the renice inherited -5 and went back to 0). `node` is left out of the agent walk (I-535).
+
+**I-506. A hook's window may be `herdr:<pane_id>`, sent by repose-hook;
+a window that resolves to no pane changes no agent's state.**
+(multiplexer-spec, 2026-10-05; amends I-244) Inside a herdr pane
+`$TMUX_PANE` is unset, and `herdr-fixes` (I-499's branch) made such a
+hook relay under the agent's name without touching a tmux window.
+`repose-hook`, `repose-notify` and `repose-ask` now send `window =
+"herdr:" + $HERDR_PANE_ID` when `REPOSE_AGENT_WINDOW` is empty,
+`$TMUX_PANE` is unset, and `HERDR_ENV=1`; they read their own
+environment, so guestd reads no new variable and the one exception in
+`SECURITY.md` stays as written. guestd resolves a `herdr:` window through
+the herdr source to the agent's key and records the hook on it. One that
+resolves nowhere is relayed with the agent's name for display, and no
+state changes. A pane id longer than 58 bytes or holding a character
+outside `[A-Za-z0-9:_-]` is treated as unresolved. Built (mux-guestd): `windowDefault` in `cmd/repose-hook`, `windowOf` in `internal/guestd/hooks`, `Watcher.ResolveHerdr`; `TestHookNamesTheHerdrPane`, `TestNotifyNamesTheHerdrPane`, `TestHerdrHookWindows`.
+
+**I-507. `herdr_down` joins the guest warning kinds.** (multiplexer-spec,
+2026-10-05; amends I-29) guestd sends `Warning{kind: "herdr_down"}` when
+`project.json` says herdr and the socket refused (or answered a protocol
+below 22) on two refreshes in a row, at most once per 10 minutes like
+every kind. `tmux_down` is sent only when the file says tmux or has no
+key. hostd and the api add the kind to their lists and ship before the
+base that sends it; an older hostd relays it as `guest_other`, which the
+api already stores. The detail is hostd's own `guest <id>`. Built (mux-api): `guestWarningKinds` in hostd and `warningKinds` in the
+api's events; tests `TestGuestWarningKindAndDetailAreHostWritten`,
+`TestHostWarningKindsAreAFixedSet`; RUNBOOK "herdr_down".
+
+**I-508. Under herdr, secrets, TZ and PATH reach panes through the
+login shell, `BASH_ENV` and the wrappers.** (multiplexer-spec,
+2026-10-05; amends I-475, I-476, I-488) herdr has no
+`set-environment`, so `WriteSecrets` pushes into tmux only when the tmux
+socket exists, and the post-switch push into dev's user manager reaches
+the herdr server at its next start. herdr panes start login shells
+(the seeded config), wrapped agents source `/etc/profile.d/repose.sh`
+(I-241) and each bash command reads `BASH_ENV` (I-475), so agents and
+shell commands get current secrets, TZ and PATH. A program that is not
+bash, started from a pane opened before the change, keeps the
+environment the server started with. The CLI's TZ push on `run` and
+`attach` writes `/etc/repose/env` alone on herdr. `secrets.md` and
+guest-conventions say so. Built (mux-base): the server unit reads
+`/etc/repose/env` (`EnvironmentFile`) and starts from `bash -l`, the
+seeded `shell_mode = "login"` makes each pane a login shell, and the
+post-switch push in `env.nix` leaves the herdr server alone. Checked on
+kanali with the unit's own commands: the pane's shell ran as `-bash`
+with `HERDR_ENV=1`, `REPOSE_PROJECT` and `TZ`.
+
+**I-509. On a herdr project, `run "prompt"`, attach, `ps`, `paste`,
+messages and the temporary session end go through herdr, and `run` in a
+laptop herdr pane opens no client.** (multiplexer-spec, 2026-10-05;
+owner decision 6; amends R4-10, I-253, I-274, I-280, I-304, I-352,
+I-469, I-480) The CLI picks the backend from the running unit
+(`systemctl --user -q is-active repose-herdr-server` over the ssh master
+it holds), since the setting can differ from what runs until the next
+start. A prompt opens a tab in the checkout's workspace (created when
+missing; with `--worktree` the worktree is opened with `herdr worktree
+open`), starts the agent with `herdr agent start`, waits past herdr's
+300 s start cap with `herdr agent wait` up to the CLI's 30 minute
+dev-shell limit, and types with `herdr agent prompt`. A pane that
+settles on `blocked` gets no prompt (I-486's dialog error, naming the
+tab). Attach has three paths: in a laptop herdr pane (`HERDR_ENV=1`) the
+CLI prints `<slug> is in herdr's sidebar.` and stays in the foreground as
+the session helper (forwards, bridge, carry) until Ctrl-C; with herdr
+0.9.0 or newer on the laptop PATH it runs `herdr --remote <slug>.repose
+--session default` as its child, never through exec, so the helper lives
+as long as the client; otherwise `ssh -t <slug>.repose herdr` under the
+input proxy and the reattacher. `ps` lists herdr's agents (WORKSPACE,
+AGENT, NAME, STATE; no cwd, no title), `paste` sends the path with
+`herdr pane send-text` to the focused pane, messages use `herdr
+notification show repose --body`, and a temporary machine ends when its attach returns
+and herdr reports no panes. A client nested inside the user's herdr was
+rejected. A tmux project behaves as before. Built (mux-cli): the seam is
+`internal/cli/mux.go` (the interface is `muxer`, since the package
+`internal/multiplexer` holds the name), `mux_tmux.go` and `mux_herdr.go`;
+the probe is `muxFor`. Checked by `TestHerdrScriptsAgainstHerdr` (the
+guest scripts run with bash against a herdr 0.9.3 server:
+workspace create, tab create, agent start, agent prompt, agent list,
+pane send-text, worktree open, the focus step), `TestHerdrAttachPath`
+(the three paths by `HERDR_ENV`, a temporary machine, the laptop
+herdr's version and the alias), `TestHerdrStatePick`,
+`TestParseHerdrStateDropsCwd` and `TestStatusNamesHerdr`.
+
+**I-510. The CLI keeps the laptop herdr's machine list for repose's
+machines.** (multiplexer-spec, 2026-10-05; owner decision 5) When `herdr`
+0.9.0 or newer is on the laptop PATH and `~/.ssh/config` includes
+repose's file, the CLI reconciles `herdr machine list --json` where it
+already holds the project list after writing the ssh files (`run`,
+`attach`, the certificate refresh), and on `rm`. It adds `herdr machine
+add <slug>.repose --label <slug> --remote-session default` for each
+running herdr project with no entry, in the background so `Ready in`
+does not move; removes each entry whose target is `<slug>.repose` and
+whose slug is no project of the account; and leaves every entry whose
+target is anything else. An entry made by hand or by the tutorial for
+`<slug>.repose` is repose's from then on. A disabled entry stays
+disabled, a stopped machine's entry stays, and a temporary machine is
+never added. Registration behind a config key was rejected: the sidebar
+is where a herdr user looks for the machine. Built (mux-cli):
+`internal/cli/herdr_catalog.go`. Checked by `TestPlanHerdrCatalog`,
+`TestSyncHerdrMachinesRunsHerdrsCommands`,
+`TestSyncHerdrMachinesAddFailsOnce`, `TestSyncHerdrMachinesDoesNothing`
+(herdr 0.8.5, a failing list, no Include line, no herdr),
+`TestForgetHerdrMachine` and `TestEnsureEntry`; where adds run is
+I-542.
+
+**I-511. A laptop herdr's SSH bridge counts as someone at the machine.**
+(multiplexer-spec, 2026-10-05; owner decision 8) A laptop herdr keeps an
+SSH bridge to each machine in its sidebar, and each SSH session counts in
+`ssh_sessions`, which the idle notice (I-262), the temporary machine's
+expiry wait (I-350) and the miner check read. It counts as a `tmux
+attach` left open counts today; nothing in the api changes. Stage 5 of
+the proposal measures whether herdr's idle bridge cleanup closes bridges
+to machines nobody has selected, and how many ssh-prepare calls a bridge
+retrying against a stopped machine makes; a decision to discount bridges
+would be a new entry.
+
+**I-549. A fork or restore as new gates herdr on the source's base.**
+(mux-api, 2026-10-05; amends I-502) I-502 and api.md had a fork and a
+restore as a new project gate `herdr` on the newest published base, as a
+POST does. `insertRestored` copies the source's `base_version` into the
+copy, and the copy boots on that base until a base update moves it, so
+the gate reads that version: a herdr source held on a base older than
+`herdrMinBase` gives tmux copies. A null source base reads as the newest
+published base, as for a POST. Gating on the newest base was rejected:
+the copy would keep herdr on a base without it and start tmux with no
+word why, the case the gate exists to prevent. The gate also gets a
+third message, `<slug> has no base yet; herdr needs <needs> or newer.`,
+for a PATCH on a project whose `base_version` is null, which the two
+messages I-502 listed could not word. The fake api follows: its fork
+and restore as new copy the source's base and gate on it. Tests:
+`TestMultiplexerForkCopies` (fork and restore as new, the source on and
+behind the min base), the fakes' `TestMultiplexerCopyGatesOnSourceBase`.
+**I-551. mux-base as built: the tmux unit restarts its server after
+5 s, and the herdr steps' exact rules.** (mux-base, 2026-10-05; amends
+I-501, I-503) Five points where the base differs from the spec
+`multiplexer-spec` wrote.
+
+1. The path unit I-503 removed also brought the session back on a
+running machine: systemd.path(5) checks the paths again when the unit
+it triggered stops, and `project.json` always exists, so `exit` in the
+last window or `tmux kill-server` got a new session at once. Without it
+the machine had no session until the next start, and `repose attach`
+and `repose run "prompt"` failed with tmux's "can't find session".
+`repose-tmux-session.service` now has `Restart=always` and
+`RestartSec=5s`. A start the `ExecCondition` skipped is never restarted,
+and neither is a `systemctl stop`, so I-503's rules hold. The 5 s let
+I-352's check after an attach (`tmux has-session` over the attach's ssh
+master) see the session gone on a temporary machine; the path unit
+came back at once and could beat that check. A CLI fallback (start the
+unit when `has-session` fails) was rejected: `internal/cli` is
+`mux-cli`'s, and the CLI is not the only reader of the session (guestd's
+tmux source, `repose ps`). The herdr unit keeps `Restart=on-failure`;
+how its server behaves with no pane left is for the temporary-machine
+check in `workstreams/16-multiplexer.md`.
+2. `repose-herdr-workspace` waits for herdr by wall time: at most 10 s,
+each `herdr workspace list` capped at 2 s, then at most 5 s for the
+create. A count of tries let a herdr that accepts without answering
+hold `ExecStartPost` for minutes, past the user manager's 90 s
+`TimeoutStartSec` (a failed start kills the server's cgroup) and
+guestd's 60 s `SetupProject` budget. Measured on kanali against a socket
+that never answers: 10.37 s, exit 0. It exits 0 at once when the unit's
+`ActiveState` is not `active`, `activating` or `reloading`, exits 0 when
+herdr never answers, and exits 1 only when the create fails, which the
+unit's `-` prefix ignores.
+3. `versions.json` holds herdr as `herdr.version`,
+`herdr.x86_64-linux.url` and `herdr.x86_64-linux.hash`, the agents'
+shape that `bump-agents-pr.sh` checks, in place of `herdr.sha256`.
+4. `repose-agent-setup` reinstalls herdr's integration when `herdr
+integration status` has no `<agent>: current ` line. herdr 0.9.3's
+`--outdated-only` prints an update notice and lists nothing
+(`src/cli/integration.rs`), so the spec's rule would never find an
+outdated integration. Not installed, `outdated (vN < vM)` and `needs
+repair (vN)` (an installed version at or above the expected one whose
+files are wrong) are all reinstalled.
+5. The seeded `config.toml` is written by the server unit's
+`ExecStartPre`, as dev, before herdr reads it, and only on a project
+that runs herdr. `repose-multiplexer-is` exits 2 for an argument other
+than `tmux` or `herdr`; systemd skips that start like a refusal, and the
+2 tells a broken unit apart from a refusal in the journal.
+
+**I-560. The session units outlive their own servers' exits: herdr's
+keeps its panes through a handoff and an OOM kill, tmux's never
+restarts a start that failed.** (mux-base, 2026-10-06; amends I-551,
+I-501) A review of mux-base found four faults in the units and two
+claims the code did not keep.
+
+1. herdr's panes run in `repose-herdr-server.service`'s cgroup, and the
+unit inherited the user manager's `DefaultOOMPolicy=stop`: the kernel's
+OOM kill of a test run in one pane stopped the unit and, through
+`KillMode=control-group`, the server and every agent. The unit now has
+`OOMPolicy=continue`, as the browser unit has. The tmux unit needs none:
+each tmux pane is a scope of its own.
+2. A live handoff (`herdr update --handoff`, the `server.live_handoff`
+request) starts the new server as a child of the old one, and the old
+one, the unit's main process, exits 0. With the default
+`ExitType=main` systemd ended the unit there and killed the new server
+and every pane. The unit now has `ExitType=cgroup`. That alone kept a
+unit up with no server for as long as one pane process outlived a crash
+or `herdr server stop` (measured: a failed main process with a leftover
+child stays `active`), so the unit also starts `repose-herdr-watch` in
+the background. It kills the cgroup once no process named herdr whose
+parent is dev's systemd runs in it (guestd's rule for the server,
+I-505), checking every 0.5 s until the first server and every 5 s
+after. The herdr unit moves from `Restart=on-failure` to
+`Restart=always`, `RestartSec=5s`, so a stopped or crashed server is
+back 5 s later with its workspaces, as tmux's is (I-551), and
+`StartLimitBurst=5` in 60 s, so a server that cannot start is not tried
+every 5 s forever. Measured on kanali with herdr 0.9.3 in a transient
+user unit with these settings: after a live handoff the unit stayed
+`active` and `sleep 4242` in a pane kept running; `herdr server stop`
+with a `nohup` process in a pane ended the unit, killed that process
+and restarted the server 5 s later with workspace `app` restored; an
+OOM kill in a pane under `MemoryMax=300M` left the server's pid and
+`NRestarts` unchanged; `kill -KILL` of the server gave `Failed with
+result 'signal'` and a restart; a server failing at start stopped at
+`start-limit-hit` after five restarts.
+3. `Restart=always` on the tmux unit, which is `Type=forking`, restarted
+every start that left nothing running: a session on a tmux server
+started outside the unit (over ssh, in the 5 s wait) made the script
+exit 0 with an empty cgroup, and a `project.json` with no slug made it
+exit 1; either repeated every 5 s, below the default start limit.
+`RestartPreventExitStatus` does not help: it reads the main process,
+which a forking unit's start is not (measured: exit 1 and exit 3 with
+`RestartPreventExitStatus=1 3` each restarted three times in 4 s). The
+unit now has `Restart=on-success` and `RestartForceExitStatus=SIGKILL
+SIGSEGV SIGABRT SIGBUS`: a server's exit and its crash or OOM kill are
+restarted, a failed start is not. `repose-tmux-session` exits 3 when the
+slug's session belongs to a server outside the unit's cgroup (checked
+only when it runs in `repose-tmux-session.service`'s cgroup), and when
+`project.json` is empty. Measured on kanali in a transient unit with the
+built script: `kill-server` gave the session back after 5 s in the
+unit's cgroup; a server started outside during the wait ended the unit
+`failed` with `NRestarts` unchanged 12 s later; `kill -KILL` of the
+server restarted it; a `project.json` of `{}` failed with no restart.
+4. guest-conventions and `repose-agent-setup` said the base's herdr
+integration replaces one the laptop carried. herdr reports any
+installed version at or above its own as `current` (measured with
+0.9.3: v11 `current`, v9 `outdated (v9 < v10)`), so a newer hook from a
+newer laptop herdr is kept. The texts now say so; the behaviour stays,
+since a newer hook is the newer herdr's to keep.
+5. The public sentence on a temporary machine's last window
+(`run-and-attach.md`) said it is destroyed; that holds only when the
+attach of `repose attach` or `repose run` returns and the CLI's check
+runs (I-352). It now says so. The file is `mux-cli`'s; `mux-base`
+carries this one sentence because the behaviour ships in the base, and
+STATUS.md records it for `mux-cli`.
+
+**I-563. The session units start their servers outside a login shell,
+herdr's panes load the current environment, and a running herdr rereads
+a changed config.** (mux-base, 2026-10-06; amends I-501, I-508, I-227)
+Another session's findings on machine.nix and the tmux session
+(`reports/nix-demo tmux findings.md`, findings 1, 2, 4, 6 and 8) named
+five gaps a herdr project would hit; tmux shares 3 and 5.
+
+1. herdr's unit ran `bash -lc 'exec herdr server'`. That login shell
+exports `__NIXOS_SET_ENVIRONMENT_DONE` and `__ETC_PROFILE_DONE` into the
+server, and every pane inherited them, so a pane's shell skipped
+`/etc/set-environment` and `/etc/profile.d/repose.sh`: no fresh session
+variables, zone or secrets, where a new tmux window gets them. The unit
+now runs `repose-herdr-start`, which clears those guards and
+home-manager's `__HM_SESS_VARS_SOURCED` before it execs the server. A
+pane's shell, login or not (`/etc/bashrc` reads `/etc/profile` when the
+guard is unset), then loads the current environment.
+2. herdr has no `set-environment`, so a session variable a later switch
+dropped stayed in every new pane. `repose-herdr-start` also unsets the
+names in `/etc/repose/session-vars.names`; the panes' shells and the
+agent wrappers set the current ones. tmux gets the same result from the
+activation script's `set-environment -g -u` (I-488).
+3. Both units read the login PATH through a login shell, and a
+machine.nix can write the user's profile (`programs.bash.profileExtra`).
+Text a profile prints went into tmux's PATH, and a profile that runs
+`exec zsh` replaced herdr's shell before the server started. Both now
+call `repose-login-path`: a login shell with an empty environment, no
+stdin and at most 10 s that prints PATH after a marker line, so printed
+text is ignored and a replaced shell gives nothing, in which case the
+unit's own PATH stays. herdr's server is resolved on that PATH, so a
+`herdr` in `~/.local/bin` or in `home.packages` wins over the base's, as
+I-501 accepts; guestd's protocol check (I-504) reports a server it
+cannot speak to as `herdr_down`.
+4. herdr reads `config.toml` at server start, and the server lives for
+the session (I-496), so a machine.nix that changed or removed it reached
+a running machine only at its next start. `repose-herdr-reload` runs
+after every home-manager activation (`home-manager-dev`'s
+`ExecStartPost`, beside I-552's tmux reload): with a server's socket
+there it puts the seed back when the file went away, and when the
+file's digest changed since its last run it runs `herdr server
+reload-config`. It never fails the switch.
+5. home-manager writes user units to `~/.config/systemd/user`, which
+systemd reads before `/etc/systemd/user`, so a fragment's
+`systemd.user.services.repose-herdr-server` (or `repose-tmux-session`)
+would replace the base's. The contract now refuses any
+`systemd.user.services` name that starts with `repose-`.
+
+A `config.toml` that machine.nix manages is a read-only link and
+replaces the seeded file; it keeps herdr's defaults for anything it
+leaves out, including a non-login pane shell, and herdr cannot save
+onboarding into it. The public docs say to carry `shell_mode = "login"`.
+Evidence: `nix flake check`'s `guest-session-environment` runs both
+scripts against a scratch HOME and a fake herdr (a profile that prints
+text, one that runs `exec sh`, the guards and a dropped name, the
+reload on change only and the seed restored), and fails when the
+guards are kept or the marker is dropped; `fragment-contract`'s
+`user-unit-repose-name` fails evaluation and passes when the assertion
+is removed. Not booted on a guest: no VM test runs on kanali.
+**I-535. Under herdr, guestd protects the agents it can name by binary,
+and leaves `node` out.** (mux-guestd, 2026-10-05; amends I-505) I-505
+protects every process in the herdr server's tree whose name or
+executable is one of the five agents' binaries. Gemini CLI runs as
+`node` (I-46), and so does a dev server started in a shell pane; under
+tmux the window name tells them apart (a `node` counts only in a window
+named `gemini`), but under herdr guestd has no pane-to-process map,
+because the only herdr answer that carries pane pids, `pane.process_info`,
+also carries argv and cwd (R5-3). Protecting every shallowest `node` in
+the tree would put a vite or a test runner at -800, which is the
+opposite of I-200. So the herdr walk looks for `claude`, `opencode`,
+`codex`, `gemini` and `pi` (and nix's `.X-wrapped` names) only, and
+Gemini CLI under herdr gets no -800: it runs as `node` (I-46), so no
+process of it is named `gemini`, and it stays at the kernel's default
+until herdr reports a pane's root pid. The herdr server itself is protected as I-505 says,
+and its pane shells and their children are set back to 0 when they hold
+a negative value. Revisit when herdr reports a pane's root pid in
+`agent.list` without argv or cwd.
+
+**I-561. A herdr agent's turn finishes when `completion_seq` rises, the
+read after a failed one is a baseline, and of two herdr agents with one
+key the first is reported.** (mux-guestd, 2026-10-06;
+amends I-504 and I-506) I-504 took a `state_change_seq` that moved while
+the status reads `idle` or `done` as a finished turn. herdr bumps that
+sequence on every state change, including `unknown` to `idle` when a
+named agent's process is first found or a pane respawns, which herdr
+itself does not count as a completion (herdr 0.9.3+42,
+`finish_agent_process_acquisition`). That sent `gemini went idle` for an
+agent that had run no turn. The decoder now keeps a seventh field,
+`completion_seq` (a number or absent, no tenant text), which herdr sets
+only for idle reached from working or blocked, and clears at the next
+change. A `completion_seq` above the one the previous read saw for that
+pane is a finished turn, even one shorter than a refresh. herdr counts
+both sequences per server process from 0 and never saves them, so the
+first read after a failed one only records them, and a `state_change_seq`
+lower than the previous read's is a restart, never a finished turn.
+`workspace.list` goes at most once a minute, and at once for a
+`workspace_id` the last `workspace.list` was not asked about; a failed
+one, or one that lacks an agent's workspace, waits the minute. Keys: a
+refresh that cannot read tmux keeps the tmux window names of the last
+one that could, so a `<key> (herdr)` does not flip to `<key>`; of two
+herdr agents with one key, the first in `agent.list` is reported, and a
+hook from the other's pane is unresolved (I-506's no-state rule); a key
+that passes from a tmux window to a herdr agent, or the other way, drops
+the hook recorded on it, and a herdr agent whose key changes keeps its
+hook. Built: `herdrSource.Panes` and `Watcher.refreshPanes` in
+`internal/guestd/sample`; `TestHerdrUnknownToIdleIsNoCompletion`,
+`TestHerdrSequenceJumpGivesOneCompletion`,
+`TestHerdrRestartInTheGraceSendsNoCompletion`,
+`TestHerdrLowerSequenceSendsNoCompletion`,
+`TestHerdrLabelsAreNotReadEveryRefresh`,
+`TestHerdrDuplicateKeyHookResolvesToNothing`,
+`TestHerdrKeyKeepsItsSuffixWhileTmuxIsUnreadable`,
+`TestHookStaysWithItsAgentWhenTheKeyMoves`.
+
+**I-562. `tmux_down` and `herdr_down` wait for this boot's SetupProject,
+and the watcher sends each warning kind at most once per 10 minutes.**
+(mux-guestd, 2026-10-06; amends I-29 and I-507) The session unit starts
+only at SetupProject (I-503), which hostd sends after RegisterPaths,
+WriteSecrets and SetPrincipals, while guestd's watcher starts at boot
+with the multiplexer the last boot's `project.json` named. A boot whose
+chain took longer than a refresh sent `herdr_down` (or `tmux_down`)
+before the server had been asked to start. guestd now counts no refresh
+toward either warning until SetupProject has run since guestd started,
+whether or not the unit started, or until 60 s after guestd started, the
+end for a guestd restarted on a running machine, which gets no
+SetupProject. `herdr_down` then needs two failed refreshes counted from
+that point. The contract already said each kind is sent at most once per
+10 minutes, but the watcher sent again each time a condition cleared and
+came back, so a herdr restarting every minute (`Restart=on-failure`)
+sent `herdr_down` every minute. The watcher's warnings (`tmux_down`,
+`herdr_down`, `docker_down`) now keep a last-sent time per kind, and a
+condition that holds when the 10 minutes pass is sent then. Built:
+`Handler.SetupDone` in `internal/guestd/project`, `sessionExpected` and
+`oneShot` in `internal/guestd/sample`; `TestSetupDoneOnlyAfterSetup`,
+`TestHerdrDownWaitsForSetup`, `TestHerdrDownFlapSendsOncePerRepeat`,
+`TestHerdrProjectWarnsHerdrDown`.
+would be a new entry. Built (mux-cli): nothing in the CLI
+counts sessions; the public docs say a sidebar entry holds the machine
+in use (lifecycle "Idle machines", run-and-attach, the herdr tutorial).
+The stage 5 measurements wait for the release that ships herdr.
+
+**I-542. The multiplexer probe runs only for a prompt or an attach; a
+certificate refresh only removes sidebar entries; herdr's notifications
+need its toast delivery on.** (mux-cli, 2026-10-05; narrows I-509,
+I-510) Three things the contracts left open met the code. First, the
+probe (`systemctl --user -q is-active repose-herdr-server`) is one more
+ssh, and `repose sync` and `run --no-attach` with no prompt need no
+answer: they ask nothing, and the sidebar takes the project's stored
+`multiplexer` for them; `TestRunStartedGuestFirstConnectionIsTheProbe`
+still counts two ssh commands. `repose status` reads the answer in the
+ssh it already makes for listening processes. Second, `ensureCert` is
+also run by `repose ssh-prepare`, which ssh starts and which exits as
+soon as the files are written, so a background `herdr machine add` there
+would be killed half done: the certificate refresh removes entries and
+adds none, and `run`, `attach` and `sync` add (`sync` waits up to 30 s
+for its adds). Third, herdr 0.9.3 shows `notification show` only when
+`[ui.toast] delivery = "herdr"` is in the server's config; its default,
+`off`, answers `reason: "disabled"`. The CLI sends the messages I-509
+names either way; whether the base seeds that key is mux-base's call
+and is not made here.
+
+Review of mux-cli added four more (amends I-509, I-510). A temporary
+machine runs tmux only: I-352 destroys it when the last terminal closes,
+and herdr 0.9.3 with a client attached opens a fresh workspace and shell
+as soon as its last pane closes (`ensure_default_workspace`), so a herdr
+session never reaches zero panes and the machine would wait out its
+expiry. `--temp` takes tmux from `default_multiplexer` as from
+`HERDR_ENV`, `--temp --multiplexer herdr` exits 2, and `--multiplexer
+herdr` on a temporary project exits 2 naming `repose keep`. Telling an
+idle shell from a running job would need herdr's process info, whose
+answer carries argv, which R5-3 keeps out of reach. Second, the sidebar
+reconcile adds other projects by their stored `multiplexer`: the api has
+no other answer, and probing each would cost an ssh per project. A
+project switched to herdr while it runs tmux can therefore enter the
+sidebar before its next start, and herdr's `machine add` prepares the
+remote and starts a herdr server there, beside tmux and outside the
+unit, until the stop. The current project is added only on the guest's
+answer, or, on a `sync` that asks nothing, by the value it had before
+that same command switched it while running. Third, a failed add's line
+is held while an attach owns the terminal and printed after it returns.
+Fourth, the public docs name the test for a CLI that knows herdr
+(`repose run --help` lists `--multiplexer`) rather than a version, which
+is not known before the conductor tags the release; the release notes
+name the version.
+
+A second review pass added five (amends I-509, I-510). The probe reads
+the unit's `ActiveState`, this boot's `multiplexer` in `project.json`
+and whether tmux answers, in the same one ssh: `active`, `activating`
+(the restart wait) and `reloading` are herdr, a tmux that answers is
+tmux, a boot that named herdr with neither exits 1 (`herdr is not
+running on <slug>`) instead of attaching to a tmux server that is not
+there, and an ssh that failed takes the stored value. A command that
+read no project list (the fast attach, a `run` whose connection was
+already up) reconciles its own project alone, adding and never
+removing, so I-223's fast attach makes no api call for the sidebar.
+Each add reads herdr's list again under `herdr-sidebar.lock` in the
+config directory, since herdr's `machine add --label` makes a second
+entry for a target it has; the reconcile removes all but one entry per
+live slug. An attach that execs ssh in place of the CLI waits up to
+10 s for adds in flight, which the exec would kill halfway. The guest's
+herdr shows repose's messages only with `[ui.toast] delivery =
+"herdr"`, which no base seeds yet; until mux-base or the conductor
+records who seeds it, the public docs say so and give the two lines,
+and say that drops and Ctrl+V from a laptop herdr go to herdr and copy
+nothing.
+
+**I-564. The base's herdr config turns on herdr's toast delivery.**
+(owner, 2026-10-06; settles the open part of I-542) herdr shows
+`notification show` only with `[ui.toast] delivery = "herdr"`, and its
+default is `off`, so on a stock machine every message I-509 sends
+(copied files, new forwards, the time zone) went nowhere. The owner
+chose to seed the key: `repose-herdr-config` writes it into a new
+`~/.config/herdr/config.toml` beside `shell_mode` and `version_check`.
+A file that was there before the seed is left as it is (I-501's rule:
+the file is dev's, and herdr edits it), so a machine where the user
+ran herdr by hand keeps their setting; the public docs give the two
+lines for that case. `guest-session-environment` fails when the seed
+lacks the key, and the guest-base VM test reads the seeded file.
+
+**I-565. The herdr config seed gives back the file home-manager moved
+aside.** (herdr, 2026-10-06; amends I-563, from nix-demo's notes on
+machine.nix) herdr reads one config file with no system layer, so the
+base cannot keep its settings in /etc and still let a user's file win;
+the seed stays in `~/.config/herdr/config.toml`. home-manager
+(`backupFileExtension = "repose-bak"`, microvm.nix) moves a real file to
+`config.toml.repose-bak` when a machine.nix starts managing it, and
+refuses the next activation while that backup exists. Before this, a
+machine.nix that managed the file, dropped it, then managed it again
+failed the third switch: `repose-herdr-reload` had seeded a new file
+over the gap and the old backup was still there. Now, when the file is
+gone and a regular `.repose-bak` is beside it, the seed moves the
+backup back and writes nothing new. `guest-session-environment` covers
+the take-over, the release and the restore.
+**I-525. The base installs git-lfs with its filter in /etc/gitconfig.**
+(base-git-gpg, 2026-10-05; amends I-195 and I-210) A laptop that ran
+`git lfs install` carries `filter.lfs.clean`, `.smudge`, `.process` and
+`.required=true` in its global config (I-195), and the base had no
+git-lfs, so `git add .` in an LFS repository failed with "git-lfs:
+command not found ... clean filter 'lfs' failed" and a clone failed at
+checkout. The sync docs told users to `repose config add git-lfs`, which
+installs the binary without the filter config, so `git lfs pull` said
+"Git LFS is not installed for this repository" and a commit stored the
+raw file. `programs.git.lfs.enable` installs git-lfs and writes
+`[filter "lfs"]` to `/etc/gitconfig`; `git lfs pull` fetches a synced
+repository's objects with no other step. About 13.8 MiB of closure
+(git-lfs 13.5, pinentry-curses and libsecret for I-528 the rest),
+measured as the NAR sizes of the paths base 2026.10.05 lacks. The
+command-key check of I-195 is widened in the same change (see its
+amendment), and the sync sets `GIT_LFS_SKIP_SMUDGE=1` (I-210's
+amendment). *Rejected:* dropping a carried `filter.*.required` key so the
+add succeeds without the filter (for git-crypt that commits plaintext).
+
+**I-526. gh is the guest's credential helper for GitHub, by command
+name, in /etc/gitconfig.** (base-git-gpg, 2026-10-05) `features/secrets.md`
+told a user who logs in to gh on the machine to run `gh auth setup-git`.
+That writes `helper = !/nix/store/...-gh-2.100.0/bin/.gh-wrapped auth
+git-credential` for github.com and gist.github.com into `~/.gitconfig`:
+a path that a base update and the host's store GC remove, and that skips
+the wrapper's `GH_TELEMETRY`. The carry (I-247) wrote a helper for
+github.com only, so `git credential fill` for gist.github.com failed. The
+base now sets `credential."https://github.com".helper` and
+`credential."https://gist.github.com".helper` to `!gh auth
+git-credential` in `/etc/gitconfig`; with no gh login gh answers nothing
+and git prompts, so it is safe on every machine. The carry adds the gist
+helper beside its github.com one (hash part `gh-helper-3`), and keeps the
+two `url.insteadOf` rewrites conditional on a carried login: set
+system-wide they would send an SSH deploy key made on the machine (I-247)
+over HTTPS. `repose-gh-helper-cleanup`, run from dev's user activation
+(at login and at each base switch, since dev's user manager lingers and
+a unit wanted by `default.target` would wait for the next boot), removes
+the helpers for those two hosts in `~/.gitconfig` whose value
+matches `^!/nix/store/[^ ]*gh[^ ]* auth git-credential$`, with the empty
+`helper =` that `gh auth setup-git` writes before each; any other helper
+stays. The secrets page now says a `gh auth login` on the machine is
+enough for HTTPS URLs. *Rejected:* `url.insteadOf` in `/etc/gitconfig`
+(deploy keys); cleaning up from the carry (a user with no laptop gh login
+never gets that part).
+
+**I-527. git defaults for a fresh HOME, at system scope.** (base-git-gpg,
+2026-10-05) `/etc/gitconfig` was empty, so with no carried config `git
+init` made `master`, a divergent `git pull` stopped with "Need to specify
+how to reconcile divergent branches", and the first `git push` of a new
+branch failed for want of an upstream, each a stop for an agent working
+alone. The base sets `init.defaultBranch=main`, `pull.rebase=false` and
+`push.autoSetupRemote=true` in `/etc/gitconfig`, as `mkDefault`. System
+config is read before the global file and the carried file it includes
+(I-195), so any of these the laptop sets wins, and a key set by hand in
+`~/.gitconfig` wins over both. *Rejected:* `rerere`, `merge.conflictStyle
+zdiff3`, `fetch.prune`: preferences, which the laptop's config carries
+for the users who hold them.
+
+**I-528. gpg-agent's pinentry is pinentry-curses, set in
+/etc/gnupg/gpg-agent.conf.** (base-git-gpg, 2026-10-05) The base lists
+gnupg for commit signing, yet gnupg 2.4.9's built-in pinentry path
+(`<gnupg>/bin/pinentry`) does not exist and nothing provided one, so
+`echo test | gpg --symmetric` failed with "No pinentry" (exit 2) with or
+without a terminal. gpg-agent 2.4 reads `gpg-agent.conf` in its
+sysconfdir, `/etc/gnupg`, before the user's: on kanali (base 2026.10.05)
+the same command succeeded once a test pinentry was named there, inside
+a mount namespace with `/etc` overlaid, and failed without it.
+`/etc/gnupg/gpg-agent.conf` names `pinentry-curses`, and interactive
+bash exports `GPG_TTY` as `tty` names it, when there is one, so it
+draws in the pane. A user's own
+`~/.gnupg/gpg-agent.conf` still applies on top. `gpgconf
+--list-components` keeps printing the compiled-in path, which the agent
+does not use once the file names another. Agents have no terminal; the
+machine guide tells them to pass `--batch --pinentry-mode loopback
+--passphrase-fd`, which needs no pinentry (`allow-loopback-pinentry` is
+gpg-agent's default since 2.1.12). A gpg-agent already running at a
+base switch read its config before the file existed, so dev's user
+activation runs `gpgconf --reload gpg-agent` when the agent's socket
+exists, bounded at 10 s and never failing the activation; no agent is
+started for it. *Rejected:* `programs.gnupg.agent`,
+which adds socket-activated user units for one config line.
+
+**I-529. The guest deletes, weekly, the unused store paths only its
+overlay holds.** (base-nix-store, 2026-10-06) The guest never collected
+garbage (`nix.gc.automatic = false`, `min-free` 0, dev's profile-1..14
+never pruned). On kanali (base 2026.10.05) `/` was 40 GB and 89 to 95
+percent full, with 17 GB in `/nix/.rw-store`; of the 3,248 paths
+`nix-store --gc --print-dead` listed, 2,500 existed only in the overlay's
+upper dir, 8.6 GB, mostly flake `-source` copies of a dirty checkout
+(about 1.9 GB each), old codex and deno builds and go-modules. A
+whole-store GC (`nix.gc.automatic`, `min-free`, `nix-collect-garbage -d`)
+is unsafe here: deleting a path that also exists in the lower layer
+(`/nix/.ro-store`, the host's copy) writes an overlayfs whiteout into the
+upper dir, and the whiteout keeps hiding the host's copy. hostd registers
+earlier closures again (`--load-db` at every switch, I-67; the store view
+keeps up to 16 earlier closures and the `rev-*` roots, I-463), so a later
+switch or rollback finds a valid path with no files. kanali already has
+2,047 whiteouts from a manual GC on 2026-10-03, 1,157 of them over paths
+that are in `.ro-store`. `repose-store-gc.service` (Nice 19, idle I/O)
+runs from a weekly timer (`RandomizedDelaySec=1h`, `Persistent=true`):
+it deletes dev's profile generations older than 14 days, as dev (`nix
+profile wipe-history --older-than 14d`; the system's generations are
+hostd's), then keeps from `--print-dead` the paths whose basename exists
+in the upper dir (read from /proc/mounts as `repose-pin-profile` reads
+it), is not a character device there (a whiteout) and exists in no
+lower dir, and passes them to `nix-store --delete`, which refuses live
+paths. `nix-store --delete` refuses the whole list, deleting nothing,
+when a dead path outside the list refers to one in it (checked on a
+scratch store), so the closure of the dead paths that stay is left out;
+on kanali that removed none of the 2,500. A path that became live
+between the listing and the deletion makes the call fail, so the
+selection runs once more. The script, run on kanali with the deletion
+replaced by a listing, selected 2,534 paths (8.6 GB) in 6 s and no path
+in `.ro-store`. `nix.gc.automatic` stays false and `min-free` at its
+default. VM test `guest-base` ("I-529"): a path the guest added goes, a
+dead path in the lower layer stays with no whiteout, live paths stay.
+Follow-up, not built: guestd could remove a whiteout that hides a path
+`RegisterPaths` registers, which would repair guests a manual GC already
+damaged; it changes what the registration step writes to the overlay and
+needs its own decision.
+
+**I-530. dev is a trusted nix user.** (base-nix-store, 2026-10-06)
+`nix store info` said `Trusted: 0` and nix.conf had `trusted-users = root
+root`, so a flake's `nixConfig.extra-substituters` was dropped even with
+`--accept-flake-config` ("ignoring untrusted substituter"), and `cachix
+use` could not work. dev already has passwordless sudo (R3-13), so trust
+grants nothing dev could not take. `trusted-users = [ "root" "dev" ]`;
+`accept-flake-config` stays false, so a flake's caches apply only when
+the command asks (`nix develop --accept-flake-config`, which agents need,
+having no TTY for nix's prompt, or `--option extra-substituters URL
+--option extra-trusted-public-keys KEY`). cache.nixos.org stays the
+default; its duplicate in nix.conf (the module's default plus ours) is
+harmless and left alone. Docs: machine.md "Projects with a flake.nix",
+the agent guide. VM test `guest-devtools` checks `Trusted: 1`.
+
+**I-531. `nixpkgs` in the guest's global flake registry is the base's
+nixpkgs, locked.** (base-nix-store, 2026-10-06; amends I-218) Nix 2.34
+locks a flake's indirect inputs against the global registry only, never
+the system one, so with `flake-registry = ""` (I-218) a flake with
+`outputs = { self, nixpkgs }` and no inputs, or `inputs.nixpkgs.url =
+"nixpkgs"`, failed with "cannot find flake 'flake:nixpkgs' in the flake
+registries" in the cd hook, `nix develop` and `nix flake lock`. The
+global registry is now a file the base writes with one entry: `nixpkgs`
+to `github:NixOS/nixpkgs` at the flake input's `rev`, `narHash` and
+`lastModified`, which `repose.nixpkgsLocked` carries into the guest
+(set by `nixosModules.guestBase` and the runner). Nix finds the narHash
+in the store, so the lock is made offline: on kanali an input-less flake
+locked to `github:NixOS/nixpkgs/b1b8759...?narHash=...` with
+`--offline`, where the empty registry failed, and the lock is a URL a
+laptop and CI can fetch. Without a known rev the entry points at the
+source path (`type = "path"`), which locks but only to a path. The
+system registry keeps the path entry, so `nix profile add nixpkgs#X`
+behaves as before; `templates#` and `home-manager#` stay unresolved, as
+I-218 intends. VM test `guest-devtools` ("I-531") locks an input-less
+flake offline and checks the lock is the github entry.
+
+**I-532. The guest has no nix channels.** (base-nix-store, 2026-10-06;
+amends I-218) NIX_PATH was `nixpkgs=flake:nixpkgs:/nix/var/nix/profiles/per-user/root/channels`;
+that directory never exists in the guest, so every `nix-shell -p`
+warned that it does not exist. `nix.channel.enable = false`: NIX_PATH is
+`nixpkgs=flake:nixpkgs` alone and `nix-channel` is not installed.
+Nothing in the base runs `nix-channel` or reads a channel's
+`programs.sqlite` (command-not-found uses nix-locate, I-219). No
+`~/.nix-defexpr` link is added for `nix-env`: dev's profile is a `nix
+profile` manifest, which `nix-env -i` refuses anyway. VM test
+`guest-devtools` checks NIX_PATH and that `nix-channel` is absent.
+
+**I-533. The libraries a guest-built binary links are pinned in the
+overlay.** (base-nix-store, 2026-10-06) A binary built in the guest names
+base store paths: on kanali, a `cc` build against openssl has
+`/nix/store/...-glibc-2.42-84/lib/ld-linux-x86-64.so.2` as its
+interpreter and a RUNPATH of openssl-3.6.4, glibc-2.42-84 and
+gcc-15.3.0-lib; cgo, node-gyp and cargo builds are the same. On the host
+only the current SystemClosure and the `rev-*` roots keep those paths, a
+stop drops the guest's root, and the host GC runs weekly with
+`--delete-older-than 14d`, so after a base change and a GC such a binary
+fails with ENOENT. `repose-pin-profile` copied up only dev's profile.
+It now also copies up, at every boot and switch (the same service, which
+runs while the base's paths are still in the lower layer; a switch-time
+hook would be too late once a stop has dropped the root), the closure of
+a list fixed at eval time: the gcc wrapper's libc and `cc.lib`, and the
+runtime outputs of openssl, zlib, sqlite, libffi, libyaml, libpq,
+libxml2, libxslt and libmysqlclient (compat.nix's `PKG_CONFIG_PATH`
+set). Headers are left out: a rebuild uses the new base's wrapper. Each
+target is rooted at `/nix/var/nix/gcroots/repose-link-targets/<name>`,
+and roots from earlier bases stay, so I-529's GC never deletes them; the
+upper dir is never cleared of them. Measured on kanali with `nix
+path-info -sS`: glibc's closure is 36.0 MiB, openssl 8.9 MiB on its
+own, gcc-lib 9.8 MiB, the whole set 72.3 MiB; an unchanged path costs
+nothing (the existing `-e` test), and on kanali all but 2.1 MiB were in
+the upper dir already. All eleven are in the base closure already, so
+the closure does not grow. The service now waits for `repose-paths`
+(I-67), since before the registration `nix-store -qR` of a system path
+finds nothing. At a switch the activation script runs before
+switch-to-configuration reloads systemd, so starting
+`repose-pin-profile.service` from it ran the previous base's script,
+which knows only the previous base's targets; it starts this base's
+script as a transient unit (`systemd-run --no-block`) instead.
+VM test `guest-base` ("I-533") builds against openssl,
+checks each linked path is copied up and rooted, and runs the binary
+from the upper copies alone (the test VM's lower layer is the host's
+read-only store, so a path cannot be taken out of it there).
+
+**I-534. The guest has man pages.** (base-nix-store, 2026-10-06; amends
+I-218) `man ls`, `man git` and `man tmux` said "No manual entry":
+`documentation.enable = false` gates every documentation option, so
+`/share/man` was never linked into the system path and no `man` output
+was installed (`man` itself comes from the laptop's tools). Now
+`documentation.enable` and `documentation.man.enable` are on, with
+`man.cache.enable` (formerly `generateCaches`), `doc`, `info`, `dev` and
+`nixos` off. Most pages were in the closure already, inside the
+packages' `out` (coreutils-full, git). The delta is the `man` outputs of
+installed packages not yet in the closure: 49 of them, 13,119,200 bytes
+of NAR (cache.nixos.org narinfo; the largest are openssl's 4.1 MB and
+systemd's 2.1 MB); man-db and its closure were in the base already.
+That is within the 6 GiB check's room (the 2026.10.05 base closure is
+6,306,239,088 bytes). VM test `guest-devtools` runs `man -w` for ls,
+git, tmux and nix.
+**I-550. A guest's hostname is its project's slug.**
+(base-hostd-guestd, 2026-10-06) Every guest called itself `repose-guest`
+(`hostname`, the shell prompt, `t3 pair`'s "Pairing with"). hostd
+rendered `ip=<ip>::<gateway>:<netmask>::eth0:off` with the name field
+empty, and filling it alone would change nothing: the closure writes
+`/etc/hostname` from `networking.hostName`, and systemd applies that over
+the kernel's name. hostd now sets `ch.Spec.Hostname` to the project slug
+when it is a DNS label (a-z, 0-9 and `-`, 1 to 63 characters, no
+leading or trailing `-`) and renders it in the `ip=` name field and as
+`systemd.hostname=<slug>`, which systemd prefers over `/etc/hostname`.
+An empty or invalid slug renders neither, so the guest keeps
+`repose-guest`, as NixOS test nodes and slugless guests do; the closure
+stays the same for every guest (no per-guest `networking.hostName`).
+Create, start, restore and a rebuild all render the line from the
+recorded `project_slug`, so a guest gets the name at its next boot. The
+runner's `bin/run` passes `systemd.hostname=` too.
+*Rejected:* a per-guest `networking.hostName` (one closure per project);
+`hostnamectl hostname` from guestd (`/etc/hostname` is a read-only store
+link). Tests: `TestCmdlineHostname`, `TestCmdlineHostnameFallback`,
+`TestCreateReachesRunningWithEverythingWired` and
+`TestSnapshotRestoreRoundTrip` read `ch.args`.
+**I-536. A base switch never restarts dockerd, the desktop or the
+agents' browser; containers outlive dockerd.** (base-docker-system,
+2026-10-05; the failure class of I-496) guestd runs
+`switch-to-configuration` at the 04:00 UTC sweep
+(`internal/guestd/system/system.go`). `docker.service` had no
+`X-RestartIfChanged=false` (the pinned nixpkgs sets it only on
+`docker-prune`), its unit embeds the docker, systemd, coreutils and kmod
+store paths, and live-restore was off, so the first switch after a
+nixpkgs bump would stop every container, and a `docker run -d
+postgres:17` with no restart policy would stay down. The desktop
+(repose-xvnc, -openbox, -vncconfig, -novnc, -novnc-proxy) and the
+browser (repose-browser, -browser-proxy, -browser-bridge-proxy) had the
+same gap, and repose-browser `BindsTo` repose-xvnc, so a changed Xvnc
+unit would have closed the agents' pages mid-session. All of them now
+set `restartIfChanged = false`, and the daemon sets `live-restore =
+true` directly (the `virtualisation.docker.liveRestore` option is a
+rename alias). A new dockerd runs from the machine's next start; the
+desktop and browser stop on their own (StopWhenUnneeded, the 30-minute
+idle check) and the next socket activation starts the new closure. The
+socket units are left alone: they hold no process. live-restore is
+incompatible with swarm mode, which no guest runs; a user who wants
+swarm sets `live-restore` false in their own daemon config. Check
+`guest-session-survives-switch` now also greps each of these units
+(and a nixpkgs unit's `overrides.conf` drop-in) for the flag;
+`guest-docker` asserts `LiveRestoreEnabled` true. Not covered: a VM
+test that switches a running guest between two bases with a container
+up; it needs the dev box. `docker.service` `Requires=docker.socket`, so
+a switch that changes the socket unit's text still stops dockerd; that
+unit embeds no store path, and live-restore keeps the containers
+through it.
+
+**I-537. Containers resolve through resolved on 172.20.0.1.**
+(base-docker-system, 2026-10-05) On the default bridge, and in `docker
+build` RUN steps, an Alpine (musl) container waited 2.50 s on every
+lookup: musl sends A and AAAA from one UDP socket at once to
+1.1.1.1/8.8.8.8, the second answer is lost past the guest, and musl
+retries at +2.5 s. A Python two-query test without Docker lost the
+second answer 6/6 to 9/10, against 0/10 with a 50 ms gap or through
+127.0.0.53; guest conntrack counters were clean and the guest has no
+firewall. dockerd now pins the default bridge to `bip 172.20.0.1/24`
+(the first /24 of the 172.20.0.0/14 pool, which docker0 already had)
+and gives containers `dns [172.20.0.1]`; resolved's stub also listens
+there (`DNSStubListenerExtra`, bound with IP_FREEBIND, so it needs no
+docker0 at boot). The same daemon `dns` feeds the embedded resolver
+(127.0.0.11) of user networks and BuildKit. No `dns-opts` timeout:
+with resolved answering, nothing waits. Checked on kanali (base
+2026.10.05) with a runtime resolved drop-in: `docker run alpine getent
+ahosts github.com` took 2.50 s per lookup before, 0.00 to 0.02 s with
+`--dns 172.20.0.1` on the default bridge and on a user network;
+`ss -Hlun` showed 172.20.0.1:53. `guest-docker` asserts the bridge
+container's resolv.conf and the listener. *Host root cause, not
+measured:* the per-guest `ct count`/`limit` rules in
+`nix/hosts/nftables.nix` may drop the clashing second packet of a new
+UDP flow. Someone should read `conntrack -S` and flows_drop on host-01
+during the two-query test and, if confirmed, add `iifname "br-guests"
+meta l4proto udp th dport 53 accept` ahead of them. nftables is not
+changed without that measurement.
+
+**I-538. Open files: 524288 soft for the user manager and dev's
+logins.** (base-docker-system, 2026-10-05) The user manager's
+defaults were `DefaultLimitNOFILESoft=1024` (hard 524288), so
+`repose-tmux-session.service`, the tmux server and every pane had a
+soft limit of 1024; Python in a pane hit EMFILE at about 1021 open
+files while Claude Code's own shells had 524288. The base sets
+`systemd.user.settings.Manager.DefaultLimitNOFILE = "524288:524288"`
+(`systemd.user.extraConfig` is removed in the pinned nixpkgs) and
+`security.pam.loginLimits` soft nofile 524288 for `dev`, which covers
+SSH, `repose exec` and `repose code`. System daemons keep systemd's
+defaults. The guest VM test reads the tmux server's and a pane's
+`/proc/PID/limits` and `ulimit -Sn` in a `su - dev` login. On a live
+base switch a new SSH login gets the limit at once, but the running
+tmux server and its panes keep 1024 until the machine's next start,
+since the switch never restarts the session (I-496).
+
+**I-539. dev may ptrace its own processes.** (base-docker-system,
+2026-10-05) `kernel.yama.ptrace_scope` was 1 (yama's default, kept by
+I-231's `security.lsm = [ "landlock" "yama" ]`), so `strace -p`, `gdb
+-p` and py-spy on dev's own process failed. The guest has a single
+user with passwordless sudo, and the VM is the boundary; Landlock
+(Codex) and the bwrap PID namespaces still confine the agents. The
+sysctl is now 0, and yama stays in `security.lsm` so the knob exists.
+The sysctls subtest asserts it.
+
+**I-540. The browser has CJK fonts.** (base-docker-system, 2026-10-05)
+`fc-list :lang=ja` (zh, ko) returned nothing, so Chinese, Japanese and
+Korean rendered blank or as boxes in Chromium and in the agents'
+screenshots. `fonts.packages` adds `noto-fonts-cjk-sans`, the variable
+OTC build alone (narSize 64,592,096 bytes, no references, from
+cache.nixos.org), and "Noto Sans CJK SC" follows "Noto Sans" in the
+sans-serif default. The serif package and the static build are left out:
+either breaks the 6 GiB cap. The base closure was 6,306,239,088 bytes;
+with the font it is about 6,370,831,184 plus the fontconfig cache
+growth, leaving about 71.6 MB (68 MiB) under the cap. Review measured
+that growth by building the `fc-cache` derivation alone: 1,766,776
+bytes against 1,648,120 on base 2026.10.05 (+118,656), so the delta is
+about 64.7 MB and the headroom about 71.5 MB, shared with every other
+branch that adds to the closure (base-git-gpg adds about 13.8 MiB).
+With that cache, `fc-list :lang=ja` (zh, ko) lists 10 faces and
+`fc-match sans-serif:lang=ja` picks Noto Sans CJK JP. The guest system
+itself was not built; `guest-closure-size` is the check.
+
+**I-541. `BROWSER` prints the URL.** (base-docker-system, 2026-10-05)
+`BROWSER` was unset and the guest has no `xdg-open`, so `gh browse`
+and `gh pr create --web` failed with `exec: "xdg-open,...": executable
+file not found` and never showed the URL. `environment.variables.BROWSER`
+is now a store-path script that prints `Open in your browser: URL` to
+stderr and exits 0, so no new command lands on PATH. It never opens the
+agents' Chromium: that would put the user's logins in the agents'
+browser. A user's own `BROWSER` wins. Python's `webbrowser.open`, which
+launched a separate Chromium, now prints too.
+**I-552. Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named.**
+(personal-removal, 2026-10-06; follows I-490, I-496) On kanali the owner
+pushed a machine.nix that themed tmux and reloaded it into the running
+server, then emptied it and applied: home-manager removed every file,
+and the purple status bar stayed. tmux reads `/etc/tmux.conf`,
+`~/.tmux.conf` and `~/.config/tmux/tmux.conf` once, when the server
+starts, and since I-496 the server lives as long as the session, so a
+fragment or machine.nix that added, changed or removed a tmux config
+did nothing on a running machine, and one sourced by hand outlived its
+file. `repose-tmux-reload` (nix/guest/base/tmux-reload.nix) now runs as
+`ExecStartPost=-` of `home-manager-dev`, which also restarts when
+`/etc/tmux.conf` changes: when the files' contents changed since its
+last run and a server is running, it unsets every global server,
+session and window option, replaces the key tables with tmux's defaults
+(from a server that read no file), and sources the files in tmux's
+order. Sourcing alone was rejected: it only adds, and appends to array
+options such as `terminal-features` on each run. Options a session sets
+for itself (the CLI's port forward line), the global environment (TZ,
+PATH) and every window and pane are kept; a global option a user set by
+hand is lost at the next config change. With no server (as at boot) it records
+the digest only; the first run on a running machine reloads, so the base
+that brings the script also brings its own tmux changes (I-515's
+terminal-features and set-titles) to sessions already open. The digest is
+recorded after the reload, so one cut short runs again. Every tmux call
+has a 10 s timeout, so a hung server or a config blocking in `run-shell`
+cannot hold the switch, and the `-` keeps a failed reload from failing
+it; a file with an error still loads its other lines. Nothing is reset
+unless tmux's default key bindings were read first (at least 100
+`bind-key` lines), since emptied key tables would leave the session with
+no way to detach.
+Check `guest-tmux-follows-config` asserts the unit line, and on a real
+tmux in the build sandbox that the first run keeps the file's options
+and every default binding without doubling array options, that removal
+resets an option, a binding and an array entry to tmux's defaults with
+exactly the default key tables while a session option survives, and that
+an added file loads. Shells already open keep the aliases and functions their
+`.bashrc` loaded; that is documented, not fixed.
+
+The CLI side: deleting `~/.config/repose/machine.nix` pushes nothing,
+so the account kept applying it to new machines with no word. `run`
+now says once, when this laptop pushed the account's current revision
+and its file is gone since, that the account still has it
+(`missing_noted` in machine.nix.state keeps it to once).
+`config --global apply` with no file names `apply /dev/null` as the way
+to remove it when the account has one. The docs gain the removal steps,
+the starship sentence (the machine already runs starship, so a prompt
+needs only its config file; aliases work through I-519), and that a tmux config reaches the running
+session. Not covered: a VM test that switches a running guest's
+personal layer off with a pane open; it needs the dev box.

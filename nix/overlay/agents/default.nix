@@ -19,6 +19,10 @@ in
     pi-coding-agent = final.callPackage ./pi-coding-agent.nix { };
   };
 
+  # herdr, the second multiplexer (DECISIONS I-501): in every guest's
+  # system packages, unwrapped, pinned in versions.json beside the agents.
+  reposeHerdr = final.callPackage ./herdr.nix { };
+
   # The five agents, each wrapped per guest-conventions.md "Agent wrappers".
   reposeAgents = builtins.mapAttrs (name: pkg: wrap { inherit name pkg; })
     final.reposeAgentsUnwrapped;
@@ -31,7 +35,7 @@ in
   };
 
   # Runs once per agent start: idempotent hook and MCP registration.
-  repose-agent-setup = final.callPackage ./agent-setup.nix { };
+  repose-agent-setup = final.callPackage ./agent-setup.nix { herdr = final.reposeHerdr; };
 
   # Shell implementation of the repose-hook contract (guest-conventions.md);
   # the base uses it until workstream 04's Go binary exists in cmd/repose-hook.

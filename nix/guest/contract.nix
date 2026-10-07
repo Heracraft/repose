@@ -35,6 +35,17 @@
 #     (DECISIONS I-488). PATH and the names the base's loader owns are
 #     refused with the reason.
 #
+#   home.shellAliases = { gs = "git status --short"; };
+#     carried to NixOS's programs.{bash,zsh,fish}.shellAliases at priority
+#     90, so an alias of the user's replaces the base's alias of the same
+#     name (ll) and every shell on the guest has it (DECISIONS I-519).
+#     home-manager's programs.bash stays off: it would take over ~/.bashrc.
+#     programs.bash.initExtra (and the other shells' init options) is not
+#     carried: the base already initialises starship, zoxide, direnv and
+#     fzf, and the copies from home-manager's modules would run a second
+#     time. Shell code goes in ~/.bashrc, which every bash on the guest
+#     reads (I-513).
+#
 # The fragment itself is `repose.fragment`; nix/guest/compose.nix and
 # nix/guest/microvm.nix set it. The account's personal layer
 # (`machine.nix`, DECISIONS I-490) is `repose.personal`: the same contract,
@@ -129,6 +140,14 @@ let
     ++ map (p: "home.sessionPath: '${p}' may not contain a double quote (\")")
       (lib.filter (p: lib.hasInfix "\"" p) sessionPath);
   carriedVars = lib.filterAttrs (n: _: !(reservedVars ? ${n})) sessionVars;
+
+  # A user unit home-manager writes to ~/.config/systemd/user wins over the
+  # base's unit of the same name in /etc/systemd/user, so a fragment could
+  # replace repose-tmux-session or repose-herdr-server, the units every
+  # agent runs in. The repose- prefix is the base's (DECISIONS I-563).
+  unitRefusals = map
+    (n: "systemd.user.services.${n}: not allowed in a fragment; names starting with repose- belong to the machine")
+    (lib.filter (lib.hasPrefix "repose-") (builtins.attrNames hm.systemd.user.services));
 
   # Sourced by /etc/profile.d/repose.sh (env.nix): every login and
   # interactive shell, and every agent wrapper, whose tmux server may have
@@ -235,6 +254,10 @@ in
       lib.mapAttrs (_: v: lib.mkOverride 90 v) carriedVars
       // { PATH = lib.mkBefore sessionPath; };
     environment.etc."repose/session-vars.sh".text = sessionVarsScript;
+    # home.shellAliases into every shell (header; DECISIONS I-519).
+    programs.bash.shellAliases = lib.mapAttrs (_: lib.mkOverride 90) hm.home.shellAliases;
+    programs.zsh.shellAliases = lib.mapAttrs (_: lib.mkOverride 90) hm.home.shellAliases;
+    programs.fish.shellAliases = lib.mapAttrs (_: lib.mkOverride 90) hm.home.shellAliases;
     # The names, one per line, for env.nix's activation script, which
     # gives a running tmux server and user manager the new values and
     # unsets the names a new configuration dropped.
@@ -256,6 +279,10 @@ in
       {
         assertion = sessionRefusals == [ ];
         message = lib.concatStringsSep "\n" sessionRefusals;
+      }
+      {
+        assertion = unitRefusals == [ ];
+        message = lib.concatStringsSep "\n" unitRefusals;
       }
     ];
   } // allowed;

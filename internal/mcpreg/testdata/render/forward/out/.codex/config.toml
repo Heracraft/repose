@@ -1,0 +1,3 @@
+[mcp_servers.apple-notes]
+command = "repose-mcp"
+args = ["apple-notes"]

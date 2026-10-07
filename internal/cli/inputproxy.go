@@ -524,7 +524,8 @@ type dropHandler struct {
 	slug    string
 	repoDir string // the laptop checkout that is the machine's checkout (target.Checkout's, I-480); "" when there is none
 	clip    clipboardReader
-	// notify shows a message on the tmux status line, without blocking.
+	// notify shows a message on the tmux status line or as a herdr
+	// notification, without blocking.
 	notify func(msg string)
 	now    func() time.Time
 
@@ -537,8 +538,7 @@ func newDropHandler(t sshTarget, slug, repoDir string) *dropHandler {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			cmd := fmt.Sprintf("tmux display-message -d 5000 -t %s %s", shQuote("="+slug+":"), shQuote(strings.ReplaceAll("repose: "+msg, "#", "##")))
-			_, _ = runSSH(ctx, t, cmd, nil)
+			_, _ = runSSH(ctx, t, guestMessageScript(slug, "repose: "+msg), nil)
 		}()
 	}
 	return h

@@ -62,6 +62,7 @@ var internalEnvVars = map[string]string{
 	"REPOSE_TEST_GOOS":       "tests only: pretend to be another OS (goos())",
 	"REPOSE_CLAUDE_PLATFORM": "tests only: the guest's platform settings path in the Claude merge script",
 	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
+	"REPOSE_CHECKOUT":        "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
 }
 
 func readCLIDoc(t *testing.T) string {

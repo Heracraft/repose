@@ -1,9 +1,11 @@
 # Run and attach
 
 `repose run` is the whole product in one command. With no arguments it puts
-you inside your project's tmux session. With a prompt it starts an agent in a
-new tmux window, types the prompt, and leaves it running whether or not you
-stay attached.
+you inside your project's session: tmux, or herdr on a project that chose
+it (DECISIONS I-501, I-502; "herdr projects" below). With a prompt it
+starts an agent in a new window (a tab on herdr), types the prompt, and
+leaves it running whether or not you stay attached. Everything above
+"herdr projects" describes tmux.
 
 ## What the user sees
 
@@ -332,6 +334,180 @@ Input typed during a copy waits and follows it in order. A copy that
 takes over 0.5 s says so on the status line; nothing is ever written
 over the pane. `REPOSE_INPUT_PROXY=0`, Windows, or a stdin or stdout that
 is not a terminal: the CLI execs ssh as before. Nothing is logged.
+
+## Choosing the multiplexer (I-502)
+
+```
+$ repose run --help
+...
+      --multiplexer string   tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else tmux)
+```
+
+```toml
+# ~/.config/repose/config.toml
+default_agent = "claude"
+default_multiplexer = "herdr"
+```
+
+A new project, from a laptop terminal inside herdr:
+
+```
+$ cd ~/src/todo-app && repose run
+✓ Created todo-app (large, herdr)  0.3s
+...
+Ready in 38s.
+todo-app is in herdr's sidebar.
+```
+
+Switching a running machine:
+
+```
+$ repose run --multiplexer herdr
+todo-app uses herdr from its next start; tmux runs until then.
+```
+
+- `--multiplexer` is a flag of `run` and `sync`. Values `tmux` and
+  `herdr`; anything else exits 2 naming both.
+- A new project gets, in order: `--multiplexer`; `default_multiplexer`
+  in `config.toml`; `herdr` when `HERDR_ENV=1` is in the CLI's
+  environment; `tmux`. A temporary project takes tmux from every source
+  but the flag, and `--temp --multiplexer herdr` exits 2 (I-542). The create line
+  names herdr (`Created todo-app (large, herdr)`) and says nothing for
+  tmux.
+- On an existing project `--multiplexer` with another value than the
+  project's sends `PATCH /projects/:id {multiplexer}` before anything
+  else, and the value stays with the project. A stopped project then
+  starts on it, and nothing more is printed. A running one prints the
+  line above (with the values swapped for a switch to tmux) and attaches
+  to what runs now. The same value as the project's prints nothing and
+  sends nothing.
+- The api refuses herdr on a base without it (`409`,
+  `base_update_needed`, api.md "The base gate"). For an explicit flag or
+  config key the CLI prints the api's message and exits 1. For the
+  `HERDR_ENV` pick it creates the project with tmux and says nothing.
+- `default_multiplexer` never changes an existing project.
+- The dashboard shows `herdr` beside the size on a herdr project's page,
+  read only.
+
+## herdr projects (I-509, I-510)
+
+Which path a command takes is decided by what runs: the CLI asks the
+guest, in one ssh over the connection it holds (a few milliseconds; the
+fast path asks too), for `repose-herdr-server`'s `ActiveState`, this
+boot's `multiplexer` in `~/.repose/project.json`, and whether a tmux
+server answers. First match wins (I-542):
+
+1. The ssh failed: the project's stored `multiplexer`.
+2. The unit is `active`, `activating` (systemd's wait before a restart)
+   or `reloading`: herdr.
+3. tmux answers: tmux. A machine switched while running answers by what
+   it runs until its next start.
+4. This boot named herdr and neither runs: exit 1 with `herdr is not
+   running on todo-app: repose-herdr-server is failed. \`repose stop
+   todo-app\` and \`repose start todo-app\` start it again.` No tmux
+   attach is tried.
+5. Otherwise tmux (a base with no herdr unit included).
+
+The CLI asks only when a prompt or an attach needs the answer; a `sync`
+(or `run --no-attach` with no prompt) asks nothing and takes the
+project's stored `multiplexer` for the sidebar, or the old value when
+that same command switched a running machine (I-542).
+
+| Command | herdr project |
+|---|---|
+| `repose run`, `repose attach` | the attach rule below |
+| `repose run "prompt"` | a tab in the checkout's workspace, the agent, the prompt, then the attach rule |
+| `repose run --worktree "prompt"` | the git worktree as on tmux, `herdr worktree open --path DIR` so herdr groups it under the repository, then the agent in it |
+| `repose attach P:CHECKOUT` (I-480) | focuses that checkout's workspace, creating it in `/home/dev/<name>` when missing, then the attach rule |
+| `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`; `--json` gives `{workspace, agent, name, state, focused}`; `-q` the names. No cwd, no title |
+| `repose paste` | `herdr pane send-text <pane> <path>` into the focused pane (from `herdr pane list`), or into agent NAME's pane with `--window NAME`; no Enter |
+| `repose status` | `herdr` after the size in the header; the sessions line drops `tmux clients` |
+| `repose ls` AGENTS, dashboard | herdr's agents and states, gone when the pane closes |
+| `repose stop` | as on tmux, the `Interrupted ...` line included (I-500); herdr resumes agents with an integration at the next start |
+| `repose rm` | also removes the laptop herdr's entry for the machine |
+| temporary machine | always tmux (I-542): `--temp --multiplexer herdr` exits 2, and `--multiplexer herdr` on a temporary project exits 2 naming `repose keep` |
+
+**The attach rule**, first match wins:
+
+1. `HERDR_ENV=1` (a laptop herdr pane), the project is not temporary, and
+   the machine is in the laptop herdr's sidebar (the reconcile below has
+   just made sure): the CLI prints `<slug> is in herdr's sidebar.` and
+   stays in the foreground as the session helper (port forwards, the
+   browser bridge, the carry) until Ctrl-C, which exits 0. No client
+   opens inside the pane.
+2. `herdr` 0.9.0 or newer on the laptop PATH: `herdr --remote
+   <slug>.repose --session default` runs as a child of the CLI, never
+   through exec, so the session helper lives as long as it does. herdr's
+   bridge reconnects by itself, so the input proxy and the reattacher
+   (I-280, I-469) stay off on this path. The exit status is herdr's.
+3. Otherwise `ssh -t <slug>.repose herdr` under the input proxy and the
+   reattacher, as a tmux attach runs.
+
+**A prompt on herdr** is one ssh script:
+
+1. The folder trust of Claude Code and Codex, as on tmux (I-486, I-544).
+2. The workspace for the folder (checkout, worktree or other checkout),
+   created when missing.
+3. `herdr agent list` (it prints herdr's JSON answer) picks the name, `claude` or the lowest free
+   `claude-N`, and counts the same agent in that workspace. With one
+   there, `run` prints `Another claude tab is open; two agents share one
+   working tree. \`repose run --worktree\` gives the next one its own.`
+4. `herdr tab create --workspace W --cwd DIR --label NAME --no-focus`.
+   The Claude Code login (no prompt, I-486) creates the tab with
+   `--focus` instead and starts claude with `herdr pane run`, which
+   gives the pane no agent name, so the attach lands in that tab.
+5. `herdr agent start NAME --kind AGENT --pane P --timeout 300000`; on a
+   timeout, `herdr agent wait NAME --until idle --until blocked` again
+   until 30 minutes have passed (a first dev-shell build).
+6. A pane that settles on `blocked` gets no prompt: `run` names the tab
+   and attaches, or exits 1 with `--no-attach` (I-486).
+7. `herdr agent prompt NAME "<prompt>" --wait --until working --until
+   blocked --timeout 10000`.
+
+**The laptop's sidebar** (I-510). With `herdr` 0.9.0 or newer on the
+laptop PATH and repose's `Include` in `~/.ssh/config`, `run`, `attach`,
+`sync`, `rm` and every certificate refresh reconcile herdr's machine list: a
+running herdr project with no entry gets `herdr machine add
+<slug>.repose --label <slug> --remote-session default` in the
+background (it never delays `Ready in`; a certificate refresh, which
+`ssh-prepare` may run in a process that ends at once, only removes,
+I-542); an entry whose target is
+`<slug>.repose` and whose slug is no live project goes (a destroy from
+the dashboard, another laptop or an expiry); anything else, including an
+entry you disabled, stays. A stopped machine keeps its entry, and herdr
+shows the gateway's "stopped" line until you start it. Temporary
+machines are never added. Each add reads herdr's list again under
+`~/.config/repose/herdr-sidebar.lock`, so two commands at once make one
+entry, and the reconcile removes all but one entry for a live slug (the
+enabled one kept). An attach that execs ssh in place of the CLI (no
+input proxy) waits up to 10 s for adds in flight first. A command that
+read no project list from the api (the fast attach, I-223) adds its own
+project and removes nothing, with no api call. Nothing is printed
+unless an add fails, once:
+`Could not add todo-app to herdr's sidebar: <herdr's last line>`. An
+add that fails while an attach holds the terminal prints after the
+attach returns, never over the pane (I-542). Other projects are added
+by their stored `multiplexer`, since the api has no other answer; the
+current one by the guest's (I-542).
+
+**Messages.** What the session helper and the CLI show inside the
+session (`Time zone set to ...`, forwards, carry notices) goes through
+`herdr notification show repose --body "<text>"` on herdr, where tmux
+uses `display-message`; a script that does not know the multiplexer
+uses herdr when `repose-herdr-server` is active, else tmux, so a tmux
+started inside a herdr pane does not take the message.
+herdr shows them only when the guest's herdr config sets `[ui.toast]
+delivery = "herdr"` (its default is off, I-542). The base seeds it in a
+new `config.toml` (I-564). In the sidebar path
+(rule 1) the helper runs in the CLI's own pane, and its messages print
+there. With no herdr client attached nobody sees them, as with tmux.
+
+**Old CLIs.** A CLI from before I-509 runs `tmux attach` on a herdr
+machine and gets tmux's `no server running`. The release notes name the
+CLI version herdr needs. The public docs (/docs/tutorial-herdr,
+run-and-attach, troubleshooting) name the test instead, a `repose run
+--help` that lists `--multiplexer`, which holds whichever release ships
+it (I-542). The api cannot tell an old CLI apart.
 
 ## ps, exec and ssh (I-274, I-275)
 

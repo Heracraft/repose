@@ -57,6 +57,7 @@ func TestEndToEndAgentInTmux(t *testing.T) {
 	run := &privateTmux{tmux: tmux, sock: filepath.Join(dir, "sock")}
 	h := New(p, run, quietLog())
 	h.uid, h.gid = -1, -1
+	tmuxSocketFile(t, p, h.tmuxUID)
 	loader := loaderFor(t, p.SecretsRefresh())
 
 	start := exec.Command(tmux, "-S", run.sock, "-f", "/dev/null", "new-session", "-d", "-s", "e2e", "sleep 60")

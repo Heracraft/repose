@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "sentry": {
+      "bearer_token_env_var": "SENTRY_TOKEN",
+      "url": "https://mcp.sentry.dev/mcp"
+    }
+  },
+  "skipped": [
+    {
+      "name": "both",
+      "reason": "needs the secrets BOTH_KEY, BOTH_ORG"
+    },
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

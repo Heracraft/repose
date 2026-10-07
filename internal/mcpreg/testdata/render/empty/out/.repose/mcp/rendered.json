@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {},
+    "codex": {},
+    "gemini": {},
+    "opencode": {},
+    "pi": {}
+  }
+}

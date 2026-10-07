@@ -1,0 +1,1 @@
+{"mcpServers":{"keep":{"type":"http","url":"https://keep.example/mcp"},"gone":{"type":"http","url":"https://gone.example/mcp"},"changed":{"type":"http","url":"https://changed.example/mcp","headers":{"X-Mine":"1"}},"mine":{"command":"my-mcp"}}}

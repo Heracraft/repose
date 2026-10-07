@@ -1,0 +1,5 @@
+[mcp_servers.keep]
+url = "https://keep.example/mcp"
+
+[mcp_servers.mine]
+command = "my-mcp"

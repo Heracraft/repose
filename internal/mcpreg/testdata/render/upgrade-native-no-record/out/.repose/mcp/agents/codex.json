@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "db": {
+      "args": [
+        "run",
+        "db"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "edited": {
+      "args": [
+        "run",
+        "edited"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "plain": {
+      "args": [
+        "run",
+        "plain"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    }
+  },
+  "skipped": [
+    {
+      "name": "db",
+      "reason": "another server has this name"
+    },
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

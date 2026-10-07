@@ -25,11 +25,21 @@ type Plan struct {
 	DiskGB       int // may be allocated
 	EgressGB     int // a period
 	ProjectLimit int
+	// IntroCents and IntroMonths are the introductory price: a first
+	// subscription pays IntroCents for its first IntroMonths charges after
+	// the trial, then PriceCents. Zero is no introductory price. Paddle
+	// charges it as a recurring discount (DECISIONS I-497). IntroEgressGB
+	// is the egress allowance a period has while the offer runs; zero
+	// keeps EgressGB.
+	IntroCents    int64
+	IntroMonths   int
+	IntroEgressGB int
 }
 
-// The three plans (DECISIONS I-362).
+// The three plans (DECISIONS I-362), and Solo's introductory price
+// (DECISIONS I-497).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroCents: 2000, IntroMonths: 3, IntroEgressGB: 100}
 	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25}
 	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50}
 )
@@ -61,6 +71,29 @@ const PriceVersion = "plan-v1"
 func PlanByID(id string) (Plan, bool) {
 	for _, p := range Plans {
 		if p.ID == id {
+			return p, true
+		}
+	}
+	return Plan{}, false
+}
+
+// HasIntro reports whether the plan has an introductory price.
+func (p Plan) HasIntro() bool { return p.IntroCents > 0 && p.IntroMonths > 0 }
+
+// IntroDiscountCents is the flat amount the introductory discount takes
+// off each of the first IntroMonths charges.
+func (p Plan) IntroDiscountCents() int64 {
+	if !p.HasIntro() {
+		return 0
+	}
+	return p.PriceCents - p.IntroCents
+}
+
+// IntroPlan is the plan with an introductory price, if any. One plan has
+// one at most: Paddle's discount is restricted to that plan's price.
+func IntroPlan() (Plan, bool) {
+	for _, p := range Plans {
+		if p.HasIntro() {
 			return p, true
 		}
 	}

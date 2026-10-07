@@ -1,6 +1,7 @@
 // Package project implements the SetupProject request of
 // docs/interfaces/vsock-guestd.md: the project directory, project.json, the
-// environment file, and the tmux session that every other feature attaches to.
+// environment file, and the session unit of the multiplexer project.json
+// names, which every other feature attaches to (DECISIONS I-503).
 package project
 
 import (
@@ -17,12 +18,18 @@ import (
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // TmuxUnit is the user unit that owns the project's tmux session. It belongs
 // to the guest base (02); guestd starts it rather than running tmux itself, so
 // the session survives a guestd restart and belongs to dev's tmux server.
-const TmuxUnit = "repose-tmux-session.service"
+// HerdrUnit is herdr's (I-501). Both carry ExecCondition, so a start of the
+// one project.json does not name is a skip, not a failure.
+const (
+	TmuxUnit  = multiplexer.TmuxUnit
+	HerdrUnit = multiplexer.HerdrUnit
+)
 
 // DefaultTimeout bounds the whole setup.
 const DefaultTimeout = 60 * time.Second
@@ -41,6 +48,9 @@ type Info struct {
 	UserHandle string `json:"user_handle,omitempty"`
 	Class      string `json:"class,omitempty"`
 	TZ         string `json:"tz,omitempty"`
+	// Multiplexer is tmux or herdr (I-502); absent or any other value
+	// means tmux (multiplexer.Normalize).
+	Multiplexer string `json:"multiplexer,omitempty"`
 }
 
 // Handler sets projects up and remembers the current slug for the sampler.
@@ -53,6 +63,10 @@ type Handler struct {
 
 	mu   sync.RWMutex
 	slug string
+	mux  string
+	// setup is true once Setup has reached the session unit since this
+	// guestd started, whether or not the unit started.
+	setup bool
 }
 
 // New builds the handler and loads the slug from a project.json left by an
@@ -61,10 +75,29 @@ type Handler struct {
 func New(p sysdep.Paths, run sysdep.Runner, log *slog.Logger) *Handler {
 	uid, gid := sysdep.DevIdentity()
 	h := &Handler{paths: p, run: run, log: log, uid: uid, gid: gid}
+	h.mux = multiplexer.Tmux
 	if info, err := h.load(); err == nil && info.Slug != "" {
 		h.slug = info.Slug
+		h.mux = multiplexer.Normalize(info.Multiplexer)
 	}
 	return h
+}
+
+// Multiplexer is the multiplexer project.json named at the last
+// SetupProject (or the file an earlier boot left), normalized.
+func (h *Handler) Multiplexer() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.mux
+}
+
+// SetupDone is true once SetupProject has asked for the session unit since
+// guestd started. Until then no tmux or herdr server is expected
+// (DECISIONS I-562).
+func (h *Handler) SetupDone() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.setup
 }
 
 // Slug is the current project slug, or "" before the first SetupProject.
@@ -133,23 +166,28 @@ func (h *Handler) Setup(ctx context.Context, req *guestdv1.SetupProject) error {
 			return err
 		}
 	}
-	err = h.ensureTmux(ctx)
+	// The file just written decides the multiplexer: the api's record, or
+	// tmux for a project_json without the key (an api before I-502).
+	info, _ := h.load()
+	mux := multiplexer.Normalize(info.Multiplexer)
+	err = h.ensureSession(ctx, mux)
+	h.mu.Lock()
+	// A unit that failed to start is a server that is down: the
+	// warnings may say so, for the multiplexer project.json now names.
+	h.setup = true
+	h.mux = mux
+	if err == nil {
+		h.slug = slug
+	}
+	h.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
-	h.mu.Lock()
-	h.slug = slug
-	h.mu.Unlock()
-
 	// The slug is a name the user chose, so it stays out of the line; the
 	// project id from project.json is the identifier that may be logged.
-	id := ""
-	if info, err := h.load(); err == nil {
-		id = info.ProjectID
-	}
 	h.log.Info("project set up",
-		"event", "setup_project", "project_id", id,
+		"event", "setup_project", "project_id", info.ProjectID, "multiplexer", mux,
 		"checkout_found", dir != "", "dir_linked", linked, "git_init", initialised)
 	return nil
 }
@@ -389,22 +427,26 @@ func originURL(remote string) string {
 	return "git@" + host + ":" + path + ".git"
 }
 
-// ensureTmux starts the user unit if it is not already running. A start of
-// an active unit is a no-op in systemd, so one `start` does both: each
-// `-M dev@` call is a PAM login and a bridge to dev's manager, and a
-// separate is-active first cost about 0.2 s of every boot's SetupProject
-// (DECISIONS I-231).
-func (h *Handler) ensureTmux(ctx context.Context) error {
+// ensureSession starts the session unit of the multiplexer project.json
+// names (DECISIONS I-503). A start of an active unit is a no-op in systemd,
+// so one `start` does both: each `-M dev@` call is a PAM login and a bridge
+// to dev's manager, and a separate is-active first cost about 0.2 s of
+// every boot's SetupProject (DECISIONS I-231). The unit's ExecCondition
+// skips the start while the other multiplexer's unit is active (a switch
+// made while running applies at the next start, I-502); systemctl exits 0
+// for a skip.
+func (h *Handler) ensureSession(ctx context.Context, mux string) error {
+	unit := multiplexer.Unit(mux)
 	res, err := h.run.Run(ctx, sysdep.RunSpec{
-		Argv:      []string{"systemctl", "--user", "-M", "dev@", "start", TmuxUnit},
+		Argv:      []string{"systemctl", "--user", "-M", "dev@", "start", unit},
 		MaxOutput: 8 << 10,
 		Env:       sysdep.DevEnv(h.paths, "root"),
 	})
 	if err != nil {
-		return sysdep.Errf(sysdep.CodeInternal, "start the tmux session unit: %w", err)
+		return sysdep.Errf(sysdep.CodeInternal, "start the %s session unit: %w", multiplexer.Normalize(mux), err)
 	}
 	if res.ExitCode != 0 {
-		return sysdep.Errf(sysdep.CodeInternal, "start the tmux session unit: systemctl exited %d", res.ExitCode)
+		return sysdep.Errf(sysdep.CodeInternal, "start the %s session unit: systemctl exited %d", multiplexer.Normalize(mux), res.ExitCode)
 	}
 	return nil
 }

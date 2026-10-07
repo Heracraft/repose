@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -17,6 +18,11 @@ import (
 var realHome string
 
 func TestMain(m *testing.M) {
+	// The test binary doubles as a process the tests start: the stdio MCP
+	// server and repose-mcp of the forward's tests (mcpforward_test.go).
+	if h := os.Getenv(testHelperEnv); h != "" {
+		os.Exit(runTestHelper(h, os.Args[1:]))
+	}
 	realHome = os.Getenv("HOME")
 	home, err := os.MkdirTemp("", "repose-cli-test-home-")
 	if err != nil {
@@ -28,6 +34,11 @@ func TestMain(m *testing.M) {
 	// A developer who moved their Claude config would otherwise have the
 	// carry tests read it instead of the test home's ~/.claude.
 	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
+	// A test run from a herdr pane would pick herdr for new projects,
+	// and the developer's own herdr must never see a test's reconcile
+	// (I-510): tests that want a laptop herdr set lookHerdr themselves.
+	_ = os.Unsetenv("HERDR_ENV")
+	lookHerdr = func(string) (string, error) { return "", exec.ErrNotFound }
 	code := m.Run()
 	_ = os.RemoveAll(home)
 	os.Exit(code)

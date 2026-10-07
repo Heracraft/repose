@@ -73,7 +73,7 @@ var warningKinds = map[string]bool{
 	"pool_high": true, "store_high": true, "build_queue_deep": true, "cache_unreachable": true,
 	"guestd_lost": true, "freeze_timeout": true,
 	"disk_high": true, "inotify_exhausted": true, "docker_down": true, "store_path_missing": true,
-	"oom": true, "tmux_down": true, "guest_other": true,
+	"oom": true, "tmux_down": true, "herdr_down": true, "guest_other": true,
 }
 
 // MaxWarningDetail caps a host warning's detail in the api log.

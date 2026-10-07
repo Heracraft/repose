@@ -23,7 +23,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Created) != 8 || len(res.Found) != 0 {
+	if len(res.Created) != 9 || len(res.Found) != 0 {
 		t.Fatalf("first run: created %v found %v", res.Created, res.Found)
 	}
 	if res.PriceSolo == "" || res.PricePlus == "" || res.PricePro == "" || res.ProductOverage == "" || res.WebhookSecret != f.Secret() || res.Environment != "sandbox" {
@@ -44,12 +44,22 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("price amount %v", up["amount"])
 		}
 	}
+	// The introductory discount: $9 off Solo's price for three charges.
+	ds := f.Bodies["POST /discounts"]
+	if len(ds) != 1 || res.DiscountIntro == "" {
+		t.Fatalf("discounts created: %v (%q)", ds, res.DiscountIntro)
+	}
+	d := ds[0]
+	if d["type"] != "flat" || d["amount"] != "900" || d["currency_code"] != "USD" || d["recur"] != true || d["maximum_recurring_intervals"] != float64(3) ||
+		len(d["restrict_to"].([]any)) != 1 || d["restrict_to"].([]any)[0] != res.PriceSolo || d["custom_data"].(map[string]any)["repose"] != "intro-solo-2000-3" {
+		t.Fatalf("discount body: %v", d)
+	}
 	ns := f.Bodies["POST /notification-settings"][0]
 	if ns["destination"] != "https://api.repose.test/v1/billing/webhook" || len(ns["subscribed_events"].([]any)) != len(billing.WebhookEvents) {
 		t.Fatalf("notification setting: %v", ns)
 	}
 	block := res.EnvBlock()
-	for _, want := range []string{"PADDLE_PRICE_SOLO=" + res.PriceSolo, "PADDLE_PRICE_PLUS=" + res.PricePlus, "PADDLE_PRICE_PRO=" + res.PricePro, "PADDLE_PRODUCT_OVERAGE=" + res.ProductOverage, "PADDLE_WEBHOOK_SECRET=" + f.Secret()} {
+	for _, want := range []string{"PADDLE_PRICE_SOLO=" + res.PriceSolo, "PADDLE_PRICE_PLUS=" + res.PricePlus, "PADDLE_PRICE_PRO=" + res.PricePro, "PADDLE_PRODUCT_OVERAGE=" + res.ProductOverage, "PADDLE_DISCOUNT_INTRO=" + res.DiscountIntro, "PADDLE_WEBHOOK_SECRET=" + f.Secret()} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block lacks %q:\n%s", want, block)
 		}
@@ -63,7 +73,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(again.Created) != 0 || len(again.Found) != 8 || again.PriceSolo != res.PriceSolo || again.PricePlus != res.PricePlus || again.PricePro != res.PricePro || again.WebhookSecret != f.Secret() {
+	if len(again.Created) != 0 || len(again.Found) != 9 || again.DiscountIntro != res.DiscountIntro || again.PriceSolo != res.PriceSolo || again.PricePlus != res.PricePlus || again.PricePro != res.PricePro || again.WebhookSecret != f.Secret() {
 		t.Fatalf("rerun: created %v found %v", again.Created, again.Found)
 	}
 	for _, r := range f.Requests[before:] {

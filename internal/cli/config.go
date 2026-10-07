@@ -2,11 +2,15 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 const defaultAPIURL = "https://api.repose.herakraft.co/v1"
@@ -25,6 +29,9 @@ type Config struct {
 	// still loads, since unknown keys are ignored (DECISIONS I-242).
 	DefaultClass string `toml:"default_class"`
 	DefaultAgent string `toml:"default_agent"`
+	// DefaultMultiplexer is the multiplexer of projects `run` creates,
+	// tmux or herdr; empty lets the CLI pick (DECISIONS I-502).
+	DefaultMultiplexer string `toml:"default_multiplexer"`
 	// SyncExclude is sync.exclude. TOML spells that as a [sync] table
 	// with an exclude key (Sync, merged in by loadConfig); the quoted
 	// top-level key "sync.exclude" is what this tag matched before and
@@ -40,9 +47,19 @@ type Config struct {
 	// Logins is the [logins] table: which of the laptop's logins `run`
 	// leaves on the laptop (logins.go, DECISIONS I-422).
 	Logins LoginsConfig `toml:"logins"`
+	// MCP is the [mcp] table: forward lists the laptop's MCP servers
+	// forwarded whenever you're attached (`repose mcp forward`, DECISIONS
+	// I-557).
+	MCP MCPConfig `toml:"mcp"`
 	// Projects holds per-project tables, keyed by the project's name:
-	// [projects.NAME.logins] replaces [logins] for that project.
+	// [projects.NAME.logins] replaces [logins] for that project, and
+	// [projects.NAME.mcp] forward adds to [mcp] forward.
 	Projects map[string]ProjectConfig `toml:"projects"`
+}
+
+// MCPConfig is an [mcp] table.
+type MCPConfig struct {
+	Forward []string `toml:"forward"`
 }
 
 // LoginsConfig is a [logins] table. Skip is nil when the table does not
@@ -55,6 +72,21 @@ type LoginsConfig struct {
 // ProjectConfig is one [projects.NAME] table.
 type ProjectConfig struct {
 	Logins LoginsConfig `toml:"logins"`
+	MCP    MCPConfig    `toml:"mcp"`
+}
+
+// mcpForward is what the session helper forwards for the project named
+// slug: [mcp] forward, then [projects.NAME.mcp] forward, each name once.
+func (c Config) mcpForward(slug string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range append(append([]string{}, c.MCP.Forward...), c.Projects[slug].MCP.Forward...) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func defaultConfig() Config {
@@ -90,6 +122,9 @@ func loadConfig(dir string) (Config, error) {
 	}
 	if cfg.LogtoClientID == "" {
 		cfg.LogtoClientID = defaultLogtoClientID
+	}
+	if cfg.DefaultMultiplexer != "" && !multiplexer.Valid(cfg.DefaultMultiplexer) {
+		return cfg, fmt.Errorf("%s: default_multiplexer is %q; it takes %s", configPath(dir), cfg.DefaultMultiplexer, strings.Join(multiplexer.Names, " or "))
 	}
 	return cfg, nil
 }

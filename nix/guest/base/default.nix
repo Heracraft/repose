@@ -15,7 +15,10 @@
     ./docker.nix
     ./caches.nix
     ./tmux.nix
+    ./herdr.nix
     ./tools.nix
+    ./shell.nix
+    ./git.nix
     ./devtools.nix
     ./tools-carry.nix
     ./compat.nix
@@ -34,15 +37,25 @@
   ];
 
   system.stateVersion = "26.11";
-  # Lowest priority: the runner passes the real name on the kernel line and
-  # the NixOS test driver names its nodes itself.
+  # Lowest priority: hostd and the runner name the guest after its project on
+  # the kernel line (systemd.hostname=, which wins over /etc/hostname,
+  # DECISIONS I-550), and the NixOS test driver names its nodes itself.
   networking.hostName = lib.mkOverride 1100 "repose-guest";
   time.timeZone = lib.mkDefault "UTC";
   i18n.defaultLocale = "C.UTF-8";
 
-  # The guest never builds its own system: the host does (DESIGN.md §5), so
-  # nothing that only serves `nixos-rebuild` inside the guest is installed.
-  documentation.enable = false;
+  # Man pages for what is installed (`man ls`, `man git`), and nothing
+  # else from the documentation modules (DECISIONS I-534). Every
+  # documentation.* option is gated on documentation.enable. No caches:
+  # building the man-db index at each base build costs time and `man`
+  # finds a page without it. The NixOS manual and options pages only serve
+  # `nixos-rebuild`, and the host builds the guest's system (DESIGN.md §5).
+  documentation.enable = true;
+  documentation.man.enable = true;
+  documentation.man.cache.enable = false;
+  documentation.doc.enable = false;
+  documentation.info.enable = false;
+  documentation.dev.enable = false;
   documentation.nixos.enable = false;
   # NixOS's own handler reads a channel's programs.sqlite, which a flake
   # system does not have; devtools.nix installs the nix-index one (I-219).

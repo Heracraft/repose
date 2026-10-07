@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // RunOptions is `repose run`'s flags (07-cli.md §5.1).
@@ -38,6 +40,9 @@ type RunOptions struct {
 	// NoPersonal keeps the account's machine.nix off this machine, for
 	// good (--no-personal, DECISIONS I-490).
 	NoPersonal bool
+	// Multiplexer is --multiplexer: tmux or herdr for a new project, or a
+	// switch from the next start for an existing one (DECISIONS I-502).
+	Multiplexer string
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -158,6 +163,21 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			return err
 		}
 	}
+	// runningMux is what a machine that was already running runs while
+	// this command switches its setting: the old value until its next
+	// start (I-502), which the sidebar of a sync goes by.
+	runningMux := ""
+	if !attachOnly && res.Project != nil && opts.Multiplexer != "" {
+		// --multiplexer on a project that exists: the setting changes
+		// first, and sticks (I-502).
+		before := multiplexer.Normalize(res.Project.Multiplexer)
+		if err := switchMultiplexer(ctx, e, res.Project, opts.Multiplexer); err != nil {
+			return err
+		}
+		if res.Project.State == "running" && multiplexer.Normalize(res.Project.Multiplexer) != before {
+			runningMux = before
+		}
+	}
 	project := res.Project
 	if project == nil {
 		if attachOnly {
@@ -226,7 +246,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout}
+	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
+		helper.MCPOff = true // I-556: attach honours the off switch too
+	}
+	helper.MCP = e.Cfg.mcpForward(project.Slug) // I-557
 	// This folder's checkout on the machine: the machine's own (the same
 	// remote), or another one the folder is (I-480), not one that
 	// PROJECT:CHECKOUT named from elsewhere.
@@ -240,24 +264,49 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		// from anywhere else would carry some other repository's.
 		helper.RepoDir = root
 	}
-	// After the attach on the input-proxy path: a temporary machine whose
-	// session has ended goes at once (I-352).
-	afterAttach := func() { tempSessionEnded(ctx, e, target, project) }
+	// What runs the machine's terminals now (I-509): the guest says, asked
+	// once and only by a prompt or an attach, so a sync costs no ssh.
+	var muxOnce muxer
+	muxNow := func() (muxer, error) {
+		if muxOnce == nil {
+			m, err := muxFor(ctx, target, project)
+			if err != nil {
+				return nil, err
+			}
+			muxOnce = m
+		}
+		return muxOnce, nil
+	}
+	attach := func(window string) error {
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
+		helper.Multiplexer = mux.Name()
+		release := e.herdrSyncFor(ctx, project, mux.Name() == multiplexer.Herdr)
+		defer release()
+		// After an attach the CLI waited on: a temporary machine whose
+		// session has ended goes at once (I-352).
+		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
+		defer e.keepTokenFresh()()
+		return mux.Attach(e, attachReq{Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
+	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).
 		helper.Carry = true
 		e.addReposeRemote(ctx, project, target, nil) // I-272
-		startSessionHelper(e, helper)
 		tzSaved()
 		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
-		defer e.keepTokenFresh()()
-		return attachTmux(target, project.Slug, "", tz, helper.RepoDir, afterAttach, renewFor(e, project))
+		return attach("")
 	}
 
 	// The machine's checkout, as its sync or carry found it (I-368).
 	var checkout *string
+	// The laptop's .mcp.json answers for this repository, which the agent
+	// window's trust write copies (I-556); read with the carry.
+	var mcpAppr mcpApprovals
 	if skipSync {
 		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
@@ -286,17 +335,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			envDone <- builtEnv{envs, err}
 		}()
 		type builtCarry struct {
-			gc    *gitCarry
-			gcErr error
-			cc    *claudeCarry
-			tc    *toolsCarry
+			gc      *gitCarry
+			gcErr   error
+			cc      *claudeCarry
+			tc      *toolsCarry
+			mc      *mcpCarry
+			mcNotes []string
 		}
 		carryDone := make(chan builtCarry, 1)
 		go func() {
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
+			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot))                                 // I-221, I-222, I-490
+			b.mc, b.mcNotes = buildMCPCarry(e.HomeDir, gitRepoRoot(repoRoot), project.Slug, target.Checkout, toolBinsOf(b.tc)) // I-556
 			carryDone <- b
 		}()
 		waitEnv := func() []envFile {
@@ -321,6 +373,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			Carry: func(markers map[string]string) (*credCarry, error) {
 				b := <-carryDone
 				gc, cc := b.gc, b.cc
+				if b.mc != nil && !skip[mcpLogin] {
+					mcpAppr = b.mc.Approvals
+				}
 				if b.gcErr != nil {
 					e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(b.gcErr.Error()))
 				}
@@ -334,13 +389,16 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 						e.warn("%s", n)
 					}
 				}
+				for _, n := range b.mcNotes {
+					e.warn("%s", n)
+				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
 					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
 						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
 					},
-				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, Markers: markers})
+				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
 			},
 		})
 		if err != nil {
@@ -382,6 +440,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 
 	window := ""
 	if opts.Prompt != "" {
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
 		agent := opts.Agent
 		if agent == "" {
 			agent = project.AgentDefault
@@ -395,7 +457,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			dir = tildePath(*checkout)
 		}
 		if opts.Worktree {
-			wt, err := prepareWorktree(ctx, target, project.Slug, agent)
+			wt, err := prepareWorktreeWith(ctx, target, project.Slug, agent, mux)
 			if err != nil {
 				return err
 			}
@@ -410,14 +472,14 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 			pr.Phase("Starting "+agent, "")
 		} else {
-			n, othersOpen, err := windowNameFor(ctx, target, project.Slug, agent)
+			n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
 			if err != nil {
-				return stepFailed("list the guest's tmux windows", err, "")
+				return stepFailed("list the guest's "+mux.Name()+" "+mux.Unit()+"s", err, "")
 			}
 			name = n
 			if othersOpen {
 				pr.Fail()
-				_, _ = fmt.Fprintf(e.ErrOut, "Another %s window is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent)
+				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent, mux.Unit())
 				pr.Phase("Starting "+agent, "")
 			}
 		}
@@ -435,22 +497,22 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err := startAgentWindow(ctx, target, project.Slug, name, dir, agent, opts.Prompt, attachInstead, loadingDevShell)
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
 			// on the dialog, and the prompt was not typed.
 			pr.Fail()
 			if opts.NoAttach {
-				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s window with `repose attach %s`, then type your prompt there.", dialog.Error(), name, project.Slug)
+				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug)
 			}
-			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the window that opens, then type your prompt there.\n", dialog.Error())
+			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
 		} else if err != nil {
 			return stepFailed("start "+agent+" in the guest", err, "")
 		}
 		pr.End()
 		if attachInstead {
-			_, _ = fmt.Fprintln(e.Out, "Claude Code is not logged in on this guest yet. Finish the login in the window that opens, then re-run with your prompt.")
+			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on this guest yet. Finish the login in the %s that opens, then re-run with your prompt.\n", mux.Unit())
 		}
 	}
 
@@ -460,11 +522,23 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	}
 	tzSaved()
 	if opts.NoAttach {
+		// A sync ends here. The sidebar takes the project by its stored
+		// multiplexer, by the old one when this command switched a
+		// running machine, or by the guest's answer when a prompt asked;
+		// the adds finish before the command does.
+		runsHerdr := multiplexer.Normalize(project.Multiplexer) == multiplexer.Herdr
+		if runningMux != "" {
+			runsHerdr = runningMux == multiplexer.Herdr
+		}
+		if muxOnce != nil {
+			runsHerdr = muxOnce.Name() == multiplexer.Herdr
+		}
+		release := e.herdrSyncFor(ctx, project, runsHerdr)
+		release()
+		waitHerdrAdds(30 * time.Second)
 		return nil
 	}
-	startSessionHelper(e, helper)
-	defer e.keepTokenFresh()()
-	return attachTmux(target, project.Slug, window, tz, helper.RepoDir, afterAttach, renewFor(e, project))
+	return attach(window)
 }
 
 // syncResultLine is what a run prints about its sync. With nothing new on
@@ -574,6 +648,7 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		return sshTarget{}, err
 	}
 	endAPI()
+	e.listed = allProjects
 	params := certParams{Handle: me.Handle, Projects: allProjects, CheckAlias: e.TargetFor == nil}
 	endCert := timeSpan("connect cert+ssh files")
 	cr, err := ensureCert(ctx, e.Client, params, nil)
@@ -684,7 +759,7 @@ func hasOAuthSecret(ctx context.Context, c *Client, projectID string) (bool, err
 	return false, nil
 }
 
-// attachTmux is step 8: ssh -t <slug>.repose tmux attach [-t
+// attachTmux is step 8 on tmux: ssh -t <slug>.repose tmux attach [-t
 // <slug>:<window>]. On macOS and Linux ssh runs under the input proxy
 // (I-280), which gets dropped files and Ctrl+V images to the session;
 // repoDir is the laptop checkout that is ~/<slug> on the machine, "" when
@@ -704,17 +779,25 @@ func hasOAuthSecret(ctx context.Context, c *Client, projectID string) (bool, err
 // answers (I-469); renew, when not nil, is how a certificate that ended
 // the connection by expiring (I-436) is replaced.
 func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), renew func(context.Context) error) error {
+	colour := attachColour(os.Getenv("COLORTERM"))
+	return attachSSH(t, slug, colour+attachCommand(slug, t.Checkout, window), colour+attachCommand(slug, t.Checkout, ""), tz, repoDir, after, renew)
+}
+
+// attachSSH is `ssh -t <target> <remote>` under the input proxy and the
+// reattacher, whose attaches after a dropped connection run reremote, or
+// ssh exec'd in place of the CLI where the proxy cannot run. tmux and
+// herdr's third attach path (I-509) share it.
+func attachSSH(t sshTarget, slug, remote, reremote, tz, repoDir string, after func(), renew func(context.Context) error) error {
 	extra := []string{"-t"}
 	if tz != "" {
 		if err := os.Setenv("TZ", tz); err == nil {
 			extra = append(extra, "-o", "SendEnv=TZ")
 		}
 	}
-	remote := attachCommand(slug, t.Checkout, window)
 	if inputProxyEnabled() {
 		args := append(append(append([]string{}, extra...), t.Args...), remote)
 		re := newReattacher(t, slug, renew)
-		re.args = append(append(append([]string{}, extra...), t.Args...), attachCommand(slug, t.Checkout, ""))
+		re.args = append(append(append([]string{}, extra...), t.Args...), reremote)
 		if handled, err := runInputProxy(args, newDropHandler(t, slug, repoDir), re); handled {
 			if after != nil {
 				after()
@@ -723,6 +806,23 @@ func attachTmux(t sshTarget, slug, window, tz, repoDir string, after func(), ren
 		}
 	}
 	return execReplaceSSH(t, extra, remote)
+}
+
+// attachColour is what goes before the guest-side attach command, given
+// the laptop's COLORTERM. tmux gives a client 24-bit colour when the
+// client's own COLORTERM says truecolor or 24bit, or when its TERM is one
+// /etc/tmux.conf lists, and otherwise turns a pane's 24-bit colours into
+// the nearest of 256. The guest's PAM environment sets COLORTERM=truecolor
+// on every ssh session and overrides one sent with SendEnv, so the
+// attach unsets it when the laptop's terminal did not say so: Apple's
+// Terminal before macOS 26 then gets 256 colours instead of garbled ones
+// (DECISIONS I-515).
+func attachColour(colorterm string) string {
+	switch strings.ToLower(colorterm) {
+	case "truecolor", "24bit":
+		return ""
+	}
+	return "unset COLORTERM; "
 }
 
 // attachCommand is the guest-side command of the attach. With a window
@@ -1232,10 +1332,25 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if isAgent(e.Cfg.DefaultAgent) {
 		req.AgentDefault = e.Cfg.DefaultAgent
 	}
+	// The multiplexer (I-502): the flag, config.toml, a laptop herdr
+	// pane, else tmux, which is the api's default and is not sent.
+	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer, opts.Temp > 0)
+	if mux != multiplexer.Tmux {
+		req.Multiplexer = mux
+	}
 
 	waited := map[string]bool{}
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
+		if ae, ok := baseGateRefusal(err); ok && req.Multiplexer != "" {
+			if !auto {
+				return nil, exitf(ExitGeneric, "%s", ae.Message)
+			}
+			// Picked only because this is a herdr pane: tmux, silently.
+			req.Multiplexer = ""
+			attempt--
+			continue
+		}
 		if err == nil {
 			// The phase starts once the api has answered, so it names the
 			// slug every later line and command uses, not the name as
@@ -1494,6 +1609,11 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		}
 		co.Claude = cc
 	}
+	mc, notes := buildMCPCarry(e.HomeDir, repoDir, project.Slug, t.Checkout, toolBinsOf(co.Tools)) // I-556
+	for _, n := range notes {
+		e.warn("%s", n)
+	}
+	co.MCP = mc
 	skip, chosen := e.loginSkip(project.Slug)
 	copied, carried, err := syncCredentialsAndCarry(ctx, t, e.HomeDir, repoDir, credSyncOptions{
 		RemoteURL: project.RemoteURL,

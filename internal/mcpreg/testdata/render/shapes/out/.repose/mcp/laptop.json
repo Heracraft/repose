@@ -1,0 +1,11 @@
+{"version":1,
+ "user":{
+  "linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}","MODE":"fast"}},
+  "withdefault":{"command":"tool-mcp","args":[],"env":{"REGION":"${REGION:-eu}"}},
+  "argref":{"command":"db-mcp","args":["--token","${DB_TOKEN}"]},
+  "notion":{"type":"http","url":"https://mcp.notion.com/mcp","headers":{"Authorization":"Bearer ${NOTION_TOKEN}"}},
+  "bad name":{"command":"x"},
+  "run":{"command":"x"}},
+ "projects":{"/home/dev/app":{"localdb":{"type":"stdio","command":"pg-mcp","args":["/home/dev/app/db"]},"linear":{"command":"other"}},
+             "/home/dev/lib":{"localdb":{"type":"stdio","command":"pg-mcp","args":["/home/dev/lib/db"]}}},
+ "secrets":{"LINEAR_TOKEN":["linear"],"NOTION_TOKEN":["notion"]}}

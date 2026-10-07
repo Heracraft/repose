@@ -72,11 +72,21 @@ func isCobraRefusal(err error) bool {
 type cobraUsageError struct{ error }
 
 type globalFlags struct {
-	command string // the running command's path, set before RunE
+	command string // the running command's path, set before RunE, with " --project" when it takes no PROJECT argument
 	project string
 	apiURL  string
 	json    bool
 	verbose bool
+}
+
+// hintCommand is the command as the not-found hint shows it: its path,
+// with " --project" when it takes PROJECT as that flag only (`secrets
+// set`, `mcp forward`), since a PROJECT argument there is refused.
+func hintCommand(cmd *cobra.Command) string {
+	if strings.Contains(cmd.Use, "PROJECT") {
+		return cmd.CommandPath()
+	}
+	return cmd.CommandPath() + " --project"
 }
 
 func newRootCmd(version string) *cobra.Command {
@@ -108,7 +118,7 @@ func newRootCmd(version string) *cobra.Command {
 		e.Command = g.command
 		return e, nil
 	}
-	root.PersistentPreRun = func(cmd *cobra.Command, args []string) { g.command = cmd.CommandPath() }
+	root.PersistentPreRun = func(cmd *cobra.Command, args []string) { g.command = hintCommand(cmd) }
 	envJSON := func(cmd *cobra.Command) (*Env, error) {
 		json, _ := cmd.Flags().GetBool("json")
 		g.json = json
@@ -147,7 +157,7 @@ func newRootCmd(version string) *cobra.Command {
 		newResizeCmd(env, g),
 		newVersionCmd(version),
 		newCompletionCmd(),
-		newMCPCmd(),
+		newMCPCmd(env, g),
 		newBrowserCmd(env, g),
 		newCpCmd(env, g),
 		newPasteCmd(env, g),
@@ -316,6 +326,9 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
 			}
+			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -338,6 +351,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVar(&opts.NoAttach, "no-attach", false, "do not attach after starting/sending the prompt")
 	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix (repose config --global) off this machine, from now on")
+	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, ~/<slug>-worktree-<N> on branch worktree-<N>")
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
@@ -395,6 +409,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -408,6 +425,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	addTempFlag(cmd, &tempRaw)
 	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the guest's uncommitted changes before syncing")
 	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "discard the guest's uncommitted changes before syncing")
+	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
@@ -1345,16 +1363,90 @@ func newVersionCmd(version string) *cobra.Command {
 	}
 }
 
-func newMCPCmd() *cobra.Command {
-	root := &cobra.Command{Use: "mcp", Short: "MCP helpers (reserved)"}
-	root.AddCommand(&cobra.Command{
-		Use:   "forward",
-		Short: "Forward a laptop-bound MCP server into the machine (not available yet)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println(NotAvailableMessage("repose mcp forward"))
+// newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.
+func newMCPCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
+	root := &cobra.Command{Use: "mcp", Short: "MCP servers for the agents on a machine"}
+	// `repose mcp forward` (DECISIONS I-557). Names only: the project comes
+	// from the folder or --project, since names and a PROJECT cannot share
+	// positions without a guess (an exception to I-155).
+	var remove bool
+	forward := &cobra.Command{
+		Use:   "forward NAME... [-- COMMAND [ARG...]]",
+		Short: "Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C",
+		Long: `Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C.
+
+NAME is a server in your Claude Code, Claude Desktop, Codex or Gemini CLI config
+on this laptop, or the command after --. It runs here, with your apps, files and
+tokens; each agent session on the machine gets its own copy over SSH. Agents
+started after the first forward list NAME; while nothing forwards it, its tools
+answer that your laptop isn't connected. To forward whenever you're attached,
+add NAME to [mcp] forward in config.toml. The project is the folder's, or
+--project's. Needs the machine running.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			names := args
+			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+				names = args[:dash]
+				if dash < len(args) && len(names) != 1 {
+					return cobraUsageError{fmt.Errorf("a command after -- goes with one NAME, got %s", gotArgs(names))}
+				}
+			}
+			if len(names) == 0 {
+				return cobraUsageError{fmt.Errorf("%s needs a server NAME, got %s", cmd.CommandPath(), gotArgs(args))}
+			}
+			for _, n := range names {
+				if err := mcpForwardName(n); err != nil {
+					return cobraUsageError{fmt.Errorf("%w; got %s", err, gotArgs(args))}
+				}
+			}
 			return nil
 		},
-	})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := MCPForwardOptions{Names: args, Remove: remove}
+			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+				opts.Names, opts.Inline = args[:dash], args[dash:]
+			}
+			if remove && len(opts.Inline) > 0 {
+				return cobraUsageError{fmt.Errorf("--remove takes names only, not a command after --")}
+			}
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return MCPForwardCmd(cmd.Context(), e, g.project, opts)
+		},
+	}
+	forward.Flags().BoolVar(&remove, "remove", false, "take NAME off the machine's agents")
+	root.AddCommand(forward)
+	// `repose mcp list` (DECISIONS I-558): what each agent on the machine
+	// has, read from its configs over SSH; starts no server.
+	list := &cobra.Command{
+		Use:     "list [PROJECT]",
+		Aliases: []string{"ls"},
+		Short:   "List the MCP servers the agents on a machine have, and those your laptop kept",
+		Long: `List the MCP servers the agents on a machine have, and those your laptop kept.
+
+FROM is repose (the browser tools), laptop (copied from your laptop's Claude
+Code, or kept there, with the reason in STATE), forward (repose mcp forward),
+project (a checkout's .mcp.json) or machine (added on the machine). STATE
+starts with the checkout for a server from one, and is otherwise empty when
+the server needs nothing. Piped, it prints one tab-separated line per server
+with no header. Needs the machine running.`,
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := projectFrom(args, g)
+			if err != nil {
+				return err
+			}
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return MCPListCmd(cmd.Context(), e, project)
+		},
+	}
+	list.Flags().BoolVar(&g.json, "json", false, "print JSON")
+	root.AddCommand(list)
 	return root
 }
 

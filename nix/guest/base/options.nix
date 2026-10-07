@@ -25,5 +25,23 @@
         closure a Build produces serves any class (DECISIONS I-43).
       '';
     };
+
+    mcpServers = lib.mkOption {
+      internal = true;
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          command = lib.mkOption { type = lib.types.str; };
+          args = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; };
+        };
+      });
+      default = { };
+      description = ''
+        The platform's MCP servers (browser.nix), rendered into each
+        agent's own layer: /etc/repose/mcp.json for Claude Code and Codex
+        (through repose-agent-setup), /etc/opencode/opencode.json,
+        /etc/gemini-cli/system-defaults.json and the pi extension
+        (DECISIONS I-553).
+      '';
+    };
   };
 }

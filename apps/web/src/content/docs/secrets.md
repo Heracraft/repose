@@ -32,9 +32,11 @@ DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 
 Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
+The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in. A server that starts with a command reads its secrets each time an agent starts it. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
+
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 
-On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. A change, a removal included, reaches a running machine within seconds. Each command an agent runs after that sees it, and so does each new shell or tmux window. A program already running, such as a dev server or a shell you have open, keeps the old value until you restart it (`exec $SHELL` in a shell). The refresh comes from bash, so a command an agent runs with `sh` (`sh -c`, a `#!/bin/sh` script) keeps the values the agent started with.
+On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. A change, a removal included, reaches a running machine within seconds. Each command an agent runs after that sees it, and so does each new shell, tmux window or herdr tab. On a herdr machine a program that isn't bash, started from a tab opened before the change, keeps the values herdr started with. A program already running, such as a dev server or a shell you have open, keeps the old value until you restart it (`exec $SHELL` in a shell). The refresh comes from bash, so a command an agent runs with `sh` (`sh -c`, a `#!/bin/sh` script) keeps the values the agent started with.
 
 A value you set yourself wins over a secret of the same name and stays when secrets change later: one in the project's `.envrc`, one you export in a shell, or one you give a single command (`STRIPE_KEY=sk_test ./run-tests.sh`). The machine tells your value from its own by comparing it with the values it delivered for that name, the last 16 of them. A value equal to one of those follows the secret, so an `.envrc` that loads the same `.env` you imported gets your later changes. A command that lacks a secret gets it back after the next change, a sandbox's command included; to keep a secret out of a command, give the variable an empty value, or leave `BASH_ENV` out of that command's environment. The machine does this with two environment variables of its own. `BASH_ENV` points every bash at `/etc/repose/bash-env.sh`, which refreshes the secrets; if you set your own `BASH_ENV`, commands under it stop picking up changes. `REPOSE_ENV_GEN` records which version of your secrets a process holds. Neither can be a secret's name, and nor can `ENV`.
 
@@ -59,7 +61,7 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 | Codex CLI  | `~/.codex/auth.json`                                                          |
 | opencode   | `~/.local/share/opencode/auth.json`                                           |
 
-Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, run `gh auth setup-git` there once.
+Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, `gh auth login` is enough for HTTPS GitHub URLs; SSH URLs are rewritten to HTTPS only for a login copied from your laptop.
 
 Never copied: SSH private keys, Claude Code's login, Gemini's OAuth login, the Vercel CLI's login. See [Agents](/docs/agents#log-in) for the agents' logins.
 
@@ -79,7 +81,7 @@ repose used to copy this login. If an earlier `repose run` copied it, the next `
 
 ### Choose what is copied
 
-The logins in the table above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)). To keep some of them on your laptop, run `repose secrets choose`:
+The logins in the table above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)) and your Claude Code MCP servers ([Agents](/docs/agents#mcp-servers)). To keep some of them on your laptop, run `repose secrets choose`:
 
 ```
 $ repose secrets choose
@@ -90,6 +92,7 @@ space toggles, enter saves, q leaves
   [x] codex     Codex CLI login
   [ ] opencode  opencode login (not logged in on this laptop)
   [x] env       gitignored .env files (2 in this checkout)
+  [x] mcp       Claude Code MCP servers (tokens stay on the laptop)
 ```
 
 Or name them, which also works in scripts:
@@ -101,7 +104,7 @@ repose secrets choose --on env
 
 The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip = [...]` under `[logins]`, and applies to every project. `--project NAME` gives one project its own list, saved under `[projects.NAME.logins]`, and `repose secrets choose --reset --project NAME` sends it back to the shared list. repose never sees the list.
 
-The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. Snapshots taken before then still hold the copy; revoke that token where you created it.
+The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays. Snapshots taken before then still hold the copy; revoke that token where you created it.
 
 Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a token as described below.
 
@@ -137,7 +140,7 @@ Add the public key to that one repository as a deploy key with write access. It 
 
 ## Git and Claude Code settings
 
-Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager or editor the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Commits made on the machine are unsigned, since the signing key stays on your laptop.
+Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager, editor or diff filter the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Where neither sets a value, the machine's git starts new repositories on `main`, merges on `git pull`, and sets the upstream on the first `git push` of a branch. Commits made on the machine are unsigned, since the signing key stays on your laptop.
 
 Your Claude Code setup is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run. [Agents](/docs/agents#your-claude-code-setup-comes-along) has the details.
 

@@ -25,11 +25,14 @@ const machineNixFile = "machine.nix"
 
 // personalState is ~/.config/repose/machine.nix.state: the account
 // revision and the text's SHA-256 the last push or pull left both sides
-// on. API is the api it applies to.
+// on. API is the api it applies to. MissingNoted is the revision `run`
+// last said was still on the account after the laptop's file was
+// deleted, so it says so once (DECISIONS I-552).
 type personalState struct {
-	API        string `json:"api"`
-	RevisionID string `json:"revision_id"`
-	SHA256     string `json:"sha256"`
+	API          string `json:"api"`
+	RevisionID   string `json:"revision_id"`
+	SHA256       string `json:"sha256"`
+	MissingNoted string `json:"missing_noted,omitempty"`
 }
 
 func (e *Env) machineNixPath() string    { return filepath.Join(e.Dir, machineNixFile) }
@@ -159,6 +162,18 @@ func (e *Env) personalApply(ctx context.Context, v *personalView, err error) (li
 	}
 	has := strings.TrimSpace(v.Account.Fragment) != ""
 	if !v.LocalExists {
+		// The laptop pushed this revision and its file is gone since:
+		// deleting the file removes nothing, so say once that it stays.
+		if has && v.HaveState && v.State.RevisionID == v.Account.Rev() && v.State.MissingNoted != v.Account.Rev() {
+			st := v.State
+			st.MissingNoted = v.Account.Rev()
+			if b, err := json.Marshal(st); err == nil {
+				if err := writeFileAtomic(e.personalStatePath(), b, 0o600); err != nil {
+					e.warn("Could not record the machine.nix notice (%s); the next run shows it again.", oneLine(err.Error()))
+				}
+			}
+			return []string{fmt.Sprintf("%s is gone, but your account still has machine.nix and every machine gets it.", e.displayPath(e.machineNixPath()))}, has
+		}
 		return nil, has
 	}
 	local := strings.TrimSpace(v.Local) != ""
@@ -326,6 +341,13 @@ func GlobalApplyCmd(ctx context.Context, e *Env, path string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && path == e.machineNixPath() {
+			acct, aerr := e.Client.GetPersonal(ctx)
+			if aerr != nil {
+				return exitf(ExitUsage, "No %s, and could not read machine.nix from your account (%s).", e.displayPath(path), oneLine(aerr.Error()))
+			}
+			if strings.TrimSpace(acct.Fragment) != "" {
+				return exitf(ExitUsage, "No %s, but your account has machine.nix (revision %s) and every machine gets it. `repose config --global apply /dev/null` removes it; `repose config --global edit` brings it back to this laptop.", e.displayPath(path), shortRev(acct.Rev()))
+			}
 			return exitf(ExitUsage, "No %s yet. `repose config --global edit` starts one, or `repose config --global add ripgrep`.", e.displayPath(path))
 		}
 		return exitf(ExitUsage, "reading %s: %v", path, err)

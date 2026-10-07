@@ -114,6 +114,9 @@ type Fake struct {
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
 	bill billingState
+	// herdrMinBase is the first base with herdr; empty refuses herdr
+	// (SetHerdrMinBase, I-502).
+	herdrMinBase string
 }
 
 type failRule struct {

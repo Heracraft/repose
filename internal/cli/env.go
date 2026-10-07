@@ -47,6 +47,10 @@ var userEnvVars = []string{
 // Env bundles what almost every command needs: config, the API client,
 // and the laptop-local caches (docs/interfaces/cli-config.md).
 type Env struct {
+	// listed is the account's projects as connect's slow path read
+	// them, for the laptop herdr's reconcile (I-510); nil until then.
+	listed []Project
+
 	Dir     string // ~/.config/repose
 	Cfg     Config
 	Client  *Client
@@ -64,7 +68,9 @@ type Env struct {
 	// lines otherwise (I-154).
 	TTY bool
 	// Command is what the user ran ("repose attach"), for hints that
-	// show the command again with a PROJECT argument.
+	// show the command again with a PROJECT argument; it ends in
+	// " --project" for a command that takes PROJECT as that flag only
+	// ("repose mcp forward --project").
 	Command string
 
 	active *progress // the command's progress display, so warnings do not tear its line

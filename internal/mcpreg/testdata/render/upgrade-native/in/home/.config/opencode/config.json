@@ -1,0 +1,50 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "db": {
+      "command": [
+        "pg-mcp"
+      ],
+      "environment": {
+        "DATABASE_URL": "{env:DB_URL}"
+      },
+      "type": "local"
+    },
+    "edited": {
+      "command": [
+        "edited-mcp"
+      ],
+      "environment": {
+        "EDITED_TOKEN": "{env:EDITED_TOKEN}",
+        "EXTRA": "1"
+      },
+      "type": "local"
+    },
+    "linear": {
+      "command": [
+        "npx",
+        "-y",
+        "linear-mcp"
+      ],
+      "environment": {
+        "LINEAR_TOKEN": "{env:LINEAR_TOKEN}"
+      },
+      "type": "local"
+    },
+    "notion": {
+      "headers": {
+        "Authorization": "Bearer {env:NOTION_TOKEN}"
+      },
+      "type": "remote",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "plain": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "plain"
+      ],
+      "type": "local"
+    }
+  }
+}

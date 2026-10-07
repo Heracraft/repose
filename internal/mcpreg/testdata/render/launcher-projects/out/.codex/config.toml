@@ -1,0 +1,4 @@
+[mcp_servers.db]
+command = "repose-mcp"
+args = ["run", "db"]
+startup_timeout_sec = 60

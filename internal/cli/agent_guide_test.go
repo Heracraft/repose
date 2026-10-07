@@ -64,6 +64,8 @@ var guestCommands = map[string]string{
 	"npx":      "nix/guest/base/tool-list.nix:nodejs_24",
 	"go":       "nix/guest/base/tool-list.nix:go",
 	"uv":       "nix/guest/base/tool-list.nix:uv",
+	"rustup":   "nix/guest/base/tool-list.nix:rustup",
+	"python3":  "nix/guest/base/compat.nix:pythonCompat",
 	"direnv":   "nix/guest/base/tool-list.nix:direnv",
 	"docker":   "nix/guest/base/docker.nix:virtualisation.docker",
 	"claude":   "nix/overlay/agents/default.nix:claude-code",
@@ -71,20 +73,26 @@ var guestCommands = map[string]string{
 	"opencode": "nix/overlay/agents/default.nix:opencode",
 	"gemini":   "nix/overlay/agents/default.nix:gemini-cli",
 	"pi":       "nix/overlay/agents/default.nix:pi-coding-agent",
+
+	// Scheduled jobs are user timers (I-518).
+	"systemctl": "system:systemd, NixOS's init",
 }
 
 // notCommands are backticked words in the guide that are names, not
 // commands: MCP servers, menu entries, the user, a .envrc line.
 var notCommands = map[string]string{
-	"dev":             "the user",
-	"localhost":       "an address",
-	"0.0.0.0":         "an address",
-	"playwright":      "an MCP server name (the command is playwright-mcp)",
-	"chrome-devtools": "an MCP server name",
-	"redis":           "a menu entry",
-	"mysql":           "a menu entry",
-	"use flake":       "a line for .envrc",
-	"flake.nix":       "a file name",
+	"dev":                  "the user",
+	"localhost":            "an address",
+	"0.0.0.0":              "an address",
+	"host.docker.internal": "a host name",
+	"playwright":           "an MCP server name (the command is playwright-mcp)",
+	"chrome-devtools":      "an MCP server name",
+	"redis":                "a menu entry",
+	"mysql":                "a menu entry",
+	"use flake":            "a line for .envrc",
+	"flake.nix":            "a file name",
+	"env_vars":             "a Codex config key",
+	"bearer_token_env_var": "a Codex config key",
 }
 
 type guideLine struct {

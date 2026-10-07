@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // The connect fast path (DECISIONS I-223). connect's slow path reads the
@@ -256,15 +258,29 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 	if helper.RepoDir != "" {
 		e.addReposeRemote(ctx, guess, target, nil) // I-272
 	}
-	startSessionHelper(e, helper)
+	// What runs now, from the guest: no api call here either (I-509),
+	// and the sidebar reconcile takes this project alone (herdrSyncFor).
+	mux, err := muxFor(ctx, target, guess)
+	if err != nil {
+		return true, err
+	}
+	helper.Multiplexer = mux.Name()
+	release := e.herdrSyncFor(ctx, guess, mux.Name() == multiplexer.Herdr)
+	defer release()
 	defer e.keepTokenFresh()()
-	return true, attachTmux(target, guess.Slug, "", tz, helper.RepoDir, nil, renewFor(e, guess))
+	// The cache keeps no expiry: a temporary machine is never cached
+	// (I-351), so the guess is never one.
+	return true, mux.Attach(e, attachReq{Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the
 // same as the full path's, --bridge included (I-305).
 func fastAttachHelper(e *Env, guess *Project, target sshTarget, tz, explicit string, bridge bool) sessionOptions {
-	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge}
+	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge, Checkout: target.Checkout}
+	if skip, _, _ := e.Cfg.loginSkip(guess.Slug); skip[mcpLogin] {
+		helper.MCPOff = true // I-556
+	}
+	helper.MCP = e.Cfg.mcpForward(guess.Slug) // I-557
 	if root := gitRepoRoot(e.Cwd); root != "" && explicit == "" {
 		// Guessed from this checkout's remote: the checkout is the
 		// project's own, whose git config the carry takes.
