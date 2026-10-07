@@ -23,6 +23,17 @@
     hashedPassword = "!";
   };
 
+  # A stop powers the guest off, and dev's user manager holds every tmux
+  # pane, shell and agent. On host-01 its stop took 22 s on one of
+  # waterville's stops and was the only unit any guest console showed
+  # waiting ("A stop job is running for User Manager for UID 1000", 76
+  # lines across the consoles there, 2026-10-07); the default bound is
+  # 2 minutes. Whatever is left of it after 10 s is killed: a process that
+  # has ignored SIGTERM and SIGHUP that long is not finishing anything,
+  # and a stop's snapshot was taken before the shutdown began (I-404).
+  # DECISIONS I-572.
+  systemd.services."user@".serviceConfig.TimeoutStopSec = "10s";
+
   users.users.root = {
     # Locked: `passwd -S root` shows L. Root is reached by `sudo -i` only.
     hashedPassword = "!";

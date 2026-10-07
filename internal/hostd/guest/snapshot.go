@@ -59,6 +59,7 @@ type takenSnapshot struct {
 	lv     string // the LVM snapshot volume
 	reason string
 	start  time.Time
+	freeze time.Duration // freeze, lvcreate -s and thaw; 0 for a stopped guest
 	fail   func(*Error) (*hostdv1.SnapshotResult, *Error)
 	log    *slog.Logger
 }
@@ -100,6 +101,7 @@ func (m *Manager) takeSnapshot(ctx context.Context, g *state.Guest, reason strin
 		lvErr := m.d.LVM.Snapshot(ctx, vol, t.lv)
 		thawErr := sess.Thaw(ctx)
 		window := m.d.Now().Sub(fstart)
+		t.freeze = window
 		if m.d.Metrics != nil {
 			m.d.Metrics.SnapshotFreezeSeconds.Observe(window.Seconds())
 		}
@@ -175,7 +177,15 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 		mo := md.Mode()
 		format, why, used = mo.Format, mo.Why, mo.UsedBytes
 	}
+	// read_ms is the device read alone (0 when unknown): close to
+	// duration_ms means the disk set the pace; well under it, zstd or the
+	// upload did (DECISIONS I-571).
+	var readMs int64
+	if rt, ok := r.(snapshot.ReadTimer); ok {
+		readMs = rt.ReadDuration().Milliseconds()
+	}
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(),
+		"freeze_ms", t.freeze.Milliseconds(), "read_ms", readMs,
 		"format", format, "raw_reason", why, "used_bytes", used, "volume_bytes", g.VolumeBytes)
 	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
 	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil

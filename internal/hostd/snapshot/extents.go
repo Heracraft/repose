@@ -195,11 +195,35 @@ func (l *usedLayout) usedBytes() uint64 {
 	return n
 }
 
+// snapshotReaders is how many chunks a snapshot reads at once. Read one
+// 4 MiB chunk at a time, the next read waited for the chunk to go through
+// zstd, and a stop's snapshot ran at 370 to 460 MB/s of used data on
+// host-01 (24 s for waterville's 9.8 GB, 2026-10-06). Read eight at a
+// time with O_DIRECT, the same 2.5 GB of a guest volume went through
+// `zstd -T4 -3` at 900 MB/s, against 365 MB/s for one buffered reader
+// (DECISIONS I-571).
+const snapshotReaders = 8
+
+// extentRead is one chunk of a used range: read by a reader goroutine,
+// emitted in order by writeExtents.
+type extentRead struct {
+	off  uint64
+	n    int
+	buf  []byte
+	got  int
+	runs [][2]int // the maximal runs of non-zero pieces in buf[:got]
+	err  error
+	done chan struct{}
+}
+
 // writeExtents reads the used ranges of dev and writes the uncompressed
 // extent stream to w, skipping pieces that are all zero (the inode tables
 // that mkfs left to lazy init, blocks the guest freed but the bitmap still
-// holds). It returns the bytes it read from dev.
-func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64, error) {
+// holds). It returns the bytes it read from dev. snapshotReaders chunks
+// are read at once, through direct (an O_DIRECT handle on the same
+// device, or nil) where a chunk is aligned for it and through dev
+// otherwise; the stream is the same either way.
+func writeExtents(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer) (uint64, error) {
 	bw := bufio.NewWriterSize(w, 1<<20)
 	var hdr [16]byte
 	copy(hdr[:8], extentMagic)
@@ -207,8 +231,40 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 	if _, err := bw.Write(hdr[:]); err != nil {
 		return 0, err
 	}
-	buf := make([]byte, extentChunk)
-	zero := make([]byte, extentPiece)
+	free := make(chan []byte, snapshotReaders)
+	for range snapshotReaders {
+		free <- alignedBuffer(extentChunk)
+	}
+	queue := make(chan *extentRead, snapshotReaders)
+	quit := make(chan struct{})
+	// The producer hands out chunks in order, each read by its own
+	// goroutine into a free buffer; at most snapshotReaders are out at
+	// once, since each holds a buffer until it is emitted.
+	go func() {
+		defer close(queue)
+		for _, r := range l.used {
+			end := min(r[1], size) // a filesystem never extends past its device
+			for off := r[0]; off < end; {
+				select {
+				case <-quit:
+					return
+				default:
+				}
+				var buf []byte
+				select {
+				case buf = <-free:
+				case <-quit:
+					return
+				}
+				n := int(min(uint64(len(buf)), end-off))
+				j := &extentRead{off: off, n: n, buf: buf, done: make(chan struct{})}
+				go readChunk(dev, direct, j)
+				queue <- j // never blocks for long: the queue holds as many as there are buffers
+				off += uint64(n)
+			}
+		}
+	}()
+
 	var read, data uint64
 	record := func(off uint64, b []byte) error {
 		var h [16]byte
@@ -221,40 +277,29 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 		data += uint64(len(b))
 		return err
 	}
-	for _, r := range l.used {
-		end := min(r[1], size) // a filesystem never extends past its device
-		for off := r[0]; off < end; {
-			n := min(uint64(len(buf)), end-off)
-			got, err := dev.ReadAt(buf[:n], int64(off))
-			if err != nil && (!errors.Is(err, io.EOF) || got == 0) {
-				return read, fmt.Errorf("read at %d: %w", off, err)
-			}
-			chunk := buf[:got]
-			read += uint64(got)
-			// Emit each maximal run of non-zero pieces as one record.
-			runStart := -1
-			for p := 0; p < len(chunk); p += extentPiece {
-				q := min(p+extentPiece, len(chunk))
-				if bytes.Equal(chunk[p:q], zero[:q-p]) {
-					if runStart >= 0 {
-						if err := record(off+uint64(runStart), chunk[runStart:p]); err != nil {
-							return read, err
-						}
-						runStart = -1
+	var werr error
+	for j := range queue {
+		<-j.done
+		if werr == nil {
+			if j.err != nil {
+				werr = j.err
+			} else {
+				read += uint64(j.got)
+				for _, run := range j.runs {
+					if err := record(j.off+uint64(run[0]), j.buf[run[0]:run[1]]); err != nil {
+						werr = err
+						break
 					}
-					continue
-				}
-				if runStart < 0 {
-					runStart = p
 				}
 			}
-			if runStart >= 0 {
-				if err := record(off+uint64(runStart), chunk[runStart:]); err != nil {
-					return read, err
-				}
+			if werr != nil {
+				close(quit) // the producer stops; the chunks already out are waited for here
 			}
-			off += uint64(got)
 		}
+		free <- j.buf
+	}
+	if werr != nil {
+		return read, werr
 	}
 	var t [16]byte
 	binary.LittleEndian.PutUint64(t[:8], trailerMark)
@@ -263,6 +308,60 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 		return read, err
 	}
 	return read, bw.Flush()
+}
+
+// readChunk reads j's chunk, through direct when the chunk is aligned for
+// O_DIRECT and through dev otherwise or when the direct read fails, and
+// finds its non-zero runs.
+func readChunk(dev, direct *os.File, j *extentRead) {
+	defer close(j.done)
+	buf := j.buf[:j.n]
+	got, err := 0, error(nil)
+	if direct != nil && j.off%directAlign == 0 && j.n%directAlign == 0 {
+		got, err = direct.ReadAt(buf, int64(j.off))
+		if err != nil && !(errors.Is(err, io.EOF) && got > 0) {
+			got, err = 0, nil
+			direct = nil // read it again through the page cache below
+		}
+	} else {
+		direct = nil
+	}
+	if direct == nil {
+		got, err = dev.ReadAt(buf, int64(j.off))
+	}
+	if err != nil && (!errors.Is(err, io.EOF) || got == 0) {
+		j.err = fmt.Errorf("read at %d: %w", j.off, err)
+		return
+	}
+	j.got = got
+	j.runs = nonZeroRuns(buf[:got])
+}
+
+// zeroPiece is extentPiece zero bytes, compared against and never written.
+var zeroPiece = make([]byte, extentPiece)
+
+// nonZeroRuns returns each maximal run of non-zero extentPiece pieces in
+// chunk as [start, end), the records an extent stream holds for it.
+func nonZeroRuns(chunk []byte) [][2]int {
+	var runs [][2]int
+	runStart := -1
+	for p := 0; p < len(chunk); p += extentPiece {
+		q := min(p+extentPiece, len(chunk))
+		if bytes.Equal(chunk[p:q], zeroPiece[:q-p]) {
+			if runStart >= 0 {
+				runs = append(runs, [2]int{runStart, p})
+				runStart = -1
+			}
+			continue
+		}
+		if runStart < 0 {
+			runStart = p
+		}
+	}
+	if runStart >= 0 {
+		runs = append(runs, [2]int{runStart, len(chunk)})
+	}
+	return runs
 }
 
 // readExtents applies an extent stream (magic already peeked, not

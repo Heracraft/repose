@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-579 entries.
+582 entries.
 
 ## Scope
 
@@ -469,7 +469,7 @@ pointer, not a summary.
 - **I-401** Landing repair round 4: the snapshot marks only turn as listed, the hero's lead wraps inside a sentence before it scrolls, the docs sidebar scrolls only for a cut link, and the dashboard's command block shows where its line runs on — 2026-10-01; L10340
 - **I-402** Pricing says "memory" and counts no agents — 2026-10-01; L10399
 - **I-403** A restore writes the volume with O_DIRECT, eight writes in flight, and downloads the snapshot as eight ranged GETs at once — 2026-10-01; L10421
-- **I-404** A stop uploads its snapshot while the guest shuts down; the snapshot read itself stays as it was — 2026-10-01; L10496
+- **I-404** A stop uploads its snapshot while the guest shuts down; the snapshot read itself stays as it was — 2026-10-01; amended by I-571; L10496
 - **I-405** hostd caches an evaluation by its inputs and skips `nix eval` when they recur — 2026-10-01; L10537
 - **I-406** `start` on a project with no guest runs its create again — 2026-10-01; L10564
 - **I-407** `repose run` waits for a destroy that holds the name it wants, instead of creating NAME-2 — 2026-10-01; L10587
@@ -541,7 +541,7 @@ pointer, not a summary.
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12400
 - **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; amended by I-519; L12436
 - **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; L12560
-- **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; L12599
+- **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; amended by I-570; L12599
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12664
 - **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12729
 - **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; superseded by I-501; L12769
@@ -611,3 +611,6 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L14468
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
+- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L14545
+- **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L14570
+- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L14614

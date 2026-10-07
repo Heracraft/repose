@@ -217,7 +217,7 @@ func TestStopNamesInterruptedAgents(t *testing.T) {
 		{Agent: "codex", Window: "codex", State: "idle"},
 		{Agent: "claude", Window: "claude-2", State: "needs_input"},
 	})
-	if !strings.HasSuffix(out, "Disk is still billed.\nInterrupted claude (working) and claude-2 (needs input).\n") {
+	if !strings.HasPrefix(out, "Stopped app-3 in ") || !strings.HasSuffix(out, "s.\nInterrupted claude (working) and claude-2 (needs input).\n") {
 		t.Errorf("stop with two busy agents printed %q", out)
 	}
 	if strings.Contains(out, "codex") || strings.Contains(out, "resume") {
@@ -226,5 +226,67 @@ func TestStopNamesInterruptedAgents(t *testing.T) {
 
 	if out := stop([]fakeapi.AgentSignal{{Agent: "codex", Window: "codex", State: "idle"}}); strings.Contains(out, "Interrupted") {
 		t.Errorf("stop with only an idle agent printed %q", out)
+	}
+}
+
+// The stop line says how long the stop took and, when it took one, the
+// snapshot's size, and nothing about billing: a stopped project costs
+// nothing (DECISIONS I-570). The owner's 2026-10-07 stop printed "Disk is
+// still billed." and the snapshot's 36-character id.
+func TestStopLineSaysWhatTheStopDid(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "waterville", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := func(snapshot bool) string {
+		t.Helper()
+		if err := StartCmd(ctx, e, p.ID); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		e.Out = &out
+		if err := StopCmd(ctx, e, p.ID, snapshot); err != nil {
+			t.Fatalf("StopCmd: %v", err)
+		}
+		return out.String()
+	}
+	snaps := func() []Snapshot {
+		t.Helper()
+		s, err := e.Client.ListSnapshots(ctx, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	out := stop(true)
+	latest := newestSnapshot(snaps())
+	if latest == nil {
+		t.Fatal("the stop took no snapshot")
+	}
+	want := " with a " + humanBytes(latest.Bytes) + " snapshot.\n"
+	if !strings.HasPrefix(out, "Stopped waterville in ") || !strings.HasSuffix(out, want) || strings.Count(out, "\n") != 1 {
+		t.Errorf("stop printed %q, want one line ending %q", out, want)
+	}
+	if strings.Contains(out, latest.ID) || strings.Contains(out, "billed") {
+		t.Errorf("stop printed the snapshot id or a billing claim: %q", out)
+	}
+
+	out = stop(false)
+	if !strings.HasPrefix(out, "Stopped waterville in ") || !strings.HasSuffix(out, "s.\n") || strings.Contains(out, "snapshot") || strings.Count(out, "\n") != 1 {
+		t.Errorf("stop --no-snapshot printed %q", out)
+	}
+
+	var out2 bytes.Buffer
+	e.Out = &out2
+	if err := StopCmd(ctx, e, p.ID, true); err != nil {
+		t.Fatalf("StopCmd on a stopped project: %v", err)
+	}
+	if got := out2.String(); got != "waterville is already stopped.\n" {
+		t.Errorf("already stopped printed %q", got)
 	}
 }

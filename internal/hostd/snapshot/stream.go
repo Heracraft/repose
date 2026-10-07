@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/shell"
@@ -52,9 +54,43 @@ type procReader struct {
 	io.ReadCloser
 	wait []func() error
 	mode Mode
+	rt   *readTimer // nil for a raw stream
 }
 
 func (p *procReader) Mode() Mode { return p.mode }
+
+// ReadDuration is how long reading the device took, from Read to the last
+// byte read, or 0 when it is not known (a raw stream) or not over. A
+// snapshot whose duration is mostly this was bound by the disk; one that
+// ended well after it, by zstd or the upload (DECISIONS I-571).
+func (p *procReader) ReadDuration() time.Duration {
+	if p.rt == nil {
+		return 0
+	}
+	return p.rt.duration()
+}
+
+// ReadTimer is implemented by the readers Pipeline returns.
+type ReadTimer interface{ ReadDuration() time.Duration }
+
+// readTimer records when the device read ended.
+type readTimer struct {
+	start time.Time
+	mu    sync.Mutex
+	took  time.Duration
+}
+
+func (r *readTimer) finish() {
+	r.mu.Lock()
+	r.took = time.Since(r.start)
+	r.mu.Unlock()
+}
+
+func (r *readTimer) duration() time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.took
+}
 
 func (p *procReader) Close() error {
 	err := p.ReadCloser.Close()
@@ -90,11 +126,22 @@ func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout) (
 		_ = f.Close() // read only
 		return nil, fmt.Errorf("device size: %w", err)
 	}
+	// O_DIRECT only when every chunk can be aligned for it: chunks start
+	// on filesystem blocks and end on one or at the device's end.
+	var direct *os.File
+	if l.blockSize%directAlign == 0 && size%directAlign == 0 {
+		direct = openDirectRead(dev)
+	}
 	pr, pw := io.Pipe()
 	gen := make(chan error, 1)
+	rt := &readTimer{start: time.Now()}
 	go func() {
-		_, err := writeExtents(f, size, l, pw)
-		_ = f.Close()              // read only
+		_, err := writeExtents(f, direct, size, l, pw)
+		rt.finish()
+		_ = f.Close() // read only
+		if direct != nil {
+			_ = direct.Close() // read only
+		}
 		_ = pw.CloseWithError(err) // zstd sees EOF, or a failed read
 		gen <- err
 	}()
@@ -112,7 +159,7 @@ func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout) (
 		}
 		return nil
 	}
-	return &procReader{ReadCloser: zs.Stdout(), wait: []func() error{zs.Wait, stop}, mode: Mode{Format: "extents", UsedBytes: l.usedBytes()}}, nil
+	return &procReader{ReadCloser: zs.Stdout(), wait: []func() error{zs.Wait, stop}, mode: Mode{Format: "extents", UsedBytes: l.usedBytes()}, rt: rt}, nil
 }
 
 func (p *Pipeline) readRaw(ctx context.Context, dev, why string) (io.ReadCloser, error) {

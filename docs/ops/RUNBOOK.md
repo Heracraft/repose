@@ -267,7 +267,19 @@ done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
 
 - `format: extents`: time should follow `used_bytes` (reading) and
   `bytes` (the upload). Slow with little data means the disk or Blob is
-  slow; `iostat -x 1` during the next one.
+  slow; `iostat -x 1` during the next one. `read_ms` is the device read
+  alone and `freeze_ms` the freeze, LVM snapshot and thaw (I-571): with
+  `read_ms` close to `duration_ms` the disk set the pace (another
+  guest's writes share it); well under it, zstd or the upload did.
+  I-571's probe read and compressed 900 MB/s on host-01; before it,
+  stops ran at 370 to 530 MB/s of `used_bytes`.
+- A stop also logs `"guest stopped"` (`power_off_ms`, `escalated`:
+  `none`, `hypervisor` when the guest ignored the shutdown for the
+  timeout, `kill`) and, with a snapshot, `"stop timings"` (`down_ms` from
+  the freeze to the guest being down, `total_ms`). A `power_off_ms` past
+  10 s is the guest's user manager waiting on a pane process (I-572);
+  the guest's `console.log` shows `A stop job is running for User
+  Manager for UID 1000`.
 - `format: raw` reads the whole volume (about 16 s per 20 GB on host-01).
   `raw_reason` says why: `journal needs recovery` (the guest was killed,
   not shut down, or, for a running guest, its freeze did not hold until

@@ -100,7 +100,7 @@ func TestDirectRestoreMatchesBuffered(t *testing.T) {
 	// Two used ranges with a hole between them, one ending mid-chunk.
 	l := &usedLayout{blockSize: 4096, blocks: size / 4096, used: [][2]uint64{{0, 37<<20 + 4096*3}, {40 << 20, size}}}
 	var s bytes.Buffer
-	if _, err := writeExtents(sf, size, l, &s); err != nil {
+	if _, err := writeExtents(sf, nil, size, l, &s); err != nil {
 		t.Fatal(err)
 	}
 	want := append([]byte(nil), src...)
@@ -430,4 +430,180 @@ func (f *failingWriter) Write(p []byte) (int, error) {
 	}
 	f.after--
 	return len(p), nil
+}
+
+// serialExtents is the extent stream as writeExtents wrote it before
+// I-571, one chunk at a time: the reference the parallel reader must
+// match byte for byte.
+func serialExtents(t *testing.T, src []byte, size uint64, l *usedLayout) []byte {
+	t.Helper()
+	var s bytes.Buffer
+	var h [16]byte
+	copy(h[:8], extentMagic)
+	binary.LittleEndian.PutUint64(h[8:], size)
+	s.Write(h[:])
+	var data uint64
+	rec := func(off uint64, b []byte) {
+		binary.LittleEndian.PutUint64(h[:8], off)
+		binary.LittleEndian.PutUint64(h[8:], uint64(len(b)))
+		s.Write(h[:])
+		s.Write(b)
+		data += uint64(len(b))
+	}
+	zero := make([]byte, extentPiece)
+	for _, r := range l.used {
+		end := min(r[1], size)
+		for off := r[0]; off < end; {
+			n := min(uint64(extentChunk), end-off)
+			chunk := src[off : off+n]
+			runStart := -1
+			for p := 0; p < len(chunk); p += extentPiece {
+				q := min(p+extentPiece, len(chunk))
+				if bytes.Equal(chunk[p:q], zero[:q-p]) {
+					if runStart >= 0 {
+						rec(off+uint64(runStart), chunk[runStart:p])
+						runStart = -1
+					}
+					continue
+				}
+				if runStart < 0 {
+					runStart = p
+				}
+			}
+			if runStart >= 0 {
+				rec(off+uint64(runStart), chunk[runStart:])
+			}
+			off += n
+		}
+	}
+	binary.LittleEndian.PutUint64(h[:8], trailerMark)
+	binary.LittleEndian.PutUint64(h[8:], data)
+	s.Write(h[:])
+	return s.Bytes()
+}
+
+// TestParallelSnapshotReadMatchesSerial: reading snapshotReaders chunks
+// at once, through the page cache or O_DIRECT, gives the stream the
+// one-chunk-at-a-time reader gave, including ranges that end mid-chunk
+// and mid-piece, a range past the device's end, and a device whose
+// size is not a multiple of the O_DIRECT alignment (DECISIONS I-571).
+func TestParallelSnapshotReadMatchesSerial(t *testing.T) {
+	for _, size := range []uint64{96 << 20, 96<<20 + 1536} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			src := patterned(int(size), size)
+			p := filepath.Join(t.TempDir(), "src")
+			if err := os.WriteFile(p, src, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.Open(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			l := &usedLayout{blockSize: 512, blocks: size / 512, used: [][2]uint64{
+				{0, 37<<20 + 4096*3},
+				{38<<20 + 512, 39 << 20},
+				{40 << 20, size + 8192}, // clamped to the device
+			}}
+			want := serialExtents(t, src, size, l)
+
+			var buffered bytes.Buffer
+			if _, err := writeExtents(f, nil, size, l, &buffered); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(buffered.Bytes(), want) {
+				t.Fatalf("buffered parallel stream differs from the serial one (%d vs %d bytes)", buffered.Len(), len(want))
+			}
+			d := openDirectRead(p)
+			if d == nil {
+				t.Skipf("%s refuses O_DIRECT", filepath.Dir(p))
+			}
+			defer func() { _ = d.Close() }()
+			var direct bytes.Buffer
+			n, err := writeExtents(f, d, size, l, &direct)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(direct.Bytes(), want) {
+				t.Fatalf("O_DIRECT parallel stream differs from the serial one (%d vs %d bytes)", direct.Len(), len(want))
+			}
+			if wantRead := l.used[0][1] + (l.used[1][1] - l.used[1][0]) + (size - l.used[2][0]); n != wantRead {
+				t.Fatalf("read %d bytes, want %d", n, wantRead)
+			}
+			// And it restores to the source, outside the holes.
+			back := emptyDevice(t, int64(size))
+			g, _ := os.OpenFile(back, os.O_WRONLY, 0)
+			if err := readExtents(bytes.NewReader(direct.Bytes()), g, nil); err != nil {
+				t.Fatal(err)
+			}
+			_ = g.Close()
+			got, _ := os.ReadFile(back)
+			exp := append([]byte(nil), src...)
+			clear(exp[l.used[0][1]:l.used[1][0]])
+			clear(exp[l.used[1][1]:l.used[2][0]])
+			if !bytes.Equal(got, exp) {
+				t.Fatal("restored bytes differ from the source")
+			}
+		})
+	}
+}
+
+// TestParallelSnapshotReadStopsOnAFailedRead: a chunk that cannot be read
+// fails the stream with its offset, and writeExtents returns with every
+// reader finished instead of hanging on the ones still out.
+func TestParallelSnapshotReadStopsOnAFailedRead(t *testing.T) {
+	const size = 64 << 20
+	p := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(p, patterned(size, 7), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.Open(p)
+	defer func() { _ = f.Close() }()
+	// The layout says the device is twice its size: every chunk past
+	// 64 MiB reads nothing.
+	l := &usedLayout{blockSize: 4096, blocks: 2 * size / 4096, used: [][2]uint64{{0, 2 * size}}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := writeExtents(f, nil, 2*size, l, io.Discard)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("read at %d", size)) {
+			t.Fatalf("err = %v, want the read at %d", err, size)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("writeExtents hung after a failed read")
+	}
+}
+
+// TestParallelSnapshotReadStopsWhenTheWriterFails: a stream whose reader
+// (zstd) went away ends the read with that error.
+func TestParallelSnapshotReadStopsWhenTheWriterFails(t *testing.T) {
+	const size = 64 << 20
+	p := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(p, patterned(size, 9), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.Open(p)
+	defer func() { _ = f.Close() }()
+	l := &usedLayout{blockSize: 4096, blocks: size / 4096, used: [][2]uint64{{0, size}}}
+	pr, pw := io.Pipe()
+	go func() {
+		_, _ = io.CopyN(io.Discard, pr, 3<<20)
+		_ = pr.CloseWithError(io.ErrClosedPipe)
+	}()
+	done := make(chan error, 1)
+	go func() {
+		_, err := writeExtents(f, nil, size, l, pw)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("err = %v, want the closed pipe", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("writeExtents hung after its writer failed")
+	}
 }

@@ -438,10 +438,11 @@ measures them):
 ### 5.6 stop, start, destroy, resize
 
 - `stop [PROJECT]`: `POST /stop {snapshot: !--no-snapshot}`, phase on the
-  op, then `Stopped <slug> in <time>. Snapshot <id> (1.2 GB). Disk is
-  still billed.` Already stopped: says so, exit 0. Success lines say what
-  happened and stop; a next command is for failures and refusals
-  (DECISIONS I-484).
+  op, then `Stopped <slug> in <time> with a 1.2 GB snapshot.` (`Stopped
+  <slug> in <time>.` without one). Already stopped: says so, exit 0.
+  Success lines say what happened and stop; a next command is for
+  failures and refusals (DECISIONS I-484). Nothing about cost: a stopped
+  project costs nothing (I-570).
 - `start [PROJECT]`: `POST /start`, wait, print `<slug> is running
   (<class>), ready in <time>.` Does not
   sync. When the api answers `restart: true` (a project in `error`, or a

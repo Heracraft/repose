@@ -45,11 +45,15 @@ func TestFork(t *testing.T) {
 		"Forked izma into 2 projects from its snapshot of ",
 		"  izma-fork-1  running (large)\n",
 		"  izma-fork-2  running (large)\n",
-		"izma is unchanged and is still its checkout's project.\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fork said:\n%s\nwant %q", got, want)
 		}
+	}
+	// No footer: the table is the answer, and a stopped or running fork
+	// is not billed by the hour (I-484, I-570).
+	if !strings.HasSuffix(got, "  izma-fork-2  running (large)\n") || strings.Contains(got, "billed") {
+		t.Fatalf("fork printed a line after its table:\n%s", got)
 	}
 	if strings.Contains(got, "`repose ") {
 		t.Fatalf("fork names a command after it worked (I-484):\n%s", got)

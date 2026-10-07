@@ -35,7 +35,7 @@ $ repose status
 todo-app   large   running  2h14m   claude: working   $0.31 so far today
 $ repose open 3000                 # http://localhost:3000 -> guest's :3000
 $ repose attach                    # back into tmux, see what the agent did
-$ repose stop                      # snapshot, then deallocate; disk billed only
+$ repose stop                      # snapshot, then deallocate; a stopped project costs nothing
 ```
 
 Everything else (`secrets`, `config`, `snapshots`, `logs`, `destroy`, `start`)
@@ -190,9 +190,10 @@ its fragment; the CLI streams the build.
   root overlay's upper dir and `/home`.
 - Snapshot = `guestd` runs `fsfreeze -f /` , hostd takes an LVM thin snapshot,
   `guestd` runs `fsfreeze -u`, freeze window under one second. The snapshot's
-  used blocks (DECISIONS I-164) are streamed `zstd`-compressed to Azure Blob (`repose-snapshots` container,
+  used blocks (DECISIONS I-164) are read eight chunks at a time around the
+  page cache (I-571) and streamed `zstd`-compressed to Azure Blob (`repose-snapshots` container,
   path `<user>/<project>/<timestamp>.img.zst`), then the LVM snapshot is
-  removed.
+  removed. On `stop` the upload runs while the guest shuts down (I-404).
 - Schedule: nightly at 03:00 in the host's timezone, and on every `stop`.
   Retain 7 daily. After `destroy`, keep the last snapshot 30 days. After
   account cancellation, stop all guests, keep snapshots 30 days, then delete.
