@@ -124,8 +124,10 @@ runner using the host's shared store. Everything in
   the guest and `base_version` in the api agree.
 - `nix/guest/base/network.nix`: systemd-networkd, one interface `eth0`
   matching the virtio MAC, static address from the kernel command line
-  (`ip=10.64.x.y::10.64.x.1:255.255.252.0::eth0:off` set by hostd in the
-  runner), DNS `1.1.1.1 8.8.8.8` (guests cannot reach the host, so no host
+  (`ip=10.64.x.y::10.64.x.1:255.255.252.0:<slug>:eth0:off` set by hostd
+  in the runner, and `systemd.hostname=<slug>`; an empty or invalid
+  slug leaves the name field empty and adds no `systemd.hostname`,
+  I-550), DNS `1.1.1.1 8.8.8.8` (guests cannot reach the host, so no host
   resolver) through resolved, whose stub also listens on `172.20.0.1` for
   containers (I-537), no LLMNR or mDNS (I-215),
   `networking.firewall.enable = false` (the host enforces policy;
