@@ -44,7 +44,7 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only its disk, until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
+The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). The disk stays, with everything in `/home/dev`. A stopped machine costs only the disk it holds, until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
