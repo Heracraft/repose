@@ -117,6 +117,9 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 			}
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, withNext(reason, fmt.Sprintf("`repose start %s` restarts it.", p.Slug)))
 		}
+		if r := bootFallbackReason(p); r != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, withNext(r, ""))
+		}
 	}
 }
 
@@ -158,6 +161,10 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 			reason = "its last operation failed"
 		}
 		_, _ = fmt.Fprintf(w, "  error: %s\n", withNext(reason, fmt.Sprintf("`repose start %s` restarts it.", p.Slug)))
+	}
+	if r := bootFallbackReason(p); r != "" {
+		// DECISIONS I-590: running, on its previous system.
+		_, _ = fmt.Fprintf(w, "  %s\n", withNext(r, ""))
 	}
 	if route != nil {
 		host := route.HostName

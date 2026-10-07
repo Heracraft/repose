@@ -45,7 +45,7 @@ it`, the size double the disk up to 320 GB. AGENTS names the one agent,
 or counts several by state: `3 agents: 1 needs_input, 2 working`.
 
 ```
-$ repose logs                    # console, last 200 lines, follow with -f
+$ repose logs                    # console of failed boots, last 200 lines each
 $ repose logs --kind build       # the last build's output
 $ repose logs --kind ops         # create/start/stop/apply/snapshot history
 ```
@@ -54,7 +54,10 @@ $ repose logs --kind ops         # create/start/stop/apply/snapshot history
 not apply, uptime only while running), followed by one line per project
 in `error` with the reason the api recorded and the command that fixes
 it, e.g. `age-calculator: the environment's agent (guestd) stopped
-answering; \`repose start\` restarts it.` (DECISIONS I-153). While a
+answering; \`repose start\` restarts it.` (DECISIONS I-153), and one per
+running project whose new system did not boot, which runs its previous
+one (I-590), e.g. `kanali: its new system did not boot, so it runs its
+previous one: ...`. While a
 listed project's disk is 90 percent full or more (the api's root
 filesystem figure), a `DISK` column reads `93% full` for it and `-` for
 the rest, there only then, as `LEFT` is (I-567). `--json` is
@@ -101,10 +104,13 @@ Status:
 
 Logs:
 
-- `console`: the guest's serial console as captured by hostd, last 200
-  lines by default, `-f` follows over SSE. It contains boot messages and
-  kernel output, not application logs; the doc says where application logs
-  are (in the guest, wherever the app writes them).
+- `console`: what the guest printed during each boot that never reached
+  Ready, as hostd captured it: the last 200 lines (16 KiB) of each, from
+  the project's last 20 operations (DECISIONS I-592). A guest that booted
+  cleanly has none, and the command says so. `-f` polls every 2 s. It
+  holds boot messages and kernel output, not application logs, which stay
+  in the guest wherever the app writes them. The whole serial console of
+  every boot goes to the operators' log store (OBSERVABILITY.md).
 - `build`: the most recent config build's output, complete, with secret
   values redacted (secrets.md).
 - `ops`: one line per operation with timestamps, duration, and result;

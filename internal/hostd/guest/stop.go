@@ -165,6 +165,9 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	if err := m.d.Roots.Remove(g.GuestID); err != nil {
 		return errf(CodeInternal, "gcroot: %v", err)
 	}
+	if err := m.d.Roots.Remove(goodRoot(g.GuestID)); err != nil {
+		return errf(CodeInternal, "gcroot: %v", err)
+	}
 	// The project's revision roots go with the guest (host-conventions.md:
 	// "removed on destroy"; DECISIONS I-115). A restore of a destroyed
 	// project rebuilds its closure instead of expecting it in the store.

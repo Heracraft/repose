@@ -7,6 +7,7 @@ package basebump
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -173,7 +174,9 @@ func (j *Job) OnOpFinished(ctx context.Context, op *store.Op) {
 	// projects whose builds had succeeded and whose switch had not).
 	msg := "base " + v + " failed to build"
 	if op.RevisionID != nil {
-		if rev, err := store.GetRevision(ctx, j.pool, *op.RevisionID); err == nil && rev.Status == "built" {
+		if rev, err := store.GetRevision(ctx, j.pool, *op.RevisionID); err == nil && (rev.Status == "built" || rev.Status == "failed" && revisionBootFailed(rev)) {
+			// A revision that built and then did not boot is failed too
+			// (I-590), and was not a build failure either.
 			msg = "base " + v + " built, but switching the running guest to it failed; the guest keeps its current system"
 		}
 	}
@@ -183,4 +186,10 @@ func (j *Job) OnOpFinished(ctx context.Context, op *store.Op) {
 		}
 	}
 	_ = j.events.Platform(ctx, *op.ProjectID, "base_update_failed", msg) // see above
+}
+
+// revisionBootFailed reports whether a failed revision built and then
+// never booted (its error is boot_failed's, DECISIONS I-590).
+func revisionBootFailed(rev *store.Revision) bool {
+	return rev.Error != nil && strings.HasPrefix(*rev.Error, "boot_failed: ")
 }

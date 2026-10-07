@@ -737,7 +737,15 @@ func opJSON(r *http.Request, op *store.Op) map[string]any {
 		out["error"] = op.Error
 	}
 	if op.Result != nil {
-		out["result"] = op.Result
+		// The console tail of a failed boot is served by the logs route
+		// (I-592), not with every read of the op.
+		res := make(map[string]any, len(op.Result))
+		for k, v := range op.Result {
+			if k != "console" {
+				res[k] = v
+			}
+		}
+		out["result"] = res
 	}
 	if op.Kind == ops.KindBuild || op.Kind == ops.KindCreate {
 		out["log_url"] = "/v1/projects/" + r.PathValue("id") + "/ops/" + op.ID.String() + "/log"

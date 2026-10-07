@@ -313,6 +313,9 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 		return m.fail(g, stepHypervisr, err)
 	}
 	props := GuestUnitProps(class, m.cfg.GuestUser, m.cfg.GuestsDir, dir, spec.VolumeDev)
+	// This boot's console starts here in the log, which earlier boots
+	// wrote too (I-592).
+	consoleFrom := m.consoleSize(g.GuestID)
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, argv); err != nil {
 		return m.fail(g, stepHypervisr, err)
 	}
@@ -332,15 +335,21 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	mon := m.startMonitor(g)
 	sess, err := mon.waitReady(ctx, m.cfg.ReadyTimeout)
 	if err != nil {
+		// The console is read before capture ends; what a boot that
+		// failed early printed is in the log long before the wait ends.
+		rf := m.readyFailure(g, consoleFrom, err)
 		mon.stop()
 		m.removeMonitor(g.GuestID)
-		return m.fail(g, stepReady, fmt.Errorf("guest did not become ready: %w", err))
+		return m.fail(g, stepReady, rf)
 	}
 	if err := m.deliver(ctx, g, sess, dump); err != nil {
 		mon.stop()
 		m.removeMonitor(g.GuestID)
 		return m.fail(g, stepReady, err)
 	}
+	// The closure reached Ready and took its delivery: it is what a later
+	// boot that fails falls back to (I-590). setState writes the record.
+	m.markGood(g, g.SystemClosure)
 	if err := m.setState(g, StateRunning, ""); err != nil {
 		return m.fail(g, stepReady, err)
 	}
@@ -512,30 +521,39 @@ func (m *Manager) waitSocket(ctx context.Context, unit, socket string) error {
 	}
 }
 
-func (m *Manager) start(ctx context.Context, c *hostdv1.StartGuest) *Error {
+// start boots a stopped guest. commandID ties a boot fallback (I-590) to
+// the command that made it: a resend of that command after a hostd
+// restart answers with the same fallback, whether the second boot had
+// finished (the guest runs) or not (it is booted again on the closure
+// the fallback chose, which the record already names).
+func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartGuest) (*hostdv1.StartResult, *Error) {
 	g, gerr := m.getGuest(c.GuestId)
 	if gerr != nil {
-		return gerr
+		return nil, gerr
+	}
+	var resent *state.BootFallback
+	if fb := g.BootFallback; fb != nil && fb.CommandID == commandID {
+		resent = fb
 	}
 	switch g.State {
 	case StateRunning:
-		return nil
+		return startResult(g, resent, ""), nil
 	case StateStopped, StateError, StateStarting:
 	default:
-		return errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
+		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
 	}
 	if g.SystemClosure == "" {
-		return errf(CodeNotFound, "system closure missing; api must rebuild")
+		return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
 	}
 	if ok, err := m.d.Roots.Exists(g.GuestID); err != nil {
-		return errf(CodeInternal, "gcroot: %v", err)
+		return nil, errf(CodeInternal, "gcroot: %v", err)
 	} else if !ok {
-		return errf(CodeNotFound, "system closure missing; api must rebuild")
+		return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
 	}
 	if ok, err := m.d.LVM.VolumeExists(ctx, VolumeName(g.GuestID)); err != nil {
-		return errf(CodeInternal, "lvs: %v", err)
+		return nil, errf(CodeInternal, "lvs: %v", err)
 	} else if !ok {
-		return errf(CodeNotFound, "volume for guest %s is missing", g.GuestID)
+		return nil, errf(CodeNotFound, "volume for guest %s is missing", g.GuestID)
 	}
 	// DECISIONS I-260: the api sends the project's class on every start,
 	// so a class changed while the project was stopped takes effect here:
@@ -544,19 +562,19 @@ func (m *Manager) start(ctx context.Context, c *hostdv1.StartGuest) *Error {
 	// boot's first state change; a start refused below leaves it as it was.
 	if c.Class != "" && c.Class != g.Class {
 		if _, ok := Classes[c.Class]; !ok {
-			return errf(CodeInvalidArgument, "class %q must be small, large or xl", c.Class)
+			return nil, errf(CodeInvalidArgument, "class %q must be small, large or xl", c.Class)
 		}
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class
 	}
 	if m.FreeMemBytes() < (Classes[g.Class].MemMiB+OverheadMiB)<<20 {
-		return errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", g.Class)
+		return nil, errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", g.Class)
 	}
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
 	// that restarted still has the guest's secrets and sshd material.
 	if len(c.Secrets) > 0 || len(c.HostKey) > 0 || len(c.HostCert) > 0 || c.SshCaPub != "" {
 		if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if len(c.Principals) > 0 {
@@ -574,7 +592,21 @@ func (m *Manager) start(ctx context.Context, c *hostdv1.StartGuest) *Error {
 	if m.cachedSecrets(g.GuestID) == nil {
 		m.log(g).Warn("starting without secrets; api sent none since hostd restarted", "event", "guest_start", "reason", "no_secrets")
 	}
-	return m.boot(ctx, g, stepRunner)
+	if resent != nil {
+		// The record already names the closure the fallback chose; boot
+		// it, and answer with the fallback this command made.
+		if err := m.boot(ctx, g, stepRunner); err != nil {
+			return nil, err
+		}
+		return startResult(g, resent, ""), nil
+	}
+	// A fallback another command made is over once this one boots.
+	g.BootFallback = nil
+	fb, tail, err := m.bootOrFallBack(ctx, g, commandID)
+	if err != nil {
+		return nil, err
+	}
+	return startResult(g, fb, tail), nil
 }
 
 // --- monitor ----------------------------------------------------------

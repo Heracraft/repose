@@ -95,6 +95,14 @@ const (
 type Fake struct {
 	Server *httptest.Server
 
+	// startOutcome is how the next start of a project ends, when set:
+	// the op fails with an error, or ends done with a warning the way a
+	// start whose new system did not boot does (DECISIONS I-590).
+	startOutcome map[string]startOutcome
+	// console is each project's console lines from failed boots, what
+	// GET /logs?kind=console serves (I-592).
+	console map[string][]string
+
 	opts   Options
 	mux    *http.ServeMux
 	routes []string
@@ -565,4 +573,64 @@ func (f *Fake) register() {
 	f.handle("GET /v1/internal/hosts", f.internalHosts)
 	f.handle("POST /v1/internal/gateway-certs", f.internalGatewayCerts)
 	f.handle("POST /v1/internal/events", f.internalEvents)
+}
+
+type startOutcome struct {
+	failCode, failMsg string
+	warnCode, warnMsg string
+}
+
+// SetStartFailure makes the next start op of the project end in error
+// with code and message, leaving the project in error.
+func (f *Fake) SetStartFailure(projectID, code, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.startOutcome == nil {
+		f.startOutcome = map[string]startOutcome{}
+	}
+	f.startOutcome[projectID] = startOutcome{failCode: code, failMsg: message}
+}
+
+// SetStartWarning makes the next start op of the project end done with
+// result.warning {code, message} and last_error "code: message", the
+// project running (DECISIONS I-590).
+func (f *Fake) SetStartWarning(projectID, code, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.startOutcome == nil {
+		f.startOutcome = map[string]startOutcome{}
+	}
+	f.startOutcome[projectID] = startOutcome{warnCode: code, warnMsg: message}
+}
+
+// endStart applies a start outcome set for p to its op. Under f.mu.
+func (f *Fake) endStart(p *project, o *op) {
+	out, ok := f.startOutcome[p.ID]
+	if !ok {
+		return
+	}
+	delete(f.startOutcome, p.ID)
+	switch {
+	case out.failCode != "":
+		o.State = "error"
+		o.Error = out.failMsg
+		p.State = "error"
+		le := out.failCode + ": " + out.failMsg
+		p.LastError = &le
+	case out.warnCode != "":
+		o.Result = map[string]any{"warning": map[string]any{"code": out.warnCode, "message": out.warnMsg}}
+		le := out.warnCode + ": " + out.warnMsg
+		p.LastError = &le
+	}
+}
+
+// SetConsole sets the console lines GET /projects/:id/logs?kind=console
+// serves for the project: what hostd kept of its boots that failed.
+func (f *Fake) SetConsole(projectID string, lines ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.console == nil {
+		f.console = map[string][]string{}
+	}
+	f.console[projectID] = lines
 }

@@ -477,8 +477,10 @@ measures them):
   (<class>), ready in <time>.` Does not
   sync. When the api answers `restart: true` (a project in `error`, or a
   running one whose guestd stopped answering, I-157) the phase reads
-  `Restarting <slug> (its agent stopped answering)`. Already running and
-  healthy: says so, exit 0.
+  `Restarting <slug>`, with `(its agent stopped answering)` only for the
+  second. A start that ended running on the previous system, or without
+  its pending revision, prints the op's warning on stderr as `<slug>:
+  <sentence>.` (I-590). Already running and healthy: says so, exit 0.
 - `destroy [PROJECT]`: asks `Destroy <slug>? A final snapshot is kept for
   30 days. [y/N]` unless `--yes`/`-y` (no terminal and no `--yes`: exit 2).
   Then `DELETE /projects/:id` → `202 {op_id}` (api.md, I-156) and, by
@@ -658,7 +660,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | Op fails (start, stop, destroy, resize, snapshot) | exit 1, `Could not <verb> <slug>: <reason> (<code>). <next step>`; destroy never prints `Destroyed` unless the op is done and the project is gone |
 | Dirty remote tree | exit 6, message in 5.5 |
 | Build or eval error | exit 10, Nix error block, fragment line marked |
-| SSH cannot connect within 60 s after `running` | exit 1, `Guest is running but SSH did not answer in 60s. \`repose logs --kind console\` may show why.` |
+| SSH cannot connect within 60 s after `running` | exit 1, `Guest is running but SSH did not answer in 60s. \`repose stop\` and then \`repose start\` restart it.` |
 | Gateway rejects certificate | re-issue once; if still rejected exit 1 with the gateway banner verbatim |
 | `~/.ssh/config` unwritable, a read-only link, or its Include not effective | warning naming the file and the exact line to add (for a link, where); the command goes on with `ssh -F ~/.ssh/repose/config`; nothing partial written (write temp + rename), a link never replaced (I-151) |
 | Browser cannot open | print the URL and continue |

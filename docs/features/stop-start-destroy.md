@@ -25,8 +25,14 @@ Starting todo-app...
 todo-app is running (large), ready in 4.1s.
 
 $ repose start age-calculator          # in `error`: the api restarts it (I-157)
-Restarting age-calculator (its agent stopped answering)...
+Restarting age-calculator...
 age-calculator is running (large), ready in 21s.
+
+$ repose start kanali                  # its new system does not boot (I-590)
+Starting kanali...
+Booting kanali...
+kanali: its new system did not boot, so it runs its previous one: the system it boots is missing from the machine's store (stage 1 found no stage 2 init); `repose logs --kind console` shows what the new one printed.
+kanali is running (xl), ready in 1m31s.
 
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
@@ -127,8 +133,19 @@ Start:
   answering, it restarts: the unit is stopped without a snapshot (nothing
   can freeze the filesystem without guestd), the newest built revision is
   put in place while the guest is down, and the guest boots on it. The
-  response says `restart: true`; the CLI says it is restarting. A running
+  response says `restart: true`; the CLI says it is restarting, and names
+  "its agent stopped answering" only when that is the reason. A running
   project with a healthy guestd still answers "already running".
+- A start whose new system never reaches Ready boots the system the
+  machine last ran, once (I-590): the machine runs, the revision that did
+  not boot is failed and is not tried again by a start or the nightly
+  base sweep, the one that booted is the applied one, and the op ends
+  `done` with `result.warning`; `last_error` and a `boot_failed` event
+  carry the same sentence, which `repose ls`, `repose status` and the
+  dashboard show while the machine runs on it. A start whose switch of
+  the running machine to a newer revision fails ends the same way, the
+  machine on what it had and the revision still pending. Neither puts a
+  running project in `error`.
 
 Destroy:
 
@@ -188,10 +205,12 @@ Account cancellation (`DELETE /me`, dashboard button):
 
 Failure handling:
 
-- A guest that fails to boot goes to `error` with the console log's last
-  50 lines attached to the op; `repose logs --kind console` shows them.
-  The volume is untouched; `start` retries; `snapshots restore` is the
-  escape.
+- A guest that fails to boot, with no earlier system to fall back to,
+  goes to `error`, its reason classified from its console (`boot_failed`:
+  stage 2 missing, a kernel panic, a failed disk check, a stage 1 error;
+  else `guest_unresponsive`, I-592), and the console's last 200 lines
+  attached to the op; `repose logs --kind console` shows them. The volume
+  is untouched; `start` retries; `snapshots restore` is the escape.
 - A dead guestd never makes an op fail instantly for ever. `stop` stops
   the unit anyway and snapshots the stopped volume; `destroy` finishes as
   above; `start` restarts. A manual snapshot and a resize need guestd (to

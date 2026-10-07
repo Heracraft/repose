@@ -1025,7 +1025,19 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		}
 		return e.setResult(ctx, op, map[string]any{"guest_ip": c.GuestIp})
 	case PhaseStartGuest:
-		if _, err := e.pool.Exec(ctx, "update projects set host_unreachable = false, last_error = null where id = $1", p.ID); err != nil {
+		if st := res.GetStart(); st != nil && st.FailedClosure != "" {
+			return e.onBootFallback(ctx, op, p, st)
+		}
+		// A warning an earlier phase of this start left (its apply
+		// failed, I-590) stays the project's last word; otherwise the
+		// start clears the last error.
+		var lastErr any
+		if w, ok := op.Params["warning"].(map[string]any); ok {
+			c, _ := w["code"].(string)
+			m, _ := w["message"].(string)
+			lastErr = c + ": " + m
+		}
+		if _, err := e.pool.Exec(ctx, "update projects set host_unreachable = false, last_error = $2 where id = $1", p.ID, lastErr); err != nil {
 			return err
 		}
 		return e.setState(ctx, p, "running")
@@ -1152,6 +1164,13 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 	}
 	if phase == PhaseRestore {
 		_, _ = e.pool.Exec(ctx, "update snapshots set restoring_op_id = null where restoring_op_id = $1", op.ID) // release the expiry guard
+	}
+	if phase == PhaseApplyConfig && code == codeBootFailed && op.RevisionID != nil {
+		// A forced reboot onto the revision never reached Ready and the
+		// machine runs its previous system (I-590): the revision is not
+		// applied again by a start or the base sweep.
+		_, _ = e.pool.Exec(ctx, "update config_revisions set status = 'failed', error = $2 where id = $1 and status in ('built', 'applied')", *op.RevisionID, code+": "+msg) // best effort; the op carries the error
+		e.notifyPlatform(ctx, p.ID, EventBootFailed, bootFailedSummary(p.Slug, msg))
 	}
 	if _, ok := op.Params["personal"].(string); ok && op.Kind == KindBuild && (phase == PhaseBuild || personalLine > 0) {
 		// A build the personal layer started (I-490): the machine keeps

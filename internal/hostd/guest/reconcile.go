@@ -102,6 +102,7 @@ func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 }
 
 func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive bool) {
+	m.reconcileGood(g, g.State == StateRunning && unitActive)
 	switch g.State {
 	case StateRunning, StateStarting, StateCreating, StateStopping:
 		if unitActive {
@@ -139,6 +140,32 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 		if v, _ := m.d.Systemd.IsActive(ctx, virtiofs.AuthUnit(g.GuestID)); v {
 			_ = virtiofs.StopAuth(ctx, m.d.Systemd, g.GuestID) // the same for the login share
 		}
+	}
+}
+
+// reconcileGood keeps a guest's last good closure rooted (I-590), and
+// gives a guest found running with none, one running across the hostd
+// upgrade that added it, the closure it runs: guestd answered on it.
+func (m *Manager) reconcileGood(g *state.Guest, running bool) {
+	if g.LastGoodClosure == "" {
+		if !running || g.SystemClosure == "" {
+			return
+		}
+		m.markGood(g, g.SystemClosure)
+		if g.LastGoodClosure != "" {
+			if err := m.d.State.PutGuest(g); err != nil {
+				m.log(g).Warn("last good closure not recorded", "event", "boot_fallback", "err", err.Error())
+				return
+			}
+			m.writeGuestJSON(g)
+		}
+		return
+	}
+	if t, err := m.d.Roots.Get(goodRoot(g.GuestID)); err == nil && t == g.LastGoodClosure {
+		return
+	}
+	if err := m.d.Roots.Set(goodRoot(g.GuestID), g.LastGoodClosure); err != nil {
+		m.log(g).Warn("last good closure not rooted", "event", "boot_fallback", "err", err.Error())
 	}
 }
 
