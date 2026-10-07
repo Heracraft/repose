@@ -329,14 +329,14 @@
             # handler that called the helper by name would not reach it.
             handler() {
               sed -n "/$2/,/$3/p" "$1" \
-                | sed "s#${builtins.storeDir}/[^ ]*/bin/repose-command-not-found#${stub}/bin/repose-command-not-found#"
+                | sed "s#${builtins.storeDir}/[^ ]*/bin/repose-command-not-found#$stub/bin/repose-command-not-found#"
             }
             bashFn=$(handler "$bashrc" '^command_not_found_handle() {$' '^}$')
             zshFn=$(handler "$zshrc" '^command_not_found_handler() {$' '^}$')
             fishFn=$(handler "$fishrc" '^function fish_command_not_found$' '^end$')
             for fn in "bash:$bashFn" "zsh:$zshFn" "fish:$fishFn"; do
               case "$fn" in
-                *"${stub}/bin/repose-command-not-found"*) ;;
+                *"$stub/bin/repose-command-not-found"*) ;;
                 *) echo "the interactive ''${fn%%:*} handler does not call repose-command-not-found by its store path" >&2; fail=1 ;;
               esac
             done
