@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-600 entries.
+603 entries.
 
 ## Scope
 
@@ -247,7 +247,7 @@ pointer, not a summary.
 - **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; amended by I-575; L3517
 - **I-153** The CLI says what actually happened: the true state, why, and the next command — 2026-09-23; L3532
 - **I-154** Long commands show live phases — 2026-09-23; L3567
-- **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-557; L3584
+- **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-557; amended by I-566; L3584
 - **I-164** A snapshot reads the blocks the filesystem uses, not the whole volume — 2026-09-23; L3606
 - **I-165** A destroy stops the guest first, reads `destroying` from the moment it is accepted, and says so when it fails — 2026-09-23; L3657
 - **I-166** `repose destroy` returns when the api has accepted the destroy — 2026-09-23; L3690
@@ -632,3 +632,6 @@ pointer, not a summary.
 - **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15533
 - **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L15591
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L15636
+- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15743
+- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L15774
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; L15845

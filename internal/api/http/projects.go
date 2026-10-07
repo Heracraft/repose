@@ -133,7 +133,14 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		out["idle"] = map[string]any{"since": *x.idleSince, "hourly_cents": 0, "memory_gb": billing.ClassMemoryGB(p.Class)}
 	}
 	if x.latest != nil {
+		// disk_used_bytes is the thin volume's allocated blocks, which keep
+		// a deleted file's blocks until the weekly fstrim; root_* is the
+		// guest's root filesystem, what its writes run out of (I-567).
 		out["disk_used_bytes"] = x.latest.DiskUsed
+		if x.latest.RootSize > 0 {
+			out["root_used_bytes"] = x.latest.RootUsed
+			out["root_size_bytes"] = x.latest.RootSize
+		}
 		agents := []map[string]string{}
 		for _, a := range x.latest.Agents {
 			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"]})

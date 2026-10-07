@@ -54,7 +54,9 @@ type Project struct {
 	BaseVersion      string     `json:"base_version"`
 	ConfigRevisionID string     `json:"config_revision_id"`
 	VolumeBytes      int64      `json:"volume_bytes"`
-	DiskUsedBytes    int64      `json:"disk_used_bytes,omitempty"`
+	DiskUsedBytes    int64      `json:"disk_used_bytes,omitempty"` // the volume's allocated blocks; not shown (I-567)
+	RootUsedBytes    int64      `json:"root_used_bytes,omitempty"` // the guest's root filesystem, newest sample (I-567)
+	RootSizeBytes    int64      `json:"root_size_bytes,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	Signals          *Signals   `json:"signals,omitempty"`

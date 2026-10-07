@@ -30,15 +30,22 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0017 (projects.multiplexer, I-502) is the newest: the column goes,
-	// and 0015 (the personal layer, I-490), 0014 (CPU pressure, I-493),
-	// 0013 (snapshots.sha256) and 0012 (hosts.prev_cert_serial) stay.
+	// 0018 (meter_samples root filesystem, I-567) is the newest: its two
+	// columns go, and 0017 (projects.multiplexer, I-502), 0015 (the
+	// personal layer, I-490), 0014 (CPU pressure, I-493), 0013
+	// (snapshots.sha256) and 0012 (hosts.prev_cert_serial) stay.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'meter_samples' and column_name in ('root_used', 'root_size')").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("projects.multiplexer is still there after down 1 (0017)")
+		t.Fatal("meter_samples root filesystem columns are still there after down 1 (0018)")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("projects.multiplexer went with down 1 (0017 must stay)")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'personal_revisions'").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -75,7 +82,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(def, "plus") {
-		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0017 reverted, 0011 kept): %s", def)
+		t.Fatalf("subscriptions_plan_check lost plus after down 1 (0018 reverted, 0011 kept): %s", def)
 	}
 	up, err := db.MigrateUp(ctx, pool)
 	if err != nil {
@@ -88,8 +95,8 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err != nil || len(st.Pending) != 0 {
 		t.Fatalf("after up: %+v %v", st, err)
 	}
-	// 0017 back: every existing project reads tmux, and the check keeps
-	// out any other value.
+	// 0017 stayed through the down: every existing project reads tmux,
+	// and the check keeps out any other value.
 	var def17, mux string
 	if err := pool.QueryRow(ctx, "select column_default from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&def17); err != nil {
 		t.Fatal(err)

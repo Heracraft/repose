@@ -101,16 +101,16 @@ repose exec [-i] [-t] [PROJECT] [--] CMD [ARG...]  # one command in the checkout
 repose ssh [PROJECT]           # login shell in the checkout, outside tmux (I-275)
 repose secrets set NAME [--from-file PATH] [--from-env]
 repose secrets import [FILE|-] [--dry-run]   # dotenv, default ./.env (I-277)
-repose secrets list            # alias ls
+repose secrets list [PROJECT]  # alias ls
 repose secrets rm NAME
-repose config show [--revisions]
-repose config edit
+repose config show [PROJECT] [--revisions]
+repose config edit [PROJECT]
 repose config apply [PATH]      # PATH defaults to ./repose.nix if present, else opens editor
 repose config add NAME...       # catalog id, else any nixpkgs attribute path (I-220)
 repose config remove NAME...    # alias rm
-repose snapshots list [-q|--quiet] [--json]   # alias ls
-repose snapshots create
-repose snapshots restore SNAPSHOT_ID [--as-new NAME]
+repose snapshots list [PROJECT] [-q|--quiet] [--json]   # alias ls
+repose snapshots create [PROJECT]
+repose snapshots restore [PROJECT] SNAPSHOT_ID [--as-new NAME]
 repose rm [PROJECT] [--yes|-y] [--wait]   # alias destroy, the old name (I-273)
 repose restore [NAME] [--as NEW-NAME] [--snapshot ID]   # no NAME: the checkout's remote finds it
 repose logs [PROJECT] [--kind console|build|ops] [--since 1h] [--follow|-f]
@@ -139,8 +139,11 @@ working, the same project named both ways is fine, two different ones is
 exit 2. `run`'s argument stays the prompt (all remaining words, joined),
 and a one-word prompt equal to one of the user's slugs is refused with
 exit 2 pointing at `--project`/`attach` (`--agent` sends it anyway).
-`open`, `secrets`, `config`, `snapshots` keep `--project` because their
-argument is something else. A command given an argument it does not take
+`open` and the subcommands whose argument is something else (`secrets
+set NAME`, `config add PACKAGE...`, `config apply PATH`) keep
+`--project`; `snapshots list`, `snapshots create`, `secrets list`,
+`config show` and `config edit` take `[PROJECT]`, and `snapshots restore`
+takes `[PROJECT] SNAPSHOT_ID` (I-566). A command given an argument it does not take
 exits 2; so do unknown commands and flags. Completion offers the
 account's slugs for PROJECT and `--project`.
 

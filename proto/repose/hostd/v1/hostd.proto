@@ -288,6 +288,13 @@ message GuestSample {
   // sample (guest-written; mem_rss_bytes is what the host has backed,
   // which never shrinks without a balloon). DECISIONS I-493.
   uint64 guest_mem_used_bytes = 14;
+  // The guest's root filesystem, used and size in bytes, as statfs in the
+  // guest sees it (guest-written; 0 for both when the guest did not say or
+  // said something past the volume). disk_used_bytes is the thin volume's
+  // allocated blocks, which keep a deleted file's blocks until the guest's
+  // weekly fstrim. DECISIONS I-567.
+  uint64 root_used_bytes = 15;
+  uint64 root_size_bytes = 16;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

@@ -94,6 +94,38 @@ func TestSampleReportsPartialOnAStaleCache(t *testing.T) {
 	}
 }
 
+// A sample past its budget still counts the ssh sessions. The /proc walk
+// was skipped once Signals had waited out the budget on the watcher's lock,
+// and the sample went out with ssh_sessions 0 beside the cached
+// tmux_clients: `sessions 0   tmux clients 1` on an attached machine.
+func TestSamplePastItsBudgetStillCountsSSHSessions(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{
+		{pid: 102, ppid: 1, comm: "sshd-session", uid: 1000},
+		{pid: 103, ppid: 102, comm: "tmux: client", uid: 1000},
+	})
+	run.Match["list-windows"] = tmuxOutput()
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	w.Refresh(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the budget is already spent
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+	res, err := h.Sample(ctx)
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	sig := res.GetSignals()
+	if sig.GetSshSessions() != 1 || sig.GetTmuxClients() != 1 {
+		t.Errorf("ssh_sessions %d, tmux_clients %d past the budget, want 1 and 1", sig.GetSshSessions(), sig.GetTmuxClients())
+	}
+	if len(res.GetProcs()) == 0 {
+		t.Error("no process samples past the budget")
+	}
+	if !res.GetPartial() {
+		t.Error("a sample past its budget is partial")
+	}
+}
+
 func TestSampleIsUnder20Milliseconds(t *testing.T) {
 	// A guest of a few hundred processes, which is a busy one.
 	var procs []fakeProc
@@ -177,6 +209,28 @@ func TestSampleCarriesGuestMemoryUsed(t *testing.T) {
 	}
 	if got, want := res.GetMemUsedBytes(), uint64(2000000)<<10; got != want {
 		t.Fatalf("mem_used_bytes = %d, want %d", got, want)
+	}
+}
+
+// The root filesystem of I-567 rides the sample: under the test root it is
+// the temp directory's filesystem, a real one, so statfs answers.
+func TestSampleCarriesRootFilesystem(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{{pid: 100, ppid: 1, comm: "node", ticks: 5}})
+	run.Match["list-windows"] = tmuxOutput()
+	w.Refresh(context.Background())
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+	res, err := h.Sample(context.Background())
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if res.GetRootSizeBytes() == 0 || res.GetRootUsedBytes() > res.GetRootSizeBytes() {
+		t.Fatalf("root used %d of %d", res.GetRootUsedBytes(), res.GetRootSizeBytes())
+	}
+}
+
+func TestRootFSMissingPathIsZero(t *testing.T) {
+	if used, size := rootFS(filepath.Join(t.TempDir(), "missing")); used != 0 || size != 0 {
+		t.Fatalf("missing path gave %d of %d", used, size)
 	}
 }
 

@@ -13,12 +13,13 @@ To act on a project from elsewhere, name it: `repose attach todo-app`, `repose s
 
 ```
 $ repose ls
-PROJECT   CLASS  STATE    UP     AGENTS           TODAY  MONTH
-todo-app  large  running  2h14m  claude: working  2h14m  41h
-api-v2    xl     stopped  -      -                0h     63h
+PROJECT   CLASS  STATE    UP     AGENTS               TODAY  MONTH
+todo-app  large  running  2h14m  claude: working      2h14m  41h
+api       xl     running  6h40m  2 agents: 2 working  6h40m  12h
+web       small  stopped  -      -                    0h     3h
 ```
 
-AGENTS lists each agent in the machine's tmux session with its state: `working`, `idle` or `needs_input` (waiting on a permission prompt). One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it.
+AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` or `needs_input` (waiting on a permission prompt). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. TODAY and MONTH are the hours the machine has run.
 
 `repose ls -q` prints only the names, for scripts: `repose ls -q | xargs -n1 repose stop` stops everything.
 
@@ -78,7 +79,7 @@ To put a project back to a snapshot, stop it first. Stopping takes its own snaps
 
 ```
 repose stop todo-app
-repose snapshots restore SNAPSHOT_ID --project todo-app
+repose snapshots restore todo-app SNAPSHOT_ID
 ```
 
 Or restore into a new project and leave the original alone:

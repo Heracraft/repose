@@ -615,7 +615,7 @@ func TestCreatedLabelNamesHerdr(t *testing.T) {
 func TestStatusNamesHerdr(t *testing.T) {
 	p := &Project{Slug: "todo-app", Class: "large", State: "running", Signals: &Signals{SSHSessions: 1, TmuxClients: 0}}
 	var b strings.Builder
-	writeStatusLinesMux(&b, p, nil, nil, nil, multiplexer.Herdr)
+	writeStatusLinesMux(&b, p, nil, nil, nil, multiplexer.Herdr, guestDisk{})
 	first, rest, _ := strings.Cut(b.String(), "\n")
 	if !strings.HasPrefix(first, "todo-app   large  herdr  running") {
 		t.Fatalf("first line %q", first)

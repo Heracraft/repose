@@ -84,7 +84,7 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	return nil
 }
 
-// SnapshotsRestoreCmd implements `repose snapshots restore SNAPSHOT_ID
+// SnapshotsRestoreCmd implements `repose snapshots restore [PROJECT] SNAPSHOT_ID
 // [--as-new NAME]`. Without --as-new it requires the project stopped and
 // asks for confirmation (07-cli.md §5.10).
 func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, asNew string, confirm func() (bool, error)) error {

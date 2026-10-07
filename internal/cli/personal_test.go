@@ -168,7 +168,7 @@ func TestGlobalConfigCommands(t *testing.T) {
 	root.SetArgs([]string{"config", "--global", "show", "--project", "x"})
 	root.SetOut(&strings.Builder{})
 	root.SetErr(&strings.Builder{})
-	if err := root.ExecuteContext(ctx); err == nil || !strings.Contains(err.Error(), "takes no --project") {
+	if err := root.ExecuteContext(ctx); err == nil || !strings.Contains(err.Error(), "--global takes no project") {
 		t.Fatalf("--global --project: %v", err)
 	}
 }

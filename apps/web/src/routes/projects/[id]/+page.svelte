@@ -33,6 +33,7 @@
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
 	import { pct, cpuTime, type Pt } from '$lib/usage';
+	import { diskFullPercent } from '$lib/disk';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type {
 		Me,
@@ -660,7 +661,7 @@
 							{#each project.signals.agents as a (a.window)}
 								<div class="flex justify-between gap-4">
 									<dt class="text-ink-muted">{a.agent} ({a.window})</dt>
-									<dd>{a.state}</dd>
+									<dd>{a.state && a.state !== 'unknown' ? a.state : '—'}</dd>
 								</div>
 							{/each}
 						{/if}
@@ -675,7 +676,11 @@
 				{/if}
 			</div>
 
-			<section class="card min-w-0 sm:col-span-2" data-testid="usage-card" aria-labelledby="usage-title">
+			<section
+				class="card min-w-0 sm:col-span-2"
+				data-testid="usage-card"
+				aria-labelledby="usage-title"
+			>
 				<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
 					<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
 					<!-- The current window is marked the way the config tabs mark
@@ -800,11 +805,22 @@
 
 			<div class="card">
 				<h2 class="text-xl font-semibold">Disk</h2>
+				<!-- Used is the guest's root filesystem, what its writes run out
+				     of; the volume's allocated figure keeps deleted files until
+				     the weekly fstrim and is not shown (I-567). -->
 				<p class="mt-3 text-sm tabular-nums">
-					{project.disk_used_bytes !== undefined ? gb(project.disk_used_bytes) : '—'} of {gb(
-						project.volume_bytes
-					)}
+					{project.root_used_bytes !== undefined && project.root_size_bytes
+						? gb(project.root_used_bytes)
+						: '—'} of {gb(project.volume_bytes)}
 				</p>
+				{#if diskFullPercent(project) !== null}
+					<p
+						class="mt-1 text-sm text-amber-700 tabular-nums dark:text-amber-400"
+						data-testid="disk-full"
+					>
+						{diskFullPercent(project)} percent full
+					</p>
+				{/if}
 				{#if !showResize}
 					{#if largerSizes.length > 0}
 						<button type="button" id="resize-open" class="btn-ghost mt-2 px-0" onclick={openResize}

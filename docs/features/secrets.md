@@ -10,7 +10,7 @@ $ repose secrets set DATABASE_URL
 Value for DATABASE_URL: **************************************
 Set DATABASE_URL (pushed to running guest)
 
-$ repose secrets list
+$ repose secrets list              # or: repose secrets list izma (I-566)
 DATABASE_URL	2026-09-17 14:02
 GEMINI_API_KEY	2026-09-15 09:41
 

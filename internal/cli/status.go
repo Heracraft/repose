@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -19,20 +20,13 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 	if e.JSON {
 		return writeJSONOut(e.Out, project)
 	}
-	// The guest's answer (listeners, and what runs its terminals, I-509)
-	// is asked beside the api's reads.
-	type guestAnswer struct {
-		procs []listeningProc
-		mux   string
-	}
-	guest := make(chan guestAnswer, 1)
+	// The guest's answer (listeners, its disk, and what runs its
+	// terminals, I-509, I-567) is asked beside the api's reads.
+	guest := make(chan guestStatus, 1)
 	if project.State == "running" {
-		go func() {
-			procs, mux := guestListeningMux(ctx, e.target(project.Slug))
-			guest <- guestAnswer{procs, mux}
-		}()
+		go func() { guest <- guestStatusRead(ctx, e.target(project.Slug)) }()
 	} else {
-		guest <- guestAnswer{}
+		guest <- guestStatus{}
 	}
 	route, _ := e.Client.ProjectRoute(ctx, project.ID)
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
@@ -42,7 +36,7 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 	if mux == "" {
 		mux = multiplexer.Normalize(project.Multiplexer)
 	}
-	writeStatusLinesMux(e.Out, project, route, snaps, events, mux)
+	writeStatusLinesMux(e.Out, project, route, snaps, events, mux, g.disk)
 	writeListening(e.Out, g.procs)
 	return nil
 }
@@ -79,14 +73,19 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 	now := time.Now()
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
-	left := false
+	// DISK, a nearly full disk (I-567), likewise.
+	left, disk := false, false
 	for i := range projects {
 		left = left || projects[i].ExpiresAt != nil
+		disk = disk || diskFullCell(&projects[i]) != ""
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	head := "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
 	if left {
 		head += "\tLEFT"
+	}
+	if disk {
+		head += "\tDISK"
 	}
 	_, _ = fmt.Fprintln(tw, head)
 	for i := range projects {
@@ -96,6 +95,9 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 			runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
 		if left {
 			row += "\t" + orDash(tempLeft(p, now))
+		}
+		if disk {
+			row += "\t" + orDash(diskFullCell(p))
 		}
 		_, _ = fmt.Fprintln(tw, row)
 	}
@@ -126,13 +128,17 @@ func orDash(s string) string {
 }
 
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
-	writeStatusLinesMux(w, p, route, snaps, events, multiplexer.Normalize(p.Multiplexer))
+	writeStatusLinesMux(w, p, route, snaps, events, multiplexer.Normalize(p.Multiplexer), guestDisk{})
 }
 
-// writeStatusLinesMux is writeStatusLines with the multiplexer that runs
-// now: herdr is named after the size, and its sessions line has no tmux
-// clients, since herdr's arrive over SSH (I-509).
-func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event, mux string) {
+// writeStatusLinesMux is writeStatusLines with what the guest said: the
+// multiplexer that runs now, so herdr is named after the size and its
+// sessions line has no tmux clients, since herdr's arrive over SSH
+// (I-509); and its root filesystem, which the disk figure is (I-567).
+func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event, mux string, gd guestDisk) {
+	if gd.Size <= 0 {
+		gd = apiDisk(p)
+	}
 	_, _ = fmt.Fprintln(w, statusFirstLineMux(p, mux))
 	if r := abuseStopReason(p); r != "" {
 		// DECISIONS I-239: the platform stopped it, and says why.
@@ -154,15 +160,14 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 		_, _ = fmt.Fprintf(w, "  error: %s\n", withNext(reason, fmt.Sprintf("`repose start %s` restarts it.", p.Slug)))
 	}
 	if route != nil {
-		disk := "-"
-		if p.VolumeBytes > 0 {
-			disk = fmt.Sprintf("%s/%s", humanBytes(p.DiskUsedBytes), humanBytes(p.VolumeBytes))
-		}
 		host := route.HostName
 		if host == "" {
 			host = route.HostID // an api without host_name
 		}
-		_, _ = fmt.Fprintf(w, "  host %s   ip %s   disk %s   snapshot %s\n", orDash(host), orDash(route.GuestIP), disk, snapshotAge(snaps))
+		_, _ = fmt.Fprintf(w, "  host %s   ip %s   disk %s   snapshot %s\n", orDash(host), orDash(route.GuestIP), statusDisk(p, gd), snapshotAge(snaps))
+	}
+	if l := diskFullLine(p, gd); l != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
 	if p.Signals != nil && p.State == "running" {
 		docker := p.Signals.Docker
@@ -185,6 +190,66 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 		}
 		_, _ = fmt.Fprintf(w, "  last event %s: %s%s %q\n", humanAge(last.TS), agent, last.Kind, last.Summary)
 	}
+}
+
+// statusDisk is the disk figure: the guest's root filesystem, used over
+// its size, from the guest's own answer or else the api's newest sample;
+// with neither, the volume's size alone. The api's disk_used_bytes is not
+// shown: it counts the volume's allocated blocks, which a deleted file
+// keeps until the weekly fstrim (I-567).
+func statusDisk(p *Project, gd guestDisk) string {
+	if gd.Size > 0 {
+		return fmt.Sprintf("%s/%s", humanBytes(gd.Used), humanBytes(gd.Size))
+	}
+	if p.VolumeBytes > 0 {
+		return humanBytes(p.VolumeBytes)
+	}
+	return "-"
+}
+
+// DiskFullPercent is where status calls the disk nearly full: guestd's
+// disk_high threshold (I-11), the point past which a build or an agent's
+// next write can fail.
+const DiskFullPercent = 90
+
+// maxDiskGB is the largest disk a resize gives (the dashboard's largest
+// size, machine.md "Memory and disk").
+const maxDiskGB = 320
+
+// diskFullLine is the line under the host line when the guest's disk is
+// nearly full, with the resize that grows it: a full disk fails writes,
+// which is a loss the user cannot undo (I-567, I-484).
+func diskFullLine(p *Project, gd guestDisk) string {
+	pct := gd.Percent()
+	if gd.Size <= 0 || pct < DiskFullPercent {
+		return ""
+	}
+	line := fmt.Sprintf("disk %d percent full", pct)
+	gb := p.VolumeBytes >> 30
+	if gb <= 0 || gb >= maxDiskGB {
+		return line
+	}
+	return fmt.Sprintf("%s; `repose resize %s %dG` grows it", line, p.Slug, min(2*gb, maxDiskGB))
+}
+
+// apiDisk is the guest's root filesystem as the api's newest sample has
+// it (I-567): what status shows when the guest did not answer over SSH,
+// and what `repose ls` reads. Zero Size when the api did not say.
+func apiDisk(p *Project) guestDisk {
+	if p.RootSizeBytes <= 0 || p.RootUsedBytes < 0 || p.RootUsedBytes > p.RootSizeBytes {
+		return guestDisk{}
+	}
+	return guestDisk{Used: p.RootUsedBytes, Size: p.RootSizeBytes}
+}
+
+// diskFullCell is `repose ls`'s DISK column: "93% full" at DiskFullPercent
+// or more, else empty. The column is there only while a listed project
+// has one, as LEFT is (I-567, I-484).
+func diskFullCell(p *Project) string {
+	if d := apiDisk(p); d.Size > 0 && d.Percent() >= DiskFullPercent {
+		return fmt.Sprintf("%d%% full", d.Percent())
+	}
+	return ""
 }
 
 func statusFirstLine(p *Project) string {
@@ -225,14 +290,49 @@ func uptime(p *Project) string {
 	return humanDuration(time.Since(*p.StartedAt))
 }
 
+// agentState is the AGENTS column: the one agent with its state, or, for
+// several, how many are in each state, needs_input first. It showed the
+// first agent alone, so a machine with five read `claude: working`
+// (I-567). guestd's `unknown` (an agent quiet for less than the idle
+// time, or a window that just closed) tells the reader nothing, so it is
+// not named: one such agent reads `claude`, and several are counted
+// without it.
 func agentState(p *Project) string {
-	if p.Signals == nil || p.State != "running" {
+	if p.Signals == nil || p.State != "running" || len(p.Signals.Agents) == 0 {
 		return ""
 	}
-	for _, a := range p.Signals.Agents {
-		return fmt.Sprintf("%s: %s", a.Agent, a.State)
+	agents := p.Signals.Agents
+	if len(agents) == 1 {
+		if agents[0].State == "unknown" || agents[0].State == "" {
+			return agents[0].Agent
+		}
+		return fmt.Sprintf("%s: %s", agents[0].Agent, agents[0].State)
 	}
-	return ""
+	counts := map[string]int{}
+	var order []string
+	for _, st := range []string{"needs_input", "working", "idle"} {
+		order = append(order, st)
+		counts[st] = 0
+	}
+	for _, a := range agents {
+		if a.State == "unknown" || a.State == "" {
+			continue
+		}
+		if _, ok := counts[a.State]; !ok {
+			order = append(order, a.State)
+		}
+		counts[a.State]++
+	}
+	var parts []string
+	for _, st := range order {
+		if counts[st] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[st], st))
+		}
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d agents", len(agents))
+	}
+	return fmt.Sprintf("%d agents: %s", len(agents), strings.Join(parts, ", "))
 }
 
 func humanDuration(d time.Duration) string {

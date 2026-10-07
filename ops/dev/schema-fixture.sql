@@ -126,6 +126,8 @@ create table if not exists meter_samples (
   cpu_pressure_us bigint,
   host_cpu_wait_us bigint,
   mem_used bigint,
+  root_used bigint,
+  root_size bigint,
   primary key (project_id, ts)
 ) partition by range (ts);
 

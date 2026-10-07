@@ -39,6 +39,17 @@ const maxPressureDelta = 300_000_000
 // a tebibyte, so a larger value is a guest's invention.
 const maxGuestMem = 1 << 40
 
+// boundRootFS keeps the guest-written root filesystem figures (DECISIONS
+// I-567) when they can be true: a size no larger than the volume, and used
+// no larger than the size. Anything else is a guest's invention and both
+// go as 0, which the api reads as "the guest did not say".
+func boundRootFS(used, size, volume uint64) (uint64, uint64) {
+	if size == 0 || size > volume || used > size {
+		return 0, 0
+	}
+	return used, size
+}
+
 // advancePressure moves a guest's CPU pressure cursor to total, the
 // guest's /proc/pressure/cpu "some" total, and returns the bounded delta.
 // The first reading after hostd starts sets the baseline. A zero total is
@@ -222,6 +233,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					gsm.Procs = cleanProcs(sr.Procs)
 					gsm.CpuPressureUsDelta = m.advancePressure(g.GuestID, sr.GetCpuPressureUsTotal())
 					gsm.GuestMemUsedBytes = min(sr.GetMemUsedBytes(), maxGuestMem)
+					gsm.RootUsedBytes, gsm.RootSizeBytes = boundRootFS(sr.GetRootUsedBytes(), sr.GetRootSizeBytes(), gsm.DiskAllocBytes)
 				} else {
 					lost++
 				}
