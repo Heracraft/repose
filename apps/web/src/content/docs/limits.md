@@ -1,6 +1,6 @@
 ---
 title: Limits and acceptable use
-description: What your plan allows at once, how many projects you can have, what the network allows, and what gets a machine stopped.
+description: What your plan allows at once, how many projects an account can have, what the network allows, and what gets a machine stopped.
 section: Account
 order: 31
 ---
@@ -11,7 +11,11 @@ A plan buys memory for running machines, disk that may be allocated, and egress 
 
 ## Projects
 
-Solo allows 10 projects, Plus 25 and Pro 50, running or stopped. Destroyed projects don't count, and neither does one still being destroyed, for projects or for disk. A project whose destroy failed still counts until `repose rm` succeeds. Each copy [`repose fork`](/docs/lifecycle#fork-a-project) makes is a project, and so is a [temporary machine](/docs/lifecycle#temporary-machines) until it's destroyed. A temporary machine lives from 10 minutes to 24 hours, and waits at most a day past that while someone is attached. Disk bounds it anyway: Solo allocates up to 100 GB across its projects, Plus 250 GB, Pro 500 GB.
+Your plan's memory limits what runs at once, and its disk limits what you keep: Solo allocates up to 100 GB across your projects, running or stopped, Plus 250 GB and Pro 500 GB. A new project's disk is 20 GB for `small`, 40 GB for `large` and 80 GB for `xl`. Stop a project and start another whenever you like; a stopped project uses only its disk.
+
+An account can have 100 projects, running or stopped, on every plan. Past that, creating, restoring or forking a project is refused: `You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.`
+
+Destroyed projects don't count, and neither does one still being destroyed, for projects or for disk. A project whose destroy failed still counts until `repose rm` succeeds. Each copy [`repose fork`](/docs/lifecycle#fork-a-project) makes is a project, and so is a [temporary machine](/docs/lifecycle#temporary-machines) until it's destroyed. A temporary machine lives from 10 minutes to 24 hours, and waits at most a day past that while someone is attached.
 
 ## When repose is full
 

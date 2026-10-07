@@ -2,16 +2,19 @@ package httpapi_test
 
 import (
 	"encoding/base64"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/heracraft/repose/internal/billing"
 )
 
 // TestFork is I-254: POST /projects/:id/fork restores one snapshot of a
 // live project into N new projects, named <slug>-fork-<k>, without the
 // source's remote, with its named secrets and not its sshd material; the
-// project limit is checked for all N before anything is created; a resent
-// request_id answers with the same projects.
+// account's project cap is checked for all N before anything is created;
+// a resent request_id answers with the same projects.
 func TestFork(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
@@ -54,22 +57,35 @@ func TestFork(t *testing.T) {
 	if r := e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": uuid.NewString(), "count": 1}); r.status != 404 {
 		t.Fatalf("unknown snapshot: %d %s", r.status, r.raw)
 	}
-	// The plan's project count (I-289): an exempt account works within
-	// users.project_limit, here 3, so 1 project + 3 forks is refused and
-	// nothing is created.
+	// The account's project cap (I-569), running or stopped: an exempt
+	// account whose users.project_limit is below the cap has the cap.
+	// With 97 stopped projects beside izma, 3 forks would make 101, so the
+	// fork is refused and nothing is created.
 	e.subscribe(t, "sub-fern", "")
 	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt', project_limit = 3, xl_limit = 1 where logto_sub = 'sub-fern'"); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i < billing.ProjectCap-3; i++ {
+		if _, err := e.h.Pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) select gen_random_uuid(), id, $1, $1, 'small', 'stopped', 1073741824 from users where logto_sub = 'sub-fern'", fmt.Sprintf("filler-%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	live := func() int {
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects p join users u on u.id = p.user_id where u.logto_sub = 'sub-fern' and p.destroyed_at is null").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
 	}
 	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": sid, "count": 3})
 	if r.status != 400 || errCode(r) != "invalid" {
 		t.Fatalf("over the limit: %d %s", r.status, r.raw)
 	}
-	if det, _ := r.body["error"].(map[string]any)["detail"].(map[string]any); det["limit"] != float64(3) || det["projects"] != float64(1) || det["requested"] != float64(3) {
+	if det, _ := r.body["error"].(map[string]any)["detail"].(map[string]any); det["reason"] != "project_limit" || det["limit"] != float64(billing.ProjectCap) || det["projects"] != float64(billing.ProjectCap-2) || det["requested"] != float64(3) {
 		t.Fatalf("limit detail: %s", r.raw)
 	}
-	if l := e.do(t, tok, "GET", "/projects", nil); len(l.list) != 1 {
-		t.Fatalf("a refused fork created projects: %s", l.raw)
+	if n := live(); n != billing.ProjectCap-2 {
+		t.Fatalf("a refused fork created projects: %d live", n)
 	}
 
 	// Two forks.
@@ -142,8 +158,8 @@ func TestFork(t *testing.T) {
 	if len(again) != 2 || again[0].(map[string]any)["project_id"] != ids[0] || again[1].(map[string]any)["project_id"] != ids[1] {
 		t.Fatalf("resend answered other projects: %s", r.raw)
 	}
-	if l := e.do(t, tok, "GET", "/projects", nil); len(l.list) != 3 {
-		t.Fatalf("resend created projects: %s", l.raw)
+	if n := live(); n != billing.ProjectCap {
+		t.Fatalf("resend created projects: %d live", n)
 	}
 
 	// At the limit now; a fork of a fork is refused the same way.
@@ -155,8 +171,9 @@ func TestFork(t *testing.T) {
 	}
 
 	// Numbering takes the lowest free k, and a long name is trimmed to
-	// fit a slug's 40 characters.
-	if _, err := e.h.Pool.Exec(ctx, "update users set project_limit = 10 where logto_sub = 'sub-fern'"); err != nil {
+	// fit a slug's 40 characters. users.project_limit above the cap raises
+	// it for this account.
+	if _, err := e.h.Pool.Exec(ctx, "update users set project_limit = $1 where logto_sub = 'sub-fern'", billing.ProjectCap+10); err != nil {
 		t.Fatal(err)
 	}
 	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": sid, "count": 1, "name": "a-very-long-name-for-an-experiment-with-the-parser"})

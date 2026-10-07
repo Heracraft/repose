@@ -83,7 +83,8 @@ Restoring:
   snapshot, which is what makes an in-place restore reversible.
 - `restore --as-new NAME` creates a new project with the same class and
   volume size, on the host with the most free memory, and starts it. It
-  counts toward the project limit.
+  counts toward the account's project cap (100, running or stopped,
+  DECISIONS I-569).
 - Restore works onto any host, not only the one the snapshot came from. The
   release checklist rehearses exactly that.
 - A restore checks the whole blob against the recorded SHA-256 before it
@@ -109,8 +110,9 @@ Forking (DECISIONS I-254, I-255):
   numbers no live project uses, each started on the host with the most
   free memory.
 - The N projects are created in one transaction under the user's row
-  lock: the project limit (and the xl limit for xl copies) is checked for
-  all N first, and past it nothing is created (`invalid`, as for create).
+  lock: the account's project cap is checked for all N first, and past it
+  nothing is created (`invalid` with `detail.reason = project_limit`, as
+  for create; I-569). xl copies are the memory gate's to refuse (I-293).
   A resent request with the same `request_id` answers with the projects
   the first one made. Each copy's restore is its own op; one failing
   leaves the others running, and the CLI lists which failed and exits 1.

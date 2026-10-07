@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -52,5 +53,36 @@ func TestStatusShowsHours(t *testing.T) {
 	writeProjectsTable(&b, []Project{*p})
 	if !strings.Contains(b.String(), "TODAY") || !strings.Contains(b.String(), "2h14m") || !strings.Contains(b.String(), "41h") || strings.Contains(b.String(), "$") {
 		t.Fatalf("table:\n%s", b.String())
+	}
+}
+
+// The project cap refusal reads the same from every command (I-569):
+// run, restore and the rest print the CLI's sentence for the api's 400,
+// not "invalid: ..."; an api from before I-569 (no detail.reason) is
+// recognised by its numbers; another invalid stays as the api said it.
+func TestProjectLimitMessage(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  *APIError
+		want string
+	}{
+		{"one", &APIError{Code: "invalid", Message: "you have 100 of the 100 projects an account can have, running or stopped; destroy one first",
+			Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(100)}},
+			"You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.\n"},
+		{"several", &APIError{Code: "invalid", Message: "…",
+			Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(98), "requested": float64(5)}},
+			"You have 98 of the 100 projects an account can have, running or stopped, and 5 more would make 103. Destroy some first.\n"},
+		{"older api", &APIError{Code: "invalid", Message: "you have 6 of 6 projects; destroy one, or upgrade your plan at https://repose.herakraft.co/billing",
+			Detail: map[string]any{"limit": float64(6), "projects": float64(6)}},
+			"You have 6 of the 6 projects an account can have, running or stopped. Destroy one first.\n"},
+		{"other invalid", &APIError{Code: "invalid", Message: "name must match [A-Za-z0-9._-]{1,64}"},
+			"invalid: name must match [A-Za-z0-9._-]{1,64}\n"},
+		{"other reason", &APIError{Code: "invalid", Message: "something else", Detail: map[string]any{"reason": "other", "limit": float64(1), "projects": float64(1)}},
+			"invalid: something else\n"},
+	} {
+		var buf bytes.Buffer
+		if code := exitCodeFor(c.err, &buf); code != ExitGeneric || buf.String() != c.want {
+			t.Errorf("%s: exit %d, printed %q, want %q", c.name, code, buf.String(), c.want)
+		}
 	}
 }

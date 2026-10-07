@@ -265,7 +265,7 @@ Create:
 - `POST /projects` carries `expires_in_s` and no `remote_url`; the api
   sets `expires_at = now() + expires_in_s` and refuses `expires_in_s`
   outside 600..86400, or with `remote_url`, with `400 invalid`.
-- The billing gate and the project limit apply as to any create
+- The billing gate and the project cap apply as to any create
   (`countsTowardLimit` unchanged). A refusal says what it says today.
 
 Sync:

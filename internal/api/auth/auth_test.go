@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/api/auth"
+	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db/testdb"
 	"github.com/heracraft/repose/internal/fakes/logto"
 )
@@ -147,8 +148,8 @@ func TestFirstSignInCreatesUserAndCollisionsSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A new account has no plan and no credit (I-289); the row's limits are
-	// Solo's project count and no xl, for the exempt path.
-	if a.Handle != "octo-cat" || *a.Email != "a@example.com" || a.TrialCreditCents != 0 || a.ProjectLimit != 10 || a.XLLimit != 0 || a.BillingStatus != "none" || a.HasCard {
+	// the account project cap (I-569) and no xl, for the exempt path.
+	if a.Handle != "octo-cat" || *a.Email != "a@example.com" || a.TrialCreditCents != 0 || a.ProjectLimit != billing.ProjectCap || a.XLLimit != 0 || a.BillingStatus != "none" || a.HasCard {
 		t.Fatalf("%+v", a)
 	}
 	again, err := p.EnsureUser(ctx, "sub-a")

@@ -40,13 +40,15 @@ then on and gets one email when a seat is theirs, held for 72 hours
 
 ## What the plan buys
 
-| Plan | Running at once | Disk | Egress a month | Projects |
-|---|---|---|---|---|
-| Solo | 8 GB: one `large`, or two `small` | 100 GB | 250 GB | 10 |
-| Plus | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 25 |
-| Pro | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 50 |
+| Plan | Running at once | Disk | Egress a month |
+|---|---|---|---|
+| Solo | 8 GB: one `large`, or two `small` | 100 GB | 250 GB |
+| Plus | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB |
+| Pro | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB |
 
-Projects cost nothing while stopped, the month costs the same however
+A plan sells no project count: projects cost nothing but their disk
+while stopped, and every account may have 100, running or stopped
+(`limits.md`, DECISIONS I-569). The month costs the same however
 much runs, and nothing is metered by the hour. The other reasons
 `payment_required` carries, each with the whole sentence as `message`:
 

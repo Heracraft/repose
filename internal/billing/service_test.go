@@ -122,7 +122,7 @@ func TestCheckout(t *testing.T) {
 		t.Fatalf("overview: %v", ov)
 	}
 	usage := ov["usage"].(map[string]any)
-	if usage["memory_gb"] != 8 || usage["project_limit"] != 10 {
+	if usage["memory_gb"] != 8 || usage["project_limit"] != billing.ProjectCap {
 		t.Fatalf("usage without a plan shows Solo's limits: %v", usage)
 	}
 }

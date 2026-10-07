@@ -118,8 +118,12 @@ func TestAdminSurface(t *testing.T) {
 	if _, err := run(t, e, "users", "exempt", "zed"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run(t, e, "users", "limits", "zed", "--projects", "10", "--xl", "10"); err != nil {
-		t.Fatal(err)
+	// --projects only raises the account cap (I-569).
+	if _, err := run(t, e, "users", "limits", "zed", "--projects", "10"); err == nil {
+		t.Fatal("--projects below the cap should refuse")
+	}
+	if out, err := run(t, e, "users", "limits", "zed", "--projects", "150", "--xl", "10"); err != nil || !strings.Contains(out, "zed: 150 projects, 10 xl") {
+		t.Fatalf("limits: %s %v", out, err)
 	}
 	// rename: only while the user has no projects; the new handle must be
 	// a valid handle (I-100).
@@ -134,7 +138,7 @@ func TestAdminSurface(t *testing.T) {
 		t.Fatalf("show after rename: %s %v", out, err)
 	}
 	uu, _ := store.GetUser(ctx, h.Pool, u.ID)
-	if uu.BillingStatus != "exempt" || uu.ProjectLimit != 10 || uu.XLLimit != 10 {
+	if uu.BillingStatus != "exempt" || uu.ProjectLimit != 150 || uu.XLLimit != 10 {
 		t.Fatalf("user after admin: %+v", uu)
 	}
 	// projects driven through the engine

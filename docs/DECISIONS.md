@@ -14541,3 +14541,111 @@ the starship sentence (the machine already runs starship, so a prompt
 needs only its config file; aliases work through I-519), and that a tmux config reaches the running
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
+
+**I-569. A plan sells no project count; every account may have 100
+projects, running or stopped.** (owner dogfood, 2026-10-07) The owner,
+at 6 of 6 projects with four stopped, was refused `repose fork` and
+`repose run`: the limit counted stopped projects, as limits.md and
+billing.md said it did. The product direction is that a user keeps as
+many projects as they like, a stopped one costs them its disk and
+nothing else, and they run what they need within the plan's memory:
+stop one, start another. This amends I-289, I-362, I-293 and I-300:
+the per-plan counts (Solo 10, Plus 25, Pro 50, "live or stopped"), what
+`users.project_limit` means (I-293's point 2), and what the slot a
+destroy frees is a slot of.
+
+What limits exist now. (a) Memory caps what runs: the compute gate
+(`billing.Gate.Check`, I-289) already runs on create, start, run's create
+and start, restore, fork and a class change, and its `plan_limit` refusal
+names the machines using the memory ("Your Solo plan runs 8 GB at once
+and todo-app is using it. Stop it, or upgrade at ..."), so no count of
+running projects is added. (b) Disk caps what is kept: the gate's
+`disk_limit` already sums the allocated volume sizes of every live
+project, running or stopped, on create, restore, fork and growth. (c)
+One abuse bound, `billing.ProjectCap` = 100 live projects per account,
+running or stopped, the same on every plan and without one. It counts
+what `countsTowardLimit` counts (I-300 unchanged: a project being
+destroyed is out, one left in error by a failed destroy is in). It is
+on the Limits page, not in the pricing table or on the plan cards, and
+`/me`'s `limits.projects` carries it. `users.project_limit` raises it for
+one account and never lowers it: the values on the rows (6 for the
+owner, 3 and 10 for early accounts, 100 for operator-created ones) were
+set when the limit was a plan's and counted stopped projects, so
+reading them as caps would keep the owner blocked; `AccountProjectCap`
+takes the larger. No migration and no data change: the owner's account
+reads 100 once the api deploys. `repose-admin users limits HANDLE
+--projects N` refuses an N below 100 (suspend an account to stop it).
+The xl count limit stays gone for subscribed accounts (I-293); the fake
+api's fork had kept one, now removed, and api.md's fork row no longer
+mentions it.
+
+The refusal is `400 invalid` with `detail: {reason: "project_limit",
+limit, projects, requested?}` (`reason` is new and additive) and the
+message "you have 100 of the 100 projects an account can have, running
+or stopped; destroy one first". The CLI prints one sentence for every
+command: `exitCodeFor` maps that error (and an older api's, recognised
+by `limit` and `projects` in `detail`) to "You have 100 of the 100
+projects an account can have, running or stopped. Destroy one first.",
+so `run`, `restore`, `snapshots restore --as-new` and `fork` no longer
+show "invalid: ..." raw, and fork's own check before it snapshots uses
+the same function (counting projects not being destroyed, as the api
+does). The CLI's sentence has no upgrade link: no plan raises the cap.
+The dashboard's billing page loses its Projects meter and the Projects
+row of the plan cards; `/billing`'s `usage.project_limit` and
+`plans[].project_limit` stay one release, reading 100.
+
+Why 100 and the same everywhere: at the default volume sizes (20 GB
+`small`, 40 GB `large`, 80 GB `xl`) the plan's disk binds long before
+it: Solo holds 5 `small` or 2 `large`, Plus 12 or 6, Pro 25 or 12. The
+cap binds only an exempt account (no memory or disk gate, I-16), a
+deploy with `BILLING_ENFORCE=false`, and any future change that counts
+disk by bytes used rather than allocated. 100 keeps per-account rows,
+host slots and snapshot blobs bounded in those cases, and is far from
+what a person keeps.
+
+What a stopped project costs, checked for the scaling question. On its
+host: its thin LV (only written blocks take pool space; the plan's disk
+counts the allocated size), a guest record in hostd's bbolt, one guest
+index (IP, MAC, vsock CID) from the host's `/22` (about 1,020 guests
+per host, running and stopped together), and a GC root on its system
+closure in the host store (closures share the base; the per-project
+cap is 20 GB). Nothing runs for it: no Cloud Hypervisor or virtiofsd
+process, no guestd monitor, no samples, and no nightly snapshot
+(`SnapshotAll` takes running guests only). In Blob: the snapshots of
+its last week running, then its newest one kept for as long as the
+project lives (snapshots.md, `internal/api/snapshots`). In Postgres: its
+rows, and one `usage_hours` row an hour (the rollup records disk
+allocated for every live project). The gateway resolves projects per
+connection; there is no per-project DNS or edge entry. So a stopped
+project pins host disk and one guest slot on the host it was created
+on, and nothing else. Per seat, the plan's disk already bounded the
+pinned disk before this change (stopped volumes always counted), so
+the host pool's exposure is unchanged: about 125 GB allocated per seat
+at worst, with written bytes the real use. The guest slots are the new
+ceiling to watch: at the disk cap a seat holds at most 25 projects
+(Pro, all `small`, per seat about 6), so a full `D64s_v7` of about 30
+seats stays near 200 guests, well inside 1,020; exempt accounts are the
+exception and are few. Two existing limits get more visible and are
+not changed here: a stopped project starts only on its own host, so a
+start on a host full of other tenants' machines answers `capacity`
+(`repose-admin projects move` is the operator's way out), and a
+create that finds no free guest index fails `insufficient_capacity` at
+hostd because the scheduler places by memory and pool space, not by
+free indexes.
+
+Open for the owner: "dozens of projects" holds on Pro and with `small`
+machines; on Solo the disk binds at 2 `large` or 5 `small`. Counting
+disk by bytes used, smaller default volumes, or a paid disk add-on are
+pricing decisions this entry does not make.
+
+`TestProjectCap`, `TestDestroyingFreesTheSlot`, `TestFork` (api),
+`TestLimitsFor`, `TestPlansMatchPricingDoc` (billing), `TestFork`,
+`TestProjectLimitMessage` (cli), the fake's `TestDestroyDelay`, and
+the billing page's Playwright test. *Rejected:* a count of running
+projects per plan (the memory pool already caps what runs, and says
+which machines to stop); keeping per-plan counts and excluding stopped
+projects (a count that binds only running projects is the memory pool
+said worse); reading `users.project_limit` as an exact cap (keeps the
+owner at 6 until an operator edits the row, and makes every early
+account's 3 or 10 a silent block); a migration rewriting the rows (a
+data change for a value the code can read safely).

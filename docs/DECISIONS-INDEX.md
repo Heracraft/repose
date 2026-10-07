@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-579 entries.
+580 entries.
 
 ## Scope
 
@@ -367,10 +367,10 @@ pointer, not a summary.
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7533
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7546
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7571
-- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; L7593
+- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; L7593
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; L7671
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; L7710
-- **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; L7736
+- **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7736
 - **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; L7793
 - **I-295** The dashboard under plans: the fake's default is exempt, the Paddle stub, one site-wide CSP, and what the pages stop showing — 2026-09-27; L7861
 - **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; L7906
@@ -381,7 +381,7 @@ pointer, not a summary.
 - **I-331** Sign-out leaves the page alone until the browser goes, and no page paints before its stylesheet — 2026-09-28; partly amended by I-370; L8131
 - **I-332** Settings save as they change; the ntfy URL keeps a Save — 2026-09-28; L8151
 - **I-333** "Recently destroyed" shows ten rows, then more on request — 2026-09-28; L8170
-- **I-300** A project being destroyed does not count toward the project limit; one left in error by a failed destroy does — 2026-09-28; L8177
+- **I-300** A project being destroyed does not count toward the project limit; one left in error by a failed destroy does — 2026-09-28; amended by I-569; L8177
 - **I-301** `repose run` on a project being destroyed waits and starts over — 2026-09-28; L8195
 - **I-302** `repose sync [PROJECT]` — 2026-09-28; L8212
 - **I-303** A run with nothing new prints no sync line — 2026-09-28; L8219
@@ -427,7 +427,7 @@ pointer, not a summary.
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9140
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9167
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9188
-- **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; L9211
+- **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; L9211
 - **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; L9253
 - **I-364** tmux's mouse mode is off in the guest — 2026-09-29; L9279
 - **I-365** `repose secrets set` echoes one `*` per character — 2026-09-29; L9294
@@ -611,3 +611,4 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L14468
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
+- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L14545

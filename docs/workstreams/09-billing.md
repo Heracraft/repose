@@ -270,10 +270,11 @@ invoice never disagree.
 What runs since 2026-09-27, with the exact names.
 
 **The plan table.** `internal/billing/plans.go`: `Plan{ID, Name,
-PriceCents, Currency, TrialDays, Seats, MemoryGB, DiskGB, EgressGB,
-ProjectLimit}`, `Solo` (solo, 2900, 7, 1, 8, 100, 250, 10), `Plus` (plus,
-5900, 7, 2, 16, 250, 500, 25) and `Pro` (pro, 9900, 7, 4, 32, 500, 1000,
-50) since I-362, `Plans`, `PlanByID`, `SmallestFor(class)`,
+PriceCents, Currency, TrialDays, Seats, MemoryGB, DiskGB, EgressGB, ...}`,
+`Solo` (solo, 2900, 7, 1, 8, 100, 250), `Plus` (plus, 5900, 7, 2, 16,
+250, 500) and `Pro` (pro, 9900, 7, 4, 32, 500, 1000) since I-362, no
+project count since I-569 (`ProjectCap = 100` for every account,
+`AccountProjectCap`), `Plans`, `PlanByID`, `SmallestFor(class)`,
 `EgressHardStopMultiplier = 4`, `OveragePerGBCents = 5`, `SeatGB = 8`,
 `ClassMemoryGB` (small 4, large 8, xl 16), `OverageCents(plan, bytes)`
 (whole GB over, rounded up, at 5 cents), `PriceVersion = "plan-v1"`.
@@ -364,11 +365,12 @@ and the default volume), `/projects/:id/start` (class, excluding itself),
 `/projects/restore` and `/snapshots/:sid/restore` (class when starting,
 the volume when new), `/fork` (class when starting, the volumes of all
 N), `PATCH /projects/:id {class}` to a bigger class, `/resize` (the
-growth). `LimitsFor(user, sub)` is `/me`'s `limits`: the plan's project
-count, `xl` 1 when the plan has 16 GB, memory, disk, egress; an exempt or
-plan-less account has `users.project_limit` and `xl_limit`. The project
-count check stays a `400 invalid` with `{limit, projects, requested}` and
-now reads the plan's limit; the xl count limit is gone (memory decides).
+growth). `LimitsFor(user, sub)` is `/me`'s `limits`: the account's
+project cap (I-569: 100, or `users.project_limit` when higher), `xl` 1
+when the plan has 16 GB, memory, disk, egress; an exempt or plan-less
+account has `xl_limit`. The project count check stays a `400 invalid`
+with `{reason: project_limit, limit, projects, requested}` and reads the
+account's cap; the xl count limit is gone (memory decides).
 `WaitlistPlace` reads the 0008 waitlist row for `/me`, `/billing` and the
 gate's detail.
 
@@ -471,7 +473,7 @@ that signs webhooks), `TestPlansMatchPricingDoc`,
 `TestCloseAccountChargesThenCancels`, `TestSubscriptionSeatsStub`;
 `TestPaddleSandbox` runs against the real sandbox with
 `REPOSE_PADDLE_SANDBOX_KEY` and skips without it. `internal/api/http`:
-`TestBillingGateBlocksCompute`, `TestPlanProjectLimit`,
+`TestBillingGateBlocksCompute`, `TestProjectCap` (I-569),
 `TestBillingEnforceFalseLetsStartsThrough`, `TestBillingDisabledRoutes`,
 `TestBillingRoutes`, `TestProjectCarriesRunningSeconds`.
 `internal/admin`: `TestBillingSubcommands`. `internal/cli`:
@@ -565,10 +567,10 @@ sandbox wait for the key and name the `docs/ops/M4-GATE.md` step.
       a deploy without Paddle refuses `subscription_required`. Evidence:
       `TestGateEveryReason` (unit) and `TestBillingGateBlocksCompute`
       (create, start, class change, resize, restore; suspended allow-list),
-      `TestPlanProjectLimit`, `TestBillingEnforceFalseLetsStartsThrough`,
+      `TestProjectCap` (I-569), `TestBillingEnforceFalseLetsStartsThrough`,
       `TestBillingDisabledRoutes`, `TestSignInAndProjectsLifecycle`
       (`/me` defaults `none`, Pro's `limits`, `plan_limit` naming the
-      machines), `TestFork` (the plan's project count).
+      machines), `TestFork` (the account project cap, I-569).
 - [x] The overage line: 50 GB over on Solo is one charge of 250 cents
       with `effective_from next_billing_period` under the overage
       product; a retry sends none; under the allowance nothing is sent

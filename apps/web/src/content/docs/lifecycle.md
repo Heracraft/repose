@@ -102,7 +102,7 @@ Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
 Destroying todo-app. Its final snapshot is kept for 30 days.
 ```
 
-This deletes the machine and its disk and stops all charges for the project. It stops counting toward your [project limit](/docs/limits#projects) at once, while it's still `destroying`. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
+This deletes the machine and its disk and stops all charges for the project. It stops counting toward your [project cap](/docs/limits#projects) at once, while it's still `destroying`. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
 
 Within 30 days, bring it back, running, with its size, configuration and git remote:
 
@@ -179,7 +179,7 @@ Not a git repository, so nothing was synced.
 - Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
 - A temporary machine always runs tmux, whatever `default_multiplexer` says. herdr opens a new shell when its last tab closes, so the session would never end. `--temp --multiplexer herdr` stops with an error, and so does `--multiplexer herdr` on a temporary machine until `repose keep` makes it a normal one.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
-- A temporary machine counts toward your [project limit](/docs/limits#projects) and plan while it exists, like any other.
+- A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
 
 To keep one after all:
 
@@ -217,7 +217,7 @@ git merge fork-2/main
 
 Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`.
 
-Each copy is a project: it counts toward your [project limit](/docs/limits) and is billed like any project while it runs. If the copies would take you past the limit, `repose fork` creates none of them. `--size small` makes cheaper copies; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects) and uses your plan's memory while it runs. If the copies would take you past 100, `repose fork` creates none of them. `--size small` makes cheaper copies; `--name` changes their names.
 
 ## Logs and events
 

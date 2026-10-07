@@ -145,6 +145,7 @@ copy-paste version):
 | Move a project to another host | `repose-admin projects move <id> --to host-NN` (stop, snapshot, restore, start) |
 | Suspend a user | `repose-admin users suspend <handle> --reason "..."` (stops guests, freezes billing, audit row) |
 | Unsuspend | `repose-admin users unsuspend <handle>` |
+| Raise one account's project cap | `repose-admin users limits <handle> --projects N` (N above 100, the cap every account has, running or stopped; DECISIONS I-569) |
 | See the api's automatic abuse stops | `repose-admin abuse list [--all]` (project, owner, process name, hold) |
 | Lift a project's abuse hold | `repose-admin abuse clear <id or slug.handle>` (clears its stops and strikes, audited as `abuse_clear`) |
 | Run a command in a guest (audited) | `repose-admin exec <project-id> -- <argv>` |

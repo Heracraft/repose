@@ -314,6 +314,9 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 	if e := f.gate(u, class, classes[class], nil); e != nil {
 		return nil, e
 	}
+	if e := f.projectCap(u, 1); e != nil {
+		return nil, e
+	}
 	for _, p := range f.userProjects(u) {
 		switch {
 		case p.Name == name:
@@ -1334,29 +1337,14 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return answer(list)
 		}
 	}
-	live := f.userProjects(u)
-	limits := f.meOf(u).Limits
-	counted, xl := 0, 0
+	// The project cap is checked for all N at once; xl is the memory
+	// gate's to refuse, as in the api (I-293), not a count.
 	taken := map[string]bool{}
-	for _, q := range live {
+	for _, q := range f.userProjects(u) {
 		taken[q.Slug] = true
-		// A project being destroyed no longer counts (I-300); its name
-		// stays taken until the destroy ends.
-		if q.State == "destroying" {
-			continue
-		}
-		counted++
-		if q.Class == "xl" {
-			xl++
-		}
 	}
-	if counted+count > limits.Projects {
-		return invalid("you have %d of %d projects, and %d more would make %d; destroy some or add a card and pay your first invoice to raise the limit", counted, limits.Projects, count, counted+count).
-			withDetail(map[string]any{"limit": limits.Projects, "projects": counted, "requested": count})
-	}
-	if class == "xl" && xl+count > limits.XL {
-		return invalid("you have %d of %d xl projects, and %d more would make %d; fork with a smaller class", xl, limits.XL, count, xl+count).
-			withDetail(map[string]any{"xl_limit": limits.XL, "xl": xl, "requested": count})
+	if e := f.projectCap(u, count); e != nil {
+		return e
 	}
 	b := slugOf(base)
 	var list []forked
@@ -1430,6 +1418,32 @@ func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError
 	o := f.newOp(p, "restore")
 	f.event(p, "volume.restored", "", "volume replaced from snapshot "+snap.ID)
 	return opResult(w, o)
+}
+
+// projectCap refuses n more projects past the account's cap, running or
+// stopped (I-569), as the api's projectLimitError does. A project being
+// destroyed no longer counts (I-300); its name stays taken until the
+// destroy ends.
+func (f *Fake) projectCap(u *userRec, n int) *apiError {
+	limit := f.meOf(u).Limits.Projects
+	if limit <= 0 {
+		return nil
+	}
+	have := 0
+	for _, q := range f.userProjects(u) {
+		if q.State != "destroying" {
+			have++
+		}
+	}
+	if have+n <= limit {
+		return nil
+	}
+	detail := map[string]any{"reason": "project_limit", "limit": limit, "projects": have}
+	if n <= 1 {
+		return invalid("you have %d of the %d projects an account can have, running or stopped; destroy one first", have, limit).withDetail(detail)
+	}
+	detail["requested"] = n
+	return invalid("you have %d of the %d projects an account can have, running or stopped, and %d more would make %d; destroy some first", have, limit, n, have+n).withDetail(detail)
 }
 
 // restoreAsNew is the as-new restore: a new project from p's class and,

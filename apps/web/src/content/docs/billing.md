@@ -7,11 +7,11 @@ order: 30
 
 repose is a monthly plan. You choose one before your first machine starts, with a card, and the first week is free.
 
-| Plan | A month | Running at once                        | Disk   | Egress a month | Projects |
-| ---- | ------- | -------------------------------------- | ------ | -------------- | -------- |
-| Solo | $29\*   | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         | 10       |
-| Plus | $59     | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         | 25       |
-| Pro  | $99     | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           | 50       |
+| Plan | A month | Running at once                        | Disk   | Egress a month |
+| ---- | ------- | -------------------------------------- | ------ | -------------- |
+| Solo | $29\*   | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         |
+| Plus | $59     | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         |
+| Pro  | $99     | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           |
 
 \*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. Until the $29 month starts, the egress allowance is 100 GB a month: $0.05 a GB is charged past 100 GB, and your machines stop at 400 GB. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
 
@@ -28,7 +28,7 @@ Seven days on any plan. Your card is taken at checkout and first charged on day 
 - **Memory.** Starting a machine that would put your running machines past the plan is refused, and the message names the machine using the memory: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` An `xl` needs Plus or Pro.
 - **Disk.** Creating a project or growing a disk past the plan's total is refused. Disk counts by the size you chose, running or stopped; snapshots are free.
 - **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice as one line. At four times the allowance (1 TB on Solo, 400 GB during its introductory months, 2 TB on Plus, 4 TB on Pro) your machines stop until the month turns, and you get an email.
-- **Projects.** 10 on Solo, 25 on Plus, 50 on Pro, running or stopped. Destroyed projects and their 30-day snapshots don't count.
+- **Projects.** A plan doesn't count them: stop one and start another within the plan's memory. A stopped project uses only its disk.
 
 Example: after the first 3 months, a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
 

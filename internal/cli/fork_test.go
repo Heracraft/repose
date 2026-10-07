@@ -76,18 +76,20 @@ func TestFork(t *testing.T) {
 		t.Fatalf("snapshots of the source: %+v %v", snaps, err)
 	}
 
-	// At the plan's limit: refused before a snapshot is taken. The fake's
-	// default account is exempt (I-295), so the limit is Solo's 10 here;
-	// seven more projects fill it.
-	for i := 0; i < 7; i++ {
-		if _, err := fake.CreateProject(fmt.Sprintf("filler-%d", i), "small"); err != nil {
+	// At the account's cap, running or stopped (I-569): refused before a
+	// snapshot is taken, in the words every command uses. Stopped
+	// projects fill it, on Solo as on any plan.
+	for i := 0; i < fakeapi.ProjectCap-3; i++ {
+		f, err := fake.CreateProject(fmt.Sprintf("filler-%d", i), "small")
+		if err != nil {
 			t.Fatal(err)
 		}
+		fake.SetState(f.ID, "stopped")
 	}
 	fake.SetBilling(fakeapi.BillingActive)
 	fake.SetPlan("solo")
 	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1})
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || !strings.Contains(ee.msg, "You have 10 of 10 projects (Solo's limit), and 1 more would make 11") {
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != "You have 100 of the 100 projects an account can have, running or stopped. Destroy one first." {
 		t.Fatalf("fork at the limit: %v", err)
 	}
 	fake.SetBilling(fakeapi.BillingExempt)
@@ -131,8 +133,8 @@ func TestFork(t *testing.T) {
 	if ee, ok := err.(*exitError); !ok || !strings.Contains(ee.msg, "Could not fork izma: that snapshot is not one of izma's, or it has expired. Nothing was created.") {
 		t.Fatalf("unknown snapshot: %v", err)
 	}
-	// izma, izma-fork-1 and the seven fillers.
-	if ps, _ := e.Client.ListProjects(ctx); len(ps) != 9 {
+	// izma, izma-fork-1 and the fillers.
+	if ps, _ := e.Client.ListProjects(ctx); len(ps) != fakeapi.ProjectCap-1 {
 		t.Fatalf("projects after a refused fork: %d", len(ps))
 	}
 }

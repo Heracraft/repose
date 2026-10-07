@@ -448,11 +448,16 @@ func TestDestroyingFreesTheSlot(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
 	tok := e.signIn(t, "sub-cleo", "cleo")
-	// An exempt account without a plan works within users.project_limit
-	// (I-289); 3 keeps the test short.
+	// An exempt account without a plan has the account cap (I-569); 97
+	// stopped projects put it three short.
 	e.subscribe(t, "sub-cleo", "")
-	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt', project_limit = 3 where logto_sub = 'sub-cleo'"); err != nil {
+	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt' where logto_sub = 'sub-cleo'"); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i < billing.ProjectCap-3; i++ {
+		if _, err := e.h.Pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) select gen_random_uuid(), id, $1, $1, 'small', 'stopped', 1073741824 from users where logto_sub = 'sub-cleo'", fmt.Sprintf("filler-%d", i)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ids := map[string]string{}
 	for _, n := range []string{"one", "two", "three"} {
@@ -463,7 +468,7 @@ func TestDestroyingFreesTheSlot(t *testing.T) {
 		ids[n] = r.body["id"].(string)
 		e.waitOp(t, r)
 	}
-	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "four", "class": "small"}); r.status != 400 || r.body["error"].(map[string]any)["detail"].(map[string]any)["limit"].(float64) != 3 {
+	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "four", "class": "small"}); r.status != 400 || r.body["error"].(map[string]any)["detail"].(map[string]any)["limit"].(float64) != float64(billing.ProjectCap) {
 		t.Fatalf("at the limit: %d %s", r.status, r.raw)
 	}
 	if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'destroying' where id = $1", ids["three"]); err != nil {
@@ -480,7 +485,7 @@ func TestDestroyingFreesTheSlot(t *testing.T) {
 	if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'error' where id = $1", ids["three"]); err != nil {
 		t.Fatal(err)
 	}
-	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "five", "class": "small"}); r.status != 400 || r.body["error"].(map[string]any)["detail"].(map[string]any)["projects"].(float64) != 4 {
+	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "five", "class": "small"}); r.status != 400 || r.body["error"].(map[string]any)["detail"].(map[string]any)["projects"].(float64) != float64(billing.ProjectCap+1) {
 		t.Fatalf("a failed destroy still counts: %d %s", r.status, r.raw)
 	}
 }
@@ -506,7 +511,7 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	// count and no xl until a plan is chosen (I-289).
 	b := r.body["billing"].(map[string]any)
 	l := r.body["limits"].(map[string]any)
-	if b["status"] != "none" || b["trial_credit_cents"].(float64) != 0 || b["plan"] != nil || b["has_card"] != false || l["projects"].(float64) != 10 || l["xl"].(float64) != 0 || l["memory_gb"].(float64) != 8 {
+	if b["status"] != "none" || b["trial_credit_cents"].(float64) != 0 || b["plan"] != nil || b["has_card"] != false || l["projects"].(float64) != float64(billing.ProjectCap) || l["xl"].(float64) != 0 || l["memory_gb"].(float64) != 8 {
 		t.Fatalf("defaults: %s", r.raw)
 	}
 	var row map[string]any
@@ -532,7 +537,7 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	r = e.do(t, tok, "GET", "/me", nil)
 	b = r.body["billing"].(map[string]any)
 	l = r.body["limits"].(map[string]any)
-	if b["status"] != "active" || b["plan"] != "plus" || b["seats"].(float64) != 2 || b["period_end"] == nil || l["projects"].(float64) != 25 || l["xl"].(float64) != 1 || l["memory_gb"].(float64) != 16 {
+	if b["status"] != "active" || b["plan"] != "plus" || b["seats"].(float64) != 2 || b["period_end"] == nil || l["projects"].(float64) != float64(billing.ProjectCap) || l["xl"].(float64) != 1 || l["memory_gb"].(float64) != 16 {
 		t.Fatalf("subscribed /me: %s", r.raw)
 	}
 	// Validation.

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ApiError, NetworkError, errorText, isApiError, isOutage } from './errors';
+import {
+	ApiError,
+	NetworkError,
+	errorText,
+	isApiError,
+	isOutage,
+	projectLimitText
+} from './errors';
 
 describe('ApiError', () => {
 	it('carries the documented envelope fields plus the transport ones', () => {
@@ -72,5 +79,43 @@ describe('isOutage', () => {
 		// Only a 503 is an answer: the same code on a 500 means trouble.
 		expect(isOutage(500, 'capacity')).toBe(true);
 		expect(isOutage(404, 'not_found')).toBe(false);
+	});
+});
+
+describe('projectLimitText', () => {
+	it("says the project cap in the CLI's words (I-569)", () => {
+		const one = new ApiError(
+			{
+				code: 'invalid',
+				message:
+					'you have 100 of the 100 projects an account can have, running or stopped; destroy one first',
+				detail: { reason: 'project_limit', limit: 100, projects: 100 }
+			},
+			400,
+			null
+		);
+		const want =
+			'You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.';
+		expect(projectLimitText(one)).toBe(want);
+		expect(errorText(one, 'Could not restore the project.')).toBe(want);
+		const several = new ApiError(
+			{
+				code: 'invalid',
+				message: '…',
+				detail: { reason: 'project_limit', limit: 100, projects: 98, requested: 5 }
+			},
+			400,
+			null
+		);
+		expect(projectLimitText(several)).toBe(
+			'You have 98 of the 100 projects an account can have, running or stopped, and 5 more would make 103. Destroy some first.'
+		);
+	});
+
+	it('is undefined for any other error', () => {
+		const other = new ApiError({ code: 'invalid', message: 'name must match' }, 400, null);
+		expect(projectLimitText(other)).toBeUndefined();
+		expect(errorText(other, 'x')).toBe('name must match');
+		expect(projectLimitText(new Error('boom'))).toBeUndefined();
 	});
 });

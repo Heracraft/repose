@@ -124,7 +124,6 @@ export interface Usage {
 	egress_included_gb: number;
 	overage_cents: number;
 	projects: number;
-	project_limit: number;
 }
 
 /** One of GET /billing's plans (docs/PRICING.md). */
@@ -138,7 +137,6 @@ export interface Plan {
 	memory_gb: number;
 	disk_gb: number;
 	egress_gb: number;
-	project_limit: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
 	/** The introductory price a month and for how many months; 0 for none (I-497). */

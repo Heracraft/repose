@@ -117,7 +117,7 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 			available = count.Total == 0 || count.Free >= p.Seats-sub.Seats
 		}
 		plans = append(plans, map[string]any{"id": p.ID, "name": p.Name, "price_cents": p.PriceCents, "currency": p.Currency, "trial_days": p.TrialDays,
-			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "project_limit": p.ProjectLimit, "available": available,
+			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "project_limit": ProjectCap, "available": available,
 			"intro_price_cents": p.IntroCents, "intro_months": p.IntroMonths, "intro_egress_gb": p.IntroEgressGB})
 	}
 	place, err := WaitlistPlace(ctx, s.pool, u.ID)

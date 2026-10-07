@@ -82,13 +82,17 @@ Identity:
 
 Limits:
 
-- A user with no paid invoice yet may have 3 projects, at most 1 of class
-  `xl`. After the first paid invoice, 10 projects. `POST /projects` past the
-  limit returns `invalid` with the limit in `detail`, and the CLI prints
-  `you have 3 of 3 projects; destroy one or add a card and pay your first
-  invoice to raise the limit`.
+- The plan's memory limits what runs at once and its disk what is kept
+  (pricing.md). A plan sells no project count: an account may have 100
+  projects, running or stopped, on every plan and without one, and an
+  operator can raise that for one account with `repose-admin users limits
+  HANDLE --projects N` (DECISIONS I-569). `POST /projects`, an as-new
+  restore and a fork past it return `400 invalid` with `detail: {reason:
+  project_limit, limit, projects, requested?}`, and every command prints
+  `You have 100 of the 100 projects an account can have, running or
+  stopped. Destroy one first.`
 - `repose fork` makes N projects at once and is refused whole, before any
-  is created, when N more would pass the limit (snapshots.md, "Forking";
+  is created, when N more would pass the cap (snapshots.md, "Forking";
   DECISIONS I-254).
 - No seats gate on `POST /projects` since DECISIONS I-290: creating a
   project needs a plan (`payment_required`, `detail.reason =

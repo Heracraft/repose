@@ -56,7 +56,7 @@ const Usage = `repose-admin <command> [args]
             list [--host N] [--sort disk|closure] | show ID|SLUG | start ID | stop ID [--no-snapshot] | restart ID | snapshot ID | resize ID --bytes B
             move ID --to N | restore ID [--snapshot SID | --latest] [--to N] | destroy ID [--wait=false] | exec ID -- ARGV...
   exec      ID -- ARGV...
-  users     list | show HANDLE | suspend HANDLE --reason R | unsuspend HANDLE | exempt HANDLE | limits HANDLE --projects N --xl N | rename OLD NEW [--github-login L] (no projects)
+  users     list | show HANDLE | suspend HANDLE --reason R | unsuspend HANDLE | exempt HANDLE | limits HANDLE [--projects N (above 100)] [--xl N] | rename OLD NEW [--github-login L] (no projects)
   certs     revoke --user HANDLE
   secrets   rewrap
   billing   show HANDLE | rollup [--hour 2026-09-17T14] | explain PROJECT 2026-09-17T14 | suspend HANDLE | unsuspend HANDLE

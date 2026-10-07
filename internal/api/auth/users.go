@@ -245,14 +245,14 @@ func (p *Provisioner) EnsureUser(ctx context.Context, sub string) (*store.User, 
 		}
 		// A new account has no plan and no credit (DECISIONS I-289):
 		// billing_status none until a checkout's webhook arrives. The
-		// project and xl limits on the row matter only for an exempt
-		// account (a subscribed one has its plan's); they start at Solo's
-		// project count and no xl, which `repose-admin users limits`
-		// raises.
+		// The xl limit on the row matters only for an exempt account (a
+		// subscribed one has its plan's); it starts at none, which
+		// `repose-admin users limits` raises. The project limit starts at
+		// the cap every account has (I-569) and can only be raised.
 		err := db.InTx(ctx, p.pool, func(tx db.Tx) error {
 			if _, err := tx.Exec(ctx, `insert into users (id, logto_sub, handle, email, github_login, billing_status, trial_credit_cents, project_limit, xl_limit, billing_anchor)
 				values ($1, $2, $3, $4, $5, 'none', 0, $6, 0, now())`,
-				uid, sub, handle, email, gh, billing.Solo.ProjectLimit); err != nil {
+				uid, sub, handle, email, gh, billing.ProjectCap); err != nil {
 				return err
 			}
 			// The welcome email (DECISIONS I-291): install, run, choose a

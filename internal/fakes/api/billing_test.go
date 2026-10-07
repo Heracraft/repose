@@ -177,7 +177,7 @@ func TestBillingWaitlist(t *testing.T) {
 	// Invited: the hold is the user's seat.
 	f.SetWaitlist(1, time.Now().Add(70*time.Hour))
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
-	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":2900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"project_limit":10,"intro_price_cents":2000,"intro_months":3,"intro_egress_gb":100,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
+	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":2900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"project_limit":100,"intro_price_cents":2000,"intro_months":3,"intro_egress_gb":100,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
 		t.Fatalf("invited billing: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "solo"})
@@ -283,7 +283,7 @@ func TestBillingCheckoutPro(t *testing.T) {
 		t.Fatalf("after a Pro checkout: %s", r.body)
 	}
 	r = call(t, f, "GET", "/v1/me", tok, nil)
-	if !strings.Contains(string(r.body), `"limits":{"projects":50,"xl":1,"memory_gb":32,"disk_gb":500,"egress_gb":1000}`) {
+	if !strings.Contains(string(r.body), `"limits":{"projects":100,"xl":1,"memory_gb":32,"disk_gb":500,"egress_gb":1000}`) {
 		t.Fatalf("me: %s", r.body)
 	}
 }
@@ -465,7 +465,7 @@ func TestBillingGates(t *testing.T) {
 	// Under it, the overage is a line in usage: 300 GB on Solo is $2.50.
 	f.SetEgress(300)
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
-	if !strings.Contains(string(r.body), `"egress_gb":300,"egress_included_gb":250,"overage_cents":250,"projects":2,"project_limit":10`) {
+	if !strings.Contains(string(r.body), `"egress_gb":300,"egress_included_gb":250,"overage_cents":250,"projects":2,"project_limit":100`) {
 		t.Fatalf("usage: %s", r.body)
 	}
 	// Exempt: no gate at all.

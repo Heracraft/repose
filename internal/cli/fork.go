@@ -97,16 +97,20 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if err != nil {
 		return err
 	}
-	// The limit is the api's to enforce, for all N at once; asking first
-	// only spares a snapshot that nothing would use.
+	// The cap is the api's to enforce, for all N at once; asking first
+	// only spares a snapshot that nothing would use. It counts running
+	// and stopped projects alike (I-569).
 	if me, err := e.Client.GetMe(ctx); err == nil && me.Limits.Projects > 0 {
-		if projects, err := e.Client.ListProjects(ctx); err == nil && len(projects)+opts.Count > me.Limits.Projects {
-			whose := "your account's limit"
-			if me.Billing.Plan != nil {
-				whose = planName(*me.Billing.Plan) + "'s limit"
+		if projects, err := e.Client.ListProjects(ctx); err == nil {
+			have := 0
+			for _, p := range projects {
+				if p.State != "destroying" {
+					have++
+				}
 			}
-			return exitf(ExitGeneric, "You have %d of %d projects (%s), and %d more would make %d. Destroy some (`repose ls` lists them), or upgrade your plan at https://repose.herakraft.co/billing.",
-				len(projects), me.Limits.Projects, whose, opts.Count, len(projects)+opts.Count)
+			if have+opts.Count > me.Limits.Projects {
+				return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
+			}
 		}
 	}
 

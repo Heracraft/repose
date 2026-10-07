@@ -38,16 +38,18 @@ var billingModes = map[string]bool{
 
 // PlanDef is one row of GET /billing's plans (docs/PRICING.md).
 type PlanDef struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	PriceCents   int64  `json:"price_cents"`
-	Currency     string `json:"currency"`
-	TrialDays    int    `json:"trial_days"`
-	Seats        int    `json:"seats"`
-	MemoryGB     int    `json:"memory_gb"`
-	DiskGB       int    `json:"disk_gb"`
-	EgressGB     int    `json:"egress_gb"`
-	ProjectLimit int    `json:"project_limit"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	PriceCents int64  `json:"price_cents"`
+	Currency   string `json:"currency"`
+	TrialDays  int    `json:"trial_days"`
+	Seats      int    `json:"seats"`
+	MemoryGB   int    `json:"memory_gb"`
+	DiskGB     int    `json:"disk_gb"`
+	EgressGB   int    `json:"egress_gb"`
+	// ProjectLimit is ProjectCap on every plan; the api keeps sending it
+	// for one release after I-569.
+	ProjectLimit int `json:"project_limit"`
 	// IntroPriceCents and IntroMonths are the introductory price; 0 for
 	// none (DECISIONS I-497).
 	IntroPriceCents int64 `json:"intro_price_cents"`
@@ -57,10 +59,14 @@ type PlanDef struct {
 
 // Plans is docs/PRICING.md's table.
 var Plans = []PlanDef{
-	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: 10, IntroPriceCents: 2000, IntroMonths: 3, IntroEgressGB: 100},
-	{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: 25},
-	{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: 50},
+	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: ProjectCap, IntroPriceCents: 2000, IntroMonths: 3, IntroEgressGB: 100},
+	{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: ProjectCap},
+	{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: ProjectCap},
 }
+
+// ProjectCap is how many live projects, running or stopped, an account
+// may have on every plan (billing.ProjectCap, DECISIONS I-569).
+const ProjectCap = 100
 
 // classGB is each size class's memory, the unit a plan counts
 // (docs/interfaces/README.md).
@@ -692,7 +698,7 @@ func (f *Fake) meLimits() limitsView {
 	case BillingOff, BillingExempt:
 		// The top plan's numbers (I-289).
 		top := Plans[len(Plans)-1]
-		return limitsView{Projects: top.ProjectLimit, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB}
+		return limitsView{Projects: ProjectCap, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB}
 	}
 	plan := f.currentPlan()
 	if plan == nil {
@@ -703,7 +709,7 @@ func (f *Fake) meLimits() limitsView {
 	if plan.MemoryGB >= classGB["xl"] {
 		xl = 1
 	}
-	return limitsView{Projects: plan.ProjectLimit, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB}
+	return limitsView{Projects: ProjectCap, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB}
 }
 
 // Handlers.
