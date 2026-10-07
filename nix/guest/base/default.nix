@@ -28,6 +28,7 @@
     ./browser.nix
     ./desktop.nix
     ./sysctl.nix
+    ./keystroke-path.nix
     ./tmp.nix
     ./env.nix
     ./guestd.nix

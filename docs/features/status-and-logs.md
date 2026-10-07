@@ -73,7 +73,8 @@ Status:
   open, and is given 4 seconds; when the guest does not answer, the list
   is simply missing and every other line is the api's. Nothing is
   stopped for the user; under memory pressure the kernel kills a dev
-  server before an agent (guest-conventions.md "Memory pressure"), and
+  server before an agent, the tmux server or the SSH connection
+  (guest-conventions.md "Memory pressure"), and
   the `oom` notification names what it killed. While attached, the same
   ports are forwarded to the laptop (ports-and-previews.md).
 - `status` never triggers a certificate refresh, and its lines come from

@@ -186,17 +186,8 @@ in
     };
   };
 
-  # Each SSH connection, with its sshd and the `tmux attach` client, is a
-  # logind session scope; the same weight keeps the keystrokes moving
-  # while user@1000.service's panes hold every core (DECISIONS I-494). A
-  # prefix drop-in, so it reaches the transient session-N.scope units.
-  systemd.units."session-.scope" = {
-    overrideStrategy = "asDropin";
-    text = ''
-      [Scope]
-      CPUWeight=1000
-    '';
-  };
+  # The SSH session scopes' CPU weight, and this unit's MemoryLow and
+  # OOMPolicy, are in keystroke-path.nix (DECISIONS I-494, I-576).
 
   systemd.tmpfiles.rules = [
     "d /home/dev/.repose 0700 dev dev -"

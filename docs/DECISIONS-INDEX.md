@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-579 entries.
+581 entries.
 
 ## Scope
 
@@ -283,7 +283,7 @@ pointer, not a summary.
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4381
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4395
 - **I-199** Ports are auto-forwarded while a CLI session is attached — L4400
-- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; L4413
+- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; L4413
 - **I-201** `repose cp` — L4425
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4430
 - **I-203** The first sync of a large GitHub repository clones in the guest — L4438
@@ -552,7 +552,7 @@ pointer, not a summary.
 - **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; amended by I-519; amended by I-508; L12942
 - **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L13003
 - **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L13030
-- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; amended by I-505; L13048
+- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; amended by I-505; amended by I-576; L13048
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13066
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13093
 - **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; L13114
@@ -566,7 +566,7 @@ pointer, not a summary.
 - **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13315
 - **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L13343
 - **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L13380
-- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13416
+- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; amended by I-577; L13416
 - **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13435
 - **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13456
 - **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13474
@@ -576,7 +576,7 @@ pointer, not a summary.
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L13572
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13606
 - **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L13622
-- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; L13652
+- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; amended by I-576; L13652
 - **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L13671
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L13686
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13697
@@ -611,3 +611,5 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L14468
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L14545
+- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L14651

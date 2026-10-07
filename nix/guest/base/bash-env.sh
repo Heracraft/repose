@@ -36,9 +36,18 @@ fi
 # unless something already defined a handler. A script file and sh keep
 # bash's plain message: BASH_EXECUTION_STRING is set only for -c.
 if [ -n "${BASH_VERSION-}" ] && [ -n "${BASH_EXECUTION_STRING-}" ]; then
+  # By absolute path: bash runs the handler in a child, and a command the
+  # handler cannot find calls the handler again in a grandchild. With a
+  # PATH that lacked repose-command-not-found, one unknown command forked
+  # bash until the machine ran out of memory (DECISIONS I-577).
   # shellcheck disable=SC3044 # bash only: BASH_VERSION is set
   declare -F command_not_found_handle >/dev/null 2>&1 || command_not_found_handle() {
-    repose-command-not-found "$1"
+    unset -f command_not_found_handle
+    if [ -x /run/current-system/sw/bin/repose-command-not-found ]; then
+      /run/current-system/sw/bin/repose-command-not-found "$1"
+    else
+      printf '%s: command not found\n' "$1" >&2
+    fi
     return 127
   }
 fi

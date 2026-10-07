@@ -189,19 +189,22 @@ in
     environment.systemPackages = [ notFound ]
       ++ lib.optional (cfg.nixIndexPackage != null) cfg.nixIndexPackage;
 
+    # The handlers call the store path: a name looked up on PATH would,
+    # with a PATH that lacks it, call the handler again for itself, one
+    # process deeper each time (DECISIONS I-577).
     programs.bash.interactiveShellInit = ''
       command_not_found_handle() {
-        repose-command-not-found "$1"
+        ${notFound}/bin/repose-command-not-found "$1"
       }
     '';
     programs.zsh.interactiveShellInit = ''
       command_not_found_handler() {
-        repose-command-not-found "$1"
+        ${notFound}/bin/repose-command-not-found "$1"
       }
     '';
     programs.fish.interactiveShellInit = ''
       function fish_command_not_found
-        repose-command-not-found $argv[1]
+        ${notFound}/bin/repose-command-not-found $argv[1]
       end
     '';
 

@@ -93,6 +93,48 @@ func TestOOMPriority(t *testing.T) {
 	}
 }
 
+// I-576 on a fixture /proc: dev's user manager gets OOMUserManager from
+// upstream's 100; dev's sshd-session and the tmux client it runs get
+// OOMProtected (sshd handed them -800, or they started at 0 on an older
+// base); the login shell and a `repose exec` build that inherited -800
+// from the session go back to 0; root's sshd-session and root's systemd
+// are left alone; a `systemd` of dev's that is not the manager is not
+// treated as one; a second pass writes nothing.
+func TestOOMKeystrokePath(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 10, ppid: 1, comm: "systemd", uid: 1000},
+		{pid: 11, ppid: 10, comm: "systemd", uid: 1000},
+		{pid: 20, ppid: 1, comm: "sshd", uid: 0},
+		{pid: 21, ppid: 20, comm: "sshd-session", uid: 0},
+		{pid: 22, ppid: 21, comm: "sshd-session", uid: 1000},
+		{pid: 23, ppid: 22, comm: "bash", uid: 1000},
+		{pid: 24, ppid: 23, comm: "tmux: client", uid: 1000},
+		{pid: 30, ppid: 21, comm: "sshd-session", uid: 1000},
+		{pid: 31, ppid: 30, comm: "bash", uid: 1000},
+		{pid: 32, ppid: 31, comm: "make", uid: 1000},
+		{pid: 40, ppid: 10, comm: "tmux: server", uid: 1000},
+		{pid: 41, ppid: 40, comm: "bash", uid: 1000},
+	}
+	r, p := newProcFixture(t, procs)
+	adj := map[int]int{10: 100, 11: 0, 20: -1000, 21: -800, 22: -800, 23: -800, 24: -800, 30: 0, 31: -800, 32: -800, 40: 200, 41: 200}
+	for pid, v := range adj {
+		if err := os.WriteFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"), []byte(fmt.Sprintf("%d\n", v)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.applyOOM(1000, map[int]bool{}, nil)
+	want := map[int]int{10: OOMUserManager, 11: 0, 20: -1000, 21: -800, 22: OOMProtected, 23: 0, 24: OOMProtected, 30: OOMProtected, 31: 0, 32: 0, 40: OOMProtected, 41: 200}
+	for pid, w := range want {
+		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
+		if got := strings.TrimSpace(string(b)); got != fmt.Sprint(w) {
+			t.Errorf("pid %d oom_score_adj = %s, want %d", pid, got, w)
+		}
+	}
+	if again := r.applyOOM(1000, map[int]bool{}, nil); len(again) != 0 {
+		t.Errorf("second pass wrote %+v", again)
+	}
+}
+
 // writeTasks gives a fixture process threads with nice values: tid -> nice.
 func writeTasks(t *testing.T, p sysdep.Paths, pid int, comm string, tasks map[int]int) {
 	t.Helper()
@@ -121,8 +163,9 @@ func writeTaskNice(t *testing.T, dir string, tid int, comm string, nice int) {
 // I-505 on a fixture /proc: the herdr server (herdr under dev's systemd
 // --user) and the agents in its tree get OOMProtected; its threads go to
 // nice -5; a pane's shell and a build that inherited -5 go back to 0; a
-// herdr client under sshd and a node dev server are neither; a second
-// pass changes nothing.
+// node dev server is neither; a herdr client under sshd is not a server
+// but is on the keystroke path (I-576), so it gets OOMProtected and no
+// nice; a second pass changes nothing.
 func TestHerdrServerOOMAndNice(t *testing.T) {
 	procs := []fakeProc{
 		{pid: 10, ppid: 1, comm: "systemd", uid: 1000},
@@ -177,7 +220,7 @@ func TestHerdrServerOOMAndNice(t *testing.T) {
 		t.Fatalf("agents = %v, want 31 (claude) and 51 (gemini), not the node processes", agents)
 	}
 	r.applyOOM(1000, agents, servers)
-	for pid, want := range map[int]int{20: -800, 31: -800, 51: -800, 30: 0, 32: 200, 41: 200, 61: 200} {
+	for pid, want := range map[int]int{20: -800, 31: -800, 51: -800, 30: 0, 32: 200, 41: 200, 61: -800} {
 		b, _ := os.ReadFile(filepath.Join(p.ProcPID(fmt.Sprint(pid)), "oom_score_adj"))
 		if got := strings.TrimSpace(string(b)); got != fmt.Sprint(want) {
 			t.Errorf("pid %d oom_score_adj = %s, want %d", pid, got, want)

@@ -257,6 +257,75 @@
             echo "both session units: X-RestartIfChanged=false, ExecCondition, no WantedBy, back after 5s; no path unit; tmux Restart=on-success; herdr OOMPolicy=continue, ExitType=cgroup, watcher, Restart=always"
             touch $out
           '';
+        # The keystroke path (DECISIONS I-576, I-494): the unit settings
+        # that keep SSH, the tmux server and dev's user manager alive and
+        # resident when memory runs out, and MGLRU's thrash prevention.
+        # Reads the unit texts, so it builds no part of the guest system.
+        # It also runs bash-env.sh's command-not-found handler with a PATH
+        # that lacks repose-command-not-found, under a process limit: the
+        # handler must not call itself (DECISIONS I-577).
+        guest-keystroke-path =
+          let
+            cfg = self.guestSystem.config;
+            text = units: name: pkgs.writeText (lib.replaceStrings [ "@" ] [ "-at-" ] name)
+              (builtins.unsafeDiscardStringContext units.${name}.text);
+            sys = text cfg.systemd.units;
+            usr = text cfg.systemd.user.units;
+          in
+          pkgs.runCommand "guest-keystroke-path" {
+            userManager = sys "user@.service";
+            sshd = sys "sshd.service";
+            session = sys "session-.scope";
+            systemSlice = sys "system.slice";
+            userSlice = sys "user.slice";
+            userUidSlice = sys "user-.slice";
+            guestd = sys "guestd.service";
+            journald = sys "systemd-journald.service";
+            logind = sys "systemd-logind.service";
+            dbus = sys "dbus-broker.service";
+            tmux = usr "repose-tmux-session.service";
+            appSlice = usr "app.slice";
+            userConf = pkgs.writeText "user.conf" (builtins.unsafeDiscardStringContext cfg.environment.etc."systemd/user.conf".text);
+            tmpfiles = pkgs.writeText "tmpfiles" (lib.concatStringsSep "\n" cfg.systemd.tmpfiles.rules);
+            bashrc = pkgs.writeText "bashrc" (builtins.unsafeDiscardStringContext cfg.programs.bash.interactiveShellInit);
+            bashEnv = ./guest/base/bash-env.sh;
+          } ''
+            fail=0
+            need() { grep -qx "$2" "$1" || { echo "$1 lacks $2" >&2; fail=1; }; }
+            need "$userManager" 'OOMScoreAdjust=-900'
+            need "$userManager" 'MemoryLow=64M'
+            need "$userConf" 'DefaultOOMScoreAdjust=0'
+            need "$sshd" 'OOMScoreAdjust=-800'
+            need "$sshd" 'MemoryLow=16M'
+            need "$session" 'CPUWeight=1000'
+            need "$session" 'MemoryLow=32M'
+            need "$systemSlice" 'MemoryLow=176M'
+            need "$userSlice" 'MemoryLow=128M'
+            need "$userUidSlice" 'MemoryLow=128M'
+            need "$guestd" 'MemoryLow=64M'
+            need "$guestd" 'OOMScoreAdjust=-900'
+            need "$journald" 'MemoryLow=64M'
+            need "$logind" 'MemoryLow=16M'
+            need "$dbus" 'MemoryLow=16M'
+            need "$tmux" 'CPUWeight=1000'
+            need "$tmux" 'MemoryLow=48M'
+            need "$tmux" 'OOMPolicy=continue'
+            need "$appSlice" 'MemoryLow=48M'
+            need "$tmpfiles" 'w- /sys/kernel/mm/lru_gen/min_ttl_ms - - - - 1000'
+            # The interactive handler calls the store path, not a PATH name.
+            grep -q '^ *${builtins.storeDir}/[^ ]*/bin/repose-command-not-found "\$1"$' "$bashrc" || { echo "the interactive bash handler does not call repose-command-not-found by its store path" >&2; fail=1; }
+            # An unknown command with a PATH that lacks the helper: one line
+            # and 127, not a fork per level until the limit.
+            got=$(ulimit -u 64; timeout 20 env PATH=${pkgs.coreutils}/bin BASH_ENV="$bashEnv" ${pkgs.bash}/bin/bash -c 'cowsayzz hi; echo status=$?' 2>&1 || true)
+            if [ "$got" != "$(printf 'cowsayzz: command not found\nstatus=127')" ]; then
+              echo "bash-env.sh's handler with no helper on PATH printed:" >&2
+              printf '%s\n' "$got" | head -5 >&2
+              fail=1
+            fi
+            [ "$fail" = 0 ] || exit 1
+            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, tmux OOMPolicy=continue, min_ttl_ms 1000; not-found handler does not recurse"
+            touch $out
+          '';
         # The session units start their servers outside a login shell and
         # read the login PATH through repose-login-path, so a profile that
         # prints text or replaces the shell (machine.nix's
