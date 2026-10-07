@@ -16,6 +16,7 @@ import (
 // a repose command, each with why (DECISIONS I-484). The key is
 // file:function:the string's first 40 characters.
 var quietAllowed = map[string]string{
+	"sync.go:mergeMessage: (repose sync)":                                         "the subject of the merge commit a sync makes on the guest (I-574), not output",
 	"repoconfig.go:lastRepoConfigStands:%s did not build last time (revision %s:": "a failure: the last build of this repose.nix failed",
 	"repoconfig.go:applyRepoConfig:%s was not applied (%s). `repose config ":      "a refusal: the api refused the repose.nix",
 	"repoconfig.go:applyRepoConfig:Could not send %s (%s); the machine keep":      "a failure: the repose.nix could not be sent",
