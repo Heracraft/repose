@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-579 entries.
+582 entries.
 
 ## Scope
 
@@ -247,7 +247,7 @@ pointer, not a summary.
 - **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; L3515
 - **I-153** The CLI says what actually happened: the true state, why, and the next command — 2026-09-23; L3530
 - **I-154** Long commands show live phases — 2026-09-23; L3565
-- **I-155** A project is the argument of the commands whose object it is — 2026-09-23; L3582
+- **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-566; L3582
 - **I-164** A snapshot reads the blocks the filesystem uses, not the whole volume — 2026-09-23; L3601
 - **I-165** A destroy stops the guest first, reads `destroying` from the moment it is accepted, and says so when it fails — 2026-09-23; L3652
 - **I-166** `repose destroy` returns when the api has accepted the destroy — 2026-09-23; L3685
@@ -611,3 +611,6 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L14468
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
+- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L14545
+- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L14576
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; L14613

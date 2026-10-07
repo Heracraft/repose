@@ -371,6 +371,93 @@ func TestPositionalProject(t *testing.T) {
 	}
 }
 
+// TestProjectArgumentOnSubcommands: the commands I-155 missed take the
+// project as their first argument too (snapshots list/create/restore,
+// secrets list, config show/edit; the owner's `repose snapshots create
+// parth-event`).
+func TestProjectArgumentOnSubcommands(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	t.Setenv("REPOSE_API_URL", fake.URL()+"/v1")
+	t.Setenv("REPOSE_PROJECT", "")
+	if err := os.MkdirAll(filepath.Join(cfg, "repose"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	creds, _ := json.Marshal(Credentials{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour), LogtoIssuer: "https://auth.example"})
+	if err := os.WriteFile(filepath.Join(cfg, "repose", "credentials.json"), creds, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := newClient(fake.URL()+"/v1", staticToken("tok"))
+	ctx := context.Background()
+	izma, err := client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CreateProject(ctx, CreateProjectRequest{Name: "other", Class: "large"}); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) error {
+		root := newRootCmd("test")
+		root.SetArgs(args)
+		root.SetOut(&strings.Builder{})
+		root.SetErr(&strings.Builder{})
+		return root.ExecuteContext(ctx)
+	}
+	quietStdout(t)
+
+	if err := run("snapshots", "create", "izma"); err != nil {
+		t.Fatalf("repose snapshots create izma: %v", err)
+	}
+	snaps, err := client.ListSnapshots(ctx, izma.ID)
+	if err != nil || len(snaps) != 1 {
+		t.Fatalf("izma's snapshots after `snapshots create izma`: %+v %v", snaps, err)
+	}
+	for _, args := range [][]string{
+		{"snapshots", "list", "izma"},
+		{"snapshots", "ls", "izma", "--project", "izma"},
+		{"secrets", "list", "izma"},
+		{"config", "show", "izma"},
+	} {
+		if err := run(args...); err != nil {
+			t.Fatalf("repose %s: %v", strings.Join(args, " "), err)
+		}
+	}
+	for _, args := range [][]string{
+		{"snapshots", "create", "izma", "--project", "other"},
+		{"snapshots", "create", "izma", "other"},
+		{"snapshots", "list", "izma", "other"},
+		{"secrets", "list", "izma", "--project", "other"},
+		{"config", "show", "izma", "other"},
+		{"config", "edit", "izma", "--project", "other"},
+		{"config", "--global", "show", "izma"},
+		{"snapshots", "restore"},
+		{"snapshots", "restore", "izma", snaps[0].ID, "extra"},
+		{"snapshots", "restore", "izma", snaps[0].ID, "--project", "other"},
+	} {
+		if err := run(args...); !isUsage(err) {
+			t.Fatalf("repose %s: %v, want a usage error", strings.Join(args, " "), err)
+		}
+	}
+	// Restore takes [PROJECT] SNAPSHOT_ID: the project first, as above,
+	// and one argument is still the snapshot.
+	if err := run("stop", "izma"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run("snapshots", "restore", "izma", snaps[0].ID, "--yes"); err != nil {
+		t.Fatalf("repose snapshots restore izma ID: %v", err)
+	}
+	if p, _ := client.GetProject(ctx, izma.ID); p != nil && p.State != "stopped" {
+		if err := run("stop", "izma"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := run("snapshots", "restore", snaps[0].ID, "--project", "izma", "--yes"); err != nil {
+		t.Fatalf("repose snapshots restore ID --project izma: %v", err)
+	}
+}
+
 func isUsage(err error) bool {
 	_, ok := err.(cobraUsageError)
 	return ok

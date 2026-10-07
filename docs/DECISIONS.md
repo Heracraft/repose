@@ -14541,3 +14541,95 @@ the starship sentence (the machine already runs starship, so a prompt
 needs only its config file; aliases work through I-519), and that a tmux config reaches the running
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
+
+**I-566. The snapshot, secrets-list and config show/edit commands take
+the project as their first argument.** (cli-small-fixes, 2026-10-07;
+owner's dogfood notes) `repose snapshots create parth-event` failed with
+"takes no arguments": I-155 kept `--project` on `snapshots`, `secrets`
+and `config` because their argument is something else, but `snapshots
+list`, `snapshots create`, `secrets list`, `config show` and `config edit`
+take no other argument, so the project is their object as it is for
+`stop`. This amends I-155: those five take `[PROJECT]`, and `snapshots
+restore` takes `[PROJECT] SNAPSHOT_ID` (one argument is the snapshot,
+two are the project then the snapshot). The api finds a snapshot under
+its project (`POST /projects/{id}/snapshots/{sid}/restore` checks
+`snap.project_id`), so the project stays needed; resolving it from the
+snapshot id alone would be a new api route. A destroyed project's id
+works in the argument as it did in `--project` (I-153). `--project` and
+`$REPOSE_PROJECT` still work, the same project both ways is fine and two
+different ones exit 2, as for I-155's commands. `config --global` refuses
+a project in either form. The audit of the rest of `internal/cli`: every
+other command whose object is a project already takes it (`attach`,
+`sync`, `start`, `stop`, `status`, `rm`, `keep`, `fork`, `resize`,
+`logs`, `events`, `questions`, `reply`, `browser`, `browser bridge`,
+`code`, `ps`, `paste`, `exec`, `ssh`); `open PORT`, `secrets set NAME`,
+`secrets rm NAME`, `secrets import [FILE]`, `secrets choose [NAME...]`,
+`config add`, `config remove` and `config apply [PATH]` keep `--project`
+because their argument is something else; `ls`, `login`, `logout`,
+`notify`, `version`, `completion` and `mcp forward` have no project; `cp`
+names it in `PROJECT:PATH`. Messages that printed `--project` for these
+now print the argument (`repose snapshots list ID` in `restore --snapshot`'s
+help, fork's missing-snapshot error, run's failed-build line). cli.md,
+lifecycle.md and 07-cli.md say so in this commit.
+`TestProjectArgumentOnSubcommands`. Needs a CLI release.
+
+**I-567. `repose status` reads the disk from the guest, says when it is
+nearly full, and AGENTS counts every agent.** (cli-small-fixes,
+2026-10-07; owner's `repose status kanali`: "disk 39.5 GB/40.0 GB",
+"Notice something??") The figure was the api's `disk_used_bytes`, the
+host thin volume's allocated blocks (`lvs data_percent`). A deleted file
+keeps its blocks there until the guest's weekly `fstrim` (kanali's last
+one gave back 13.4 GiB), so it reads near full on a disk with room: the
+same day kanali's root filesystem was 33 of 39 GB used (83 percent). And
+nothing said anything at any figure. Status already asks a running guest
+over SSH for its listeners (I-200); the same call now runs `stat -f /`
+and status shows the root filesystem's used over its size, counted as
+guestd's `disk_high` counts it (blocks less those available to `dev`).
+At 90 percent or more (guestd's `disk_high` threshold, I-11) a line under
+the host line says "disk N percent full;" and names `repose resize
+PROJECT SIZE` that "grows it", SIZE double the disk up to 320 GB, and no command at 320 GB:
+a full disk fails writes, a loss the user cannot undo, so the line names
+the fix (I-484). A guest that does not answer, and a stopped project,
+show the disk's size alone; the allocated figure is not shown anywhere in
+the CLI. AGENTS (`repose ls`, status's first line) showed the first agent
+alone, `claude: working` on a machine with five; it now names one agent
+and counts several by state, `needs_input` first (`5 agents: 1
+needs_input, 3 working, 1 idle`), as lifecycle.md's "lists each agent"
+meant. The agent guide's disk line says writes fail past 90 percent and
+to tell the user, who alone can resize. Not done here: `repose ls` and
+the dashboard's Disk card still have only the allocated figure, since the
+api has no filesystem number; the fix is a `root_used_bytes` and
+`root_size_bytes` in guestd's `SampleResult`, carried by hostd's
+`GuestSample` to a `meter_samples` column and the project's JSON, as
+I-493 did for `mem_used_bytes` (guestd, hostd, api, a migration and four
+interface docs), and the dashboard then shows it. Seen and left: the
+`snapshot 20h17m ago` is right (nightly at 03:00 host time, R3-6, plus
+every stop); `sessions 0` beside `tmux clients 1` needs a look at the
+guest's `sshd-session` processes while attached (guestd counts `sshd`
+and `sshd-session` owned by `dev`), which this branch could not do.
+`TestStatusDiskIsTheGuestsFilesystem`, `TestAgentStateCountsEveryAgent`.
+Needs a CLI release; the guide line ships with the base.
+
+**I-568. The dashboard's header links to the docs, and the agent guide
+says how to hand the user a file.** (cli-small-fixes, 2026-10-07;
+owner's notes) "why are docs not linked in the homepage": the landing
+has Docs in its header and footer at every width, but a signed-in user
+lands on `/projects`, whose header had Projects, Billing, Settings,
+Account and Sign out and no Docs. It gains Docs before Sign out from
+`sm` up, as the landing shows GitHub: below `sm` the six labels, the
+mark and the gutters measure about 379px in Arial's metrics, past the
+360 the phone check holds (design.spec.ts), and the row has no room to
+wrap. A phone reaches the docs from the landing. Second, an agent on a
+machine told the user "I don't know the SSH host name your laptop uses
+for this machine". Every laptop that ran `repose login` reaches a
+project as the SSH host `<slug>.repose` (ssh-and-editors.md), and `repose
+cp PROJECT:PATH .` copies from it, so nothing is laptop-specific: the
+agent guide now says to give the user `repose cp NAME:/home/dev/PATH .`,
+with NAME from `jq -r .slug ~/.repose/project.json`, and that their scp,
+rsync and editor reach the machine as NAME.repose. project.json is used
+over `hostname` because a machine running since before I-550 is still
+`repose-guest`. *Rejected:* a new command on the guest that prints the
+laptop command (the guide line does it); rendering the slug into the
+guide (the guide is one file in the shared base). auth.spec.ts "the
+dashboard header links to the docs"; `TestAgentGuideCommandsExist` with
+`jq` added.

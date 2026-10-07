@@ -666,16 +666,21 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	set.Flags().BoolVar(&fromEnv, "from-env", false, "read the value from $NAME")
 
 	list := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List secret names",
-		Args:    noArgs,
+		Use:               "list [PROJECT]",
+		Aliases:           []string{"ls"},
+		Short:             "List secret names",
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := projectFrom(args, g)
+			if err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
-			return SecretsListCmd(cmd.Context(), e, g.project)
+			return SecretsListCmd(cmd.Context(), e, project)
 		},
 	}
 	rm := &cobra.Command{
@@ -761,37 +766,52 @@ that file when it changed; ` + "`repose run --no-personal`" + ` keeps it off one
 		}
 		return env()
 	}
+	// projectEnv is globalEnv for show and edit, which take [PROJECT]
+	// (I-566).
+	projectEnv := func(args []string) (*Env, string, error) {
+		project, err := projectFrom(args, g)
+		if err != nil {
+			return nil, "", err
+		}
+		if global && project != "" {
+			return nil, "", cobraUsageError{fmt.Errorf("--global takes no project (%s): machine.nix applies to every machine of your account", project)}
+		}
+		e, err := env()
+		return e, project, err
+	}
 	var showRevisions bool
 	show := &cobra.Command{
-		Use:   "show",
-		Short: "Print the current fragment (with --global, your machine.nix)",
-		Args:  noArgs,
+		Use:               "show [PROJECT]",
+		Short:             "Print the current fragment (with --global, your machine.nix)",
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := globalEnv()
+			e, project, err := projectEnv(args)
 			if err != nil {
 				return err
 			}
 			if global {
 				return GlobalShowCmd(cmd.Context(), e, showRevisions)
 			}
-			return ConfigShowCmd(cmd.Context(), e, g.project, showRevisions)
+			return ConfigShowCmd(cmd.Context(), e, project, showRevisions)
 		},
 	}
 	show.Flags().BoolVar(&showRevisions, "revisions", false, "list revisions instead")
 
 	edit := &cobra.Command{
-		Use:   "edit",
-		Short: "Edit the fragment in $EDITOR (with --global, ~/.config/repose/machine.nix)",
-		Args:  noArgs,
+		Use:               "edit [PROJECT]",
+		Short:             "Edit the fragment in $EDITOR (with --global, ~/.config/repose/machine.nix)",
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := globalEnv()
+			e, project, err := projectEnv(args)
 			if err != nil {
 				return err
 			}
 			if global {
 				return GlobalEditCmd(cmd.Context(), e, openInEditor)
 			}
-			return ConfigEditCmd(cmd.Context(), e, g.project, openInEditor)
+			return ConfigEditCmd(cmd.Context(), e, project, openInEditor)
 		},
 	}
 	apply := &cobra.Command{
@@ -885,41 +905,56 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var yes bool
 	var quiet bool
 	list := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List snapshots",
-		Args:    noArgs,
+		Use:               "list [PROJECT]",
+		Aliases:           []string{"ls"},
+		Short:             "List snapshots",
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if quiet && g.json {
 				return cobraUsageError{fmt.Errorf("-q and --json are two different outputs; pass one")}
+			}
+			project, err := projectFrom(args, g)
+			if err != nil {
+				return err
 			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
 			e.Quiet = quiet
-			return SnapshotsListCmd(cmd.Context(), e, g.project)
+			return SnapshotsListCmd(cmd.Context(), e, project)
 		},
 	}
 	list.Flags().BoolVar(&g.json, "json", false, "print as JSON")
 	list.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the snapshot ids, one per line")
 	create := &cobra.Command{
-		Use:   "create",
-		Short: "Take a manual snapshot",
-		Args:  noArgs,
+		Use:               "create [PROJECT]",
+		Short:             "Take a manual snapshot",
+		Args:              projectArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := projectFrom(args, g)
+			if err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
-			return SnapshotsCreateCmd(cmd.Context(), e, g.project)
+			return SnapshotsCreateCmd(cmd.Context(), e, project)
 		},
 	}
 	restore := &cobra.Command{
-		Use:   "restore SNAPSHOT_ID",
-		Short: "Restore a snapshot",
-		Args:  cobra.ExactArgs(1),
+		Use:               "restore [PROJECT] SNAPSHOT_ID",
+		Short:             "Restore a snapshot",
+		Args:              snapshotRestoreArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := projectFrom(args[:len(args)-1], g)
+			if err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -930,13 +965,23 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 					return askYesNo("Restore over the current volume? Anything since the snapshot is lost. [y/N] ", false, "restoring in place")
 				}
 			}
-			return SnapshotsRestoreCmd(cmd.Context(), e, g.project, args[0], asNew, confirm)
+			return SnapshotsRestoreCmd(cmd.Context(), e, project, args[len(args)-1], asNew, confirm)
 		},
 	}
 	restore.Flags().StringVar(&asNew, "as-new", "", "restore into a new project instead of replacing this one")
 	restore.Flags().BoolVar(&yes, "yes", false, "skip the confirmation")
 	root.AddCommand(list, create, restore)
 	return root
+}
+
+// snapshotRestoreArgs is `restore [PROJECT] SNAPSHOT_ID` (I-566):
+// the api finds a snapshot under its project, so the project
+// comes first when named, as on every command whose object is one.
+func snapshotRestoreArgs(cmd *cobra.Command, args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return cobraUsageError{fmt.Errorf("%s takes [PROJECT] SNAPSHOT_ID, got %s", cmd.CommandPath(), gotArgs(args))}
+	}
+	return nil
 }
 
 // addTempFlag is run's and sync's --temp [DURATION] (DECISIONS I-351).
@@ -1048,7 +1093,7 @@ func newRestoreCmd(env func() (*Env, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "", "name for the restored project (default: its old name)")
-	cmd.Flags().StringVar(&snapshot, "snapshot", "", "restore this snapshot instead of the newest (`repose snapshots list --project ID` lists them)")
+	cmd.Flags().StringVar(&snapshot, "snapshot", "", "restore this snapshot instead of the newest (`repose snapshots list ID` lists them)")
 	return cmd
 }
 

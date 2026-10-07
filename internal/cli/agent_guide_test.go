@@ -58,6 +58,7 @@ var guestCommands = map[string]string{
 	"df":       "system:NixOS's base system path (coreutils)",
 	"dmesg":    "system:NixOS's base system path (util-linux)",
 	"curl":     "nix/guest/base/tool-list.nix:curl",
+	"jq":       "nix/guest/base/tool-list.nix:jq",
 	"git":      "nix/guest/base/tool-list.nix:git",
 	"gh":       "nix/guest/base/tool-list.nix:gh",
 	"npm":      "nix/guest/base/tool-list.nix:nodejs_24",

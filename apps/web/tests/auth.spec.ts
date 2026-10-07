@@ -33,6 +33,17 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await expect(page).toHaveURL('/projects');
 });
 
+// DECISIONS I-568: the dashboard's header links to the docs, where a
+// signed-in visitor lands after sign-in.
+test('the dashboard header links to the docs', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await signIn(page);
+	await page.goto('/projects');
+	const docs = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Docs' });
+	await expect(docs).toBeVisible();
+	await expect(docs).toHaveAttribute('href', '/docs');
+});
+
 // DECISIONS I-331: sign-out leaves the signed-in page as it is until the
 // browser goes to Logto's end-session page; it never renders the landing
 // page in between.
