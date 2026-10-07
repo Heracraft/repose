@@ -15901,3 +15901,157 @@ Docs and fits at 390/360"; routes.spec.ts "/account redirects
 permanently to /settings"; settings-account.spec.ts "settings carries the
 account section first and no heading twice"; machine-nix.spec.ts follows
 the Config page's link to `/settings#machine-nix`.
+
+**I-590. A boot that never reaches Ready falls back to the guest's last
+good closure, once, and the start ends running with a warning.**
+(lifecycle-errors, 2026-10-07; the kanali incident.) At 17:40Z `repose
+start kanali` adopted a new closure on the stopped guest, booted it, and
+stage 1 found no stage 2 init (an in-guest GC had whited the system out
+of the store's upper layer, I-529); the guest stayed in error, unbootable
+while the closure it had run that morning was still on the host. hostd
+now records per guest `last_good_closure`: the closure that last reached
+Ready and took its delivery at a boot, or that guestd switched to in
+place and answered on; it is rooted as `good-<guest_id>` in
+`/nix/var/nix/gcroots/repose/` (removed on destroy) so the host GC keeps
+it. A StartGuest, or an ApplyConfig with force_reboot, whose boot never
+gets Ready (not a failure before step 10, not a failed delivery after
+Ready) and whose guest has a last good closure other than the one that
+failed, still whole on the host, adopts that closure and boots it, once.
+The failure is written to the guest record (`boot_fallback`: command id,
+the closure that failed, code, hostd's fixed sentence) before the second
+boot, so a resend of the same command after a hostd restart, whether the
+second boot finished (the guest runs) or not (the record already names
+the closure to boot), answers with the same fallback and never adopts
+the failed closure again. StartGuest's result gains a `StartResult`
+payload (`booted_closure`, and after a fallback `failed_closure` and
+`boot_error`); a forced reboot that fell back answers `boot_failed`
+("...; the machine runs its previous system"), never
+`guest_unresponsive`, which the api answers with a reboot onto the same
+closure. If the last good closure fails too the start fails with the
+first failure: two boots, no third. A first boot (CreateGuest), a
+restored guest (a new record; the snapshot does not carry hostd's
+record, and the api's applied revision, which this decision keeps true,
+is what a restore boots) and a record from before this decision have no
+last good closure until a boot or switch reaches Ready; reconcile gives
+a guest it finds running the closure it runs, and re-roots a recorded
+one. A class change boots the fallback at the new class. The api, on a
+fallback: marks the revisions of the closure that failed `failed` (error
+`boot_failed: ...`), makes the newest revision of the booted closure the
+applied one again (`config_revision_id`, `base_version`), sets the
+project running with `last_error = "boot_failed: its new system did not
+boot, so it runs its previous one: <reason>; ..."`, puts the same
+sentence in `ops.result.warning {code, message}`, and records a
+`boot_failed` event (notifies, "<project>: new system did not boot"). A
+start's apply phase that fails for good (not `guest_unresponsive`, which
+I-157 still answers with a restart) no longer ends the op in error with a
+running project marked `error`, which is what sent the next `repose
+start` into the reboot at 17:40Z: the apply is skipped with the same
+warning and `last_error`, a restart's boot goes on with what the guest
+has, and the op ends done; a `boot_failed` revision is marked failed
+there too. Nothing retries a failed revision by itself: a start applies
+only `built` revisions, and the base sweep skips a project whose newest
+revision is on the latest base and not applied, so the nightly never
+loops a guest through reboots; the next base or configuration change
+builds a new revision, which a start tries once. A failed in-place switch leaves the revision
+`built`, tried in place again at the next start, which costs no reboot.
+The CLI prints a start's warning on stderr as "<project>: <sentence>."
+without a ✓ for the phase that did not do what it says; `repose ls` and
+`repose status` show a running project's `boot_failed` last_error, and so
+does the dashboard (list and project page). *Rejected:* falling back to
+any past closure (only one that reached Ready is known to boot); keeping
+the op in error with the project running (the CLI's "Could not start" for
+a machine that runs); hostd refusing a closure that failed before (it
+cannot tell the user's deliberate retry from an automatic one, and the
+api, which can, no longer sends one). TestStartFallsBackToLastGoodClosure,
+TestStartFallbackResentMidBoot, TestFallbackThatFailsTooEndsInError,
+TestForcedRebootFallsBack, TestReconcileGivesARunningGuestItsLastGood
+(hostd); TestRestartWhoseNewSystemDoesNotBootRunsThePreviousOne,
+TestStartWhoseSwitchFailsStaysRunning,
+TestRestartWhoseApplyIsRefusedStillBoots (api);
+TestStartWithAWarningSaysIt (cli); bootfail.test.ts (web).
+
+**I-591. ApplyConfig on a stopped guest checks what the boot will read
+from the host.** (lifecycle-errors, 2026-10-07.) It moved the root and
+answered ok with nothing checked beyond `nix path-info`, so a closure
+whose kernel, initrd or init was missing, or whose requisites were not
+whole, failed later at step 5 or 8 of the next start. It now reads the
+closure's kernel, initrd and init (what step 5 renders the hypervisor
+from) and its requisites (what step 8 fills the store view with), and
+answers `not_found` naming what is missing, leaving the root where it
+was. What only the guest's disk decides, a whiteout in its store's upper
+layer as on kanali, cannot be seen from the host while the guest is
+stopped; I-590's fallback covers it at the boot.
+TestOfflineApplyChecksTheClosure.
+
+**I-592. A boot that never reaches Ready is classified from its console,
+and the console reaches its owner through `repose logs --kind console`.**
+(lifecycle-errors, 2026-10-07; amends status-and-logs.md "Logs" and
+cli.md's `repose logs`; a new hostd error code, grpc-hostd.md.) kanali's
+stage 1 printed "stage 2 init script ... not found" into
+`/var/lib/repose/guests/<id>/console.log` on the host, and the user read
+"the environment booted but its agent (guestd) never answered", which
+was false, while `repose logs --kind console` showed one-line op errors
+(the docs promised the serial console, 200 lines, followed over SSE,
+which nothing ever served). hostd notes where each boot's output starts
+in console.log and, when Ready never comes, reads the end of what that
+boot printed (at most 200 lines and 16 KiB) and classifies it: "stage 2
+init script ... not found", a kernel panic, a failed fsck, and stage 1's
+generic error line are the new code `boot_failed` with a fixed sentence
+("the system it boots is missing from the machine's store (stage 1 found
+no stage 2 init)", "the guest's kernel panicked while booting", "the
+check of the machine's disk failed while booting", "the boot stopped in
+stage 1, before the machine's system started"); output that reached the
+system ("Welcome to NixOS", systemd), or nothing recognisable, stays
+`guest_unresponsive` with its step-10 message and a sentence that says
+which. The sentence goes in `Error.message` and log fields; the console
+text goes only in `Error.console_tail` (field 5) and
+`StartResult.boot_error.console_tail`, never in a log line
+(OBSERVABILITY.md): it is the tenant's output. The api stores it in
+`ops.result.console` (left out of the op's read), and `GET
+/projects/:id/logs?kind=console` serves those lines, one JSON line per
+console line with the op's finish time and `kind: "console"`, for the
+project's last 20 ops, oldest first, honouring `since`; an op from before
+this decision still gives its error sentence. The api's sentence for
+`boot_failed` is "the environment did not boot: <reason>; `repose logs
+--kind console` shows what it printed" ("the new system did not boot"
+for an apply), and for a boot's `guest_unresponsive` "the environment did
+not answer within a minute of starting; ...", no longer "booted". The CLI
+points at the console only after a boot failure (`boot_failed`,
+`guest_unresponsive`), no longer after every failed start, in the error
+state line or after "SSH did not answer", where no console was kept. An
+api older than this hostd shows a `boot_failed` message as it is and
+stores no console; this api reads a hostd older than it as before.
+`repose logs` that finds nothing says so on stderr, naming the project
+(it printed nothing and exited 0 on 2026-10-07; with no project here it
+exits 4 with the usual message, as it already did). *Rejected:* serving
+the live console through the api (hostd's stream carries no tenant
+output, and the full log is the operators', in Loki); putting console
+lines in `message` or `detail`, which the api logs and shows on every op
+read. TestBootFailureWithoutLastGoodReportsTheConsole, TestClassifyConsole
+(hostd); TestCreateWhoseBootFailsSaysHow (api ops);
+TestConsoleLogsServeTheFailedBoot (api http); TestLogsSaysWhatItFound,
+TestFailedStartPointsAtTheConsoleOnlyForABoot (cli).
+
+**I-593. A Switch error guestd codes reaches the api with its code.**
+(lifecycle-errors, 2026-10-07.) On 2026-10-06 04:00Z the nightly
+ApplyConfig of kanali failed in guestd with `not_found: switch: ... is
+not in the store share`, and hostd answered `internal: switch failed:
+...`, which read as a platform fault. hostd now passes guestd's Switch
+code through when it is one of hostd's (`not_found`, `invalid_argument`;
+the list is `switchCodes` in internal/hostd/guest/build.go) and keeps
+`internal` for any other; the message is unchanged. The api's sentence
+for an apply's `not_found` is "the new system is not in the machine's
+store, so it was not switched to and keeps its current system"; the
+revision stays `built`. A code another change adds to guestd's Switch
+(a closure hidden by a whiteout, say) is added to `switchCodes`,
+grpc-hostd.md's list and the api's `humanError` together.
+TestSwitchNotFoundIsNotInternal (hostd); TestStartWhoseSwitchFailsStaysRunning (api).
+
+**Amends I-157's progress line.** `repose start` of a project in error
+says "Restarting <project>" and names "its agent stopped answering" only
+when the project runs and its newest sample says so; a start's first
+phase ("Starting <project>") has no ✓, which printed as soon as the boot
+began, before a resize's start failed (2026-10-07 17:38Z); a start's
+switch of the running machine is its own phase ("Switching <project> to
+its new system"). This paragraph is part of I-590.
+TestStartFromErrorSaysRestarting, TestResizeClassPrintsNoSuccessBeforeTheStartFails.

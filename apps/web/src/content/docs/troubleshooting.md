@@ -31,13 +31,17 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It shows the same error the editor got, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``; connecting never starts one.
 
-**`Guest is running but SSH did not answer in 60s.`** `repose logs --kind console` shows the boot log. `repose start` restarts a stuck machine.
+**`Guest is running but SSH did not answer in 60s.`** `repose stop` and then `repose start` restart it.
 
 ## Machine state
 
 **``todo-app is stopped. Start it with `repose start todo-app` ...``** `attach`, `ssh`, `exec`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`. Run `repose start todo-app`, or `repose run` in the checkout.
 
-**`todo-app is in an error state`** or **`guestd stopped answering`.** `repose start todo-app` restarts it. If that fails, `repose logs todo-app --kind console` shows what happened during boot.
+**`todo-app is in an error state`** or **`guestd stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
+
+**`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason. That system isn't tried again on its own; the next base update, or a change to the configuration, builds a new one. `repose logs todo-app --kind console` shows what the failed boot printed.
+
+**`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** Something on the machine removed store paths that the new system needs, usually a `nix-collect-garbage` or `nix store gc` run inside it. The machine keeps running what it had.
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout waits for the destroy, then creates a fresh `todo-app`; see [Start over with a fresh machine](/docs/lifecycle#start-over-with-a-fresh-machine).
 

@@ -386,7 +386,18 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			if res.Error != nil {
 				code, msg, line, pline = res.Error.Code, res.Error.Message, int(res.Error.FragmentLine), int(res.Error.PersonalLine)
 			}
+			// A boot that never reached Ready carries the end of the
+			// guest's console, which `repose logs --kind console` shows
+			// its owner (I-592); it is never logged.
+			if tail := res.Error.GetConsoleTail(); tail != "" {
+				if err := e.setResult(ctx, op, map[string]any{"console": tail}); err != nil {
+					log.Warn("console tail not stored", "event", "op_console", "err", err.Error())
+				}
+			}
 			if e.recoverFrom(ctx, op, code) {
+				return
+			}
+			if e.skipFailedApply(ctx, op, code, msg) {
 				return
 			}
 			e.failWithLines(ctx, op, code, msg, line, pline)

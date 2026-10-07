@@ -663,9 +663,11 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 			f.run(p)
 			o.State = "done"
 			o.phase = ""
+			f.endStart(p, o)
 		}()
 	} else if p.State != "running" {
 		f.run(p)
+		f.endStart(p, o)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "restart": restart})
 	return nil
@@ -1679,9 +1681,10 @@ func (f *Fake) projectLogs(w http.ResponseWriter, r *http.Request) *apiError {
 	ts := f.now()
 	switch kind {
 	case "console":
-		lines = []map[string]any{
-			{"ts": ts, "kind": kind, "line": "guestd: hello"},
-			{"ts": ts, "kind": kind, "line": "tmux: session " + p.Slug + " ready"},
+		// What hostd kept of boots that failed (DECISIONS I-592); a
+		// project that booted cleanly has none.
+		for _, l := range f.console[p.ID] {
+			lines = append(lines, map[string]any{"ts": ts, "kind": kind, "line": l})
 		}
 	case "build":
 		for i, l := range buildLines {

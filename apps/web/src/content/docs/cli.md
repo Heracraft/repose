@@ -268,6 +268,8 @@ Grow the project's disk, for example `repose resize 80G`, or `repose resize todo
 
 `--kind console|build|ops` (default `console`), `--since 1h` (a duration, or a time such as `2026-09-28T10:00:00Z`), `-f`/`--follow` to follow, `--json`. Each line starts with its time.
 
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, for its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log, `ops` one line per operation with its result.
+
 ### `repose events [PROJECT]`
 
 Every event in the window, oldest first, one per line: time, agent, kind, summary. `--since 72h` (default `24h`), `-f`/`--follow` to keep printing new ones as they come, `--json`.

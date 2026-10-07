@@ -2133,8 +2133,10 @@ or `POST /certs` itself fails.
 `Guest is running but SSH did not answer in 60s.` after the API already
 reports the project `running`.
 
-1. `repose logs --kind console` — sshd not started yet (guest still
-   booting past `running`), or a boot failure, both show here.
+1. The guest reached Ready, so `repose logs --kind console` has nothing
+   of this boot (it keeps only boots that never reached Ready, I-592).
+   On the host, `tail -n 200 /var/lib/repose/guests/<guest_id>/console.log`
+   shows whether sshd started.
 2. `repose status` for `sessions`/`tmux clients`: if the API's state is
    stale (host lost contact), `hosts` on the host-01 side and
    `repose-admin hosts show` tell you whether the host itself is

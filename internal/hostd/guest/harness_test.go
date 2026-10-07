@@ -113,8 +113,11 @@ type harness struct {
 	gopts   fakeguestd.Options
 	cgWait  atomic.Uint64 // every guest unit's cpu.pressure some total
 	noBoot  map[string]bool
-	cfg     Config
-	logs    lockedBuffer // every line the manager logged, JSON
+	// badClosure makes a boot of that closure print the console text and
+	// never answer, as a guest that fails in stage 1 does (I-590).
+	badClosure map[string]string
+	cfg        Config
+	logs       lockedBuffer // every line the manager logged, JSON
 }
 
 // lockedBuffer is a bytes.Buffer the manager's goroutines may write at once.
@@ -159,7 +162,7 @@ func fakeClosure(t *testing.T, name string) string {
 
 func newHarness(t *testing.T, mut func(*Config)) *harness {
 	t.Helper()
-	h := &harness{t: t, guestds: map[string]*fakeguestd.Server{}, noBoot: map[string]bool{}}
+	h := &harness{t: t, guestds: map[string]*fakeguestd.Server{}, noBoot: map[string]bool{}, badClosure: map[string]string{}}
 	st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -188,6 +191,17 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 		defer h.mu.Unlock()
 		if h.noBoot[id] {
 			return nil
+		}
+		joined := strings.Join(argv, " ")
+		for closure, console := range h.badClosure {
+			if strings.Contains(joined, closure+"/") {
+				f, err := os.OpenFile(filepath.Join(h.cfg.GuestsDir, id, "console.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+				if err != nil {
+					return err
+				}
+				_, _ = f.WriteString(console)
+				return f.Close()
+			}
 		}
 		if old := h.guestds[id]; old != nil {
 			_ = old.Close()

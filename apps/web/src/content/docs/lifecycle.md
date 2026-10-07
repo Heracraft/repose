@@ -222,7 +222,7 @@ Each copy is a project: it counts toward the [100 projects an account can have](
 ## Logs and events
 
 ```
-repose logs               # boot and kernel output
+repose logs               # what a boot that failed printed
 repose logs --kind build  # the last configuration build
 repose logs --kind ops    # create, start, stop, snapshot history
 repose events             # agent and project events, last 24 hours
