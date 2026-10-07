@@ -206,7 +206,7 @@ var errTempHerdr = errors.New("--temp machines run tmux: " + tempHerdrWhy)
 const tempHerdrWhy = "herdr opens a new shell when its last tab closes, and the machine would never see your session end"
 
 // multiplexerFlagHelp is --multiplexer's help line (features/run-and-attach.md).
-const multiplexerFlagHelp = "tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else tmux)"
+const multiplexerFlagHelp = "tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
 
 // addMultiplexerFlag adds --multiplexer to run and sync.
 func addMultiplexerFlag(cmd *cobra.Command, v *string) {

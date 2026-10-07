@@ -142,22 +142,20 @@ On a herdr project the commands on this page work through herdr:
 - `repose run "prompt"` opens a tab in the checkout's workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under the repository in herdr's sidebar.
 - `repose attach` from a terminal inside herdr on your laptop opens nothing new: the machine is in herdr's sidebar, and the command prints `todo-app is in herdr's sidebar.` and keeps port forwards and the browser bridge going until you press Ctrl-C. Elsewhere, with herdr 0.9.0 or newer installed, it opens `herdr --remote todo-app.repose`. Without herdr on the laptop, it runs herdr's client on the machine over SSH.
 - `repose ps` lists herdr's agents with their workspace and state. `repose paste` sends the image's path to the focused pane, or to an agent's pane with `--window NAME`.
-- `repose status` shows `herdr` after the size.
+- `repose status` shows `herdr` after the size. The dashboard shows it on a stopped machine, which starts with herdr.
 - From herdr on your laptop (the sidebar or `herdr --remote`), a dropped file or `Ctrl+V` goes to herdr, and nothing is copied to the machine. Use `repose paste` for an image on the clipboard and [`repose cp`](/docs/sync#single-files) for a file. herdr's client over SSH, without herdr on the laptop, copies drops and pastes as tmux does.
 - If herdr has stopped on the machine, `run` and `attach` say `herdr is not running on todo-app` and exit 1. `repose stop` and `repose start` bring it back.
 
-repose's messages inside the session (the time zone, new port forwards, copied files) are herdr notifications, which the machine's `~/.config/herdr/config.toml` turns on. A `config.toml` that was there before the machine first ran herdr, for example because you ran herdr there yourself, keeps its own settings. Add this to it and run `herdr server reload-config` on the machine:
+repose's messages inside the session (the time zone, new port forwards, copied files) are herdr notifications, which the machine's `~/.config/herdr/config.toml` turns on. A `config.toml` that was there before the machine first ran herdr, for example because you ran herdr there yourself, keeps its own settings, and without this a copied file is named nowhere on herdr. Add it and run `herdr server reload-config` on the machine:
 
 ```toml
 [ui.toast]
 delivery = "herdr"
 ```
 
-Without it, a copied file is not named anywhere on herdr.
-
 `run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
 
-A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it. The [herdr tutorial](/docs/tutorial-herdr) walks through a first project.
+A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it.
 
 ## See what's running, run one command
 

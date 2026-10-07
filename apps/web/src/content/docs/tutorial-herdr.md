@@ -8,7 +8,7 @@ status: experimental
 
 [herdr](https://herdr.dev) is a terminal multiplexer for coding agents: one sidebar shows which agent is working, which is waiting for you and which is done, across your laptop and the machines you reach over SSH. A repose machine can run herdr in place of tmux. Its agents keep running with the laptop closed, and after `repose stop` and `repose start` herdr puts the tabs back and resumes the agents where they were.
 
-You need herdr 0.9.0 or newer on your laptop ([herdr.dev](https://herdr.dev)) for the sidebar, and repose 0.1.31 or newer (`repose version`; [update](/docs/install#update) by running the install command again). Without herdr on the laptop everything below still works; `repose attach` then runs herdr's client on the machine.
+You need herdr 0.9.0 or newer on your laptop ([herdr.dev](https://herdr.dev)) for the sidebar, and repose 0.1.31 or newer (`repose version`; [update](/docs/install#update) by running the install command again). Without herdr on the laptop, `repose attach` runs herdr's client on the machine, and there is no sidebar.
 
 ## Make herdr the default
 
@@ -38,7 +38,7 @@ Ready in 38s.
 todo-app is in herdr's sidebar.
 ```
 
-`run` opened a tab in the `todo-app` workspace on the machine, started Claude Code there and typed the prompt. The machine is now in herdr's sidebar under its name; select it to watch the agent. The `repose` command stays in its pane and keeps your ports forwarded until you press Ctrl-C. Nothing else opens inside the pane.
+`run` opened a tab in the `todo-app` workspace on the machine, started Claude Code there and typed the prompt. The machine is now in herdr's sidebar under its name; select it to watch the agent. The `repose` command stays in its pane and keeps your ports forwarded until you press Ctrl-C.
 
 From a terminal outside herdr, the same command opens herdr's client on the machine (`herdr --remote todo-app.repose`) instead.
 
@@ -65,7 +65,7 @@ A machine in the sidebar holds an SSH connection open while your laptop's herdr 
 
 ## After a stop and start
 
-`repose stop` ends every process on the machine, herdr included, and names any agent it interrupted. `repose start` starts herdr again before anyone connects: the workspaces and tabs come back, and each agent with herdr's integration (Claude Code, Codex, opencode and pi) resumes in its conversation. repose installs those integrations on the machine for you.
+`repose stop` ends every process on the machine, herdr included, and names any agent it interrupted. `repose start` starts herdr again before anyone connects: the workspaces and tabs come back, and each agent with herdr's integration (Claude Code, Codex, opencode and pi) resumes in its conversation.
 
 ## What changes on a repose machine
 

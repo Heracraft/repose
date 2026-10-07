@@ -364,6 +364,10 @@ func (herdrMux) Attach(e *Env, a attachReq) error {
 		if errors.As(err, &se) && se.ExitCode == 2 {
 			return exitf(ExitUsage, "%s", strings.TrimSpace(se.Stderr))
 		}
+		if err != nil {
+			// The attach goes on: herdr opens on its last tab instead.
+			_, _ = fmt.Fprintf(e.ErrOut, "Could not pick the tab on %s: %v\n", slug, err)
+		}
 	}
 	lh := laptopHerdr()
 	switch chooseHerdrPath(lh, a.Project, a.Target, func() bool { return lh.ensureEntry(e, slug) }) {
