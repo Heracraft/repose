@@ -189,14 +189,13 @@ func TestRunNewProjectFromHerdrPane(t *testing.T) {
 	}
 
 	fake.SetHerdrMinBase("2026.09.01")
-	e2, _, errOut2 := freshEnv(f.env, f.local)
+	e2, _, _ := freshEnv(f.env, f.local)
 	if err := runRun(ctx, e2, RunOptions{Name: "paned", NoAttach: true, NoSync: true}, false); err != nil {
 		t.Fatalf("run from a herdr pane: %v", err)
 	}
 	if p := bySlug(listed(t, e2), "paned"); p == nil || p.Multiplexer != "herdr" {
 		t.Fatalf("paned %+v, want herdr", p)
 	}
-	_ = errOut2
 
 	// A temporary machine from a herdr pane stays on tmux.
 	e3, _, _ := freshEnv(f.env, f.local)
