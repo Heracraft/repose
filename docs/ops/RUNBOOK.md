@@ -877,8 +877,7 @@ The thin pool is over 70 percent used (data, or `host_warning{kind=
 "pool_high"}` from hostd, which counts metadata too) for 15 minutes. The
 api places no new project on the host from here: a create, or a restore
 or fork as a new project, goes to another host or, on a one-host fleet,
-waits as `the host has no room for this project right now` (DECISIONS
-I-586). Projects already on the host keep starting, stopping and
+fails with code `capacity` (`no host with capacity`; DECISIONS I-586). Projects already on the host keep starting, stopping and
 restoring in place. The 30 percent left is room for those guests to grow
 into: plans count what volumes hold (I-585), so the volumes' sizes sum
 past the pool by design.
@@ -907,7 +906,7 @@ is why `PoolFull` pages at 90.
 The thin pool's metadata is over 80 percent (`repose_lvm_pool_metadata_
 percent` from the textfile collector). Metadata maps every allocated
 block; running out fails every volume's writes as data running out does,
-and autoextend grows data only. hostd's 85 and 95 percent refusals count
+and it can fill before the data does. hostd's 85 and 95 percent refusals count
 metadata as they count data (I-586).
 
 1. `lvs -a -o lv_name,lv_size,metadata_percent vg-guests` and `vgs

@@ -47,7 +47,7 @@ groups:
 
       - alert: PoolMetadataHigh
         # Thin pool metadata running out fails every volume's writes the
-        # way data does, and autoextend grows data only (I-586).
+        # way data does, and it can fill before the data does (I-586).
         expr: repose_lvm_pool_metadata_percent > 80
         for: 5m
         labels:

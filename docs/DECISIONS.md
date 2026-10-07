@@ -11622,7 +11622,9 @@ Not done
 here: the api's scheduler still places by free space alone and learns of
 the budget only from hostd's refusal, and nothing yet acts at 90 percent
 beyond refusing creates. Tests: `internal/hostd/guest/poolbudget_test.go`,
-`internal/hostd/lvm` `TestRealAllocated`.
+`internal/hostd/lvm` `TestRealAllocated`. *Superseded by I-586:* the bound
+on the sum of the sizes and both tests are gone; the pool is guarded by
+what it holds, and one disk may still be the plan's whole disk.
 
 **I-450. Each guest's disk is rate-limited by its size class.** (security
 review, 2026-10-03) Every guest volume is on one data disk (16,000 IOPS and
@@ -15744,7 +15746,10 @@ projects (a count that binds only running projects is the memory pool
 said worse); reading `users.project_limit` as an exact cap (keeps the
 owner at 6 until an operator edits the row, and makes every early
 account's 3 or 10 a silent block); a migration rewriting the rows (a
-data change for a value the code can read safely).
+data change for a value the code can read safely). *Amended by I-585:*
+the plan's disk counts what projects hold, so the 100-project cap is
+what bounds an account of nearly empty projects.
+
 **I-566. The snapshot, secrets-list and config show/edit commands take
 the project as their first argument.** (cli-small-fixes, 2026-10-07;
 owner's dogfood notes) `repose snapshots create parth-event` failed with
@@ -15869,7 +15874,8 @@ over `hostname` because a machine running since before I-550 is still
 laptop command (the guide line does it); rendering the slug into the
 guide (the guide is one file in the shared base). auth.spec.ts "the
 dashboard header links to the docs"; `TestAgentGuideCommandsExist` with
-`jq` added.
+`jq` added. *Amended by I-578:* Account moved into Settings, and Docs shows at
+every width.
 
 **I-585. The plan's disk counts the bytes each project's volume holds; a
 disk's size is only the ceiling it can grow to.** (owner, 2026-10-07:
@@ -15955,9 +15961,9 @@ disk rate (I-450) and the host's pool guard (I-586), and the email and
 the admin view show it; refusing starts while far over is the next step
 if anyone does it.
 
-Calls for the owner to confirm: the 1 GiB estimate a create adds;
-refusing a grow while over the plan; the plan totals (100, 250, 500 GB)
-left as they are.
+The owner confirmed three choices on 2026-10-07: a create adds 1 GiB;
+a disk grow is refused while the projects hold more than the plan; the
+plan totals stay 100, 250 and 500 GB.
 
 `TestGateEveryReason`, `TestDiskOverPlanEmail`, `TestChangePlan`
 (billing), `TestIngestRecordsDiskHeld` (meter), `TestBillingGateBlocksCompute`,
@@ -16004,7 +16010,7 @@ full, so at 95 it waits for the operator; the user reads "the host has
 no room for this project right now". Nothing stops a running guest for
 the pool. Metadata: `LVM.PoolMetadataPercent` (`lvs metadata_percent`)
 counts in hostd's checks, and `PoolMetadataHigh` pages at 80 percent,
-since autoextend grows data only. Why 70: the 15 points to 85 are 300
+since it can fill before the data does. Why 70: the 15 points to 85 are 300
 GB of a 2 TB pool (71 GB of host-01's 476 GiB), about 40 minutes of one
 `large` writing flat out at its 120 MB/s (I-450), hours of ordinary
 agent work, and the disk grow (online Premium SSD v2, `pvresize`,
@@ -16034,8 +16040,6 @@ refusing starts earlier (a stopped user's own files, and the pool has
 room); stopping guests automatically near full (an operator's call per
 tenant, RUNBOOK "PoolFull"); placing by free guest indexes reported by
 hostd (the live project count is the same number without a new field).
-`jq` added. *Amended by I-578:* Account moved into Settings, and Docs shows at
-every width.
 
 **I-578. The Account page is a section of Settings, and the dashboard
 header shows Docs at every width.** (header-docs-phone, 2026-10-07;
