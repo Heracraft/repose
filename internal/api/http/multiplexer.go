@@ -15,7 +15,7 @@ import (
 // empty, or names no row of base_versions, the api refuses every request
 // for herdr (docs/interfaces/api.md, "The base gate"). The conductor sets
 // it in the release that ships the CLI side (workstream 16, section 2).
-const herdrMinBase = ""
+const herdrMinBase = "2026.10.07"
 
 // minBase is herdrMinBase, replaceable by tests (export_test.go).
 var minBase atomic.Pointer[string]
