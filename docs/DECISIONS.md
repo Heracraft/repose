@@ -14504,13 +14504,23 @@ order. Sourcing alone was rejected: it only adds, and appends to array
 options such as `terminal-features` on each run. Options a session sets
 for itself (the CLI's port forward line), the global environment (TZ,
 PATH) and every window and pane are kept; a global option a user set by
-hand is lost at the next config change. With no server, or on the first
-run, it records the digest only. The `-` keeps a broken user config from
-failing the switch; a file with an error still loads its other lines.
+hand is lost at the next config change. With no server (as at boot) it records
+the digest only; the first run on a running machine reloads, so the base
+that brings the script also brings its own tmux changes (I-515's
+terminal-features and set-titles) to sessions already open. The digest is
+recorded after the reload, so one cut short runs again. Every tmux call
+has a 10 s timeout, so a hung server or a config blocking in `run-shell`
+cannot hold the switch, and the `-` keeps a failed reload from failing
+it; a file with an error still loads its other lines. Nothing is reset
+unless tmux's default key bindings were read first (at least 100
+`bind-key` lines), since emptied key tables would leave the session with
+no way to detach.
 Check `guest-tmux-follows-config` asserts the unit line, and on a real
-tmux in the build sandbox that removal resets an option, a binding and
-an array entry while a session option survives, and that an added file
-loads. Shells already open keep the aliases and functions their
+tmux in the build sandbox that the first run keeps the file's options
+and every default binding without doubling array options, that removal
+resets an option, a binding and an array entry to tmux's defaults with
+exactly the default key tables while a session option survives, and that
+an added file loads. Shells already open keep the aliases and functions their
 `.bashrc` loaded; that is documented, not fixed.
 
 The CLI side: deleting `~/.config/repose/machine.nix` pushes nothing,
