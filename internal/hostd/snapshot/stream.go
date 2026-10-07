@@ -59,10 +59,10 @@ type procReader struct {
 
 func (p *procReader) Mode() Mode { return p.mode }
 
-// ReadDuration is how long reading the device took, from Read to the last
-// byte read, or 0 when it is not known (a raw stream) or not over. A
-// snapshot whose duration is mostly this was bound by the disk; one that
-// ended well after it, by zstd or the upload (DECISIONS I-571).
+// ReadDuration is how long the stream waited for the device, or 0 when
+// that is not known (a raw stream) or the stream is not over. A snapshot
+// whose duration is mostly this was bound by the disk; one that ended
+// well after it, by zstd or the upload (DECISIONS I-571).
 func (p *procReader) ReadDuration() time.Duration {
 	if p.rt == nil {
 		return 0
@@ -73,23 +73,23 @@ func (p *procReader) ReadDuration() time.Duration {
 // ReadTimer is implemented by the readers Pipeline returns.
 type ReadTimer interface{ ReadDuration() time.Duration }
 
-// readTimer records when the device read ended.
+// readTimer holds the time the extent stream waited for the device,
+// set once the stream is over.
 type readTimer struct {
-	start time.Time
-	mu    sync.Mutex
-	took  time.Duration
+	mu     sync.Mutex
+	waited time.Duration
 }
 
-func (r *readTimer) finish() {
+func (r *readTimer) set(d time.Duration) {
 	r.mu.Lock()
-	r.took = time.Since(r.start)
+	r.waited = d
 	r.mu.Unlock()
 }
 
 func (r *readTimer) duration() time.Duration {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.took
+	return r.waited
 }
 
 func (p *procReader) Close() error {
@@ -134,10 +134,11 @@ func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout) (
 	}
 	pr, pw := io.Pipe()
 	gen := make(chan error, 1)
-	rt := &readTimer{start: time.Now()}
+	rt := &readTimer{}
 	go func() {
-		_, err := writeExtents(f, direct, size, l, pw)
-		rt.finish()
+		var waited time.Duration
+		_, err := writeExtentsTimed(f, direct, size, l, pw, &waited)
+		rt.set(waited)
 		_ = f.Close() // read only
 		if direct != nil {
 			_ = direct.Close() // read only

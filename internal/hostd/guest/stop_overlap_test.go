@@ -172,7 +172,7 @@ func TestStopLogsItsPhases(t *testing.T) {
 	if len(done) != 1 {
 		t.Fatalf("%d \"snapshot done\" lines", len(done))
 	}
-	for _, k := range []string{"freeze_ms", "read_ms", "duration_ms"} {
+	for _, k := range []string{"freeze_ms", "read_wait_ms", "duration_ms"} {
 		if _, ok := done[0][k].(float64); !ok {
 			t.Fatalf("snapshot done has no %s: %v", k, done[0])
 		}

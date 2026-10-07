@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
@@ -224,6 +225,14 @@ type extentRead struct {
 // device, or nil) where a chunk is aligned for it and through dev
 // otherwise; the stream is the same either way.
 func writeExtents(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer) (uint64, error) {
+	return writeExtentsTimed(dev, direct, size, l, w, nil)
+}
+
+// writeExtentsTimed is writeExtents that also adds to *waited (when not
+// nil) the time the stream spent waiting for a chunk to be read: the
+// part of the snapshot's time the disk set. The rest went on writing to
+// w, that is zstd and the upload behind it (DECISIONS I-571).
+func writeExtentsTimed(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer, waited *time.Duration) (uint64, error) {
 	bw := bufio.NewWriterSize(w, 1<<20)
 	var hdr [16]byte
 	copy(hdr[:8], extentMagic)
@@ -279,7 +288,13 @@ func writeExtents(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer)
 	}
 	var werr error
 	for j := range queue {
-		<-j.done
+		if waited != nil {
+			t0 := time.Now()
+			<-j.done
+			*waited += time.Since(t0)
+		} else {
+			<-j.done
+		}
 		if werr == nil {
 			if j.err != nil {
 				werr = j.err

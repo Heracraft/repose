@@ -14597,8 +14597,10 @@ also stops a snapshot from filling the host's page cache with a guest's
 disk. zstd stays at `-T4`: the guests share those cores. Expected: a
 stop the size of waterville's in about 11 s instead of 24; to be checked
 on host-01 after the hostd switch. Phase timings, durations only:
-`snapshot done` gains `freeze_ms` and `read_ms` (the device read alone;
-close to `duration_ms` means the disk set the pace); stopGuest logs
+`snapshot done` gains `freeze_ms` and `read_wait_ms` (how long the
+stream waited for the device; close to `duration_ms` means the disk set
+the pace, since the stream is written to zstd through a pipe and a
+plain read time would include zstd's and the upload's pauses); stopGuest logs
 `guest stopped` with `power_off_ms`, `duration_ms` and `escalated`
 (`none`, `hypervisor`, `kill`); a stop with a snapshot logs `stop
 timings` with `down_ms` and `total_ms`. RUNBOOK "Snapshot, stop or

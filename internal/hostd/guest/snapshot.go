@@ -177,15 +177,15 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 		mo := md.Mode()
 		format, why, used = mo.Format, mo.Why, mo.UsedBytes
 	}
-	// read_ms is the device read alone (0 when unknown): close to
-	// duration_ms means the disk set the pace; well under it, zstd or the
-	// upload did (DECISIONS I-571).
-	var readMs int64
+	// read_wait_ms is how long the stream waited for the device (0 when
+	// unknown): close to duration_ms means the disk set the pace; well
+	// under it, zstd or the upload did (DECISIONS I-571).
+	var readWaitMs int64
 	if rt, ok := r.(snapshot.ReadTimer); ok {
-		readMs = rt.ReadDuration().Milliseconds()
+		readWaitMs = rt.ReadDuration().Milliseconds()
 	}
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(),
-		"freeze_ms", t.freeze.Milliseconds(), "read_ms", readMs,
+		"freeze_ms", t.freeze.Milliseconds(), "read_wait_ms", readWaitMs,
 		"format", format, "raw_reason", why, "used_bytes", used, "volume_bytes", g.VolumeBytes)
 	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
 	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil
