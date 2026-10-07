@@ -45,7 +45,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`todo-app: a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one`.** A garbage collection run on the machine on an older base deleted store paths that repose shares with it and that the new system needs. The machine keeps running what it had. `repose stop todo-app`, then `repose start todo-app`: the start puts the paths back and switches to the new system.
 
-**`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** Something on the machine removed store paths that the new system needs, usually a `nix-collect-garbage` or `nix store gc` run inside it. The machine keeps running what it had.
+**`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** The machine's store doesn't show paths the new system needs: on an older base, a `nix-collect-garbage` or `nix store gc` run inside the machine hid them; on a current base, the server no longer has them. The machine keeps running what it had.
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout waits for the destroy, then creates a fresh `todo-app`; see [Start over with a fresh machine](/docs/lifecycle#start-over-with-a-fresh-machine).
 
