@@ -33,6 +33,7 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 	// uploads: the stop waits for the longer of the two, not their sum,
 	// and the guest's hours end at the freeze instead of after the upload
 	// (DECISIONS I-404). A freeze that fails stops nothing, as before.
+	start := m.d.Now()
 	t, err := m.takeSnapshot(ctx, g, "stop")
 	if err != nil {
 		return nil, err
@@ -47,7 +48,13 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 		up <- upload{sr, err}
 	}()
 	stopErr := m.stopGuest(ctx, g, c.TimeoutS)
+	down := m.d.Now().Sub(start)
 	u := <-up
+	// What the stop waited for: the shutdown and the snapshot overlap, so
+	// the later of down_ms and the snapshot is total_ms (I-404); "guest
+	// stopped" and snapshot_done break each one down (DECISIONS I-571).
+	m.log(g).Info("stop timings", "event", "guest_stop", "down_ms", down.Milliseconds(),
+		"total_ms", m.d.Now().Sub(start).Milliseconds(), "snapshot_ok", u.err == nil)
 	if u.err != nil && stopErr == nil {
 		// The guest is down now: snapshot the stopped volume instead, the
 		// path a stop takes when guestd cannot freeze (I-158).
@@ -74,6 +81,8 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 		return errf(CodeInternal, "%v", err)
 	}
 	m.log(g).Info("stopping guest", "event", "guest_stop", "timeout_s", timeoutS)
+	start := m.d.Now()
+	escalated := "none" // or "hypervisor", "kill": how the guest went down
 	unit := GuestUnit(g.GuestID)
 	// The monitor must not mistake this for an unexpected exit. Console
 	// capture stays until the hypervisor is gone: ending it while the guest
@@ -100,11 +109,13 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 		cancel()
 		if err != nil {
 			m.log(g).Warn("guest did not power off; asking the hypervisor", "event", "guest_stop")
+			escalated = "hypervisor"
 			_ = m.d.CH.Shutdown(ctx, ch.APISocket(m.guestDir(g.GuestID))) // the next step kills the unit if this did nothing
 			wctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 			err = m.d.Systemd.WaitInactive(wctx, unit)
 			cancel()
 			if err != nil {
+				escalated = "kill"
 				m.log(g).Warn("killing hypervisor", "event", "guest_stop")
 				if err := m.d.Systemd.Kill(ctx, unit); err != nil {
 					return errf(CodeInternal, "systemctl kill: %v", err)
@@ -116,10 +127,13 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 		stopConsole()
 		stopConsole = nil
 	}
+	powerOff := m.d.Now().Sub(start)
 	m.teardown(ctx, g)
 	if err := m.setState(g, StateStopped, ""); err != nil {
 		return errf(CodeInternal, "%v", err)
 	}
+	m.log(g).Info("guest stopped", "event", "guest_stop", "power_off_ms", powerOff.Milliseconds(),
+		"duration_ms", m.d.Now().Sub(start).Milliseconds(), "escalated", escalated)
 	return nil
 }
 

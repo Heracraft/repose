@@ -661,7 +661,7 @@
 							{#each project.signals.agents as a (a.window)}
 								<div class="flex justify-between gap-4">
 									<dt class="text-ink-muted">{a.agent} ({a.window})</dt>
-									<dd>{a.state}</dd>
+									<dd>{a.state && a.state !== 'unknown' ? a.state : '—'}</dd>
 								</div>
 							{/each}
 						{/if}

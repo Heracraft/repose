@@ -75,8 +75,8 @@ Retention (DECISIONS R4-11):
   then deleted with the account's other data.
 - A project that has been stopped for months keeps its most recent
   snapshot indefinitely (the seven-day window only rolls while new
-  snapshots are taken), because the volume it backs is still billed and
-  still exists.
+  snapshots are taken), because the volume it backs still exists and
+  still counts toward the plan's disk.
 
 Restoring:
 
@@ -128,8 +128,8 @@ Forking (DECISIONS I-254, I-255):
   source's `~/<slug>`, made by guestd's `SetupProject` (I-255).
 - With `--prompt`, the CLI starts the agent with that prompt in each
   running copy, without syncing the laptop into it, and does not attach.
-- Each copy is a project: it counts toward the limit and is billed like
-  one. There is no fork lineage in the api, no "promote a copy", and no
+- Each copy is a project: it counts toward the project limit and the
+  plan's disk, and toward the plan's memory while it runs (I-570). There is no fork lineage in the api, no "promote a copy", and no
   dashboard action yet.
 
 Alerts:

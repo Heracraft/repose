@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "apple-notes": {
+      "command": [
+        "repose-mcp",
+        "apple-notes"
+      ],
+      "type": "local"
+    }
+  }
+}

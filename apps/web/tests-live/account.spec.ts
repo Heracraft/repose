@@ -2,7 +2,7 @@
 // with a real Logto session captured by `pnpm run live:auth`, and closes
 // the rows of docs/workstreams/08-dashboard.md §9 that say "the real
 // Logto" — sign-in, callback, token refresh, sign-out — plus settings and
-// the account page against a real account rather than internal/fakes/api.
+// its account section against a real account rather than internal/fakes/api.
 //
 // It is deliberately non-destructive. It changes the signed-in user's
 // settings and puts them back; it asserts on the delete-account control
@@ -56,10 +56,10 @@ test('a dropped access token is refreshed against the real Logto', async ({ page
 	await expect(page.getByText('Session expired, sign in again.')).toHaveCount(0);
 });
 
-test('/account shows the real identity and guards deletion', async ({ page }) => {
-	await gotoSignedIn(page, '/account');
-	const handle = (await page.locator('dd.font-mono').first().innerText()).trim();
-	expect(handle, 'no handle rendered on /account').not.toBe('');
+test('/settings shows the real identity and guards deletion', async ({ page }) => {
+	await gotoSignedIn(page, '/settings');
+	const handle = (await page.locator('#account dd.font-mono').first().innerText()).trim();
+	expect(handle, 'no handle rendered on /settings').not.toBe('');
 
 	await expect(
 		page.getByText('Everything, including snapshots, is deleted 30 days later.')
@@ -67,7 +67,7 @@ test('/account shows the real identity and guards deletion', async ({ page }) =>
 
 	const button = page.getByRole('button', { name: 'Delete account' });
 	await expect(button).toBeDisabled();
-	const input = page.getByRole('textbox').first();
+	const input = page.locator('#delete-account').getByRole('textbox');
 	await input.fill(`${handle}x`);
 	await expect(button).toBeDisabled();
 	await input.fill(handle);
@@ -80,9 +80,12 @@ test('/account shows the real identity and guards deletion', async ({ page }) =>
 test('/settings round-trips timezone, email toggle and ntfy URL', async ({ page }) => {
 	await gotoSignedIn(page, '/settings');
 
-	const tz = page.locator('select').first();
-	const email = page.getByRole('checkbox');
+	// Each control saves as it changes; the ntfy URL has its own Save
+	// (DECISIONS I-332), and machine.nix has another further down (I-578).
+	const tz = page.getByLabel('Timezone');
+	const email = page.getByRole('checkbox', { name: 'Email notifications' });
 	const ntfy = page.locator('#ntfy-url');
+	const saveNtfy = page.locator('form', { has: ntfy }).getByRole('button', { name: 'Save' });
 
 	const beforeTz = await tz.inputValue();
 	const beforeEmail = await email.isChecked();
@@ -92,22 +95,29 @@ test('/settings round-trips timezone, email toggle and ntfy URL', async ({ page 
 	const probeNtfy = `https://ntfy.sh/repose-live-check-${Date.now()}`;
 
 	await tz.selectOption(probeTz);
+	await expect(page.getByText(`Timezone set to ${probeTz}.`)).toBeVisible({ timeout: 15_000 });
 	await email.setChecked(!beforeEmail);
+	await expect(
+		page.getByText(beforeEmail ? 'Email notifications off.' : 'Email notifications on.')
+	).toBeVisible({ timeout: 15_000 });
 	await ntfy.fill(probeNtfy);
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByText('Settings saved.')).toBeVisible({ timeout: 15_000 });
+	await saveNtfy.click();
+	await expect(page.getByText('ntfy URL saved.')).toBeVisible({ timeout: 15_000 });
 
 	await page.reload();
-	await expect(page.locator('select').first()).toHaveValue(probeTz, { timeout: 30_000 });
-	await expect(page.locator('#ntfy-url')).toHaveValue(probeNtfy);
-	expect(await page.getByRole('checkbox').isChecked()).toBe(!beforeEmail);
+	await expect(tz).toHaveValue(probeTz, { timeout: 30_000 });
+	await expect(ntfy).toHaveValue(probeNtfy);
+	expect(await email.isChecked()).toBe(!beforeEmail);
 
 	// Put the account back exactly as it was.
-	await page.locator('select').first().selectOption(beforeTz);
-	await page.getByRole('checkbox').setChecked(beforeEmail);
-	await page.locator('#ntfy-url').fill(beforeNtfy);
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByText('Settings saved.')).toBeVisible({ timeout: 15_000 });
+	await tz.selectOption(beforeTz);
+	await expect(page.getByText(`Timezone set to ${beforeTz}.`)).toBeVisible({ timeout: 15_000 });
+	await email.setChecked(beforeEmail);
+	await ntfy.fill(beforeNtfy);
+	await saveNtfy.click();
+	await expect(page.getByText(beforeNtfy ? 'ntfy URL saved.' : 'ntfy turned off.')).toBeVisible({
+		timeout: 15_000
+	});
 });
 
 // The button exists to prove a channel end to end; 08 §6 requires it to

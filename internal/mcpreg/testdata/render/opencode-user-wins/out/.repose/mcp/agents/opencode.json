@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "bar": {
+      "type": "remote",
+      "url": "https://bar.example/mcp"
+    },
+    "baz": {
+      "type": "remote",
+      "url": "https://baz.example/mcp"
+    },
+    "foo": {
+      "headers": {
+        "A": "{env:FOO_T}"
+      },
+      "type": "remote",
+      "url": "https://foo.example/mcp"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "apple-notes": {
+      "args": [
+        "apple-notes"
+      ],
+      "command": "repose-mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

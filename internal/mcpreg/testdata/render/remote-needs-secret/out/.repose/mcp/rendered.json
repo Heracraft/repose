@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        },
+        "sentry": {
+          "headers": {
+            "Authorization": "Bearer ${SENTRY_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.sentry.dev/mcp"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "sentry": {
+          "bearer_token_env_var": "SENTRY_TOKEN",
+          "url": "https://mcp.sentry.dev/mcp"
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "sentry": {
+          "headers": {
+            "Authorization": "Bearer ${SENTRY_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.sentry.dev/mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "linear": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "linear"
+          ],
+          "type": "local"
+        },
+        "sentry": {
+          "headers": {
+            "Authorization": "Bearer {env:SENTRY_TOKEN}"
+          },
+          "type": "remote",
+          "url": "https://mcp.sentry.dev/mcp"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "sentry": {
+          "headers": {
+            "Authorization": "Bearer ${SENTRY_TOKEN}"
+          },
+          "url": "https://mcp.sentry.dev/mcp"
+        }
+      }
+    }
+  }
+}

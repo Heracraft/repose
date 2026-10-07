@@ -81,7 +81,7 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 		return err
 	}
 	if project.State == "stopped" {
-		_, _ = fmt.Fprintf(e.Out, "%s is already stopped. Disk is still billed.\n", project.Slug)
+		_, _ = fmt.Fprintf(e.Out, "%s is already stopped.\n", project.Slug)
 		return nil
 	}
 	busy := busyAgents(project)
@@ -114,16 +114,29 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 	if err != nil {
 		return err
 	}
-	snapID, snapBytes := "", int64(0)
-	if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
-		if latest := newestSnapshot(snaps); latest != nil {
-			snapID, snapBytes = latest.ID, latest.Bytes
+	// A stopped project costs nothing; its disk counts toward the plan's
+	// disk total, which `repose ls` and the Billing page show. The line
+	// says what the stop did: how long it took and the snapshot's size,
+	// which is what that time went on (DECISIONS I-570). The snapshot's id
+	// is for `repose snapshots`, where it is used.
+	// The stop op's result names the snapshot it recorded; an api that
+	// does not say leaves the newest snapshot, when it is a stop's and the
+	// project carries no error (a failed snapshot sets one, I-158).
+	snapBytes := int64(-1)
+	if snapshot {
+		snapID, _ := op.Result["snapshot_id"].(string)
+		if snapID != "" || projectReason(p) == "" {
+			if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
+				if s := stopSnapshot(snaps, snapID); s != nil {
+					snapBytes = s.Bytes
+				}
+			}
 		}
 	}
-	if snapshot && snapID != "" {
-		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Snapshot %s (%s). Disk is still billed.\n", p.Slug, fmtElapsed(pr.Total()), snapID, humanBytes(snapBytes))
+	if snapBytes >= 0 {
+		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s with a %s snapshot.\n", p.Slug, fmtElapsed(pr.Total()), humanBytes(snapBytes))
 	} else {
-		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s. Disk is still billed.\n", p.Slug, fmtElapsed(pr.Total()))
+		_, _ = fmt.Fprintf(e.Out, "Stopped %s in %s.\n", p.Slug, fmtElapsed(pr.Total()))
 	}
 	if busy != "" {
 		_, _ = fmt.Fprintf(e.Out, "Interrupted %s.\n", busy)
@@ -303,6 +316,23 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 // newestSnapshot is the most recent of snaps, or nil. The api lists them
 // newest first and the fake api oldest first; v0.1.5 took the last one,
 // which on the real api was the oldest (DECISIONS I-166).
+// stopSnapshot is the snapshot a stop took: the one with id, or, with
+// no id, the newest when a stop took it.
+func stopSnapshot(snaps []Snapshot, id string) *Snapshot {
+	if id != "" {
+		for i := range snaps {
+			if snaps[i].ID == id {
+				return &snaps[i]
+			}
+		}
+		return nil
+	}
+	if s := newestSnapshot(snaps); s != nil && s.Reason == "stop" {
+		return s
+	}
+	return nil
+}
+
 func newestSnapshot(snaps []Snapshot) *Snapshot {
 	var best *Snapshot
 	for i := range snaps {

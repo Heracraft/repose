@@ -96,21 +96,13 @@ Only commits travel this way. Files the agent changed but didn't commit stay on 
 You edited `README.md` on your laptop while the agent was editing it on the machine. `repose run` attaches without touching either copy. `repose sync` would write over the agent's edit, so it stops:
 
 ```text
-`repose sync` copies your laptop's work onto the machine.
-It doesn't restart or rebuild anything.
-The machine has uncommitted changes your laptop doesn't have
-(1 file), probably an agent's:
+Not synced: the machine changed 1 file that your laptop changed too:
   README.md
-Your laptop has new work as well, so syncing now would write over
-them. Nothing was changed. Pick one:
-  repose attach                  look at the machine first
-  repose sync --stash-remote     put the machine's changes in git
-                                 stash, then sync
-  repose sync --discard-remote   throw the machine's changes away,
-                                 then sync
+`repose sync --stash-remote` stashes the machine's changes first;
+`--discard-remote` throws them away.
 ```
 
-The exit code is 6, so a script notices. Ask agents to commit: had the agent committed instead of leaving the file dirty, there would be no conflict. The sync checks your laptop's commit out detached on the machine and leaves the agent's branch where it is, and `git fetch repose` brings that branch to you to merge like any other.
+The exit code is 6, so a script notices. Files the agent changed that your laptop didn't touch never stop a sync; they stay as the agent left them. Ask agents to commit: had the agent committed instead of leaving the file dirty, the sync would merge your laptop's commit into the agent's branch, or, when the two conflict, check your commit out detached and leave the agent's branch where it is. `git fetch repose` brings that branch to you to merge like any other.
 
 ## Agents on their own branches
 

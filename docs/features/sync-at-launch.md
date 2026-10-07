@@ -36,15 +36,22 @@ Connected to todo-app (large)
 Synced: 0 modified, 0 untracked (2 new commits)
 ```
 
-An agent committed on the guest's branch and the laptop has not pulled:
+An agent committed on the guest's branch, left two files uncommitted,
+and the laptop has not pulled (DECISIONS I-573, I-574):
+
+```
+$ repose sync
+Connected to todo-app (large)
+Synced: 1 modified, 0 untracked (1 new commit), merged with the machine's main; kept the machine's changes to 2 files
+```
+
+The same, when the two sides' commits conflict:
 
 ```
 $ repose sync
 Connected to todo-app (large)
 Synced: 1 modified, 0 untracked (1 new commit)
-The guest's main has commits your laptop does not have; it was left as it
-is and the guest is on 4f2a9c1, detached. `git fetch repose` brings them
-to your laptop (or `repose attach` to look).
+The machine's main has commits that could not be merged with yours, so it was left as it is and the machine is on 4f2a9c1, detached. `git fetch repose` brings that branch here.
 ```
 
 The laptop checkout has a fetch-only `repose` remote for the guest's
@@ -56,23 +63,40 @@ I-248):
 
 ```
 $ repose sync
-Nothing new to sync. The machine has changes your laptop doesn't have (27 files); `repose sync --stash-remote` puts them in git stash and lays your laptop's work over them.
+Nothing new to sync. The machine has changes your laptop doesn't have (27 files).
 ```
 
-Guest changed and the laptop has new work that would land on it:
+Guest changed files that the laptop's new work changes too (DECISIONS
+I-573):
 
 ```
 $ repose sync
-`repose sync` copies your laptop's work onto the machine. It doesn't restart or rebuild anything.
-The machine has uncommitted changes your laptop doesn't have (27 files), probably an agent's:
+Not synced: the machine changed 11 files that your laptop changed too:
   src/auth.ts
   src/routes/login.ts
   ...(eight names in all)
-  and 19 more
-Your laptop has new work as well, so syncing now would write over them. Nothing was changed. Pick one:
-  repose attach                  look at the machine first
-  repose sync --stash-remote     put the machine's changes in git stash, then sync
-  repose sync --discard-remote   throw the machine's changes away, then sync
+  and 3 more
+`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away.
+```
+
+The guest's checkout has a git operation of its own in progress
+(DECISIONS I-573):
+
+```
+$ repose sync
+Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes.
+```
+
+A Ctrl-C after the sync created the project and before it connected
+(DECISIONS I-575); a Ctrl-C with the create request still out looks the
+name up for two seconds and prints the same line, or ``Interrupted.
+job-search may have been created; `repose ls` shows it.``:
+
+```
+$ repose sync
+✓ Created job-search (large)  0.6s
+^C
+Interrupted. job-search was created and stays on your account; `repose rm job-search` removes it.
 ```
 
 ## Behaviour that must hold
@@ -87,25 +111,45 @@ Your laptop has new work as well, so syncing now would write over them. Nothing 
   `attach`, `start`, or any other command. `run --stash-remote` and
   `--discard-remote` exit 2 naming `repose sync` with the same flag.
   Everything below describes `repose sync` and a run's first sync.
-- The guest checks `git status --porcelain` in the checkout first
-  (this includes untracked files, so an agent's scratch file counts as
-  dirty too). If it is non-empty (and not the last sync's own, below)
-  and neither `--stash-remote` nor `--discard-remote` was given, what
-  happens depends on the laptop (DECISIONS I-248). When the laptop has
-  nothing new since the sync the guest last took (its sync key equals the
-  guest's `.git/repose-synced-key` and the guest has every commit it
-  would send, which the guest shows by still having the commits that
-sync recorded under its key, DECISIONS I-284, even after it pulled past
-every commit the laptop knows), there is nothing to write over: the checkout is left
-  alone, only the logins and carry go, and the sync ends with the
-  one-line notice above. The same holds when the guest's tree is clean
-  but it moved on (an agent's commits, another branch): no detached
-  checkout of an older laptop commit. Otherwise the CLI prints the
-  refusal above (eight names, then a count) and exits 6; nothing else in
-  the sync step runs. `--stash-remote` runs `git stash
-  push -u -m "repose run"` in the guest first; `--discard-remote` runs
-  `git reset --hard && git clean -fd`. Neither asks for confirmation —
-  the flag itself is the confirmation.
+- The guest's own changes refuse a sync only where the sync would write
+  (DECISIONS I-573, which replaces the whole-tree refusal of R3-12 and
+  I-248). When the laptop has nothing new since the sync the guest last
+  took (its sync key equals the guest's `.git/repose-synced-key` and the
+  guest has every commit it would send, which the guest shows by still
+  having the commits that sync recorded under its key, DECISIONS I-284,
+  even after it pulled past every commit the laptop knows), there is
+  nothing to write: the checkout is left alone, only the logins and carry
+  go, and the sync ends with the one-line notice above, whose count is
+  the guest's own changed files (every untracked file on its own) less
+  the paths the last sync's per-path record still matches; with none of
+  those and the guest's `HEAD` and branch as that sync left them, the
+  line is "Nothing new to sync: the machine already has this checkout."
+  The same holds
+  when the guest's tree is clean but it moved on (an agent's commits,
+  another branch): no detached checkout of an older laptop commit.
+  Otherwise the apply, before it touches anything (and before the logins
+  and carry), lists the paths the sync writes: the ones the checkout to
+  its target (the laptop's commit, or the merge tree below) changes
+  against the guest's `HEAD` (`git ls-tree` of the target in an empty
+  repository), both sides of the laptop's staged and unstaged diffs, its
+  untracked files and each bundled submodule. It lists the guest's own
+  changes with `git status --porcelain=v1 -z -uall`: every dirty or
+  untracked file (both paths of a rename), leaving out the last sync's own
+  (below). A guest path that equals a written path, sits under one, or
+  holds one below it is an overlap: the apply exits 3 naming each, and the
+  CLI prints the refusal above (eight names, then a count) and exits 6.
+  With no overlap the sync goes on, the guest's other changes stay as
+  they are (git's checkout and merge carry unrelated edits), and the
+  summary line ends "kept the machine's changes to N files".
+  Before the overlap check, a merge, rebase, `git am`, cherry-pick,
+  revert or bisect in progress in the guest's checkout refuses the sync
+  (exit 6, the refusal above naming the operation): a checkout would drop
+  its state and a stash cannot hold it, so `--stash-remote` refuses too.
+  `--stash-remote` runs `git stash push -u -m "repose run"` in the guest
+  first; `--discard-remote` ends any such operation where `HEAD` is, then
+  runs `git reset --hard && git clean -fd`; with either there is no
+  overlap check. Neither asks for confirmation; the
+  flag itself is the confirmation.
 - A run with nothing new applies nothing (DECISIONS I-224): when the
   laptop would send exactly what the last completed sync sent (the same
   commit, branch, diff and untracked files) and the guest's tree is still
@@ -113,22 +157,33 @@ every commit the laptop knows), there is nothing to write over: the checkout is 
   run that attaches prints no summary line; `repose sync` and
   `run --no-attach` print "Nothing new to sync: the machine already has
   this checkout." (DECISIONS I-303).
-- The laptop's own changes are not an agent's (DECISIONS I-210). A sync
-  that carried a modified or untracked file leaves the guest's tree dirty
-  by construction, so the apply records a fingerprint of the tree it left
-  (`HEAD` plus the tree `git add -A` would write, in the checkout's
-  `.git/repose-synced`). When the next probe finds the tree dirty and the
-  fingerprint unchanged, the run goes on: the apply stashes those
-  changes (`git stash push -u -m "repose run: last sync"`, so nothing
+- The laptop's own changes are not an agent's (DECISIONS I-210, I-573).
+  A sync that carried a modified or untracked file leaves the guest's tree
+  dirty by construction, so the apply records what it left twice: per
+  path, in `.git/repose-synced-paths` (the `HEAD` it left, then each of
+  the laptop's paths with a hash of its content: a blob hash, a link
+  target, a submodule's `HEAD` and tree, or none), and, when no guest
+  change was kept, as a fingerprint of the whole tree (`HEAD` plus the
+  tree `git add -A` would write, in the checkout's `.git/repose-synced`).
+  A path whose content still matches the record under the same `HEAD` is
+  the last sync's own: it never overlaps, and the apply stashes it alone
+  (`git stash push -u -m "repose run: last sync" --pathspec-from-file`)
+  before laying the laptop's current work down. When the next probe finds
+  the tree dirty and the fingerprint unchanged, the run goes on: the apply
+  stashes those changes (`git stash push -u -m "repose run: last sync"`, so nothing
   misjudged is lost; only the newest 10 such stashes are kept, and the
   user's own stashes and `--stash-remote`'s are never dropped), lays down the laptop's current ones, and the summary
   line ends "the last sync's changes stashed in the guest". An edit to a
   synced file, a new file, a commit, or a change inside a submodule
   (each checked-out submodule adds its own `HEAD` and tree to the
-  fingerprint, DECISIONS I-263) changes the fingerprint and refuses as above, including one made
-  between the probe and the apply; a tree that was clean at the probe is
-  checked again before the files are laid down, so an agent's new file is
-  never overwritten by one the laptop sends. `git stash push -u` cleans
+  fingerprint, DECISIONS I-263) changes the fingerprint; the apply then stashes only the paths the
+  record still matches, and an edited synced file the laptop still sends
+  refuses as above. The overlap check runs in the apply itself, so a
+  change made between the probe and the apply counts. A tracked file an
+  agent edits after the check makes the checkout or `git apply` fail, so
+  it is not overwritten; a new file an agent writes at one of the
+  laptop's untracked paths after the check (the logins are copied in
+  between) is overwritten by the untracked tar. `git stash push -u` cleans
   the untracked files after recording them, so a file written in that
   instant is lost (git's own behaviour). The checks force
   `status.showUntrackedFiles=normal` and `submodule.recurse=false`, so a
@@ -151,9 +206,23 @@ every commit the laptop knows), there is nothing to write over: the checkout is 
 - Checkout: the laptop's branch is created in the guest, or
   fast-forwarded when the guest's copy is behind. When the guest's branch
   has commits the laptop does not (an agent committed and nobody pulled),
-  the branch is left exactly where it is, the laptop's commit is checked
-  out detached, and a warning says so; an agent's work is never moved off
-  its branch. A detached `HEAD` on the laptop is checked out detached.
+  the laptop's commit is merged into it, after switching the checkout to
+  it when the guest is on another branch or detached (the overlap check
+  counts the paths that switch changes; a switch git still refuses falls
+  back to the detached checkout; the other branch keeps its commits)
+  (DECISIONS I-574) when `git merge-tree --write-tree` finds no conflict,
+  the guest's commits since the merge base leave every one of the
+  laptop's own paths alone, and git has a committer identity, the
+  laptop's `user.name` and `user.email` (sent in the apply's tar, set
+  for the identity check and the merge alone): `git merge
+  --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures
+  --no-gpg-sign -m "Merge the laptop's <branch> (repose sync)"`, and the
+  summary line says "merged with the machine's <branch>". Otherwise the
+  branch is left exactly where it is, the laptop's commit is checked out
+  detached, and a warning says so; an agent's work is never moved off its
+  branch, and the agent guide tells the agent what a detached checkout
+  after a sync means. A detached `HEAD` on the laptop is checked out
+  detached.
 - Two diffs, not a tar, carry tracked changes: `git diff --cached
   --binary` (what is staged) applied with `git apply --index`, then
   `git diff --binary` (what is not) applied with `git apply`, so the

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "apple-notes": {
+          "args": [
+            "apple-notes"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "apple-notes": {
+          "args": [
+            "apple-notes"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "apple-notes": {
+          "args": [
+            "apple-notes"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "apple-notes": {
+          "command": [
+            "repose-mcp",
+            "apple-notes"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "apple-notes": {
+          "args": [
+            "apple-notes"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}

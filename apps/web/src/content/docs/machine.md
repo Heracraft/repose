@@ -19,7 +19,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Languages:** Node.js 24 with npm, pnpm and yarn (through corepack), Python 3.12 with uv, Go, and rustup (run `rustup default stable` once, and `rustup component add rust-analyzer` if your editor uses it).
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
-- **Browser:** Chromium and Playwright's browsers, with fonts for Chinese, Japanese and Korean text and colour emoji.
+- **Browser:** Chromium and Playwright's Chromium, with fonts for Chinese, Japanese and Korean text and colour emoji.
 - **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 `man` has the pages of the installed tools. The shell is bash with the starship prompt. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines. Your `~/.bashrc` is read in tmux windows, SSH shells and your editor's terminal, after the machine's own settings, so what it sets wins. `dev` is in the `docker` group, so `docker` needs no `sudo`. A base update leaves Docker and its containers running; the new Docker takes effect at the machine's next start.
@@ -28,7 +28,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --pinentry-mode loopback --passphrase-fd 0`.
 
-Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
+Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's Chromium and Firefox, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
 
 Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
@@ -97,7 +97,7 @@ Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModu
 Check three things in a first flake:
 
 - **Commit `flake.nix`.** Nix only sees files git tracks. An untracked `flake.nix` still reaches the machine, then fails to load with `Path 'flake.nix' in the repository ... is not tracked by Git`.
-- **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it, and your next `repose sync` stops with `The machine has uncommitted changes your laptop doesn't have`, naming `flake.lock`. Run `nix flake lock` on your laptop and commit the file. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
+- **Commit `flake.lock`.** Without one, each new machine locks the flake's inputs to whatever is newest that day, so two machines can get different versions. With an `.envrc` that says `use flake`, the first load also writes `flake.lock` into the checkout and stages it. Run `nix flake lock` on your laptop and commit the file. Your next `repose sync` then stops with `Not synced: the machine changed 1 file that your laptop changed too`, naming `flake.lock`; `repose sync --stash-remote` stashes the machine's changes, its `flake.lock` among them, and lays yours down. Without Nix on your laptop, have the agent commit `flake.lock` and bring it back with `git fetch repose`.
 - **Define the dev shell for `x86_64-linux`.** The machine is x86-64 Linux whatever your laptop is. A flake written on a Mac with only `devShells.aarch64-darwin` fails with `does not provide attribute 'devShells.x86_64-linux.default'`. Name both systems, or use `flake-utils.lib.eachDefaultSystem`.
 
 Your own shells get the same dev shell. In `repose ssh`, `ssh todo-app.repose`, an editor's terminal or a tmux window you open, bash loads it when you `cd` into the checkout and unloads it when you leave:
@@ -169,13 +169,13 @@ This quick tunnel needs no Cloudflare account and prints a random `trycloudflare
 
 ## Browser
 
-Claude Code on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
+Every agent on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
 
 ```
 repose run "screenshot each signup step with playwright"
 ```
 
-Playwright test suites run without `npx playwright install`.
+Playwright 1.63's Chromium is installed. For another Playwright release, or for Firefox, run `npx playwright install chromium` or `npx playwright install firefox` once, without `--with-deps`. WebKit doesn't run on the machine.
 
 To watch the browser or use it yourself (a captcha, a passkey):
 
@@ -209,13 +209,13 @@ The machine can reach the internet over TCP and UDP. Nothing on the internet can
 
 ## Memory and disk
 
-When a machine runs out of memory, something is killed. Your agents and the tmux or herdr server are kept to the last, so a runaway test or dev server goes first. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
+When a machine runs out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
 
 A deleted file's space goes back to the server within a day, when the machine runs `fstrim`, and when the machine stops. That is when it stops counting toward your plan's disk; `sudo fstrim /` does it now.
 
 Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now.
 
-`repose status`, `repose ls` and the project's page in the dashboard say when the disk is 90 percent full or more. They count the machine's filesystem, as `df /` does. Grow it with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink. A larger disk costs nothing until it fills: your [plan's disk](/docs/billing#what-a-plan-means) counts what your projects hold. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
+`repose status`, `repose ls` and the project's page in the dashboard say when the disk is 90 percent full or more. They count the machine's filesystem, as `df /` does. Grow it with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink. A larger disk counts nothing more until it fills: your [plan's disk total](/docs/billing#what-a-plan-means) counts what your projects hold. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 
 ## Seeing what the machine is doing
 
@@ -236,4 +236,4 @@ A project's size is chosen when it's created (`repose run --size`, default `larg
 
 The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it (taking a snapshot), changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. Asking for the size a project already has does nothing.
 
-It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). An `xl` needs Plus or Pro ([Limits](/docs/limits#your-plan)).
+It prints what the new size gives and which plan it needs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. While the machine runs, its size counts toward the memory your [plan](/docs/billing) runs at once. An `xl` needs Plus or Pro ([Limits](/docs/limits#your-plan)).

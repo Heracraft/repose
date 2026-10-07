@@ -146,12 +146,6 @@ const PAGES: Target[] = [
 		url: () => '/settings',
 		ready: (page) => expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
 	},
-	{
-		name: '/account',
-		signedIn: true,
-		url: () => '/account',
-		ready: (page) => expect(page.getByRole('heading', { level: 1, name: 'Account' })).toBeVisible()
-	},
 	// With no plan the page shows the three plan cards, its densest state;
 	// the default fixture state (billing off) is a single sentence.
 	{

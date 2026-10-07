@@ -16,6 +16,7 @@ import (
 // a repose command, each with why (DECISIONS I-484). The key is
 // file:function:the string's first 40 characters.
 var quietAllowed = map[string]string{
+	"sync.go:mergeMessage: (repose sync)":                                         "the subject of the merge commit a sync makes on the guest (I-574), not output",
 	"repoconfig.go:lastRepoConfigStands:%s did not build last time (revision %s:": "a failure: the last build of this repose.nix failed",
 	"repoconfig.go:applyRepoConfig:%s was not applied (%s). `repose config ":      "a refusal: the api refused the repose.nix",
 	"repoconfig.go:applyRepoConfig:Could not send %s (%s); the machine keep":      "a failure: the repose.nix could not be sent",
@@ -29,8 +30,6 @@ var quietAllowed = map[string]string{
 	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
 	"login.go:runLogin:No plan yet. Choose one at https://repos":                  "blocked: nothing runs without a plan",
-	"sync.go:String:Nothing new to sync. The machine has cha":                     "a refusal: the sync did nothing",
-	"sync.go:Warnings:The guest's %s has commits your laptop d":                   "a warning: the guest's commits were left detached",
 	"creds.go:skippedCredNotice: login an earlier repose run copied to t":         "says why a copy was removed",
 	"sync.go:Warnings:Removed the .env file an earlier repose ":                   "says why a copy was removed",
 	"sync.go:Warnings:Removed the %d .env files an earlier rep":                   "says why a copy was removed",
@@ -47,6 +46,14 @@ var quietAllowed = map[string]string{
 	"run.go:failedStart:Fix it with `repose config edit %s`.\n":                   "a failure: the config did not build",
 	"temp.go:tempSessionEndedWith:Could not destroy %s (%s). It goes at it":       "a failure",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",
+	"carry_mcp.go:mcpLines: repose mcp forward NAME runs one from h":              "unblocks: a server was left on the laptop (I-556, I-557)",
+	"carry_mcp.go:mcpLines: repose mcp forward ":                                  "unblocks: a server was left on the laptop (I-556, I-557)",
+	"carry_mcp.go:mcpLines: repose mcp forward NAME runs ":                        "unblocks: a server was left on the laptop (I-556, I-557)",
+	"carry_mcp.go:mcpLines:, which the machine lacks. repose config":              "unblocks: a carried server's command is missing (I-556)",
+	"carry_mcp.go:mcpLines: Set it from your laptop's value with re":              "unblocks: a carried server lacks its secret (I-556)",
+	"carry_mcp.go:mcpLines: Set them from your laptop's values with":              "unblocks: carried servers lack their secrets (I-556)",
+	"carry_mcp.go:mcpLines: Set each with repose secrets set NAME.":               "unblocks: carried servers lack their secrets (I-556)",
+	"carry_mcp.go:mcpLines: from your laptop's values with repose s":              "unblocks: carried servers lack their secrets (I-556)",
 }
 
 // quietFailureCalls are the calls whose string arguments are a failure or

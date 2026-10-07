@@ -271,5 +271,4 @@ func writeForkSummary(e *Env, src *Project, res *ForkResult, took time.Duration)
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", f.Slug, state)
 	}
 	_ = tw.Flush()
-	_, _ = fmt.Fprintf(e.Out, "Each is its own machine, billed like any project; %s is unchanged and is still its checkout's project.\n", src.Slug)
 }

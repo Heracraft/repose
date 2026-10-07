@@ -54,17 +54,34 @@ type sessionOptions struct {
 	Bridge bool `json:"bridge,omitempty"`
 	// BridgeAllow is `--bridge-allow`: the bridge's allowlist (I-311).
 	BridgeAllow []string `json:"bridge_allow,omitempty"`
+	// Checkout is the extra checkout's name (I-480), "" for the
+	// machine's own: where the MCP carry files local-scope servers.
+	Checkout string `json:"checkout,omitempty"`
+	// MCPOff is logins.skip naming mcp: the carry sends an empty list
+	// (I-556).
+	MCPOff bool `json:"mcp_off,omitempty"`
+	// MCP is [mcp] forward: the laptop's MCP servers forwarded for as
+	// long as the attach lasts (I-557).
+	MCP []string `json:"mcp,omitempty"`
 	// Multiplexer is what the machine runs (I-509): messages go to tmux's
 	// status line or herdr's notifications. "" is tmux.
 	Multiplexer string `json:"multiplexer,omitempty"`
 }
+
+// windowsMCPForwardLine is [mcp] forward on Windows, where attach runs no
+// helper to forward with.
+const windowsMCPForwardLine = "[mcp] forward in config.toml does nothing on Windows; run repose mcp forward NAME in a terminal of its own."
 
 // startSessionHelper starts the helper for the attach that follows, and
 // never fails the attach: a helper that cannot start is simply absent.
 // Windows has no multiplexing and no exec, and tests (TargetFor set) drive
 // runSession themselves.
 func startSessionHelper(e *Env, opts sessionOptions) {
-	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge) {
+	if goos() == "windows" && len(opts.MCP) > 0 {
+		// Set and silently ignored would read as a broken forward.
+		_, _ = fmt.Fprintln(e.ErrOut, windowsMCPForwardLine)
+	}
+	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge && len(opts.MCP) == 0) {
 		return
 	}
 	b, err := json.Marshal(opts)
@@ -155,9 +172,17 @@ func runSessionWith(ctx context.Context, opts sessionOptions, alive func() bool,
 			runSessionBridge(ctx, t, opts.Slug, opts.BridgeAllow, say, alive)
 		}
 	}()
+	mcpDone := make(chan struct{})
+	go func() {
+		defer close(mcpDone)
+		if len(opts.MCP) > 0 {
+			runSessionMCP(ctx, t, opts.MCP, opts.HomeDir, opts.RepoDir, say, alive)
+		}
+	}()
 	if opts.Forward {
 		runForwards(ctx, newForwarder(t, opts.Slug, say), alive)
 	}
+	<-mcpDone
 	<-bridged
 	<-carried
 	close(msgs)
@@ -188,6 +213,15 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 		co.Claude = cc
 		warnings = append(warnings, cc.Notes...)
 	}
+	// The tools carry's bins with the globals in, a superset of what run
+	// left out: the hash does not depend on them (I-556).
+	bins := toolBinsOf(buildToolsCarry(opts.HomeDir, opts.RepoDir, precedenceFor(false, opts.RepoDir)))
+	mc, notes := buildMCPCarry(opts.HomeDir, opts.RepoDir, opts.Slug, opts.Checkout, bins)
+	warnings = append(warnings, notes...)
+	if mc != nil && opts.MCPOff {
+		mc = mc.off()
+	}
+	co.MCP = mc
 	p := newGuestPayload()
 	sent, err := addCarry(p, co)
 	if err != nil {

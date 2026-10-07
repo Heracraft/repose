@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "apple-notes": {
+      "args": [
+        "apple-notes"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
+    }
+  }
+}

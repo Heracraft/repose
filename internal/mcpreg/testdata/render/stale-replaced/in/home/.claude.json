@@ -1,0 +1,1 @@
+{"mcpServers":{"linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp@1"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}"}}},"oauthAccount":{"x":1}}

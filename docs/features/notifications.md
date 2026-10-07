@@ -34,7 +34,7 @@ codex needs input: "Should I drop the legacy sessions table?"
 In `repose status`:
 
 ```
-todo-app   large  running   3h12m   codex: needs_input   today $0.41   month $6.20
+todo-app   large  running   3h12m   codex: needs_input   today 3h12m  month 26h
   ...
   last event 2m ago: codex needs_input "Should I drop the legacy sessions table?"
 ```

@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "db"
+      ],
+      "type": "local"
+    },
+    "edited": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "edited"
+      ],
+      "type": "local"
+    },
+    "linear": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "linear"
+      ],
+      "type": "local"
+    },
+    "plain": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "plain"
+      ],
+      "type": "local"
+    }
+  },
+  "skipped": [
+    {
+      "name": "db",
+      "reason": "another server has this name"
+    },
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

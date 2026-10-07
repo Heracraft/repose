@@ -68,7 +68,9 @@ type Env struct {
 	// lines otherwise (I-154).
 	TTY bool
 	// Command is what the user ran ("repose attach"), for hints that
-	// show the command again with a PROJECT argument.
+	// show the command again with a PROJECT argument; it ends in
+	// " --project" for a command that takes PROJECT as that flag only
+	// ("repose mcp forward --project").
 	Command string
 
 	active *progress // the command's progress display, so warnings do not tear its line

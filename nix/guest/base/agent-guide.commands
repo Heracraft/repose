@@ -23,6 +23,7 @@ python3
 repose-ask needs
 repose-checkout needs
 repose-guest-profile needs
+repose-mcp needs
 repose-notify needs
 rustup
 sh

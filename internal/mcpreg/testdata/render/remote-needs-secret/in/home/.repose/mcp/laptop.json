@@ -1,0 +1,6 @@
+{"version":1,"user":{
+ "notion":{"type":"http","url":"https://mcp.notion.com/mcp","headers":{"Authorization":"Bearer ${NOTION_TOKEN}"}},
+ "both":{"type":"sse","url":"https://both.example/sse?org=${BOTH_ORG}","headers":{"X-Key":"${BOTH_KEY}"}},
+ "sentry":{"type":"http","url":"https://mcp.sentry.dev/mcp","headers":{"Authorization":"Bearer ${SENTRY_TOKEN}"}},
+ "linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}"}}},
+ "secrets":{"NOTION_TOKEN":["notion"],"BOTH_ORG":["both"],"BOTH_KEY":["both"],"SENTRY_TOKEN":["sentry"],"LINEAR_TOKEN":["linear"]}}

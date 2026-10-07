@@ -97,8 +97,9 @@ func TestMultiplexerField(t *testing.T) {
 		}
 	}
 
-	// herdrMinBase empty, as shipped until the CLI release: every herdr
-	// request is refused with needs "", and tmux goes through.
+	// herdrMinBase names no row of this test's base_versions, which reads
+	// as no herdr base: every herdr request is refused with needs "", and
+	// tmux goes through.
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "mh", "class": "small", "multiplexer": "herdr"})
 	if d := gateDetail(r); d == nil || d["needs"] != "" || r.body["error"].(map[string]any)["message"] != "herdr is not available yet." {
 		t.Fatalf("POST herdr with no min base: %d %s", r.status, r.raw)

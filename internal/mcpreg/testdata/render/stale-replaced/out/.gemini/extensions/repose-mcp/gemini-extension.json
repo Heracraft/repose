@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

@@ -168,8 +168,17 @@ func TestAgentStateCountsEveryAgent(t *testing.T) {
 		{Agent: "claude", State: "working"}, {Agent: "claude", State: "idle"}, {Agent: "codex", State: "needs_input"},
 		{Agent: "claude", State: "working"}, {Agent: "pi", State: "unknown"},
 	}
-	if got := agentState(p); got != "5 agents: 1 needs_input, 2 working, 1 idle, 1 unknown" {
+	if got := agentState(p); got != "5 agents: 1 needs_input, 2 working, 1 idle" {
 		t.Errorf("five agents: %q", got)
+	}
+	// unknown is guestd's state between busy and idle; it is not named.
+	p.Signals.Agents = []AgentSignal{{Agent: "claude", State: "unknown"}}
+	if got := agentState(p); got != "claude" {
+		t.Errorf("one unknown agent: %q", got)
+	}
+	p.Signals.Agents = []AgentSignal{{Agent: "claude", State: "unknown"}, {Agent: "codex", State: "unknown"}}
+	if got := agentState(p); got != "2 agents" {
+		t.Errorf("two unknown agents: %q", got)
 	}
 	p.State = "stopped"
 	if got := agentState(p); got != "" {

@@ -46,7 +46,11 @@ Identity:
   trusted while the project's remote matches the directory's (both empty
   for such a project), and naming a project explicitly (`repose attach
   izma`, `--project`) never writes it, so one checkout can never be sent
-  to another checkout's guest (DECISIONS I-152).
+  to another checkout's guest (DECISIONS I-152). One exception: a sync
+  (`repose sync PROJECT`, `--project`, or a run's first sync) into a
+  project with no remote, from a directory with no remote and no `by_dir`
+  entry, writes `by_dir` for that project, since the directory's work is
+  now in it (DECISIONS I-575).
 - `--name NAME` on `run` or `sync` means the project called NAME (by name,
   or by the slug NAME gets) wherever the command runs, and creates it when
   there is none; it never lands on a project of another name (DECISIONS
@@ -67,7 +71,9 @@ Identity:
   `[A-Za-z0-9._-]` replaced by `-` (`job search` is `job-search`), with the
   usual `-2` retry on a taken name, and writes `by_dir` so the next plain
   `run` there finds it (DECISIONS I-358, replacing the exit 2 that asked
-  for `--name`). Any other command that finds no project exits 4 (`No
+  for `--name`). A Ctrl-C after that create and before the run connects
+  removes the `by_dir` entry again and names the project, which stays on
+  the account (DECISIONS I-575). Any other command that finds no project exits 4 (`No
   repose project here, and this directory has no git remote. Name one:
   ...`).
 - The project name becomes the slug: lowercase, `[a-z0-9-]`, other characters

@@ -199,9 +199,7 @@ func herdrStartScript(s agentStart, extra string) string {
 	var b strings.Builder
 	b.WriteString(checkoutVar(s.Slug, extra))
 	fmt.Fprintf(&b, "repose_d=%s\n", herdrDir(s.Dir))
-	if s.Agent == "claude" {
-		b.WriteString(claudeTrustScript(`"$repose_d"`))
-	}
+	b.WriteString(agentTrustScript(s.Agent, `"$repose_d"`, s.MCPApprovals))
 	b.WriteString("repose_ws=\n")
 	if s.Worktree {
 		b.WriteString(`repose_ws=$(herdr worktree open --path "$repose_d" --no-focus 2>/dev/null | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
@@ -303,7 +301,7 @@ func (herdrMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error
 	}
 	switch status {
 	case "blocked":
-		return &agentDialogError{}
+		return &agentDialogError{agent: s.Agent}
 	case "idle", "done", "working", "timeout":
 		// timeout: still not ready after 30 minutes; type the prompt
 		// anyway rather than hang, as the tmux path does.
@@ -321,7 +319,7 @@ func (herdrMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error
 		// yet, which is not a failure to type.
 		return nil
 	case "agent_blocked":
-		return &agentDialogError{}
+		return &agentDialogError{agent: s.Agent}
 	default:
 		return fmt.Errorf("herdr could not type the prompt (%s)", orDash(p))
 	}

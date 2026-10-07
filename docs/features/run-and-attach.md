@@ -445,7 +445,7 @@ that same command switched a running machine (I-542).
 
 **A prompt on herdr** is one ssh script:
 
-1. Claude's folder trust, as on tmux (I-486).
+1. The folder trust of Claude Code and Codex, as on tmux (I-486, I-544).
 2. The workspace for the folder (checkout, worktree or other checkout),
    created when missing.
 3. `herdr agent list` (it prints herdr's JSON answer) picks the name, `claude` or the lowest free

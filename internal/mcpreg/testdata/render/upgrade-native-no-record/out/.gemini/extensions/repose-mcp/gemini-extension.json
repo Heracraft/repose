@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "db": {
+      "args": [
+        "run",
+        "db"
+      ],
+      "command": "repose-mcp"
+    },
+    "edited": {
+      "args": [
+        "run",
+        "edited"
+      ],
+      "command": "repose-mcp"
+    },
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp"
+    },
+    "plain": {
+      "args": [
+        "run",
+        "plain"
+      ],
+      "command": "repose-mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

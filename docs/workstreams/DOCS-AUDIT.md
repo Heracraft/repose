@@ -67,7 +67,7 @@ keeps that group honest from now on.
 | Settings: time zone | added | run-and-attach#time-zone |
 | Settings: Send test, Save | added | notifications#your-phone-with-ntfy |
 | Billing page: hours per day, invoices, card | added | billing#seeing-what-youve-used (no "add a card" step: billing is not enforced) |
-| Account page, Delete account (type handle, stops all, deleted in 30 days) | added | billing#deleting-your-account |
+| Settings' account section (the Account page until I-578), Delete account (type handle, stops all, deleted in 30 days) | added | billing#deleting-your-account |
 | Past-due / suspended banners | not documented | only reachable with BILLING_ENFORCE on, which production doesn't set |
 
 ## Guest and platform behaviour

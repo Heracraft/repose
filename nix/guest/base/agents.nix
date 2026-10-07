@@ -63,8 +63,11 @@ in
     # first runs: an OpenCode 2 the user installed (DECISIONS I-481) runs
     # its background service outside the wrapper and would otherwise never
     # get the plugin, nor the replacement of one an earlier base installed.
+    # Gemini's at login too: a Gemini CLI that updated itself into
+    # ~/.npm-global (I-543) sits ahead of the wrapper on PATH, so the
+    # wrapper would never run to remove it.
     systemd.user.services.repose-agent-hooks = {
-      description = "repose: install the opencode plugin";
+      description = "repose: install the opencode plugin and the Gemini extension";
       wantedBy = [ "default.target" ];
       unitConfig.ConditionUser = "dev";
       # Outside default.target's ordering, like repose-npm-registry: the
@@ -74,7 +77,10 @@ in
       before = [ "shutdown.target" ];
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.repose-agent-setup}/bin/repose-agent-setup opencode";
+        ExecStart = [
+          "${pkgs.repose-agent-setup}/bin/repose-agent-setup opencode"
+          "${pkgs.repose-agent-setup}/bin/repose-agent-setup gemini"
+        ];
       };
     };
 

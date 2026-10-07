@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        },
+        "plain": {
+          "args": [
+            "--home",
+            "${HOME}"
+          ],
+          "command": "plain-mcp",
+          "env": {
+            "WHERE": "${HOME}/x"
+          }
+        }
+      },
+      "projects": {
+        "/home/dev/app": {
+          "db": {
+            "args": [
+              "run",
+              "db",
+              "/home/dev/app"
+            ],
+            "command": "repose-mcp",
+            "type": "stdio"
+          }
+        },
+        "/home/dev/lib": {
+          "db": {
+            "args": [
+              "run",
+              "db",
+              "/home/dev/lib"
+            ],
+            "command": "repose-mcp",
+            "type": "stdio"
+          }
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "edited": {
+          "args": [
+            "run",
+            "edited"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp"
+        },
+        "edited": {
+          "args": [
+            "run",
+            "edited"
+          ],
+          "command": "repose-mcp"
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "db": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "db"
+          ],
+          "type": "local"
+        },
+        "linear": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "linear"
+          ],
+          "type": "local"
+        },
+        "plain": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "plain"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp"
+        },
+        "edited": {
+          "args": [
+            "run",
+            "edited"
+          ],
+          "command": "repose-mcp"
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}

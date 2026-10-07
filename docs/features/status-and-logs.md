@@ -1,7 +1,7 @@
 # Status and logs
 
-`repose status` answers "what is it doing and what is it costing" in one
-screen. `repose logs` shows the guest's console, the last build, or the
+`repose status` answers "what is it doing and how long has it run" in
+one screen. `repose logs` shows the guest's console, the last build, or the
 operations history. The dashboard shows the same data with history.
 
 ## What the user sees
@@ -9,11 +9,11 @@ operations history. The dashboard shows the same data with history.
 ```
 $ repose ls
 PROJECT   CLASS  STATE    UP     AGENTS           TODAY  MONTH
-todo-app  large  running  2h14m  claude: working  $0.31  $18.40
-api-v2    xl     stopped  -      -                $0.00  $41.02
+todo-app  large  running  2h14m  claude: working  2h14m  41h
+api-v2    xl     stopped  -      -                0h     63h
 
 $ repose status todo-app          # or --project todo-app, or from the checkout
-todo-app   large  running   2h14m   claude: working      today $0.31   month $18.40
+todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
   host host-01   ip 10.100.0.12   disk 6.2 GB/40.0 GB   snapshot 11h8m ago
   sessions 1   tmux clients 1   docker 0
   last event 14m ago: claude completed "Added auth flow"
@@ -67,9 +67,9 @@ Status:
 
 - `repose ls` lists every non-destroyed project with class, state,
   uptime since the last `running` transition, agent state (counted by
-  state when there are several, I-567), and cost
-  today and month to date in dollars from `usage_hours` plus the current
-  partial hour estimated at the class rate. `repose status` prints the
+  state when there are several; guestd's `unknown` is not named, I-567),
+  and running hours today and month to date from `usage_hours` (I-289:
+  nothing is priced by the hour). `repose status` prints the
   same columns for one project, then its detail lines.
 - Agent state per window comes from guestd's latest `AgentState`
   (`working`, `idle`, `needs_input`, `unknown`) and is at most 60 seconds
@@ -87,7 +87,8 @@ Status:
   open, and is given 4 seconds; when the guest does not answer, the list
   is simply missing and every other line is the api's. Nothing is
   stopped for the user; under memory pressure the kernel kills a dev
-  server before an agent (guest-conventions.md "Memory pressure"), and
+  server before an agent, the tmux server or the SSH connection
+  (guest-conventions.md "Memory pressure"), and
   the `oom` notification names what it killed. While attached, the same
   ports are forwarded to the laptop (ports-and-previews.md).
 - `status` never triggers a certificate refresh, and its lines come from
@@ -118,13 +119,12 @@ this describes, and it is narrower than an earlier draft of this section
 promised, DECISIONS I-96):
 
 - `/projects`: one row per project — name, class, state, uptime, agent
-  state, cost today, cost this month. The same figures as `status`, from
+  state, running hours today and this month. The same figures as `status`, from
   the same `usage_hours` rows. Not sortable, and no sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
-  signals, cost (today, this month, and the month projected at the
-  current run rate), disk (the guest's root filesystem used, of the
-  volume's size, and `N percent full` at 90 or more, I-567) with a
-  resize control, events newest first, the
+  signals, usage (running hours today and this month), disk (the guest's
+  root filesystem used, of the volume's size, and `N percent full` at 90
+  or more, I-567) with a resize control, events newest first, the
   last build with a link to the config page, and snapshots with restore
   and restore-as-new. Start, Stop, Resize and Destroy are the header
   actions; Destroy makes you type the slug.
@@ -133,8 +133,9 @@ promised, DECISIONS I-96):
   streaming build log and the revision list, and the secrets page the
   names and their dates.
 - `/billing`: card on file, invoices, usage for the month by class.
-  `/settings`: timezone, email toggle, ntfy URL and its test button.
-  `/account`: handle, email, GitHub login, and deletion.
+  `/settings`: the account (handle, email, GitHub login), timezone,
+  email toggle, ntfy URL and its test button, machine.nix, and deletion
+  last; `/account` redirects there (I-578).
 
 Usage on the dashboard (DECISIONS I-492, I-493):
 

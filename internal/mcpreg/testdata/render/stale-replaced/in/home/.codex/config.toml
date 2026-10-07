@@ -1,0 +1,8 @@
+model = "o4"
+
+[mcp_servers.linear]
+command = "repose-mcp"
+args = ["run", "linear"]
+
+[profiles.fast]
+model = "o4-mini"

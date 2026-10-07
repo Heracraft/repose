@@ -193,6 +193,8 @@ unsupported at first, `repose mcp forward` planned. Notifications: platform
 hooks for every agent plus each agent's own features.** *Rejected:* a longer
 agent list (unpackaged tools become packages you maintain); a laptop Chrome
 bridge first (only works while the laptop is open, the case being escaped).
+*Amended by I-557:* `repose mcp forward` is built, through a guest shim
+that answers for an absent laptop, in place of the `mcp-proxy` plan.
 
 **R3-19. Agents come from a platform-owned overlay bumped on a schedule, not
 nixpkgs.** *Why:* nixpkgs lags Claude Code by weeks and Gemini CLI by months;
@@ -3597,6 +3599,9 @@ Completion offers the account's slugs for the argument and for
 `--project` (the api with a two-second limit, else the cached slugs),
 and fixed values for `--agent`, `--size`, `--kind`.
 `TestPositionalProject`, `TestRunRefusesAPromptThatIsAProjectName`.
+*Amended by I-557:* `repose mcp forward` keeps `--project` as well; its
+arguments are MCP server names, and a name and a PROJECT cannot share
+positions without a guess.
 
 **I-164. A snapshot reads the blocks the filesystem uses, not the whole
 volume.** (destroy-restore, 03, 2026-09-23; owner's `repose destroy izma`,
@@ -4377,6 +4382,9 @@ I-196 carries config, and the Claude login question is open (proposal item
 contradict themselves on the path and on whether managed hooks combine
 with user hooks); a laptop-wins overwrite (guest "don't ask again" and
 `/model` write to the same file).
+*Amended by I-556:* the `mcpServers` of `~/.claude.json` (user scope and
+the run's repository under `projects`) now travel, templated; every other
+key of that file stays excluded.
 
 **I-197. Gitignored `.env` files travel over SSH at `run`.** This reverses
 the rule in `features/sync-at-launch.md` that ignored files never travel.
@@ -7422,6 +7430,10 @@ hooks, and a shared hook would let an agent in one project run commands
 in every other project of the user. The worst an agent can do with the
 shared file is read the token (it can already, in its own guest) or
 corrupt it, which signs the user out everywhere until the next `/login`.
+*Amended by I-556:* Claude Code also keeps MCP OAuth tokens in this file
+(`mcpOAuth`), so a `/mcp` sign-in on one machine is in the shared file,
+and an agent on any of the user's machines can read it, as it can the
+Claude login.
 
 First-run onboarding (theme, then "Select login method") shows even when
 the shared file holds a valid login and does not skip on Esc, so
@@ -13111,6 +13123,650 @@ removed). The other user units (`repose-tools-carry`,
 no session. Not covered: a VM test that switches a running guest between
 two bases with a pane open; it needs the dev box.
 
+**I-543. Gemini CLI and pi never update themselves on a guest.**
+(base-agents-config, 2026-10-06) Gemini CLI 0.61.0's installation check
+takes a package in `/nix/store` for an npm install, and
+`general.enableAutoUpdate` defaults to true, so its first interactive
+start ran `npm install -g @google/gemini-cli@<latest>` into
+`~/.npm-global` (0.62.0 on kanali). That prefix is ahead of
+`/run/current-system/sw/bin` on PATH, so from then on `gemini` skipped
+the repose wrapper: no TERM fix, no secrets or `REPOSE_PROJECT` in a
+`repose run` window, no `repose-agent-setup`, no dev shell, no
+`REPOSE_HOOK_AGENT`. Reproduced on kanali with a temp HOME and
+`NPM_CONFIG_PREFIX`: "Update successful! The new version will be used on
+your next run." and `bin/gemini` in the prefix. The fix is
+`general.enableAutoUpdate` and `general.enableAutoUpdateNotification`
+false in `/etc/gemini-cli/system-defaults.json`, Gemini CLI's defaults
+layer (user and workspace settings win). That file is defined in
+`browser.nix` by the mcp branch (I-553), which owns how system defaults
+reach Gemini CLI and adds these two keys; this branch relies on it
+landing in the same batch. It must be a root-owned copy, not a link into
+`/nix/store`: a link is refused ("Security Warning: Skipping system
+defaults file ... is insecure", the store is mode 1775), and Gemini CLI
+checks every ancestor. With the same file at a root path, the same start
+left the prefix empty. `settings.json` (the system override layer) was
+not used, since a user could not turn the update back on. This holds
+while `system.etc.overlay` is off; with the overlay, `/etc` files would
+be links into the store again. `repose-agent-setup gemini` removes, once per home (marker
+`~/.local/state/repose/gemini-npm-removed`), a `@google/gemini-cli`
+package in `${NPM_CONFIG_PREFIX:-~/.npm-global}` and its `bin/gemini`
+link, and the `repose-agent-hooks` user unit runs it at login, since a
+shadowed wrapper never runs. The cost: a user who installed Gemini CLI
+there on purpose before this base loses it once and reinstalls; one
+installed after the marker stays. pi 0.87.1 printed "New version 1.0.4
+is available. Run pi update" at every start, and `pi update` fails
+("pi cannot self-update this installation", exit 1); its wrapper now
+sets `PI_SKIP_VERSION_CHECK=1`, as `claude-code.nix` and `opencode.nix`
+turn their updaters off. `PI_TELEMETRY` is left as it is; a telemetry
+default needs its own decision. VM test `guest-agent-guide` checks that
+the file is root's and not writable by dev, that `enableAutoUpdate` is
+false, the pi variable, and the one-time removal.
+
+**I-544. The CLI marks the folder it starts Codex in as trusted.**
+(base-agents-config, 2026-10-06; amends I-486) Codex 0.157 shows "Trust
+this folder? Codex can read, edit, and run files here" on its first
+start in a folder (checked on kanali in a fresh git repo, with and
+without full access). Its default is "Trust and continue", so the Enter
+`repose run` typed trusted the folder and the prompt was lost; every
+checkout and `--worktree` folder is new to it. As I-486 does for Claude
+Code, the same SSH command that opens the window now appends a
+`[projects."<dir, symlinks resolved>"]` table with `trust_level =
+"trusted"` to `${CODEX_HOME:-~/.codex}/config.toml` when the file has no
+table for that folder in either quoting (a user's `untrusted` stays; a
+path with characters TOML would need escapes for is skipped; atomic,
+0600). A `config.toml` that is a symlink, which a dotfiles tool manages,
+is left alone; the dialog then shows and `run` attaches. Checked on
+kanali: Codex in a folder whose table was written by hand started
+without the screen; a worktree of a trusted repository is trusted by
+Codex already. `agentDialogs` gains Codex's line, and the dialog message
+names the agent ("Codex is asking ..."). Gemini CLI's folder trust is
+not handled here: the mcp branch turns it off machine-wide with
+`security.folderTrust.enabled: false` in
+`/etc/gemini-cli/system-defaults.json` (I-553), since Gemini disables
+every MCP server in an untrusted folder. Gemini CLI is a node script, so
+its pane's `pane_current_command` is `node`; `waitPaneIdle` now accepts
+that for gemini. Before, a gemini pane never matched and `run` waited
+out the 30 s timeout before typing.
+
+**I-545. Withdrawn: platform MCP servers for Codex, opencode and Gemini CLI.**
+(base-agents-config, 2026-10-06) *Superseded by I-553*, on the mcp
+branch, which owns how MCP servers reach every agent. This entry
+registered `/etc/repose/mcp.json`'s servers as `[mcp_servers.*]` in
+`/etc/codex/config.toml`, as `mcpServers` in the Gemini extension, and
+by a merge into `~/.config/opencode/opencode.json`; all three were
+removed from this branch before it merged, so the two branches do not
+write the same servers twice. The id stays reserved.
+
+**I-546. Codex starts without approvals, with full access and no update check.**
+(base-agents-config, 2026-10-06; amends I-250 and I-495) I-250 gave
+Claude Code bypass mode by default and left Codex at its defaults,
+assuming a TOML merge into the user's file would be needed. It is not:
+`/etc/codex/config.toml` is Codex's lowest config layer and a key in
+`~/.codex/config.toml` overrides it key by key. Codex 0.157.1 started
+with approval `OnRequest`, a workspace-write, no-network sandbox, and an
+update check at startup that nagged about 0.160.1 (an update the store
+package cannot take). The base's file now starts with
+`approval_policy = "never"`, `sandbox_mode = "danger-full-access"` and
+`check_for_update_on_startup = false`, before `developer_instructions`.
+A guest is a VM an agent may wreck (I-250's reasoning), and a Codex that
+asks in a `repose run` window waits until someone attaches.
+With `danger-full-access`, Codex runs commands without its bwrap
+sandbox, so I-495's bundled bwrap matters only to a user who sets
+another `sandbox_mode`. To opt out, set both `approval_policy` and
+`sandbox_mode` in `~/.codex/config.toml`; setting one keeps the
+machine's value of the other. Codex's web search is live in this mode,
+and `/docs/agents` says so. The guest-agent-guide VM test now parses the
+whole file.
+
+**I-547. An interactive Codex in another dev environment runs without the shared daemon.**
+(base-agents-config, 2026-10-06; amends I-487) Interactive Codex 0.157
+runs its turns in the managed app-server daemon, whose environment is
+the one its first start had; the app-server protocol has no environment
+field on ThreadStart or TurnStart. A second interactive `codex`, started
+in another directory with `AUDIT_MARK=second`, ran its turn's command
+with `MARK=first` and the first daemon's PATH (seen in the base audit
+with a logged-in turn). The wrapper loads the checkout's dev shell (I-259) and then execs
+Codex, so a second checkout or a worktree got the first one's dev shell.
+`-c features.daemon_auto_start=false` does not help once a daemon runs;
+`--no-daemon` does, for top-level `codex`, `resume` and `fork`. The
+daemon stays on (the owner's I-487 choice). The codex wrapper, after the
+dev shell load, hashes `DIRENV_DIR` and `PATH` into a key. With no
+daemon running (`app-server-daemon/daemon.pid` names no live
+`app-server` process) it writes the key to
+`${CODEX_HOME:-~/.codex}/app-server-daemon/repose-env`, and the daemon
+this start brings up has that environment. With one running whose stamp
+differs, an interactive start (no arguments, a first argument that is an
+option or a prompt, `resume`, `fork`) gets `--no-daemon`; `exec`, `app-server`,
+`agents` and the other subcommands are left alone, and so is an
+invocation that already has `--no-daemon`. Checked on kanali with the
+built wrapper: the first start had no flag, a start with another PATH
+got `--no-daemon`, `resume` in the first environment had none and in the
+other got `resume --no-daemon`. A daemon started before this base has no
+stamp, so starts get `--no-daemon` until it exits. Secrets are not at
+issue: they reach commands through `BASH_ENV` (I-475).
+
+**I-548. The guide and docs say which Playwright browsers a guest has.**
+(base-agents-config, 2026-10-06) The guide said "Its browsers are
+installed; skip `npx playwright install`" and `/docs/machine` said test
+suites run without it. The overlay builds `reposePlaywrightBrowsers`
+with Firefox and WebKit off, so `~/.cache/ms-playwright` holds
+chromium-1243, its headless shell and ffmpeg: with Playwright 1.63
+Firefox and WebKit fail with "Executable doesn't exist", and with 1.55
+Chromium does too. WebKit cannot run on a guest (nix-ld lacks gstreamer
+and the rest, and its ICU is 74 where the guest has 78); those libraries
+are not added. The guide now renders the version from
+`pkgs.playwright-driver.version` ("Playwright 1.63.0's Chromium is
+installed") and says to run `npx playwright install chromium` or
+`npx playwright install firefox` once, without `--with-deps`, for
+another release or Firefox. `/docs/machine` says the same with the
+version written out, which moves by hand with a nixpkgs bump of
+playwright-driver.
+**I-553. Platform MCP servers reach every agent through the agent's own layer beneath the user's file.**
+(mcp-platform, 2026-10-06; extends I-246) The machine guide tells every
+agent to drive the browser with `playwright` and `chrome-devtools`, and
+only Claude Code had them. Each agent now gets the two where it has a
+layer the user's own file overrides, with `command` and `args` only, so
+a user's field-level override stays clean. Claude Code keeps the
+`~/.claude.json` merge from `/etc/repose/mcp.json` (I-246), because its
+`managed-mcp.json` takes exclusive control: `claude mcp add` fails with
+"enterprise MCP configuration is active" and user servers drop out of
+`claude mcp list`. opencode gets `mcp.NAME = {type: "local", command:
+[...]}` in `/etc/opencode/opencode.json`, never `enabled`, so the user's
+`enabled: false` turns one off. Gemini CLI gets `mcpServers` in
+`/etc/gemini-cli/system-defaults.json`, a copied root 0644 file in a root
+0755 directory, since Gemini skips a system file whose resolved directory
+is not root-owned or is group-writable, which a store symlink is. The
+same file turns Gemini's folder trust off (`security.folderTrust.enabled:
+false`, owner sign-off O1): in a folder it was not told to trust, Gemini
+disables every MCP server, headless runs included, and agents on the
+machine already run without prompts (I-250); a per-checkout
+`trustedFolders.json` entry would miss each folder an agent changes into.
+Codex does not use `/etc/codex/config.toml` for these: a user table of
+the same name holding `url` beside a system-layer `command` stops every
+`codex` command ("url is not supported for stdio"), and `codex mcp add`
+copies every system-layer server into the user file anyway. Instead
+`repose-agent-setup codex` appends an `[mcp_servers.NAME]` table to
+`~/.codex/config.toml` for each server the parsed file lacks, judged by
+Python's `tomllib` (as strict as Codex's parser: `yj` accepted an inline
+`mcp_servers` table extended by a later header, which Codex refuses),
+re-parses the result before the rename, and holds `flock
+~/.repose/mcp/.lock` so parallel agent starts cannot write a duplicate
+table. A table under that name, the user's own or one they changed, stays
+as it is; a file that does not parse is left for Codex to report. A later
+base that changes the args does not update a table written earlier;
+unit B's `repose-mcp sync codex` owns that by value. Evidence, run on
+kanali with the rendered files and the pinned binaries in temp homes
+(opencode and Gemini through a private mount namespace over `/etc` and
+`GEMINI_CLI_SYSTEM_DEFAULTS_PATH`): `codex mcp list --json` shows both
+enabled with the registry's args, a user `enabled = false` gives
+`"enabled": false`, a user `url` table stays the user's; `opencode mcp
+list` shows both `connected`, `playwright disabled` under the user's
+`enabled: false`; `gemini mcp list` in a fresh folder shows both
+`Connected` with no trust warning, and `Blocked` under `mcp.excluded`.
+The VM subtests in guest-base, guest-agent-guide and guest-desktop need
+the dev box.
+Gap fixes on the same branch: the guest-agent-guide capture run asserts
+that each agent's first request names the browser tool, and leaves Codex
+out of that assertion: Codex 0.157.1 in code mode sends the model no MCP
+tool by name (its tools reach the model through the code-mode runtime),
+so the request body has nothing to match, and Codex's registration is
+asserted from `codex mcp list --json` in guest-base instead. The guide
+tells agents they have the browser tools, "Codex not while
+`~/.codex/config.toml` is a symlink", the one case where an agent lacks
+them (I-555). Evidence from a run of the real binaries on kanali (not the
+VM) against `repose-mcp sync` output from this branch, in a temp HOME,
+with a probe stdio server that logs whether it received its secret:
+Claude Code 2.1.283 `claude mcp list` shows `playwright`,
+`chrome-devtools` and the carried probe Connected, and the probe got the
+secret through `${PROBE_TOKEN}`; Codex 0.157.1 `codex mcp list` shows all
+of them, and `codex exec` started `repose-mcp run probe`, which gave the
+probe the real value from the secret file (Codex strips the environment,
+so a `REPOSE_SECRETS_DIR` set outside does not reach the launcher; on a
+guest the default `/run/repose/secrets` applies); opencode 1.18.34 reads
+`~/.config/opencode/config.json` and the probe connected with the secret;
+Gemini CLI 0.61.0 loads `~/.gemini/extensions/repose-mcp` and the probe
+connected with the secret, once its system-defaults file with folder
+trust off sat in a root-owned directory that is not world-writable (it
+rejected one under `/var/tmp`; the guest's `/etc` qualifies); pi 1.0.4
+with the branch's `pi-extension.js` registered all four servers (named as
+`mcp__*` code-mode servers in the request to a fake model) and started
+the probe with the secret.
+
+**I-554. pi moves to 1.0.4 for built-in MCP.**
+(mcp-platform, 2026-10-06) pi 0.87.1 has no MCP. 0.99 added it, with
+`pi.registerMcpServer(name, config)` for extensions taking the
+`mcp.json` entry shape, and a `~/.pi/agent/mcp.json` entry of the same
+name taking precedence. 1.0.4 rather than 1.0.3 because it fixes MCP
+sessions that left a connecting server's transport open and `--tools`
+removing MCP tools; the GitHub release asset `pi-linux-x64.tar.gz` keeps
+the layout `pi-coding-agent.nix` installs (the npm package moved to
+`@earendil-works/pi-coding-agent`; the overlay never used npm). The
+guide extension (`/etc/repose/pi-extension.js`, I-243) registers each
+server in `/etc/repose/mcp.json`, and in `~/.repose/mcp/agents/pi.json`
+once unit B writes it. Both checks are its own: an older pi without
+`registerMcpServer` returns before registering, and each call sits in
+its own try, since an invalid name or config throws and must not cost
+the guide or the other servers. `pi mcp list` does not load extensions,
+so it does not show these two; `/mcp` in a session does. The off switch
+is `{"mcpServers": {"playwright": {"command": "playwright-mcp",
+"enabled": false}}}` in `~/.pi/agent/mcp.json`: an entry with `enabled`
+alone is rejected for lacking `command`. Evidence on kanali: pi 1.0.4
+with the guide extension and a fake OpenAI-compatible model sent a
+request whose system prompt holds the guide and `<mcp_servers>` listing
+`mcp__chrome_devtools` and `mcp__playwright` (codemode exposure); with
+the off-switch entry the list holds `mcp__chrome_devtools` alone; the
+`before_agent_start` hook still receives `systemPromptOptions.sections`.
+Gap fixes on the same branch: the guest-agent-guide capture run also
+proves pi starts both platform servers, through wrappers on its `PATH`
+that log each start and exec the real `playwright-mcp` and
+`chrome-devtools-mcp` (the registry names them by command name), instead
+of a grep for `registerMcpServer`.
+
+**I-555. repose keeps one MCP list per machine and renders it into each agent's own config.**
+(mcp-registry, 2026-10-06; amends I-246) The carry of the laptop's
+Claude Code servers and `repose mcp forward` each have to reach five
+agents with three ways of handling secrets. Writing agent files from the
+carry would put a second unlocked writer on `~/.claude.json` and spread
+format translation over the CLI and the guest. Instead the carry writes
+`~/.repose/mcp/laptop.json`, the forward writes `~/.repose/mcp/forward/NAME.json`,
+and `repose-mcp sync AGENT`, which `repose-agent-setup` runs at each agent
+start, renders them with the platform's `/etc/repose/mcp.json` into
+`~/.claude.json`, `~/.codex/config.toml`, a Gemini CLI extension named
+`repose-mcp`, `~/.config/opencode/config.json` and
+`~/.repose/mcp/agents/pi.json`. Ownership is judged by value, I-246's
+rule for every agent: an entry is repose's while it equals what
+`rendered.json` records, what sync would write now, or a
+`repose_retired` value; anything else under the name is the user's and
+stays. Codex passes stdio servers a fixed environment allowlist and
+expands nothing, so its carried stdio servers start through `repose-mcp
+run NAME`, which fills `${NAME}` from `/run/repose/secrets` and execs the
+real command. Claude Code, Gemini CLI, opencode (as `{env:NAME}`) and pi
+expand references themselves (the MCP design's critic run confirmed each
+on the pinned versions) and get the server's own shape; only a reference
+in the command or arguments, or a `${NAME:-default}`, sends theirs through
+the launcher. Codex also gets the platform servers this way, as
+user-file tables owned by value, because a user's same-name `url` table
+beside a system-layer stdio entry stops Codex from loading at all.
+opencode's entries go to `config.json`, which opencode loads beneath the
+user's `opencode.json`, and not through `OPENCODE_CONFIG`, which
+outranks the user's file; opencode merges a same-name server there field
+by field (opencode 1.18.34, `opencode debug config`), so sync renders no
+name the user's `opencode.json` or `opencode.jsonc` defines. The
+launcher's server env replaces an inherited variable of the same name
+rather than adding a second copy, which glibc's getenv, and so Node,
+would ignore. A missing command is reported as written, since its
+expansion may hold a secret. A Codex name repose cannot edit warns once
+per value (`held` in `rendered.json`), since sync runs at every start.
+Writes to `~/.claude.json` take Claude Code's
+own `~/.claude.json.lock` (a directory, proper-lockfile), held under
+5 s, taken over after 10 s as Claude Code does, and agent-setup's other
+writes to the file take it too; every sync runs under `flock
+~/.repose/mcp/.lock`, since agents start in parallel and two appends of
+one Codex table make Codex refuse its config. On a base whose
+`repose-hook` is the shell implementation there is no `repose-mcp`, and
+agent-setup keeps merging the platform servers into `~/.claude.json`
+itself. `repose-mcp status --json` reports each server's source, agents
+and needs for `repose mcp list`. `repose-mcp NAME` and `repose-mcp hold`
+route to `internal/mcpshim`, which in this base exits 1 with
+"forwarding is not built in this base"; the forward replaces it (I-557).
+Not covered here: the guest-base VM subtest needs the dev box. In it the
+probe server refuses to start unless its env and argument hash to the
+secret's digest, so `claude`, `gemini` and `opencode mcp list` showing it
+connected means each agent's own launch delivered the secret; Codex and
+pi list without starting servers, so the test runs the command each one's
+config names and calls the tool. A tool call through each agent itself
+needs a logged-in model and is left to the dev-box run. At integration
+with I-553: on a base with `repose-mcp`, `repose-agent-setup codex` writes
+only `notify` under the flock, releases it, and runs sync, which writes
+the platform tables; its own append is the fallback for a base without
+`repose-mcp`. A `~/.codex/config.toml` that is a symlink is edited by
+neither, since the rename would replace the link; sync still records
+what Codex would get in `agents/codex.json`. The CLI's folder trust
+write (I-486, extended by I-556) takes the same `~/.claude.json.lock`,
+so all three repose writers of the file hold Claude Code's lock.
+*Amended by I-558:* the status's `from` is `repose` for the platform and
+`machine` for a server the user added, in place of `machine` and `yours`.
+Review fixes on the same branch: a root `mcp_servers = { ... }` inline
+table takes no appended `[mcp_servers.NAME]` (Codex refuses that file,
+though BurntSushi/toml accepts it), so each new name is held and warned
+once. opencode reads comments and trailing commas in its `.json` files
+(1.18.34), so the same-name check reads `opencode.json` that way, and a
+commented `config.json` is left as written with one warning per held
+change. A `~/.codex/config.toml` symlink gets `notify` through the link
+when its target is a writable file; for a read-only target
+(home-manager's store) agent-setup names the missing `notify` on stderr.
+Gap fixes on the same branch: `repose-mcp run NAME` refuses to start a
+server that references a secret without a default that neither
+`/run/repose/secrets` nor the environment holds, exit 1 with one line
+naming it and `repose secrets set NAME`: started anyway, the server sent
+the literal `${LINEAR_TOKEN}` to its service as a token and the user saw
+that service's auth error (found by running the real Codex against the
+launcher). `${NAME:-default}` is unchanged. A registry file that does not
+parse, or whose `version` is newer than the base reads, costs only its
+own servers: before, one bad `laptop.json` or `forward/NAME.json` stopped
+every render, platform servers included, and since agent-setup no longer
+merges `/etc/repose/mcp.json` itself on a base with `repose-mcp`, a fresh
+Claude Code or Codex lost the browser tools. Sync names each such file on
+stderr, status lists it under `problems`, and a newer `rendered.json`
+reads as missing (only an entry equal to what sync writes now is then
+repose's). `repose-mcp status` names why an agent lacks a server sync
+meant to give it when the cause is a file sync leaves alone: a symlinked
+`~/.codex/config.toml`, a Codex name in a form repose does not edit, a
+commented opencode `config.json`. agent-setup writes `notify` into a
+symlinked Codex config's target by temp file and rename beside it, so a
+full disk or a kill cannot leave the user's dotfile half written, and
+names a target it cannot write once per target
+(`~/.repose/mcp/codex-link-warned`), not at every Codex start. Evidence:
+the real-binary run recorded in I-553.
+*Amended on the same branch (launcher for every agent):* a carried stdio
+server that references a secret now starts through `repose-mcp run` for
+Claude Code, Gemini CLI, opencode and pi as well as Codex. Running the
+real agents showed why: claude 2.1.283 started a stdio server whose env
+was `PROBE_TOKEN=${MISSING_TOKEN}` with the literal text, and a server
+started that way sends `${MISSING_TOKEN}` to its service as the token;
+`run` refuses that start with one line. The agents also fill `${NAME}`
+from their own environment, fixed when the agent started, so a secret
+set later never reached them; `run` reads `/run/repose/secrets` at each
+server start. The rule: a `${X:-default}`, or a `${X}` whose X is not
+one the machine always sets (`HOME`, `USER`, `PATH`, `XDG_*` and the
+rest of `environmentName`), in the command, an argument or an env value.
+A server without one keeps its own shape; Gemini CLI, opencode and pi
+still take the launcher for any reference in the command or arguments.
+Claude Code's entry is `{"type":"stdio","command":"repose-mcp","args":
+["run",NAME]}`, and a project entry adds its checkout, `run NAME
+CHECKOUT`, since two checkouts may each have a server of that name;
+`run NAME` resolves as before. A carried http, sse or ws server cannot
+go through `run`: while a secret it references without a default is
+missing from `/run/repose/secrets` and the environment, sync leaves it
+out of every agent with the reason `needs the secret X`, since the agent
+would send `Bearer ${X}` to the service. Sync runs at each agent start,
+so the server appears at the first start after the secret is set; the
+registry reads the secrets directory from `Paths` for this. `status`
+shows such a row with no agents and the state `needs X`. A machine an
+earlier base synced holds the native shapes that base wrote; sync
+renders that shape again for each carried server whose entry changed
+(`Rendered.Legacy`, per checkout for Claude Code's projects) and owns it
+by value like a retired platform value, so the entry is replaced even
+without `rendered.json`, while an entry the user edited stays theirs.
+Evidence (claude 2.1.283, opencode 1.18.34, gemini 0.61.0 in a temp
+HOME on kanali, recorded in the commit): `probe` connects through
+`repose-mcp run probe` in all three and the probe logs only `ok`;
+`needy` fails in each without starting, so the probe never saw a
+literal; status shows `needy` as `needs MISSING_TOKEN`. Gemini CLI drops
+`REPOSE_SECRETS_DIR` from a server's environment (its name matches its
+secret filter), which matters only in a harness; a guest uses the
+default `/run/repose/secrets`.
+
+**I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
+with credentials replaced by secret references.** (mcp-carry,
+2026-10-06; amends I-196 and I-278) Users fill Claude Code's MCP list on
+the laptop with `claude mcp add`, and found an empty list on the
+machine: I-196 kept `~/.claude.json` home because its project entries
+are keyed on laptop paths and its values hold tokens. Both can be
+handled. The CLI reads only `mcpServers` (user scope) and
+`projects[<main worktree root>].mcpServers` (local scope, keyed as Claude
+Code keys it, so a linked worktree and a subdirectory find it) from
+`~/.claude.json` or `$CLAUDE_CONFIG_DIR/.claude.json`, with a scanner that
+skips every other value undecoded (a 5 MB file costs about 15 ms). The
+classifier (`internal/cli/carry_mcp.go`; features/agents.md "MCP") drops
+the platform's own servers, leaves behind with a one-word reason those
+that need the laptop (an Apple app, a program, files or an env path on
+the laptop, a URL on loopback, the LAN, `*.local`, `*.ts.net` or
+`100.64/10`, a `headersHelper` or `clientSecretHelper`), rewrites a
+launcher's absolute path to its name and paths under the repository to
+`@@REPOSE_CHECKOUT@@`, and replaces every literal credential with
+`${NAME}` before anything is hashed or packed (I-211). Headers are where
+a server's key goes, so every header value is templated except a short
+list of plain ones (`Accept`, `Content-Type`, `User-Agent` and the like),
+in `headers` and in a `--header "Name: value"` argument (mcp-remote);
+arguments, URL path segments and query values are templated when they
+read like a token on their own (a provider prefix such as `sk-`, or 20
+token characters with a letter and a digit), so a positional key or a
+Zapier-style URL with its secret in the path stays home. Flags are judged
+by their last word (`--api-key`, `--auth`), so `--auth-type oauth` keeps
+its value. An env key keeps its
+own name unless an agent reads that name for its own login
+(`ANTHROPIC_*`, `OPENAI_API_KEY`, `GITHUB_TOKEN` and the like): a secret
+by that name would be in every agent's environment, and Claude Code then
+asks to use the API key, which takes `run`'s prompt and moves the user to
+API billing. Two different laptop values under one name give the second
+its server's prefix, compared in memory, with the number placed after the
+64-character cut. No value reaches the payload, a marker or a line; a
+rotated laptop token sends nothing. The hash leaves out the tools carry's
+bins (the guest's command check filters them), so `run` and `attach`
+compute the same marker.
+
+The guest keeps the list in `~/.repose/mcp/laptop.json` (schema in
+guest-conventions.md, shared with I-555's reader), written by the carry's
+guest script, which replaces the placeholder with the checkout's real
+path, replaces user scope whole and this checkout's project entry only,
+and recomputes `secrets` from every `${NAME}` without a default. The carry
+never writes an agent file; `repose-mcp sync` renders the list at each
+agent start (I-555), so `~/.claude.json` has no new writer and a server
+the user added on the machine under the same name stays theirs. Two
+markers, `claude-mcp` and `claude-mcp-project`; on a base without
+`repose-mcp` the guest writes them with `:old` and the CLI treats both as
+current, so the base line prints once and the file waits for the base
+that reads it. Lines print once per change: the servers left on the
+laptop, the secrets the machine lacks, the commands it lacks, the old
+base. The `mcp` row in `repose secrets choose` (`logins.skip`) sends empty
+scopes, on `attach` as well as `run`. `repose secrets import --mcp` (owner
+decision O4) reads the laptop config again, resolves each templated name
+to its laptop value in memory and sets it through the secrets PUT, the
+one home named secrets have. The carry chose those names, and an env key
+keeps its own (`DATABASE_URL`), which may be a secret the project already
+has for another use: so it asks once before replacing one (`--yes` skips
+the question, a no sets only the others), unlike the file import, whose
+names the user wrote. `--dry-run` lists names, and a FILE argument is
+refused. Secrets belong
+to one project, so a server used in three projects needs it in each.
+
+OAuth servers carry `clientId`, `callbackPort` and the like, never a
+token; `clientSecret` is templated. On the machine Claude Code keeps MCP
+OAuth tokens in `~/.claude/.credentials.json`, the I-278 login share,
+whose text now says so. With `.mcp.json` arriving through the sync,
+Claude Code outside `bypassPermissions` shows "New MCP server found in
+this project" with "continue without" preselected, and `run`'s Enter would
+answer it (seen with 2.1.283): the dialog joins `agentDialogs`, so `run`
+stops typing and says so, and the I-486 trust write copies the laptop's
+`enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
+adding each server the guest answers in neither list: Claude Code writes
+both lists empty into every project it opens, so an empty list is no
+answer. *Rejected:* writing agent configs from the
+carry (a second unlocked writer of `~/.claude.json`, and format
+translation in the CLI); carrying Codex, Gemini CLI and opencode laptop
+configs (owner decision O5; deferred); writing the checkout's
+`.claude/settings.local.json` (it sits in the user's working tree).
+Not covered here: the guest VM test feeding a golden payload to
+`repose-agent-setup` (needs the dev box and I-555's renderer), and an
+OAuth sign-in end to end while attached.
+Review fixes on the same branch: a `NAME=VALUE` argument (docker `-e`,
+`--env=`, `env`) is templated by the env map's rules; a JWT counts as a
+token though it is dotted, and `jwt` joins the secret words for flags,
+env keys and query names; a Windows `cmd /c` wrapper is dropped, and a
+repository path written with backslashes matches the root git gives; an
+absolute command outside the laptop roots (`/bin/bash`, `/usr/bin/ruby`)
+runs by name on the machine and is checked like a bare one. `#mcpold`
+prints only when the laptop has a server to carry. `secrets import
+--mcp` says only that it could not read the servers when
+`~/.claude.json` fails to parse, without the carry's clause about the
+machine.
+Gap fixes on the same branch: the skip reasons a user reads say what to
+fix ("its name has characters other than letters, digits, - and _",
+"type X, which repose does not copy"), and `xcrun` (Xcode's
+`xcrun mcpbridge`) counts as an Apple app. The "Left on your laptop" line
+offers `repose mcp forward` only for servers forward can run (a command
+and a name it takes), naming them when only some can, since forward
+refuses an HTTP server. A name and its reason are cut separately, on a
+rune boundary, so a long non-ASCII name keeps its reason and valid UTF-8.
+A missing command's line names `repose config add PACKAGE`. The guest
+script's extra tool directories come from `REPOSE_TOOL_DIRS` when set,
+so the old-base test hides `repose-mcp` on a host that has it. The VM
+subtest design 3.2.5 asked for now exists: guest-base runs the payload
+this CLI sends for a fixture (`nix/guest/tests/mcp-carry`, kept current
+by `TestMCPCarryGoldenPayload`) and checks `claude mcp list` and `codex
+mcp list --json` after `repose-agent-setup`. Not covered still: the OAuth
+sign-in end to end while attached; the public docs say it needs an
+attach, as the callback's port reaches the laptop only through the
+attach's port forward.
+
+**I-557. `repose mcp forward` runs laptop-bound MCP servers through a
+guest shim that answers for an absent laptop.** (mcp-forward,
+2026-10-06; amends R2-14 and I-155) The carry (I-556) leaves behind the
+servers that need the laptop: an Apple app, a laptop file, a program
+only the laptop has. A forward's whole value is reaching the laptop, and
+the laptop comes and goes, so the guest side must not depend on it.
+`repose mcp forward NAME...` (owner decision O2, option A) runs in the
+foreground until Ctrl-C, like `browser bridge`; `[mcp] forward` and
+`[projects.NAME.mcp] forward` in config.toml do the same beside every
+attach through the session helper, which says nothing on success. No
+`--mcp` flag on `run` or `attach`: the config key does that without
+typing. The command takes names only and the project from the folder or
+`--project` (O6), an exception to I-155. Definitions come from the
+laptop: Claude Code's local scope, its user scope, Claude Desktop
+(macOS), Codex, Gemini CLI, or `-- COMMAND ARGS`; `${VAR}` expands from
+the laptop's environment, so tokens stay there (I-211).
+
+Transport: `ssh MACHINE repose-mcp hold NAME...` on a connection of its
+own, with the session's stdin and stdout carrying small frames (hello,
+open NAME, data, close, ready, gone). The design's `ssh -R` to a guest
+unix socket would make the guest's sshd open `forwarded-streamlocal`
+channels, which the gateway refuses (it relays `forwarded-tcpip` only,
+the reason I-296 rejected the same for the bridge); the session channel
+needs no gateway change and no Windows OpenSSH check. `hold` fills
+`~/.repose/mcp/forward/NAME.json` through the laptop (initialize and
+every `tools/list` page), runs `repose-mcp sync` for the agents already
+rendered on a first registration, and listens on
+`/run/repose/mcp/NAME.sock` (tmpfiles `0700 dev`, socket `0600`). Each
+connection becomes a stream, and the laptop starts one server process per
+stream, so each agent session gets its own, as stdio servers run
+locally; at most 8 per NAME, and a stream's end sends TERM to the
+server's process group, KILL after 2 s. The machine names a server; the
+laptop starts only what its own config says for that name. A newer hold
+of the same NAME rebinds the socket and the older one, seeing the inode
+change, hands over and says so.
+
+Agents start `repose-mcp NAME`, the shim. It answers `initialize` (with
+`capabilities.tools.listChanged`, which opencode needs to listen) and
+`tools/list` from the registration, so an agent's start never waits on
+the laptop and a server forwarded once stays listed. With the socket up
+it replays the agent's initialize to the laptop's server and passes lines
+both ways, sampling and elicitation included. It pings every 10 s and
+the laptop's end answers without the server seeing it; two misses or a
+closed socket mark the laptop away, and each later `tools/call` answers
+`isError` with a line telling the agent to ask the user to run `repose
+mcp forward NAME`, within about 20 s of a laptop going to sleep, where
+sshd alone takes 2 minutes. It retries every 5 s and sends
+`notifications/tools/list_changed` when the tools differ; Codex ignores
+that, so the CLI's line names Codex when the tools changed. The laptop
+prints one line per call, agent and tool name only. `--remove` deletes the
+registration and syncs. *Rejected:* `mcp-proxy` on the laptop (R2-14's
+plan: a Python tool on the laptop, one process shared by every agent, and
+a failed server for an agent that started while the laptop was away); a
+streamable-HTTP front in Go (the same absent-laptop failure plus
+per-session bookkeeping); `ssh -R` to a unix socket (the gateway, above);
+a detached background forward (lending a laptop resource stays visible,
+as the bridge does). Deferred: forwarding loopback HTTP servers on the
+laptop (Figma Dev Mode), where the laptop end becomes an HTTP client and
+the guest side stays as it is. Not covered here: the guest-base VM
+subtest (the real hold with a fake laptop end, every agent listing the
+server, the away answer) is written and evaluated and needs the dev box
+to boot; the live check is a laptop forward called from Codex, then the
+lid closed.
+Review fixes on the same branch: while a connect is in progress (the
+first after initialize, and an immediate one after a socket closes, a
+hand-over included) the shim holds the agent's calls and sends them once
+the link is up; the list methods still answer from the cache, and after
+missed pings calls answer away at once and retries wait 5 s, as above.
+Lines the server sends between the replayed initialize and the link
+going live (roots/list, a log line) reach the agent before anything
+newer, and a link that closed before it went live is not installed.
+hold and the laptop end queue each stream without blocking their frame
+loop, up to 16 MB, and end a stream past that, so one agent or server
+that stops reading holds up no other stream's pings. The laptop end
+refuses a stream id already in use, and prints only names it forwards,
+with control characters dropped from the machine's strings. The laptop
+sends a keepalive frame `A` every 10 s; hold touches
+`/run/repose/mcp/NAME.alive`, and status shows `laptop not connected`
+once that file is 30 s old. A hold from before `A` ignores the frame, and
+a CLI from before it writes no file, so the socket alone decides, as
+before. A first forward's line keeps "Agents already running list it
+after a restart.", which the design's preview dropped: an agent reads
+its MCP config at start, so one already running has no entry for the
+new name and list_changed cannot reach it.
+Gap fixes on the same branch: two attaches to one project used to end
+each other's `[mcp] forward`: the second hold took the socket, the first
+dropped the name for good, and when the second attach ended its hold
+removed the socket while the first attach was still open. An attach's
+forward now runs `repose-mcp hold --wait`, which takes NAME only while no
+other live hold answers on the socket (a `$/repose/holder` probe the hold
+answers itself, so no laptop server starts), and after a takeover waits
+quietly to take it back; so NAME stays forwarded while any attach lives,
+and a foreground `repose mcp forward` still takes it over and hands it
+back when it ends. The shim pings every 5 s, during a connect's replay
+too, and calls the laptop away after 20 s with no answer: a hold that
+still held the socket for a sleeping laptop made each call wait the
+replay's 60 s. A connect that fails marks the laptop away, so calls
+during the retries answer at once. A cached initialize of `null` no
+longer panics the shim, and hold refuses such a result. The laptop end
+treats output that does not start with the hold's hello as no hold (a
+shell startup file that prints), ends the forward with a line that says
+so, and once its frames stop closes the hold's stdin and kills the ssh
+after 3 s, where before it hung silently. SIGHUP and SIGTERM end the
+forward like Ctrl-C, since the servers' own process groups never get
+them. A dropped connection is named once per outage; a reconnect that
+fails asks the api whether the machine still runs and ends with exit 5
+when it stopped, where before the line repeated every 30 s forever. A
+failure on the machine's side (socket, cache file) carries `"where":
+"machine"` in the ready frame and prints as the machine's. A laptop entry
+with a `${VAR}` this shell lacks is refused before the forward starts.
+On Windows `[mcp] forward` does nothing (no session helper), and attach
+now says so in one line. `TestMCPForwardLaptopSilent` stops the forward's
+ssh with SIGSTOP, so nothing closes, and the call gets the away answer
+from missed pings alone (20.0 s); `TestMCPForwardEndToEnd`'s Ctrl-C step
+closes the socket, which its comment now says.
+
+**I-558. `repose mcp list` shows each MCP server on a machine, where it
+came from and which agents have it.** (mcp-list, 2026-10-06; amends
+I-555) Five agents list MCP servers five ways: pi's `mcp list` misses
+extension servers, Codex's starts nothing, and none of them knows which
+servers came from the laptop or why one stayed there. "Why doesn't my
+agent see linear" should take one command, so `repose mcp list
+[PROJECT]` (alias `ls`, the `list` verb `secrets` and `snapshots` use,
+owner decision O3) runs `repose-mcp status --json` over the project's
+SSH connection and prints NAME, FROM, AGENTS and STATE. STATE is the
+status document's `state`, after the checkout path for a row of one
+checkout; AGENTS is `none` for a server the carry left on the laptop.
+Piped, one tab-separated line per server with no header, as `secrets
+list`; `--json` prints the machine's document as it came, so a field a
+newer base adds reaches scripts without a CLI release. The status reads
+files and starts no server. A base without `repose-mcp` (exit 127) gets
+one line saying it predates the list and works after the machine's next
+update.
+
+Vocabulary: I-555's status called the platform `machine` and a server
+the user added on the machine `yours`. Beside `laptop`, `yours` reads as
+"from your laptop", and the design's own carry section called the user's
+entry the machine's. FROM is now `repose` for the platform and `machine` for
+the user's own; no released CLI read the old values, so no old shape is
+kept. A server the carry left on the laptop and that is now forwarded
+shows once, as `forward`, and a forward no agent was synced for yet
+still has a row. *Rejected:* a column per agent (five columns of
+yes/no hide the reason, which is the point); starting each server to
+probe it (slow, and a server that needs the laptop would fail the
+probe for the wrong reason). Not covered here: a live run against a
+machine on a real base.
+Gap fixes on the same branch: names and states pass the CLI's
+`terminalText` before printing, since a cloned repository's `.mcp.json`
+names a row; the status's `problems` print on stderr after the rows; an
+agent that lacks a server says why when a file repose leaves alone is the
+cause. *Not built:* a `codex: restart to see new tools` STATE for a
+forward whose tools changed (critic correction 9). The status reads files
+and cannot tell which running Codex sessions loaded the older list: shown
+whenever the cache changed it would stay wrong after every restart, and
+telling sessions apart means matching Codex processes' start times against
+the cache's, which is guessing. The forward's own line says it at the
+moment the tools change, which is when the user can act.
 **I-497. Solo costs $20 a month with 100 GB of egress for its first three
 months, then $29 with 250 GB, on an account's first subscription.**
 (owner, 2026-10-05: "lets make the $20 now $29 in 3 months a reality",
@@ -13956,7 +14612,12 @@ reload-config`. It never fails the switch.
 systemd reads before `/etc/systemd/user`, so a fragment's
 `systemd.user.services.repose-herdr-server` (or `repose-tmux-session`)
 would replace the base's. The contract now refuses any
-`systemd.user.services` name that starts with `repose-`.
+`systemd.user.services` name that starts with `repose-`, except a
+`repose-npm-` name the base does not define: the menu's npm installs
+(Vercel, portless) write `repose-npm-<tool>` units, and saved project
+files carry those names, so refusing them failed every such project's
+build (`TestRealNixAllEntriesEvaluate`, CI on b34301e3, 2026-10-07).
+`repose-npm-registry`, the base's own, stays refused.
 
 A `config.toml` that machine.nix manages is a read-only link and
 replaces the seeded file; it keeps herdr's defaults for anything it
@@ -14542,6 +15203,441 @@ needs only its config file; aliases work through I-519), and that a tmux config 
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
 
+**I-576. When a machine runs out of memory, the SSH session, the tmux
+server and dev's user manager are the last things killed and the last
+paged out, and the kernel kills instead of thrashing.** (guest-oom-keystroke,
+2026-10-07; amends I-200, I-494 and I-505) kanali (large, base
+2026.10.05) on 2026-10-05, times EDT, from its journal: from 20:39 to
+20:54 guestd's `tmux list-*` calls timed out ("run setpriv: context
+deadline exceeded", 164 times) and journald hung until its watchdog
+killed it at 20:53:20 ("Watchdog timeout (limit 3min)"; the unit had
+"19.8G read from disk" over 23 hours with a 39.8M memory peak), and
+again at 21:14:44; the page cache was about 10 MB and nothing was
+OOM-killed. That was the gap in the CPU chart. At 21:31 to 21:32 the
+kernel killed, in order, chromium, a 128 kB pane `bash` at
+`oom_score_adj` 200, dev's user dbus-broker at 200, then dev's user
+manager (`systemd`, pid 616, 1.7 MB, at 100) and `(sd-pam)`, and only
+then a 319 MB `claude` at 0. The manager's death stopped
+`user@1000.service`, which ended the tmux server and every pane. The
+scores explain the order: upstream runs `user@.service` at
+`OOMScoreAdjust=100` and gives the manager's units its value plus 100,
+and the kernel adds adj/1000 of RAM plus swap to a process's badness, so
+on 8 GB with 2 GB of zram a process at 100 counts as 1 GB more than it
+holds and one at 200 as 2 GB. The task dump at 21:32:06 had 926 `bash`
+(2.6 GB, I-577) and 26 `MainThread` (2.3 GB resident, 1.2 GB swapped:
+node; most in parent and child pairs, the shape of Gemini CLI, plus
+Playwright MCP), 5
+claude (1.3 GB) and 275,462 pages (1.07 GB) of unreclaimable slab.
+
+Now, in `nix/guest/base/keystroke-path.nix`:
+- `user@.service` runs at `OOMScoreAdjust=-900`, and user.conf sets
+  `DefaultOOMScoreAdjust=0`, so the manager's units (the tmux server,
+  user dbus, repose's user services) start at 0 instead of 200 and are
+  ranked by size. The template already has `restartIfChanged = false`, so this
+  takes effect at the machine's next start; guestd writes -900 to the
+  running manager (`systemd` of dev's whose parent is pid 1) at each
+  refresh meanwhile.
+- `sshd.service` runs at `OOMScoreAdjust=-800`. OpenSSH sets its
+  listener to -1000 and gives every forked session the unit's value
+  back, so `sshd-session` (root's and dev's) runs at -800. guestd keeps
+  dev's `sshd-session`, every `tmux: client` and every `herdr` process
+  (server and client) at -800, and puts every other process of dev's
+  holding a negative value back to 0 within 5 s, as I-200 does for panes:
+  the login shell, a `repose exec` command, a `repose code` server.
+- `MemoryLow` on each cgroup of the path and on each slice above it,
+  since a child's protection is capped by its parent's: sshd.service 16M,
+  guestd.service 64M, systemd-journald.service 64M, systemd-logind 16M,
+  dbus-broker 16M, system.slice 176M; each `session-N.scope` 32M (beside
+  I-494's CPU weight), `user@1000.service` 64M, `user-1000.slice` and
+  user.slice 128M; in the user manager app.slice and
+  `repose-tmux-session.service` 48M. The budget is fixed, not a share of
+  RAM: on kanali the tmux server's cgroup holds 4 MB (12 MB peak), sshd
+  6, guestd 21 (54 peak), journald 43, a session with herdr 13 (60 peak),
+  and none of that grows with the size. 304 MB in all, 7.4 percent of
+  small's 4 GB, and only memory those cgroups use is protected.
+- `repose-tmux-session.service` gets `OOMPolicy=continue`. The default,
+  `stop`, would stop the unit (and with `KillMode=control-group` the
+  server and every pane) when the kernel kills a `#()` or `run-shell` job
+  in its cgroup.
+- MGLRU's `min_ttl_ms` is 1000 (tmpfiles `w-`): when the kernel cannot
+  keep the pages touched in the last second, it runs the OOM killer
+  instead of evicting them. 20:39 to 20:54 becomes one kill of the
+  largest process not protected. The kernel's documentation names 1000
+  ms as the value that removes intolerable lag.
+Checked by flake check `guest-keystroke-path` (unit texts, user.conf,
+the tmpfiles line), guest-base's I-576 subtest (live values,
+`memory_recursiveprot` on the cgroup mount, and a python memory hog in a
+pane killed while the manager, the tmux server and the session stay)
+and the guestd test's I-200 subtest (guestd writes -900 to a manager
+running at upstream's 100).
+
+*Rejected:*
+- systemd-oomd on app.slice (`ManagedOOMMemoryPressure=kill`). oomd
+  kills a whole cgroup and each tmux pane is one scope, holding the
+  agent and everything it started (kanali: claude, gopls and two `go
+  run` servers in one `tmux-spawn-*.scope`), so it would kill the agent
+  with its build, the opposite of I-200; it does not read
+  `oom_score_adj`. `ManagedOOMSwap=kill` would fire on a healthy
+  machine: kanali's 2 GB of zram sat 97 percent full with 4.7 GB
+  available. oomd stays as NixOS ships it, running and watching nothing.
+- earlyoom. It ranks by the same `oom_score` and would act earlier than
+  the kernel, but it is a daemon that has to be scheduled and paged in
+  during the thrash it is meant to stop; `min_ttl_ms` is the kernel's own
+  check in kswapd.
+- A positive `OOMScoreAdjust` on panes or app.slice. A flat bonus on
+  every pane process is what upstream's 200 was: it made 128 kB shells
+  outrank a 300 MB process, and each such kill freed nothing. At 0, the
+  kernel takes the largest.
+- `MemoryMin`. It is never reclaimed, so unused protection (spread to
+  sibling cgroups by `memory_recursiveprot`) would bring OOM kills
+  sooner on small; `MemoryLow` gives way only when nothing else is left.
+- `MemoryLow` on `repose-herdr-server.service`: herdr's panes share its
+  cgroup, so it would protect their builds.
+- `TasksMax` per pane. The pids controller counts threads, and a JVM or a
+  test runner holds thousands; I-577 removes the one fork storm seen.
+- journald rate limits. guestd wrote one line every 5 s during the hang;
+  journald was waiting on the disk for its own file pages, which
+  `MemoryLow` keeps.
+
+*CPU, the owner's question* ("leave some CPU for ssh+tmux and force
+that?"): I-494's `CPUWeight=1000` on each session scope and the tmux
+server already gives them ten times a pane's share the moment the CPU is
+contended, and nothing while it is not. A reservation (`AllowedCPUs`
+keeping a vCPU off panes, or `CPUQuota` on app.slice) would take half of
+small's two vCPUs from builds on an idle machine and would not have
+helped here: the 20:39 hang was processes waiting on page-ins (guestd's
+`setpriv` exec timed out, journald read 19.8 GB), not waiting for a CPU.
+*Revisit when:* a keystroke still lags with memory free and every core
+busy (then I-494's `io.weight`), or the I-494 load test shows the weight
+is not enough.
+
+**I-577. The command-not-found handler calls its helper by path and
+cannot call itself.** (guest-oom-keystroke, 2026-10-07; amends I-516) bash
+runs `command_not_found_handle` in a forked child, and an unknown command
+inside the handler calls the handler again in a grandchild. I-516's
+handler in `bash-env.sh` called `repose-command-not-found` through PATH,
+so a `bash -c` with BASH_ENV and a PATH without the helper forked one
+bash per level until memory ran out. That happened on kanali at 21:29 on
+2026-10-05: a review session ran `env PATH=<coreutils>
+BASH_ENV=nix/guest/base/bash-env.sh bash -c 'cowsayzz hi'` from the
+unreleased branch, and the 21:32:06 OOM task dump shows 926 `bash` with
+consecutive pids from 1308773, each a little larger than the last
+(total_vm from 1996 to 3005 pages), 2.6 GB in all, which is what pushed
+the machine into I-576's kills. Reproduced on kanali under `prlimit
+--nproc`: main's file ends in "fork: Resource temporarily unavailable",
+the fixed one prints `cowsayzz: command not found` and `status=127`. The
+handler now unsets itself first (a no-op outside its own child) and runs
+`/run/current-system/sw/bin/repose-command-not-found` when it exists,
+else prints `NAME: command not found`; the interactive bash, zsh and
+fish handlers call the helper's store path. Flake check
+`guest-keystroke-path` runs each of the four handlers (bash-env.sh's,
+and the interactive bash, zsh and fish ones with a stub at the helper's
+store path) with a PATH that lacks the helper, under `ulimit -u 128`,
+and expects one answer and status 127; CI builds it.
+No shipped base had I-516's handler.
+**I-570. A stop says how long it took and how big its snapshot is, and
+nothing about cost.** (dogfood, 2026-10-07: "Stopped waterville in 24s.
+Snapshot 01a10e86-e9fd-71b8-80a6-4b74cd7d1196 (2.6 GB). Disk is still
+billed." "wtf bro") The billing claim was false: since I-289 a plan buys
+memory that may run at once, disk, egress and a number of projects; a
+stopped project costs nothing, and its disk counts toward the plan's disk
+total whether it runs or not (billing.md). This amends I-484, which kept
+`Disk is still billed.` as a fact worth a line. The snapshot's id went
+too: nobody types a 36-character id from a stop line, and `repose
+snapshots` lists it where it is used. The size stays, since it is what
+the stop's time went on. `repose stop` prints `Stopped NAME in 11s with
+a 2.1 GB snapshot.`, `Stopped NAME in 6.2s.` with `--no-snapshot`, and
+`NAME is already stopped.`; the size is that of the snapshot the stop
+op's result names (`snapshot_id`, which the api has set since
+recordSnapshot), so a stop whose snapshot failed (I-158, which says so
+on stderr) never shows an older snapshot's size. With an api that names
+none, the newest snapshot is used when a stop took it and the project
+carries no error. The same false claim went from the other places that
+carried it: `repose fork`'s footer after its table ("billed like any
+project", cut whole under I-484), its `--help`, and the public docs
+(lifecycle, index, cli, machine: "costs only its disk", "billed like
+any project", "the larger disk is billed", "hours are billed at the
+size") now say what counts toward the plan. lifecycle.md also stops
+promising a cost and a projected monthly cost on the project page, which
+shows neither. Tests: `TestStopLineSaysWhatTheStopDid`,
+`TestStopNamesInterruptedAgents` and the fork summary test, updated.
+
+**I-571. A snapshot reads eight chunks at a time, around the page
+cache, and hostd logs a stop's phases.** (dogfood, 2026-10-07: stops of
+24 s and 43 s.) hostd's log on host-01 for the two stops: waterville
+froze in 160 ms, was down 5.1 s after the stop began and finished its
+snapshot (9.8 GB used, 2.77 GB stored) at 24.1 s; parth-event froze in
+970 ms, was down at 6.2 s and finished its snapshot (5.1 GB used,
+0.96 GB stored) at 42.4 s. Every other stop since 2026-10-01 holding
+2 GB or more read its used data at 370 to 530 MB/s, so a stop's time
+was the snapshot's, about a second for each 400 MB used; parth-event's 121 MB/s was an outlier
+whose cause the log cannot show (no overlapping snapshot or restore on
+the host; kanali, on the same data disk, was out of memory at the time).
+The guest's shutdown took 3 to 6 s in 68 of 87 stops since 2026-09-28.
+I-404's 650 to 700 MB/s was the read alone, measured on volumes a
+restore had just written. The pipeline read one 4 MiB chunk, handed it
+to zstd, and only then read the next. Measured on host-01 against
+waterville's stopped volume (read only, 2026-10-07): one O_DIRECT
+reader 637 to 690 MB/s, eight at once 1,277 to 1,715 MB/s; the same
+2.5 GB of it through `zstd -T4 -3` went at 365 MB/s from one buffered
+reader and 898 MB/s from eight O_DIRECT readers (987 at `-T8`). This
+amends I-404, which tried eight O_DIRECT reads in flight and kept the
+page cache because the time was the same on those volumes. writeExtents
+now reads `snapshotReaders` (8) chunks at once into aligned buffers and
+emits them in order, so the stream is byte for byte the one the serial
+reader wrote; a chunk goes through O_DIRECT when the filesystem block,
+the device size and the chunk allow it, through the page cache
+otherwise or when the direct read fails. Reading around the page cache
+also stops a snapshot from filling the host's page cache with a guest's
+disk. Eight 4 MiB buffers per stream would have made the nightly
+`hostd snapshot-all`, which starts every running guest's snapshot at
+once, hold 32 MiB per guest (1.3 GB for 40); reads are bounded host-wide
+instead: `maxChunkReads` (32 chunks, 128 MiB) slots shared by every
+snapshot stream in hostd, each chunk holding one from its read until it
+is emitted, with buffers from a pool taken only under a slot. A lone
+stop still reads eight at a time; a stream's head chunk is always its
+own, so no stream waits on another's slots forever. `read_wait_ms`
+counts the wait for a slot too. The number of snapshots at once stays
+unbounded, as before: nothing caps `snapshot-all`, and a cap there
+would queue a user's stop behind other guests' nightly snapshots, a
+trade left for its own decision. zstd stays at `-T4`: the guests share
+those cores. Expected: a
+stop the size of waterville's in about 11 s instead of 24; to be checked
+on host-01 after the hostd switch. Phase timings, durations only:
+`snapshot done` gains `freeze_ms` and `read_wait_ms` (how long the
+stream waited for the device; close to `duration_ms` means the disk set
+the pace, since the stream is written to zstd through a pipe and a
+plain read time would include zstd's and the upload's pauses); stopGuest logs
+`guest stopped` with `power_off_ms`, `duration_ms` and `escalated`
+(`none`, `hypervisor`, `kill`); a stop with a snapshot logs `stop
+timings` with `down_ms` and `total_ms`. RUNBOOK "Snapshot, stop or
+destroy slow" says how to read them. The CLI and the api add nothing:
+the CLI printed 24 s for a hostd command of 24.2 s. Tests:
+`TestParallelSnapshotReadMatchesSerial` (buffered and O_DIRECT streams
+equal the old serial reader's, including unaligned ranges, a range
+past the device and an unaligned device size, and restore to the
+source), `TestParallelSnapshotReadStopsOnAFailedRead`,
+`TestParallelSnapshotReadStopsWhenTheWriterFails`,
+`TestSnapshotReadsShareAHostBound` (ten streams at once hold at most
+32 chunks and each stream equals the serial one), `TestStopLogsItsPhases`. *Not done:* incremental snapshots (I-404).
+
+**I-572. A guest's shutdown waits at most 10 s for dev's user
+manager.** (found with I-571, 2026-10-07) The only unit any guest console on host-01
+showed holding a shutdown was `user@1000.service` ("A stop job is running
+for User Manager for UID 1000", 76 such lines across the consoles,
+2026-10-07), which holds every tmux pane, shell and agent; one of
+waterville's earlier stops waited 22 s on it, and 10 of 87 stops since
+2026-09-28 took 10 s or more to go down (up to 27 s, and once 88 s). Its stop bound was
+systemd's 2 minutes. `systemd.services."user@".serviceConfig.TimeoutStopSec
+= "10s"` (users.nix) kills what is left of it after 10 s. A process that
+has ignored SIGTERM and SIGHUP for 10 s during a poweroff is not
+finishing anything, and a stop's snapshot is taken before the shutdown
+begins (I-404); a `--no-snapshot` stop keeps the disk as the kill left
+it, which is what a crash leaves and ext4's journal recovers. A
+switch never restarts `user@`, but its daemon-reload rereads the unit,
+so a running guest's next stop is bounded once a switch has applied the
+base that carries it. Test: guest-base
+asserts `TimeoutStopUSec=10s` on `user@1000.service`.
+**I-573. A sync refuses only over the machine's changes to the paths it
+writes, names only those, and keeps the rest.** (sync-overlap, owner's
+dogfood, 2026-10-07; amends R3-12, I-248 and I-210) The owner's `repose
+sync` in `job search` refused three times over six files an agent had
+left (two of them untracked scratch files, one a `.playwright-mcp/`
+directory) while the laptop only had commits that touched none of them,
+and kept refusing as the agent committed them down to three: "it just
+says the agent is dirty but it doesn't actually know whether it'd
+overwrite". It did not: `syncGuest` refused whenever the guest's
+`git status --porcelain` was non-empty (untracked files included) and
+the laptop had anything new, before it compared a single path. I-248
+rejected comparing file lists, but for another question: whether the
+laptop had moved, which the sync key answers. Which files a sync would
+write over is a different question, and only a path comparison answers
+it. Now:
+- The laptop sends, in the apply's tar, `paths`: both sides of its staged
+  and unstaged diffs (`--no-renames`), its untracked files after the
+  filters, and each bundled submodule.
+- The apply, after `git fetch` from the bundle and before the logins, the
+  carry or anything that touches the checkout, adds the paths the
+  checkout to its target changes (`git diff --name-only HEAD <target>`, or
+  `git ls-tree` of the target in an empty repository) and reads the
+  guest's changes with `git status --porcelain=v1 -z -uall` (every
+  untracked file, not the directory; both paths of a rename). A guest path
+  that equals a written path, sits under one, or holds one below it is an
+  overlap. Any overlap exits 3 with the paths on stderr; the CLI exits 6
+  with `Not synced: the machine changed N files that your laptop changed
+  too:`, the overlapping paths (eight, then "and N more") and one line
+  for the two flags. Nothing has been written: no stash, no logins.
+- With no overlap the sync goes on. `git checkout`, `git merge` and `git
+  apply` carry edits to other files, and the untracked tar writes only
+  the laptop's paths, so the guest's other changes stay as they were, and
+  the summary line ends `; kept the machine's changes to N files`.
+- The last sync's own changes (I-210) still never count as the guest's,
+  now per path: the end of each apply writes `.git/repose-synced-paths`,
+  the `HEAD` it left and a hash of each of the laptop's paths (a blob
+  hash, a link target, a submodule's `HEAD` and tree). A dirty path that
+  still matches under the same `HEAD` is the last sync's: it never
+  overlaps, and the apply stashes those paths alone (`git stash push -u
+  -m "repose run: last sync" --pathspec-from-file`) before laying the
+  laptop's current work down. The whole-tree fingerprint stays for the
+  common case and is written only when no guest change was kept, since
+  a kept change is not the sync's. When it still matches in the apply,
+  the whole tree is the last sync's: it is stashed whole and the overlap
+  check is skipped, which is also how a guest an older CLI synced (a
+  fingerprint and no per-path record) gets its first sync with this one.
+  A fingerprint that moved after the probe falls back to the per-path
+  check and stash instead of exit 6.
+- `--stash-remote` and `--discard-remote` keep their meaning (all of the
+  guest's changes, no check). `repose run` syncs only into a checkout with
+  no commit (I-367), and its first sync goes through the same check.
+- A checkout with a git operation of its own in progress (a merge,
+  rebase, `git am`, cherry-pick, revert or bisect: `MERGE_HEAD`,
+  `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
+  `sequencer`, `BISECT_LOG` under `git rev-parse --git-path`) refuses the
+  sync before anything else, exit 6: ``Not synced: the machine's checkout
+  is in the middle of a git merge. Finish or abort it there, or run
+  `repose sync --discard-remote` to throw it away with the machine's other
+  changes.`` A checkout would drop the operation's state (git removes
+  `MERGE_HEAD` on a checkout) and a stash cannot hold it, so
+  `--stash-remote` refuses too, and its message adds ``, which
+  `--stash-remote` can't keep``. `--discard-remote` ends the operation
+  where `HEAD` is (`--quit` for rebase, am, cherry-pick and revert, `git
+  bisect reset HEAD`) before its reset and clean.
+- "Nothing new to sync. The machine has changes your laptop doesn't have
+  (N files)" counts what is the guest's own: the probe reads `git status
+  -uall` (every untracked file, not its directory, as the overlap check
+  and the kept count do) less the paths the per-path record still
+  matches. When nothing but the last sync's own changes is left and the
+  guest's `HEAD` and branch are the ones that sync left, the line is
+  "Nothing new to sync: the machine already has this checkout."
+The check runs in the apply rather than the probe because the probe goes
+out before the laptop knows what it sends (I-223, I-284) and because the
+target of a merge (I-574) is only known in the guest. Costs: a refused
+sync has sent its bundle (objects only, no ref moves), and the apply
+reads `git status -uall`, which descends into untracked directories.
+The submodule rule is coarse: any change inside a bundled submodule
+overlaps. The copy also drops the lines nobody asked for: "`repose sync`
+copies your laptop's work onto the machine. It doesn't restart or
+rebuild anything", "probably an agent's", `repose attach` as a choice,
+the `--stash-remote` hint after "Nothing new to sync", the `git fetch
+repose` hint after it, "Delete it there if it should go" and the
+`.gitignore` advice after "Not sent". `TestSyncKeepsTheGuestsChangesElsewhere`,
+`TestSyncRefusesNamingTheOverlap`, `TestSyncWithOnlyUntrackedGuestFilesElsewhere`,
+`TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds`,
+`TestSyncRefusesOverTheOldPathOfAGuestRename`,
+`TestSyncRefusalNamesOnlyTheOverlap`, `TestSyncCommandSyncsAnExistingCheckout`,
+`TestSyncStashesAnOlderSyncsChangesWithoutTheRecord`,
+`TestSyncRefusesWhileTheAgentIsMidMerge`,
+`TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncRefusesDuringABisect`,
+`TestSyncNothingNewCountsOnlyTheGuestsOwn`.
+Interfaces: guest-conventions.md (`.git/repose-synced-paths`). Needs a CLI
+release; the agent guide line of I-574 needs a base publish.
+*Rejected:* comparing in the laptop (it cannot see a merge's tree, nor
+the guest's untracked files without a third round trip); a prompt
+("sync anyway?"), for I-248's reason.
+
+**I-574. A guest branch with commits the laptop lacks takes a merge of
+the laptop's commit when git can make it cleanly.** (sync-overlap,
+owner's dogfood, 2026-10-07; amends I-150) The owner's sync above went
+through on its fourth try and left the machine on d5ea57e, detached,
+with the agent's commits on `master`; the agent then had to merge by
+hand, and an agent that did not notice would have committed on a
+detached `HEAD`, which `git fetch repose` does not bring back. I-150
+detaches so that an agent's work is never moved off its branch; a merge
+keeps it there and puts the laptop's work on the branch too. The apply,
+after the fetch, merges when the laptop's branch exists in the guest
+with commits the laptop lacks (a git operation of the guest's own in
+progress has already refused the sync, I-573), `git merge-tree
+--write-tree` finds no conflict, the guest's commits since
+the merge base touch none of the laptop's own paths (I-573's `paths`; a
+merge would put the agent's version under the laptop's uncommitted
+work), and git has a committer identity. That identity is the one the
+sync carries: the laptop's `user.name` and `user.email` for the
+checkout travel in the apply's tar (`ident`, never on a command line)
+and are the author and committer of the identity check and the merge
+(`GIT_AUTHOR_*`, `GIT_COMMITTER_*` for those two commands only), since
+the carry that writes them into the guest's git config runs after the
+overlap check, so that a refused sync changes nothing. The merge is
+`git merge --no-ff --no-edit --no-verify --no-autostash
+--no-verify-signatures --no-gpg-sign -m "Merge the laptop's <branch>
+(repose sync)"`: the user's identity, unsigned like every commit made on a machine,
+without the repository's hooks or a carried `merge.ff=only` or
+`merge.autoStash`. A guest on another branch, or detached, is switched
+to the laptop's branch first (`git checkout <branch> --`, which carries
+the guest's uncommitted files as any switch does): the sync moves the
+checkout to the laptop's branch whatever happens, so the merge goes where
+the checkout was going anyway, and the other branch keeps its commits.
+The overlap check then also counts the paths that switch changes, so git
+does not refuse it over a file the guest changed; if git refuses it all
+the same, the sync falls back to the detached checkout. The summary line says `, merged with the machine's
+<branch>`. Otherwise the branch is left alone and the laptop's commit is
+checked out detached as before, with a shorter warning (``The machine's
+main has commits that could not be merged with yours, so it was left as
+it is and the machine is on 4f2a9c1, detached. `git fetch repose`
+brings that branch here.``), and the agent guide now says what a detached
+checkout after a sync means and what to do before committing. A merge
+the sync started that fails is aborted and falls back to the detached
+checkout; a merge the agent started is never aborted (one in progress
+refuses the sync, and the merge checks again just before it runs).
+`TestSyncMergesADivergedGuestBranch`,
+`TestSyncMergesWithTheLaptopsIdentity`,
+`TestSyncLeavesAConflictingGuestBranchAlone`,
+`TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork`,
+`TestSyncMergesBesideTheGuestsUncommittedFiles`,
+`TestSyncMergesTheGuestsMainFromAnotherBranch`,
+`TestSyncLeavesTheGuestsBranchesAloneWhenMainConflicts`. *Rejected:*
+rebasing the agent's commits onto the laptop's (rewrites commits an
+agent may have pushed); refusing (the laptop's work would not reach the
+machine at all). An earlier draft of this entry also rejected merging
+for a guest on another branch, as it "would have to switch the agent's
+branch first"; the owner asked about that case, and the reason does not
+hold: every sync already moves the checkout to the laptop's branch, so
+detaching there only lost the merge.
+
+**I-575. Ctrl-C after a run or sync created a project leaves no
+directory link behind and names the project; a sync into a named
+project links a directory nothing else can find.** (sync-overlap,
+owner's dogfood, 2026-10-07; amends I-152 and I-358) In `job search`,
+whose laptop checkout has no git remote, a plain `repose sync` printed
+`Created job-search (large)`; the owner meant his machine `job` and
+pressed Ctrl-C. `job-search` stayed on the account and in `by_dir`, so
+the next plain sync there would have used it unasked. `job` was not
+found because nothing linked the directory to it: a project with no
+remote is found only through `by_dir`, which only the run that creates
+such a project writes, and an explicit project (`--project job`, as the
+owner then used) never writes it (I-152). Either `job` was made from
+another directory or laptop, or its entry was lost, and its name is not
+the directory's, so no name match would have found it either. Now:
+- When `run` or `sync` created the project and the command ends
+  interrupted before it connected, the CLI removes the project from
+  `projects.json` and exits 130 with ``Interrupted. job-search was created
+  and stays on your account; `repose rm job-search` removes it.`` The
+  project is not removed for the user: the api refuses a destroy while
+  the create op runs (`ErrOpInProgress`), and waiting for it is what the
+  Ctrl-C asked not to do.
+- Ctrl-C while the create request itself is out: the api may have made
+  the project without the CLI hearing of it. One lookup by name, two
+  seconds at most, settles it: a project of that name made moments ago
+  (still creating or building, or created in the last two minutes, so an
+  older project of the same name is never offered to `repose rm`) gets
+  the same line; otherwise ``Interrupted. job-search may have been
+  created; `repose ls` shows it.`` Exit 130 either way, and nothing is
+  cached.
+- A sync into a project named on the command line (`repose sync job`,
+  `--project`, or a run's first sync), with no remote, from a directory
+  with no remote and no `by_dir` entry, writes `by_dir` for that project:
+  the directory's work is now in it, so a plain `repose sync` there means
+  it. A directory that has an entry keeps it, and a directory with a
+  remote is found by its remote as before.
+`TestSyncInterruptedAfterCreateForgetsTheProject`,
+`TestSyncInterruptedDuringTheCreateRequestNamesTheProject`,
+`TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist`,
+`TestSyncWithAProjectLinksAnUnlinkedDirectory`,
+`TestSyncWithAProjectLeavesACheckoutWithARemoteUnlinked`. *Rejected:*
+destroying the project on Ctrl-C (refused by the api mid-create, see
+above); keeping the entry and printing the line (the next plain sync
+would still land on a project the user stopped); picking an existing
+project whose name matches the directory (a second laptop's unrelated
+folder of the same name would sync into it).
 **I-569. A plan sells no project count; every account may have 100
 projects, running or stopped.** (owner dogfood, 2026-10-07) The owner,
 at 6 of 6 projects with four stopped, was refused `repose fork` and
@@ -14750,7 +15846,7 @@ code that gives that pair. `TestStatusDiskIsTheGuestsFilesystem`,
 `TestAgentStateCountsEveryAgent`,
 `TestSamplePastItsBudgetStillCountsSSHSessions`. Needs a CLI release;
 the guide line and the guestd change ship with the base.
-
+ guestd's `unknown` (an agent quiet for less than the idle time, or a window that just closed; dogfood 2026-10-07: `claude: unknown` on kanali) is not named in the AGENTS column or on the dashboard: one such agent reads as its name, several are counted without it, and the project page shows `—`, since lifecycle.md promises only `working`, `idle` and `needs_input`.
 **I-568. The dashboard's header links to the docs, and the agent guide
 says how to hand the user a file.** (cli-small-fixes, 2026-10-07;
 owner's notes) "why are docs not linked in the homepage": the landing
@@ -14938,3 +16034,35 @@ refusing starts earlier (a stopped user's own files, and the pool has
 room); stopping guests automatically near full (an operator's call per
 tenant, RUNBOOK "PoolFull"); placing by free guest indexes reported by
 hostd (the live project count is the same number without a new field).
+`jq` added. *Amended by I-578:* Account moved into Settings, and Docs shows at
+every width.
+
+**I-578. The Account page is a section of Settings, and the dashboard
+header shows Docs at every width.** (header-docs-phone, 2026-10-07;
+owner's decision; amends I-568 and 08-dashboard.md 5.2's `/account`
+row.) I-568 put Docs in the header from `sm` up only, because six labels
+did not fit a 360px phone, so a phone reached the docs only through the
+landing. The owner chose to merge Account into Settings to free the room:
+the header is Projects, Billing, Settings, Docs and Sign out at every
+width, five items as before the Docs link, with Docs shorter than Account.
+`/settings` now holds, in order: Account (handle, email, GitHub login;
+`id="account"`), Timezone, Notifications, Install, machine.nix
+(`#machine-nix`) and Delete account (`#delete-account`), last as the
+danger zone (DESIGN-LANGUAGE.md). The account page's own Sign out button
+is gone: the header has Sign out on every page and every width, and two
+on one page made the second noise. `/account` is a server route answering
+308 to `/settings` with no fragment: the account section sits directly
+under the title, so the top of the page is the right place, and a browser
+carries an old `/account#machine-nix` over a Location without a fragment.
+The Settings page scrolls to its URL's fragment once its sections have
+rendered (they wait for `GET /me`), which the Config page's link to
+`#machine-nix` needs. Links updated: the Config page, billing.md,
+config.md, 08-dashboard.md, status-and-logs.md, DESIGN-LANGUAGE.md,
+LAUNCH.md, DOCS-AUDIT.md; nothing in internal/, cmd/, the email
+templates or the agent guide linked to `/account`. *Rejected:* a menu
+behind the handle (a second header pattern for one link); dropping Sign
+out from the header on phones. design.spec.ts "the dashboard header shows
+Docs and fits at 390/360"; routes.spec.ts "/account redirects
+permanently to /settings"; settings-account.spec.ts "settings carries the
+account section first and no heading twice"; machine-nix.spec.ts follows
+the Config page's link to `/settings#machine-nix`.

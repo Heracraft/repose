@@ -73,7 +73,7 @@ const sshRetryInterval = time.Second
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
 // attachOnly runs only steps 1 (resolve, no create), 3, 4, 8 — what
 // `repose attach` is (§5.5's last paragraph).
-func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error {
+func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retErr error) {
 	// A project this checkout ran before, with its ssh master still up:
 	// attach needs no api call, and run's probe goes out beside the api's
 	// answer instead of after it (DECISIONS I-223).
@@ -179,6 +179,16 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		}
 	}
 	project := res.Project
+	// made is the project this command created, until the sync or carry
+	// reaches it. Ctrl-C before then: it is this command's own and nothing
+	// has used it, so the directory does not keep it (the next plain run
+	// would land on it unasked) and one line says it exists (I-575).
+	var made *Project
+	defer func() {
+		if made != nil && retErr != nil && ctx.Err() != nil {
+			retErr = interruptedCreate(e, made)
+		}
+	}()
 	if project == nil {
 		if attachOnly {
 			return errNoProjectFoundFor(res.Remote, e.Command)
@@ -188,6 +198,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if err != nil {
 			return err
 		}
+		made = project
 	}
 
 	endEnsure := timeSpan("phase ensure-running")
@@ -234,6 +245,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	endConnect()
 	pr.End()
 	_, _ = fmt.Fprintf(e.Out, "Connected to %s (%s)\n", project.Slug, project.Class)
+	made = nil
 	idleNote(project.ID)
 	// Another checkout of the machine (I-480): the folder's, or the one
 	// PROJECT:CHECKOUT names. --on the first time makes it.
@@ -246,7 +258,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout}
+	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
+		helper.MCPOff = true // I-556: attach honours the off switch too
+	}
+	helper.MCP = e.Cfg.mcpForward(project.Slug) // I-557
 	// This folder's checkout on the machine: the machine's own (the same
 	// remote), or another one the folder is (I-480), not one that
 	// PROJECT:CHECKOUT named from elsewhere.
@@ -300,6 +316,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 
 	// The machine's checkout, as its sync or carry found it (I-368).
 	var checkout *string
+	// The laptop's .mcp.json answers for this repository, which the agent
+	// window's trust write copies (I-556); read with the carry.
+	var mcpAppr mcpApprovals
 	if skipSync {
 		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
@@ -328,17 +347,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			envDone <- builtEnv{envs, err}
 		}()
 		type builtCarry struct {
-			gc    *gitCarry
-			gcErr error
-			cc    *claudeCarry
-			tc    *toolsCarry
+			gc      *gitCarry
+			gcErr   error
+			cc      *claudeCarry
+			tc      *toolsCarry
+			mc      *mcpCarry
+			mcNotes []string
 		}
 		carryDone := make(chan builtCarry, 1)
 		go func() {
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
+			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot))                                 // I-221, I-222, I-490
+			b.mc, b.mcNotes = buildMCPCarry(e.HomeDir, gitRepoRoot(repoRoot), project.Slug, target.Checkout, toolBinsOf(b.tc)) // I-556
 			carryDone <- b
 		}()
 		waitEnv := func() []envFile {
@@ -363,6 +385,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			Carry: func(markers map[string]string) (*credCarry, error) {
 				b := <-carryDone
 				gc, cc := b.gc, b.cc
+				if b.mc != nil && !skip[mcpLogin] {
+					mcpAppr = b.mc.Approvals
+				}
 				if b.gcErr != nil {
 					e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(b.gcErr.Error()))
 				}
@@ -376,13 +401,16 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 						e.warn("%s", n)
 					}
 				}
+				for _, n := range b.mcNotes {
+					e.warn("%s", n)
+				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
 					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
 						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
 					},
-				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, Markers: markers})
+				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
 			},
 		})
 		if err != nil {
@@ -391,6 +419,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		endSync()
 		pr.End()
 		checkout = &summary.Checkout
+		if !summary.Skipped && target.Checkout == "" {
+			e.linkExplicitSync(project, opts)
+		}
 		if l := syncResultLine(summary, opts.NoAttach); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
 		}
@@ -481,7 +512,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell})
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
@@ -525,6 +556,88 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	return attach(window)
 }
 
+// linkExplicitSync remembers this directory for project after `repose
+// sync PROJECT` (or `--project`, or a run's first sync) laid the
+// directory's work into it, when nothing else can find it: the directory
+// has no git remote, neither has the project, and the directory has no
+// project of its own in the cache. The next plain `repose sync` here then
+// lands on the same machine instead of creating one named after the
+// directory (DECISIONS I-575, narrowing I-152 for this case).
+func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
+	explicit := e.resolveArg(opts.ProjectArg)
+	if explicit == "" || strings.Contains(explicit, ":") || project.RemoteURL != "" || e.extraCheckout() != nil {
+		return
+	}
+	deps := defaultResolveDeps()
+	if deps.RemoteFor(e.Cwd) != "" {
+		return
+	}
+	key := dirKey(e.Cwd, deps)
+	if _, ok := e.Cache.ByDir[key]; ok {
+		return
+	}
+	if e.Cache.ByDir == nil {
+		e.Cache.ByDir = map[string]string{}
+	}
+	e.Cache.ByDir[key] = project.ID
+	if err := e.saveCache(); err != nil {
+		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+}
+
+// interruptedCreate is runRun's error when Ctrl-C came after it created
+// p and before anything used it (DECISIONS I-575): the directory's cache
+// forgets p, so the next plain run here does not land on it unasked, and
+// the line names it. The api has no cancel for a create in flight, so the
+// project stays until the user removes it.
+func interruptedCreate(e *Env, p *Project) error {
+	forgetProject(&e.Cache, p.ID)
+	// From the file as it is: the create's own save added the entries,
+	// and a save of e.Cache only removes what its load had (mergeInto).
+	disk, err := loadProjectsCache(e.Dir)
+	if err == nil {
+		forgetProject(&disk, p.ID)
+		err = saveProjectsCache(e.Dir, disk)
+	}
+	if err != nil {
+		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+	return interruptedCreated(p.Slug)
+}
+
+func interruptedCreated(slug string) error {
+	return exitf(ExitInterrupted, "Interrupted. %s was created and stays on your account; `repose rm %s` removes it.", slug, slug)
+}
+
+// createLookupWait bounds interruptedInFlight's lookup: the user pressed
+// Ctrl-C to stop waiting.
+var createLookupWait = 2 * time.Second
+
+// interruptedInFlight is createProjectForRun's error when Ctrl-C cut its
+// create request short (DECISIONS I-575): one short lookup by name says
+// whether the api made the project. Only one made moments ago counts, so
+// an older project of the same name (the create would have been refused
+// as a conflict) is never named for `repose rm`. A lookup that finds
+// nothing cannot rule out a create the api is still finishing.
+func interruptedInFlight(e *Env, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), createLookupWait)
+	defer cancel()
+	if p, err := findByName(ctx, e.Client, name); err == nil && p != nil && justCreated(p) {
+		return interruptedCreated(p.Slug)
+	}
+	return exitf(ExitInterrupted, "Interrupted. %s may have been created; `repose ls` shows it.", name)
+}
+
+// justCreated is whether p is a project a create made moments ago: still
+// being created or built, or created in the last two minutes.
+func justCreated(p *Project) bool {
+	switch p.State {
+	case "creating", "building":
+		return true
+	}
+	return !p.CreatedAt.IsZero() && time.Since(p.CreatedAt) < 2*time.Minute
+}
+
 // syncResultLine is what a run prints about its sync. With nothing new on
 // the laptop (the apply skipped, I-224, I-248) a run that attaches says
 // nothing (I-303); `repose sync` and --no-attach have nothing else to
@@ -538,7 +651,7 @@ func syncResultLine(s *SyncSummary, noAttach bool) string {
 	case !s.Unchanged:
 		return s.String()
 	case noAttach:
-		return "Nothing new to sync: the machine already has this checkout."
+		return nothingNewLine
 	}
 	return ""
 }
@@ -1326,6 +1439,11 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	waited := map[string]bool{}
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
+		if err != nil && ctx.Err() != nil {
+			// Ctrl-C with the create in flight: the api may have made it
+			// (I-575). Nothing is cached either way.
+			return nil, interruptedInFlight(e, req.Name)
+		}
 		if ae, ok := baseGateRefusal(err); ok && req.Multiplexer != "" {
 			if !auto {
 				return nil, exitf(ExitGeneric, "%s", ae.Message)
@@ -1593,6 +1711,11 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		}
 		co.Claude = cc
 	}
+	mc, notes := buildMCPCarry(e.HomeDir, repoDir, project.Slug, t.Checkout, toolBinsOf(co.Tools)) // I-556
+	for _, n := range notes {
+		e.warn("%s", n)
+	}
+	co.MCP = mc
 	skip, chosen := e.loginSkip(project.Slug)
 	copied, carried, err := syncCredentialsAndCarry(ctx, t, e.HomeDir, repoDir, credSyncOptions{
 		RemoteURL: project.RemoteURL,

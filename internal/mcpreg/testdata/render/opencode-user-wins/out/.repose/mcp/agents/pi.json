@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "bar": {
+      "url": "https://bar.example/mcp"
+    },
+    "baz": {
+      "url": "https://baz.example/mcp"
+    },
+    "foo": {
+      "headers": {
+        "A": "${FOO_T}"
+      },
+      "url": "https://foo.example/mcp"
+    }
+  }
+}

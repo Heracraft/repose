@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": [
+        "repose-mcp",
+        "run",
+        "db"
+      ],
+      "type": "local"
+    }
+  },
+  "skipped": [
+    {
+      "name": "db",
+      "reason": "another server has this name"
+    }
+  ]
+}

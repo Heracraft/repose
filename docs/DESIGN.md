@@ -32,10 +32,10 @@ $ repose run "finish the auth flow, run the tests, commit"
                                     # opens tmux window "claude", starts Claude
                                     # Code's TUI, types the prompt
 $ repose status
-todo-app   large   running  2h14m   claude: working   $0.31 so far today
+todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
 $ repose open 3000                 # http://localhost:3000 -> guest's :3000
 $ repose attach                    # back into tmux, see what the agent did
-$ repose stop                      # snapshot, then deallocate; disk billed only
+$ repose stop                      # snapshot, then deallocate; a stopped project costs nothing
 ```
 
 Everything else (`secrets`, `config`, `snapshots`, `logs`, `destroy`, `start`)
@@ -181,6 +181,12 @@ of user config:
   3.12, uv, go, rustup, just, ripgrep, jq, gh, git, direnv with nix-direnv,
   starship, zoxide, eza, a C toolchain and everyday CLIs (I-218).
 - `fs.inotify.max_user_watches=1048576`, `max_user_instances=1024`.
+- Under load, what a user types gets through first. The SSH session
+  scopes and the tmux server run at ten times a pane's CPU weight. When
+  memory runs out, the kernel kills rather than thrashes, and the SSH
+  session, the tmux server, dev's user manager, guestd and journald are
+  the last killed and the last paged out; the largest build or dev
+  server goes first, and agents are kept (DECISIONS I-200, I-494, I-576).
 - `TZ` and `LANG=C.UTF-8` set from the user's profile; `TZ` defaults to the
   laptop's zone as reported by the CLI at project creation.
 - Fluent Bit is *not* in the guest. Console output goes to hostd over the
@@ -214,9 +220,10 @@ its fragment; the CLI streams the build.
   root overlay's upper dir and `/home`.
 - Snapshot = `guestd` runs `fsfreeze -f /` , hostd takes an LVM thin snapshot,
   `guestd` runs `fsfreeze -u`, freeze window under one second. The snapshot's
-  used blocks (DECISIONS I-164) are streamed `zstd`-compressed to Azure Blob (`repose-snapshots` container,
+  used blocks (DECISIONS I-164) are read eight chunks at a time around the
+  page cache (I-571) and streamed `zstd`-compressed to Azure Blob (`repose-snapshots` container,
   path `<user>/<project>/<timestamp>.img.zst`), then the LVM snapshot is
-  removed.
+  removed. On `stop` the upload runs while the guest shuts down (I-404).
 - Schedule: nightly at 03:00 in the host's timezone, and on every `stop`.
   Retain 7 daily. After `destroy`, keep the last snapshot 30 days. After
   account cancellation, stop all guests, keep snapshots 30 days, then delete.
@@ -356,9 +363,12 @@ and no `--name` is an error with a one-line fix.
 4. Sync: the laptop's commits travel in a git bundle over SSH (the guest
    never fetches from origin, nothing is pushed), the laptop's `HEAD` is
    checked out, and staged and unstaged changes follow as two diffs, with
-   untracked files as a tar. If the guest's tree has changes of its own,
-   refuse and offer `--stash-remote` or `--discard-remote`
-   (`features/sync-at-launch.md`). Since DECISIONS I-367 `run` does this
+   untracked files as a tar. If the guest changed files the sync would
+   write, refuse, name them and offer `--stash-remote` or
+   `--discard-remote`; its changes elsewhere stay (DECISIONS I-573,
+   `features/sync-at-launch.md`). A guest branch with commits the laptop
+   lacks takes a merge of the laptop's commit when git can make it
+   cleanly (I-574). Since DECISIONS I-367 `run` does this
    only into a guest whose checkout has no commit yet; `repose sync` does
    it on demand.
 5. Sync credential files listed in `features/secrets.md` (gh, Codex,

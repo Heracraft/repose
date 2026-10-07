@@ -186,3 +186,28 @@ func TestErrNoProjectFoundMessages(t *testing.T) {
 		t.Fatalf("code = %d", e2.code)
 	}
 }
+
+// A command that takes PROJECT only as --project says so in its hint;
+// one with PROJECT in its usage keeps the argument form.
+func TestNoProjectHintForm(t *testing.T) {
+	root := newRootCmd("test")
+	for args, want := range map[string]string{
+		"mcp forward notes":    "Name one: `repose mcp forward --project PROJECT`",
+		"secrets import --mcp": "Name one: `repose secrets import --project PROJECT`",
+		"secrets set NAME":     "Name one: `repose secrets set --project PROJECT`",
+		"mcp list":             "Name one: `repose mcp list PROJECT`",
+		"attach":               "Name one: `repose attach PROJECT`",
+	} {
+		cmd, _, err := root.Find(strings.Fields(args))
+		if err != nil {
+			t.Fatalf("%s: %v", args, err)
+		}
+		if got := errNoProjectFoundFor("", hintCommand(cmd)).Error(); !strings.Contains(got, want) {
+			t.Errorf("repose %s: %q, want %q", args, got, want)
+		}
+	}
+	got := errNoProjectFoundFor("github.com/a/b", "repose mcp forward --project").Error()
+	if !strings.Contains(got, "or name one: `repose mcp forward --project PROJECT`.") {
+		t.Errorf("with a remote: %q", got)
+	}
+}

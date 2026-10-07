@@ -277,7 +277,7 @@ agent runs headless Chromium, nothing is displayed and nothing is started.
 | Agent | Version in the overlay | Mechanism | Verified how |
 |---|---|---|---|
 | Claude Code | nixpkgs `claude-code` at the flake lock | `hooks.Notification` and `hooks.Stop` in `~/.claude/settings.json` run `repose-hook`; payload on stdin | VM test feeds a recorded `Stop` payload through `repose-hook` and asserts the `AgentEvent` on the socket |
-| Codex CLI | nixpkgs `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`; payload as `argv[1]` | wrapper adds the key; mapping of `agent-turn-complete` in `repose-hook` |
+| Codex CLI | nixpkgs `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`; payload as `argv[1]`. `/etc/codex/config.toml` sets `approval_policy = "never"`, `sandbox_mode = "danger-full-access"`, `check_for_update_on_startup = false`, below the user's file (DECISIONS I-546) | wrapper adds the key; mapping of `agent-turn-complete` in `repose-hook`; guest-agent-guide VM test parses `/etc/codex/config.toml` |
 | opencode | nixpkgs `opencode` | plugin `~/.config/opencode/plugins/repose.js` on `session.idle`, `session.error`, `permission.updated` | plugin installed by the wrapper; the event names are the ones opencode's plugin API documents and are not exercised against a live session here (no provider key on the dev box), so guestd's heuristic remains the fallback |
 | Gemini CLI | nixpkgs `gemini-cli` (marked for removal upstream: Google replaced it with Antigravity CLI; the overlay keeps it until 12 decides) | pane-idle heuristic in guestd | none needed |
 | pi | nixpkgs `pi-coding-agent` | pane-idle heuristic in guestd | none needed |
@@ -307,7 +307,7 @@ dev box, the flake stays.
 | Agent wrapper clobbers a user hook | Forbidden by the merge rule; VM test asserts an existing hook survives. |
 | Xvnc starts but Chromium shows nothing | `DISPLAY` not exported because the profile snippet ran before Xvnc. The snippet checks the X socket each shell start; the user opens a new shell. Documented in `features/browser.md`. |
 | A user profile references a host path that gets collected | `repose-pin-profile` copies profile closures into the overlay; if it did not run (activation failed), the error is `nix: path /nix/store/... does not exist` in the guest; the fix is `nix profile install` again, and the base bug is filed. |
-| Guest OOM | zram absorbs bursts; the kernel OOM killer picks the largest process, which is usually a build, not the agent. guestd sends `Warning{kind: "oom"}` from `dmesg`, and the user sees it in `repose status`. |
+| Guest OOM | zram absorbs bursts; MGLRU's `min_ttl_ms` makes the kernel kill rather than thrash; the kernel OOM killer picks the largest process not on the keystroke path or an agent, which is usually a build (I-200, I-576). guestd sends `Warning{kind: "oom"}` from `dmesg`, and the user sees it in `repose status`. |
 
 ## 7. Testing
 

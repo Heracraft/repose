@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "sentry": {
+      "bearer_token_env_var": "SENTRY_TOKEN",
+      "env_http_headers": {
+        "X-Org": "SENTRY_ORG"
+      },
+      "http_headers": {
+        "X-Plain": "yes"
+      },
+      "url": "https://mcp.sentry.dev/mcp"
+    }
+  },
+  "skipped": [
+    {
+      "name": "events",
+      "reason": "an SSE server, which Codex does not take"
+    },
+    {
+      "name": "partial",
+      "reason": "a header Codex cannot fill"
+    },
+    {
+      "name": "socket",
+      "reason": "a WebSocket server, which Codex does not take"
+    }
+  ]
+}

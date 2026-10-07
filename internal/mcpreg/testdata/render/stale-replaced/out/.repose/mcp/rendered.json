@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "linear": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "linear"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}
