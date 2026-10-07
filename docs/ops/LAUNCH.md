@@ -73,7 +73,7 @@ the code in the tweet; the checkout has a discount field.
 2. Set `RESEND_API_KEY` on both api apps and redeploy. `NOTIFY_FROM` stays
    `repose <notify@repose.herakraft.co>`.
 3. Check: sign in with a fresh GitHub account; the `welcome` email arrives.
-   The dashboard's Account page has "Send a test notification".
+   The dashboard's Settings page has **Send test**.
 
 ## 3. Seats and the host (money)
 

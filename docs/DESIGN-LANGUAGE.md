@@ -220,8 +220,8 @@ links are Docs and Pricing at every width, GitHub from `sm` up, and the
 sign-in button; Pricing is in the footer too.
 The right side holds plain text links in `--ink-muted`; the current page
 is ink with a 1px underline, no bold shift and no accent colour. The
-dashboard's are Projects, Billing, Settings, Account, Docs from `sm` up
-(I-568) and Sign out. No hamburger on the dashboard; the docs' menu button sits at the right end
+dashboard's are Projects, Billing, Settings, Docs and Sign out at every
+width (I-568, I-578). No hamburger on the dashboard; the docs' menu button sits at the right end
 below `lg`.
 
 Every page's content column is the header's column: `max-w-5xl`, and
@@ -232,7 +232,7 @@ starting under the logo, so nothing shifts sideways between pages.
 # Dashboard
 
 The signed-in pages: projects, a project and its config and secrets,
-billing, settings and account.
+billing, and settings (which holds the account, I-578).
 
 ## Frame
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-603 entries.
+604 entries.
 
 ## Scope
 
@@ -634,4 +634,5 @@ pointer, not a summary.
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L15636
 - **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15743
 - **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L15774
-- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; L15845
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; L15845
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; L15870

@@ -439,7 +439,7 @@
 				</label>
 				<p class="mt-1 text-sm text-ink-muted">
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-					<a class="link" href={resolve('/account') + '#machine-nix'}
+					<a class="link" href={resolve('/settings') + '#machine-nix'}
 						>Edit machine.nix on your account</a
 					>
 				</p>
