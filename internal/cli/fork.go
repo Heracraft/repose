@@ -158,7 +158,14 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if err != nil {
 		pr.Fail()
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
+		// The api's cap refusal (a create elsewhere since the check
+		// above, or /me unreadable) in the words every command uses.
+		if errors.As(err, &apiErr) {
+			if have, limit, n, ok := projectLimitOf(apiErr); ok {
+				return exitf(ExitGeneric, "%s", projectLimitMessage(have, limit, n))
+			}
+		}
+		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
 			return exitf(ExitGeneric, "Could not fork %s: %s. Nothing was created.", src.Slug, strings.TrimSuffix(humaneMessage(apiErr.Message), "."))
 		}
 		return err
