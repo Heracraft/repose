@@ -13465,8 +13465,9 @@ variables), `NAME.timer` with `OnCalendar=daily`, `Persistent=true`
 (a run missed while the machine was stopped happens at the next start)
 and `WantedBy=timers.target`, enabled with `systemctl --user
 daemon-reload && systemctl --user enable --now NAME.timer`. machine.md
-"Scheduled jobs" and the agent guide say so. *Rejected:* installing
-cronie, a second scheduler beside systemd's with its own environment.
+"Scheduled jobs" and the agent guide say so. With I-521's link in
+place, both write `ExecStart=/bin/bash -lc 'CMD'`, the same bash.
+*Rejected:* installing cronie, a second scheduler beside systemd's with its own environment.
 
 **I-519. home.shellAliases from machine.nix or repose.nix reach every shell.**
 (base-shell-terminal, 2026-10-05; amends I-488 and I-490) `/docs/config`

@@ -26,7 +26,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 `host.docker.internal` isn't defined. To reach a server on the machine from a container, add `extra_hosts: ["host.docker.internal:host-gateway"]` (or `--add-host host.docker.internal:host-gateway`), and have that server listen on `0.0.0.0`; one listening only on localhost refuses the connection.
 
-Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
+Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
 
 Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
@@ -50,7 +50,8 @@ Type a command the machine doesn't have and it tells you which package has it an
 $ air
 air: command not found
   nix profile add nixpkgs#air  install it on this machine
-  repose config add air        keep it on every rebuild (run this on your laptop)
+  repose config add air        keep it on every rebuild
+                               (run this on your laptop)
 Other packages with air: air-formatter
 ```
 
@@ -112,7 +113,7 @@ The machine has no cron. A systemd timer runs a job on a schedule, with nobody a
 # ~/.config/systemd/user/backup.service
 [Service]
 Type=oneshot
-ExecStart=/run/current-system/sw/bin/bash -lc 'cd ~/myapp && ./scripts/backup.sh'
+ExecStart=/bin/bash -lc 'cd ~/myapp && ./scripts/backup.sh'
 ```
 
 ```ini
@@ -128,7 +129,8 @@ WantedBy=timers.target
 Then turn it on:
 
 ```
-systemctl --user daemon-reload && systemctl --user enable --now backup.timer
+systemctl --user daemon-reload
+systemctl --user enable --now backup.timer
 ```
 
 The job runs with the same `PATH`, secrets and variables as a login shell. `Persistent=true` runs a job missed while the machine was stopped when it next starts. `systemctl --user list-timers` shows when each runs next, and `journalctl --user -u backup` shows its output.
