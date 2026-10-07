@@ -41,6 +41,13 @@ type Options struct {
 	// the way the real engine does; a start meanwhile is a conflict. Zero
 	// keeps the instant create.
 	CreateDelay time.Duration
+	// CreateHold holds POST /projects for the duration before it makes
+	// anything; a client that gives up meanwhile creates nothing.
+	// CreateReplyDelay makes the project at once and holds only the
+	// answer. Both stand in for a create request cut short by Ctrl-C
+	// (DECISIONS I-575); other requests are served meanwhile.
+	CreateHold       time.Duration
+	CreateReplyDelay time.Duration
 	// StartDelay makes POST /projects/:id/start on a stopped project leave
 	// the project "starting" and its op "running" (phase start_guest) for
 	// the delay, then running and done. Zero keeps the instant start.
@@ -365,6 +372,14 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	isCreate := r.Method == http.MethodPost && r.URL.Path == "/v1/projects"
+	if isCreate && f.opts.CreateHold > 0 {
+		select {
+		case <-time.After(f.opts.CreateHold):
+		case <-r.Context().Done():
+			return
+		}
+	}
 	f.mu.Lock()
 	f.reqSeq++
 	w.Header().Set("X-Request-Id", fmt.Sprintf("req-%06d", f.reqSeq))
@@ -401,6 +416,22 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// themselves, for their reads only.
 		f.mu.Unlock()
 		f.mux.ServeHTTP(w, r)
+		return
+	}
+	if isCreate && f.opts.CreateReplyDelay > 0 {
+		rec := httptest.NewRecorder()
+		f.mux.ServeHTTP(rec, r)
+		f.mu.Unlock()
+		select {
+		case <-time.After(f.opts.CreateReplyDelay):
+		case <-r.Context().Done():
+			return
+		}
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
 		return
 	}
 	defer f.mu.Unlock()

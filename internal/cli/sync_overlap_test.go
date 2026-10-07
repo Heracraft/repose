@@ -230,10 +230,11 @@ func TestSyncStashesAnOlderSyncsChangesWithoutTheRecord(t *testing.T) {
 	wantFile(t, f.guestRepo(), "README.md", "laptop edit, later\n")
 }
 
-// An agent in the middle of a merge of its own: the sync makes no merge
-// and aborts nothing, so the agent's staged merge result stays.
-func TestSyncDoesNotMergeOrAbortDuringTheAgentsMerge(t *testing.T) {
-	f := newSyncFixture(t)
+// agentMidMerge leaves the guest's main in the middle of a merge of a
+// side branch (staged side.txt, MERGE_HEAD), with a commit of its own the
+// laptop lacks, and gives the laptop a new commit.
+func agentMidMerge(t *testing.T, f *syncFixture) {
+	t.Helper()
 	g := f.guestRepo()
 	mustRun(t, g, "git", "checkout", "-q", "-b", "side")
 	writeAt(t, g, "side.txt", "side\n")
@@ -247,16 +248,137 @@ func TestSyncDoesNotMergeOrAbortDuringTheAgentsMerge(t *testing.T) {
 	writeAt(t, f.local, "laptop.go", "package laptop\n")
 	mustRun(t, f.local, "git", "add", "laptop.go")
 	mustRun(t, f.local, "git", "commit", "-q", "-m", "laptop's commit")
+}
+
+// A merge, rebase, cherry-pick, revert, am or bisect in progress on the
+// machine refuses the sync, naming it, and nothing moves; --stash-remote
+// refuses too and says why; --discard-remote throws the state away and
+// syncs (I-573).
+func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts SyncOptions
+		want string
+	}{
+		{"plain", SyncOptions{}, "Not synced: the machine's checkout is in the middle of a git merge. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes."},
+		{"stash", SyncOptions{StashRemote: true}, "Not synced: the machine's checkout is in the middle of a git merge, which `--stash-remote` can't keep. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSyncFixture(t)
+			agentMidMerge(t, f)
+			g := f.guestRepo()
+			head := mustRun(t, g, "git", "rev-parse", "HEAD")
+			_, err := syncGuest(context.Background(), f.target, f.local, testSlug, tc.opts)
+			wantDirtyRefusal(t, err)
+			if msg := err.(*exitError).msg; msg != tc.want {
+				t.Fatalf("message:\n%s\nwant:\n%s", msg, tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(g, ".git", "MERGE_HEAD")); err != nil {
+				t.Fatalf("the agent's merge is gone: %v", err)
+			}
+			if got := mustRun(t, g, "git", "rev-parse", "HEAD"); got != head {
+				t.Fatalf("guest HEAD moved to %s", got)
+			}
+			if st := mustRun(t, g, "git", "status", "--porcelain"); !strings.Contains(st, "A  side.txt") {
+				t.Fatalf("guest status %q, want the agent's staged side.txt", st)
+			}
+			if list := mustRun(t, g, "git", "stash", "list"); list != "" {
+				t.Fatalf("stashed: %q", list)
+			}
+		})
+	}
+}
+
+func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
+	f := newSyncFixture(t)
+	agentMidMerge(t, f)
+	g := f.guestRepo()
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{DiscardRemote: true})
+	if err != nil {
+		t.Fatalf("sync --discard-remote: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(g, ".git", "MERGE_HEAD")); err == nil {
+		t.Fatal("the agent's merge is still in progress")
+	}
+	if !s.Merged {
+		t.Fatalf("summary %+v, want the laptop's commit merged", s)
+	}
+	wantFile(t, g, "laptop.go", "package laptop\n")
+	if _, err := os.Stat(filepath.Join(g, "side.txt")); err == nil {
+		t.Fatal("side.txt, the discarded merge's, is still there")
+	}
+}
+
+// A bisect is named as such.
+func TestSyncRefusesDuringABisect(t *testing.T) {
+	f := newSyncFixture(t)
+	mustRun(t, f.guestRepo(), "git", "bisect", "start")
+	writeAt(t, f.local, "laptop.go", "package laptop\n")
+	mustRun(t, f.local, "git", "add", "laptop.go")
+	mustRun(t, f.local, "git", "commit", "-q", "-m", "laptop's commit")
+	_, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	wantDirtyRefusal(t, err)
+	if msg := err.(*exitError).msg; !strings.HasPrefix(msg, "Not synced: the machine's checkout is in the middle of a git bisect.") {
+		t.Fatalf("message:\n%s", msg)
+	}
+}
+
+// The merge's committer is the identity the sync carries, the laptop's,
+// even on a guest whose git has none of its own yet (I-574).
+func TestSyncMergesWithTheLaptopsIdentity(t *testing.T) {
+	f := newSyncFixture(t)
+	g := f.guestRepo()
+	writeAt(t, g, "agent.go", "package agent\n")
+	mustRun(t, g, "git", "add", "agent.go")
+	mustRun(t, g, "git", "commit", "-q", "-m", "agent's commit")
+	mustRun(t, g, "git", "config", "--unset", "user.email")
+	mustRun(t, g, "git", "config", "--unset", "user.name")
+	writeAt(t, f.local, "laptop.go", "package laptop\n")
+	mustRun(t, f.local, "git", "add", "laptop.go")
+	mustRun(t, f.local, "git", "commit", "-q", "-m", "laptop's commit")
 
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	if s.Merged || !s.Diverged {
-		t.Fatalf("summary %+v", s)
+	if !s.Merged {
+		t.Fatalf("summary %+v, want merged", s)
 	}
-	wantFile(t, g, "side.txt", "side\n")
-	if st := mustRun(t, g, "git", "status", "--porcelain"); !strings.Contains(st, "A  side.txt") {
-		t.Fatalf("guest status %q, want the agent's staged side.txt", st)
+	if got := mustRun(t, g, "git", "log", "-1", "--format=%cn <%ce> %an <%ae>"); got != "Dev Laptop <dev@example.com> Dev Laptop <dev@example.com>" {
+		t.Fatalf("merge commit identity = %q", got)
+	}
+}
+
+// After a sync that kept the agent's file beside the laptop's, a sync
+// with nothing new counts the agent's file alone, every untracked file
+// on its own; once the agent's file is gone, nothing is the machine's.
+func TestSyncNothingNewCountsOnlyTheGuestsOwn(t *testing.T) {
+	f := newSyncFixture(t)
+	writeAt(t, f.local, "README.md", "laptop edit\n")
+	writeAt(t, f.local, "notes.md", "laptop notes\n")
+	writeAt(t, f.guestRepo(), "gen/a.go", "package gen\n")
+	writeAt(t, f.guestRepo(), "gen/b.go", "package gen\n")
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil || s.GuestKept != 2 {
+		t.Fatalf("first sync: %+v %v", s, err)
+	}
+
+	s, err = syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Nothing new to sync. The machine has changes your laptop doesn't have (2 files)."; !s.GuestAhead || s.String() != want {
+		t.Fatalf("summary %+v %q, want %q", s, s.String(), want)
+	}
+
+	if err := os.RemoveAll(filepath.Join(f.guestRepo(), "gen")); err != nil {
+		t.Fatal(err)
+	}
+	s, err = syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.String() != nothingNewLine {
+		t.Fatalf("summary %+v %q", s, s.String())
 	}
 }

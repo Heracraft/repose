@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -94,5 +95,59 @@ func TestSyncWithAProjectLeavesACheckoutWithARemoteUnlinked(t *testing.T) {
 	}
 	if len(f.env.Cache.ByDir) != 0 {
 		t.Fatalf("by_dir = %v", f.env.Cache.ByDir)
+	}
+}
+
+// Ctrl-C while the create request itself is out (I-575): the api made
+// the project, so a short lookup names it; nothing is cached.
+func TestSyncInterruptedDuringTheCreateRequestNamesTheProject(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{CreateReplyDelay: 30 * time.Second})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	mustRun(t, f.local, "git", "remote", "remove", "origin")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(time.Second, cancel)
+
+	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false)
+	ee, ok := err.(*exitError)
+	if !ok || ee.code != ExitInterrupted {
+		t.Fatalf("err = %v, want exit %d", err, ExitInterrupted)
+	}
+	ps, lerr := f.env.Client.ListProjects(context.Background())
+	if lerr != nil || len(ps) != 1 {
+		t.Fatalf("projects = %+v, %v", ps, lerr)
+	}
+	slug := ps[0].Slug
+	if want := "Interrupted. " + slug + " was created and stays on your account; `repose rm " + slug + "` removes it."; ee.msg != want {
+		t.Fatalf("message = %q\nwant      %q", ee.msg, want)
+	}
+	if disk, derr := loadProjectsCache(f.env.Dir); derr != nil || len(disk.ByDir) != 0 || len(f.env.Cache.ByDir) != 0 {
+		t.Fatalf("by_dir: disk %v (%v), memory %v", disk.ByDir, derr, f.env.Cache.ByDir)
+	}
+}
+
+// Ctrl-C before the api made anything: the lookup cannot tell, and the
+// line says the project may exist.
+func TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{CreateHold: 30 * time.Second})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	mustRun(t, f.local, "git", "remote", "remove", "origin")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(time.Second, cancel)
+
+	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false)
+	ee, ok := err.(*exitError)
+	if !ok || ee.code != ExitInterrupted {
+		t.Fatalf("err = %v, want exit %d", err, ExitInterrupted)
+	}
+	name := dirProjectName(filepath.Base(syncRoot(f.local)))
+	if want := "Interrupted. " + name + " may have been created; `repose ls` shows it."; ee.msg != want {
+		t.Fatalf("message = %q\nwant      %q", ee.msg, want)
+	}
+	if ps, err := f.env.Client.ListProjects(context.Background()); err != nil || len(ps) != 0 {
+		t.Fatalf("projects = %+v, %v", ps, err)
 	}
 }

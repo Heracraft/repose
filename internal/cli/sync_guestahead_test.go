@@ -53,8 +53,8 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 	if !s.GuestAhead || s.Unchanged || n != 1 {
 		t.Fatalf("guestAhead=%v unchanged=%v ssh=%d", s.GuestAhead, s.Unchanged, n)
 	}
-	// git status names the untracked directory once: README.md and gen/.
-	want := "Nothing new to sync. The machine has changes your laptop doesn't have (2 files)."
+	// Every file counts, each of gen/'s 26 too (I-573).
+	want := "Nothing new to sync. The machine has changes your laptop doesn't have (27 files)."
 	if s.String() != want {
 		t.Fatalf("summary = %q\nwant      %q", s.String(), want)
 	}

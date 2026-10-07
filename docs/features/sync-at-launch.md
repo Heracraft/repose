@@ -79,8 +79,18 @@ Not synced: the machine changed 11 files that your laptop changed too:
 `repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away.
 ```
 
+The guest's checkout has a git operation of its own in progress
+(DECISIONS I-573):
+
+```
+$ repose sync
+Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes.
+```
+
 A Ctrl-C after the sync created the project and before it connected
-(DECISIONS I-575):
+(DECISIONS I-575); a Ctrl-C with the create request still out looks the
+name up for two seconds and prints the same line, or ``Interrupted.
+job-search may have been created; `repose ls` shows it.``:
 
 ```
 $ repose sync
@@ -109,7 +119,12 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   having the commits that sync recorded under its key, DECISIONS I-284,
   even after it pulled past every commit the laptop knows), there is
   nothing to write: the checkout is left alone, only the logins and carry
-  go, and the sync ends with the one-line notice above. The same holds
+  go, and the sync ends with the one-line notice above, whose count is
+  the guest's own changed files (every untracked file on its own) less
+  the paths the last sync's per-path record still matches; with none of
+  those and the guest's `HEAD` and branch as that sync left them, the
+  line is "Nothing new to sync: the machine already has this checkout."
+  The same holds
   when the guest's tree is clean but it moved on (an agent's commits,
   another branch): no detached checkout of an older laptop commit.
   Otherwise the apply, before it touches anything (and before the logins
@@ -126,9 +141,14 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   With no overlap the sync goes on, the guest's other changes stay as
   they are (git's checkout and merge carry unrelated edits), and the
   summary line ends "kept the machine's changes to N files".
+  Before the overlap check, a merge, rebase, `git am`, cherry-pick,
+  revert or bisect in progress in the guest's checkout refuses the sync
+  (exit 6, the refusal above naming the operation): a checkout would drop
+  its state and a stash cannot hold it, so `--stash-remote` refuses too.
   `--stash-remote` runs `git stash push -u -m "repose run"` in the guest
-  first; `--discard-remote` runs `git reset --hard && git clean -fd`; with
-  either there is no overlap check. Neither asks for confirmation; the
+  first; `--discard-remote` ends any such operation where `HEAD` is, then
+  runs `git reset --hard && git clean -fd`; with either there is no
+  overlap check. Neither asks for confirmation; the
   flag itself is the confirmation.
 - A run with nothing new applies nothing (DECISIONS I-224): when the
   laptop would send exactly what the last completed sync sent (the same
@@ -186,11 +206,12 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
 - Checkout: the laptop's branch is created in the guest, or
   fast-forwarded when the guest's copy is behind. When the guest's branch
   has commits the laptop does not (an agent committed and nobody pulled)
-  and the guest is on that branch with no merge, rebase, cherry-pick or
-  revert of its own in progress, the laptop's commit is merged into it
+  and the guest is on that branch, the laptop's commit is merged into it
   (DECISIONS I-574) when `git merge-tree --write-tree` finds no conflict,
   the guest's commits since the merge base leave every one of the
-  laptop's own paths alone, and git has a committer identity: `git merge
+  laptop's own paths alone, and git has a committer identity, the
+  laptop's `user.name` and `user.email` (sent in the apply's tar, set
+  for the identity check and the merge alone): `git merge
   --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures
   --no-gpg-sign -m "Merge the laptop's <branch> (repose sync)"`, and the
   summary line says "merged with the machine's <branch>". Otherwise the

@@ -14593,6 +14593,26 @@ it. Now:
 - `--stash-remote` and `--discard-remote` keep their meaning (all of the
   guest's changes, no check). `repose run` syncs only into a checkout with
   no commit (I-367), and its first sync goes through the same check.
+- A checkout with a git operation of its own in progress (a merge,
+  rebase, `git am`, cherry-pick, revert or bisect: `MERGE_HEAD`,
+  `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
+  `sequencer`, `BISECT_LOG` under `git rev-parse --git-path`) refuses the
+  sync before anything else, exit 6: ``Not synced: the machine's checkout
+  is in the middle of a git merge. Finish or abort it there, or run
+  `repose sync --discard-remote` to throw it away with the machine's other
+  changes.`` A checkout would drop the operation's state (git removes
+  `MERGE_HEAD` on a checkout) and a stash cannot hold it, so
+  `--stash-remote` refuses too, and its message adds ``, which
+  `--stash-remote` can't keep``. `--discard-remote` ends the operation
+  where `HEAD` is (`--quit` for rebase, am, cherry-pick and revert, `git
+  bisect reset HEAD`) before its reset and clean.
+- "Nothing new to sync. The machine has changes your laptop doesn't have
+  (N files)" counts what is the guest's own: the probe reads `git status
+  -uall` (every untracked file, not its directory, as the overlap check
+  and the kept count do) less the paths the per-path record still
+  matches. When nothing but the last sync's own changes is left and the
+  guest's `HEAD` and branch are the ones that sync left, the line is
+  "Nothing new to sync: the machine already has this checkout."
 The check runs in the apply rather than the probe because the probe goes
 out before the laptop knows what it sends (I-223, I-284) and because the
 target of a merge (I-574) is only known in the guest. Costs: a refused
@@ -14609,7 +14629,10 @@ repose` hint after it, "Delete it there if it should go" and the
 `TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds`,
 `TestSyncRefusesOverTheOldPathOfAGuestRename`,
 `TestSyncRefusalNamesOnlyTheOverlap`, `TestSyncCommandSyncsAnExistingCheckout`,
-`TestSyncStashesAnOlderSyncsChangesWithoutTheRecord`.
+`TestSyncStashesAnOlderSyncsChangesWithoutTheRecord`,
+`TestSyncRefusesWhileTheAgentIsMidMerge`,
+`TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncRefusesDuringABisect`,
+`TestSyncNothingNewCountsOnlyTheGuestsOwn`.
 Interfaces: guest-conventions.md (`.git/repose-synced-paths`). Needs a CLI
 release; the agent guide line of I-574 needs a base publish.
 *Rejected:* comparing in the laptop (it cannot see a merge's tree, nor
@@ -14625,15 +14648,21 @@ hand, and an agent that did not notice would have committed on a
 detached `HEAD`, which `git fetch repose` does not bring back. I-150
 detaches so that an agent's work is never moved off its branch; a merge
 keeps it there and puts the laptop's work on the branch too. The apply,
-after the fetch, merges when the guest is on that branch with no merge,
-rebase, cherry-pick or revert of its own in progress, `git
-merge-tree --write-tree` finds no conflict, the guest's commits since
+after the fetch, merges when the guest is on that branch (a git
+operation of the guest's own in progress has already refused the sync,
+I-573), `git merge-tree --write-tree` finds no conflict, the guest's commits since
 the merge base touch none of the laptop's own paths (I-573's `paths`; a
 merge would put the agent's version under the laptop's uncommitted
-work), and git has a committer identity. The merge is `git merge
---no-ff --no-edit --no-verify --no-autostash --no-verify-signatures
---no-gpg-sign -m "Merge the laptop's <branch> (repose sync)"`: the
-user's carried identity, unsigned like every commit made on a machine,
+work), and git has a committer identity. That identity is the one the
+sync carries: the laptop's `user.name` and `user.email` for the
+checkout travel in the apply's tar (`ident`, never on a command line)
+and are the author and committer of the identity check and the merge
+(`GIT_AUTHOR_*`, `GIT_COMMITTER_*` for those two commands only), since
+the carry that writes them into the guest's git config runs after the
+overlap check, so that a refused sync changes nothing. The merge is
+`git merge --no-ff --no-edit --no-verify --no-autostash
+--no-verify-signatures --no-gpg-sign -m "Merge the laptop's <branch>
+(repose sync)"`: the user's identity, unsigned like every commit made on a machine,
 without the repository's hooks or a carried `merge.ff=only` or
 `merge.autoStash`. The summary line says `, merged with the machine's
 <branch>`. Otherwise the branch is left alone and the laptop's commit is
@@ -14643,9 +14672,10 @@ it is and the machine is on 4f2a9c1, detached. `git fetch repose`
 brings that branch here.``), and the agent guide now says what a detached
 checkout after a sync means and what to do before committing. A merge
 the sync started that fails is aborted and falls back to the detached
-checkout; a merge the agent left in progress is never aborted.
+checkout; a merge the agent started is never aborted (one in progress
+refuses the sync, and the merge checks again just before it runs).
 `TestSyncMergesADivergedGuestBranch`,
-`TestSyncDoesNotMergeOrAbortDuringTheAgentsMerge`,
+`TestSyncMergesWithTheLaptopsIdentity`,
 `TestSyncLeavesAConflictingGuestBranchAlone`,
 `TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork`,
 `TestSyncMergesBesideTheGuestsUncommittedFiles`. *Rejected:* rebasing
@@ -14675,6 +14705,14 @@ the directory's, so no name match would have found it either. Now:
   project is not removed for the user: the api refuses a destroy while
   the create op runs (`ErrOpInProgress`), and waiting for it is what the
   Ctrl-C asked not to do.
+- Ctrl-C while the create request itself is out: the api may have made
+  the project without the CLI hearing of it. One lookup by name, two
+  seconds at most, settles it: a project of that name made moments ago
+  (still creating or building, or created in the last two minutes, so an
+  older project of the same name is never offered to `repose rm`) gets
+  the same line; otherwise ``Interrupted. job-search may have been
+  created; `repose ls` shows it.`` Exit 130 either way, and nothing is
+  cached.
 - A sync into a project named on the command line (`repose sync job`,
   `--project`, or a run's first sync), with no remote, from a directory
   with no remote and no `by_dir` entry, writes `by_dir` for that project:
@@ -14682,6 +14720,8 @@ the directory's, so no name match would have found it either. Now:
   it. A directory that has an entry keeps it, and a directory with a
   remote is found by its remote as before.
 `TestSyncInterruptedAfterCreateForgetsTheProject`,
+`TestSyncInterruptedDuringTheCreateRequestNamesTheProject`,
+`TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist`,
 `TestSyncWithAProjectLinksAnUnlinkedDirectory`,
 `TestSyncWithAProjectLeavesACheckoutWithARemoteUnlinked`. *Rejected:*
 destroying the project on Ctrl-C (refused by the api mid-create, see

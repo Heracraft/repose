@@ -144,3 +144,11 @@ func gitDiffNames(dir string) ([]string, error) {
 	}
 	return names, nil
 }
+
+// gitIdentity is the user.name and user.email git uses in dir, empty
+// when unset. A newline cannot be part of either.
+func gitIdentity(dir string) (name, email string) {
+	name, _ = gitCmd(dir, "config", "user.name")
+	email, _ = gitCmd(dir, "config", "user.email")
+	return strings.TrimSpace(name), strings.TrimSpace(email)
+}

@@ -586,7 +586,40 @@ func interruptedCreate(e *Env, p *Project) error {
 	if err != nil {
 		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
 	}
-	return exitf(ExitInterrupted, "Interrupted. %s was created and stays on your account; `repose rm %s` removes it.", p.Slug, p.Slug)
+	return interruptedCreated(p.Slug)
+}
+
+func interruptedCreated(slug string) error {
+	return exitf(ExitInterrupted, "Interrupted. %s was created and stays on your account; `repose rm %s` removes it.", slug, slug)
+}
+
+// createLookupWait bounds interruptedInFlight's lookup: the user pressed
+// Ctrl-C to stop waiting.
+var createLookupWait = 2 * time.Second
+
+// interruptedInFlight is createProjectForRun's error when Ctrl-C cut its
+// create request short (DECISIONS I-575): one short lookup by name says
+// whether the api made the project. Only one made moments ago counts, so
+// an older project of the same name (the create would have been refused
+// as a conflict) is never named for `repose rm`. A lookup that finds
+// nothing cannot rule out a create the api is still finishing.
+func interruptedInFlight(e *Env, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), createLookupWait)
+	defer cancel()
+	if p, err := findByName(ctx, e.Client, name); err == nil && p != nil && justCreated(p) {
+		return interruptedCreated(p.Slug)
+	}
+	return exitf(ExitInterrupted, "Interrupted. %s may have been created; `repose ls` shows it.", name)
+}
+
+// justCreated is whether p is a project a create made moments ago: still
+// being created or built, or created in the last two minutes.
+func justCreated(p *Project) bool {
+	switch p.State {
+	case "creating", "building":
+		return true
+	}
+	return !p.CreatedAt.IsZero() && time.Since(p.CreatedAt) < 2*time.Minute
 }
 
 // syncResultLine is what a run prints about its sync. With nothing new on
@@ -602,7 +635,7 @@ func syncResultLine(s *SyncSummary, noAttach bool) string {
 	case !s.Unchanged:
 		return s.String()
 	case noAttach:
-		return "Nothing new to sync: the machine already has this checkout."
+		return nothingNewLine
 	}
 	return ""
 }
@@ -1390,6 +1423,11 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	waited := map[string]bool{}
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
+		if err != nil && ctx.Err() != nil {
+			// Ctrl-C with the create in flight: the api may have made it
+			// (I-575). Nothing is cached either way.
+			return nil, interruptedInFlight(e, req.Name)
+		}
 		if ae, ok := baseGateRefusal(err); ok && req.Multiplexer != "" {
 			if !auto {
 				return nil, exitf(ExitGeneric, "%s", ae.Message)

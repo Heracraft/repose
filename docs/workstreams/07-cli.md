@@ -219,7 +219,10 @@ repository root, else the cwd, with characters outside `[A-Za-z0-9._-]`
 replaced by `-`, and write `by_dir` for it (DECISIONS I-358). A Ctrl-C
 after the create and before the connect removes that entry and exits 130
 with ``Interrupted. <slug> was created and stays on your account;
-`repose rm <slug>` removes it.`` (DECISIONS I-575).
+`repose rm <slug>` removes it.`` (DECISIONS I-575). A Ctrl-C during the
+create request looks the name up (2 s at most): a project made moments
+ago gets that line, anything else ``Interrupted. <name> may have been
+created; `repose ls` shows it.``
 
 ### 5.4 Certificates and SSH files
 
@@ -348,10 +351,12 @@ $ repose run
       list, and `paths`: every path the laptop's own work writes, NUL
       separated): `git fetch` from the bundle; when the guest is on
       `<branch>` and it has commits the laptop lacks, decide on a merge
-      (DECISIONS I-574: no merge, rebase, cherry-pick or revert in
-      progress, `git merge-tree --write-tree` clean, the guest's
+      (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
       commits since the merge base leave `paths` alone, a committer
-      identity); without `--stash-remote` or `--discard-remote`, the
+      identity, the laptop's from the tar's `ident`); before that,
+      without `--discard-remote`, a merge, rebase, am, cherry-pick,
+      revert or bisect in progress in the guest exits 3 (I-573; the CLI
+      exits 6 naming it); without `--stash-remote` or `--discard-remote`, the
       overlap check of `features/sync-at-launch.md` (I-573: the guest's
       dirty and untracked files against `paths` plus what the checkout to
       `H` or the merge tree changes; any overlap exits 3 naming them,
