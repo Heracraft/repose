@@ -14627,7 +14627,7 @@ systemd's 2 minutes. `systemd.services."user@".serviceConfig.TimeoutStopSec
 has ignored SIGTERM and SIGHUP for 10 s during a poweroff is not
 finishing anything, and a stop's snapshot is taken before the shutdown
 begins (I-404); a `--no-snapshot` stop keeps the disk as the kill left
-it, which is what a crash leaves and ext4's journal recovers. The
+it, which is what a crash leaves and ext4's journal recovers. A
 switch never restarts `user@`, but its daemon-reload rereads the unit,
 so a running guest's next stop is bounded once a switch has applied the
 base that carries it. Test: guest-base
