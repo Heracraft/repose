@@ -14643,7 +14643,7 @@ code that gives that pair. `TestStatusDiskIsTheGuestsFilesystem`,
 `TestAgentStateCountsEveryAgent`,
 `TestSamplePastItsBudgetStillCountsSSHSessions`. Needs a CLI release;
 the guide line and the guestd change ship with the base.
-
+ guestd's `unknown` (an agent quiet for less than the idle time, or a window that just closed; dogfood 2026-10-07: `claude: unknown` on kanali) is not named in the AGENTS column or on the dashboard: one such agent reads as its name, several are counted without it, and the project page shows `—`, since lifecycle.md promises only `working`, `idle` and `needs_input`.
 **I-568. The dashboard's header links to the docs, and the agent guide
 says how to hand the user a file.** (cli-small-fixes, 2026-10-07;
 owner's notes) "why are docs not linked in the homepage": the landing

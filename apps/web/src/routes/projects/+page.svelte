@@ -99,7 +99,10 @@
 	function agentSummary(p: Project): string {
 		const agents = p.signals?.agents ?? [];
 		if (agents.length === 0) return '—';
-		return agents.map((a) => `${a.agent} · ${a.state}`).join(', ');
+		// guestd's `unknown` (quiet for less than the idle time) is not named.
+		return agents
+			.map((a) => (a.state && a.state !== 'unknown' ? `${a.agent} · ${a.state}` : a.agent))
+			.join(', ');
 	}
 
 	let summary = $derived.by(() => {

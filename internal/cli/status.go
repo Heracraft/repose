@@ -293,13 +293,19 @@ func uptime(p *Project) string {
 // agentState is the AGENTS column: the one agent with its state, or, for
 // several, how many are in each state, needs_input first. It showed the
 // first agent alone, so a machine with five read `claude: working`
-// (I-567).
+// (I-567). guestd's `unknown` (an agent quiet for less than the idle
+// time, or a window that just closed) tells the reader nothing, so it is
+// not named: one such agent reads `claude`, and several are counted
+// without it.
 func agentState(p *Project) string {
 	if p.Signals == nil || p.State != "running" || len(p.Signals.Agents) == 0 {
 		return ""
 	}
 	agents := p.Signals.Agents
 	if len(agents) == 1 {
+		if agents[0].State == "unknown" || agents[0].State == "" {
+			return agents[0].Agent
+		}
 		return fmt.Sprintf("%s: %s", agents[0].Agent, agents[0].State)
 	}
 	counts := map[string]int{}
@@ -309,6 +315,9 @@ func agentState(p *Project) string {
 		counts[st] = 0
 	}
 	for _, a := range agents {
+		if a.State == "unknown" || a.State == "" {
+			continue
+		}
 		if _, ok := counts[a.State]; !ok {
 			order = append(order, a.State)
 		}
@@ -319,6 +328,9 @@ func agentState(p *Project) string {
 		if counts[st] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[st], st))
 		}
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d agents", len(agents))
 	}
 	return fmt.Sprintf("%d agents: %s", len(agents), strings.Join(parts, ", "))
 }
