@@ -197,6 +197,10 @@ func skipCheckout(ctx context.Context, t sshTarget, localRepoDir string, opts Sy
 // directory, since the machine had no checkout then (I-368). Only a shell
 // sitting idle in the home directory is replaced; anything else is left
 // as it is. "" on every other sync.
+//
+// On a machine that runs herdr it runs repose-herdr-workspace instead,
+// which gives herdr a workspace in the new checkout (guest-conventions.md
+// "herdr", Workspace); a base without that command skips the step.
 func freshShellScript(slug string, probe guestProbe) string {
 	if !probe.created {
 		return ""
@@ -204,7 +208,8 @@ func freshShellScript(slug string, probe guestProbe) string {
 	w := shQuote("=" + slug + ":shell")
 	return fmt.Sprintf(`repose_p=$(tmux display-message -p -t %[1]s '#{pane_current_path} #{pane_current_command}' 2>/dev/null || true)
 case "$repose_p" in "$HOME bash"|"$HOME -bash"|"$HOME sh") tmux respawn-pane -k -t %[1]s -c %[2]s 2>/dev/null || true ;; esac
-`, w, homeShell(probe.checkout))
+if command -v repose-herdr-workspace >/dev/null 2>&1 && %[3]s; then repose-herdr-workspace >/dev/null 2>&1 || true; fi
+`, w, homeShell(probe.checkout), muxProbeScript)
 }
 
 // dirtyTreeError is 07-cli.md §6's exit 6, carrying the file list for the
@@ -291,8 +296,10 @@ type guestProbe struct {
 // make a stash or reset reach into a submodule, and a repository using
 // Git LFS in a guest without git-lfs would fail every add and stash
 // (filter.lfs.required=false stores the file as it is instead: the
-// fingerprint only has to be stable). repose_dirty is the dirty list,
-// submodules included.
+// fingerprint only has to be stable). GIT_LFS_SKIP_SMUDGE=1 keeps the
+// guest's git-lfs (I-525) from downloading objects, or waiting on LFS
+// credentials, in a sync's checkout: LFS files stay pointer files until
+// `git lfs pull`. repose_dirty is the dirty list, submodules included.
 //
 // repose_fp fingerprints the checkout as it stands: HEAD and the tree
 // `git add -A` would record (index, working tree and every untracked file
@@ -307,7 +314,8 @@ type guestProbe struct {
 // made it "failed"). The apply stores it after laying down the laptop's
 // diff and untracked files; the next probe compares, so the tree the sync
 // itself made dirty is not taken for an agent's work.
-const syncedFP = `repose_c="-c status.showUntrackedFiles=normal -c submodule.recurse=false -c filter.lfs.required=false"
+const syncedFP = `export GIT_LFS_SKIP_SMUDGE=1
+repose_c="-c status.showUntrackedFiles=normal -c submodule.recurse=false -c filter.lfs.required=false"
 repose_git() { git $repose_c "$@"; }
 repose_dirty() { repose_git status --porcelain --ignore-submodules=none; }
 repose_tab=$(printf '\t')

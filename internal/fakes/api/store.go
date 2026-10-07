@@ -47,6 +47,8 @@ type Project struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// PersonalOptOut keeps the account's machine.nix off (I-490).
 	PersonalOptOut bool `json:"personal_opt_out"`
+	// Multiplexer is what the next start runs, tmux or herdr (I-502).
+	Multiplexer string `json:"multiplexer"`
 }
 
 // Idle is Project.idle.

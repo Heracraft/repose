@@ -83,6 +83,7 @@ create table if not exists projects (
   config_revision_id uuid,
   volume_bytes bigint,
   tz text,
+  multiplexer text not null default 'tmux',
   started_at timestamptz,
   stopped_at timestamptz,
   destroyed_at timestamptz,

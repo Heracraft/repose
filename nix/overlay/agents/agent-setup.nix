@@ -59,10 +59,19 @@
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
 #          ~/.pi/agent/extensions/repose-machine-guide.js -> /etc/repose/pi-extension.js.
 #          A file or directory the user put at either path is left alone.
-{ lib, writeShellApplication, jq, python3, coreutils, util-linux, reposeOpencodePlugin }:
+# herdr   inside a herdr pane (HERDR_ENV=1), for claude, codex, opencode
+#          and pi: `herdr integration install <agent>` with the base's
+#          herdr when `herdr integration status` does not list the agent's
+#          integration as current, so herdr knows the agent's state and
+#          resumes it after a restart. A hook older than the base's herdr
+#          expects, or one needing repair, is replaced; a newer one (carried
+#          from a newer laptop herdr) counts as current and is kept, since
+#          herdr reports any version at or above its own as current. Best
+#          effort and silent (DECISIONS I-501, I-560).
+{ lib, writeShellApplication, jq, python3, coreutils, util-linux, gnugrep, reposeOpencodePlugin, herdr }:
 writeShellApplication {
   name = "repose-agent-setup";
-  runtimeInputs = [ jq python3 coreutils util-linux ];
+  runtimeInputs = [ jq python3 coreutils util-linux gnugrep ];
   text = ''
     agent="''${1:-}"
     platform_claude=/etc/repose/claude-settings.json
@@ -332,6 +341,19 @@ writeShellApplication {
       mcp_sync opencode
     }
 
+    # herdr's own integration for this agent, only in a herdr pane. Its
+    # status line reads "<agent>: current (vN) (<path>)" when installed
+    # and up to date; anything else (not installed, outdated, needs
+    # repair) gets an install. Ten seconds at most, never a message.
+    setup_herdr() {
+      local target="$1" status
+      [ "''${HERDR_ENV:-}" = 1 ] || return 0
+      status=$(timeout 10 ${herdr}/bin/herdr integration status 2>/dev/null) || return 0
+      if ! printf '%s\n' "$status" | grep -q "^$target: current "; then
+        timeout 10 ${herdr}/bin/herdr integration install "$target" >/dev/null 2>&1 || true
+      fi
+    }
+
     case "$agent" in
       claude) setup_claude ;;
       codex) setup_codex ;;
@@ -339,6 +361,9 @@ writeShellApplication {
       gemini) setup_gemini ;;
       pi) setup_pi ;;
       *) echo "repose-agent-setup: unknown agent '$agent'" >&2 ;;
+    esac
+    case "$agent" in
+      claude|codex|opencode|pi) setup_herdr "$agent" ;;
     esac
     exit 0
   '';

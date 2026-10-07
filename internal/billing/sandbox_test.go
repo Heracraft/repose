@@ -51,11 +51,13 @@ func TestPaddleSandbox(t *testing.T) {
 	if err != nil || found != customer {
 		t.Fatalf("find by email: %q %v", found, err)
 	}
-	txn, err := p.CreateCheckoutTransaction(ctx, customer, res.PriceSolo, uid)
+	// A first Solo checkout carries the introductory discount (I-497):
+	// Paddle accepts it on a trialing price.
+	txn, err := p.CreateCheckoutTransaction(ctx, customer, res.PriceSolo, res.DiscountIntro, uid)
 	if err != nil || !strings.HasPrefix(txn, "txn_") {
 		t.Fatalf("transaction: %q %v", txn, err)
 	}
-	t.Logf("sandbox: customer %s, checkout transaction %s (open it with Paddle.js and the test card to finish the gate by hand)", customer, txn)
+	t.Logf("sandbox: customer %s, checkout transaction %s with discount %s (open it with Paddle.js and the test card to finish the gate by hand; the subscription's discount should end three charges after the trial)", customer, txn, res.DiscountIntro)
 }
 
 type testWriter struct{ t *testing.T }

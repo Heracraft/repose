@@ -38,7 +38,7 @@ user="${USER:-$(id -un)}"
 # an older base). ~/go/bin and ~/.cargo/bin are on it, so a tool the user
 # installed with `go install` or `cargo install` is not installed again.
 search_path() {
-  printf '%s' "${PATH:-}:$HOME/.local/bin:$HOME/.local/share/pnpm:$HOME/.npm-global/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.deno/bin:$HOME/.nix-profile/bin:$HOME/.local/state/nix/profile/bin:/etc/profiles/per-user/$user/bin:/run/current-system/sw/bin"
+  printf '%s' "${PATH:-}:$HOME/.local/bin:$HOME/.local/share/pnpm/bin:$HOME/.local/share/pnpm:$HOME/.npm-global/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.deno/bin:$HOME/.nix-profile/bin:$HOME/.local/state/nix/profile/bin:/etc/profiles/per-user/$user/bin:/run/current-system/sw/bin"
 }
 
 has_cmd() {
@@ -267,6 +267,7 @@ install_one() {
       mkdir -p "$HOME/.local/bin"
       attempt timeout 1200 env GOBIN="$HOME/.local/bin" go install "$pkg@${version:-latest}" || return 1 ;;
     cargo)
+      cargo_toolchain || return 1
       if [ -n "$version" ]; then
         attempt timeout 1200 cargo install --locked --root "$HOME/.local" "$pkg" --version "$version" || return 1
       else
@@ -288,6 +289,45 @@ install_one() {
   return 1
 }
 
+# cargo_toolchain gives rustup a default toolchain before the first
+# cargo install, which fails without one (I-522): the stable toolchain,
+# minimal profile. A laptop with cargo-installed crates is a Rust user's,
+# who would run `rustup default stable` anyway. A default the user chose
+# is kept.
+cargo_toolchain() {
+  rustup show active-toolchain >/dev/null 2>&1 && return 0
+  attempt timeout 1200 rustup toolchain install stable --profile minimal || return 1
+  attempt rustup default stable || return 1
+  logline "rustup: stable (minimal profile) is the default toolchain, for cargo install"
+}
+
+# ruby_bundler installs Bundler 2.7 into GEM_HOME for a ruby whose
+# RubyGems is 3.7 or newer and whose own Bundler is older than 2.7
+# (I-524): nixpkgs's ruby_3_4 pairs RubyGems 3.7 with Bundler 2.6, which
+# redefines RubyGems constants and prints a screen of warnings on every
+# `bundle`. A Ruby with Bundler 2.7 or newer (ruby_4_0 has 4.0) gets
+# nothing. --env-shebang, so the `bundle` in GEM_HOME runs whichever ruby
+# is first on PATH after a later pin.
+ruby_bundler() {
+  local gv bv
+  gv=$(bash -lc 'gem --version' 2>/dev/null) || return 0
+  version_at_least "$gv" 3.7 || return 0
+  bv=$(bash -lc 'bundle -v' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
+  [ -z "$bv" ] || ! version_at_least "$bv" 2.7 || return 0
+  reason=
+  if ! attempt timeout 600 bash -lc "gem install --no-document --env-shebang bundler -v '~> 2.7'"; then
+    notice "Could not install Bundler 2.7 for Ruby: $reason"
+    return 0
+  fi
+  bv=$(bash -lc 'bundle -v' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
+  logline "ruby: bundler ${bv:-?} in GEM_HOME"
+}
+
+# version_at_least A B: dotted version A is B or newer.
+version_at_least() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]
+}
+
 notice() {
   printf '%s\n' "$*" >> "$notices"
   logline "$*"
@@ -302,7 +342,11 @@ runtime_pass() {
   want=$(runtime_want "$lang")
   [ -n "$want" ] || return 0
   cur=$(runtime_version "$lang")
-  [ "$cur" != "$want" ] || return 0
+  if [ "$cur" = "$want" ]; then
+    # A Ruby an earlier pass pinned, before I-524: it gets its Bundler now.
+    if [ "$lang" = ruby ] && [ -s "$state/ruby" ]; then ruby_bundler; fi
+    return 0
+  fi
   profile_wins "$lang" || return 0 # plan said so already
   attr=$(runtime_attr "$lang" "$want")
   prev=$(cat "$state/$lang" 2>/dev/null || true)
@@ -313,6 +357,7 @@ runtime_pass() {
   if attempt profile_add "$attr" && [ "$(login_version "$lang")" = "$want" ]; then
     printf '%s\n' "$attr" > "$state/$lang"
     logline "$lang: $attr is the $lang of new shells"
+    [ "$lang" != ruby ] || ruby_bundler
     return 0
   fi
   nix profile remove "$attr" >/dev/null 2>&1 || true

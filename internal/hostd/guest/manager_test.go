@@ -118,8 +118,10 @@ func TestCreateReachesRunningWithEverythingWired(t *testing.T) {
 	if st := h.rec.states(gid1); strings.Join(st, ">") != "creating>starting>running" {
 		t.Fatalf("state events %v", st)
 	}
-	if _, err := os.Stat(filepath.Join(h.cfg.GuestsDir, gid1, "ch.args")); err != nil {
+	if b, err := os.ReadFile(filepath.Join(h.cfg.GuestsDir, gid1, "ch.args")); err != nil {
 		t.Fatal("ch.args not written")
+	} else if !strings.Contains(string(b), ":todo-app:eth0:off systemd.hostname=todo-app") {
+		t.Fatalf("ch.args does not name the guest after its slug (I-550):\n%s", b)
 	}
 	if _, err := os.Stat(filepath.Join(h.cfg.GuestsDir, gid1, "guest.json")); err != nil {
 		t.Fatal("guest.json not written")
@@ -495,6 +497,9 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 		t.Fatalf("restore wired the network: %v", left)
 	}
 	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid2}))
+	if b, _ := os.ReadFile(filepath.Join(h.cfg.GuestsDir, gid2, "ch.args")); !strings.Contains(string(b), "systemd.hostname=todo-app") {
+		t.Fatalf("restored guest's ch.args lacks its slug (I-550):\n%s", b)
+	}
 	if sec := h.guestd(gid2).Secrets(); string(sec["API_KEY"]) != "s3cret" || string(sec[SecretHostKey]) != "hk" {
 		t.Fatal("restore did not cache secrets for the start")
 	}

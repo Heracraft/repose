@@ -64,6 +64,12 @@ type Config struct {
 	VsockPort uint32
 	// HookSocket overrides the hook socket path; empty uses the convention.
 	HookSocket string
+	// HerdrSocket overrides herdr's socket path (tests: sun_path is short);
+	// empty uses /home/dev/.config/herdr/herdr.sock under Root. HerdrUID,
+	// when above 0, is the peer uid that socket must have in place of
+	// dev's.
+	HerdrSocket string
+	HerdrUID    int
 
 	FreezeTimeout time.Duration
 	SwitchTimeout time.Duration
@@ -156,6 +162,9 @@ func New(cfg Config) (*Server, error) {
 	s.ssh = ssh.New(paths, runner, log)
 	s.project = project.New(paths, runner, log)
 	s.watcher = sample.NewWatcher(paths, runner, docker, s.project, s, log, cfg.Now)
+	if cfg.HerdrSocket != "" {
+		s.watcher.SetHerdrSocket(cfg.HerdrSocket, cfg.HerdrUID)
+	}
 	s.sampler = sample.NewHandler(paths, s.watcher, log, cfg.Now)
 	s.exec = exec.New(paths, runner, log)
 	s.warn = warn.New(paths, s.Warn, log, cfg.Now)
@@ -166,6 +175,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	_, devGID := sysdep.DevIdentity()
 	s.hooks = hooks.NewServer(hookPath, devGID, s.onHook, s.sampler.WindowOfPane, log)
+	s.hooks.SetHerdrResolver(s.watcher.ResolveHerdr)
 	s.asks = questions.New(paths.QuestionsDir(), s.emitQuestion, log, cfg.Now)
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
 	return s, nil
@@ -182,6 +192,11 @@ func (s *Server) Run(ctx context.Context) error {
 
 	if err := os.MkdirAll(s.paths.RunDir(), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", s.paths.RunDir(), err)
+	}
+	// Before serving, so hostd's first command finds the secrets loadable
+	// (DECISIONS I-475). A failure is logged; WriteSecrets rewrites it all.
+	if err := s.secrets.Restore(ctx); err != nil {
+		s.log.Warn("could not rebuild the secrets refresh file", "event", "write_secrets", "error_code", sysdep.CodeOf(err))
 	}
 	if err := s.hooks.Listen(); err != nil {
 		return err
@@ -398,8 +413,15 @@ func (s *Server) emitQuestion(q questions.Question) {
 func (s *Server) Questions() *questions.Store { return s.asks }
 
 // onHook is what the hook socket calls: relay to hostd and fold into the
-// agent-state machine so the next Sample agrees with the notification.
+// agent-state machine so the next Sample agrees with the notification. A
+// hook with no window (outside tmux, or a herdr pane no agent is in,
+// I-506) is relayed under the agent's name and changes no window's state:
+// the tmux window named "claude" is not the Claude in a herdr pane.
 func (s *Server) onHook(agent, window, kind, summary string) {
+	if window == "" {
+		s.AgentEvent(agent, agent, kind, summary)
+		return
+	}
 	s.watcher.RecordHook(window, kind, s.now())
 	s.AgentEvent(agent, window, kind, summary)
 }

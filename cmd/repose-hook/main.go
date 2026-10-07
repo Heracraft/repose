@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/guestd/hooks"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 var version = "dev" // set by -ldflags at release
@@ -57,7 +58,7 @@ func run() string {
 	var (
 		agent   = fs.String("agent", agentDefault(), "which agent is reporting")
 		socket  = fs.String("socket", socketDefault(), "guestd hook socket")
-		window  = fs.String("window", os.Getenv("REPOSE_AGENT_WINDOW"), "tmux window name, if the wrapper knows it")
+		window  = fs.String("window", windowDefault(), "tmux window name, if the wrapper knows it")
 		showVer = fs.Bool("version", false, "print the version and exit")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -105,6 +106,23 @@ func agentDefault() string {
 		return a
 	}
 	return os.Getenv("REPOSE_AGENT")
+}
+
+// windowDefault is REPOSE_AGENT_WINDOW, else in a herdr pane (HERDR_ENV=1
+// and no $TMUX_PANE) "herdr:" and herdr's pane id, which guestd resolves
+// to the agent's key (DECISIONS I-506), else "": guestd then looks up the
+// caller's $TMUX_PANE itself. This process reads its own environment, so
+// guestd reads no variable beyond TMUX_PANE.
+func windowDefault() string {
+	if w := os.Getenv("REPOSE_AGENT_WINDOW"); w != "" {
+		return w
+	}
+	if os.Getenv("TMUX_PANE") == "" && os.Getenv("HERDR_ENV") == "1" {
+		if id := os.Getenv("HERDR_PANE_ID"); id != "" {
+			return multiplexer.HerdrWindowPrefix + id
+		}
+	}
+	return ""
 }
 
 // socketDefault reads REPOSE_HOOK_SOCKET, or REPOSE_HOOKS_SOCKET, which is

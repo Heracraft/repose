@@ -573,6 +573,12 @@
 		<p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
 			<span class="text-ink"><StateDot state={project.state} /></span>
 			<span class="font-mono">{project.class}</span>
+			{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
+				<!-- The stored choice is the next start's; a running machine may
+				     still run tmux until it stops (I-502), so only a stopped one
+				     shows it. -->
+				<span class="font-mono">herdr</span>
+			{/if}
 			{#if project.state === 'running'}
 				<span class="tabular-nums">up {uptime(project.started_at)}</span>
 			{/if}

@@ -32,10 +32,12 @@ type procReader struct {
 
 	mu   sync.Mutex
 	prev map[string]uint64 // comm -> cumulative CPU nanoseconds
+	// setNice sets one thread's nice value (tests replace it).
+	setNice func(tid, nice int) error
 }
 
 func newProcReader(p sysdep.Paths) *procReader {
-	return &procReader{paths: p, prev: map[string]uint64{}}
+	return &procReader{paths: p, prev: map[string]uint64{}, setNice: setPriority}
 }
 
 type procTotals struct {

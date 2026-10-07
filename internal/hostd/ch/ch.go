@@ -39,6 +39,10 @@ type Spec struct {
 	DiskIOPS        uint64
 	DiskBytesPerSec uint64
 	StoreTag        string // ro-store
+	// Hostname is the guest's name on the kernel line (the project slug,
+	// DECISIONS I-550); empty, or not a DNS label, leaves the closure's
+	// default (repose-guest).
+	Hostname string
 	// AuthTag is the user's Claude login share (DECISIONS I-278); empty
 	// when the guest has none (no user id recorded), and then no second
 	// --fs is rendered.
@@ -58,15 +62,37 @@ func VirtiofsSocket(dir string) string { return filepath.Join(dir, "virtiofsd", 
 // for the same reason (DECISIONS I-278).
 func AuthSocket(dir string) string { return filepath.Join(dir, "virtiofsd-auth", "virtiofsd.sock") }
 
+// Hostname returns name when it is a DNS label (a-z, 0-9 and '-', 1 to 63
+// characters, no leading or trailing '-'), and "" otherwise.
+func Hostname(name string) string {
+	if len(name) < 1 || len(name) > 63 || name[0] == '-' || name[len(name)-1] == '-' {
+		return ""
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return ""
+		}
+	}
+	return name
+}
+
 // Cmdline renders the kernel command line: the closure's init and params,
-// the serial console, and the static address the guest's networkd reads.
+// the serial console, the static address the guest's networkd reads and,
+// when Hostname is a DNS label, the guest's name. systemd.hostname= wins
+// over the closure's /etc/hostname, which the ip= name field alone does not
+// (DECISIONS I-550).
 func (s Spec) Cmdline() string {
 	parts := []string{"init=" + s.Init}
 	if p := strings.TrimSpace(s.KernelParams); p != "" {
 		parts = append(parts, p)
 	}
+	host := Hostname(s.Hostname)
 	parts = append(parts, "console=ttyS0",
-		fmt.Sprintf("ip=%s::%s:%s::eth0:off", s.IP, s.Gateway, s.Netmask))
+		fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host))
+	if host != "" {
+		parts = append(parts, "systemd.hostname="+host)
+	}
 	return strings.Join(parts, " ")
 }
 

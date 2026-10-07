@@ -31,6 +31,7 @@ func TestBillingSubcommands(t *testing.T) {
 	t.Setenv("PADDLE_PRICE_PLUS", "pri_plus_test")
 	t.Setenv("PADDLE_PRICE_PRO", "pri_pro_test")
 	t.Setenv("PADDLE_PRODUCT_OVERAGE", "pro_overage_test")
+	t.Setenv("PADDLE_DISCOUNT_INTRO", "dsc_intro_test")
 
 	// A Solo account with a project, an hour of usage and 260 GB egress.
 	uid, pid, gid := store.NewID(), store.NewID(), store.NewID()
@@ -101,11 +102,11 @@ func TestBillingSubcommands(t *testing.T) {
 	// paddle-bootstrap creates the catalog and prints the block, twice
 	// the same; a live key is refused.
 	out, err = run(t, e, "billing", "paddle-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
-	if err != nil || !strings.Contains(out, "PADDLE_PRICE_SOLO=pri_") || !strings.Contains(out, "PADDLE_WEBHOOK_SECRET=") || strings.Contains(out, "pdl_sdbx_apikey_test") {
+	if err != nil || !strings.Contains(out, "PADDLE_PRICE_SOLO=pri_") || !strings.Contains(out, "PADDLE_DISCOUNT_INTRO=dsc_") || !strings.Contains(out, "PADDLE_WEBHOOK_SECRET=") || strings.Contains(out, "pdl_sdbx_apikey_test") {
 		t.Fatalf("bootstrap: %s %v", out, err)
 	}
 	again, err := run(t, e, "billing", "paddle-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
-	if err != nil || !strings.Contains(again, "created 0 object(s), found 8") {
+	if err != nil || !strings.Contains(again, "created 0 object(s), found 9") {
 		t.Fatalf("bootstrap rerun: %s %v", again, err)
 	}
 	t.Setenv("PADDLE_API_KEY", "pdl_live_apikey_test")
@@ -135,12 +136,13 @@ type fakePaddle struct {
 	products map[string]map[string]any
 	prices   map[string]map[string]any
 	settings map[string]map[string]any
+	discount map[string]map[string]any
 	charges  int
 	seq      int
 }
 
 func newFakePaddle(t *testing.T) *fakePaddle {
-	f := &fakePaddle{subs: map[string]bool{}, products: map[string]map[string]any{}, prices: map[string]map[string]any{}, settings: map[string]map[string]any{}}
+	f := &fakePaddle{subs: map[string]bool{}, products: map[string]map[string]any{}, prices: map[string]map[string]any{}, settings: map[string]map[string]any{}, discount: map[string]map[string]any{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
@@ -183,6 +185,12 @@ func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
 		p := map[string]any{"id": id("pri"), "product_id": body["product_id"], "status": "active", "unit_price": body["unit_price"], "custom_data": body["custom_data"]}
 		f.prices[p["id"].(string)] = p
 		f.write(w, 201, p)
+	case r.Method == "GET" && r.URL.Path == "/discounts":
+		f.write(w, 200, list(f.discount))
+	case r.Method == "POST" && r.URL.Path == "/discounts":
+		d := map[string]any{"id": id("dsc"), "status": "active", "restrict_to": body["restrict_to"], "custom_data": body["custom_data"]}
+		f.discount[d["id"].(string)] = d
+		f.write(w, 201, d)
 	case r.Method == "GET" && r.URL.Path == "/notification-settings":
 		f.write(w, 200, list(f.settings))
 	case r.Method == "POST" && r.URL.Path == "/notification-settings":

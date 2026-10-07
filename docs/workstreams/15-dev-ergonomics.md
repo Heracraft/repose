@@ -110,12 +110,15 @@ This runs in the guest with `jq` (already in the base). Pseudocode:
 ```
 strip(x)  = x | del(.hooks[]?[]?.hooks[]? | select(.command|test("repose-hook")))   # and empty groups
 merged    = strip(guest) * strip(laptop_rewritten)
+merged.hooks[ev] = (guest.hooks[ev] - prev_laptop.hooks[ev]) + laptop.hooks[ev]   # identical groups once (I-499)
 merged.permissions.{allow,deny,ask} = (guest + laptop) | unique
 merged    = add_platform_hooks(merged)
 ```
 
 `*` is jq's recursive merge; arrays are replaced by the right side, which is
-why permissions are unioned explicitly. Hooks and `statusLine` commands
+why permissions and hook events are unioned explicitly. `prev_laptop` is
+`~/.repose/claude-laptop-hooks.json`, the hooks the previous laptop file
+added, so a hook deleted on the laptop leaves the guest (DECISIONS I-499). Hooks and `statusLine` commands
 that don't resolve in the guest are dropped *after* the home-path rewrite.
 Write to `settings.json.tmp`, check it with `jq empty`, copy the old file to
 `settings.json.repose-prev`, `mv` into place. Running the merge twice with

@@ -197,6 +197,80 @@ func TestClaudeSettingsRewriteHomeAnywhere(t *testing.T) {
 	}
 }
 
+// A laptop SessionStart hook joins the guest's instead of replacing them,
+// so herdr's resume hook (written to the guest's settings.json by `herdr
+// integration install claude`) survives every run; a hook removed from
+// the laptop leaves the guest on the next run, and a hook both sides have
+// is kept once (DECISIONS I-499).
+func TestClaudeSettingsMergeKeepsGuestHooks(t *testing.T) {
+	home := t.TempDir()
+	herdrHook := filepath.Join(home, ".claude", "hooks", "herdr-agent-state.sh")
+	_ = os.MkdirAll(filepath.Dir(herdrHook), 0o700)
+	if err := os.WriteFile(herdrHook, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	herdrCmd := "bash '" + herdrHook + "' session"
+	settings := filepath.Join(home, ".claude", "settings.json")
+	guest := `{"hooks": {"SessionStart": [
+  {"matcher": "^(startup|resume|clear|compact|fork)$", "hooks": [{"type": "command", "command": "` + herdrCmd + `", "timeout": 10}]},
+  {"matcher": "", "hooks": [{"type": "command", "command": "echo both"}]}
+]}}`
+	if err := os.WriteFile(settings, []byte(guest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	laptop := func(cmd string) []byte {
+		return []byte(`{"hooks": {"SessionStart": [
+  {"matcher": "", "hooks": [{"type": "command", "command": "` + cmd + `"}]},
+  {"matcher": "", "hooks": [{"type": "command", "command": "echo both"}]}
+]}}`)
+	}
+	sessionStart := func() []string {
+		t.Helper()
+		b, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v struct {
+			Hooks map[string][]struct {
+				Hooks []struct{ Command string } `json:"hooks"`
+			} `json:"hooks"`
+		}
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatalf("%v\n%s", err, b)
+		}
+		var cmds []string
+		for _, g := range v.Hooks["SessionStart"] {
+			for _, h := range g.Hooks {
+				cmds = append(cmds, h.Command)
+			}
+		}
+		return cmds
+	}
+
+	runClaudeMerge(t, home, laptop("echo laptop-one"), "/Users/lap")
+	if got, want := strings.Join(sessionStart(), "|"), herdrCmd+"|echo laptop-one|echo both"; got != want {
+		t.Fatalf("SessionStart after the first run = %q, want %q", got, want)
+	}
+	first, _ := os.ReadFile(settings)
+	runClaudeMerge(t, home, laptop("echo laptop-one"), "/Users/lap")
+	if again, _ := os.ReadFile(settings); !bytes.Equal(first, again) {
+		t.Errorf("the same laptop file again changed settings.json:\n%s\n%s", first, again)
+	}
+
+	// The laptop's hook changes: the old one goes, herdr's stays.
+	runClaudeMerge(t, home, laptop("echo laptop-two"), "/Users/lap")
+	if got, want := strings.Join(sessionStart(), "|"), herdrCmd+"|echo laptop-two|echo both"; got != want {
+		t.Errorf("SessionStart after the laptop changed = %q, want %q", got, want)
+	}
+
+	// A laptop file with no hooks at all takes its own hooks out and
+	// leaves herdr's.
+	runClaudeMerge(t, home, []byte(`{"model": "opus"}`), "/Users/lap")
+	if got, want := strings.Join(sessionStart(), "|"), herdrCmd; got != want {
+		t.Errorf("SessionStart after the laptop dropped its hooks = %q, want %q", got, want)
+	}
+}
+
 // A guest settings.json that is not JSON is left exactly as it is, with
 // one warning; nothing half-written appears beside it.
 func TestClaudeSettingsMergeLeavesAnInvalidGuestFile(t *testing.T) {

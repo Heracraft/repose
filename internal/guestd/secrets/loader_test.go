@@ -417,3 +417,68 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// A guest whose secrets an older guestd wrote, then switched live onto a base
+// with the loader (I-475): secrets.env without REPOSE_ENV_GEN and the secret
+// files, no secrets.refresh, no state. Restore at guestd's start rebuilds the
+// refresh file, so a process with no secrets gets them through the loader
+// while an .envrc's own value stays, and pushes the set to tmux. A second
+// call does nothing.
+func TestRestoreRebuildsTheRefreshFileAfterALiveSwitch(t *testing.T) {
+	h, p, run := newHandler(t)
+	must(t, os.MkdirAll(p.SecretsDir(), 0o700))
+	must(t, os.WriteFile(filepath.Join(p.SecretsDir(), "API_KEY"), []byte("k1"), 0o400))
+	must(t, os.WriteFile(filepath.Join(p.SecretsDir(), "DATABASE_URL"), []byte("postgres://secret"), 0o400))
+	must(t, os.WriteFile(p.SecretsEnv(), []byte("export API_KEY='k1'\nexport DATABASE_URL='postgres://secret'\n"), 0o400))
+
+	must(t, h.Restore(context.Background()))
+	if _, err := os.Stat(p.SecretsRefresh()); err != nil {
+		t.Fatalf("secrets.refresh not written: %v", err)
+	}
+	if _, err := os.Stat(p.SecretsState()); err != nil {
+		t.Fatalf("secrets.state not written: %v", err)
+	}
+	genOf(t, p) // secrets.env now starts with REPOSE_ENV_GEN
+	st := h.readState()
+	if len(st.Earlier) != 0 || len(st.Current) != 2 {
+		t.Fatalf("state = %d current, %d earlier; want 2 and 0", len(st.Current), len(st.Earlier))
+	}
+
+	loader := loaderFor(t, p.SecretsRefresh())
+	if got := show(t, loader, nil, "API_KEY", "DATABASE_URL"); got != "API_KEY=k1 DATABASE_URL=postgres://secret" {
+		t.Fatalf("a process with no secrets: %s", got)
+	}
+	if got := show(t, loader, []string{"DATABASE_URL=postgres://localhost"}, "API_KEY", "DATABASE_URL"); got != "API_KEY=k1 DATABASE_URL=postgres://localhost" {
+		t.Fatalf("an .envrc value: %s", got)
+	}
+
+	pushed, ok := run.Ran("tmux source-file -")
+	if !ok {
+		t.Fatal("the set was not pushed to tmux")
+	}
+	if !strings.Contains(string(pushed.Stdin), `set-environment -g API_KEY "k1"`) || strings.Contains(strings.Join(pushed.Argv, " "), "k1") {
+		t.Fatalf("tmux push: argv %q, stdin %q", pushed.Argv, pushed.Stdin)
+	}
+
+	before, _ := os.ReadFile(p.SecretsRefresh())
+	run.Reset()
+	must(t, h.Restore(context.Background()))
+	after, _ := os.ReadFile(p.SecretsRefresh())
+	if string(before) != string(after) || len(run.Calls()) != 0 {
+		t.Fatal("a second Restore changed the refresh file or ran tmux")
+	}
+}
+
+// With no secret files there is nothing to restore and nothing is written.
+func TestRestoreWithNoSecrets(t *testing.T) {
+	h, p, run := newHandler(t)
+	must(t, h.Restore(context.Background()))
+	must(t, os.MkdirAll(p.SecretsDir(), 0o700))
+	must(t, h.Restore(context.Background()))
+	if _, err := os.Stat(p.SecretsRefresh()); !os.IsNotExist(err) {
+		t.Fatalf("secrets.refresh written with no secrets: %v", err)
+	}
+	if len(run.Calls()) != 0 {
+		t.Fatal("tmux ran with no secrets")
+	}
+}

@@ -290,8 +290,14 @@ func (s *Server) restoreAsNew(ctx context.Context, u *store.User, src *store.Pro
 // with `detail.reason = "name_taken"`.
 func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, src *store.Project, snap *store.Snapshot, newID uuid.UUID, name, class string, remote *string, start bool, params map[string]any) (uuid.UUID, error) {
 	rid := store.NewID()
-	_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11, $12)`,
-		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid, src.PersonalOptOut)
+	// The copy keeps the source's multiplexer, or tmux when herdr would be
+	// refused for the base the copy runs (I-502).
+	mux, err := copiedMultiplexer(ctx, tx, src, Slug(name), src.BaseVersion)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id, personal_opt_out, multiplexer) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11, $12, $13)`,
+		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid, src.PersonalOptOut, mux)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

@@ -47,6 +47,13 @@ const laptopGitConfig = `[user]
 	colorMoved = default
 [pull]
 	rebase
+[interactive]
+	diffFilter = repose-no-such-filter --color-only
+[pager]
+	log = false
+	diff = repose-no-such-pager
+[sequence]
+	editor = repose-no-such-editor --wait
 [http "https://github.com/"]
 	extraHeader = "AUTHORIZATION: basic NEVER-PAT-HEADER"
 [http]
@@ -84,6 +91,39 @@ func laptopHome(t *testing.T) (home, repo string) {
 	repo = filepath.Join(home, "work", "proj")
 	mustRun(t, home, "git", "init", "-q", "-b", "main", repo)
 	return home, repo
+}
+
+// A carried value that git runs as a command is checked against the
+// guest's PATH; a boolean pager.<cmd> and a filter are not (I-195, I-525).
+func TestGitCommandKey(t *testing.T) {
+	for _, c := range []struct {
+		key, value string
+		want       bool
+	}{
+		{"core.pager", "delta", true},
+		{"core.editor", "code --wait", true},
+		{"sequence.editor", "code --wait", true},
+		{"interactive.difffilter", "delta --color-only", true},
+		{"diff.external", "difft", true},
+		{"diff.lockb.textconv", "bun", true},
+		{"diff.img.command", "imgdiff", true},
+		{"merge.npm.driver", "npx npm-merge-driver merge %A %O %B %P", true},
+		{"pager.diff", "delta", true},
+		{"pager.log", "false", false},
+		{"pager.branch", "off", false},
+		{"pager.status", "1", false},
+		{"pager.show", "", false},
+		{"diff.colormoved", "default", false},
+		{"diff.algorithm", "histogram", false},
+		{"merge.conflictstyle", "zdiff3", false},
+		{"filter.lfs.clean", "git-lfs clean -- %f", false},
+		{"filter.crypt.smudge", "git-crypt smudge", false},
+		{"alias.st", "status", false},
+	} {
+		if got := gitCommandKey(c.key, c.value); got != c.want {
+			t.Errorf("gitCommandKey(%q, %q) = %v, want %v", c.key, c.value, got, c.want)
+		}
+	}
 }
 
 // One left-out entry reads as one: "1 git config entry that holds".
@@ -231,7 +271,7 @@ func TestCarryGitConfig(t *testing.T) {
 		t.Fatalf("outcome = %+v", o)
 	}
 	dropped := strings.Join(o.Dropped, ",")
-	for _, want := range []string{"git core.pager", "git commit.template"} {
+	for _, want := range []string{"git core.pager", "git commit.template", "git interactive.difffilter", "git pager.diff", "git sequence.editor"} {
 		if !strings.Contains(dropped, want) {
 			t.Errorf("dropped = %v, want %q named", o.Dropped, want)
 		}
@@ -261,12 +301,15 @@ func TestCarryGitConfig(t *testing.T) {
 	if got := guestGit("config", "--global", "--includes", "alias.st"); got != "status --short" {
 		t.Errorf("guest alias.st = %q, want the guest's own", got)
 	}
-	for _, denied := range []string{"credential.", "url.", "gpg.", "signingkey", "gpgsign", "proxy", "sslcainfo", "diff.tool", "includeif", "excludesfile", "core.pager", "commit.template"} {
+	for _, denied := range []string{"credential.", "url.", "gpg.", "signingkey", "gpgsign", "proxy", "sslcainfo", "diff.tool", "includeif", "excludesfile", "core.pager", "commit.template", "difffilter", "pager.diff", "sequence.editor"} {
 		if strings.Contains(strings.ToLower(list), denied) {
 			t.Errorf("denied or dropped key %q is in the guest's config", denied)
 		}
 	}
-	for _, kept := range []string{"core.editor=vi", "core.autocrlf=input", "pull.rebase", "diff.colormoved=default"} {
+	if strings.Contains(dropped, "pager.log") {
+		t.Errorf("pager.log=false is a boolean, not a command, yet it was dropped: %v", o.Dropped)
+	}
+	for _, kept := range []string{"core.editor=vi", "core.autocrlf=input", "pull.rebase", "diff.colormoved=default", "pager.log=false"} {
 		if !strings.Contains(list, kept) {
 			t.Errorf("%q missing from the guest's config", kept)
 		}

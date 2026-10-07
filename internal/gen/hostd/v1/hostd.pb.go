@@ -3026,6 +3026,8 @@ func (x *BuildLog) GetLine() string {
 	return ""
 }
 
+// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes
+// (DECISIONS I-504).
 type AgentProc struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -3147,12 +3149,14 @@ func (x *ProcSample) GetRssBytes() uint64 {
 }
 
 type GuestSignals struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	SshSessions      uint32                 `protobuf:"varint,1,opt,name=ssh_sessions,json=sshSessions,proto3" json:"ssh_sessions,omitempty"`
-	TmuxClients      uint32                 `protobuf:"varint,2,opt,name=tmux_clients,json=tmuxClients,proto3" json:"tmux_clients,omitempty"`
-	Agents           []*AgentProc           `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
-	DockerContainers uint32                 `protobuf:"varint,4,opt,name=docker_containers,json=dockerContainers,proto3" json:"docker_containers,omitempty"`
-	GuestdOk         bool                   `protobuf:"varint,5,opt,name=guestd_ok,json=guestdOk,proto3" json:"guestd_ok,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SshSessions uint32                 `protobuf:"varint,1,opt,name=ssh_sessions,json=sshSessions,proto3" json:"ssh_sessions,omitempty"`
+	// tmux clients only; 0 on a herdr machine, whose clients count in
+	// ssh_sessions (DECISIONS I-511).
+	TmuxClients      uint32       `protobuf:"varint,2,opt,name=tmux_clients,json=tmuxClients,proto3" json:"tmux_clients,omitempty"`
+	Agents           []*AgentProc `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
+	DockerContainers uint32       `protobuf:"varint,4,opt,name=docker_containers,json=dockerContainers,proto3" json:"docker_containers,omitempty"`
+	GuestdOk         bool         `protobuf:"varint,5,opt,name=guestd_ok,json=guestdOk,proto3" json:"guestd_ok,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3576,6 +3580,7 @@ type AgentEvent struct {
 	Summary string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
 	// The tmux window the hook came from, as guestd resolved it (the
 	// `window` of 13-notifications.md §5.1); empty when unknown. I-121.
+	// A tmux window name or a herdr agent key, at most 64 bytes (I-504).
 	TmuxWindow    string `protobuf:"bytes,5,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3650,15 +3655,16 @@ func (x *AgentEvent) GetTmuxWindow() string {
 // The text is tenant content: delivered to the user's channels, never
 // logged.
 type AgentQuestion struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GuestId       string                 `protobuf:"bytes,1,opt,name=guest_id,json=guestId,proto3" json:"guest_id,omitempty"`
-	QuestionId    string                 `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
-	Agent         string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
-	TmuxWindow    string                 `protobuf:"bytes,4,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
-	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
-	Options       []string               `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`
-	TimeoutS      uint32                 `protobuf:"varint,7,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
-	State         string                 `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	GuestId    string                 `protobuf:"bytes,1,opt,name=guest_id,json=guestId,proto3" json:"guest_id,omitempty"`
+	QuestionId string                 `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
+	Agent      string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
+	// A tmux window name or a herdr agent key, at most 64 bytes (I-504).
+	TmuxWindow    string   `protobuf:"bytes,4,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	Text          string   `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	Options       []string `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`
+	TimeoutS      uint32   `protobuf:"varint,7,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
+	State         string   `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

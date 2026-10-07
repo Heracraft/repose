@@ -21,10 +21,11 @@ We let people in, in the order they joined, as seats free up or we add a server.
 
 ## Egress
 
-Data your machines send to the internet is counted against the month's allowance (250 GB on Solo, 500 GB on Plus, 1 TB on Pro), then $0.05 per GB. At four times the allowance your machines are stopped until the month turns, with an email. Incoming data, and your own SSH traffic through the gateway, don't count.
+Data your machines send to the internet is counted against the month's allowance (250 GB on Solo, 100 GB during its [$20 introductory months](/docs/billing), 500 GB on Plus, 1 TB on Pro), then $0.05 per GB. At four times the allowance your machines are stopped until the month turns, with an email. Incoming data, and your own SSH traffic through the gateway, don't count.
 
 ## Network
 
+- Outbound TCP and UDP are allowed. Ping to the internet gets no reply, so check connectivity with `curl -sI https://example.com`.
 - Outbound traffic is limited to 200 Mbit/s per machine. Downloads into the machine are limited to 1 Gbit/s; downloads from the npm and Docker Hub caches on the server aren't limited.
 - Outbound connections to port 25 are blocked. Use your email provider's API, or its submission port (587 or 465) with a login.
 - Outbound connections to the ports mining pools use (3333, 5555, 7777, 14433 and 14444) are blocked.

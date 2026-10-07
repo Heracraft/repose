@@ -41,10 +41,11 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                  |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                         |
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix). |
+| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. A `--temp` machine always runs tmux, and `--temp --multiplexer herdr` stops with an error. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
 ### `repose attach [PROJECT]`
 
-Attach to the project's tmux session without syncing. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
+Attach to the project's tmux session without syncing; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
 
 `run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
 
@@ -63,10 +64,11 @@ Copy this checkout's current work to its machine, over the checkout already ther
 | `--size small\|large\|xl` | Size of a new project.                                             |
 | `--name NAME`             | The project called NAME, created if there is none.                 |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
+| `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
 
 ### `repose ps [PROJECT]`
 
-The project's tmux windows: number and name, the program running in each (its name, not its arguments), and when it last printed something. `*` marks the current window, the one `attach` opens on. `-q`/`--quiet` prints only the names; `--json` for JSON.
+The project's tmux windows: number and name, the program running in each (its name, not its arguments), and when it last printed something. `*` marks the current window, the one `attach` opens on. `-q`/`--quiet` prints only the names; `--json` for JSON. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one; `--json` gives `workspace`, `agent`, `name`, `state` and `focused`.
 
 ```
 $ repose ps
@@ -201,7 +203,7 @@ Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout'
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard to `/tmp/repose-paste/` on the machine and paste its path into the tmux session's current pane, where Claude Code attaches it. Nothing is sent with it; you press Enter. While you're attached, `Ctrl+V` does the same; `repose paste` is for scripts and other windows. See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
+Copy the image on your clipboard to `/tmp/repose-paste/` on the machine and paste its path into the tmux session's current pane, or herdr's focused pane, where Claude Code attaches it. `--window NAME` picks a tmux window, or a herdr agent by name. Nothing is sent with it; you press Enter. While you're attached, `Ctrl+V` does the same; `repose paste` is for scripts and other windows. See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
 | Flag            | What it does                                                     |
 | --------------- | ---------------------------------------------------------------- |
@@ -327,6 +329,7 @@ With `--global`, the same commands act on your machine.nix instead of the projec
 ```toml
 default_class = "small"
 default_agent = "codex"
+default_multiplexer = "herdr"
 
 [sync]
 exclude = ["dist", "*.mp4"]
@@ -344,17 +347,18 @@ forward = ["apple-notes"]
 forward = ["figma"]
 ```
 
-| Key               | Default  | What it does                                                                                                                                                                                                |
-| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default_class`   | `large`  | Size of new projects.                                                                                                                                                                                       |
-| `default_agent`   | `claude` | Agent for new projects.                                                                                                                                                                                     |
-| `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
+| Key               | Default  | What it does                                                                                                                            |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `default_class`   | `large`  | Size of new projects.                                                                                                                   |
+| `default_agent`   | `claude` | Agent for new projects.                                                                                                                 |
+| `default_multiplexer` | none | `tmux` or `herdr` for new projects; a `--temp` machine runs tmux either way. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key. |
+| `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                      |
 | `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`     | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                            |
 | `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
-| `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
-| `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
-| `logto_client_id` | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
+| `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                    |
+| `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                  |
+| `logto_client_id` | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                    |
 
 ## Environment variables
 

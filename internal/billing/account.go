@@ -63,8 +63,8 @@ func LoadAccount(ctx context.Context, pool *db.Pool, userID uuid.UUID, at time.T
 			return a, err
 		}
 	}
-	a.Plan = a.Sub.PlanOrSolo()
 	a.Period = a.Sub.Period(at)
+	a.Plan = a.Sub.PlanFor(a.Period.Start)
 	a.Limits = LimitsFor(u, a.Sub)
 	if a.Usage, err = LoadUsage(ctx, pool, u.ID, a.Plan, a.Period); err != nil {
 		return a, err

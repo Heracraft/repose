@@ -28,11 +28,16 @@ type Sub struct {
 	CancelAt          *time.Time `db:"cancel_at"`
 	ScheduledPlan     *string    `db:"scheduled_plan"`
 	OverageChargedFor *time.Time `db:"overage_charged_for"`
-	CreatedAt         time.Time  `db:"created_at"`
-	UpdatedAt         time.Time  `db:"updated_at"`
+	// Intro is whether the subscription carries the introductory discount
+	// (DECISIONS I-497), and IntroUntil when Paddle says it ends; nil while
+	// Paddle has not fixed the end.
+	Intro      bool       `db:"intro"`
+	IntroUntil *time.Time `db:"intro_until"`
+	CreatedAt  time.Time  `db:"created_at"`
+	UpdatedAt  time.Time  `db:"updated_at"`
 }
 
-const subCols = `id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, created_at, updated_at`
+const subCols = `id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, intro, intro_until, created_at, updated_at`
 
 // Subscription statuses, Paddle's words.
 const (
@@ -95,6 +100,45 @@ func LiveSubscription(ctx context.Context, q store.Querier, userID uuid.UUID) (*
 	return &subs[0], nil
 }
 
+// EverSubscribed reports whether the user has had any subscription, in
+// any status. Only a first subscription gets the introductory price
+// (DECISIONS I-497).
+func EverSubscribed(ctx context.Context, q store.Querier, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, "select exists (select 1 from subscriptions where user_id = $1)", userID).Scan(&ok)
+	return ok, err
+}
+
+// IntroAt reports whether the introductory offer covers at: the
+// subscription carries the introductory discount, its plan has an
+// introductory price, and at is before the discount's end (or Paddle has
+// not fixed the end yet).
+func (s *Sub) IntroAt(at time.Time) bool {
+	return s != nil && s.Intro && s.PlanOrSolo().HasIntro() && (s.IntroUntil == nil || at.Before(*s.IntroUntil))
+}
+
+// ChargeCents is what Paddle charges for the subscription's plan at at:
+// the introductory price while the offer runs, else the plan's price.
+func (s *Sub) ChargeCents(at time.Time) int64 {
+	plan := s.PlanOrSolo()
+	if s.IntroAt(at) {
+		return plan.IntroCents
+	}
+	return plan.PriceCents
+}
+
+// PlanFor is the plan as it applies to the period starting at start: the
+// introductory egress allowance while the offer covers that period
+// (DECISIONS I-497), else the plan as it is. Egress arithmetic (the
+// overage line, the hard stop, the gate, GET /billing) reads this.
+func (s *Sub) PlanFor(start time.Time) Plan {
+	plan := s.PlanOrSolo()
+	if s.IntroAt(start) && plan.IntroEgressGB > 0 {
+		plan.EgressGB = plan.IntroEgressGB
+	}
+	return plan
+}
+
 // GetSubscription reads one row by Paddle id; db.ErrNotFound when absent.
 func GetSubscription(ctx context.Context, q store.Querier, id string) (*Sub, error) {
 	rows, err := q.Query(ctx, "select "+subCols+" from subscriptions where id = $1", id)
@@ -137,12 +181,13 @@ func upsertSubscription(ctx context.Context, q store.Querier, s Sub) (*Sub, erro
 	if errors.Is(err, db.ErrNotFound) {
 		prev = nil
 	}
-	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, intro, intro_until)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		on conflict (id) do update set paddle_customer_id = excluded.paddle_customer_id, plan = excluded.plan, status = excluded.status,
 		seats = excluded.seats, period_start = excluded.period_start, period_end = excluded.period_end, next_billed_at = excluded.next_billed_at,
-		trial_end = excluded.trial_end, cancel_at = excluded.cancel_at, scheduled_plan = excluded.scheduled_plan`,
-		s.ID, s.UserID, s.CustomerID, s.Plan, s.Status, s.Seats, s.PeriodStart, s.PeriodEnd, s.NextBilledAt, s.TrialEnd, s.CancelAt, s.ScheduledPlan)
+		trial_end = excluded.trial_end, cancel_at = excluded.cancel_at, scheduled_plan = excluded.scheduled_plan,
+		intro = excluded.intro, intro_until = excluded.intro_until`,
+		s.ID, s.UserID, s.CustomerID, s.Plan, s.Status, s.Seats, s.PeriodStart, s.PeriodEnd, s.NextBilledAt, s.TrialEnd, s.CancelAt, s.ScheduledPlan, s.Intro, s.IntroUntil)
 	if err != nil {
 		return prev, err
 	}

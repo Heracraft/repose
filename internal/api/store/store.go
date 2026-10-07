@@ -88,9 +88,12 @@ type Project struct {
 	// PersonalOptOut keeps the account's personal layer off this
 	// project's machine (0015, DECISIONS I-490).
 	PersonalOptOut bool `db:"personal_opt_out"`
+	// Multiplexer is what the guest's next start runs, tmux or herdr
+	// (0017, DECISIONS I-502); project_json carries it to the guest.
+	Multiplexer string `db:"multiplexer"`
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer`
 
 // Host is a hosts row.
 type Host struct {

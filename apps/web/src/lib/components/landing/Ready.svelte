@@ -22,7 +22,7 @@
 	// 2026-09-25): pgcli typed in the checkout, the command-not-found hint, the
 	// suggested install, the tool running. Colours as the capture set them,
 	// mapped as ops/dev/hero/convert.py maps them. The first line of each
-	// two-line starship prompt ('dev in repose-guest in' and the checkout's
+	// two-line starship prompt ('dev in job-alerts in' and the checkout's
 	// folder, an internal name) is cropped out, as rows are cropped out of
 	// the browser card's log; each command keeps its ❯ line, and the status
 	// bar still names the machine (I-397).
@@ -50,7 +50,7 @@
 	// The status bar as a client on that window drew it (the mode flag
 	// cropped, and its first 10 columns, the session name, cropped off the
 	// left so it starts at the window list).
-	const barHost = '"repose-guest" ';
+	const barHost = '"job-alerts" ';
 	const barDate = ' 25-Sep-26';
 	const hint = [
 		['  nix profile add nixpkgs#pgcli', 'install it on this machine'],

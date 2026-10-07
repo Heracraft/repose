@@ -2,11 +2,15 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 const defaultAPIURL = "https://api.repose.herakraft.co/v1"
@@ -25,6 +29,9 @@ type Config struct {
 	// still loads, since unknown keys are ignored (DECISIONS I-242).
 	DefaultClass string `toml:"default_class"`
 	DefaultAgent string `toml:"default_agent"`
+	// DefaultMultiplexer is the multiplexer of projects `run` creates,
+	// tmux or herdr; empty lets the CLI pick (DECISIONS I-502).
+	DefaultMultiplexer string `toml:"default_multiplexer"`
 	// SyncExclude is sync.exclude. TOML spells that as a [sync] table
 	// with an exclude key (Sync, merged in by loadConfig); the quoted
 	// top-level key "sync.exclude" is what this tag matched before and
@@ -115,6 +122,9 @@ func loadConfig(dir string) (Config, error) {
 	}
 	if cfg.LogtoClientID == "" {
 		cfg.LogtoClientID = defaultLogtoClientID
+	}
+	if cfg.DefaultMultiplexer != "" && !multiplexer.Valid(cfg.DefaultMultiplexer) {
+		return cfg, fmt.Errorf("%s: default_multiplexer is %q; it takes %s", configPath(dir), cfg.DefaultMultiplexer, strings.Join(multiplexer.Names, " or "))
 	}
 	return cfg, nil
 }

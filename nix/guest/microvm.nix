@@ -72,6 +72,8 @@ let
         repose.fragment = fragmentModule;
         repose.personal = personalModule;
         repose.prePassPkgs = prePassPkgs;
+        # `nixpkgs` in the global flake registry, locked (I-531).
+        repose.nixpkgsLocked = { inherit (nixpkgs) rev narHash lastModified; };
         # command-not-found's and nix-locate's prebuilt index (I-219).
         repose.nixIndexPackage = self.inputs.nix-index-database.packages.${system}.nix-index-with-small-db;
       }
@@ -142,6 +144,18 @@ let
             '';
           in
           lib.mkForce "${hmStart} ${config.home-manager.users.dev.home.activationPackage}";
+        # A running herdr server rereads ~/.config/herdr/config.toml when a
+        # fragment or machine.nix changed it (DECISIONS I-563), and the
+        # running tmux server takes the new tmux configuration: a fragment
+        # or machine.nix that adds, changes or removes a tmux config, or a
+        # base that changes /etc/tmux.conf, reaches the panes already open
+        # without restarting the session (I-552, I-496). "-": neither ever
+        # fails the switch.
+        systemd.services.home-manager-dev.serviceConfig.ExecStartPost = [
+          "-${(import ./base/herdr-config.nix { inherit pkgs; herdr = pkgs.reposeHerdr; }).reload}/bin/repose-herdr-reload"
+          "-${pkgs.callPackage ./base/tmux-reload.nix { }}/bin/repose-tmux-reload"
+        ];
+        systemd.services.home-manager-dev.restartTriggers = [ config.environment.etc."tmux.conf".source ];
       })
     ] ++ extraModules;
   };
@@ -247,7 +261,7 @@ let
     mkdir -p "$state_dir"
     rm -f "$api_socket" "$vsock_socket"
 
-    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off"
+    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
     if [ -n "$extra_cmdline" ]; then
       cmdline="$cmdline $extra_cmdline"
     fi

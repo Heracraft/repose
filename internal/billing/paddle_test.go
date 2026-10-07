@@ -26,7 +26,10 @@ func TestPaddleEnvironmentFromKey(t *testing.T) {
 	if err := (billing.Config{}).Validate(); err != nil {
 		t.Fatalf("no key is a valid (disabled) configuration: %v", err)
 	}
-	full := billing.Config{APIKey: "k", WebhookSecret: "s", PriceSolo: "a", PricePlus: "c", PricePro: "b", ProductOverage: "p"}
+	full := billing.Config{APIKey: "k", WebhookSecret: "s", PriceSolo: "a", PricePlus: "c", PricePro: "b", ProductOverage: "p", DiscountIntro: "d"}
+	if err := (billing.Config{APIKey: "k", WebhookSecret: "s", PriceSolo: "a", PricePlus: "c", PricePro: "b", ProductOverage: "p"}).Validate(); err == nil || !strings.Contains(err.Error(), "PADDLE_DISCOUNT_INTRO") {
+		t.Fatalf("no introductory discount is refused: %v", err)
+	}
 	if err := full.Validate(); err != nil {
 		t.Fatal(err)
 	}

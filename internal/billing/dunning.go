@@ -111,7 +111,7 @@ func (d *Dunning) Run(ctx context.Context) (DunningResult, error) {
 		if err != nil {
 			return res, err
 		}
-		if _, err := events.InsertAccount(ctx, d.pool, a.id, now, KindPaymentFailed, paymentFailed(sub.PlanOrSolo())); err != nil {
+		if _, err := events.InsertAccount(ctx, d.pool, a.id, now, KindPaymentFailed, paymentFailed(sub, a.since)); err != nil {
 			return res, err
 		}
 		res.SecondNotices = append(res.SecondNotices, a.id)

@@ -9,6 +9,8 @@ import (
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/guestd/warn"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // Agent states, the enum of docs/interfaces/grpc-hostd.md's AgentProc.state.
@@ -26,9 +28,11 @@ const (
 	KindError      = "error"
 )
 
-// Warning kinds this package produces.
+// Warning kinds this package produces. tmux_down and herdr_down are each
+// sent only when project.json names that multiplexer (DECISIONS I-507).
 const (
 	WarnTmuxDown   = "tmux_down"
+	WarnHerdrDown  = "herdr_down"
 	WarnDockerDown = "docker_down"
 )
 
@@ -53,6 +57,14 @@ const (
 	// longer waits for docker.service at boot (DECISIONS I-161), and dockerd
 	// takes 2 to 3 s to answer on a small guest.
 	DockerGrace = 60 * time.Second
+	// SessionGrace is how long after guestd starts tmux_down and
+	// herdr_down wait for this boot's SetupProject, which is what starts
+	// the session unit (DECISIONS I-562). A guestd restarted on a running
+	// machine gets no SetupProject, so the wait ends here.
+	SessionGrace = 60 * time.Second
+	// WarnRepeat is the least time between two warnings of one kind
+	// (vsock-guestd.md, Notify), the same as the warn package's.
+	WarnRepeat = warn.Repeat
 )
 
 // Emitter receives the watcher's notifications. The server's notify queue
@@ -67,6 +79,20 @@ type Emitter interface {
 // session name. It changes at SetupProject.
 type SlugSource interface{ Slug() string }
 
+// MultiplexerSource is a SlugSource that also says which multiplexer
+// project.json names (internal/multiplexer values, normalized). A
+// SlugSource without it means tmux.
+type MultiplexerSource interface {
+	SlugSource
+	Multiplexer() string
+}
+
+// SetupSource is a SlugSource that says whether SetupProject has run since
+// guestd started. A SlugSource without it counts as set up.
+type SetupSource interface {
+	SetupDone() bool
+}
+
 type hookRecord struct {
 	kind string
 	at   time.Time
@@ -75,6 +101,8 @@ type hookRecord struct {
 type windowState struct {
 	agent      string
 	windowName string
+	// source is the multiplexer that reported the pane.
+	source string
 	// cumulative CPU of the pane's process tree at the last refresh
 	lastCPU uint64
 	// when the tree last consumed CPU
@@ -94,7 +122,8 @@ type windowState struct {
 // is a read of memory plus one /proc walk.
 type Watcher struct {
 	paths  sysdep.Paths
-	tmux   tmuxClient
+	tmux   *tmuxSource
+	herdr  *herdrSource
 	procs  *procReader
 	docker sysdep.Docker
 	slugs  SlugSource
@@ -117,9 +146,22 @@ type Watcher struct {
 	// agentPanes is the agent windows' pane pids and their agents, for the
 	// OOM priority (I-200).
 	agentPanes map[int]string
+	// herdrKeys is each herdr pane id's key at the last refresh, and
+	// tmuxKeys the tmux windows' names, for hook resolution (I-506).
+	herdrKeys map[string]string
+	tmuxKeys  map[string]bool
+	// herdrDropped is the herdr pane ids the last refresh left out because
+	// an earlier pane had their key: a hook from one changes no state.
+	herdrDropped map[string]bool
 	// warned remembers which one-shot warnings have been sent, so tmux_down
-	// and docker_down are announced once rather than every five seconds.
-	warned map[string]bool
+	// and docker_down are announced once rather than every five seconds,
+	// and warnedAt when each kind was last sent, so a condition that
+	// flaps sends at most one per WarnRepeat.
+	warned   map[string]bool
+	warnedAt map[string]time.Time
+	// herdrDown counts refreshes in a row that could not read herdr,
+	// from the point the session warnings may go out (I-562).
+	herdrDown int
 }
 
 // NewWatcher builds a watcher. now may be nil for time.Now.
@@ -127,19 +169,34 @@ func NewWatcher(p sysdep.Paths, run sysdep.Runner, docker sysdep.Docker, slugs S
 	if now == nil {
 		now = time.Now
 	}
+	uid, _ := sysdep.DevIdentity()
 	return &Watcher{
-		paths:   p,
-		tmux:    tmuxClient{paths: p, run: run},
-		procs:   newProcReader(p),
-		docker:  docker,
-		slugs:   slugs,
-		emit:    emit,
-		log:     log,
-		now:     now,
-		windows: map[string]*windowState{},
-		hooks:   map[string]hookRecord{},
-		warned:  map[string]bool{},
-		started: now(),
+		paths:    p,
+		tmux:     &tmuxSource{client: tmuxClient{paths: p, run: run}, slugs: slugs, uid: uid},
+		herdr:    newHerdrSource(p, uid, log, now),
+		procs:    newProcReader(p),
+		docker:   docker,
+		slugs:    slugs,
+		emit:     emit,
+		log:      log,
+		now:      now,
+		windows:  map[string]*windowState{},
+		hooks:    map[string]hookRecord{},
+		warned:   map[string]bool{},
+		warnedAt: map[string]time.Time{},
+		started:  now(),
+	}
+}
+
+// SetHerdrSocket points the herdr source at another socket path, and when
+// uid is above 0 another peer uid (tests, where a temp root makes the
+// conventional path too long for sun_path and the test user is not dev).
+func (w *Watcher) SetHerdrSocket(path string, uid int) {
+	w.herdr.mu.Lock()
+	defer w.herdr.mu.Unlock()
+	w.herdr.socket = path
+	if uid > 0 {
+		w.herdr.uid = uid
 	}
 }
 
@@ -164,7 +221,7 @@ func (w *Watcher) Refresh(ctx context.Context) {
 	defer cancel()
 
 	w.refreshDocker(ctx)
-	w.refreshTmux(ctx)
+	w.refreshPanes(ctx)
 	w.refreshProcs()
 }
 
@@ -178,9 +235,38 @@ func (w *Watcher) refreshProcs() {
 
 	children, _ := w.procs.childIndex()
 	devUID, _ := sysdep.DevIdentity()
-	if changes := w.procs.applyOOM(devUID, w.procs.agentPIDs(children, panes)); len(changes) > 0 {
+	agents := w.procs.agentPIDs(children, panes)
+	// herdr's server and the agents in its tree (I-505). The tree is
+	// walked whatever project.json says: a server started by hand is
+	// protected the same way.
+	servers := w.procs.herdrServers(devUID)
+	for pid := range w.procs.herdrAgentPIDs(children, servers) {
+		agents[pid] = true
+	}
+	if changes := w.procs.applyOOM(devUID, agents, servers); len(changes) > 0 {
 		w.log.Debug("oom priority applied", "event", "oom_priority", "changed", len(changes))
 	}
+	if n := w.procs.applyNice(children, servers); n > 0 {
+		w.log.Debug("herdr priority applied", "event", "oom_priority", "changed", n)
+	}
+}
+
+// sessionExpected is true once this guestd has run SetupProject, or
+// SessionGrace after it started.
+func (w *Watcher) sessionExpected() bool {
+	if s, ok := w.slugs.(SetupSource); ok && !s.SetupDone() {
+		return w.now().Sub(w.started) >= SessionGrace
+	}
+	return true
+}
+
+// multiplexer is what project.json names, tmux when the slug source cannot
+// say.
+func (w *Watcher) multiplexer() string {
+	if m, ok := w.slugs.(MultiplexerSource); ok {
+		return multiplexer.Normalize(m.Multiplexer())
+	}
+	return multiplexer.Tmux
 }
 
 func (w *Watcher) refreshDocker(ctx context.Context) {
@@ -203,32 +289,58 @@ func (w *Watcher) refreshDocker(ctx context.Context) {
 	w.oneShot(WarnDockerDown, !up, "the docker socket did not answer")
 }
 
-func (w *Watcher) refreshTmux(ctx context.Context) {
-	session := w.slugs.Slug()
-	if session == "" {
+// refreshPanes takes the union of both sources' agent panes (DECISIONS
+// I-504) and runs the agent-state machine over it.
+func (w *Watcher) refreshPanes(ctx context.Context) {
+	if w.slugs.Slug() == "" {
 		w.mu.Lock()
 		w.refreshed = w.now()
 		w.mu.Unlock()
 		return
 	}
+	mux := w.multiplexer()
 
-	windows, serverUp, err := w.tmux.listWindows(ctx, session)
-	if err != nil {
+	tmuxPanes, tmuxUp, tmuxErr := w.tmux.Panes(ctx)
+	if tmuxErr != nil {
 		// The reason is in the error's message, which carries no session name.
 		w.log.Warn("could not list tmux windows",
-			"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
-		return
+			"event", "agent_state", "error_code", sysdep.CodeOf(tmuxErr), "reason", tmuxErr.Error())
 	}
 	clients := uint32(0)
-	if serverUp {
-		clients, _, err = w.tmux.listClients(ctx, session)
-		if err != nil {
+	if tmuxUp && tmuxErr == nil {
+		var err error
+		if clients, err = w.tmux.clients(ctx); err != nil {
 			w.log.Warn("could not list tmux clients",
 				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
 		}
 	}
+	var splitPanes []tmuxPane
+	if tmuxUp && tmuxErr == nil {
+		var err error
+		if splitPanes, err = w.tmux.client.listPanes(ctx, w.slugs.Slug()); err != nil {
+			w.log.Warn("could not list tmux panes",
+				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
+		}
+	}
+	herdrPanes, herdrUp, _ := w.herdr.Panes(ctx)
 
-	w.oneShot(WarnTmuxDown, !serverUp, "no tmux server is running for dev")
+	// Only SetupProject starts the session unit, so before it neither
+	// server is expected (I-562).
+	gate := w.sessionExpected()
+	w.mu.Lock()
+	switch {
+	case herdrUp || !gate:
+		w.herdrDown = 0
+	default:
+		w.herdrDown++
+	}
+	herdrDown := w.herdrDown
+	w.mu.Unlock()
+	if tmuxErr == nil {
+		w.oneShot(WarnTmuxDown, gate && mux == multiplexer.Tmux && !tmuxUp, "no tmux server is running for dev")
+	}
+	w.oneShot(WarnHerdrDown, mux == multiplexer.Herdr && herdrDown >= HerdrDownAfter,
+		"herdr's socket did not answer")
 
 	// One child index per refresh, shared by every window's tree walk.
 	children, _ := w.procs.childIndex()
@@ -241,65 +353,118 @@ func (w *Watcher) refreshTmux(ctx context.Context) {
 	var events []emission
 
 	w.mu.Lock()
-	w.tmuxUp = serverUp
-	w.clients = clients
-	w.refreshed = now
+	if tmuxErr == nil {
+		// A tmux that could not be read leaves the cache to age, so a
+		// Sample goes partial instead of reporting stale windows as fresh.
+		w.tmuxUp = tmuxUp
+		w.clients = clients
+		w.refreshed = now
+	}
 
-	live := make(map[string]bool, len(windows))
+	live := map[string]bool{}
 	panes := map[int]string{} // an agent window's pane pid -> its agent
-	for _, win := range windows {
-		agent := AgentOf(win.Name)
-		if agent == "" {
-			// A window with another name counts while an agent is its
-			// foreground program: `claude` typed in the shell window
-			// (I-421). It stops counting when the agent exits.
-			if agent = AgentByCommand(win.PaneCommand); agent == "" {
-				continue
-			}
-		}
-		if !w.procs.treeHasAnyComm(children, win.PanePID, binaries[agent]) {
+	tmuxKeys := map[string]bool{}
+	var all []Pane
+	for _, p := range tmuxPanes {
+		if !w.procs.treeHasAnyComm(children, p.RootPID, binaries[p.Agent]) {
 			// A window named after an agent whose process is not running is
 			// not an agent window; the user renamed a shell.
 			continue
 		}
-		live[win.Name] = true
-		panes[win.PanePID] = agent
+		tmuxKeys[p.Key] = true
+		all = append(all, p)
+	}
+	// herdr keys step aside for tmux windows. When tmux could not be read
+	// its windows stand, so the names they had at the last good read are
+	// still taken.
+	taken := tmuxKeys
+	if tmuxErr != nil {
+		taken = w.tmuxKeys
+	}
+	herdrKeys := map[string]string{}
+	herdrDropped := map[string]bool{}
+	for _, p := range herdrPanes {
+		p.Key = disambiguate(p.Key, taken)
+		if live[p.Key] {
+			// Two herdr agents with one name: the first is reported.
+			herdrDropped[p.Ref] = true
+			continue
+		}
+		live[p.Key] = true
+		herdrKeys[p.Ref] = p.Key
+		all = append(all, p)
+	}
+	for k := range tmuxKeys {
+		live[k] = true
+	}
 
-		ws := w.windows[win.Name]
-		if ws == nil {
-			ws = &windowState{agent: agent, windowName: win.Name, lastActive: now, stateSince: now}
-			w.windows[win.Name] = ws
+	for _, p := range all {
+		source := multiplexer.Tmux
+		if p.RootPID == 0 {
+			source = multiplexer.Herdr
 		}
-		cpu, ok := w.procs.treeCPU(children, win.PanePID)
-		busy := ok && cpu > ws.lastCPU
-		if busy {
-			ws.lastCPU = cpu
-			ws.lastActive = now
-		} else if ok {
-			ws.lastCPU = cpu
+		ws := w.windows[p.Key]
+		if ws == nil || ws.source != source {
+			if ws != nil {
+				// The key passes from one multiplexer's agent to the
+				// other's: the hook recorded on it was the old agent's.
+				delete(w.hooks, p.Key)
+			}
+			ws = &windowState{agent: p.Agent, windowName: p.Key, source: source, lastActive: now, stateSince: now}
+			w.windows[p.Key] = ws
 		}
-		if win.LastActivity > ws.lastActivity {
-			ws.lastActivity = win.LastActivity
-			ws.heuristicSent = false
+		if old := w.herdrKeys[p.Ref]; source == multiplexer.Herdr && old != "" && old != p.Key {
+			// The herdr agent changed key (the tmux window that took
+			// its name closed): its hook goes with it.
+			if rec, ok := w.hooks[old]; ok {
+				w.hooks[p.Key] = rec
+				delete(w.hooks, old)
+			}
+		}
+		busy := false
+		if p.RootPID > 0 {
+			panes[p.RootPID] = p.Agent
+			cpu, ok := w.procs.treeCPU(children, p.RootPID)
+			busy = ok && cpu > ws.lastCPU
+			if busy {
+				ws.lastCPU = cpu
+				ws.lastActive = now
+			} else if ok {
+				ws.lastCPU = cpu
+			}
+			if p.Activity > ws.lastActivity {
+				ws.lastActivity = p.Activity
+				ws.heuristicSent = false
+			}
 		}
 
-		state := w.computeState(ws, busy, now)
+		state := w.computeState(ws, busy, p.Reported, now)
 		if state != ws.state {
 			ws.state = state
 			ws.stateSince = now
 		}
 		if ws.state != ws.announced && now.Sub(ws.stateSince) >= StateDebounce {
 			ws.announced = ws.state
-			states = append(states, emission{agent: agent, window: win.Name, state: ws.state})
+			states = append(states, emission{agent: p.Agent, window: p.Key, state: ws.state})
 		}
 
-		if ev, summary, ok := w.heuristicCompletion(ws, win, now); ok {
-			events = append(events, emission{agent: agent, window: win.Name, kind: ev, summary: summary})
+		if p.RootPID > 0 {
+			if ev, summary, ok := w.heuristicCompletion(ws, p, now); ok {
+				events = append(events, emission{agent: p.Agent, window: p.Key, kind: ev, summary: summary})
+			}
+		} else if p.Done && !HookedAgents[p.Agent] {
+			// herdr saw the turn end (completion_seq rose, I-561).
+			// Hooked agents report it through their hook, so nothing
+			// arrives twice.
+			events = append(events, emission{agent: p.Agent, window: p.Key, kind: KindCompleted, summary: p.Agent + " went idle"})
 		}
 	}
 	for name, ws := range w.windows {
 		if live[name] {
 			continue
+		}
+		if tmuxErr != nil && ws.source == multiplexer.Tmux {
+			continue // tmux could not be read; its windows stand
 		}
 		// The window is gone. Say so once, then forget it.
 		if ws.announced != StateUnknown {
@@ -308,10 +473,28 @@ func (w *Watcher) refreshTmux(ctx context.Context) {
 		delete(w.windows, name)
 		delete(w.hooks, name)
 	}
-	w.mu.Unlock()
-
-	w.mu.Lock()
-	w.agentPanes = panes
+	if tmuxErr == nil {
+		// The OOM priority covers every pane of the session, not only each
+		// agent window's active one (DECISIONS I-200): an agent in a split
+		// pane, or in an inactive pane of the shell window, is protected
+		// too. The windows' own panes above stay in, so a failed
+		// list-panes protects no less than before.
+		for _, pane := range splitPanes {
+			if _, ok := panes[pane.PID]; ok {
+				continue
+			}
+			for _, agent := range []string{AgentOf(pane.Window), AgentByCommand(pane.Command)} {
+				if agent != "" && w.procs.treeHasAnyComm(children, pane.PID, binaries[agent]) {
+					panes[pane.PID] = agent
+					break
+				}
+			}
+		}
+		w.agentPanes = panes
+		w.tmuxKeys = tmuxKeys
+	}
+	w.herdrKeys = herdrKeys
+	w.herdrDropped = herdrDropped
 	w.mu.Unlock()
 
 	for _, e := range states {
@@ -324,10 +507,15 @@ func (w *Watcher) refreshTmux(ctx context.Context) {
 	}
 }
 
-// computeState is the state machine of docs/workstreams/04-guestd.md §5.
-func (w *Watcher) computeState(ws *windowState, busy bool, now time.Time) string {
+// computeState is the state machine of docs/workstreams/04-guestd.md §5. A
+// state the multiplexer reports (herdr) is taken as is; a needs_input hook
+// still wins.
+func (w *Watcher) computeState(ws *windowState, busy bool, reported string, now time.Time) string {
 	if rec, ok := w.hooks[keyFor(ws)]; ok && rec.kind == KindNeedsInput {
 		return StateNeedsInput
+	}
+	if reported != "" {
+		return reported
 	}
 	switch {
 	case busy:
@@ -343,14 +531,14 @@ func (w *Watcher) computeState(ws *windowState, busy bool, now time.Time) string
 func keyFor(ws *windowState) string { return ws.windowName }
 
 // heuristicCompletion implements features/agents.md for agents with no
-// completion hook: a quiet pane whose foreground process is still the agent
-// has finished its turn, and the notification says "went idle" rather than
-// "finished" so the user knows which mechanism spoke.
-func (w *Watcher) heuristicCompletion(ws *windowState, win tmuxWindow, now time.Time) (kind, summary string, ok bool) {
+// completion hook in a tmux window: a quiet pane whose foreground process is
+// still the agent has finished its turn, and the notification says "went
+// idle" rather than "finished" so the user knows which mechanism spoke.
+func (w *Watcher) heuristicCompletion(ws *windowState, p Pane, now time.Time) (kind, summary string, ok bool) {
 	if HookedAgents[ws.agent] || ws.heuristicSent {
 		return "", "", false
 	}
-	if win.PaneCommand != "" && !isAgentCommand(ws.agent, win.PaneCommand) {
+	if p.Command != "" && !isAgentCommand(ws.agent, p.Command) {
 		return "", "", false
 	}
 	quiet := now.Sub(ws.lastActive)
@@ -364,14 +552,68 @@ func (w *Watcher) heuristicCompletion(ws *windowState, win tmuxWindow, now time.
 	return KindCompleted, ws.agent + " went idle", true
 }
 
-// oneShot sends a warning the first time a condition becomes true and rearms
-// when it clears.
-func (w *Watcher) oneShot(kind string, bad bool, detail string) {
+// ResolveHerdr maps a hook's herdr pane id to the key its agent is reported
+// under (DECISIONS I-506): the last refresh's key, else a fresh read of
+// herdr's agents. ok is false for a pane no agent is in, for a pane whose
+// key another herdr pane holds, and for an id that is too long or holds a
+// character outside [A-Za-z0-9:_-].
+func (w *Watcher) ResolveHerdr(ctx context.Context, ref string) (string, bool) {
+	if !ValidHerdrRef(ref) {
+		return "", false
+	}
 	w.mu.Lock()
-	was := w.warned[kind]
-	w.warned[kind] = bad
+	key, ok := w.herdrKeys[ref]
+	dropped := w.herdrDropped[ref]
+	tmuxKeys := w.tmuxKeys
 	w.mu.Unlock()
-	if bad && !was {
+	if ok {
+		return key, true
+	}
+	if dropped {
+		return "", false
+	}
+	base, ok := w.herdr.Resolve(ctx, ref)
+	if !ok {
+		return "", false
+	}
+	key = disambiguate(base, tmuxKeys)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for other, k := range w.herdrKeys {
+		if k == key && other != ref {
+			// A new pane with the name of a reported one.
+			return "", false
+		}
+	}
+	return key, true
+}
+
+// WindowOfTmuxPane resolves a tmux pane id ($TMUX_PANE) to its window name.
+func (w *Watcher) WindowOfTmuxPane(ctx context.Context, pane string) (string, error) {
+	return w.tmux.client.windowOfPane(ctx, pane)
+}
+
+// oneShot sends a warning the first time a condition becomes true and rearms
+// when it clears. A kind sent less than WarnRepeat ago waits: the
+// condition, if it holds then, sends once the time has passed (I-562).
+func (w *Watcher) oneShot(kind string, bad bool, detail string) {
+	now := w.now()
+	w.mu.Lock()
+	send := false
+	switch {
+	case !bad:
+		w.warned[kind] = false
+	case w.warned[kind]:
+	default:
+		last, ok := w.warnedAt[kind]
+		if !ok || now.Sub(last) >= WarnRepeat {
+			send = true
+			w.warned[kind] = true
+			w.warnedAt[kind] = now
+		}
+	}
+	w.mu.Unlock()
+	if send {
 		w.log.Warn(detail, "event", "warning", "kind", kind)
 		w.emit.Warn(kind, detail)
 	}

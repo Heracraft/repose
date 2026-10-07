@@ -17,6 +17,7 @@ import (
 
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/menu"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 var (
@@ -327,7 +328,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 	p := &project{
 		Project: Project{
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
-			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion,
+			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux,
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
 		},
 		owner:     u.ID,
@@ -362,9 +363,21 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		ExpiresIn    *int64 `json:"expires_in_s"`
 		// PersonalOptOut keeps machine.nix off (I-490).
 		PersonalOptOut bool `json:"personal_opt_out"`
+		// Multiplexer is tmux (the default) or herdr (I-502).
+		Multiplexer *string `json:"multiplexer"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
+	}
+	if body.Multiplexer != nil {
+		if e := checkMultiplexer(*body.Multiplexer); e != nil {
+			return e
+		}
+		if *body.Multiplexer == multiplexer.Herdr {
+			if e := f.herdrGate(slugOf(body.Name), "", true); e != nil {
+				return e
+			}
+		}
 	}
 	if body.TZ != "" {
 		if _, err := time.LoadLocation(body.TZ); err != nil {
@@ -395,6 +408,9 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		p.AgentDefault = body.AgentDefault
 	}
 	p.PersonalOptOut = body.PersonalOptOut
+	if body.Multiplexer != nil {
+		p.Multiplexer = *body.Multiplexer
+	}
 	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
 		if rev := p.revision(p.ConfigRevisionID); rev != nil {
 			rev.Personal, rev.personalText = true, cur.Fragment
@@ -445,6 +461,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		ExpiresAt json.RawMessage `json:"expires_at"`
 		// machine.nix off or back on (I-490).
 		PersonalOptOut *bool `json:"personal_opt_out"`
+		// What the next start runs (I-502).
+		Multiplexer *string `json:"multiplexer"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -452,6 +470,20 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
 		return e
+	}
+	if body.Multiplexer != nil {
+		// Checked before anything changes, as the api does.
+		if e := checkMultiplexer(*body.Multiplexer); e != nil {
+			return e
+		}
+		if p.State == "destroying" {
+			return errf("conflict", "%s is being destroyed", p.Slug)
+		}
+		if *body.Multiplexer == multiplexer.Herdr {
+			if e := f.herdrGate(p.Slug, p.BaseVersion, false); e != nil {
+				return e
+			}
+		}
 	}
 	if len(body.ExpiresAt) > 0 {
 		if strings.TrimSpace(string(body.ExpiresAt)) != "null" {
@@ -489,6 +521,9 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return invalid("agent_default: must not be empty")
 		}
 		p.AgentDefault = *body.AgentDefault
+	}
+	if body.Multiplexer != nil {
+		p.Multiplexer = *body.Multiplexer
 	}
 	writeJSON(w, http.StatusOK, p.Project)
 	return nil
@@ -1341,6 +1376,7 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		if e != nil {
 			return e
 		}
+		f.copyMultiplexer(p, np)
 		for n, s := range p.secrets {
 			c := *s
 			np.secrets[n] = &c
@@ -1412,6 +1448,7 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 	if e != nil {
 		return nil, e
 	}
+	f.copyMultiplexer(p, np)
 	f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
 	return np, nil
 }

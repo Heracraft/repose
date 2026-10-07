@@ -85,18 +85,22 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
-	plan := sub.PlanOrSolo()
 	var period Period
 	if sub != nil {
 		period = sub.Period(now)
 	} else {
 		period = Period{Start: now.AddDate(0, 0, -30), End: now}
 	}
+	plan := sub.PlanFor(period.Start)
 	usage, err := LoadUsage(ctx, s.pool, u.ID, plan, period)
 	if err != nil {
 		return nil, err
 	}
 	count, err := s.seats.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	intro, err := s.introEligible(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -113,30 +117,55 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 			available = count.Total == 0 || count.Free >= p.Seats-sub.Seats
 		}
 		plans = append(plans, map[string]any{"id": p.ID, "name": p.Name, "price_cents": p.PriceCents, "currency": p.Currency, "trial_days": p.TrialDays,
-			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "project_limit": p.ProjectLimit, "available": available})
+			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "project_limit": p.ProjectLimit, "available": available,
+			"intro_price_cents": p.IntroCents, "intro_months": p.IntroMonths, "intro_egress_gb": p.IntroEgressGB})
 	}
 	place, err := WaitlistPlace(ctx, s.pool, u.ID)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{
-		"subscription": SubJSON(sub),
-		"usage":        usage.JSON(),
-		"plans":        plans,
-		"seats":        map[string]any{"total": count.Total, "held": count.Held, "free": count.Free, "waiting": count.Waiting},
-		"waitlist":     place.JSON(),
-		"paddle":       map[string]any{"environment": s.cfg.Environment(), "client_token": s.cfg.ClientToken},
+		"subscription":   SubJSON(sub),
+		"usage":          usage.JSON(),
+		"plans":          plans,
+		"intro_eligible": intro,
+		"seats":          map[string]any{"total": count.Total, "held": count.Held, "free": count.Free, "waiting": count.Waiting},
+		"waitlist":       place.JSON(),
+		"paddle":         map[string]any{"environment": s.cfg.Environment(), "client_token": s.cfg.ClientToken},
 	}
 	return out, nil
 }
 
 // SubJSON is the `subscription` object of GET /billing, nil for none.
+// next_charge_cents is what Paddle charges at next_billed_at, and
+// intro_until is when the introductory offer ends, null when the
+// subscription has none or Paddle has not fixed the end (DECISIONS I-497).
 func SubJSON(sub *Sub) any {
 	if sub == nil {
 		return nil
 	}
+	var next any
+	if sub.NextBilledAt != nil {
+		next = sub.ChargeCents(*sub.NextBilledAt)
+	}
+	var introUntil any
+	if sub.Intro && sub.IntroUntil != nil {
+		introUntil = sub.IntroUntil
+	}
 	return map[string]any{"id": sub.ID, "plan": sub.Plan, "status": sub.Status, "seats": sub.Seats, "period_start": sub.PeriodStart, "period_end": sub.PeriodEnd,
-		"next_billed_at": sub.NextBilledAt, "trial_end": sub.TrialEnd, "cancel_at": sub.CancelAt, "scheduled_plan": sub.ScheduledPlan}
+		"next_billed_at": sub.NextBilledAt, "trial_end": sub.TrialEnd, "cancel_at": sub.CancelAt, "scheduled_plan": sub.ScheduledPlan,
+		"next_charge_cents": next, "intro_until": introUntil}
+}
+
+// introEligible reports whether a checkout by u now carries the
+// introductory discount: the discount is configured and u has never had a
+// subscription (DECISIONS I-497).
+func (s *Service) introEligible(ctx context.Context, u *store.User) (bool, error) {
+	if s.cfg.DiscountIntro == "" {
+		return false, nil
+	}
+	ever, err := EverSubscribed(ctx, s.pool, u.ID)
+	return !ever, err
 }
 
 // Checkout is POST /billing/checkout: the seat first, then the customer
@@ -175,11 +204,21 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID string) (t
 	if err != nil {
 		return "", err
 	}
-	txn, err := s.paddle.CreateCheckoutTransaction(ctx, customer, s.cfg.PlanPrice(plan.ID), u.ID)
+	discount := ""
+	if plan.HasIntro() {
+		ok, err := s.introEligible(ctx, u)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			discount = s.cfg.DiscountIntro
+		}
+	}
+	txn, err := s.paddle.CreateCheckoutTransaction(ctx, customer, s.cfg.PlanPrice(plan.ID), discount, u.ID)
 	if err != nil {
 		return "", fmt.Errorf("create the checkout transaction: %w", err)
 	}
-	s.log.Info("checkout transaction created", "event", "billing_checkout", "user_id", u.ID.String(), "plan", plan.ID)
+	s.log.Info("checkout transaction created", "event", "billing_checkout", "user_id", u.ID.String(), "plan", plan.ID, "intro", discount != "")
 	return txn, nil
 }
 

@@ -69,6 +69,9 @@ type CreateProjectRequest struct {
 	// PersonalOptOut keeps the account's machine.nix off the new machine
 	// (repose run --no-personal, DECISIONS I-490).
 	PersonalOptOut bool `json:"personal_opt_out,omitempty"`
+	// Multiplexer is tmux or herdr (DECISIONS I-502); empty leaves the
+	// api's default, tmux.
+	Multiplexer string `json:"multiplexer,omitempty"`
 }
 
 func (c *Client) CreateProject(ctx context.Context, req CreateProjectRequest) (*Project, error) {
@@ -95,6 +98,9 @@ type PatchProjectRequest struct {
 	// PersonalOptOut turns machine.nix off (true) or on (false) for the
 	// project (DECISIONS I-490).
 	PersonalOptOut *bool `json:"personal_opt_out,omitempty"`
+	// Multiplexer switches the project's multiplexer from its next start
+	// (repose run --multiplexer, DECISIONS I-502).
+	Multiplexer *string `json:"multiplexer,omitempty"`
 }
 
 // KeepProject makes a temporary project a normal one: PATCH

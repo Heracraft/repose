@@ -250,10 +250,14 @@ message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 
 message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
 
+// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes
+// (DECISIONS I-504).
 message AgentProc { string agent = 1; string tmux_window = 2; string state = 3; }
 message ProcSample { string comm = 1; uint64 cpu_ns_delta = 2; uint64 rss_bytes = 3; }
 message GuestSignals {
   uint32 ssh_sessions = 1;
+  // tmux clients only; 0 on a herdr machine, whose clients count in
+  // ssh_sessions (DECISIONS I-511).
   uint32 tmux_clients = 2;
   repeated AgentProc agents = 3;
   uint32 docker_containers = 4;
@@ -296,6 +300,7 @@ message AgentEvent {
   string summary = 4;
   // The tmux window the hook came from, as guestd resolved it (the
   // `window` of 13-notifications.md §5.1); empty when unknown. I-121.
+  // A tmux window name or a herdr agent key, at most 64 bytes (I-504).
   string tmux_window = 5;
 }
 // AgentQuestion is a guest's Question notify, relayed (DECISIONS I-244).
@@ -305,6 +310,7 @@ message AgentQuestion {
   string guest_id = 1;
   string question_id = 2;
   string agent = 3;
+  // A tmux window name or a herdr agent key, at most 64 bytes (I-504).
   string tmux_window = 4;
   string text = 5;
   repeated string options = 6;

@@ -74,7 +74,7 @@ Submodules you have checked out travel the same way, nested ones included. Each 
 
 A submodule that is a shallow clone on your laptop can't be sent. The machine fetches it from its own remote instead, which works for github.com when you're logged in to `gh`. If that fails, the run goes on and the CLI says the submodule is empty on the machine. Changes inside a shallow submodule aren't sent; run `git -C <path> fetch --unshallow` on your laptop to send them.
 
-Git LFS files arrive as their small pointer files, not their contents. Run `repose config add git-lfs` once, then `git lfs pull` on the machine to fetch them.
+Git LFS files arrive as their small pointer files. Run `git lfs pull` on the machine to fetch their contents.
 
 ## When the machine has changes of its own
 

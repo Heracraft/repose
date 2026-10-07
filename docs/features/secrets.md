@@ -230,7 +230,10 @@ Rules that must hold:
   only. The dashboard has no "reveal".
 - A `set` on a running guest pushes `UpdateSecrets` and the file is updated
   within 5 seconds; `secrets.env` and `secrets.refresh` are regenerated
-  and dev's tmux global environment updated. Already running processes are
+  and dev's tmux global environment updated (when tmux runs; herdr has
+  no global environment, and a herdr pane's shells and agents get the
+  new set the same way, through `BASH_ENV` and the wrappers, I-508).
+  Already running processes are
   not restarted; the CLI says so. Their next bash command loads the new
   set, except a variable holding a value guestd did not deliver for that
   name (I-475). Commands run by `sh` rather than bash keep what their

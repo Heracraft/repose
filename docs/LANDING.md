@@ -243,8 +243,6 @@ and underlined every heading. The page is one system:
     editor".
   - *asterisk* (a wildcard) is the toolchain and anything installable,
     before "Five agents and a full toolchain on first boot".
-  - *star* is Gemini's sparkle (`SPARKLE` in `marks.ts`) and stands for
-    the agents; it is in the toolchain box as Gemini CLI's mark.
   Sun, moon and leaf name nothing on the page and are not shown. A shape
   on a head or a card title sits inline before the words, one em tall, so
   it matches the title's letters (`.head-mark`, `.cell-mark`; owner,
@@ -252,13 +250,16 @@ and underlined every heading. The page is one system:
   A column of agent logos beside the headline was tried and dropped
   (owner, 2026-09-27): a list of logos is a gimmick, and repose is a
   machine for any work, not only AI.
-  The footer's row is these eight, in the order the page used them, one
+  The star (Gemini's sparkle) was dropped (owner, 2026-10-05, I-498): it
+  read as Gemini's logo, not as repose's. Gemini CLI keeps its own mark in
+  the toolchain box.
+  The footer's row is these seven, in the order the page used them, one
   to a cell between the rails, no pie (it would read as a gauge).
 - **Anchored, never floating.** The gauges and counts sit in their line
   or card, the footer's shapes stand on its rule.
-- **The blue bar marks "replicated" in the headline and the prices,
-  nothing else** (it marked "full permissions" until I-477).
-  Section headings are bold serif with no bar.
+- **The blue bar marks the prices, nothing else.** It marked "full
+  permissions" until I-477 and "replicated" in the headline until I-498.
+  The headline and section headings are bold serif with no bar.
 - **Shapes move one way**: a group lands in place when it comes into
   view. The one other shape motion carries meaning (owner, 2026-09-27):
   the snapshot mark clicks a quarter turn when a snapshot is taken and
@@ -291,9 +292,6 @@ and underlined every heading. The page is one system:
   a dark detail on the dark paper ring vanished (DECISIONS I-379). Judge
   the balance on viewport captures at 1x in both themes, one per section,
   as "Process" says; a full-page capture only shows the page's rhythm.
-- **Where a shape and a mark are the same form, they are one.** The star
-  is Gemini's sparkle (`SPARKLE` in `marks.ts`); Gemini CLI's mark in the
-  toolchain box is that sparkle.
 - **The logo** (`Logo.svelte`, and `static/favicon.png` from the same
   drawing) is the owner's notebook sketch, traced (DECISIONS I-363): a
   thin cross in the text's ink, its crossing left of centre and low, and
@@ -447,9 +445,7 @@ at 1280 to 1920 wide, so hydration does not resize it either (I-399).
 
 - **The chrome, once on load**: the rails draw from the top down (1.1s,
   `--land-ease`, `cubic-bezier(0.65, 0, 0.35, 1)`); the ticks fade in
-  after them (0.4s ease-out, from 0.9s); the blue bar under
-  "replicated" wipes in from the left (0.8s, `--land-ease`, from 0.5s).
-  The prices' bar does not move.
+  after them (0.4s ease-out, from 0.9s). The prices' bar does not move.
 - **Shapes landing**: a group lands in place when it comes into view, one
   shape after another (`.land` in `layout.css`: opacity 0.3s ease-out,
   transform 0.7s `cubic-bezier(0.34, 1.56, 0.64, 1)`, a small overshoot,
@@ -563,8 +559,8 @@ by `+page.svelte` alone; the house tokens stay in `layout.css`):
   the picture's component.
 - **The hero.** One stack on the left edge: the headline, the lead under
   it, then the button and the install command on one row. Nothing is
-  pushed to the right; the picture fills the width. The blue bar under
-  "replicated" (I-477) and on the prices is unchanged. The picture (owner,
+  pushed to the right; the picture fills the width. The headline has
+  no bar (I-498). The picture (owner,
   2026-09-27) is your laptop, your cloud machine, and on the right a
   stack: the snapshots panel (titled, the miniatures shrink into it) over
   the internet as a bare 52px globe, no window, since the internet is not

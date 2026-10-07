@@ -156,6 +156,7 @@ then the verbatim block; the dashboard shows the same.
 | Code | CLI prefix | Summary line |
 |---|---|---|
 | `eval_failed` | `config error: ` | `syntax error at fragment.nix:1:32, unexpected ';'` |
+| `eval_failed` | `config error: ` | `systemd.user.services.repose-herdr-server: not allowed in a fragment; names starting with repose- belong to the machine` (DECISIONS I-563) |
 | `eval_failed` | `config error: ` | `attribute 'ripgrepp' missing at fragment.nix:1:22 (did you mean ripgrep?)` |
 | `eval_failed` | `config error: ` | `eval-time fetch not allowed at fragment.nix:1:39; use pkgs.fetchurl { url = ...; hash = ...; }` |
 | `eval_failed` | `config error: ` | `access to absolute path '/etc/passwd' is forbidden in pure evaluation mode (use '--impure' to override) at fragment.nix:1:37; a fragment may only read files it carries` |
@@ -183,7 +184,9 @@ hostd boots the guest from the closure directly (DECISIONS I-27): it needs
 `<out>/kernel`, `<out>/initrd`, `<out>/init` and `<out>/kernel-params`,
 which every NixOS toplevel has. Anything microvm.nix needs on the kernel
 command line must be in `boot.kernelParams`; hostd appends `init=`,
-`console=ttyS0` and `ip=<guest>::<gateway>:<netmask>::eth0:off`.
+`console=ttyS0`, `ip=<guest>::<gateway>:<netmask>:<hostname>:eth0:off`
+and, when the project slug is a DNS label, `systemd.hostname=<hostname>`
+(DECISIONS I-550).
 
 ## Fixtures and the test corpus
 

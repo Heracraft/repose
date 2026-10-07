@@ -21,7 +21,7 @@ Every machine has five coding agents installed, unmodified:
 repose run --agent codex "port the build scripts to bun"
 ```
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window. However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window, or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux). However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 ## Let it run without asking
 
@@ -126,7 +126,7 @@ An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
 `run` and `attach` copy from your laptop's `~/.claude/`: `CLAUDE.md`, `settings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, `keybindings.json`, and scripts your hooks or status line run. Plugins you enabled are installed on the machine in the background.
 
-Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
+Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours. A hook you delete on your laptop leaves the machine at the next `run` or `attach`. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
 
 Never copied: your login, conversation history, anything in `~/.claude.json` besides your MCP servers, and anything named like a key or credential.
 

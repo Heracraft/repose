@@ -50,9 +50,9 @@ ops/paddle/bootstrap.sh > /tmp/paddle.env
 
 Stderr lists each object as `created` (first run) or `found` (any rerun):
 `product solo`, `price solo`, `product plus`, `price plus`, `product
-pro`, `price pro`, `product overage`, `webhook`. Stdout, in
+pro`, `price pro`, `discount intro`, `product overage`, `webhook`. Stdout, in
 `/tmp/paddle.env`, is the block: `PADDLE_PRICE_SOLO`, `PADDLE_PRICE_PLUS`,
-`PADDLE_PRICE_PRO`, `PADDLE_PRODUCT_OVERAGE`,
+`PADDLE_PRICE_PRO`, `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`,
 `PADDLE_WEBHOOK_SECRET`. Paste it into the Coolify environment of **both**
 `api` and `api-grpc` with `PADDLE_API_KEY` and `PADDLE_CLIENT_TOKEN` beside
 it (both read billing: the webhook is served by `api`, the hourly jobs run

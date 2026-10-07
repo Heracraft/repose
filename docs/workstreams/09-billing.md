@@ -284,10 +284,11 @@ table in `PRICING.md`.
 **Configuration.** `config.go`: `PADDLE_API_KEY` (the prefix `pdl_sdbx_`
 means the sandbox, anything else live: `Environment()`),
 `PADDLE_WEBHOOK_SECRET`, `PADDLE_CLIENT_TOKEN`, `PADDLE_PRICE_SOLO`,
-`PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`, `PADDLE_PRODUCT_OVERAGE`, `PADDLE_PORTAL_RETURN_URL`
+`PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`, `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`
+(I-497), `PADDLE_PORTAL_RETURN_URL`
 (default `DASHBOARD_URL/billing`), `BILLING_ENFORCE`, `SEATS_TOTAL`.
-`Validate` refuses a key without the secret, all three prices and the overage
-product. No key: the routes answer `503 billing_disabled` and the gate
+`Validate` refuses a key without the secret, all three prices, the overage
+product and the introductory discount. No key: the routes answer `503 billing_disabled` and the gate
 refuses every non-exempt account with `subscription_required`.
 
 **The Paddle client.** `paddle.go`: `Paddle` over `net/http`, base URL from
@@ -298,7 +299,8 @@ carries the key. Calls: `FindCustomerByEmail`, `CreateCustomer`,
 `EnsureCustomer` (stores `users.paddle_customer_id`; called at checkout,
 not at first sign-in), `CreateCheckoutTransaction` (items
 `[{price_id, quantity 1}]`, `customer_id`, `custom_data.user_id`,
-`collection_mode automatic`), `GetSubscription`,
+`collection_mode automatic`, and `discount_id` on a first Solo checkout,
+I-497), `GetSubscription`,
 `UpdateSubscriptionItems` (`prorated_immediately` up,
 `prorated_next_billing_period` down), `CancelSubscription`
 (`next_billing_period` | `immediately`), `ResumeScheduledChange`
@@ -310,8 +312,10 @@ not at first sign-in), `CreateCheckoutTransaction` (items
 `ListTransactions` (billed, completed, past_due; 24), `InvoicePDF`, and
 the bootstrap's `ListProducts`, `CreateProduct`, `ListPrices`,
 `CreatePlanPrice` (`billing_cycle {month, 1}`, `trial_period {day, 7}`,
-`custom_data.repose = <plan>`), `ListNotificationSettings`,
-`CreateNotificationSetting`.
+`custom_data.repose = <plan>`), `ListDiscounts`, `CreateIntroDiscount`
+(`flat`, `recur`, `maximum_recurring_intervals`, `restrict_to` the plan's
+price, `custom_data.repose = intro-<plan>-<cents>-<months>`; I-497),
+`ListNotificationSettings`, `CreateNotificationSetting`.
 
 **The record.** `subscriptions.go`: `Sub` mirrors the table; `IsLive` is
 `trialing|active|past_due`; `LiveSubscription(user)`,
@@ -438,8 +442,8 @@ subscription, plan, period, running memory, disk, hours, egress, the
 overage arithmetic and lines), `rollup [--hour]`, `explain PROJECT HOUR`
 (the row's inputs and the period's overage arithmetic), `suspend`,
 `unsuspend`, `overage-now HANDLE`, `paddle-bootstrap [--webhook-url]
-[--no-webhook] [--live]` (`bootstrap.go`: products and prices found by
-`custom_data.repose`, the destination by URL; prints the `PADDLE_*`
+[--no-webhook] [--live]` (`bootstrap.go`: products, prices and the
+introductory discount found by `custom_data.repose`, the destination by URL; prints the `PADDLE_*`
 block; refuses a live key without `--live`; `ops/paddle/bootstrap.sh`).
 `credit`, `reconcile`, `resync`, `cycle-now` and `stripe-bootstrap` are
 gone.

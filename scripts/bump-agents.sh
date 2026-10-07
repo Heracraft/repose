@@ -56,6 +56,12 @@ latest() {
     pi-coding-agent)
       curl_gh https://api.github.com/repos/earendil-works/pi/releases/latest \
         | jq -r '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == "pi-linux-x64.tar.gz") | .browser_download_url)"' ;;
+    herdr)
+      # herdr, the second multiplexer (DECISIONS I-501): not an agent, but
+      # pinned and moved the same way. herdr.nix's install check refuses a
+      # release with another socket protocol generation.
+      curl_gh https://api.github.com/repos/herdrdev/herdr/releases/latest \
+        | jq -r '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == "herdr-linux-x86_64") | .browser_download_url)"' ;;
     chrome-devtools-mcp)
       local v; v=$(curl -fsSL https://registry.npmjs.org/chrome-devtools-mcp/latest | jq -r .version)
       echo "$v https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-$v.tgz" ;;
@@ -152,6 +158,7 @@ for c in "${changed[@]}"; do
   a=${c%% *}
   case "$a" in
     chrome-devtools-mcp) attr="chrome-devtools-mcp"; b="chrome-devtools-mcp" ;;
+    herdr) attr="herdr"; b="herdr" ;;
     *) attr="$a.unwrapped"; b=$(binary "$a") ;;
   esac
   # git+file, like ci.yml's builds: a bare absolute path is a path flake,
