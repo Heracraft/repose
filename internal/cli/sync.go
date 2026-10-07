@@ -1083,17 +1083,23 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 	// guest's branch has commits the laptop lacks, the tree of a merge of
 	// the two when git can make it cleanly and the guest's commits leave
 	// the laptop's uncommitted paths alone (I-574).
-	_, _ = fmt.Fprintf(&b, "repose_target=%s\nrepose_merge=\nrepose_merging=\n", head)
+	_, _ = fmt.Fprintf(&b, "repose_target=%s\nrepose_merge=\nrepose_merging=\nrepose_via=\n", head)
 	if branch != "" {
 		br := shQuote("refs/heads/" + branch)
 		// The committer is the identity this sync carries (the laptop's
 		// user.name and user.email, in $t/ident), so a guest that gets it
 		// only from this sync's carry, which runs after the overlap check,
-		// can still merge.
-		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify %[1]s) && ! git merge-base --is-ancestor "$cur" %[2]s && [ "$(git symbolic-ref -q HEAD || true)" = %[1]s ] && repose_with_ident git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then
+		// can still merge. The guest need not be on that branch: the sync
+		// moves the checkout to the laptop's branch either way, so a
+		// guest on another branch (or detached) is switched to it first,
+		// and the overlap check also counts the paths that switch
+		// changes ($repose_via), so git never refuses it over a file the
+		// guest changed.
+		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify %[1]s) && ! git merge-base --is-ancestor "$cur" %[2]s && repose_with_ident git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then
   if repose_mt=$(git merge-tree --write-tree --no-messages "$cur" %[2]s 2>/dev/null) && repose_mb=$(git merge-base "$cur" %[2]s) && ! repose_touches "$repose_mb" "$cur"; then
     repose_target=$(printf '%%s\n' "$repose_mt" | head -n 1)
     repose_merge=yes
+    if [ "$(git symbolic-ref -q HEAD || true)" != %[1]s ]; then repose_via=$cur; fi
   fi
 fi
 `, br, head)
@@ -1112,7 +1118,7 @@ fi
 		if whole {
 			b.WriteString("[ -n \"$repose_whole\" ] || ")
 		}
-		b.WriteString("repose_guard \"$repose_target\"\n")
+		b.WriteString("repose_guard \"$repose_target\" \"$repose_via\"\n")
 	}
 	b.WriteString(applyCarryHere)
 	switch {
@@ -1151,12 +1157,14 @@ fi
 		br := shQuote(branch)
 		// A branch behind the laptop is fast-forwarded; one with commits
 		// the laptop lacks gets the merge decided above, with the user's
-		// carried identity, unsigned and without the repository's hooks;
-		// failing that it is left where it is and the laptop's commit is
-		// checked out detached (I-150, I-574).
+		// carried identity, unsigned and without the repository's hooks,
+		// after switching to it when the guest is on another branch;
+		// failing that (git refuses the switch, or the merge) it is left
+		// where it is and the laptop's commit is checked out detached
+		// (I-150, I-574). The guest's other branch keeps its commits.
 		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify refs/heads/%[1]s); then
   if git merge-base --is-ancestor "$cur" %[2]s; then repose_git checkout -q -B %[1]s %[2]s
-  elif [ -n "$repose_merge" ] && ! repose_busy >/dev/null && repose_merging=yes && repose_with_ident git $repose_c merge -q --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures --no-gpg-sign -m %[3]s %[2]s >/dev/null 2>&1; then echo '#merged'
+  elif [ -n "$repose_merge" ] && ! repose_busy >/dev/null && { [ "$(git symbolic-ref -q HEAD || true)" = %[4]s ] || repose_git checkout -q %[1]s -- 2>/dev/null; } && repose_merging=yes && repose_with_ident git $repose_c merge -q --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures --no-gpg-sign -m %[3]s %[2]s >/dev/null 2>&1; then echo '#merged'
   else
     if [ -n "$repose_merging" ] && git rev-parse -q --verify MERGE_HEAD >/dev/null; then git merge --abort; fi
     repose_git checkout -q --detach %[2]s; echo '#diverged'
@@ -1164,7 +1172,7 @@ fi
 else
   repose_git checkout -q -b %[1]s %[2]s
 fi
-`, br, head, shQuote(mergeMessage(branch)))
+`, br, head, shQuote(mergeMessage(branch)), shQuote("refs/heads/"+branch))
 		if track != "" {
 			_, _ = fmt.Fprintf(&b, "git branch -q --set-upstream-to=%s %s >/dev/null 2>&1 || true\n", shQuote("origin/"+branch), br)
 		}
@@ -1334,6 +1342,7 @@ repose_guard() {
   if [ -f "$t/paths" ]; then cat "$t/paths" >> "$t/w"; fi
   if git rev-parse -q --verify HEAD >/dev/null; then
     git diff --name-only -z --no-renames --ignore-submodules=none HEAD "$1" -- >> "$t/w"
+    if [ -n "${2:-}" ]; then git diff --name-only -z --no-renames --ignore-submodules=none HEAD "$2" -- >> "$t/w"; fi
   else
     git ls-tree -r -z --name-only "$1" >> "$t/w"
   fi

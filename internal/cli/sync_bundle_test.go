@@ -357,3 +357,90 @@ func TestSyncOverAMultiplexedConnection(t *testing.T) {
 		t.Fatalf("the guest saw %d SSH connections, want 1 (every call multiplexed)", n)
 	}
 }
+
+// guestOnFeatureX gives the guest's main a commit the laptop lacks (body
+// in rel), then leaves the guest on feature-x with a commit of its own,
+// and gives the laptop a commit to README.md. It returns main's and
+// feature-x's commits.
+func guestOnFeatureX(t *testing.T, f *syncFixture, rel, body string) (mainHead, fxHead string) {
+	t.Helper()
+	g := f.guestRepo()
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(g, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(g, rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, g, "git", "add", rel)
+	mustRun(t, g, "git", "commit", "-q", "-m", "agent's main")
+	mustRun(t, g, "git", "checkout", "-q", "-b", "feature-x")
+	if err := os.WriteFile(filepath.Join(g, "fx.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, g, "git", "add", "fx.txt")
+	mustRun(t, g, "git", "commit", "-q", "-m", "agent's feature")
+	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "laptop's work")
+	return mustRun(t, g, "git", "rev-parse", "main"), mustRun(t, g, "git", "rev-parse", "feature-x")
+}
+
+// The guest is on feature-x and its main has commits the laptop lacks:
+// the sync moves the checkout to main as it always does, merging the
+// laptop's commit there; feature-x keeps its commit (I-574).
+func TestSyncMergesTheGuestsMainFromAnotherBranch(t *testing.T) {
+	f := newSyncFixture(t)
+	mainHead, fxHead := guestOnFeatureX(t, f, "agent.go", "package agent\n")
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "scratch.txt"), []byte("the agent's\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("syncGuest: %v", err)
+	}
+	if !s.Merged || s.Detached || s.GuestKept != 1 {
+		t.Fatalf("summary %+v", s)
+	}
+	g := f.guestRepo()
+	if ref := mustRun(t, g, "git", "symbolic-ref", "-q", "HEAD"); ref != "refs/heads/main" {
+		t.Fatalf("guest HEAD = %q, want main", ref)
+	}
+	if out, err := exec.Command("git", "-C", g, "merge-base", "--is-ancestor", mainHead, "main").CombinedOutput(); err != nil {
+		t.Fatalf("the agent's main commit is not in main: %v %s", err, out)
+	}
+	if got := mustRun(t, g, "git", "rev-parse", "feature-x"); got != fxHead {
+		t.Fatalf("feature-x moved to %s", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(g, "README.md")); string(b) != "laptop\n" {
+		t.Fatalf("README.md = %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(g, "scratch.txt")); string(b) != "the agent's\n" {
+		t.Fatalf("scratch.txt = %q", b)
+	}
+}
+
+// The same with a main that conflicts with the laptop's commit: no merge,
+// the laptop's commit is checked out detached, and neither of the
+// guest's branches moves.
+func TestSyncLeavesTheGuestsBranchesAloneWhenMainConflicts(t *testing.T) {
+	f := newSyncFixture(t)
+	mainHead, fxHead := guestOnFeatureX(t, f, "README.md", "agent\n")
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("syncGuest: %v", err)
+	}
+	if !s.Diverged || s.Merged {
+		t.Fatalf("summary %+v, want diverged", s)
+	}
+	g := f.guestRepo()
+	if got := mustRun(t, g, "git", "rev-parse", "main"); got != mainHead {
+		t.Fatalf("main moved to %s", got)
+	}
+	if got := mustRun(t, g, "git", "rev-parse", "feature-x"); got != fxHead {
+		t.Fatalf("feature-x moved to %s", got)
+	}
+	if got, want := mustRun(t, g, "git", "rev-parse", "HEAD"), mustRun(t, f.local, "git", "rev-parse", "HEAD"); got != want {
+		t.Fatalf("guest HEAD = %s, want the laptop's %s", got, want)
+	}
+}

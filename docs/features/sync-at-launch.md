@@ -205,8 +205,11 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   `git status` and `git push` behave as they would on the laptop.
 - Checkout: the laptop's branch is created in the guest, or
   fast-forwarded when the guest's copy is behind. When the guest's branch
-  has commits the laptop does not (an agent committed and nobody pulled)
-  and the guest is on that branch, the laptop's commit is merged into it
+  has commits the laptop does not (an agent committed and nobody pulled),
+  the laptop's commit is merged into it, after switching the checkout to
+  it when the guest is on another branch or detached (the overlap check
+  counts the paths that switch changes; a switch git still refuses falls
+  back to the detached checkout; the other branch keeps its commits)
   (DECISIONS I-574) when `git merge-tree --write-tree` finds no conflict,
   the guest's commits since the merge base leave every one of the
   laptop's own paths alone, and git has a committer identity, the

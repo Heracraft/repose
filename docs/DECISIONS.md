@@ -14648,9 +14648,10 @@ hand, and an agent that did not notice would have committed on a
 detached `HEAD`, which `git fetch repose` does not bring back. I-150
 detaches so that an agent's work is never moved off its branch; a merge
 keeps it there and puts the laptop's work on the branch too. The apply,
-after the fetch, merges when the guest is on that branch (a git
-operation of the guest's own in progress has already refused the sync,
-I-573), `git merge-tree --write-tree` finds no conflict, the guest's commits since
+after the fetch, merges when the laptop's branch exists in the guest
+with commits the laptop lacks (a git operation of the guest's own in
+progress has already refused the sync, I-573), `git merge-tree
+--write-tree` finds no conflict, the guest's commits since
 the merge base touch none of the laptop's own paths (I-573's `paths`; a
 merge would put the agent's version under the laptop's uncommitted
 work), and git has a committer identity. That identity is the one the
@@ -14664,7 +14665,14 @@ overlap check, so that a refused sync changes nothing. The merge is
 --no-verify-signatures --no-gpg-sign -m "Merge the laptop's <branch>
 (repose sync)"`: the user's identity, unsigned like every commit made on a machine,
 without the repository's hooks or a carried `merge.ff=only` or
-`merge.autoStash`. The summary line says `, merged with the machine's
+`merge.autoStash`. A guest on another branch, or detached, is switched
+to the laptop's branch first (`git checkout <branch> --`, which carries
+the guest's uncommitted files as any switch does): the sync moves the
+checkout to the laptop's branch whatever happens, so the merge goes where
+the checkout was going anyway, and the other branch keeps its commits.
+The overlap check then also counts the paths that switch changes, so git
+does not refuse it over a file the guest changed; if git refuses it all
+the same, the sync falls back to the detached checkout. The summary line says `, merged with the machine's
 <branch>`. Otherwise the branch is left alone and the laptop's commit is
 checked out detached as before, with a shorter warning (``The machine's
 main has commits that could not be merged with yours, so it was left as
@@ -14678,11 +14686,16 @@ refuses the sync, and the merge checks again just before it runs).
 `TestSyncMergesWithTheLaptopsIdentity`,
 `TestSyncLeavesAConflictingGuestBranchAlone`,
 `TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork`,
-`TestSyncMergesBesideTheGuestsUncommittedFiles`. *Rejected:* rebasing
-the agent's commits onto the laptop's (rewrites commits an agent may
-have pushed); refusing (the laptop's work would not reach the machine
-at all); a merge on a guest that is on another branch (it would have to
-switch the agent's branch first).
+`TestSyncMergesBesideTheGuestsUncommittedFiles`,
+`TestSyncMergesTheGuestsMainFromAnotherBranch`,
+`TestSyncLeavesTheGuestsBranchesAloneWhenMainConflicts`. *Rejected:*
+rebasing the agent's commits onto the laptop's (rewrites commits an
+agent may have pushed); refusing (the laptop's work would not reach the
+machine at all). An earlier draft of this entry also rejected merging
+for a guest on another branch, as it "would have to switch the agent's
+branch first"; the owner asked about that case, and the reason does not
+hold: every sync already moves the checkout to the laptop's branch, so
+detaching there only lost the merge.
 
 **I-575. Ctrl-C after a run or sync created a project leaves no
 directory link behind and names the project; a sync into a named

@@ -349,8 +349,9 @@ $ repose run
    d. Remote, one ssh whose stdin is one tar (the bundle, `git diff
       --cached --binary` and `git diff --binary`, a tar of the untracked
       list, and `paths`: every path the laptop's own work writes, NUL
-      separated): `git fetch` from the bundle; when the guest is on
-      `<branch>` and it has commits the laptop lacks, decide on a merge
+      separated): `git fetch` from the bundle; when the guest's
+      `<branch>` has commits the laptop lacks (whichever branch the guest
+      is on; it is switched there first), decide on a merge
       (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
       commits since the merge base leave `paths` alone, a committer
       identity, the laptop's from the tar's `ident`); before that,
