@@ -159,8 +159,11 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   fingerprint, DECISIONS I-263) changes the fingerprint; the apply then stashes only the paths the
   record still matches, and an edited synced file the laptop still sends
   refuses as above. The overlap check runs in the apply itself, so a
-  change made between the probe and the apply counts, and an agent's new
-  file is never overwritten by one the laptop sends. `git stash push -u` cleans
+  change made between the probe and the apply counts. A tracked file an
+  agent edits after the check makes the checkout or `git apply` fail, so
+  it is not overwritten; a new file an agent writes at one of the
+  laptop's untracked paths after the check (the logins are copied in
+  between) is overwritten by the untracked tar. `git stash push -u` cleans
   the untracked files after recording them, so a file written in that
   instant is lost (git's own behaviour). The checks force
   `status.showUntrackedFiles=normal` and `submodule.recurse=false`, so a
