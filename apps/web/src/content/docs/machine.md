@@ -90,7 +90,7 @@ The first load builds the dev shell. A few packages from a nixpkgs the machine h
 
 A flake input that names `nixpkgs` without a URL (`outputs = { self, nixpkgs }`, or `inputs.nixpkgs.url = "nixpkgs"`) locks to the machine's own nixpkgs revision, as a `github:` URL that works on your laptop too.
 
-A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`. `cachix use NAME` works too.
+A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`. `nix run nixpkgs#cachix -- use NAME` works too.
 
 Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
 
@@ -211,7 +211,7 @@ The machine can reach the internet over TCP and UDP. Nothing on the internet can
 
 When a machine runs out of memory, something is killed. Your agents and the tmux or herdr server are kept to the last, so a runaway test or dev server goes first. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
 
-Once a week the machine deletes nix store paths nothing uses any more, and old generations of your nix profile (older than 14 days); `sudo systemctl start repose-store-gc` does it now.
+Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now.
 
 Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 
