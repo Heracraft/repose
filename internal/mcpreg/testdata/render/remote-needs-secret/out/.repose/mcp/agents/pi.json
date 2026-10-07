@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp"
+    },
+    "sentry": {
+      "headers": {
+        "Authorization": "Bearer ${SENTRY_TOKEN}"
+      },
+      "url": "https://mcp.sentry.dev/mcp"
+    }
+  },
+  "skipped": [
+    {
+      "name": "both",
+      "reason": "needs the secrets BOTH_KEY, BOTH_ORG"
+    },
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
+    }
+  },
+  "oauthAccount": {
+    "x": 1
+  }
+}

@@ -1,0 +1,9 @@
+{"version":1,
+ "user":{
+  "linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}"}},
+  "edited":{"type":"stdio","command":"edited-mcp","args":[],"env":{"EDITED_TOKEN":"${EDITED_TOKEN}"}},
+  "notion":{"type":"http","url":"https://mcp.notion.com/mcp","headers":{"Authorization":"Bearer ${NOTION_TOKEN}"}},
+  "plain":{"command":"plain-mcp","args":["--home","${HOME}"],"env":{"WHERE":"${HOME}/x"}}},
+ "projects":{"/home/dev/app":{"db":{"type":"stdio","command":"pg-mcp","env":{"DATABASE_URL":"${DB_URL}"}}},
+             "/home/dev/lib":{"db":{"type":"stdio","command":"pg-mcp","env":{"DATABASE_URL":"${LIB_DB_URL}"}}}},
+ "secrets":{"LINEAR_TOKEN":["linear"],"EDITED_TOKEN":["edited"],"NOTION_TOKEN":["notion"],"DB_URL":["db"],"LIB_DB_URL":["db"]}}

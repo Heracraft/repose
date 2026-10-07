@@ -1,0 +1,6 @@
+{"version":1,"user":{
+ "events":{"type":"sse","url":"https://events.example/sse"},
+ "partial":{"type":"http","url":"https://partial.example/mcp","headers":{"X-Key":"key-${PARTIAL_KEY}"}},
+ "sentry":{"type":"http","url":"https://mcp.sentry.dev/mcp","headers":{"Authorization":"Bearer ${SENTRY_TOKEN}","X-Org":"${SENTRY_ORG}","X-Plain":"yes"}},
+ "socket":{"type":"ws","url":"wss://ws.example/mcp"}},
+ "skipped":[{"name":"apple-notes","reason":"an Apple app"}]}

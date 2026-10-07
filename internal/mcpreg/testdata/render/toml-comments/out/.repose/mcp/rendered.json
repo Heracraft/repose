@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "linear": {
+          "type": "http",
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "linear": {
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "linear": {
+          "type": "http",
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "linear": {
+          "type": "remote",
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "linear": {
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    }
+  }
+}

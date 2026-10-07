@@ -19,7 +19,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 - **Languages:** Node.js 24 with npm, pnpm and yarn (through corepack), Python 3.12 with uv, Go, and rustup (run `rustup default stable` once, and `rustup component add rust-analyzer` if your editor uses it).
 - **Build tools:** gcc, g++, make, cmake, pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client library, and `pg_config` and `mysql_config` are on `PATH`, so gems like `pg`, `mysql2`, `psych` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`.
-- **Browser:** Chromium and Playwright's browsers, with fonts for Chinese, Japanese and Korean text and colour emoji.
+- **Browser:** Chromium and Playwright's Chromium, with fonts for Chinese, Japanese and Korean text and colour emoji.
 - **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 `man` has the pages of the installed tools. The shell is bash with the starship prompt. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines. Your `~/.bashrc` is read in tmux windows, SSH shells and your editor's terminal, after the machine's own settings, so what it sets wins. `dev` is in the `docker` group, so `docker` needs no `sudo`. A base update leaves Docker and its containers running; the new Docker takes effect at the machine's next start.
@@ -28,7 +28,7 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --pinentry-mode loopback --passphrase-fd 0`.
 
-Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
+Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's Chromium and Firefox, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
 
 Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
@@ -169,13 +169,13 @@ This quick tunnel needs no Cloudflare account and prints a random `trycloudflare
 
 ## Browser
 
-Claude Code on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
+Every agent on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
 
 ```
 repose run "screenshot each signup step with playwright"
 ```
 
-Playwright test suites run without `npx playwright install`.
+Playwright 1.63's Chromium is installed. For another Playwright release, or for Firefox, run `npx playwright install chromium` or `npx playwright install firefox` once, without `--with-deps`. WebKit doesn't run on the machine.
 
 To watch the browser or use it yourself (a captcha, a passkey):
 

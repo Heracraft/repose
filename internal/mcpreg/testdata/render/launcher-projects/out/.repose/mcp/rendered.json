@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "projects": {
+        "/home/dev/app": {
+          "db": {
+            "args": [
+              "run",
+              "db",
+              "/home/dev/app"
+            ],
+            "command": "repose-mcp",
+            "type": "stdio"
+          }
+        },
+        "/home/dev/lib": {
+          "db": {
+            "args": [
+              "run",
+              "db",
+              "/home/dev/lib"
+            ],
+            "command": "repose-mcp",
+            "type": "stdio"
+          }
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "db": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "db"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}

@@ -88,7 +88,7 @@ func TestFirstSyncNamesTheCheckoutAfterTheLaptopFolder(t *testing.T) {
 	if got := strings.TrimSpace(eo.buf.String()); !strings.HasSuffix(got, "/factory") {
 		t.Fatalf("exec ran in %q, want ~/factory", got)
 	}
-	if err := startAgentWindow(ctx, f.target, testSlug, "cat", "", "cat", "hello", true, nil); err != nil {
+	if err := startAgentWindow(ctx, f.target, testSlug, "cat", "", "cat", "hello", true, nil, mcpApprovals{}); err != nil {
 		t.Fatal(err)
 	}
 	pwd, err := runSSH(ctx, f.target, "tmux display -p -t "+testSlug+":cat '#{pane_current_path}'", nil)

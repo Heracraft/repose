@@ -246,7 +246,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout}
+	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
+		helper.MCPOff = true // I-556: attach honours the off switch too
+	}
+	helper.MCP = e.Cfg.mcpForward(project.Slug) // I-557
 	// This folder's checkout on the machine: the machine's own (the same
 	// remote), or another one the folder is (I-480), not one that
 	// PROJECT:CHECKOUT named from elsewhere.
@@ -300,6 +304,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 
 	// The machine's checkout, as its sync or carry found it (I-368).
 	var checkout *string
+	// The laptop's .mcp.json answers for this repository, which the agent
+	// window's trust write copies (I-556); read with the carry.
+	var mcpAppr mcpApprovals
 	if skipSync {
 		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
@@ -328,17 +335,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			envDone <- builtEnv{envs, err}
 		}()
 		type builtCarry struct {
-			gc    *gitCarry
-			gcErr error
-			cc    *claudeCarry
-			tc    *toolsCarry
+			gc      *gitCarry
+			gcErr   error
+			cc      *claudeCarry
+			tc      *toolsCarry
+			mc      *mcpCarry
+			mcNotes []string
 		}
 		carryDone := make(chan builtCarry, 1)
 		go func() {
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
+			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot))                                 // I-221, I-222, I-490
+			b.mc, b.mcNotes = buildMCPCarry(e.HomeDir, gitRepoRoot(repoRoot), project.Slug, target.Checkout, toolBinsOf(b.tc)) // I-556
 			carryDone <- b
 		}()
 		waitEnv := func() []envFile {
@@ -363,6 +373,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			Carry: func(markers map[string]string) (*credCarry, error) {
 				b := <-carryDone
 				gc, cc := b.gc, b.cc
+				if b.mc != nil && !skip[mcpLogin] {
+					mcpAppr = b.mc.Approvals
+				}
 				if b.gcErr != nil {
 					e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(b.gcErr.Error()))
 				}
@@ -376,13 +389,16 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 						e.warn("%s", n)
 					}
 				}
+				for _, n := range b.mcNotes {
+					e.warn("%s", n)
+				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
 					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
 						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
 					},
-				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, Markers: markers})
+				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
 			},
 		})
 		if err != nil {
@@ -481,7 +497,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell})
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
@@ -1593,6 +1609,11 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		}
 		co.Claude = cc
 	}
+	mc, notes := buildMCPCarry(e.HomeDir, repoDir, project.Slug, t.Checkout, toolBinsOf(co.Tools)) // I-556
+	for _, n := range notes {
+		e.warn("%s", n)
+	}
+	co.MCP = mc
 	skip, chosen := e.loginSkip(project.Slug)
 	copied, carried, err := syncCredentialsAndCarry(ctx, t, e.HomeDir, repoDir, credSyncOptions{
 		RemoteURL: project.RemoteURL,

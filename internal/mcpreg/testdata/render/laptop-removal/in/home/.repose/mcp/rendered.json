@@ -1,0 +1,3 @@
+{"version":1,"agents":{
+ "claude":{"user":{"keep":{"type":"http","url":"https://keep.example/mcp"},"gone":{"type":"http","url":"https://gone.example/mcp"},"changed":{"type":"http","url":"https://changed.example/mcp"}}},
+ "codex":{"user":{"keep":{"url":"https://keep.example/mcp"},"gone":{"url":"https://gone.example/mcp"}}}}}

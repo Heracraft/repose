@@ -1,0 +1,60 @@
+{
+  "mcpServers": {
+    "edited": {
+      "args": [
+        "run",
+        "edited"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
+    },
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
+    },
+    "plain": {
+      "args": [
+        "--home",
+        "${HOME}"
+      ],
+      "command": "plain-mcp",
+      "env": {
+        "WHERE": "${HOME}/x"
+      }
+    }
+  },
+  "projects": {
+    "/home/dev/app": {
+      "db": {
+        "args": [
+          "run",
+          "db",
+          "/home/dev/app"
+        ],
+        "command": "repose-mcp",
+        "type": "stdio"
+      }
+    },
+    "/home/dev/lib": {
+      "db": {
+        "args": [
+          "run",
+          "db",
+          "/home/dev/lib"
+        ],
+        "command": "repose-mcp",
+        "type": "stdio"
+      }
+    }
+  },
+  "skipped": [
+    {
+      "name": "notion",
+      "reason": "needs the secret NOTION_TOKEN"
+    }
+  ]
+}

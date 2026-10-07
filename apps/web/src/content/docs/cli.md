@@ -155,6 +155,48 @@ Needs the machine running (it doesn't start it) and Chrome 144 or newer with rem
 
 Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to two minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
 
+### `repose mcp forward NAME...`
+
+Let the agents on the machine use MCP servers that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`. It runs on your laptop with your apps, files and tokens; `${VAR}` in its config comes from your laptop's environment, and a `${VAR}` that environment lacks stops the forward before it starts. Only servers that start with a command can be forwarded; an HTTP server on your laptop can't be yet. Each agent session on the machine gets its own copy over SSH, and each call is listed here by agent and tool. See [MCP servers](/docs/agents#mcp-servers).
+
+```
+$ repose mcp forward apple-notes
+apple-notes: forwarded to todo-app (12 tools). Agents already
+running list it after a restart. Ctrl-C ends it.
+claude called apple-notes.search_notes
+```
+
+```
+$ repose mcp forward notes -- node ~/mcp/notes.js
+```
+
+The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached, except on Windows, where it does nothing and `attach` says so.
+
+| Flag       | What it does                                                          |
+| ---------- | --------------------------------------------------------------------- |
+| `--remove` | Take NAME off the machine's agents. They drop it at their next start. |
+
+### `repose mcp list [PROJECT]`
+
+Alias `repose mcp ls`. Show each MCP server on the machine, where it came from, which agents have it, and what it lacks. It reads the agents' configs and starts no server. Needs the machine running.
+
+```
+$ repose mcp list
+NAME         FROM     AGENTS                           STATE
+playwright   repose   claude codex gemini opencode pi
+linear       laptop   claude codex gemini opencode pi  needs LIN_TOKEN
+xcode        laptop   none                             an Apple app
+notes-db     project  claude                           ~/todo-app
+apple-notes  forward  claude codex gemini opencode pi
+my-db        machine  claude
+```
+
+FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE starts with the checkout for a server from one (`~/todo-app`), and is otherwise empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`, and an agent that lacks a server says why (`codex: ~/.codex/config.toml is a link, which repose does not write`). A file on the machine that repose had to leave out, such as a `laptop.json` that doesn't parse, is named on stderr after the rows. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
+
+| Flag     | What it does                                                                                        |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| `--json` | Print the machine's answer as JSON: `name`, `from`, `agents`, `state` and the details behind STATE. |
+
 ### `repose cp [-r] SRC... DST`
 
 Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
@@ -246,13 +288,13 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 
 ## Secrets
 
-| Command                        | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose secrets set NAME`      | Asks for the value. `--from-file PATH` or `--from-env` instead.                                                                                                                                                                                                                                                                                                                                                                                                |
-| `repose secrets import [FILE]` | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--dry-run` lists the names and sends nothing.                                                                                                                                                                                                                                                                                                                                      |
-| `repose secrets list`          | Names and dates, never values. Alias `ls`.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `repose secrets rm NAME`       | Delete it.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `repose secrets choose`        | Choose which of your laptop's logins and files `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files). In a terminal, a list to toggle (space toggles, Enter saves, `q` leaves); otherwise it prints the list. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again, `--reset` drops the list. See [Secrets](/docs/secrets#choose-what-is-copied). |
+| Command                        | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repose secrets set NAME`      | Asks for the value. `--from-file PATH` or `--from-env` instead.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `repose secrets import [FILE]` | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--mcp` sets the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config instead, for this project only, and asks once before replacing secrets the project already has (`-y`/`--yes` replaces them without asking). `--dry-run` lists the names and sends nothing.                                                                                                                     |
+| `repose secrets list`          | Names and dates, never values. Alias `ls`.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `repose secrets rm NAME`       | Delete it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `repose secrets choose`        | Choose which of your laptop's logins and files `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files), `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle (space toggles, Enter saves, `q` leaves); otherwise it prints the list. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again, `--reset` drops the list. See [Secrets](/docs/secrets#choose-what-is-copied). |
 
 `secrets list` on a terminal also shows what your laptop copies at each run. Piped, it prints only `NAME`, a tab and the date, one secret per line. Without `--project`, `secrets choose` sets the list for every project; with `--project NAME` it sets that project's own list, which replaces the shared one for it, and `--reset` sends the project back to the shared list.
 
@@ -279,7 +321,6 @@ With `--global`, the same commands act on your machine.nix instead of the projec
 | `repose version`                    | Print the version.                                                                                                                       |
 | `repose completion bash\|zsh\|fish` | Print a shell completion script.                                                                                                         |
 | `repose help [COMMAND]`             | Print help for a command.                                                                                                                |
-| `repose mcp forward`                | Reserved, not available yet. Prints what works today.                                                                                    |
 
 ## config.toml
 
@@ -298,6 +339,12 @@ skip = ["gh"]
 
 [projects.todo-app.logins]
 skip = ["gh", "env"]
+
+[mcp]
+forward = ["apple-notes"]
+
+[projects.todo-app.mcp]
+forward = ["figma"]
 ```
 
 | Key               | Default  | What it does                                                                                                                            |
@@ -306,8 +353,9 @@ skip = ["gh", "env"]
 | `default_agent`   | `claude` | Agent for new projects.                                                                                                                 |
 | `default_multiplexer` | none | `tmux` or `herdr` for new projects; a `--temp` machine runs tmux either way. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key. |
 | `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                      |
-| `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`. `repose secrets choose` sets it.                           |
-| `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. |
+| `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
+| `mcp.forward`     | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                            |
+| `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
 | `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                    |
 | `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                  |
 | `logto_client_id` | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                    |
@@ -328,6 +376,7 @@ skip = ["gh", "env"]
 | `REPOSE=1`                | Set on every repose machine, so scripts can tell where they run.                                                                                 |
 | `XDG_CONFIG_HOME`         | If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`.                                                                                       |
 | `CLAUDE_CONFIG_DIR`       | Where your laptop's Claude Code setup is copied from, instead of `~/.claude`.                                                                    |
+| `CODEX_HOME`              | Where `repose mcp forward` reads your Codex config, instead of `~/.codex`.                                                                       |
 | `VISUAL`, `EDITOR`        | The editor for `repose config edit`. Default `vi`.                                                                                               |
 | `WAYLAND_DISPLAY`         | On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set.                                                           |
 | `DISPLAY`                 | Otherwise it reads the X11 clipboard with `xclip`.                                                                                               |

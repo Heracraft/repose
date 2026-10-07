@@ -23,7 +23,9 @@ repose run --agent codex "port the build scripts to bun"
 
 The agent is the normal interactive program, the same as running `claude` yourself.
 
-Claude Code doesn't ask whether you trust the folder: `run` marks the folder it starts Claude Code in as trusted in `~/.claude.json` on the machine (the checkout, or the worktree with `--worktree`). If Claude Code asks anyway, `run` doesn't type your prompt into the question. It says so and attaches you to answer it; with `--no-attach` it exits with code 1. Running `claude` yourself in another folder on the machine still asks.
+Claude Code and Codex don't ask whether you trust the folder: `run` marks the folder it starts one of them in as trusted on the machine (the checkout, or the worktree with `--worktree`), in `~/.claude.json` or `~/.codex/config.toml`. If the agent asks anyway, `run` doesn't type your prompt into the question. It says so and attaches you to answer it; with `--no-attach` it exits with code 1. Running the agent yourself in another folder on the machine still asks.
+
+Claude Code also asks before it uses a server from the checkout's `.mcp.json`. `run` gives Claude Code on the machine the answers you gave on your laptop for this project. For a server you never answered, `run` stops the same way: it doesn't type your prompt, says that Claude Code is asking about an MCP server, and attaches you to answer; with `--no-attach` it exits with code 1.
 
 If that agent already has a window, the new one is named `claude-2`, then `claude-3`, and so on, and the CLI warns that the agents share one working tree.
 

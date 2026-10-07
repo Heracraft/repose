@@ -1,0 +1,6 @@
+{
+  // the user's own bar
+  "mcp": {
+    "bar": {"type": "local", "command": ["my-bar"], /* local */ "enabled": true,},
+  },
+}

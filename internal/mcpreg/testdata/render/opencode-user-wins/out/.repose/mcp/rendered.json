@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "bar": {
+          "type": "http",
+          "url": "https://bar.example/mcp"
+        },
+        "baz": {
+          "type": "http",
+          "url": "https://baz.example/mcp"
+        },
+        "foo": {
+          "headers": {
+            "A": "${FOO_T}"
+          },
+          "type": "http",
+          "url": "https://foo.example/mcp"
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "bar": {
+          "url": "https://bar.example/mcp"
+        },
+        "baz": {
+          "url": "https://baz.example/mcp"
+        },
+        "foo": {
+          "env_http_headers": {
+            "A": "FOO_T"
+          },
+          "url": "https://foo.example/mcp"
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "bar": {
+          "type": "http",
+          "url": "https://bar.example/mcp"
+        },
+        "baz": {
+          "type": "http",
+          "url": "https://baz.example/mcp"
+        },
+        "foo": {
+          "headers": {
+            "A": "${FOO_T}"
+          },
+          "type": "http",
+          "url": "https://foo.example/mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "baz": {
+          "type": "remote",
+          "url": "https://baz.example/mcp"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "bar": {
+          "url": "https://bar.example/mcp"
+        },
+        "baz": {
+          "url": "https://baz.example/mcp"
+        },
+        "foo": {
+          "headers": {
+            "A": "${FOO_T}"
+          },
+          "url": "https://foo.example/mcp"
+        }
+      }
+    }
+  }
+}

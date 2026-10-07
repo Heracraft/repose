@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "args": [
+        "--browserUrl",
+        "http://127.0.0.1:9224"
+      ],
+      "command": "chrome-devtools-mcp",
+      "type": "stdio"
+    },
+    "playwright": {
+      "args": [
+        "--cdp-endpoint",
+        "http://127.0.0.1:9224"
+      ],
+      "command": "playwright-mcp",
+      "type": "stdio"
+    }
+  }
+}

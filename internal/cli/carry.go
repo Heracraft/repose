@@ -46,6 +46,8 @@ type carryOptions struct {
 	// Tools is the laptop's global tools and the project's commands
 	// (I-221, I-222); `run` only.
 	Tools *toolsCarry
+	// MCP is the laptop's Claude Code MCP servers, templated (I-556).
+	MCP *mcpCarry
 	// Markers is the guest's marker set (item -> hash), from the sync's
 	// probe or the helper's own. Nil sends every part; a part whose hash
 	// matches its marker is left out.
@@ -71,6 +73,16 @@ type carryOutcome struct {
 	// Failed names the parts whose script failed; the previous state of
 	// that part is still in place.
 	Failed []string
+	// MCPLeft is "NAME (reason)" per MCP server left on the laptop, and
+	// MCPForward the names among them `repose mcp forward` can run;
+	// MCPSecrets the secrets those carried need and the machine lacks;
+	// MCPMissing the [server, command] pairs the machine lacks; MCPOld a
+	// base without repose-mcp (I-556).
+	MCPLeft    []string
+	MCPForward []string
+	MCPSecrets []mcpNeed
+	MCPMissing [][2]string
+	MCPOld     bool
 	// Sent is the parts that travelled, for tests and -v.
 	Sent []string
 }
@@ -95,6 +107,7 @@ func (o *carryOutcome) Lines() []string {
 		}
 		out = append(out, fmt.Sprintf("Installing %d of your %s in the background: %s", n, what, strings.Join(o.Installing, ", ")))
 	}
+	out = append(out, o.mcpLines()...)
 	out = append(out, o.Warnings...)
 	for _, f := range o.Failed {
 		out = append(out, "Could not carry your "+f+" config; the guest keeps its previous one.")
@@ -107,6 +120,9 @@ func (o *carryOutcome) parse(out string) {
 	for _, l := range strings.Split(out, "\n") {
 		l = strings.TrimSpace(l)
 		tag, rest, _ := strings.Cut(l, " ")
+		if o.parseMCP(tag, rest) {
+			continue
+		}
 		switch tag {
 		case "#tz":
 			o.TZ = rest
@@ -217,6 +233,11 @@ func addCarry(p *guestPayload, opts carryOptions) ([]string, error) {
 		return nil, err
 	}
 	sent = append(sent, cs...)
+	ms, err := addMCPParts(p, opts.MCP, opts)
+	if err != nil {
+		return nil, err
+	}
+	sent = append(sent, ms...)
 	ts, err := addToolsPart(p, opts.Tools, opts)
 	if err != nil {
 		return nil, err

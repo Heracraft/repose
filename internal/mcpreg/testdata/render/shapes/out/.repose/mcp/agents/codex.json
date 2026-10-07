@@ -1,0 +1,58 @@
+{
+  "mcpServers": {
+    "argref": {
+      "args": [
+        "run",
+        "argref"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "localdb": {
+      "args": [
+        "run",
+        "localdb"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    },
+    "notion": {
+      "bearer_token_env_var": "NOTION_TOKEN",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "withdefault": {
+      "args": [
+        "run",
+        "withdefault"
+      ],
+      "command": "repose-mcp",
+      "startup_timeout_sec": 60
+    }
+  },
+  "skipped": [
+    {
+      "name": "bad name",
+      "reason": "a name repose cannot give a server"
+    },
+    {
+      "name": "run",
+      "reason": "a name repose cannot give a server"
+    },
+    {
+      "name": "linear",
+      "reason": "another server has this name"
+    },
+    {
+      "name": "localdb",
+      "reason": "another server has this name"
+    }
+  ]
+}

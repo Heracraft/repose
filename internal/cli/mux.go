@@ -67,6 +67,9 @@ type agentStart struct {
 	Prompt     string
 	AttachOnly bool   // open the terminal and start the agent, type nothing
 	OnLoading  func() // called once while the dev shell loads (I-259)
+	// MCPApprovals are the laptop's .mcp.json answers for the
+	// repository, written with claude's folder trust (I-556).
+	MCPApprovals mcpApprovals
 }
 
 // attachReq is everything an attach needs.

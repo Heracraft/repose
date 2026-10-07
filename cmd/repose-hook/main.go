@@ -8,6 +8,8 @@
 // Run as repose-notify or repose-ask (or `repose-hook notify|ask`) it is
 // instead the command an agent calls to message the user or ask them
 // something (ask.go, DECISIONS I-244); those exit non-zero on failure.
+// Run as repose-mcp (or `repose-hook mcp`) it is the guest's MCP registry
+// command (mcp.go, DECISIONS I-555).
 //
 // Workstream: docs/workstreams/04-guestd.md.
 package main
@@ -38,6 +40,9 @@ const DefaultSocket = "/run/repose/hooks.sock"
 const Timeout = 3 * time.Second
 
 func main() {
+	if args, ok := isMCP(os.Args); ok {
+		os.Exit(runMCP(args, os.Stdin, os.Stdout, os.Stderr))
+	}
 	if name, args := isSub(os.Args); name != "" {
 		os.Exit(runSub(name, args))
 	}

@@ -567,6 +567,239 @@ in
           # I-481: a repose.js the user changed is kept.
           guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
 
+      with subtest("every agent has the platform MCP servers in its own layer, and its own switch turns one off (I-553, I-554)"):
+          import re, shlex
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          def dev_out(cmd, err=True):
+              return guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}" + (" 2>&1" if err else ""))
+          # Codex: tables appended to the user file by repose-agent-setup,
+          # once, with the same command and args.
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && codex mcp list --json", err=False))}
+          for n, e in reg.items():
+              assert cx[n]["enabled"] is True and cx[n]["transport"]["command"] == e["command"] and cx[n]["transport"]["args"] == e["args"], cx
+          before = guest.succeed("cat /home/dev/.codex/config.toml")
+          guest.succeed("sudo -u dev repose-agent-setup codex")
+          assert guest.succeed("cat /home/dev/.codex/config.toml") == before
+          assert before.count("[mcp_servers.playwright]") == 1, before
+          # A config.toml that is a link (home-manager) stays a link, and
+          # its target is not rewritten.
+          dev_out("mkdir -p /tmp/cxlink/.codex && printf 'notify = [\"mine\"]\\n' > /tmp/cxlink/real.toml && ln -s /tmp/cxlink/real.toml /tmp/cxlink/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink/.codex/config.toml").strip() == "/tmp/cxlink/real.toml"
+          assert guest.succeed("cat /tmp/cxlink/real.toml") == 'notify = ["mine"]\n'
+          # A link whose target lacks notify gets it through the link.
+          dev_out("mkdir -p /tmp/cxlink2/.codex && printf 'model = \"o3\"\\n' > /tmp/cxlink2/real.toml && ln -s /tmp/cxlink2/real.toml /tmp/cxlink2/.codex/config.toml")
+          dev_out("HOME=/tmp/cxlink2 repose-agent-setup codex")
+          assert guest.succeed("readlink /tmp/cxlink2/.codex/config.toml").strip() == "/tmp/cxlink2/real.toml"
+          assert guest.succeed("cat /tmp/cxlink2/real.toml") == 'notify = ["repose-hook"]\nmodel = "o3"\n'
+          assert guest.succeed("stat -c %a /tmp/cxlink2/real.toml").strip() == "644", "the target kept its mode"
+          # A target repose cannot replace (a read-only directory, as
+          # home-manager's store) is named once per target, not per start.
+          dev_out("mkdir -p /tmp/cxlink3/.codex /tmp/cxlink3/ro && printf 'model = \"o3\"\\n' > /tmp/cxlink3/ro/real.toml && chmod 555 /tmp/cxlink3/ro && ln -s /tmp/cxlink3/ro/real.toml /tmp/cxlink3/.codex/config.toml")
+          first = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          second = dev_out("HOME=/tmp/cxlink3 repose-agent-setup codex")
+          assert "links to a file repose cannot write" in first, first
+          assert "links to a file repose cannot write" not in second, second
+          assert guest.succeed("cat /tmp/cxlink3/ro/real.toml") == 'model = "o3"\n'
+          # opencode: the managed layer, type local, no enabled key.
+          oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
+          for n, e in reg.items():
+              assert oc[n] == {"type": "local", "command": [e["command"]] + e["args"]}, oc
+          # Gemini: a copied root file in a root 0755 directory, folder
+          # trust off, so a folder it was never told about connects both.
+          guest.succeed("test -f /etc/gemini-cli/system-defaults.json && ! test -L /etc/gemini-cli/system-defaults.json")
+          assert guest.succeed("stat -c %U%a /etc/gemini-cli /etc/gemini-cli/system-defaults.json").split() == ["root755", "root644"]
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && gemini mcp list")
+          for n in reg:
+              assert re.search(rf"{re.escape(n)}:.*Connected", out), out
+          assert "Security Warning" not in out and "untrusted" not in out.lower(), out
+          # pi: registered by the guide extension.
+          guest.succeed("grep -q registerMcpServer /etc/repose/pi-extension.js")
+          # Each agent's own off switch, each in a home of its own.
+          def put(path, text):
+              guest.succeed(f"sudo -u dev mkdir -p $(dirname {path}) && sudo -u dev tee {path} > /dev/null <<'EOF'\n{text}\nEOF")
+          put("/tmp/cxoff/.codex/config.toml", '[mcp_servers.playwright]\ncommand = "playwright-mcp"\nenabled = false')
+          cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && HOME=/tmp/cxoff codex mcp list --json", err=False))}
+          assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
+          assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
+          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"playwright": {"enabled": false}}}')
+          out = dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list")
+          assert re.search(r"playwright\s+disabled", out), out
+          put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
+          out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
+          assert re.search(r"playwright:.*Blocked", out), out
+
+      with subtest("the MCP registry reaches every agent with its secret (I-555)"):
+          import hashlib, shlex, tomllib
+          def toml_entry(text, name):
+              return tomllib.loads(text)["mcp_servers"][name]
+          # The registry as the carry writes it: one stdio server whose token
+          # is a ''${NAME} reference to a repose secret, in env and in args.
+          guest.succeed("install -d -m 0700 -o dev -g dev /run/repose/secrets && printf probe-secret > /run/repose/secrets/PROBE_TOKEN && chown dev:dev /run/repose/secrets/PROBE_TOKEN && chmod 0400 /run/repose/secrets/PROBE_TOKEN")
+          want = hashlib.sha256(b"probe-secret").hexdigest()
+          # The digest argument makes the server refuse to start without
+          # the secret, so "connected" below means the secret arrived.
+          probe = {"type": "stdio", "command": "python3", "args": ["${./mcp-probe-server.py}", "''${PROBE_TOKEN}", want], "env": {"PROBE_TOKEN": "''${PROBE_TOKEN}"}}
+          def write_laptop(reg):
+              guest.succeed(f"sudo -u dev sh -c 'mkdir -p ~/.repose/mcp && chmod 700 ~/.repose/mcp && cat > ~/.repose/mcp/laptop.json' <<'EOF'\n{json.dumps(reg)}\nEOF")
+          write_laptop({"version": 1, "user": {"probe": probe}})
+          agents = ["claude", "codex", "gemini", "opencode", "pi"]
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a} 2>/tmp/setup-{a}.err")
+              assert guest.succeed(f"cat /tmp/setup-{a}.err") == "", a
+          u = json.loads(guest.succeed("cat /home/dev/.claude.json"))
+          # A secret reference: Claude Code starts it through the launcher
+          # too, which reads /run/repose/secrets at each start and refuses
+          # when the secret is missing (I-555, amended).
+          assert u["mcpServers"]["probe"] == {"type": "stdio", "command": "repose-mcp", "args": ["run", "probe"]}, u["mcpServers"]
+          assert set(u["mcpServers"]) >= {"playwright", "chrome-devtools"}, u
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert '[mcp_servers.probe]\ncommand = "repose-mcp"\nargs = ["run", "probe"]\nstartup_timeout_sec = 60' in codex, codex
+          ext = json.loads(guest.succeed("cat /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json"))
+          assert ext["mcpServers"]["probe"]["command"] == "repose-mcp", ext  # a reference in args needs the launcher
+          oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))
+          assert oc["mcp"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
+          assert "probe" in json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]
+          # Each agent lists it from its own config.
+          cl = json.loads(guest.succeed("sudo -u dev bash -lc 'codex mcp list --json'"))
+          print(cl)
+          assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
+          # Claude Code, Gemini CLI and opencode start the server through
+          # the launcher while listing it; it connects only with the secret.
+          for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+              status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+              print(f"{cmd} ({status}):\n{out}")
+              bad = ["disconnected", "failed", "error", "needs auth"]
+              rows = [l.lower() for l in out.splitlines() if "probe" in l and any(w in l.lower() for w in ["connected", *bad])]
+              assert len(rows) == 1, (cmd, out)
+              assert "connected" in rows[0] and not any(w in rows[0] for w in bad), (cmd, rows)
+          # Codex and pi list without starting a server: run the command
+          # each one's config names, in that agent's environment, and call
+          # the tool. The launcher fills ''${PROBE_TOKEN} from
+          # /run/repose/secrets; the server answers with digests.
+          launches = {
+              "codex": toml_entry(codex, "probe"),
+              "pi": json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]["probe"],
+          }
+          for a, e in launches.items():
+              argv = " ".join(shlex.quote(x) for x in [e["command"], *e.get("args", [])])
+              assert "''${" not in argv, (a, e)  # a reference only the launcher fills
+              out = guest.succeed(f"sudo -u dev env -u PROBE_TOKEN bash -lc {shlex.quote(f'cd /home/dev && python3 ${./mcp-client.py} {argv} -- probe {{}}')}")
+              assert f"env={want} arg={want}" in out, (a, out)
+              assert "probe-secret" not in out, a
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "probe"]
+          assert len(row) == 1 and row[0]["from"] == "laptop" and row[0]["state"] == "", st
+          assert set(row[0]["agents"]) >= {"claude", "codex", "gemini", "opencode"}, row
+          pw = [r for r in st["servers"] if r["name"] == "playwright"]
+          assert pw and pw[0]["from"] == "repose", pw
+          # Idempotent: a second start changes no byte.
+          files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/config.json /home/dev/.repose/mcp/rendered.json"
+          before = guest.succeed(f"sha256sum {files}")
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert guest.succeed(f"sha256sum {files}") == before
+          # The laptop drops it: every agent loses it; the user's own stays.
+          guest.succeed("sudo -u dev sh -c 'cat >> ~/.codex/config.toml' <<'EOF'\n\n[mcp_servers.mine]\ncommand = \"my-mcp\"\nEOF")
+          write_laptop({"version": 1})
+          for a in agents:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          codex = guest.succeed("cat /home/dev/.codex/config.toml")
+          assert "mcp_servers.probe" not in codex and "[mcp_servers.mine]" in codex, codex
+          guest.fail("test -e /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json")
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
+          guest.fail("test -e /home/dev/.claude.json.lock")
+
+      with subtest("the carry's own payload reaches claude and codex through repose-agent-setup (I-556, design 3.2.5)"):
+          # nix/guest/tests/mcp-carry is what the CLI sends for a fixture
+          # laptop config (TestMCPCarryGoldenPayload keeps it current): run
+          # it the way ssh runs the carry, as dev with the tar on stdin.
+          out = guest.succeed("cd /home/dev && sudo -H -u dev bash -c \"$(cat ${./mcp-carry/script.sh})\" < ${./mcp-carry/payload.tar}")
+          print(out)
+          assert "#failed" not in out, out
+          assert "#mcpleft 1 notes (an Apple app)" in out, out
+          assert "#mcpsecret LINEAR_TOKEN linear laptop" in out, out
+          lj = json.loads(guest.succeed("cat /home/dev/.repose/mcp/laptop.json"))
+          assert set(lj["user"]) == {"probe", "linear"} and lj["user"]["probe"]["env"] == {"PROBE_TOKEN": "''${PROBE_TOKEN}"}, lj
+          assert guest.succeed("stat -c %a /home/dev/.repose/mcp/laptop.json").strip() == "600"
+          # linear is remote and its secret is missing: no agent gets it,
+          # since the agent would send the literal reference as its token.
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "linear" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "mcp_servers.linear" not in guest.succeed("cat /home/dev/.codex/config.toml")
+          st = json.loads(guest.succeed("sudo -u dev env -u LINEAR_TOKEN repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "linear"]
+          assert row and row[0]["agents"] == [] and row[0]["state"] == "needs LINEAR_TOKEN", st
+          # Set, it arrives at the next agent start.
+          guest.succeed("printf linear-secret > /run/repose/secrets/LINEAR_TOKEN && chown dev:dev /run/repose/secrets/LINEAR_TOKEN && chmod 0400 /run/repose/secrets/LINEAR_TOKEN")
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          status, out = guest.execute("sudo -u dev bash -lc 'cd /home/dev && timeout 120 claude mcp list' 2>&1")
+          print(out)
+          for n in ["probe", "linear", "playwright"]:
+              assert re.search(rf"^{n}: ", out, re.M), (n, out)
+          cx = {e["name"]: e for e in json.loads(guest.succeed("sudo -u dev bash -lc 'cd /tmp && codex mcp list --json'"))}
+          assert cx["probe"]["transport"]["command"] == "repose-mcp" and cx["probe"]["transport"]["args"] == ["run", "probe"], cx
+          assert cx["linear"]["transport"].get("url") == "https://mcp.linear.app/mcp" and cx["linear"]["transport"].get("bearer_token_env_var") == "LINEAR_TOKEN", cx
+          assert "notes" not in cx, cx
+          # Codex's launcher refuses to start probe without its secret.
+          guest.succeed("mv /run/repose/secrets/PROBE_TOKEN /run/repose/PROBE_TOKEN.away")
+          status, out = guest.execute("sudo -u dev env -u PROBE_TOKEN repose-mcp run probe 2>&1")
+          assert status == 1 and "probe needs the secret PROBE_TOKEN; set it with `repose secrets set PROBE_TOKEN`" in out, (status, out)
+          guest.succeed("mv /run/repose/PROBE_TOKEN.away /run/repose/secrets/PROBE_TOKEN")
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "notes"]
+          assert row and row[0]["from"] == "laptop" and row[0]["agents"] == [] and row[0]["state"] == "an Apple app", st
+          # Back to no laptop servers for the subtests that follow.
+          guest.succeed("rm /run/repose/secrets/LINEAR_TOKEN")
+          write_laptop({"version": 1})
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+
+      with subtest("a forwarded server reaches every agent, and answers while the laptop is away (I-557)"):
+          import shlex
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp").strip() == "dev 700"
+          # The real hold, with a fake laptop end on its stdio: what the
+          # laptop's ssh carries in production (no -R; the gateway relays
+          # forwarded-tcpip only, I-296).
+          guest.succeed("sudo -u dev sh -c 'cd /home/dev && nohup python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe > /tmp/fake-laptop.log 2>&1 &'")
+          ready = guest.wait_until_succeeds("grep '^ready ' /tmp/fake-laptop.log", timeout=60)
+          r = json.loads(ready.split(" ", 1)[1])
+          assert r == {"name": "fwprobe", "tools": 1, "new": True}, r
+          assert guest.succeed("stat -c '%U %a' /run/repose/mcp/fwprobe.sock").strip() == "dev 600"
+          fwd = json.loads(guest.succeed("cat /home/dev/.repose/mcp/forward/fwprobe.json"))
+          assert fwd["name"] == "fwprobe" and [t["name"] for t in fwd["tools"]] == ["where"], fwd
+          # hold synced the agents it had rendered for already.
+          assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]["fwprobe"] == {"type": "stdio", "command": "repose-mcp", "args": ["fwprobe"]}
+          assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
+          def listed(connected_word):
+              for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+                  status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+                  print(f"{cmd} ({status}):\n{out}")
+                  rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
+                  assert rows and connected_word in rows[0] and "failed" not in rows[0] and "disconnected" not in rows[0], (cmd, out)
+          listed("connected")
+          call = shlex.quote("cd /home/dev && python3 ${./mcp-client.py} repose-mcp fwprobe -- where {}")
+          out = guest.wait_until_succeeds(f"sudo -u dev bash -lc {call}", timeout=30)
+          assert "laptop" in out, out
+          # The laptop goes away: the socket goes with the hold, agents
+          # still list the server from the cache, and a call is a tool
+          # error that says what to do.
+          guest.succeed("pkill -f mcp-fake-laptop.py")
+          guest.wait_until_fails("test -e /run/repose/mcp/fwprobe.sock", timeout=15)
+          listed("connected")
+          status, out = guest.execute(f"sudo -u dev bash -lc {call} 2>&1")
+          assert status == 1 and "fwprobe runs on the user's laptop, which isn't connected" in out, (status, out)
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [x for x in st["servers"] if x["name"] == "fwprobe"]
+          assert row and row[0]["from"] == "forward" and "laptop not connected" in row[0]["state"], st
+          # --remove takes it off every agent at their next start.
+          assert guest.succeed("sudo -u dev repose-mcp hold --remove fwprobe") == ""
+          assert "fwprobe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "fwprobe" not in guest.succeed("cat /home/dev/.codex/config.toml")
+
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
       ${transcript}
@@ -1500,9 +1733,9 @@ in
 
       reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
 
-      def mcp(server, *calls):
-          """Start the registered MCP server as dev and make the calls."""
-          e = reg[server]
+      def mcp(server, *calls, entry=None):
+          """Start the registered MCP server (or entry) as dev and make the calls."""
+          e = entry or reg[server]
           argv = [e["command"]] + e["args"] + ["--"]
           for name, args in calls:
               argv += [name, json.dumps(args)]
@@ -1604,6 +1837,21 @@ in
       with subtest("chrome-devtools MCP sees the same tab"):
           out = mcp("chrome-devtools", ("list_pages", {}))
           assert "magenta.html" in out, out
+
+      with subtest("each agent's own resolved config drives the browser (I-553)"):
+          def dev_json(cmd):
+              return json.loads(guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}"))
+          cx = dev_json("cd /tmp && codex mcp get playwright --json")["transport"]
+          oc = dev_json("cd /tmp && opencode debug config")["mcp"]["playwright"]["command"]
+          gm = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))["mcpServers"]["playwright"]
+          for agent, e in {
+              "codex": {"command": cx["command"], "args": cx["args"]},
+              "opencode": {"command": oc[0], "args": oc[1:]},
+              "gemini": gm,
+          }.items():
+              out = mcp("playwright", ("browser_navigate", {"url": page + "?" + agent}), entry=e)
+              assert "magenta.html?" + agent in out, (agent, out)
+              print(agent, [l for l in out.splitlines() if "Title" in l][:1])
 
       with subtest("software rendering: WebGL works, no GPU process relaunch loop"):
           out = mcp("playwright", ("browser_evaluate", {"function": "() => 'webgl=' + !!document.createElement('canvas').getContext('webgl')"}))
@@ -1873,7 +2121,7 @@ in
       def has(cmd):
           return guest.execute(f"sudo -H -u dev bash -lc {shlex.quote('command -v ' + cmd)}")[0] == 0
 
-      source = open("${../base/agent-guide.md}").read()
+      source = open("${../base/agent-guide.md}").read().replace("@playwrightVersion@", "${pkgs.playwright-driver.version}")
       commands = [l.split() for l in open("${../base/agent-guide.commands}") if l.strip() and not l.startswith("#")]
 
       with subtest("rendered from the source: comments dropped, needs lines follow the guest"):
@@ -1902,11 +2150,22 @@ in
           assert guest.succeed("cat /etc/claude-code/CLAUDE.md") == guide
           assert guest.succeed("cat /etc/repose/gemini-extension/GEMINI.md") == guide
           codex = tomllib.loads(guest.succeed("cat /etc/codex/config.toml"))
-          assert codex == {"developer_instructions": guide}, codex
+          # I-546 defaults as top-level keys and the guide; nothing else.
+          assert codex == {
+              "approval_policy": "never",
+              "sandbox_mode": "danger-full-access",
+              "check_for_update_on_startup": False,
+              "developer_instructions": guide,
+          }, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
           assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
+          # I-553: the platform MCP servers beside it; Codex gets them in
+          # the user file instead, so /etc/codex holds no mcp_servers.
+          reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+          assert set(oc["mcp"]) == set(reg) and not any("enabled" in v for v in oc["mcp"].values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
+          assert "${pkgs.playwright-driver.version}" in guide and "@playwrightVersion@" not in guide, guide
           guest.succeed("grep -q /etc/repose/agent-guide.md /etc/repose/pi-extension.js")
 
       with subtest("every command the guide names is on the machine"):
@@ -1937,8 +2196,14 @@ in
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
               "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
               "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini -p hi"),
-              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "pi --provider fake --model m -p hi"),
+              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "env PATH=/tmp/pishim:$PATH pi --provider fake --model m -p hi"),
           }
+          # I-554: pi starts both platform servers, seen by wrappers on its
+          # PATH that log each start and exec the real command (the
+          # registry names them by name, not by path).
+          for b in ["playwright-mcp", "chrome-devtools-mcp"]:
+              real = dev(f"command -v {b}").strip()
+              dev(f"mkdir -p /tmp/pishim && printf '#!/bin/sh\\necho {b} >> /tmp/pi-mcp-starts\\nexec {real} \"$@\"\\n' > /tmp/pishim/{b} && chmod +x /tmp/pishim/{b}")
           sentinel = "This is a repose machine"
           for agent, (mark, env, cmd) in runs.items():
               guest.succeed("rm -rf /tmp/caps/*")
@@ -1946,8 +2211,37 @@ in
               bodies = guest.succeed("cat /tmp/caps/* 2>/dev/null || true")
               assert sentinel in bodies, f"{agent}: the guide is not in what it sent: {bodies[:3000]}"
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
+              # I-553, I-554: the platform browser tools reach the model.
+              # pi lists codemode servers by name instead of their tools.
+              # Codex (code mode) names no MCP tool in the request; its
+              # registration is checked with codex mcp list above
+              # (DECISIONS I-553).
+              tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              if tool:
+                  assert tool in bodies, f"{agent}: {tool} is not in what it sent"
+              if agent == "pi":
+                  starts = guest.succeed("cat /tmp/pi-mcp-starts 2>/dev/null || true").split()
+                  assert {"playwright-mcp", "chrome-devtools-mcp"} <= set(starts), f"pi started {starts}"
           after = dev("cd ~ && sha256sum " + " ".join(files))
           assert before == after, (before, after)
+
+      with subtest("I-543: Gemini CLI and pi never update themselves"):
+          # The file is browser.nix's (I-553); dev must not be able to turn
+          # the update back on there.
+          owner, mode = guest.succeed("stat -c '%U %a' /etc/gemini-cli/system-defaults.json").split()
+          assert owner == "root" and int(mode, 8) & 0o022 == 0, (owner, mode)
+          d = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))
+          assert d["general"]["enableAutoUpdate"] is False, d
+          dev("! test -e ~/.npm-global/bin/gemini")
+          guest.succeed("grep -qa PI_SKIP_VERSION_CHECK ${pkgs.reposeAgents.pi-coding-agent.unwrapped}/bin/pi")
+          # A Gemini CLI an earlier base let update itself into npm's
+          # prefix is removed once; one installed after that stays.
+          g = "/tmp/gh/.npm-global"
+          dev(f"mkdir -p {g}/bin {g}/lib/node_modules/@google/gemini-cli && echo '{{\"name\":\"@google/gemini-cli\"}}' > {g}/lib/node_modules/@google/gemini-cli/package.json && ln -s ../lib/node_modules/@google/gemini-cli/bundle/gemini.js {g}/bin/gemini")
+          dev(f"HOME=/tmp/gh NPM_CONFIG_PREFIX={g} repose-agent-setup gemini")
+          dev(f"! test -L {g}/bin/gemini && ! test -e {g}/lib/node_modules/@google/gemini-cli && test -e /tmp/gh/.local/state/repose/gemini-npm-removed")
+          dev(f"mkdir -p {g}/lib/node_modules/@google/gemini-cli && echo '{{\"name\":\"@google/gemini-cli\"}}' > {g}/lib/node_modules/@google/gemini-cli/package.json")
+          dev(f"HOME=/tmp/gh NPM_CONFIG_PREFIX={g} repose-agent-setup gemini && test -e {g}/lib/node_modules/@google/gemini-cli/package.json")
 
       with subtest("gemini and pi links: idempotent, a user's file at the path is left alone"):
           assert dev("readlink ~/.gemini/extensions/repose-machine-guide").strip() == "/etc/repose/gemini-extension"

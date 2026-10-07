@@ -1,0 +1,1 @@
+{"version":1,"user":{"linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp@2"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}"}}}}

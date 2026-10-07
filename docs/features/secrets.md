@@ -28,6 +28,13 @@ replacing existing ones like `set`; the summary names names only
 (`OLD (replaced)`), `--dry-run` sends nothing, and a file with any invalid
 name or oversize value is refused whole before anything is sent. The file
 is read, never written; the values go to the one home named secrets have.
+`repose secrets import --mcp` (I-556) sets, the same way, the secrets the
+MCP carry made from literal values in the laptop's Claude Code config: it
+reads that config again, keeps each value in memory, prints names only,
+and asks once before replacing a secret the project already has, since
+the carry chose the names (`--yes` skips the question); `--dry-run` lists
+the names. Secrets belong to one
+project, so it sets them for the folder's project only.
 
 Synced logins happen inside `repose run` with no output of their own.
 
@@ -67,8 +74,9 @@ on the guest disk (in snapshots), not a repose secret, the same as any
 other file the user writes there.
 
 The user chooses which of these travel, on the laptop (DECISIONS I-422):
-`repose secrets choose` toggles `gh`, `codex`, `opencode` and `env` (the
-gitignored `.env` files, I-197) and saves the list in the laptop's
+`repose secrets choose` toggles `gh`, `codex`, `opencode`, `env` (the
+gitignored `.env` files, I-197) and `mcp` (the Claude Code MCP servers,
+I-556) and saves the list in the laptop's
 `config.toml`, for every project or, with `--project`, for one. The api
 never holds the choice, for the same reason it never holds the logins.
 Everything is copied until the user chooses. A login turned off is not
@@ -142,6 +150,16 @@ config the CLI carries" has the exact paths):
   `plugins/`, `statsig/`, `~/.claude.json`, an SSH key and Gemini's
   OAuth file in the laptop home, and those settings keys in its
   `settings.json`, and asserts none of them is in the carry stream.
+
+- **Claude Code MCP servers** (I-556): the `mcpServers` of the laptop's
+  `~/.claude.json`, user scope and the repository's local scope, with
+  every literal credential replaced by `${NAME}` before hashing or
+  packing (`agents.md` "MCP" has the classifier). The value stays on the
+  laptop; the server names a repose secret, which the user sets with
+  `secrets set` or `secrets import --mcp`, so the value reaches the one
+  home named secrets have. `TestCarryMCPServers`,
+  `TestTemplateMCPSecrets` and `TestCarryClaudeNeverCarriesSecrets` plant
+  NEVER- values and assert none reaches the stream, the hash or the guest.
 
 - **`.env` files** (I-197): gitignored `.env` and `.env.*` files in the
   checkout, laptop to guest over the sync's SSH, mode 0600, newer side

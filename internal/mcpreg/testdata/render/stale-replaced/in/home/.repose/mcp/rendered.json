@@ -1,0 +1,4 @@
+{"version":1,"agents":{
+ "claude":{"user":{"linear":{"type":"stdio","command":"npx","args":["-y","linear-mcp@1"],"env":{"LINEAR_TOKEN":"${LINEAR_TOKEN}"}}}},
+ "codex":{"user":{"linear":{"command":"repose-mcp","args":["run","linear"]}}},
+ "opencode":{"user":{"linear":{"type":"local","command":["npx","-y","linear-mcp@1"],"environment":{"LINEAR_TOKEN":"{env:LINEAR_TOKEN}"}}}}}}

@@ -91,6 +91,8 @@ var notCommands = map[string]string{
 	"mysql":                "a menu entry",
 	"use flake":            "a line for .envrc",
 	"flake.nix":            "a file name",
+	"env_vars":             "a Codex config key",
+	"bearer_token_env_var": "a Codex config key",
 }
 
 type guideLine struct {

@@ -1,0 +1,27 @@
+{
+  "mcpServers": {},
+  "projects": {
+    "/home/dev/app": {
+      "db": {
+        "args": [
+          "run",
+          "db",
+          "/home/dev/app"
+        ],
+        "command": "repose-mcp",
+        "type": "stdio"
+      }
+    },
+    "/home/dev/lib": {
+      "db": {
+        "args": [
+          "run",
+          "db",
+          "/home/dev/lib"
+        ],
+        "command": "repose-mcp",
+        "type": "stdio"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "db": {
+      "args": [
+        "run",
+        "db"
+      ],
+      "command": "repose-mcp"
+    }
+  },
+  "name": "repose-mcp",
+  "version": "1.0.0"
+}

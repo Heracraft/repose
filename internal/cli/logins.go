@@ -37,7 +37,7 @@ type loginItem struct {
 const envLogin = "env"
 
 // loginItems is every row, in the order `repose secrets choose` shows them: the
-// credRows, then the .env files.
+// credRows, then the .env files, then the MCP servers (I-556).
 func loginItems() []loginItem {
 	what := map[string]string{
 		"gh":       "GitHub CLI login: every repo you can reach",
@@ -48,7 +48,9 @@ func loginItems() []loginItem {
 	for _, r := range credRows {
 		items = append(items, loginItem{Name: r.Label, What: what[r.Label]})
 	}
-	return append(items, loginItem{Name: envLogin, What: "gitignored .env files"})
+	return append(items,
+		loginItem{Name: envLogin, What: "gitignored .env files"},
+		loginItem{Name: mcpLogin, What: "Claude Code MCP servers (tokens stay on the laptop)"})
 }
 
 func loginNames() []string {
@@ -227,6 +229,9 @@ func (e *Env) loginsFound() map[string]string {
 				found[envLogin] = fmt.Sprintf("%d in this checkout", len(files))
 			}
 		}
+	}
+	if user, project, _, err := readClaudeMCP(e.HomeDir, gitRepoRoot(e.Cwd)); err == nil && len(user)+len(project) == 0 {
+		found[mcpLogin] = "none on this laptop"
 	}
 	return found
 }
