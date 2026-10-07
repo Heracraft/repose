@@ -324,8 +324,8 @@
 		<section class="sec">
 			<SectionHead id="pricing" title="Pricing">
 				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by
-				the machines you have running; a stopped machine uses none. Its disk counts the bytes your
-				projects hold.
+				the machines you have running; a stopped machine uses none. A plan's disk counts the data
+				your projects hold.
 			</SectionHead>
 			<ul class="tiers" use:landOnView>
 				{#each plans as t, i (t.name)}

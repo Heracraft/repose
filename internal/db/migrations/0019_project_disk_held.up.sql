@@ -10,6 +10,6 @@ alter table projects add column disk_held_at timestamptz;
 
 update projects p set disk_held_bytes = l.disk_used, disk_held_at = l.ts
   from (select distinct on (project_id) project_id, ts, disk_used
-          from meter_samples where disk_used > 0
+          from meter_samples where disk_used > 0 and disk_used <= disk_alloc
          order by project_id, ts desc) l
  where l.project_id = p.id;

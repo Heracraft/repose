@@ -1375,6 +1375,7 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return e
 		}
 		f.copyMultiplexer(p, np)
+		copyHeld(p, np)
 		for n, s := range p.secrets {
 			c := *s
 			np.secrets[n] = &c
@@ -1473,8 +1474,17 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 		return nil, e
 	}
 	f.copyMultiplexer(p, np)
+	copyHeld(p, np)
 	f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
 	return np, nil
+}
+
+// copyHeld starts a restored or forked copy at what its source holds,
+// as the api's insertRestored does (DECISIONS I-585).
+func copyHeld(src, np *project) {
+	if src.DiskUsedBytes > 0 {
+		np.DiskUsedBytes = src.DiskUsedBytes
+	}
 }
 
 // restorable is p's newest snapshot that has not expired, or nil.

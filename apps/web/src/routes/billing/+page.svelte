@@ -476,7 +476,7 @@
 					limit={billing.usage.disk_gb}
 					format={gbs}
 					note={diskHeld > billing.usage.disk_gb
-						? 'Creating, restoring and forking projects, and growing a disk, wait until your projects hold less. A deleted file stops counting within a day, or when its machine stops.'
+						? 'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less. A deleted file stops counting within a day, or when its machine stops.'
 						: undefined}
 				/>
 				<Meter

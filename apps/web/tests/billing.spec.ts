@@ -220,7 +220,7 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
 });
 
-test('the disk meter counts what the projects hold and says what waits while it is over', async ({
+test('the disk meter counts what the projects hold and says what is refused while it is over', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'solo', disk_held_gb: 37.5 });
@@ -230,10 +230,9 @@ test('the disk meter counts what the projects hold and says what waits while it 
 	await expect(disk).not.toContainText('over');
 	await setBilling({ disk_held_gb: 112.4 });
 	await page.reload();
-	await expect(disk).toContainText('112.4 GB of 100 GB');
-	await expect(disk).toContainText('over');
+	await expect(disk).toContainText('112.4 GB of 100 GB · over');
 	await expect(disk).toContainText(
-		'Creating, restoring and forking projects, and growing a disk, wait until your projects hold less.'
+		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
 	);
 });
 
