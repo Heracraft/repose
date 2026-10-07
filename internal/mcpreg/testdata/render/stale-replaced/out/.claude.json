@@ -2,13 +2,10 @@
   "mcpServers": {
     "linear": {
       "args": [
-        "-y",
-        "linear-mcp@2"
+        "run",
+        "linear"
       ],
-      "command": "npx",
-      "env": {
-        "LINEAR_TOKEN": "${LINEAR_TOKEN}"
-      },
+      "command": "repose-mcp",
       "type": "stdio"
     }
   },

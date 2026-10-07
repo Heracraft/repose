@@ -49,7 +49,7 @@ func applyClaude(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 	}
 	changed := false
 	rec := &agentRecord{}
-	changes, owned := plan(rawMap(servers), want.User, prev.User, want.Retired)
+	changes, owned := plan(rawMap(servers), want.User, prev.User, want.replaceable())
 	if len(changes) > 0 {
 		applyEntries(servers, changes)
 		doc.setChild("mcpServers", servers)
@@ -81,7 +81,7 @@ func applyClaude(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 				if err != nil {
 					continue
 				}
-				changes, owned := plan(rawMap(ps), want.Projects[path], prev.Projects[path], nil)
+				changes, owned := plan(rawMap(ps), want.Projects[path], prev.Projects[path], want.ProjectLegacy[path])
 				if len(owned) > 0 {
 					if rec.Projects == nil {
 						rec.Projects = map[string]map[string]any{}

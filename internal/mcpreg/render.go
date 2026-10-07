@@ -26,11 +26,33 @@ type Rendered struct {
 	Skipped []Skip
 	// Retired is name -> values earlier bases wrote, which sync replaces.
 	Retired map[string][]any
+	// Legacy is name -> the native shape an earlier base wrote for a
+	// carried server that now starts through the launcher or is left out
+	// (DECISIONS I-555, amended): sync replaces it as its own, and status
+	// counts it as the laptop's. ProjectLegacy is the same per checkout.
+	Legacy        map[string][]any
+	ProjectLegacy map[string]map[string][]any
+}
+
+// replaceable are the values sync owns under each user-scope name besides
+// rendered.json's: retired platform values and legacy carried shapes.
+func (r *Rendered) replaceable() map[string][]any {
+	if len(r.Legacy) == 0 {
+		return r.Retired
+	}
+	out := make(map[string][]any, len(r.Retired)+len(r.Legacy))
+	for k, v := range r.Retired {
+		out[k] = append(out[k], v...)
+	}
+	for k, v := range r.Legacy {
+		out[k] = append(out[k], v...)
+	}
+	return out
 }
 
 // Render is the registry as agent's config entries.
 func (r *Registry) Render(agent string) *Rendered {
-	out := &Rendered{Agent: agent, User: map[string]any{}, From: map[string]string{}, Retired: map[string][]any{}}
+	out := &Rendered{Agent: agent, User: map[string]any{}, From: map[string]string{}, Retired: map[string][]any{}, Legacy: map[string][]any{}}
 	ls, taken := r.list(agent == "claude")
 	out.Skipped = append(out.Skipped, taken...)
 	for _, l := range ls {
@@ -39,7 +61,24 @@ func (r *Registry) Render(agent string) *Rendered {
 			// own system layers (DECISIONS I-553).
 			continue
 		}
-		v, reason := renderOne(agent, l)
+		v, reason := renderOne(agent, l, r.SecretsDir, false)
+		if l.From == FromLaptop {
+			// What a base before the launcher rule wrote, so sync knows it
+			// as its own on a machine that has it.
+			if old, oreason := renderOne(agent, l, r.SecretsDir, true); oreason == "" && (reason != "" || !equal(old, v)) {
+				if l.Project != "" && agent == "claude" {
+					if out.ProjectLegacy == nil {
+						out.ProjectLegacy = map[string]map[string][]any{}
+					}
+					if out.ProjectLegacy[l.Project] == nil {
+						out.ProjectLegacy[l.Project] = map[string][]any{}
+					}
+					out.ProjectLegacy[l.Project][l.Name] = append(out.ProjectLegacy[l.Project][l.Name], old)
+				} else {
+					out.Legacy[l.Name] = append(out.Legacy[l.Name], old)
+				}
+			}
+		}
 		if reason != "" {
 			out.Skipped = append(out.Skipped, Skip{l.Name, reason})
 			continue
@@ -61,7 +100,7 @@ func (r *Registry) Render(agent string) *Rendered {
 	}
 	for name, vals := range r.Platform.Retired {
 		for _, s := range vals {
-			v, reason := renderOne(agent, logical{Name: name, From: FromRepose, Server: s})
+			v, reason := renderOne(agent, logical{Name: name, From: FromRepose, Server: s}, "", false)
 			if reason == "" {
 				out.Retired[name] = append(out.Retired[name], v)
 			}
@@ -70,7 +109,12 @@ func (r *Registry) Render(agent string) *Rendered {
 	return out
 }
 
-func renderOne(agent string, l logical) (any, string) {
+// renderOne is l as agent's config entry, or why agent does not get it.
+// A carried stdio server with a reference the agent would fill itself
+// starts through `repose-mcp run`, which reads the secret at each start
+// and refuses when it is missing; a carried remote server with a missing
+// secret is left out. Native renders what a base before that rule wrote.
+func renderOne(agent string, l logical, secretsDir string, native bool) (any, string) {
 	if l.From == FromForward {
 		return renderForward(agent, l.Name), ""
 	}
@@ -89,6 +133,17 @@ func renderOne(agent string, l logical) (any, string) {
 	}
 	if t != "stdio" && str(s, "url") == "" {
 		return nil, "no URL"
+	}
+	if l.From == FromLaptop && !native {
+		if t == "stdio" && agent != "codex" && needsLauncher(s) {
+			return renderLauncher(agent, l), ""
+		}
+		if t != "stdio" {
+			// The agent would send the literal ${NAME} to the service.
+			if need := Needs(s, secretsDir); len(need) > 0 {
+				return nil, NeedsReason(need)
+			}
+		}
 	}
 	switch agent {
 	case "claude":
@@ -115,6 +170,31 @@ func renderForward(agent, name string) any {
 	return map[string]any{"command": Launcher, "args": []any{name}}
 }
 
+// renderLauncher is agent's entry for a carried stdio server that starts
+// through `repose-mcp run NAME`. Claude Code's project entries add their
+// checkout, since two checkouts may each have a server of that name.
+func renderLauncher(agent string, l logical) any {
+	switch agent {
+	case "claude":
+		args := []any{"run", l.Name}
+		if l.Project != "" {
+			args = append(args, l.Project)
+		}
+		return map[string]any{"type": "stdio", "command": Launcher, "args": args}
+	case "opencode":
+		return map[string]any{"type": "local", "command": []any{Launcher, "run", l.Name}}
+	}
+	return launch(l.Name)
+}
+
+// NeedsReason is the skip reason of a server whose secrets are missing.
+func NeedsReason(need []string) string {
+	if len(need) == 1 {
+		return "needs the secret " + need[0]
+	}
+	return "needs the secrets " + strings.Join(need, ", ")
+}
+
 func copyServer(s Server) map[string]any {
 	out := make(map[string]any, len(s))
 	for k, v := range s {
@@ -139,9 +219,32 @@ func anyMap(m map[string]string) map[string]any {
 	return out
 }
 
-// needsLauncher: the agent cannot expand a reference in this stdio server
-// itself (one in the command or the arguments, or a default value).
+// needsLauncher: a carried stdio server references something only
+// `repose-mcp run` fills right: a reference with a default, or one to
+// anything but a name the machine always sets (environmentName), in the
+// command, an argument or an env value. An agent that fills ${NAME}
+// itself starts the server with the literal text when the secret is
+// missing, and reads its environment only once, at its own start.
 func needsLauncher(s Server) bool {
+	vals := append([]string{str(s, "command")}, strs(s["args"])...)
+	for _, v := range strMap(s["env"]) {
+		vals = append(vals, v)
+	}
+	for _, v := range vals {
+		for _, sub := range refRe.FindAllStringSubmatch(v, -1) {
+			if sub[2] != "" || !environmentName(sub[1]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// agentCannotExpand: Gemini CLI, opencode and pi cannot expand a
+// reference in this stdio server themselves (one in the command or the
+// arguments, or a default value). It was their launcher rule before
+// needsLauncher, and still decides their native render.
+func agentCannotExpand(s Server) bool {
 	if strings.Contains(str(s, "command"), "${") {
 		return true
 	}
@@ -238,7 +341,7 @@ func renderGemini(l logical) (any, string) {
 	s := l.Server
 	switch t := transport(s); t {
 	case "stdio":
-		if needsLauncher(s) {
+		if agentCannotExpand(s) {
 			return launch(l.Name), ""
 		}
 		v := map[string]any{"command": str(s, "command"), "args": anyStrings(strs(s["args"]))}
@@ -266,7 +369,7 @@ func renderPi(l logical) (any, string) {
 	s := l.Server
 	switch transport(s) {
 	case "stdio":
-		if needsLauncher(s) {
+		if agentCannotExpand(s) {
 			return launch(l.Name), ""
 		}
 		v := map[string]any{"command": str(s, "command"), "args": anyStrings(strs(s["args"]))}
@@ -299,7 +402,7 @@ func renderOpencode(l logical) (any, string) {
 	s := l.Server
 	switch transport(s) {
 	case "stdio":
-		if needsLauncher(s) {
+		if agentCannotExpand(s) {
 			return map[string]any{"type": "local", "command": []any{Launcher, "run", l.Name}}, ""
 		}
 		cmd := append([]string{str(s, "command")}, strs(s["args"])...)

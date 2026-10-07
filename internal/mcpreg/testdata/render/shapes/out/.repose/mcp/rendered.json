@@ -5,21 +5,18 @@
       "user": {
         "argref": {
           "args": [
-            "--token",
-            "${DB_TOKEN}"
+            "run",
+            "argref"
           ],
-          "command": "db-mcp"
+          "command": "repose-mcp",
+          "type": "stdio"
         },
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}",
-            "MODE": "fast"
-          },
+          "command": "repose-mcp",
           "type": "stdio"
         },
         "notion": {
@@ -30,11 +27,12 @@
           "url": "https://mcp.notion.com/mcp"
         },
         "withdefault": {
-          "args": [],
-          "command": "tool-mcp",
-          "env": {
-            "REGION": "${REGION:-eu}"
-          }
+          "args": [
+            "run",
+            "withdefault"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
         }
       },
       "projects": {
@@ -112,14 +110,10 @@
         },
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}",
-            "MODE": "fast"
-          }
+          "command": "repose-mcp"
         },
         "localdb": {
           "args": [
@@ -155,14 +149,10 @@
         },
         "linear": {
           "command": [
-            "npx",
-            "-y",
-            "linear-mcp"
+            "repose-mcp",
+            "run",
+            "linear"
           ],
-          "environment": {
-            "LINEAR_TOKEN": "{env:LINEAR_TOKEN}",
-            "MODE": "fast"
-          },
           "type": "local"
         },
         "localdb": {
@@ -200,14 +190,10 @@
         },
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}",
-            "MODE": "fast"
-          }
+          "command": "repose-mcp"
         },
         "localdb": {
           "args": [

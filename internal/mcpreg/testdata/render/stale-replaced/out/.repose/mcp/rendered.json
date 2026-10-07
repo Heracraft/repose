@@ -5,13 +5,10 @@
       "user": {
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp@2"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
-          },
+          "command": "repose-mcp",
           "type": "stdio"
         }
       }
@@ -32,13 +29,10 @@
       "user": {
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp@2"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
-          }
+          "command": "repose-mcp"
         }
       }
     },
@@ -46,13 +40,10 @@
       "user": {
         "linear": {
           "command": [
-            "npx",
-            "-y",
-            "linear-mcp@2"
+            "repose-mcp",
+            "run",
+            "linear"
           ],
-          "environment": {
-            "LINEAR_TOKEN": "{env:LINEAR_TOKEN}"
-          },
           "type": "local"
         }
       }
@@ -61,13 +52,10 @@
       "user": {
         "linear": {
           "args": [
-            "-y",
-            "linear-mcp@2"
+            "run",
+            "linear"
           ],
-          "command": "npx",
-          "env": {
-            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
-          }
+          "command": "repose-mcp"
         }
       }
     }

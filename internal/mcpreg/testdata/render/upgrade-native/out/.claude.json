@@ -1,0 +1,59 @@
+{
+  "projects": {
+    "/home/dev/app": {
+      "mcpServers": {
+        "db": {
+          "args": [
+            "run",
+            "db",
+            "/home/dev/app"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        }
+      }
+    },
+    "/home/dev/lib": {
+      "mcpServers": {
+        "db": {
+          "args": [
+            "run",
+            "db",
+            "/home/dev/lib"
+          ],
+          "command": "repose-mcp",
+          "type": "stdio"
+        }
+      }
+    }
+  },
+  "mcpServers": {
+    "edited": {
+      "args": [],
+      "command": "edited-mcp",
+      "env": {
+        "EDITED_TOKEN": "${EDITED_TOKEN}",
+        "EXTRA": "1"
+      },
+      "type": "stdio"
+    },
+    "linear": {
+      "args": [
+        "run",
+        "linear"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
+    },
+    "plain": {
+      "args": [
+        "--home",
+        "${HOME}"
+      ],
+      "command": "plain-mcp",
+      "env": {
+        "WHERE": "${HOME}/x"
+      }
+    }
+  }
+}

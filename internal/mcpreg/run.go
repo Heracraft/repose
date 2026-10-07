@@ -25,14 +25,21 @@ func MissingSecretsLine(name string, need []string) string {
 	return "repose-mcp: " + name + " needs the secrets " + strings.Join(need, ", ") + "; set each with `repose secrets set NAME` on your laptop, then restart the agent."
 }
 
-// Prepare resolves `repose-mcp run NAME`: the carried stdio server NAME
+// Prepare resolves `repose-mcp run NAME`; PrepareIn with checkout ""
+// does the same.
+func Prepare(p Paths, name string) (path string, argv, env []string, err error) {
+	return PrepareIn(p, name, "")
+}
+
+// PrepareIn resolves `repose-mcp run NAME [CHECKOUT]`: the carried stdio
+// server NAME (checkout's own first, when given)
 // with every ${X} in its command, arguments and env filled from
 // /run/repose/secrets, else the environment. A ${X} without a default that
 // neither holds stops it with exit 1. It returns the program's path,
 // its argv and its environment (the caller's, plus the server's env).
-func Prepare(p Paths, name string) (path string, argv, env []string, err error) {
+func PrepareIn(p Paths, name, checkout string) (path string, argv, env []string, err error) {
 	reg := Load(p)
-	s, ok := reg.LaptopServer(name)
+	s, ok := reg.LaptopServerIn(name, checkout)
 	if !ok {
 		for _, pr := range reg.Problems {
 			if strings.HasPrefix(pr, "~/.repose/mcp/laptop.json") {

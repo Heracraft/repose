@@ -40,7 +40,7 @@ func applyCodex(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *
 		return prev
 	}
 	inline := inlineServers(text)
-	changes, owned := plan(cur, want.User, prev.User, want.Retired)
+	changes, owned := plan(cur, want.User, prev.User, want.replaceable())
 	held := map[string]any{}
 	expect := map[string]any{}
 	for k, v := range cur {

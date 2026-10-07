@@ -299,22 +299,34 @@ Per agent, `sync` writes:
 
 | Agent | File | Platform | Carried stdio | Carried http/sse | Forwarded NAME |
 |---|---|---|---|---|---|
-| claude | `~/.claude.json` `mcpServers`, and `projects[<path>].mcpServers` for project servers | as in `mcp.json` | as carried | as carried | `{"type":"stdio","command":"repose-mcp","args":[NAME]}` |
+| claude | `~/.claude.json` `mcpServers`, and `projects[<path>].mcpServers` for project servers | as in `mcp.json` | as carried; with a secret reference `{"type":"stdio","command":"repose-mcp","args":["run",NAME]}`, and `["run",NAME,PATH]` under `projects[PATH]` | as carried | `{"type":"stdio","command":"repose-mcp","args":[NAME]}` |
 | codex | `~/.codex/config.toml` `[mcp_servers.NAME]` tables | `command`, `args` | `command = "repose-mcp"`, `args = ["run", NAME]`, `startup_timeout_sec = 60` | `url`; `Authorization: Bearer ${X}` as `bearer_token_env_var = "X"`, a header that is all `${X}` in `env_http_headers`, a literal one in `http_headers`; sse, ws, a `${X}` in the URL or inside a longer header are skipped | `command = "repose-mcp"`, `args = [NAME]` |
-| gemini | `~/.gemini/extensions/repose-mcp/gemini-extension.json` | none (its system defaults) | `command`, `args`, `env` as carried | `type`, `url`, `headers` as carried; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
-| opencode | `~/.config/opencode/config.json` `mcp` | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
-| pi | `~/.repose/mcp/agents/pi.json` | none (its extension) | `command`, `args`, `env` as carried | `url`, `headers`; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
+| gemini | `~/.gemini/extensions/repose-mcp/gemini-extension.json` | none (its system defaults) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `type`, `url`, `headers` as carried; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
+| opencode | `~/.config/opencode/config.json` `mcp` | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}`; with a secret reference `{type:"local", command:["repose-mcp", "run", NAME]}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
+| pi | `~/.repose/mcp/agents/pi.json` | none (its extension) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `url`, `headers`; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
 
-A carried stdio server for gemini, opencode or pi whose command or
-arguments hold a `${X}`, or whose env holds a `${X:-default}`, is written
-as Codex's is (`repose-mcp run NAME`), since those agents expand neither.
-A remote server with a `${X:-default}` is skipped for them.
+A secret reference, in a carried stdio server, is a `${X:-default}`, or a
+`${X}` whose X is none of `HOME`, `USER`, `PWD`, `TMPDIR`, `PATH`,
+`SHELL`, `LANG` and `XDG_*`, in its command, an argument or an env value.
+Such a server starts through `repose-mcp run` for every agent: an agent
+that fills `${X}` itself starts it with the literal text when the secret
+is missing, and reads its environment only when it starts. For gemini,
+opencode and pi any `${X}` in the command or arguments also takes the
+launcher, since they expand neither. A carried http, sse or ws server
+with a `${X}` that has no default and that neither `/run/repose/secrets`
+nor sync's environment holds is skipped for every agent, with the reason
+`needs the secret X` (`needs the secrets X, Y`); it is rendered at the
+first sync after the secret is set, which is the next agent start. A
+remote server with a `${X:-default}` is skipped for gemini, opencode and
+pi.
 
 Ownership (I-246's rule): `sync` writes a name only where the file has no
 entry of that name, or has exactly the value in `rendered.json`, the value
 `sync` would write now, or one of `mcp.json`'s `repose_retired` values for
-it; it removes an entry only when its value is one of those and the
-registry no longer has it. Anything else under a name is the user's and
+it, or, for a carried server, the native shape a base before the
+launcher rule above wrote for it (`agentCannotExpand` in
+`internal/mcpreg`); it removes an entry only when its value is one of
+those and the registry no longer has it. Anything else under a name is the user's and
 stays; for Gemini CLI, a server of the same name in the user's own
 `settings.json` also wins in the agent itself. opencode merges a
 `config.json` server into a same-name one in `opencode.json` field by
@@ -342,7 +354,7 @@ nothing is rendered for it.
 | Command | What it does | Exit |
 |---|---|---|
 | `repose-mcp sync [AGENT...]` | the rendering above, for each AGENT (all five when none); warnings on stderr, `repose-mcp: ` first | 0 always |
-| `repose-mcp run NAME` | starts the carried stdio server NAME (the user scope's, else the first checkout's): each `${X}` and `${X:-default}` in its command, arguments and env filled from `/run/repose/secrets/X` (`REPOSE_SECRETS_DIR` moves it, for tests), else the environment; a `${X}` without a default that neither holds (or holds empty) stops it before the start; then execs it with the caller's environment plus the server's env | 127 with `repose-mcp: NAME is not in ~/.repose/mcp/laptop.json`, or when the command is missing; 1 for a remote server, or with ``repose-mcp: NAME needs the secret X; set it with `repose secrets set X` on your laptop, then restart the agent.`` (several: ``the secrets X, Y; set each with `repose secrets set NAME` ``); else the server's |
+| `repose-mcp run NAME [CHECKOUT]` | starts the carried stdio server NAME (CHECKOUT's own, when given and it has one; else the user scope's, else the first checkout's in path order): each `${X}` and `${X:-default}` in its command, arguments and env filled from `/run/repose/secrets/X` (`REPOSE_SECRETS_DIR` moves it, for tests), else the environment; a `${X}` without a default that neither holds (or holds empty) stops it before the start; then execs it with the caller's environment plus the server's env | 127 with `repose-mcp: NAME is not in ~/.repose/mcp/laptop.json`, or when the command is missing; 1 for a remote server, or with ``repose-mcp: NAME needs the secret X; set it with `repose secrets set X` on your laptop, then restart the agent.`` (several: ``the secrets X, Y; set each with `repose secrets set NAME` ``); else the server's |
 | `repose-mcp status --json` | what each agent has, read from the files; starts no server | 0 (a registry file that does not parse is a `problems` line) |
 | `repose-mcp NAME` | the forward's shim for NAME, the stdio server every agent's config starts (`internal/mcpshim`): answers `initialize` and `tools/list` from `forward/NAME.json`; after the agent's `notifications/initialized` connects to `/run/repose/mcp/NAME.sock`, replays the agent's initialize, and passes lines both ways, lines the server sent before the link was up first; while a connect is in progress it holds every request but the list methods and `ping` (answered from the cache) and sends them once the link is up; pings with `$/repose/ping` every 5 s, during a connect's replay as well, and after 20 s with no answer, or a connect that fails, answers each `tools/call` with `isError` and `NAME runs on the user's laptop, which isn't connected. Ask them to run repose mcp forward NAME there.`; reconnects at once after a closed socket and every 5 s after missed pings or a failed connect, and sends `notifications/tools/list_changed` when the tools differ | 0 when the agent closes stdin |
 | `repose-mcp hold NAME...` | the forward's endpoint, the remote command of the laptop's ssh: stdin and stdout carry frames (a type byte, a big-endian uint32 stream id and length, the payload; `H` hello `1`, `O` open NAME, `D` data, `C` close, `R` ready JSON `{"name","tools","new"?,"changed"?,"error"?,"where"?}`, `where` `machine` for an error on the machine's side (the socket, the cache file; absent from an older hold, read as the laptop's server), `G` gone NAME; laptop to hold, `A` keepalive every 10 s, no payload, which an older hold ignores). Each stream is queued without blocking the frame loop, up to 16 MB, and a stream past that is closed. Per NAME: fills `forward/NAME.json` through a stream of its own, syncs the agents `rendered.json` names on a first registration, binds `/run/repose/mcp/NAME.sock` (replacing the file), carries each connection as a stream, at most 8 at once (the ninth gets one `$/repose/busy` line and is closed). Touches `/run/repose/mcp/NAME.alive` at each `A`. Hands NAME over when the socket's inode changes (a newer hold), sending `G`. A connection's first line `{"jsonrpc":"2.0","method":"$/repose/holder"}` is answered with the same line and closed, with no stream: the probe a waiting hold sends. The laptop's end reads output that does not start with `H` as no hold at all | 0 when stdin ends or every NAME has gone; 2 for a name outside the pattern above or a reserved one |
@@ -381,7 +393,9 @@ false`, Gemini CLI's `mcp.excluded`), has the server, in the order of
 that neither `/run/repose/secrets` nor the environment holds (`HOME`,
 `USER`, `PWD`, `TMPDIR`, `PATH`, `SHELL`, `LANG`, `XDG_*` never count);
 `missing` is a stdio command not on `PATH`; `skipped` maps an agent that
-lacks the server to the reason: the renderer's, or a file sync leaves
+lacks the server to the reason: the renderer's (`needs the secret X` for
+a remote server whose secret is missing, which `state` leaves to its
+`needs X`), or a file sync leaves
 alone (`~/.codex/config.toml is a link, which repose does not write`, `...
 holds it in a form repose does not edit`, `~/.config/opencode/config.json
 has comments, which a rewrite would lose`). `problems` (absent when none)

@@ -13275,6 +13275,44 @@ full disk or a kill cannot leave the user's dotfile half written, and
 names a target it cannot write once per target
 (`~/.repose/mcp/codex-link-warned`), not at every Codex start. Evidence:
 the real-binary run recorded in I-553.
+*Amended on the same branch (launcher for every agent):* a carried stdio
+server that references a secret now starts through `repose-mcp run` for
+Claude Code, Gemini CLI, opencode and pi as well as Codex. Running the
+real agents showed why: claude 2.1.283 started a stdio server whose env
+was `PROBE_TOKEN=${MISSING_TOKEN}` with the literal text, and a server
+started that way sends `${MISSING_TOKEN}` to its service as the token;
+`run` refuses that start with one line. The agents also fill `${NAME}`
+from their own environment, fixed when the agent started, so a secret
+set later never reached them; `run` reads `/run/repose/secrets` at each
+server start. The rule: a `${X:-default}`, or a `${X}` whose X is not
+one the machine always sets (`HOME`, `USER`, `PATH`, `XDG_*` and the
+rest of `environmentName`), in the command, an argument or an env value.
+A server without one keeps its own shape; Gemini CLI, opencode and pi
+still take the launcher for any reference in the command or arguments.
+Claude Code's entry is `{"type":"stdio","command":"repose-mcp","args":
+["run",NAME]}`, and a project entry adds its checkout, `run NAME
+CHECKOUT`, since two checkouts may each have a server of that name;
+`run NAME` resolves as before. A carried http, sse or ws server cannot
+go through `run`: while a secret it references without a default is
+missing from `/run/repose/secrets` and the environment, sync leaves it
+out of every agent with the reason `needs the secret X`, since the agent
+would send `Bearer ${X}` to the service. Sync runs at each agent start,
+so the server appears at the first start after the secret is set; the
+registry reads the secrets directory from `Paths` for this. `status`
+shows such a row with no agents and the state `needs X`. A machine an
+earlier base synced holds the native shapes that base wrote; sync
+renders that shape again for each carried server whose entry changed
+(`Rendered.Legacy`, per checkout for Claude Code's projects) and owns it
+by value like a retired platform value, so the entry is replaced even
+without `rendered.json`, while an entry the user edited stays theirs.
+Evidence (claude 2.1.283, opencode 1.18.34, gemini 0.61.0 in a temp
+HOME on kanali, recorded in the commit): `probe` connects through
+`repose-mcp run probe` in all three and the probe logs only `ok`;
+`needy` fails in each without starting, so the probe never saw a
+literal; status shows `needy` as `needs MISSING_TOKEN`. Gemini CLI drops
+`REPOSE_SECRETS_DIR` from a server's environment (its name matches its
+secret filter), which matters only in a harness; a guest uses the
+default `/run/repose/secrets`.
 
 **I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
 with credentials replaced by secret references.** (mcp-carry,

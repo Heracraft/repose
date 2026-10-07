@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "user": {
+        "edited": {
+          "args": [],
+          "command": "edited-mcp",
+          "env": {
+            "EDITED_TOKEN": "${EDITED_TOKEN}"
+          },
+          "type": "stdio"
+        },
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          },
+          "type": "stdio"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "plain": {
+          "args": [
+            "--home",
+            "${HOME}"
+          ],
+          "command": "plain-mcp",
+          "env": {
+            "WHERE": "${HOME}/x"
+          }
+        }
+      },
+      "projects": {
+        "/home/dev/app": {
+          "db": {
+            "command": "pg-mcp",
+            "env": {
+              "DATABASE_URL": "${DB_URL}"
+            },
+            "type": "stdio"
+          }
+        },
+        "/home/dev/lib": {
+          "db": {
+            "command": "pg-mcp",
+            "env": {
+              "DATABASE_URL": "${LIB_DB_URL}"
+            },
+            "type": "stdio"
+          }
+        }
+      }
+    },
+    "codex": {
+      "user": {
+        "db": {
+          "args": [
+            "run",
+            "db"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "edited": {
+          "args": [
+            "run",
+            "edited"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "linear": {
+          "args": [
+            "run",
+            "linear"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        },
+        "notion": {
+          "bearer_token_env_var": "NOTION_TOKEN",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp",
+          "startup_timeout_sec": 60
+        }
+      }
+    },
+    "gemini": {
+      "user": {
+        "db": {
+          "args": [],
+          "command": "pg-mcp",
+          "env": {
+            "DATABASE_URL": "${DB_URL}"
+          }
+        },
+        "edited": {
+          "args": [],
+          "command": "edited-mcp",
+          "env": {
+            "EDITED_TOKEN": "${EDITED_TOKEN}"
+          }
+        },
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          }
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "type": "http",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    },
+    "opencode": {
+      "user": {
+        "db": {
+          "command": [
+            "pg-mcp"
+          ],
+          "environment": {
+            "DATABASE_URL": "{env:DB_URL}"
+          },
+          "type": "local"
+        },
+        "edited": {
+          "command": [
+            "edited-mcp"
+          ],
+          "environment": {
+            "EDITED_TOKEN": "{env:EDITED_TOKEN}"
+          },
+          "type": "local"
+        },
+        "linear": {
+          "command": [
+            "npx",
+            "-y",
+            "linear-mcp"
+          ],
+          "environment": {
+            "LINEAR_TOKEN": "{env:LINEAR_TOKEN}"
+          },
+          "type": "local"
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer {env:NOTION_TOKEN}"
+          },
+          "type": "remote",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "plain": {
+          "command": [
+            "repose-mcp",
+            "run",
+            "plain"
+          ],
+          "type": "local"
+        }
+      }
+    },
+    "pi": {
+      "user": {
+        "db": {
+          "args": [],
+          "command": "pg-mcp",
+          "env": {
+            "DATABASE_URL": "${DB_URL}"
+          }
+        },
+        "edited": {
+          "args": [],
+          "command": "edited-mcp",
+          "env": {
+            "EDITED_TOKEN": "${EDITED_TOKEN}"
+          }
+        },
+        "linear": {
+          "args": [
+            "-y",
+            "linear-mcp"
+          ],
+          "command": "npx",
+          "env": {
+            "LINEAR_TOKEN": "${LINEAR_TOKEN}"
+          }
+        },
+        "notion": {
+          "headers": {
+            "Authorization": "Bearer ${NOTION_TOKEN}"
+          },
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "plain": {
+          "args": [
+            "run",
+            "plain"
+          ],
+          "command": "repose-mcp"
+        }
+      }
+    }
+  }
+}

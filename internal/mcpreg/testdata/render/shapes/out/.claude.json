@@ -2,21 +2,18 @@
   "mcpServers": {
     "argref": {
       "args": [
-        "--token",
-        "${DB_TOKEN}"
+        "run",
+        "argref"
       ],
-      "command": "db-mcp"
+      "command": "repose-mcp",
+      "type": "stdio"
     },
     "linear": {
       "args": [
-        "-y",
-        "linear-mcp"
+        "run",
+        "linear"
       ],
-      "command": "npx",
-      "env": {
-        "LINEAR_TOKEN": "${LINEAR_TOKEN}",
-        "MODE": "fast"
-      },
+      "command": "repose-mcp",
       "type": "stdio"
     },
     "notion": {
@@ -27,11 +24,12 @@
       "url": "https://mcp.notion.com/mcp"
     },
     "withdefault": {
-      "args": [],
-      "command": "tool-mcp",
-      "env": {
-        "REGION": "${REGION:-eu}"
-      }
+      "args": [
+        "run",
+        "withdefault"
+      ],
+      "command": "repose-mcp",
+      "type": "stdio"
     }
   },
   "projects": {

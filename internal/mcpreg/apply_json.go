@@ -77,7 +77,7 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
 		return prev
 	}
-	changes, owned := plan(rawMap(servers), user, prev.User, want.Retired)
+	changes, owned := plan(rawMap(servers), user, prev.User, want.replaceable())
 	rec := &agentRecord{}
 	if len(owned) > 0 {
 		rec.User = owned
@@ -108,7 +108,7 @@ func opencodeCommented(doc *object, user map[string]any, want *Rendered, prev *a
 		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
 		return prev
 	}
-	changes, _ := plan(rawMap(servers), user, prev.User, want.Retired)
+	changes, _ := plan(rawMap(servers), user, prev.User, want.replaceable())
 	rec := &agentRecord{User: prev.User}
 	if len(changes) == 0 {
 		return rec

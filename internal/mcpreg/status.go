@@ -78,6 +78,11 @@ func ReadStatus(p Paths) (*Status, error) {
 				if w, ok := prev.Projects[checkout][name]; ok && equal(v, w) {
 					return FromLaptop
 				}
+				for _, r := range want.ProjectLegacy[checkout][name] {
+					if equal(v, r) {
+						return FromLaptop
+					}
+				}
 				return FromMachine
 			}
 			if w, ok := want.User[name]; ok && equal(v, w) {
@@ -92,6 +97,11 @@ func ReadStatus(p Paths) (*Status, error) {
 			for _, r := range want.Retired[name] {
 				if equal(v, r) {
 					return FromRepose
+				}
+			}
+			for _, r := range want.Legacy[name] {
+				if equal(v, r) {
+					return FromLaptop
 				}
 			}
 			return FromMachine
@@ -162,8 +172,10 @@ func ReadStatus(p Paths) (*Status, error) {
 				parts = append(parts, "laptop not connected")
 			}
 		}
+		needsSkip := ""
 		if len(r.Needs) > 0 {
 			parts = append(parts, "needs "+strings.Join(r.Needs, ", "))
+			needsSkip = NeedsReason(r.Needs)
 		}
 		for _, m := range r.Missing {
 			parts = append(parts, m+" missing")
@@ -188,7 +200,10 @@ func ReadStatus(p Paths) (*Status, error) {
 						r.Skipped = map[string]string{}
 					}
 					r.Skipped[agent] = reason
-					parts = append(parts, agent+": "+reason)
+					if reason != needsSkip {
+						// "needs X" above says it once for every agent.
+						parts = append(parts, agent+": "+reason)
+					}
 				}
 			}
 		}

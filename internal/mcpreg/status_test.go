@@ -215,6 +215,65 @@ func TestPrepare(t *testing.T) {
 	}
 }
 
+// TestPrepareIn: run NAME CHECKOUT starts that checkout's server, so two
+// checkouts' Claude Code entries of one name each start their own.
+func TestPrepareIn(t *testing.T) {
+	home, dir := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(dir, "none.json"), SecretsDir: dir}
+	writeFile(t, filepath.Join(dir, "DB_T"), "s3cret")
+	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,
+	  "user":{"top":{"command":"sh","args":["user"]}},
+	  "projects":{"/home/dev/app":{"db":{"command":"sh","args":["app","${DB_T}"]},"top":{"command":"sh","args":["app"]}},
+	              "/home/dev/lib":{"db":{"command":"sh","args":["lib","${DB_T}"]}}}}`)
+	for _, c := range []struct {
+		name, checkout string
+		argv           []string
+	}{
+		{"db", "", []string{"sh", "app", "s3cret"}},
+		{"db", "/home/dev/app", []string{"sh", "app", "s3cret"}},
+		{"db", "/home/dev/lib", []string{"sh", "lib", "s3cret"}},
+		{"db", "/home/dev/none", []string{"sh", "app", "s3cret"}},
+		{"top", "", []string{"sh", "user"}},
+		{"top", "/home/dev/app", []string{"sh", "app"}},
+		{"top", "/home/dev/lib", []string{"sh", "user"}},
+	} {
+		_, argv, _, err := PrepareIn(p, c.name, c.checkout)
+		if err != nil || !reflect.DeepEqual(argv, c.argv) {
+			t.Errorf("run %s %s: %v %v, want %v", c.name, c.checkout, argv, err, c.argv)
+		}
+	}
+}
+
+// TestRemoteNeedsSecret: a carried remote server whose secret is missing
+// reaches no agent, and status says what it needs once; set, it reaches
+// them at the next sync.
+func TestRemoteNeedsSecret(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
+	writeFile(t, filepath.Join(root, "etc/repose/pi-extension.js"), `pi.registerMcpServer`)
+	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{
+	  "notion":{"type":"http","url":"https://mcp.notion.com/mcp","headers":{"Authorization":"Bearer ${NOTION_T}"}}}}`)
+	os.Unsetenv("NOTION_T")
+	var stderr bytes.Buffer
+	Sync(p, Agents, &stderr)
+	if stderr.Len() != 0 {
+		t.Fatalf("sync: %s", stderr.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".claude.json")); strings.Contains(string(b), "notion") {
+		t.Errorf("claude got notion without its secret:\n%s", b)
+	}
+	st, _ := ReadStatus(p)
+	if len(st.Servers) != 1 || st.Servers[0].State != "needs NOTION_T" || len(st.Servers[0].Agents) != 0 {
+		t.Errorf("status %+v", st.Servers)
+	}
+	writeFile(t, filepath.Join(p.SecretsDir, "NOTION_T"), "x")
+	Sync(p, Agents, &stderr)
+	st, _ = ReadStatus(p)
+	if len(st.Servers) != 1 || st.Servers[0].State != "" || !reflect.DeepEqual(st.Servers[0].Agents, Agents) {
+		t.Errorf("status after the secret %+v", st.Servers)
+	}
+}
+
 func TestReplaceTable(t *testing.T) {
 	in := "a = 1\n\n[mcp_servers.x]\ncommand = \"c\"\n\n[mcp_servers.x.env]\nK = \"v\"\n# about y\n[mcp_servers.y]\ncommand = \"d\"\n"
 	out, ok := replaceTable(in, "x", "")

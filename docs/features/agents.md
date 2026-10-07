@@ -288,19 +288,34 @@ brings it back at the next start; each agent's own off switch (`enabled =
 false` in Codex and opencode, `mcp.excluded` in Gemini CLI, `/mcp` in
 Claude Code) turns it off.
 
-Secrets: Codex hands stdio servers a fixed environment allowlist and
-expands nothing, so its carried stdio servers run as `repose-mcp run
-NAME`, which fills each `${NAME}` from `/run/repose/secrets` and execs the
-real command; a secret set later reaches the next server start without
-restarting Codex. A secret it lacks stops the start with one line naming
-it and `repose secrets set NAME`, since the server would otherwise send
-the literal `${NAME}` to its service as a token. Claude Code, Gemini CLI, opencode (`{env:NAME}`) and pi
-expand references themselves and get the server's own shape, except a
-server with a reference in its command or arguments, or a
-`${NAME:-default}`, which goes through the launcher too. Codex takes
+Secrets: a carried stdio server that references a secret runs as
+`repose-mcp run NAME` in every agent, which fills each `${NAME}` from
+`/run/repose/secrets` at each start and execs the real command; a secret
+set later reaches the next server start, though the agent's own
+environment was fixed when it started. A secret it lacks stops the start
+with one line naming it and `repose secrets set NAME`. An agent that
+filled `${NAME}` itself started the server with the literal text when the
+secret was missing, and the server sent it to its service as the token
+(seen with Claude Code 2.1.283), so no agent fills a carried stdio
+server's secret references itself any more (I-555, amended).
+Codex needs the launcher for every carried stdio server, since it hands
+them a fixed environment allowlist. A stdio server with no reference, or
+only references to `HOME`, `USER`, `PWD`, `TMPDIR`, `PATH`, `SHELL`,
+`LANG` and `XDG_*`, keeps its own shape (for Gemini CLI, opencode and pi
+a reference in the command or arguments still goes through the
+launcher). Claude Code's project entries run `repose-mcp run NAME
+CHECKOUT`, since two checkouts may each have a server of that name.
+A carried HTTP, SSE or WebSocket server cannot go through the launcher:
+while a secret it references is missing, sync leaves it out of every
+agent (skip reason `needs the secret X`), since the agent would send
+`Bearer ${X}` to the service. Sync runs at each agent start, so the
+server appears at the first start after the secret is set. Codex takes
 `Bearer ${NAME}` and whole-value `${NAME}` headers as its
 `bearer_token_env_var` and `env_http_headers`; an SSE server, or a header
-it cannot fill, is skipped for Codex alone.
+it cannot fill, is skipped for Codex alone. A machine an earlier base
+synced holds the native shapes that base wrote; sync knows them as its
+own, whether or not `rendered.json` records them, and replaces them,
+while an entry the user edited stays theirs.
 
 `repose-mcp status --json` reports, per server, where it came from, which
 agents have it and what it lacks; `repose mcp list` shows it (I-558). The

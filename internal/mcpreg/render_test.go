@@ -152,6 +152,29 @@ func TestRenderGolden(t *testing.T) {
 	}
 }
 
+// TestUpgradeReplacesNativeEntries: on a machine an earlier base synced,
+// the native entries it wrote for servers that now start through the
+// launcher are replaced, with rendered.json or without it; the entry the
+// user edited stays theirs. The Gemini CLI extension is repose's whole.
+func TestUpgradeReplacesNativeEntries(t *testing.T) {
+	for _, c := range []string{"upgrade-native", "upgrade-native-no-record"} {
+		out := filepath.Join("testdata", "render", c, "out")
+		for _, f := range []string{".claude.json", ".config/opencode/config.json", ".gemini/extensions/repose-mcp/gemini-extension.json"} {
+			b, err := os.ReadFile(filepath.Join(out, f))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := string(b)
+			if !strings.Contains(f, "gemini") && (!strings.Contains(s, `"EXTRA": "1"`) || !strings.Contains(s, `"edited-mcp"`)) {
+				t.Errorf("%s %s lost the user's edited entry:\n%s", c, f, s)
+			}
+			if strings.Contains(s, "linear-mcp") || strings.Contains(s, "notion") || strings.Contains(s, "${LINEAR_TOKEN}") {
+				t.Errorf("%s %s kept an old native entry:\n%s", c, f, s)
+			}
+		}
+	}
+}
+
 // TestCodexHeldWarnsOncePerChange: a name Codex holds in dotted form warns
 // at the first sync, not at the next, and again when the value repose
 // would write changes.

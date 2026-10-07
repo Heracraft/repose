@@ -511,7 +511,10 @@ in
               guest.succeed(f"sudo -u dev repose-agent-setup {a} 2>/tmp/setup-{a}.err")
               assert guest.succeed(f"cat /tmp/setup-{a}.err") == "", a
           u = json.loads(guest.succeed("cat /home/dev/.claude.json"))
-          assert u["mcpServers"]["probe"] == probe, u["mcpServers"]
+          # A secret reference: Claude Code starts it through the launcher
+          # too, which reads /run/repose/secrets at each start and refuses
+          # when the secret is missing (I-555, amended).
+          assert u["mcpServers"]["probe"] == {"type": "stdio", "command": "repose-mcp", "args": ["run", "probe"]}, u["mcpServers"]
           assert set(u["mcpServers"]) >= {"playwright", "chrome-devtools"}, u
           codex = guest.succeed("cat /home/dev/.codex/config.toml")
           assert '[mcp_servers.probe]\ncommand = "repose-mcp"\nargs = ["run", "probe"]\nstartup_timeout_sec = 60' in codex, codex
@@ -524,8 +527,8 @@ in
           cl = json.loads(guest.succeed("sudo -u dev bash -lc 'codex mcp list --json'"))
           print(cl)
           assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
-          # Claude Code, Gemini CLI and opencode start the server from their
-          # own config while listing it; it connects only with the secret.
+          # Claude Code, Gemini CLI and opencode start the server through
+          # the launcher while listing it; it connects only with the secret.
           for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
               status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
               print(f"{cmd} ({status}):\n{out}")
@@ -583,6 +586,17 @@ in
           lj = json.loads(guest.succeed("cat /home/dev/.repose/mcp/laptop.json"))
           assert set(lj["user"]) == {"probe", "linear"} and lj["user"]["probe"]["env"] == {"PROBE_TOKEN": "''${PROBE_TOKEN}"}, lj
           assert guest.succeed("stat -c %a /home/dev/.repose/mcp/laptop.json").strip() == "600"
+          # linear is remote and its secret is missing: no agent gets it,
+          # since the agent would send the literal reference as its token.
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          assert "linear" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
+          assert "mcp_servers.linear" not in guest.succeed("cat /home/dev/.codex/config.toml")
+          st = json.loads(guest.succeed("sudo -u dev env -u LINEAR_TOKEN repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "linear"]
+          assert row and row[0]["agents"] == [] and row[0]["state"] == "needs LINEAR_TOKEN", st
+          # Set, it arrives at the next agent start.
+          guest.succeed("printf linear-secret > /run/repose/secrets/LINEAR_TOKEN && chown dev:dev /run/repose/secrets/LINEAR_TOKEN && chmod 0400 /run/repose/secrets/LINEAR_TOKEN")
           for a in ["claude", "codex"]:
               guest.succeed(f"sudo -u dev repose-agent-setup {a}")
           status, out = guest.execute("sudo -u dev bash -lc 'cd /home/dev && timeout 120 claude mcp list' 2>&1")
@@ -602,6 +616,7 @@ in
           row = [r for r in st["servers"] if r["name"] == "notes"]
           assert row and row[0]["from"] == "laptop" and row[0]["agents"] == [] and row[0]["state"] == "an Apple app", st
           # Back to no laptop servers for the subtests that follow.
+          guest.succeed("rm /run/repose/secrets/LINEAR_TOKEN")
           write_laptop({"version": 1})
           for a in ["claude", "codex"]:
               guest.succeed(f"sudo -u dev repose-agent-setup {a}")

@@ -69,6 +69,16 @@ func TestCarryMCPFeedsRegistry(t *testing.T) {
 		t.Fatal("registry has no secrets from the carry")
 	}
 
+	// A remote server whose secret the machine lacks reaches no agent: it
+	// would send the literal ${LINEAR_TOKEN} to the service.
+	if cl := reg.Render("claude"); cl.User["linear"] != nil || !slices.Contains(cl.Skipped, mcpreg.Skip{Name: "linear", Reason: "needs the secret LINEAR_TOKEN"}) {
+		t.Errorf("claude linear without its secret: %v, skipped %v", cl.User["linear"], cl.Skipped)
+	}
+	if err := os.WriteFile(filepath.Join(secrets, "LINEAR_TOKEN"), []byte("guest-value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg = mcpreg.Load(p)
+
 	// Render, as sync does for each agent.
 	cl := reg.Render("claude")
 	if h := cl.User["linear"].(map[string]any)["headers"].(map[string]any)["Authorization"]; h != "Bearer ${LINEAR_TOKEN}" {
@@ -76,6 +86,11 @@ func TestCarryMCPFeedsRegistry(t *testing.T) {
 	}
 	if cl.Projects[guestCo]["proj"] == nil {
 		t.Errorf("claude projects = %v", cl.Projects)
+	}
+	// A reference to a secret in a stdio server: the launcher, for Claude
+	// Code too.
+	if gh := cl.User["gh"].(map[string]any); gh["command"] != mcpreg.Launcher || !reflect.DeepEqual(gh["args"], []any{"run", "gh"}) {
+		t.Errorf("claude gh = %v", gh)
 	}
 	cx := reg.Render("codex")
 	if v := cx.User["linear"].(map[string]any)["bearer_token_env_var"]; v != "LINEAR_TOKEN" {

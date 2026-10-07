@@ -16,7 +16,7 @@ import (
 // registry command (DECISIONS I-555, docs/interfaces/guest-conventions.md
 // "MCP registry").
 const mcpUsage = `usage: repose-mcp sync [AGENT...]
-       repose-mcp run NAME
+       repose-mcp run NAME [CHECKOUT]
        repose-mcp status --json
        repose-mcp hold [--wait|--remove] NAME...
        repose-mcp NAME
@@ -24,7 +24,7 @@ const mcpUsage = `usage: repose-mcp sync [AGENT...]
 sync renders ~/.repose/mcp into each AGENT's config (all five by default)
 and always exits 0. run starts the carried stdio server NAME with its
 ${NAME} references filled from the machine's secrets, and refuses when
-one is missing. status prints what each agent has as JSON. hold and NAME
+one is missing; with CHECKOUT, that checkout's server NAME comes first. status prints what each agent has as JSON. hold and NAME
 are the two ends of repose mcp forward: hold serves the laptop's servers on /run/repose/mcp/NAME.sock for
 as long as its stdin lasts, and NAME is the stdio server agents start.
 hold --wait takes NAME only while no other hold serves it (an attach's
@@ -65,7 +65,7 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		mcpreg.Sync(mcpreg.DefaultPaths(home), agents, stderr)
 		return 0
 	case "run":
-		if len(args) != 2 {
+		if len(args) != 2 && len(args) != 3 {
 			fmt.Fprint(stderr, mcpUsage)
 			return 2
 		}
@@ -74,7 +74,11 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "repose-mcp: no home directory")
 			return 1
 		}
-		path, argv, env, err := mcpreg.Prepare(mcpreg.DefaultPaths(home), args[1])
+		checkout := ""
+		if len(args) == 3 {
+			checkout = args[2]
+		}
+		path, argv, env, err := mcpreg.PrepareIn(mcpreg.DefaultPaths(home), args[1], checkout)
 		var le *mcpreg.LaunchError
 		if errors.As(err, &le) {
 			fmt.Fprintln(stderr, le.Msg)

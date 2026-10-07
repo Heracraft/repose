@@ -94,6 +94,9 @@ type Registry struct {
 	Forward  map[string]*Forward
 	// Problems are the files Load left out, one line each.
 	Problems []string
+	// SecretsDir is /run/repose/secrets: a carried remote server whose
+	// secret is missing there and in the environment is left out.
+	SecretsDir string
 }
 
 // Paths are the files the registry reads and writes. Tests point them at a
@@ -151,7 +154,7 @@ const (
 // Problems, and every other source (the platform servers above all) still
 // renders.
 func Load(p Paths) *Registry {
-	r := &Registry{Forward: map[string]*Forward{}}
+	r := &Registry{Forward: map[string]*Forward{}, SecretsDir: p.SecretsDir}
 	problem := func(s string) { r.Problems = append(r.Problems, s) }
 	var plat Platform
 	if err := readJSON(p.Platform, &plat); err != nil {
@@ -274,6 +277,18 @@ func (r *Registry) list(perProject bool) (out []logical, taken []Skip) {
 		}
 	}
 	return out, taken
+}
+
+// LaptopServerIn is the carried server `repose-mcp run NAME CHECKOUT`
+// starts: checkout's own server of that name, which Claude Code's project
+// entry names, else LaptopServer's choice.
+func (r *Registry) LaptopServerIn(name, checkout string) (Server, bool) {
+	if checkout != "" {
+		if s, ok := r.Laptop.Projects[checkout][name]; ok && s != nil {
+			return s, true
+		}
+	}
+	return r.LaptopServer(name)
 }
 
 // LaptopServer is the carried server `repose-mcp run NAME` starts: the user

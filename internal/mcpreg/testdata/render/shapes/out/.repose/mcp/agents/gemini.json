@@ -9,14 +9,10 @@
     },
     "linear": {
       "args": [
-        "-y",
-        "linear-mcp"
+        "run",
+        "linear"
       ],
-      "command": "npx",
-      "env": {
-        "LINEAR_TOKEN": "${LINEAR_TOKEN}",
-        "MODE": "fast"
-      }
+      "command": "repose-mcp"
     },
     "localdb": {
       "args": [

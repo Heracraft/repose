@@ -1,0 +1,4 @@
+{"version":1,
+ "projects":{"/home/dev/app":{"db":{"type":"stdio","command":"pg-mcp","args":["/home/dev/app"],"env":{"DATABASE_URL":"${DB_URL}"}}},
+             "/home/dev/lib":{"db":{"type":"stdio","command":"pg-mcp","args":["/home/dev/lib"],"env":{"DATABASE_URL":"${DB_URL_2}"}}}},
+ "secrets":{"DB_URL":["db"],"DB_URL_2":["db"]}}

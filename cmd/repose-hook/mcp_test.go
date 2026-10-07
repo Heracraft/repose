@@ -82,6 +82,27 @@ func TestRunMCPDispatch(t *testing.T) {
 	if code, out, errs := run("run", "linear"); code != 1 || out != "" || errs != "repose-mcp: linear needs the secret REPOSE_TEST_LINEAR_T; set it with `repose secrets set REPOSE_TEST_LINEAR_T` on your laptop, then restart the agent.\n" {
 		t.Errorf("run without its secret: %d %q %q", code, out, errs)
 	}
+	// run NAME CHECKOUT takes that checkout's server; run NAME the first
+	// checkout's, as before.
+	if err := os.WriteFile(filepath.Join(home, ".repose", "mcp", "laptop.json"), []byte(`{"version":1,"projects":{
+	  "/home/dev/app":{"db":{"command":"sh","env":{"U":"${REPOSE_TEST_APP_T}"}}},
+	  "/home/dev/lib":{"db":{"command":"sh","env":{"U":"${REPOSE_TEST_LIB_T}"}}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Unsetenv("REPOSE_TEST_APP_T")
+	os.Unsetenv("REPOSE_TEST_LIB_T")
+	if code, _, errs := run("run", "db", "/home/dev/lib"); code != 1 || !strings.Contains(errs, "needs the secret REPOSE_TEST_LIB_T;") {
+		t.Errorf("run db lib: %d %q", code, errs)
+	}
+	if code, _, errs := run("run", "db"); code != 1 || !strings.Contains(errs, "needs the secret REPOSE_TEST_APP_T;") {
+		t.Errorf("run db: %d %q", code, errs)
+	}
+	if code, _, errs := run("run", "db", "/home/dev/other"); code != 1 || !strings.Contains(errs, "needs the secret REPOSE_TEST_APP_T;") {
+		t.Errorf("run db in a checkout without it: %d %q", code, errs)
+	}
+	if code, _, _ := run("run", "db", "/home/dev/lib", "extra"); code != 2 {
+		t.Errorf("run with three words: %d", code)
+	}
 	if err := os.WriteFile(filepath.Join(home, ".repose", "mcp", "laptop.json"), []byte(`{"version":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
