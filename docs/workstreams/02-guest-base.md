@@ -222,11 +222,18 @@ in a checkout keeps running after a base change and a host GC (DECISIONS
 I-533). An unchanged glibc costs nothing; a new one costs its closure in
 the upper dir (about 36 MiB for glibc, 9 MiB for openssl).
 
-The guest never runs a whole-store GC: deleting a path the lower layer also
-has leaves a whiteout in the upper dir that hides the host's copy for good.
-`repose-store-gc.timer` instead deletes, weekly, dev's profile generations
-older than 14 days and then the dead paths that exist in the upper dir
-alone (DECISIONS I-529).
+Deleting a path the lower layer also has leaves a whiteout in the upper
+dir that hides the host's copy. guestd roots every path the lower layer
+serves that the guest's database lists, under
+`/nix/var/nix/gcroots/repose-view/`, at every registration and at its
+start, so a whole-store GC (`nix-collect-garbage`, `nix store gc`) deletes
+none of them (DECISIONS I-588); stage 1 removes every whiteout in the
+upper store dir before stage 2, so a start repairs what a deletion that
+ignored the roots did (I-587); and `Switch` to a closure a whiteout hides
+fails saying so (I-589). The base still schedules no whole-store GC:
+`repose-store-gc.timer` deletes, weekly, dev's profile generations older
+than 14 days and then the dead paths that exist in the upper dir alone
+(DECISIONS I-529).
 
 ### Why the fragment is home-manager, and where it lands
 

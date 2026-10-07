@@ -25,8 +25,8 @@ the client side of docs/interfaces/vsock-guestd.md, for the NixOS VM test and
 for an operator on a guest that has lost hostd (ops/RUNBOOK.md, "Guest
 unresponsive").
 
-Requests: ping, freeze, thaw, switch, grow-fs, write-secrets, set-principals,
-          setup-project, sample, exec, shutdown
+Requests: ping, freeze, thaw, switch, register-paths, grow-fs, write-secrets,
+          set-principals, setup-project, sample, exec, shutdown
 
 Examples:
   guestd call ping
@@ -58,6 +58,13 @@ var builders = map[string]func(string) (*guestdv1.Request, error){
 			return nil, err
 		}
 		return &guestdv1.Request{Req: &guestdv1.Request_Switch{Switch: m}}, nil
+	},
+	"register-paths": func(body string) (*guestdv1.Request, error) {
+		m := &guestdv1.RegisterPaths{}
+		if err := unmarshal(body, m); err != nil {
+			return nil, err
+		}
+		return &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: m}}, nil
 	},
 	"write-secrets": func(body string) (*guestdv1.Request, error) {
 		m := &guestdv1.WriteSecrets{}

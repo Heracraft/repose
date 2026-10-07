@@ -127,6 +127,12 @@ func (p Paths) SystemProfile() string {
 	return p.join("nix", "var", "nix", "profiles", "system")
 }
 
+// ViewRoots is /nix/var/nix/gcroots/repose-view: one GC root per store
+// path the host shares into this guest's store (the overlay's lower
+// layer), so no nix garbage collection inside the guest deletes one and
+// leaves a whiteout that hides it (DECISIONS I-588).
+func (p Paths) ViewRoots() string { return p.join("nix", "var", "nix", "gcroots", "repose-view") }
+
 // NixStore is the read-only virtio-fs share.
 func (p Paths) NixStore() string { return p.join("nix", "store") }
 

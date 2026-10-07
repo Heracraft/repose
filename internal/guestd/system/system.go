@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
@@ -35,6 +36,9 @@ type Handler struct {
 	// reboot is the command used to reboot after a forced boot-activation.
 	// Named so the unit test can observe it without rebooting the test host.
 	rebootArgv []string
+	// viewMu serialises the store view's roots (view.go): guestd's start
+	// and a registration may both update them.
+	viewMu sync.Mutex
 }
 
 // New builds the handler.
@@ -55,6 +59,9 @@ func New(p sysdep.Paths, run sysdep.Runner, timeout time.Duration, log *slog.Log
 // when the kernel or initrd differ and force is false, because rebooting a
 // guest under the user's nose loses the agent that was running in it.
 func (h *Handler) Switch(ctx context.Context, closure string, force bool, registration []byte) (*guestdv1.SwitchResult, error) {
+	if err := h.checkHidden(closure, registration); err != nil {
+		return nil, err
+	}
 	real, err := h.resolveClosure(closure)
 	if err != nil {
 		return nil, err
@@ -208,11 +215,56 @@ func resolve(path string) (string, error) {
 // this runs; `nix-env --set`, home-manager's activation and any user
 // `nix` command that touches them fail without it (DECISIONS I-67).
 // Loading is idempotent: a listing that is already registered changes
-// nothing.
+// nothing. Then every path the shared store serves is rooted (I-588).
 func (h *Handler) RegisterPaths(ctx context.Context, registration []byte) error {
+	h.viewMu.Lock()
+	defer h.viewMu.Unlock()
+	v, overlay := h.readView()
+	// What the database says of the listed paths and of the ones the
+	// shared store serves, asked once for both: the skip below needs the
+	// first, the roots the second.
+	var invalid, known map[string]bool
+	if overlay {
+		ask := registeredPaths(registration)
+		if names, err := v.lowerNames(); err == nil {
+			listed := map[string]bool{}
+			for _, p := range ask {
+				listed[p] = true
+			}
+			for name := range names {
+				if p := storeDir + "/" + name; !listed[p] {
+					ask = append(ask, p)
+				}
+			}
+		}
+		if got, err := h.invalidPaths(ctx, ask); err == nil {
+			invalid, known = got, map[string]bool{}
+			for _, p := range ask {
+				known[p] = true
+			}
+		}
+	}
+
+	if err := h.loadRegistration(ctx, registration, overlay, invalid, known); err != nil {
+		return err
+	}
+	if overlay {
+		if invalid != nil {
+			// The load made the listed paths valid.
+			for _, p := range registeredPaths(registration) {
+				delete(invalid, p)
+			}
+		}
+		h.syncView(ctx, v, invalid, known)
+	}
+	return nil
+}
+
+// loadRegistration is RegisterPaths' load and stamp.
+func (h *Handler) loadRegistration(ctx context.Context, registration []byte, overlay bool, invalid, known map[string]bool) error {
 	sum := sha256.Sum256(registration)
 	hash := hex.EncodeToString(sum[:])
-	if b, err := os.ReadFile(h.paths.PathsLoaded()); err == nil && strings.TrimSpace(string(b)) == hash {
+	if b, err := os.ReadFile(h.paths.PathsLoaded()); err == nil && strings.TrimSpace(string(b)) == hash && !h.lostRegistration(registration, overlay, invalid, known) {
 		if _, err := os.Stat(h.paths.NixDB()); err == nil {
 			// The same registration was loaded on an earlier boot of this
 			// volume and the database is there: the load would change
@@ -246,6 +298,24 @@ func (h *Handler) RegisterPaths(ctx context.Context, registration []byte) error 
 	}
 	h.log.Info("store paths registered", "event", "register_paths", "bytes", len(registration))
 	return nil
+}
+
+// lostRegistration reports whether a path this listing registers is no
+// longer valid in the database although it was loaded before: a garbage
+// collection inside the guest deleted it (the files are back once a start
+// removed its whiteout, I-587). The listing is then loaded again rather
+// than skipped (I-588). Without an overlay or an answer from nix it
+// reports false, the I-225 behaviour.
+func (h *Handler) lostRegistration(registration []byte, overlay bool, invalid, known map[string]bool) bool {
+	if !overlay || invalid == nil {
+		return false
+	}
+	for _, p := range registeredPaths(registration) {
+		if known[p] && invalid[p] {
+			return true
+		}
+	}
+	return false
 }
 
 // setProfile points /nix/var/nix/profiles/system at the new closure.

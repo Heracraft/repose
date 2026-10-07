@@ -15901,3 +15901,89 @@ Docs and fits at 390/360"; routes.spec.ts "/account redirects
 permanently to /settings"; settings-account.spec.ts "settings carries the
 account section first and no heading twice"; machine-nix.spec.ts follows
 the Config page's link to `/settings#machine-nix`.
+
+**I-587. A start removes the whiteouts in the store overlay's upper dir
+before stage 2.** (store-whiteouts, 2026-10-07; amends I-529) kanali
+(2026-10-06) would not boot: a whole-store GC inside it had deleted
+paths the lower layer (the host's view, I-463) also served, and
+overlayfs wrote 3,621 whiteouts (0:0 character devices) into
+`/nix/.rw-store/store`, one over the system it then booted, so stage 1
+said "stage 2 init script ... not found". The snapshot carries the
+upper dir, so a restore reproduced it; it was repaired by hand with
+debugfs. The scripted initrd (I-231) now runs, in
+`boot.initrd.postMountCommands`, a pass over the upper store dir's top
+level: it lists the character devices whose device number is 0:0, and
+only when there is one unmounts `/mnt-root/nix/store`, removes them,
+and mounts it again from the line stage 1 wrote to its fstab (overlayfs
+leaves a change to a mounted layer undefined). Every top-level whiteout
+goes, not only those over a lower path: one over a path the view does
+not serve today hides nothing, but would hide it the first time a later
+start or switch shares that path again, and a switch error that says
+"a restart repairs it" would then be false. Nothing else is touched;
+a healthy guest pays a `find -maxdepth 1 -type c` and no remount. The
+console and the kernel log (so `dmesg` and the journal) get one line,
+`repose: store overlay: N whiteouts removed, M of them over shared store
+paths`. The upper root's
+`trusted.overlay.opaque` needs nothing: overlayfs never reads it on a
+mount's root ("root is always merge", `ovl_get_root`; on kanali's 6.18 kernel an upper dir with it set still showed the lower file), and only a write
+straight into the upper dir could set it. With no overlay on
+`/mnt-root/nix/store` the pass does nothing. nixpkgs deprecates the
+scripted initrd for removal in 26.11, so the base asserts it is in use:
+a move to systemd's initrd fails evaluation until the repair is ported. A whiteout inside a store
+path's directory is not looked at: nix deletes whole paths, and the
+directory's own whiteout replaces it. VM test `guest-store-whiteouts`.
+
+**I-588. guestd roots every store path the host shares into the guest,
+so no nix garbage collection inside it deletes one.** (store-whiteouts,
+2026-10-07; amends I-529 and I-225) I-529 kept the guest's own GC to
+upper-only paths, but `nix-collect-garbage`, `nix store gc` and
+`nix-store --gc` stayed one command away for an agent freeing disk, and
+nothing stopped them. guestd now keeps `/nix/var/nix/gcroots/repose-view/`
+with one symlink per store path in the overlay's lower dirs (read from
+`/proc/mounts`, as `repose-pin-profile` does) that the guest's database
+lists as valid (one `nix-store --check-validity --print-invalid` per 2,000
+paths): exactly the paths whose deletion would write a whiteout. Rooting
+each served path, rather than the top-level closures hostd registers,
+covers the closures registered on earlier boots of the volume (I-463's
+past closures and `rev-*` roots), which hostd does not send again, and
+guests from before this change. The set is brought up to date at every
+`RegisterPaths` (each start, and each in-place switch through
+`Switch`'s registration) and when guestd starts (a guestd an in-place
+switch installed runs before any registration); new roots go in before
+stale ones go out, each renamed into place, under one lock. A failure is
+logged (`view_roots`, counts only) and fails nothing: the start's repair
+(I-587) still undoes what a GC did. A path the database does not list
+cannot be rooted (nix skips such a root) and a whole-store GC deletes
+unlisted store entries; in production that is a kept revision this
+volume never ran, which nothing in the guest uses, and the next start
+removes its whiteout. Registering the whole view would close that too,
+but one closure's `--dump-db` is already about 0.5 MB of the vsock
+protocol's 1 MiB frame (1,128 paths on kanali). `RegisterPaths` also
+stops skipping a registration it loaded before (I-225) when a path it
+lists is no longer valid: a GC that deleted the booted system left it
+invalid in the database after the start brought its files back. A
+rooted path is refused by `nix-store --delete` ("still alive");
+`repose-store-gc` (I-529) is unchanged and still deletes upper-only dead
+paths. `guestd call register-paths` is added for the VM test and
+operators. Docs: machine.md "Memory and disk", the agent guide. Unit
+tests `TestRegisterPathsRootsEverySharedPath`,
+`TestRegisterPathsReloadsARegistrationTheDatabaseLost`,
+`TestViewRootsWhenValidityIsUnknown`, `TestViewRootsWithoutAnOverlay`;
+VM test `guest-store-whiteouts` runs `nix-collect-garbage -d` and checks
+no listed shared path gained a whiteout.
+
+**I-589. A switch to a closure a whiteout hides fails saying so.**
+(store-whiteouts, 2026-10-07) kanali's nightly ApplyConfig failed with
+guestd's `not_found: ... is not in the store share`, which names the
+host's GC, and hostd reported `internal`. Before anything else, `Switch`
+now checks the closure and every path its registration lists against
+the upper dir; a 0:0 character device over any of them fails it with
+`not_found` and "switch: N of the store paths <closure> needs are hidden
+in this machine's store, <path> first: a nix garbage collection inside
+the machine deleted them. Restart the machine; a start repairs its
+store" (I-587). guestd keeps to hostd's error codes (sysdep), and hostd
+already passes the message through in `switch failed: not_found: ...`;
+how the api and CLI word that is the lifecycle-errors work's. The
+whiteouts cannot be removed while the overlay is mounted, so the guest
+does not repair them itself. Troubleshooting has the message. Unit test
+`TestSwitchRefusesAClosureAWhiteoutHides`.

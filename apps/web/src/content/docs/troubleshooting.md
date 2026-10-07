@@ -81,6 +81,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **A secret isn't in a program's environment.** Programs read their environment when they start. Open a new tmux window, or restart the program or agent.
 
+**`hidden in this machine's store`.** A nix garbage collection run on the machine on an older base deleted store paths repose shares with it, and the configuration needs them. `repose stop todo-app`, then `repose start todo-app`: the start puts them back and boots the newest configuration.
+
 **`config error` or exit code 10.** The build failed and nothing changed. The message names the problem; `repose logs --kind build` has the full log. Fix it with `repose config edit` or `repose config remove`.
 
 ## Agents

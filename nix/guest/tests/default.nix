@@ -2584,4 +2584,107 @@ in
           assert "hasCompletedOnboarding" not in guest.succeed("cat /home/dev/.claude.json")
     '';
   };
+  # The store overlay's whiteouts (DECISIONS I-587, I-588): a deletion of a
+  # path the host shares leaves a whiteout that a start removes, the booted
+  # system's included (kanali, 2026-10-06: "stage 2 init script not
+  # found"); guestd roots every shared path the database lists, so a
+  # whole-store GC deletes none of them and repose-store-gc (I-529) still
+  # reclaims the overlay's own paths. The test VM's lower layer is the
+  # build's whole store, most of it unknown to the VM's database: a GC
+  # deletes those (they are not this guest's), and the next start brings
+  # them back.
+  guest-store-whiteouts = mkTest "guest-store-whiteouts" {
+    nodes.guest = { ... }: {
+      imports = [ node ];
+      # The upper dir on the disk, as on a real guest's volume, so the
+      # whiteouts outlive a restart.
+      virtualisation.writableStoreUseTmpfs = false;
+    };
+    testScript = ''
+      import os
+      import base64
+      def repaired(line):
+          # Stage 1 writes it to the console and the kernel log.
+          out = guest.succeed("dmesg | grep 'repose: store overlay' || true")
+          assert line in out, out
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      repaired("repose: store overlay: 0 whiteouts removed")
+      upper = guest.succeed("awk '$2 == \"/nix/store\" { print $4 }' /proc/mounts | tr , '\\n' | grep '^upperdir=' | cut -d= -f2").strip()
+      upper = upper.splitlines()[0].removeprefix("/mnt-root")
+      system = guest.succeed("readlink -f /run/current-system").strip()
+      sysname = os.path.basename(system)
+      probe = "${gcLowerProbe}"
+      pname = os.path.basename(probe)
+      fake = "00000000000000000000000000000000-never-shared"
+      chardev = "11111111111111111111111111111111-not-a-whiteout"
+      coreutils = "${pkgs.coreutils}/bin"
+
+      with subtest("I-587: a start removes the whiteouts a deletion left, the booted system's included"):
+          guest.succeed(f"test -e /nix/.ro-store/{sysname} && test -e /nix/.ro-store/{pname}")
+          # What kanali's GC did: nix deletes a path the host shares; overlayfs
+          # can only hide it.
+          guest.succeed(f"nix-store --delete --ignore-liveness {probe}")
+          guest.succeed(f"test -c {upper}/{pname}")
+          guest.fail(f"test -e {probe}")
+          # A whiteout over a name nothing shares, a character device that is
+          # no whiteout and a path of the overlay's own: the first goes, the
+          # others stay.
+          guest.succeed(f"mknod {upper}/{fake} c 0 0 && mknod {upper}/{chardev} c 1 3")
+          own = guest.succeed("echo only in the overlay > /tmp/own && nix-store --add /tmp/own").strip()
+          # Last, the running system itself; nothing in it runs after this.
+          guest.succeed(f"nix-store --delete --ignore-liveness {system} && {coreutils}/test -c {upper}/{sysname} && {coreutils}/sync")
+          guest.crash()
+          guest.start()
+          guest.wait_for_unit("multi-user.target")
+          repaired("repose: store overlay: 3 whiteouts removed, 2 of them over shared store paths")
+          guest.succeed(f"test -x {system}/init && test -f {probe}")
+          for name in [sysname, pname, fake]:
+              guest.fail(f"test -c {upper}/{name}")
+          guest.succeed(f"test -c {upper}/{chardev} && test -f {own}")
+          guest.succeed(f"rm {upper}/{chardev}")
+
+      with subtest("I-588: guestd roots every shared path; a whole-store GC deletes none"):
+          guest.succeed("systemd-run --unit repose-guestd-real ${guestd}/bin/guestd --dev-socket /run/repose/guestd-real.sock --hook-socket /run/repose/hooks-real.sock")
+          guest.wait_until_succeeds("journalctl -u repose-guestd-real -o cat | grep -q '\"event\":\"view_roots\"'")
+          print(guest.succeed("journalctl -u repose-guestd-real -o cat | grep view_roots"))
+          roots = "/nix/var/nix/gcroots/repose-view"
+          assert guest.succeed(f"readlink {roots}/{sysname}").strip() == system
+          assert guest.succeed(f"readlink {roots}/{pname}").strip() == probe
+          # A registration, as hostd sends at a start or switch, syncs them too.
+          reg = guest.succeed(f"nix-store --dump-db {probe}")
+          body = '{"registration":"' + base64.b64encode(reg.encode()).decode() + '"}'
+          guest.succeed(f"${guestd}/bin/guestd call register-paths '{body}' --dev-socket /run/repose/guestd-real.sock")
+          guest.succeed(f"test -L {roots}/{pname}")
+          # A rooted path is never deleted by name.
+          guest.fail(f"nix-store --delete {probe}")
+          guest.succeed(f"test -f {probe}")
+          # I-529: the overlay's own dead paths still go.
+          guest.succeed("systemctl start repose-store-gc.service")
+          guest.fail(f"test -e {own}")
+          # The shared paths the database lists, before a whole-store GC.
+          guest.succeed("ls /nix/.ro-store | grep -E '^[0-9a-z]{32}-' | sed 's|^|/nix/store/|' | sort > /tmp/shared")
+          guest.succeed("xargs -a /tmp/shared nix-store --check-validity --print-invalid | sort > /tmp/invalid")
+          guest.succeed("comm -23 /tmp/shared /tmp/invalid > /tmp/valid")
+          print(guest.succeed("wc -l /tmp/shared /tmp/invalid /tmp/valid"))
+          guest.succeed("nix-collect-garbage -d")
+          guest.succeed(f"find {upper} -mindepth 1 -maxdepth 1 -type c -printf '/nix/store/%f\\n' | sort > /tmp/whiteouts")
+          hidden = guest.succeed("comm -12 /tmp/whiteouts /tmp/valid").strip()
+          assert hidden == "", f"a whole-store GC hid shared paths the database lists: {hidden}"
+          guest.succeed(f"test -x {system}/init && test -f {probe}")
+          n = int(guest.succeed("wc -l < /tmp/whiteouts").strip())
+          print(f"whiteouts over paths the database never listed: {n}")
+
+      with subtest("the next start removes those too and boots"):
+          guest.shutdown()
+          guest.start()
+          guest.wait_for_unit("multi-user.target")
+          if n > 0:
+              repaired(f"repose: store overlay: {n} whiteouts removed, {n} of them over shared store paths")
+          else:
+              repaired("repose: store overlay: 0 whiteouts removed")
+          guest.succeed(f"test -z \"$(find {upper} -mindepth 1 -maxdepth 1 -type c)\"")
+    '';
+  };
 }

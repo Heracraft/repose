@@ -96,6 +96,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
 | `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
+| `/nix/var/nix/gcroots/repose-view/` | guestd: one root per store path the lower layer (`/nix/.ro-store`) serves and the guest's database lists, named by its basename; updated at every `RegisterPaths` and at guestd's start (DECISIONS I-588) |
+| stage 1 | removes every whiteout (0:0 character device) at the top of the overlay's upper store dir before stage 2 and prints `repose: store overlay: N whiteouts removed, M of them over shared store paths` on the console and in the kernel log (DECISIONS I-587) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
 | `/var/log/repose/console.log` | not used; console goes to the serial device and hostd captures it |
 

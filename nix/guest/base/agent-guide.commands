@@ -15,6 +15,7 @@ go
 grep
 jq
 nix
+nix-collect-garbage
 npm
 npx
 opencode
