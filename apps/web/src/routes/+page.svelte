@@ -113,7 +113,7 @@
 		{
 			name: 'Solo',
 			price: '$20',
-			then: 'For 3 months, then $29 and 250 GB egress',
+			then: 'First 3 months for new subscribers, then $29 and 250 GB egress',
 			memory: 8,
 			disk: '100 GB',
 			egress: '100 GB'

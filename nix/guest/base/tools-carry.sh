@@ -320,7 +320,6 @@ ruby_bundler() {
     return 0
   fi
   bv=$(bash -lc 'bundle -v' 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
-  printf '%s\n' "$bv" > "$state/bundler"
   logline "ruby: bundler ${bv:-?} in GEM_HOME"
 }
 

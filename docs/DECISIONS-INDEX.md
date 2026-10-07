@@ -556,58 +556,58 @@ pointer, not a summary.
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13066
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13093
 - **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; L13114
-- **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13184
-- **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13195
-- **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13219
-- **I-522** A carried cargo tool gets rustup a default toolchain first — 2026-10-05; L13241
-- **I-523** Python packages go in a venv; pipx gets the nix-ld python3; Tk comes with a uv Python — 2026-10-05; L13258
-- **I-524** A carried Ruby with RubyGems 3.7 gets Bundler 2.7 — 2026-10-05; L13274
-- **I-512** The base ships terminfo for Ghostty's and kitty's own TERM — 2026-10-05; L13293
-- **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13313
-- **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L13341
-- **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L13378
-- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13414
-- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13433
-- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13454
-- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13471
-- **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L13489
-- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13514
-- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; L13531
-- **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L13569
-- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13603
-- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L13619
-- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; L13649
-- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L13668
-- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L13683
-- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13694
-- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; L13713
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; L13748
-- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13770
-- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L13781
-- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13797
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13845
-- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L13912
-- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13969
-- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13988
-- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14024
-- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L14051
-- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14116
-- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14129
-- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14143
-- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14162
-- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14188
-- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14201
-- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14221
-- **I-530** dev is a trusted nix user — 2026-10-06; L14260
-- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14274
-- **I-532** The guest has no nix channels — 2026-10-06; L14295
-- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14306
-- **I-534** The guest has man pages — 2026-10-06; L14342
-- **I-550** A guest's hostname is its project's slug — 2026-10-06; L14357
-- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L14378
-- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L14409
-- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L14436
-- **I-539** dev may ptrace its own processes — 2026-10-05; L14452
-- **I-540** The browser has CJK fonts — 2026-10-05; L14461
-- **I-541** `BROWSER` prints the URL — 2026-10-05; L14479
-- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14488
+- **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13185
+- **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13196
+- **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13220
+- **I-522** A carried cargo tool gets rustup a default toolchain first — 2026-10-05; L13242
+- **I-523** Python packages go in a venv; pipx gets the nix-ld python3; Tk comes with a uv Python — 2026-10-05; L13259
+- **I-524** A carried Ruby with RubyGems 3.7 gets Bundler 2.7 — 2026-10-05; L13275
+- **I-512** The base ships terminfo for Ghostty's and kitty's own TERM — 2026-10-05; L13295
+- **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13315
+- **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L13343
+- **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L13380
+- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; L13416
+- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L13435
+- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L13456
+- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L13474
+- **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L13492
+- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L13517
+- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; L13534
+- **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L13572
+- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L13606
+- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L13622
+- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; L13652
+- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L13671
+- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L13686
+- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L13697
+- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; L13716
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; L13751
+- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L13773
+- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L13784
+- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L13800
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L13848
+- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L13915
+- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L13972
+- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L13991
+- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14027
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L14054
+- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14119
+- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14132
+- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14146
+- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14165
+- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14191
+- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14204
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14228
+- **I-530** dev is a trusted nix user — 2026-10-06; L14267
+- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14281
+- **I-532** The guest has no nix channels — 2026-10-06; L14302
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14313
+- **I-534** The guest has man pages — 2026-10-06; L14349
+- **I-550** A guest's hostname is its project's slug — 2026-10-06; L14364
+- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L14385
+- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L14416
+- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L14443
+- **I-539** dev may ptrace its own processes — 2026-10-05; L14459
+- **I-540** The browser has CJK fonts — 2026-10-05; L14468
+- **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
+- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495

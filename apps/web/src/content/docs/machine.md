@@ -5,7 +5,7 @@ section: Using repose
 order: 12
 ---
 
-Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. You log in as `dev`, which has passwordless `sudo`. Your checkout is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot. See [Where the checkout is](/docs/sync#where-the-checkout-is).
+Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. Your checkout is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot. See [Where the checkout is](/docs/sync#where-the-checkout-is).
 
 | Size    | vCPU | Memory | Disk  |
 | ------- | ---- | ------ | ----- |
@@ -26,7 +26,9 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 `host.docker.internal` isn't defined. To reach a server on the machine from a container, add `extra_hosts: ["host.docker.internal:host-gateway"]` (or `--add-host host.docker.internal:host-gateway`), and have that server listen on `0.0.0.0`; one listening only on localhost refuses the connection.
 
-Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers.
+gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --pinentry-mode loopback --passphrase-fd 0`.
+
+Programs downloaded for other Linux systems run as they would on Ubuntu: Prisma's engines, Playwright's own browsers, numpy and other Python wheels, esbuild, Biome, and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
 
 Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip), and Python command-line tools install with `uv tool install`; there is no system-wide pip. The system `python3` has no Tk: for tkinter, turtle or matplotlib's TkAgg, use a Python from uv (`uv python install 3.12` or `uv venv --managed-python`).
 
@@ -50,7 +52,8 @@ Type a command the machine doesn't have and it tells you which package has it an
 $ air
 air: command not found
   nix profile add nixpkgs#air  install it on this machine
-  repose config add air        keep it on every rebuild (run this on your laptop)
+  repose config add air        keep it on every rebuild
+                               (run this on your laptop)
 Other packages with air: air-formatter
 ```
 
@@ -87,7 +90,7 @@ The first load builds the dev shell. A few packages from a nixpkgs the machine h
 
 A flake input that names `nixpkgs` without a URL (`outputs = { self, nixpkgs }`, or `inputs.nixpkgs.url = "nixpkgs"`) locks to the machine's own nixpkgs revision, as a `github:` URL that works on your laptop too.
 
-A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`. `cachix use NAME` works too.
+A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`. `nix run nixpkgs#cachix -- use NAME` works too.
 
 Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine. To install software for every shell on the machine, or to run a database, use [repose config](/docs/config).
 
@@ -112,7 +115,7 @@ The machine has no cron. A systemd timer runs a job on a schedule, with nobody a
 # ~/.config/systemd/user/backup.service
 [Service]
 Type=oneshot
-ExecStart=/run/current-system/sw/bin/bash -lc 'cd ~/myapp && ./scripts/backup.sh'
+ExecStart=/bin/bash -lc 'cd ~/myapp && ./scripts/backup.sh'
 ```
 
 ```ini
@@ -128,7 +131,8 @@ WantedBy=timers.target
 Then turn it on:
 
 ```
-systemctl --user daemon-reload && systemctl --user enable --now backup.timer
+systemctl --user daemon-reload
+systemctl --user enable --now backup.timer
 ```
 
 The job runs with the same `PATH`, secrets and variables as a login shell. `Persistent=true` runs a job missed while the machine was stopped when it next starts. `systemctl --user list-timers` shows when each runs next, and `journalctl --user -u backup` shows its output.
@@ -207,7 +211,7 @@ The machine can reach the internet over TCP and UDP. Nothing on the internet can
 
 When a machine runs out of memory, something is killed. Your agents and the tmux or herdr server are kept to the last, so a runaway test or dev server goes first. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
 
-Once a week the machine deletes nix store paths nothing uses any more, and old generations of your nix profile (older than 14 days); `sudo systemctl start repose-store-gc` does it now.
+Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now.
 
 Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 

@@ -13166,8 +13166,9 @@ $20, "For 3 months, then $29 and 250 GB egress" and 100 GB of egress to
 an eligible account; a trial reads
 "Trial. First charge of $20 on DATE; $29 a month from DATE." and an
 active subscription inside the three months "Active. Renews DATE at $20;
-$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with the same
-line, and the user docs' pricing page carries the sentence under the
+$29 a month from DATE." The landing's Solo card shows $20 and 100 GB of egress with "First 3
+months for new subscribers, then $29 and 250 GB egress", since everyone
+sees it, a returning account too; and the user docs' pricing page carries the sentence under the
 table. The fake api models it, with `intro_used` to make a returning
 account.
 *Not checked here.* Against Paddle's sandbox: that a transaction with a
@@ -13281,8 +13282,9 @@ After the tools carry makes a pinned Ruby the default, or finds one an
 earlier pass pinned already the default, it installs `bundler '~> 2.7'`
 into `GEM_HOME` with `--env-shebang` when that Ruby's RubyGems is 3.7 or
 newer and the `bundle` it runs is older than 2.7 (ruby_4_0, with RubyGems
-3.7.2 and Bundler 4.0.20, gets nothing), records the version in
-`~/.repose/tools/bundler`, and on failure says so once and goes on. A
+3.7.2 and Bundler 4.0.20, gets nothing), logs the version, and on
+failure says so once and goes on. Nothing is recorded: the next pass
+reads `bundle -v` again, so it installs nothing twice. A
 `Gemfile.lock` with `BUNDLED WITH` 2.6 still switches to the old Bundler;
 `bundle update --bundler` moves it. No VM assertion: the test VM has no
 bundler gem offline. Checked on kanali against nixpkgs's ruby_3_4 (2.7.2
@@ -13465,8 +13467,9 @@ variables), `NAME.timer` with `OnCalendar=daily`, `Persistent=true`
 (a run missed while the machine was stopped happens at the next start)
 and `WantedBy=timers.target`, enabled with `systemctl --user
 daemon-reload && systemctl --user enable --now NAME.timer`. machine.md
-"Scheduled jobs" and the agent guide say so. *Rejected:* installing
-cronie, a second scheduler beside systemd's with its own environment.
+"Scheduled jobs" and the agent guide say so. With I-521's link in
+place, both write `ExecStart=/bin/bash -lc 'CMD'`, the same bash.
+*Rejected:* installing cronie, a second scheduler beside systemd's with its own environment.
 
 **I-519. home.shellAliases from machine.nix or repose.nix reach every shell.**
 (base-shell-terminal, 2026-10-05; amends I-488 and I-490) `/docs/config`
@@ -14215,7 +14218,11 @@ draws in the pane. A user's own
 does not use once the file names another. Agents have no terminal; the
 machine guide tells them to pass `--batch --pinentry-mode loopback
 --passphrase-fd`, which needs no pinentry (`allow-loopback-pinentry` is
-gpg-agent's default since 2.1.12). *Rejected:* `programs.gnupg.agent`,
+gpg-agent's default since 2.1.12). A gpg-agent already running at a
+base switch read its config before the file existed, so dev's user
+activation runs `gpgconf --reload gpg-agent` when the agent's socket
+exists, bounded at 10 s and never failing the activation; no agent is
+started for it. *Rejected:* `programs.gnupg.agent`,
 which adds socket-activated user units for one config line.
 
 **I-529. The guest deletes, weekly, the unused store paths only its

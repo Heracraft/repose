@@ -49,6 +49,16 @@ in
   system.userActivationScripts.repose-gh-helper-cleanup.text = ''
     ${ghHelperCleanup}/bin/repose-gh-helper-cleanup || true
   '';
+  # A gpg-agent started before /etc/gnupg/gpg-agent.conf named a pinentry
+  # keeps "No pinentry" until it rereads its config (I-528). Only a
+  # running agent, found by its socket, is told; none is started, and a
+  # failure or a hang never holds the activation up.
+  system.userActivationScripts.repose-gpg-agent-reload.text = ''
+    if repose_sock=$(${pkgs.gnupg}/bin/gpgconf --list-dirs agent-socket 2>/dev/null) && [ -S "$repose_sock" ]; then
+      ${pkgs.coreutils}/bin/timeout 10 ${pkgs.gnupg}/bin/gpgconf --reload gpg-agent >/dev/null 2>&1 || true
+    fi
+    unset repose_sock
+  '';
 
   # gnupg's built-in pinentry path does not exist in its store output, so
   # every passphrase prompt failed with "No pinentry". gpg-agent reads
