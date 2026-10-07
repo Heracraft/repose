@@ -1159,7 +1159,7 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Grow the project's disk (e.g. 80G), or change its size with --size",
 		Long: "With DISK, grows the project's disk (e.g. 80G); disks can't shrink.\n" +
 			"With --size, changes the project's size: small, large or xl. A stopped project starts at the\n" +
-			"new size; a running one is stopped (with a snapshot), changed and started again, after a\n" +
+			"new size; a running one is stopped, changed and started again, after a\n" +
 			"confirmation that --yes skips.\n" +
 			"PROJECT defaults to this checkout's project; one argument that reads as a size is DISK.",
 		Args:              resizeArgs,

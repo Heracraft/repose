@@ -113,7 +113,7 @@ Limits:
   `repose resize --size small|large|xl` changes the class (DECISIONS
   I-260): the API accepts `class` on `PATCH /projects/:id` only while the
   project is stopped (`conflict` otherwise), so a running project is
-  stopped with a snapshot, patched and started again after a y/N question
+  stopped without a snapshot (I-595), patched and started again after a y/N question
   (`--yes` skips it; no terminal and no `--yes` is exit 2). The same class
   is a no-op; a refused PATCH (the xl limit) starts the project again at
   its old class. StartGuest carries the class on every start, so the
