@@ -140,7 +140,7 @@ func TestRestoreWaitsForADestroyInProgress(t *testing.T) {
 	if err := RestoreCmd(ctx, e, "izma", "", "", nil); err != nil {
 		t.Fatalf("restore: %v (stderr %q)", err, errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "Waiting for izma's destroy to take its final snapshot") || !strings.HasPrefix(out.String(), "Restored izma from its snapshot of ") {
+	if !strings.Contains(errOut.String(), "Waiting for izma's destroy to take its final snapshot") || !strings.HasPrefix(out.String(), "Restored izma from its 1.0 GB snapshot of ") {
 		t.Fatalf("stdout %q stderr %q", out.String(), errOut.String())
 	}
 }

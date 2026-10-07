@@ -68,6 +68,10 @@ func TestRestoreByName(t *testing.T) {
 	if r.status != 202 || r.body["slug"] != "izma" || r.body["snapshot_id"] != snap["id"] || r.body["from_project_id"] != pid {
 		t.Fatalf("restore by name: %d %s", r.status, r.raw)
 	}
+	// The CLI's restore line names the snapshot's size (I-595).
+	if r.body["snapshot_bytes"] == nil || r.body["snapshot_bytes"] != snap["bytes"] {
+		t.Fatalf("restore answer's snapshot_bytes %v, the snapshot's bytes %v", r.body["snapshot_bytes"], snap["bytes"])
+	}
 	newID := r.body["project_id"].(string)
 	if op := e.waitOp(t, r); op.State != "done" {
 		t.Fatalf("restore op: %+v", op.Error)

@@ -16202,3 +16202,107 @@ gateway's own pre-auth budget no longer clears the source's failures.
 TestOwnCertificateRefusalsNeverBanTheSource,
 TestFailuresStillBanAndTheBanIsLogged, TestLimiterRefusalsNeitherCountNorClear,
 TestLogBucketBoundsAndReportsDrops.
+**I-594. A snapshot of a killed guest replays its journal on the LVM
+snapshot and goes out as extents.** (lifecycle-speed, kanali incident,
+2026-10-07: "destroying took forever", "restore 2m17s, was the disk that
+big?") hostd's log on host-01: kanali's destroy (accepted 17:42:30Z,
+api log) stopped a guest in `error` whose boot had died in stage 1
+after mounting its root, so the volume's journal still needed recovery.
+The final snapshot fell back to raw (`raw_reason: journal needs
+recovery`) and read the whole 100 GB volume: 156.9 s for 9.77 GB
+stored. DestroyGuest itself then took under a second; `repose ls` read
+`destroying` for those 2 min 37 s because the snapshot phase was
+running, not because the api waited on anything after hostd's result.
+The restore of that raw blob decompressed and scanned 100 GB again:
+`write_ms` 115227 of a 121 s restore, after a 15 s checksum pass
+(I-462) and before a 5.8 s e2fsck. The same volume's extent snapshot at
+17:38 (the resize's stop) held 37.3 GB used in 8.6 GB and took 56.5 s.
+I-164 sent such a volume raw because its bitmaps cannot be trusted
+until the journal is replayed; but what hostd reads is an LVM thin
+snapshot, which is writable and thrown away after the upload. When
+`dumpe2fs` reports `needs_recovery`, hostd now runs `e2fsck -E
+journal_only -p` on the snapshot (sandboxed like restore's e2fsck,
+I-465, with write access to that device alone; exit 0 or 1 is success),
+which replays the journal exactly as the guest's kernel would at its
+next mount, then runs `dumpe2fs` again. A clean result goes out as
+extents; anything else (a failed replay, `state not clean`) goes out
+raw as before, with `raw_reason` `journal replay failed` for the
+first. The guest's own volume is never written: its next boot replays
+the same journal, so a restore of the snapshot and a start of the
+volume reach the same filesystem. The replay writes at most the
+journal's size into the pool as the snapshot's own blocks, freed with
+the snapshot. `snapshot done` gains `journal_replayed`. Measured on
+kanali (the dev guest, read-write only on files in /tmp): an ext4 image
+copied while loop-mounted after `sync` (a crash-consistent copy:
+`needs_recovery`, `orphan_present`) replays in under a second, then
+reads `state: clean`, no `needs_recovery`, and `e2fsck -fn` passes.
+Expected on host-01: a killed guest's snapshot and its restore take
+the time of what the volume holds (kanali: about 56 s and about the
+same to write back) instead of the whole volume's. Checked but not
+changed: the resize's 25 s `power_off_ms` was kanali on base
+2026.10.05.1, before I-572 bounded dev's user manager at 10 s (base
+2026.10.07); kanali never took that base because its switch failed
+(the whiteouts, another worker's). The rest of a large snapshot's time
+is zstd: on kanali's CPU (host-01's Xeon 6973P), 3 GB of a dev home
+went through `zstd -T4 -3` in 2.8 s (1.06 GB/s, 706 MB out), `-T8 -3`
+in 1.9 s, `-T4 -1` in 2.0 s (776 MB out, 10 percent more stored);
+kanali's stop read 37 GB in 56 s with `read_wait_ms` 25769, so zstd
+and the upload set the other half. A faster level or more threads is
+a trade between guests' cores, stored bytes and a stop's time that
+I-571 left at `-T4 -3`; it stays there until host-01's own probe
+(the conductor's live check) says what it buys. The restore's
+separate checksum pass (I-462, 15 s for 9.8 GB) stays: it exists so
+no byte of a changed blob is ever decompressed. Tests:
+`TestKilledGuestSnapshotReplaysItsJournal` (a committed journal
+transaction written with debugfs `jw` over a file's block: extents,
+`JournalReplayed`, the restored file holds the journal's write, e2fsck
+-fn clean; it fails with `format: raw` when `ReplayJournal` is off),
+`TestJournalReplayIsOptInAndSandboxed` (no e2fsck without the flag;
+the sandboxed argv; exit 1 is success; a failed replay goes raw saying
+so). This amends I-164, whose raw fallback covered a killed guest.
+*Rejected:* replaying on the guest's volume (a stopped guest's volume
+is the user's disk and its next boot does it; hostd writing to it
+while a start may be queued is a race for nothing); `e2fsck -fp` on
+the snapshot (a full check reads every inode table: minutes on a
+100 GB volume for what the restore's own e2fsck already does).
+
+**I-595. A size change restarts without a snapshot, and a restore says
+how big its snapshot was.** (lifecycle-speed, 2026-10-07; owner: "we
+only improved speed for restore and stop? nobody thought of resize and
+others?") kanali's `repose resize --size xl` on host-01: the stop took
+a snapshot (56.5 s of 37.3 GB used, 8.6 GB stored) and powered off for
+25 s (I-594: an old base), the start took 10 s, so the change took
+about 80 s, of which the snapshot was 70 percent. A stop's snapshot is
+the project's off-host copy while it sits stopped (I-404); a size
+change does not leave the project stopped: the same volume, on the same
+host, boots again within seconds, and nothing about a class touches the
+disk. A running project's protection is the nightly snapshot, as it was
+a minute before the change; `repose snapshots create` takes one first
+for a user who wants it. `repose resize --size` on a running project
+now stops it with `snapshot: false`, labels the step `Stopping NAME`,
+and its question and help no longer mention a snapshot. This amends
+I-260's "stopped with a snapshot". Expected on host-01: a size change
+of a guest on base 2026.10.07 in about 15 s (a 3 to 10 s shutdown and
+a 10 s start) whatever its disk holds. The restore's last line names
+the snapshot's stored size, as the stop's does since I-570, so a slow
+restore says what it went on, for example `Restored kanali from its 8.6 GB snapshot
+of 2026-10-07 17:38 in 1m01s; it is running (xl).` `POST
+/projects/restore` answers `snapshot_bytes` (api.md), and the CLI
+prints the old line with an api that sends none. lifecycle.md says that
+a project reads `destroying` while its final snapshot is taken and that
+this takes longer the more its disk holds. Other lifecycle commands
+checked against hostd's log and the code: a disk grow is an online
+`lvextend` (1 s, ResizeVolume at 17:37:45); a size change on a stopped
+project is a PATCH; a stop of a guest in `error` takes no snapshot of
+its own (3 s at 17:40:37); a fork takes a running snapshot (freeze,
+extents) and restores it, so I-594 and I-571 are what speed it; a
+destroy of a stopped project keeps its final snapshot (the stop's was
+taken before the shutdown's writes, I-404, so it is not the disk being
+destroyed). Tests: `TestResizeClass` (no snapshot is taken; the
+question names none), `TestRestoreByName` (api: `snapshot_bytes`
+equals the snapshot's bytes), `TestDestroyThenRestoreByName`,
+`TestRestoreWithoutANameInACheckout` and `TestRestoreWaitsForADestroyInProgress` (the line with
+the size). *Rejected:* skipping the snapshot only when the newest is
+minutes old (a recent snapshot protects against nothing the class
+change risks, so the age is not the question); a `--snapshot` flag on
+`resize` (`repose snapshots create` already says it).

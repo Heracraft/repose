@@ -59,7 +59,7 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 	if err := RestoreCmd(ctx, e, "izma", "", "", nil); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if !strings.HasPrefix(out.String(), "Restored izma from its snapshot of ") || strings.Contains(out.String(), "`repose ") {
+	if !strings.HasPrefix(out.String(), "Restored izma from its 1.0 GB snapshot of ") || strings.Contains(out.String(), "`repose ") {
 		t.Fatalf("restore said %q", out.String())
 	}
 	back, err := findByIDOrSlug(ctx, e.Client, "izma")
@@ -184,7 +184,7 @@ func TestRestoreWithoutANameInACheckout(t *testing.T) {
 	if err := RestoreCmd(ctx, e, "", "", "", func(string) (string, error) { t.Fatal("asked with one match"); return "", nil }); err != nil {
 		t.Fatalf("restore by remote: %v", err)
 	}
-	if !strings.HasPrefix(out.String(), "Restored izma from its snapshot of ") {
+	if !strings.HasPrefix(out.String(), "Restored izma from its 1.0 GB snapshot of ") {
 		t.Fatalf("restore said %q", out.String())
 	}
 

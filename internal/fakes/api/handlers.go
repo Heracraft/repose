@@ -1605,7 +1605,7 @@ func (f *Fake) restoreByName(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	o := f.newOp(np, "restore")
 	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "project_id": np.ID, "name": np.Name, "slug": np.Slug,
-		"snapshot_id": snap.ID, "snapshot_created_at": snap.CreatedAt, "from_project_id": src.ID})
+		"snapshot_id": snap.ID, "snapshot_created_at": snap.CreatedAt, "snapshot_bytes": snap.Bytes, "from_project_id": src.ID})
 	return nil
 }
 

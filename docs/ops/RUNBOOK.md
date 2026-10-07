@@ -263,8 +263,8 @@ A running project's newest snapshot is older than 36 hours.
 
 A stop, destroy or nightly snapshot takes tens of seconds for a volume
 that holds little. On the host, `journalctl -t hostd | grep '"snapshot
-done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
-`volume_bytes` and `duration_ms` (DECISIONS I-164).
+done"'`: the line carries `format`, `raw_reason`, `journal_replayed`,
+`used_bytes`, `volume_bytes` and `duration_ms` (DECISIONS I-164).
 
 - `format: extents`: time should follow `used_bytes` (reading) and
   `bytes` (the upload). Slow with little data means the disk or Blob is
@@ -282,11 +282,21 @@ done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
   10 s is the guest's user manager waiting on a pane process (I-572);
   the guest's `console.log` shows `A stop job is running for User
   Manager for UID 1000`.
-- `format: raw` reads the whole volume (about 16 s per 20 GB on host-01).
-  `raw_reason` says why: `journal needs recovery` (the guest was killed,
-  not shut down, or, for a running guest, its freeze did not hold until
+- `journal_replayed: true`: the guest was killed, not shut down (a
+  start that never reached guestd, a stop escalated to `kill`), and hostd
+  replayed its journal on the LVM snapshot before reading it, so it still
+  went out as extents (I-594). The guest's own volume is not touched; its
+  next boot replays the same journal.
+- `format: raw` reads the whole volume (about 16 s per 20 GB on host-01;
+  kanali's 100 GB took 157 s, and its restore wrote it back for 115 s),
+  and a restore of it decompresses the whole volume again.
+  `raw_reason` says why: `journal replay failed` (hostd's `e2fsck -E
+  journal_only` on the snapshot failed: run `e2fsck -fn` on a fresh LVM
+  snapshot of the volume to see why), `journal needs recovery` (a hostd
+  older than I-594, or, for a running guest, its freeze did not hold until
   the LVM snapshot: guestd's 10 s watchdog thawed first; the next
-  snapshot goes back to extents; I-171), `dumpe2fs
+  snapshot goes back to extents; I-171), `filesystem state not clean`
+  (the kernel found an error; the guest's next boot runs e2fsck), `dumpe2fs
   failed (not ext4?)` (someone reformatted the volume), `N of M groups
   listed` (dumpe2fs output cut short: check the host's e2fsprogs). A
   hostd older than I-164 has no `format` field and always reads raw.

@@ -42,14 +42,17 @@ func classSummary(class string) string {
 // its size: the stop ends every process on the machine, agents included,
 // and the new size takes a different share of the plan's memory.
 func classChangePrompt(slug, from, to string) string {
-	return fmt.Sprintf("%s is running. Changing it from %s to %s stops it (taking a snapshot first), which ends every process on it, agents included, then starts it again. Go ahead? [y/N] ", slug, from, to)
+	return fmt.Sprintf("%s is running. Changing it from %s to %s stops it, which ends every process on it, agents included, then starts it again. Go ahead? [y/N] ", slug, from, to)
 }
 
 // ResizeClassCmd implements `repose resize --size small|large|xl` (DECISIONS
 // I-260). The api changes a project's class only while it is stopped, so
 // a running project is stopped, changed and started again, after a
 // confirmation (confirm nil means --yes). The class reaches the machine at
-// its next start: StartGuest carries it.
+// its next start: StartGuest carries it. The stop takes no snapshot: the
+// disk stays on the host and boots again at once, untouched by the change,
+// and the snapshot was most of the restart's time (kanali, 37 GB used:
+// 56 s of an 80 s change; DECISIONS I-595).
 func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confirm func(prompt string) (bool, error)) error {
 	if _, ok := classSpecs[class]; !ok {
 		return exitf(ExitUsage, "--size must be small, large or xl, got %q.", class)
@@ -90,14 +93,14 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 	var opID string
 	err = retryOnOpConflict(ctx, func() error {
 		var err error
-		opID, err = e.Client.StopProject(ctx, project.ID, true)
+		opID, err = e.Client.StopProject(ctx, project.ID, false)
 		return err
 	})
 	if err != nil {
 		return err
 	}
 	closeMaster(ctx, e, s)
-	pr.Phase("Snapshotting and stopping "+s, "")
+	pr.Phase("Stopping "+s, "")
 	op, err := waitOpPhased(ctx, e, project, opID, pr, false)
 	if err != nil {
 		return err
