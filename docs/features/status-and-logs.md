@@ -133,8 +133,9 @@ promised, DECISIONS I-96):
   streaming build log and the revision list, and the secrets page the
   names and their dates.
 - `/billing`: card on file, invoices, usage for the month by class.
-  `/settings`: timezone, email toggle, ntfy URL and its test button.
-  `/account`: handle, email, GitHub login, and deletion.
+  `/settings`: the account (handle, email, GitHub login), timezone,
+  email toggle, ntfy URL and its test button, machine.nix, and deletion
+  last; `/account` redirects there (I-578).
 
 Usage on the dashboard (DECISIONS I-492, I-493):
 

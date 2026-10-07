@@ -1,5 +1,5 @@
 // The account's machine.nix on the dashboard (DECISIONS I-490): edit and
-// save it on the Account page, a copy pushed from the laptop since is not
+// save it in Settings (the Account page until I-578), a copy pushed from the laptop since is not
 // overwritten, and each project's Config page has the opt-out switch.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv } from './helpers';
@@ -22,8 +22,8 @@ test.afterAll(async () => {
 	await putPersonal('');
 });
 
-test('machine.nix is edited and saved on the Account page', async ({ page }) => {
-	await page.goto('/account');
+test('machine.nix is edited and saved in Settings', async ({ page }) => {
+	await page.goto('/settings');
 	const section = page.locator('#machine-nix');
 	await expect(section.getByText('You have none yet.')).toBeVisible();
 	const save = section.getByRole('button', { name: 'Save', exact: true });
@@ -40,7 +40,7 @@ test('machine.nix is edited and saved on the Account page', async ({ page }) => 
 
 test('a copy pushed from the laptop after the page loaded is not overwritten', async ({ page }) => {
 	await putPersonal('{ }\n');
-	await page.goto('/account');
+	await page.goto('/settings');
 	const section = page.locator('#machine-nix');
 	await expect(section.getByText(/from your laptop\./)).toBeVisible();
 	await putPersonal('{ home.packages = [ ]; }\n');
@@ -65,6 +65,9 @@ test("the Config page's switch keeps machine.nix off one machine", async ({ page
 	await expect(page.getByText('machine.nix is off for this machine')).toBeVisible();
 	await page.reload();
 	await expect(box).not.toBeChecked();
-	await page.goto('/account');
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('link', { name: 'Edit machine.nix on your account' }).click();
+	await expect(page).toHaveURL('/settings#machine-nix');
 	await expect(page.locator('#machine-nix').getByText(`Off on ${p.slug}.`)).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'machine.nix' })).toBeInViewport();
 });

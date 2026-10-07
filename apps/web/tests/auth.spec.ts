@@ -34,7 +34,8 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 });
 
 // DECISIONS I-568: the dashboard's header links to the docs, where a
-// signed-in visitor lands after sign-in.
+// signed-in visitor lands after sign-in; at every width since I-578
+// (design.spec.ts checks 390 and 360).
 test('the dashboard header links to the docs', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await signIn(page);

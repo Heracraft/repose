@@ -40,7 +40,7 @@ test.describe('signed in', () => {
 	test('Retry keeps its banner and the keyboard focus while it runs', async ({ page }) => {
 		await fail('GET', '/me', 'internal');
 		try {
-			await page.goto('/account');
+			await page.goto('/settings');
 			const banner = page.getByRole('alert');
 			await expect(banner).toBeVisible();
 			// Slow the retry's answer, so the state between the press and the
@@ -109,6 +109,26 @@ test.describe('signed in', () => {
 		expect(other.edge.endsWith(other.page)).toBe(true);
 	});
 });
+
+// DECISIONS I-578: the dashboard header has Projects, Billing, Settings,
+// Docs and Sign out at every width, and fits a 360px phone.
+for (const width of [390, 360]) {
+	test(`the dashboard header shows Docs and fits at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 800 });
+		await signIn(page);
+		for (const path of ['/projects', '/settings']) {
+			await page.goto(path);
+			const nav = page.getByRole('navigation', { name: 'Main' });
+			for (const name of ['Projects', 'Billing', 'Settings', 'Docs']) {
+				await expect(nav.getByRole('link', { name, exact: true })).toBeInViewport({ ratio: 1 });
+			}
+			await expect(nav.getByRole('button', { name: 'Sign out' })).toBeInViewport({ ratio: 1 });
+			await expect(nav.getByRole('link', { name: 'Account' })).toHaveCount(0);
+			const wide = await page.evaluate(() => document.documentElement.scrollWidth);
+			expect(wide, path).toBeLessThanOrEqual(width);
+		}
+	});
+}
 
 test.describe('public pages', () => {
 	test('the docs fold chevron turns only when motion is allowed', async ({ page }) => {

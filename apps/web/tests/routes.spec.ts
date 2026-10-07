@@ -58,12 +58,23 @@ test('/settings renders', async ({ page }) => {
 	await page.goto('/settings');
 	await expect(page.getByText('Timezone')).toBeVisible();
 	await expect(page.getByText('Notifications', { exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
 });
 
-test('/account renders', async ({ page }) => {
+// DECISIONS I-578: the account moved into Settings; emails, docs and
+// bookmarks that link to /account land there.
+test('/account redirects permanently to /settings', async ({ page, request }) => {
+	const res = await request.get('/account', { maxRedirects: 0 });
+	expect(res.status()).toBe(308);
+	expect(res.headers()['location']).toBe('/settings');
+
 	await page.goto('/account');
-	await expect(page.getByText('heracraft').first()).toBeVisible();
+	await expect(page).toHaveURL('/settings');
+	await expect(page.locator('#account').getByText('heracraft').first()).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Delete account' })).toBeVisible();
+
+	await page.goto('/account#machine-nix');
+	await expect(page).toHaveURL('/settings#machine-nix');
 });
 
 test('/terms, /privacy and /refunds render', async ({ page }) => {

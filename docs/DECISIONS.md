@@ -14666,4 +14666,35 @@ over `hostname` because a machine running since before I-550 is still
 laptop command (the guide line does it); rendering the slug into the
 guide (the guide is one file in the shared base). auth.spec.ts "the
 dashboard header links to the docs"; `TestAgentGuideCommandsExist` with
-`jq` added.
+`jq` added. *Amended by I-578:* Account moved into Settings, and Docs shows at
+every width.
+
+**I-578. The Account page is a section of Settings, and the dashboard
+header shows Docs at every width.** (header-docs-phone, 2026-10-07;
+owner's decision; amends I-568 and 08-dashboard.md 5.2's `/account`
+row.) I-568 put Docs in the header from `sm` up only, because six labels
+did not fit a 360px phone, so a phone reached the docs only through the
+landing. The owner chose to merge Account into Settings to free the room:
+the header is Projects, Billing, Settings, Docs and Sign out at every
+width, five items as before the Docs link, with Docs shorter than Account.
+`/settings` now holds, in order: Account (handle, email, GitHub login;
+`id="account"`), Timezone, Notifications, Install, machine.nix
+(`#machine-nix`) and Delete account (`#delete-account`), last as the
+danger zone (DESIGN-LANGUAGE.md). The account page's own Sign out button
+is gone: the header has Sign out on every page and every width, and two
+on one page made the second noise. `/account` is a server route answering
+308 to `/settings` with no fragment: the account section sits directly
+under the title, so the top of the page is the right place, and a browser
+carries an old `/account#machine-nix` over a Location without a fragment.
+The Settings page scrolls to its URL's fragment once its sections have
+rendered (they wait for `GET /me`), which the Config page's link to
+`#machine-nix` needs. Links updated: the Config page, billing.md,
+config.md, 08-dashboard.md, status-and-logs.md, DESIGN-LANGUAGE.md,
+LAUNCH.md, DOCS-AUDIT.md; nothing in internal/, cmd/, the email
+templates or the agent guide linked to `/account`. *Rejected:* a menu
+behind the handle (a second header pattern for one link); dropping Sign
+out from the header on phones. design.spec.ts "the dashboard header shows
+Docs and fits at 390/360"; routes.spec.ts "/account redirects
+permanently to /settings"; settings-account.spec.ts "settings carries the
+account section first and no heading twice"; machine-nix.spec.ts follows
+the Config page's link to `/settings#machine-nix`.

@@ -165,7 +165,7 @@ Applying machine.nix (changed) to 3 machines in the background.
 
 If you saved it on the dashboard since, the laptop's copy is brought up to date instead, when you haven't changed it. When both changed, `run` pushes nothing and says so in one line; `repose config --global apply` keeps the laptop's copy, `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
 
-**On the dashboard.** **Account** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
+**On the dashboard.** **Settings** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
 
 **Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with the switch on the project's Config page.
 

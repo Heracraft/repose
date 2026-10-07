@@ -1,6 +1,6 @@
 // Checklist: "Settings: timezone, email toggle, ntfy URL, test button." and
 // "Account deletion flow requires typing the handle and explains
-// retention."
+// retention." The account is a section of Settings (DECISIONS I-578).
 import { test, expect } from '@playwright/test';
 import { failNext, signIn } from './helpers';
 
@@ -25,7 +25,10 @@ test('settings round-trips timezone, email toggle and ntfy URL, and the test but
 	await page.getByLabel('Timezone').selectOption('Europe/Berlin');
 	await expect(page.getByText('Timezone set to Europe/Berlin.')).toBeVisible();
 
-	const save = page.getByRole('button', { name: 'Save', exact: true });
+	// machine.nix has a Save of its own further down the page (I-578).
+	const save = page
+		.locator('form', { has: page.getByLabel('ntfy URL') })
+		.getByRole('button', { name: 'Save', exact: true });
 	await expect(save).toBeDisabled();
 	await page.getByLabel('ntfy URL').fill('https://ntfy.sh/repose-test');
 	await expect(page.getByText('Not saved yet.')).toBeVisible();
@@ -84,30 +87,48 @@ test('leaving settings with an unsaved ntfy URL asks first', async ({ page }) =>
 	expect(dialogs).toBe(0);
 });
 
-// A failed first load used to leave these pages on "Loading…" for good.
-for (const [path, heading] of [
-	['/settings', 'Timezone'],
-	['/account', 'Delete account']
-] as const) {
-	test(`${path} shows a failed first load and Retry loads it`, async ({ page }) => {
-		// Loaded once first, so the projects page that signIn lands on has
-		// made its own GET /me and cannot take the one failure; the reload
-		// is then the only request for it.
-		await page.goto(path);
-		await expect(page.getByRole('heading', { name: heading })).toBeVisible();
-		await failNext('GET', '/me', 'internal');
-		await page.reload();
-		const failed = page.getByRole('alert');
-		await expect(failed).toBeVisible();
-		await expect(page.getByText('Loading…')).toHaveCount(0);
-		await failed.getByRole('button', { name: 'Retry' }).click();
-		await expect(page.getByRole('heading', { name: heading })).toBeVisible();
-		await expect(failed).toHaveCount(0);
-	});
-}
+// A failed first load used to leave the page on "Loading…" for good.
+test('/settings shows a failed first load and Retry loads it', async ({ page }) => {
+	// Loaded once first, so the projects page that signIn lands on has
+	// made its own GET /me and cannot take the one failure; the reload
+	// is then the only request for it.
+	await page.goto('/settings');
+	await expect(page.getByRole('heading', { name: 'Timezone' })).toBeVisible();
+	await failNext('GET', '/me', 'internal');
+	await page.reload();
+	const failed = page.getByRole('alert');
+	await expect(failed).toBeVisible();
+	await expect(page.getByText('Loading…')).toHaveCount(0);
+	await failed.getByRole('button', { name: 'Retry' }).click();
+	for (const heading of ['Account', 'Timezone', 'Delete account']) {
+		await expect(page.getByRole('heading', { level: 2, name: heading, exact: true })).toBeVisible();
+	}
+	await expect(failed).toHaveCount(0);
+});
+
+// DECISIONS I-578: the account is the first section of Settings, under the
+// page title, and its headings appear once each.
+test('settings carries the account section first and no heading twice', async ({ page }) => {
+	await page.goto('/settings');
+	const account = page.locator('#account');
+	await expect(account.getByRole('heading', { level: 2, name: 'Account' })).toBeVisible();
+	await expect(account.getByText('heracraft').first()).toBeVisible();
+	await expect(account.getByText('Email')).toBeVisible();
+	await expect(account.getByText('GitHub')).toBeVisible();
+	await expect(page.getByRole('heading', { level: 2, name: 'Delete account' })).toBeVisible();
+	const headings = await page.locator('main h2').allInnerTexts();
+	expect(headings).toEqual([
+		'Account',
+		'Timezone',
+		'Notifications',
+		'Install',
+		'machine.nix',
+		'Delete account'
+	]);
+});
 
 test('account deletion requires typing the exact handle', async ({ page }) => {
-	await page.goto('/account');
+	await page.goto('/settings');
 	await expect(page.getByText('Everything, including snapshots, is deleted 30 days')).toBeVisible();
 
 	const deleteBtn = page.getByRole('button', { name: 'Delete account' });

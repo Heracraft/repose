@@ -2,10 +2,13 @@
 	import { onMount, tick } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { getMe, patchMe, notifyTest } from '$lib/api/client';
+	import { getMe, patchMe, notifyTest, deleteMe } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
+	import { signOut } from '$lib/auth.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import ConfirmType from '$lib/components/ConfirmType.svelte';
+	import MachineNix from '$lib/components/MachineNix.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { Me } from '$lib/api/types';
 
@@ -23,6 +26,7 @@
 	let savingNtfy = $state(false);
 	let testAvailable = $state(true);
 	let testing = $state(false);
+	let deleting = $state(false);
 	let loadError = $state<string | undefined>(undefined);
 	// A link followed while the ntfy URL was unsaved: held here, and the
 	// page asks about it in place instead of in a native confirm() box.
@@ -63,6 +67,13 @@
 			loadError = loadErrorText(err, 'Could not load settings.');
 			return;
 		}
+		// The sections render only now, after the browser looked for the
+		// fragment's target and found nothing: the Config page links to
+		// #machine-nix, and /account#machine-nix arrives here with it.
+		void tick().then(() => {
+			const id = decodeURIComponent(location.hash.slice(1));
+			if (id) document.getElementById(id)?.scrollIntoView();
+		});
 		// An account that never set a timezone shows this browser's; with
 		// no Save button to press any more, store it so what the page shows
 		// is what the account has. Quietly: nothing the user did.
@@ -157,6 +168,18 @@
 		}
 	}
 
+	async function onDelete() {
+		deleting = true;
+		try {
+			await deleteMe();
+			toast.success('Account cancellation started. Everything is deleted in 30 days.');
+			await signOut();
+		} catch (err) {
+			deleting = false;
+			toastApiError(err, 'Could not start account deletion.');
+		}
+	}
+
 	async function sendTest() {
 		testing = true;
 		try {
@@ -183,7 +206,30 @@
 		onretry={load}
 	>
 		<!-- The first section draws no rule of its own (.form-section:first-child
-		     in layout.css): the page title's rule is directly above it. -->
+		     in layout.css): the page title's rule is directly above it. The
+		     account was its own page until I-578; /account redirects here. -->
+		{#if me}
+			<div class="form-section" id="account">
+				<h2 class="text-xl font-semibold">Account</h2>
+				<dl class="mt-2 space-y-2 text-sm">
+					<div class="flex justify-between gap-4">
+						<dt class="text-ink-muted">Handle</dt>
+						<dd class="font-mono">{me.handle}</dd>
+					</div>
+					<div class="flex justify-between gap-4">
+						<dt class="text-ink-muted">Email</dt>
+						<dd class="min-w-0 break-all">{me.email}</dd>
+					</div>
+					<div class="flex justify-between gap-4">
+						<dt class="text-ink-muted">GitHub</dt>
+						<dd class={me.github_login ? '' : 'text-ink-muted'}>
+							{me.github_login ?? 'Not linked'}
+						</dd>
+					</div>
+				</dl>
+			</div>
+		{/if}
+
 		<div class="form-section">
 			<h2 class="text-xl font-semibold">Timezone</h2>
 			{#if timezones.length}
@@ -260,5 +306,25 @@
 				>curl -fsSL https://repose.herakraft.co/install.sh | sh</code
 			>
 		</div>
+
+		<MachineNix />
+
+		{#if me}
+			<div class="form-section" id="delete-account">
+				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
+				<p class="mt-1 text-sm text-ink-muted">
+					Stops every environment at once. Everything, including snapshots, is deleted 30 days
+					later.
+				</p>
+				<div class="mt-3">
+					<ConfirmType
+						word={me.handle}
+						label="Delete account"
+						disabled={deleting}
+						onconfirm={onDelete}
+					/>
+				</div>
+			</div>
+		{/if}
 	</LoadState>
 </PageShell>

@@ -67,4 +67,4 @@ The first charge after the free week is refunded on request within 14 days of it
 
 ## Deleting your account
 
-The dashboard's **Account** page shows your handle, email and GitHub login, and has **Delete account**. Any egress overage for the current month is charged, the plan is cancelled at once, every machine stops, and everything, snapshots included, is deleted 30 days later.
+The dashboard's **Settings** page shows your handle, email and GitHub login, and has **Delete account** at the bottom. Any egress overage for the current month is charged, the plan is cancelled at once, every machine stops, and everything, snapshots included, is deleted 30 days later.
