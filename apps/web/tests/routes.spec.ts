@@ -67,6 +67,9 @@ test('/account redirects permanently to /settings', async ({ page, request }) =>
 	const res = await request.get('/account', { maxRedirects: 0 });
 	expect(res.status()).toBe(308);
 	expect(res.headers()['location']).toBe('/settings');
+	const head = await request.head('/account', { maxRedirects: 0 });
+	expect(head.status()).toBe(308);
+	expect(head.headers()['location']).toBe('/settings');
 
 	await page.goto('/account');
 	await expect(page).toHaveURL('/settings');

@@ -87,6 +87,24 @@ test('leaving settings with an unsaved ntfy URL asks first', async ({ page }) =>
 	expect(dialogs).toBe(0);
 });
 
+// Settings has two guarded forms since I-578. Both ask on the same
+// navigation, and one Leave passes both: each used to cancel the other's
+// Leave, so the page never let go.
+test('with the ntfy URL and machine.nix both unsaved, one Leave leaves', async ({ page }) => {
+	await page.goto('/settings');
+	await page.getByLabel('ntfy URL').fill('https://ntfy.sh/repose-unsaved');
+	const nix = page.locator('#machine-nix');
+	await nix.locator('.cm-content').click();
+	await page.keyboard.type('{ }');
+	await expect(nix.getByText('Not saved yet.')).toBeVisible();
+
+	await page.getByRole('link', { name: 'Projects', exact: true }).click();
+	await expect(page.getByText('The ntfy URL is not saved.')).toBeVisible();
+	await expect(nix.getByText('machine.nix is not saved.')).toBeVisible();
+	await nix.getByRole('button', { name: 'Leave anyway' }).click();
+	await expect(page).toHaveURL('/projects');
+});
+
 // A failed first load used to leave the page on "Loading…" for good.
 test('/settings shows a failed first load and Retry loads it', async ({ page }) => {
 	// Loaded once first, so the projects page that signIn lands on has

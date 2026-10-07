@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
+	import { leaveAnyway, leavingAnyway } from '$lib/leave';
 	import { getMe, patchMe, notifyTest, deleteMe } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
@@ -31,7 +32,6 @@
 	// A link followed while the ntfy URL was unsaved: held here, and the
 	// page asks about it in place instead of in a native confirm() box.
 	let heldNavigation = $state<URL | undefined>(undefined);
-	let leaveAnyway = false;
 	let stayButton = $state<HTMLButtonElement | undefined>(undefined);
 	// What had focus when the navigation was held (the link followed), so
 	// Stay can give it back instead of dropping it to <body> (I-393).
@@ -89,7 +89,7 @@
 	onMount(load);
 
 	beforeNavigate(({ cancel, type, to }) => {
-		if (!ntfyDirty || leaveAnyway) return;
+		if (!ntfyDirty || leavingAnyway()) return;
 		// A tab close or reload gets the browser's own prompt from cancel().
 		// A link inside the dashboard is held, and the page asks beside the
 		// field that is unsaved, so the question uses the house banner and
@@ -119,13 +119,7 @@
 		const url = heldNavigation;
 		heldNavigation = undefined;
 		if (!url) return;
-		leaveAnyway = true;
-		try {
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL came from SvelteKit's own navigation, already resolved
-			await goto(url);
-		} finally {
-			leaveAnyway = false;
-		}
+		await leaveAnyway(url);
 	}
 
 	async function saveTz() {

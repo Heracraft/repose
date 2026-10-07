@@ -4,9 +4,10 @@
 	// save names the revision the editor started from, so a copy pushed from
 	// the laptop since is never overwritten here without asking.
 	import { onMount, tick } from 'svelte';
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
+	import { leaveAnyway, leavingAnyway } from '$lib/leave';
 	import { getPersonal, putPersonal } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
@@ -28,7 +29,6 @@
 	let dirty = $derived(personal !== undefined && text !== personal.fragment);
 
 	let heldNavigation = $state<URL | undefined>(undefined);
-	let leaveAnyway = false;
 	let stayButton = $state<HTMLButtonElement | undefined>(undefined);
 
 	async function load() {
@@ -45,7 +45,7 @@
 	onMount(load);
 
 	beforeNavigate(({ cancel, type, to }) => {
-		if (!dirty || leaveAnyway) return;
+		if (!dirty || leavingAnyway()) return;
 		cancel();
 		if (type === 'leave' || !to) return;
 		heldNavigation = to.url;
@@ -56,13 +56,7 @@
 		const url = heldNavigation;
 		heldNavigation = undefined;
 		if (!url) return;
-		leaveAnyway = true;
-		try {
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL came from SvelteKit's own navigation, already resolved
-			await goto(url);
-		} finally {
-			leaveAnyway = false;
-		}
+		await leaveAnyway(url);
 	}
 
 	async function save() {
