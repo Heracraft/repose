@@ -234,4 +234,4 @@ A project's size is chosen when it's created (`repose run --size`, default `larg
 
 The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it (taking a snapshot), changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. Asking for the size a project already has does nothing.
 
-It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).
+It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). An `xl` needs Plus or Pro ([Limits](/docs/limits#your-plan)).
