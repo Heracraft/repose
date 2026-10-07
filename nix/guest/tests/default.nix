@@ -2608,6 +2608,12 @@ in
       # Nothing here needs Docker, and under nested KVM its containerd
       # start times out and the unit restarts until the boot does too.
       virtualisation.docker.enable = lib.mkForce false;
+      # The driver mounts its /tmp/shared and /tmp/xchg shares in stage 1;
+      # the base's /tmp rotation (tmp.nix) moves them aside with the old /tmp
+      # and its purge deletes through them, so the third boot cannot mount
+      # them again. A guest mounts nothing under /tmp in stage 1.
+      systemd.services.repose-tmp-rotate.enable = lib.mkForce false;
+      systemd.timers.repose-tmp-purge.enable = lib.mkForce false;
     };
     testScript = ''
       import os
@@ -2679,20 +2685,24 @@ in
           guest.succeed("systemctl start repose-store-gc.service")
           guest.fail(f"test -e {own}")
           # The shared paths the database lists, before a whole-store GC.
-          guest.succeed("ls /nix/.ro-store | grep -E '^[0-9a-z]{32}-' | sed 's|^|/nix/store/|' | sort > /tmp/shared")
-          guest.succeed("xargs -a /tmp/shared nix-store --check-validity --print-invalid | sort > /tmp/invalid")
-          guest.succeed("comm -23 /tmp/shared /tmp/invalid > /tmp/valid")
-          print(guest.succeed("wc -l /tmp/shared /tmp/invalid /tmp/valid"))
+          guest.succeed("ls /nix/.ro-store | grep -E '^[0-9a-z]{32}-' | sed 's|^|/nix/store/|' | sort > /tmp/view-shared")
+          guest.succeed("xargs -a /tmp/view-shared nix-store --check-validity --print-invalid | sort > /tmp/view-invalid")
+          guest.succeed("comm -23 /tmp/view-shared /tmp/view-invalid > /tmp/view-valid")
+          print(guest.succeed("wc -l /tmp/view-shared /tmp/view-invalid /tmp/view-valid"))
           guest.succeed("nix-collect-garbage -d")
-          guest.succeed(f"find {upper} -mindepth 1 -maxdepth 1 -type c -printf '/nix/store/%f\\n' | sort > /tmp/whiteouts")
-          hidden = guest.succeed("comm -12 /tmp/whiteouts /tmp/valid").strip()
+          guest.succeed(f"find {upper} -mindepth 1 -maxdepth 1 -type c -printf '/nix/store/%f\\n' | sort > /tmp/view-whiteouts")
+          hidden = guest.succeed("comm -12 /tmp/view-whiteouts /tmp/view-valid").strip()
           assert hidden == "", f"a whole-store GC hid shared paths the database lists: {hidden}"
           guest.succeed(f"test -x {system}/init && test -f {probe}")
-          n = int(guest.succeed("wc -l < /tmp/whiteouts").strip())
+          n = int(guest.succeed("wc -l < /tmp/view-whiteouts").strip())
           print(f"whiteouts over paths the database never listed: {n}")
 
       with subtest("the next start removes those too and boots"):
-          guest.shutdown()
+          # crash(), not shutdown(): after a shutdown the driver does not
+          # restart the virtiofsd of its own /tmp/shared share, and stage 1
+          # fails mounting it (a guest has no such share).
+          guest.succeed("sync")
+          guest.crash()
           boot()
           if n > 0:
               repaired(f"repose: store overlay: {n} whiteouts removed, {n} of them over shared store paths")
