@@ -13282,8 +13282,9 @@ After the tools carry makes a pinned Ruby the default, or finds one an
 earlier pass pinned already the default, it installs `bundler '~> 2.7'`
 into `GEM_HOME` with `--env-shebang` when that Ruby's RubyGems is 3.7 or
 newer and the `bundle` it runs is older than 2.7 (ruby_4_0, with RubyGems
-3.7.2 and Bundler 4.0.20, gets nothing), records the version in
-`~/.repose/tools/bundler`, and on failure says so once and goes on. A
+3.7.2 and Bundler 4.0.20, gets nothing), logs the version, and on
+failure says so once and goes on. Nothing is recorded: the next pass
+reads `bundle -v` again, so it installs nothing twice. A
 `Gemfile.lock` with `BUNDLED WITH` 2.6 still switches to the old Bundler;
 `bundle update --bundler` moves it. No VM assertion: the test VM has no
 bundler gem offline. Checked on kanali against nixpkgs's ruby_3_4 (2.7.2
