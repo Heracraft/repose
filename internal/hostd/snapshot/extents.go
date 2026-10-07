@@ -392,7 +392,7 @@ func readChunk(dev, direct *os.File, j *extentRead) {
 	got, err := 0, error(nil)
 	if direct != nil && j.off%directAlign == 0 && j.n%directAlign == 0 {
 		got, err = direct.ReadAt(buf, int64(j.off))
-		if err != nil && !(errors.Is(err, io.EOF) && got > 0) {
+		if err != nil && (!errors.Is(err, io.EOF) || got <= 0) {
 			got, err = 0, nil
 			direct = nil // read it again through the page cache below
 		}
