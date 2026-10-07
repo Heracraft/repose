@@ -14218,7 +14218,11 @@ draws in the pane. A user's own
 does not use once the file names another. Agents have no terminal; the
 machine guide tells them to pass `--batch --pinentry-mode loopback
 --passphrase-fd`, which needs no pinentry (`allow-loopback-pinentry` is
-gpg-agent's default since 2.1.12). *Rejected:* `programs.gnupg.agent`,
+gpg-agent's default since 2.1.12). A gpg-agent already running at a
+base switch read its config before the file existed, so dev's user
+activation runs `gpgconf --reload gpg-agent` when the agent's socket
+exists, bounded at 10 s and never failing the activation; no agent is
+started for it. *Rejected:* `programs.gnupg.agent`,
 which adds socket-activated user units for one config line.
 
 **I-529. The guest deletes, weekly, the unused store paths only its
