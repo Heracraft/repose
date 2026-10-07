@@ -8,6 +8,7 @@ curl
 df
 dmesg
 docker
+fstrim
 gemini
 gh
 git
