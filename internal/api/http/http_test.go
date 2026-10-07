@@ -507,8 +507,8 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	if r.status != 200 || r.body["handle"] != "alice-dev" {
 		t.Fatalf("me: %d %s", r.status, r.raw)
 	}
-	// A new account has no plan: status none, no credit, Solo's project
-	// count and no xl until a plan is chosen (I-289).
+	// A new account has no plan: status none, no credit, the account's
+	// project cap (I-569) and no xl until a plan is chosen (I-289).
 	b := r.body["billing"].(map[string]any)
 	l := r.body["limits"].(map[string]any)
 	if b["status"] != "none" || b["trial_credit_cents"].(float64) != 0 || b["plan"] != nil || b["has_card"] != false || l["projects"].(float64) != float64(billing.ProjectCap) || l["xl"].(float64) != 0 || l["memory_gb"].(float64) != 8 {

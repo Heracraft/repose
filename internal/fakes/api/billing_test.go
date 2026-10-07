@@ -254,7 +254,7 @@ func TestBillingPlanChange(t *testing.T) {
 }
 
 // Pro holds four seats: the checkout needs four free, and the trial
-// carries Pro's limits (32 GB, 50 projects, an xl).
+// carries Pro's limits (32 GB, an xl) and the account cap of 100 projects.
 func TestBillingCheckoutPro(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
