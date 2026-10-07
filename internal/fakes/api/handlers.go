@@ -837,6 +837,8 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	o := f.newOp(p, "resize")
 	p.VolumeBytes = body.VolumeBytes
+	// The guest's growfs follows a resize, so its root filesystem grows too.
+	p.RootSizeBytes = body.VolumeBytes - body.VolumeBytes/40
 	f.event(p, "volume.resized", "", fmt.Sprintf("volume grown to %d bytes", body.VolumeBytes))
 	return opResult(w, o)
 }

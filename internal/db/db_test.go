@@ -95,8 +95,8 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err != nil || len(st.Pending) != 0 {
 		t.Fatalf("after up: %+v %v", st, err)
 	}
-	// 0017 back: every existing project reads tmux, and the check keeps
-	// out any other value.
+	// 0017 stayed through the down: every existing project reads tmux,
+	// and the check keeps out any other value.
 	var def17, mux string
 	if err := pool.QueryRow(ctx, "select column_default from information_schema.columns where table_name = 'projects' and column_name = 'multiplexer'").Scan(&def17); err != nil {
 		t.Fatal(err)
