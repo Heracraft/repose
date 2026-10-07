@@ -11,7 +11,7 @@ A plan buys memory for running machines, disk for what your projects hold, and e
 
 ## Projects
 
-Your plan's memory limits what runs at once, and its disk limits what you keep: Solo's 100 GB counts the data your projects hold, running or stopped, as do Plus's 250 GB and Pro's 500 GB. A new project's disk is 20 GB for `small`, 40 GB for `large` and 80 GB for `xl`; that is how far it can grow, and it counts only what it holds. Stop a project and start another whenever you like; a stopped project uses only the disk it holds.
+Your plan's memory limits what runs at once, and its disk limits what you keep: Solo's 100 GB counts the data your projects hold, running or stopped, as do Plus's 250 GB and Pro's 500 GB. A new project's disk is 20 GB for `small`, 40 GB for `large` and 80 GB for `xl`; that is how far it can grow, and it counts only what it holds. Stop a project and start another whenever you like; a stopped project uses no memory, only the disk it holds.
 
 While your projects hold more than the plan's disk, creating, restoring or forking a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Nothing stops: your machines keep running, stopped ones start, and you get one email a month about it. `repose ls`, `repose status` and the Billing page say so too.
 

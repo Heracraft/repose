@@ -217,7 +217,7 @@ git merge fork-2/main
 
 Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`.
 
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects) and your plan's disk, and toward the plan's memory while it runs. If the copies would take you past 100, `repose fork` creates none of them. `--size small` makes copies that take less of that memory and disk; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. `--size small` makes copies that take less of that memory; `--name` changes their names.
 
 ## Logs and events
 

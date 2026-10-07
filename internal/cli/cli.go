@@ -1116,8 +1116,9 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 			"projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each running on its own machine\n" +
 			"with the same files, configuration and secrets. PROJECT keeps running and stays the project\n" +
 			"`repose run` uses in its checkout. With --prompt, the agent starts in every fork with that prompt.\n" +
-			"Each fork is a project: it counts toward the 100 projects an account can have and your plan's\n" +
-			"disk, and toward the plan's memory while it runs.",
+			"Each fork is a project: it counts toward the 100 projects an account can have, toward your\n" +
+			"plan's disk by what it holds (at first what PROJECT holds), and toward the plan's memory while\n" +
+			"it runs.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
