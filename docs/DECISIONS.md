@@ -14604,9 +14604,11 @@ Now, in `nix/guest/base/keystroke-path.nix`:
   largest process not protected. The kernel's documentation names 1000
   ms as the value that removes intolerable lag.
 Checked by flake check `guest-keystroke-path` (unit texts, user.conf,
-the tmpfiles line) and guest-base's I-576 subtest (live values, and a
-python memory hog in a pane killed while the manager, the tmux server
-and the session stay).
+the tmpfiles line), guest-base's I-576 subtest (live values,
+`memory_recursiveprot` on the cgroup mount, and a python memory hog in a
+pane killed while the manager, the tmux server and the session stay)
+and the guestd test's I-200 subtest (guestd writes -900 to a manager
+running at upstream's 100).
 
 *Rejected:*
 - systemd-oomd on app.slice (`ManagedOOMMemoryPressure=kill`). oomd
@@ -14667,5 +14669,8 @@ handler now unsets itself first (a no-op outside its own child) and runs
 `/run/current-system/sw/bin/repose-command-not-found` when it exists,
 else prints `NAME: command not found`; the interactive bash, zsh and
 fish handlers call the helper's store path. Flake check
-`guest-keystroke-path` runs the bash-env.sh case under `ulimit -u 64`.
+`guest-keystroke-path` runs each of the four handlers (bash-env.sh's,
+and the interactive bash, zsh and fish ones with a stub at the helper's
+store path) with a PATH that lacks the helper, under `ulimit -u 128`,
+and expects one answer and status 127; CI builds it.
 No shipped base had I-516's handler.

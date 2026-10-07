@@ -612,4 +612,4 @@ pointer, not a summary.
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
 - **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L14545
-- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L14651
+- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L14653

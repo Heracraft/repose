@@ -288,7 +288,15 @@
             userConf = pkgs.writeText "user.conf" (builtins.unsafeDiscardStringContext cfg.environment.etc."systemd/user.conf".text);
             tmpfiles = pkgs.writeText "tmpfiles" (lib.concatStringsSep "\n" cfg.systemd.tmpfiles.rules);
             bashrc = pkgs.writeText "bashrc" (builtins.unsafeDiscardStringContext cfg.programs.bash.interactiveShellInit);
+            zshrc = pkgs.writeText "zshrc" (builtins.unsafeDiscardStringContext cfg.programs.zsh.interactiveShellInit);
+            fishrc = pkgs.writeText "fishrc" (builtins.unsafeDiscardStringContext cfg.programs.fish.interactiveShellInit);
             bashEnv = ./guest/base/bash-env.sh;
+            # Stands in for the helper at the store path the interactive
+            # handlers name, so the check needs no nix-index database.
+            stub = pkgs.writeShellScriptBin "repose-command-not-found" ''
+              printf '%s: stub\n' "$1" >&2
+              exit 127
+            '';
           } ''
             fail=0
             need() { grep -qx "$2" "$1" || { echo "$1 lacks $2" >&2; fail=1; }; }
@@ -312,18 +320,47 @@
             need "$tmux" 'OOMPolicy=continue'
             need "$appSlice" 'MemoryLow=48M'
             need "$tmpfiles" 'w- /sys/kernel/mm/lru_gen/min_ttl_ms - - - - 1000'
-            # The interactive handler calls the store path, not a PATH name.
-            grep -q '^ *${builtins.storeDir}/[^ ]*/bin/repose-command-not-found "\$1"$' "$bashrc" || { echo "the interactive bash handler does not call repose-command-not-found by its store path" >&2; fail=1; }
-            # An unknown command with a PATH that lacks the helper: one line
-            # and 127, not a fork per level until the limit.
-            got=$(ulimit -u 64; timeout 20 env PATH=${pkgs.coreutils}/bin BASH_ENV="$bashEnv" ${pkgs.bash}/bin/bash -c 'cowsayzz hi; echo status=$?' 2>&1 || true)
-            if [ "$got" != "$(printf 'cowsayzz: command not found\nstatus=127')" ]; then
-              echo "bash-env.sh's handler with no helper on PATH printed:" >&2
-              printf '%s\n' "$got" | head -5 >&2
-              fail=1
+            # Every not-found handler, with a PATH that lacks the helper and
+            # under a process limit (DECISIONS I-577): it answers once and
+            # the command's status is 127, not a fork per level until the
+            # limit. bash-env.sh's runs as an agent's bash -c does; the
+            # interactive bash, zsh and fish ones are cut from their init
+            # text, with the helper's store path pointed at the stub. A
+            # handler that called the helper by name would not reach it.
+            handler() {
+              sed -n "/$2/,/$3/p" "$1" \
+                | sed "s#${builtins.storeDir}/[^ ]*/bin/repose-command-not-found#${stub}/bin/repose-command-not-found#"
+            }
+            bashFn=$(handler "$bashrc" '^command_not_found_handle() {$' '^}$')
+            zshFn=$(handler "$zshrc" '^command_not_found_handler() {$' '^}$')
+            fishFn=$(handler "$fishrc" '^function fish_command_not_found$' '^end$')
+            for fn in "bash:$bashFn" "zsh:$zshFn" "fish:$fishFn"; do
+              case "$fn" in
+                *"${stub}/bin/repose-command-not-found"*) ;;
+                *) echo "the interactive ''${fn%%:*} handler does not call repose-command-not-found by its store path" >&2; fail=1 ;;
+              esac
+            done
+            try() {
+              ( ulimit -u 128; HOME=$TMPDIR timeout 20 env PATH=${pkgs.coreutils}/bin "$@" 2>&1 ) || true
+            }
+            expect() {
+              if [ "$2" != "$3" ]; then
+                echo "the $1 handler with no helper on PATH printed:" >&2
+                printf '%s\n' "$2" | head -5 >&2
+                fail=1
+              fi
+            }
+            expect bash-env.sh "$(try BASH_ENV="$bashEnv" ${pkgs.bash}/bin/bash -c 'cowsayzz hi; echo status=$?')" "$(printf 'cowsayzz: command not found\nstatus=127')"
+            expect bash "$(try ${pkgs.bash}/bin/bash -c "$bashFn; cowsayzz hi; echo status=\$?")" "$(printf 'cowsayzz: stub\nstatus=127')"
+            expect zsh "$(try ${pkgs.zsh}/bin/zsh -f -c "$zshFn; cowsayzz hi; echo status=\$?")" "$(printf 'cowsayzz: stub\nstatus=127')"
+            # fish may add its own error lines after the handler's; the
+            # status is 127 whatever the handler returns.
+            got=$(try ${pkgs.fish}/bin/fish --no-config -c "$fishFn; cowsayzz hi; echo status=\$status")
+            if [ "$(printf '%s\n' "$got" | grep -c '^cowsayzz: stub$')" != 1 ] || [ "$(printf '%s\n' "$got" | tail -1)" != status=127 ]; then
+              expect fish "$got" "cowsayzz: stub, once, and status=127"
             fi
             [ "$fail" = 0 ] || exit 1
-            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, tmux OOMPolicy=continue, min_ttl_ms 1000; not-found handler does not recurse"
+            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, tmux OOMPolicy=continue, min_ttl_ms 1000; bash-env.sh, bash, zsh and fish not-found handlers answer once with 127"
             touch $out
           '';
         # The session units start their servers outside a login shell and
