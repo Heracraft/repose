@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -156,16 +157,17 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 	// guest fields; the host CPU wait is host-measured (DECISIONS I-493).
 	// hostd already bounds the pressure delta; the clamp here keeps a
 	// value past int64 from refusing the row.
-	var pressure, memUsed int64
+	var pressure, memUsed, rootUsed, rootSize int64
 	if guestFields {
 		pressure = int64(min(g.CpuPressureUsDelta, maxPressureUs))
 		memUsed = int64(min(g.GuestMemUsedBytes, maxMemUsed))
+		rootUsed, rootSize = rootFS(g)
 	}
 	batch := &pgx.Batch{}
-	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) on conflict do nothing`,
+	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
-		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed)
+		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize)
 	if guestFields {
 		seen := map[string]bool{}
 		for _, p := range g.Procs {
@@ -183,6 +185,17 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 	return i.pool.SendBatch(ctx, batch).Close()
 }
 
+// rootFS is the guest's root filesystem from a sample (DECISIONS I-567),
+// kept only when it can be true: a size no larger than the volume and used
+// no larger than the size, as hostd already bounds it. Both 0 otherwise,
+// and for a hostd or guest older than I-567.
+func rootFS(g *hostdv1.GuestSample) (used, size int64) {
+	if g.RootSizeBytes == 0 || g.RootSizeBytes > g.DiskAllocBytes || g.RootUsedBytes > g.RootSizeBytes || g.DiskAllocBytes > math.MaxInt64 {
+		return 0, 0
+	}
+	return int64(g.RootUsedBytes), int64(g.RootSizeBytes)
+}
+
 // Latest is the newest sample of a project, for GET /projects/:id.
 type Latest struct {
 	TS               time.Time
@@ -193,14 +206,17 @@ type Latest struct {
 	DockerContainers int
 	DiskUsed         int64
 	GuestdOK         bool
+	// RootUsed and RootSize are the guest's root filesystem (I-567); 0
+	// when the sample did not carry it.
+	RootUsed, RootSize int64
 }
 
 // LatestSample reads the newest sample; ok=false when there is none.
 func LatestSample(ctx context.Context, q store.Querier, projectID uuid.UUID) (*Latest, bool, error) {
 	var l Latest
 	var agents []byte
-	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
-		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK)
+	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
+		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return nil, false, nil

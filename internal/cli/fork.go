@@ -148,7 +148,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		}
 		if snapID == "" {
 			pr.Fail()
-			return exitf(ExitGeneric, "The snapshot of %s finished but the api did not say which it is. `repose snapshots list --project %s` shows it; `repose fork %s --snapshot ID` forks from it.", src.Slug, src.Slug, src.Slug)
+			return exitf(ExitGeneric, "The snapshot of %s finished but the api did not say which it is. `repose snapshots list %s` shows it; `repose fork %s --snapshot ID` forks from it.", src.Slug, src.Slug, src.Slug)
 		}
 	}
 

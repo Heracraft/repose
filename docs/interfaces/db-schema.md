@@ -97,6 +97,7 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
               disk_alloc bigint, disk_used bigint, ssh_sessions int,
               tmux_clients int, agents jsonb, docker_containers int, guestd_ok bool,
               cpu_pressure_us bigint, host_cpu_wait_us bigint, mem_used bigint,  -- 0014, I-493; 0 before it
+              root_used bigint, root_size bigint,  -- 0018, I-567: the guest's root filesystem; 0 before it
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,

@@ -333,6 +333,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
 			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux,
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
+			RootUsedBytes: 1 << 30, RootSizeBytes: classes[class] - classes[class]/40,
 		},
 		owner:     u.ID,
 		secrets:   map[string]*SecretMeta{},
@@ -839,6 +840,8 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	o := f.newOp(p, "resize")
 	p.VolumeBytes = body.VolumeBytes
+	// The guest's growfs follows a resize, so its root filesystem grows too.
+	p.RootSizeBytes = body.VolumeBytes - body.VolumeBytes/40
 	f.event(p, "volume.resized", "", fmt.Sprintf("volume grown to %d bytes", body.VolumeBytes))
 	return opResult(w, o)
 }

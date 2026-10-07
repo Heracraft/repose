@@ -211,7 +211,13 @@ export interface Project {
 	base_version: string;
 	config_revision_id: string;
 	volume_bytes: number;
+	/** The volume's allocated blocks, which keep a deleted file's blocks
+	 * until the weekly fstrim; not shown (I-567). */
 	disk_used_bytes?: number;
+	/** The guest's root filesystem from the newest sample (I-567); absent
+	 * from a guest older than it or one that did not answer. */
+	root_used_bytes?: number;
+	root_size_bytes?: number;
 	created_at: string;
 	started_at?: string;
 	signals?: Signals;

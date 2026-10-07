@@ -31,6 +31,9 @@ Restored into a new project, todo-app-yesterday.
 
 Snapshot ids are UUIDv7 like every id (interfaces/README.md). TAKEN is
 the laptop's local time. `--yes` skips the question.
+`list`, `create` and `restore` act on the checkout's project, or the one
+named first: `repose snapshots list izma`, `repose snapshots restore izma
+SNAPSHOT_ID` (DECISIONS I-566).
 
 ## Behaviour that must hold
 

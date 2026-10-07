@@ -142,7 +142,8 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 disk_alloc_bytes; uint64 disk_used_bytes;
               GuestSignals signals; repeated ProcSample procs;
               uint64 cpu_pressure_us_delta; uint64 host_cpu_wait_us_delta;
-              uint64 guest_mem_used_bytes; }   // the last three: I-493
+              uint64 guest_mem_used_bytes;     // the three before: I-493
+              uint64 root_used_bytes; uint64 root_size_bytes; }   // I-567
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|unknown
@@ -228,6 +229,19 @@ time its vCPU threads waited for a host CPU (host-measured).
 (guest-written, capped at 1 TiB). The api stores them in `meter_samples`
 as `cpu_pressure_us`, `host_cpu_wait_us` and `mem_used`. A hostd older
 than I-493 sends zero for all three, which is the old shape and stays
+accepted.
+
+Root filesystem (DECISIONS I-567). `disk_used_bytes` is the thin
+volume's allocated blocks (`lvs data_percent`, host-measured), which
+keep a deleted file's blocks until the guest's weekly `fstrim`; it keeps
+that meaning. `root_used_bytes` and `root_size_bytes` are the guest's
+root filesystem from statfs (blocks less those available to `dev`, and
+blocks), guest-written: hostd sends both as 0 unless the size is
+non-zero, no larger than `disk_alloc_bytes`, and used is no larger than
+the size, and the api applies the same check. The api stores them in
+`meter_samples` as `root_used` and `root_size` and serves the newest as
+the project's `root_used_bytes` and `root_size_bytes`. A hostd or guest
+older than I-567 sends 0 for both, which is the old shape and stays
 accepted.
 
 ## Idempotency and ordering

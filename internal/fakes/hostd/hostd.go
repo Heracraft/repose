@@ -297,6 +297,7 @@ func (f *Fake) Samples() *hostdv1.Samples {
 		gs := &hostdv1.GuestSample{GuestId: g.GuestID, State: g.State, Class: g.Class, DiskAllocBytes: 40 << 30, DiskUsedBytes: 5 << 30, Signals: &hostdv1.GuestSignals{}}
 		if g.State == "running" {
 			gs.CpuNsDelta, gs.MemRssBytes, gs.NetTxBytesDelta, gs.NetRxBytesDelta = 30e9, 2<<30, 1<<20, 4<<20
+			gs.RootUsedBytes, gs.RootSizeBytes = 4<<30, 39<<30
 			gs.Signals = &hostdv1.GuestSignals{SshSessions: 1, TmuxClients: 1, GuestdOk: !g.GuestdDead, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "working"}}}
 			gs.Procs = []*hostdv1.ProcSample{{Comm: "claude", CpuNsDelta: 25e9, RssBytes: 1 << 30}, {Comm: "node", CpuNsDelta: 5e9, RssBytes: 300 << 20}}
 		}

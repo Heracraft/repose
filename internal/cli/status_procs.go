@@ -38,9 +38,51 @@ type listeningProc struct {
 	HasPID bool
 }
 
-// statusProcsScript also says what runs the machine's terminals now
-// (I-509), after "#mux": "herdr", or nothing for tmux.
-var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"; echo '#mux'; ` + muxProbeScript + ` && echo herdr`
+// statusProcsScript also says how full the root filesystem is, after
+// "#df" (statfs's blocks, blocks available to dev and block size, I-567),
+// and what runs the machine's terminals now (I-509), after "#mux":
+// "herdr", or nothing for tmux.
+var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"; echo '#df'; stat -f -c '%b %a %S' /; echo '#mux'; ` + muxProbeScript + ` && echo herdr`
+
+// guestDisk is the guest's root filesystem as statfs sees it: what the
+// guest's writes run out of. The api's disk_used_bytes is the host
+// volume's allocated blocks, which only a weekly fstrim gives back, so it
+// reads near full on a disk with room (kanali, 2026-10-07: 39.5 of 40 GB
+// allocated, 33 GB used). The api's root_used_bytes and root_size_bytes
+// are the same figure from the newest sample (apiDisk). Zero Size means
+// the guest did not say.
+type guestDisk struct {
+	Used, Size int64
+}
+
+// Percent is used over size as guestd's disk_high counts it (blocks less
+// those available to dev, so root's reserve counts as used).
+func (d guestDisk) Percent() int {
+	if d.Size <= 0 {
+		return 0
+	}
+	return int(d.Used * 100 / d.Size)
+}
+
+// parseStatusDisk reads the "#df" section: "BLOCKS AVAIL BSIZE".
+func parseStatusDisk(out string) guestDisk {
+	_, rest, ok := strings.Cut(out, "#df")
+	if !ok {
+		return guestDisk{}
+	}
+	rest, _, _ = strings.Cut(rest, "#mux")
+	f := strings.Fields(rest)
+	if len(f) < 3 {
+		return guestDisk{}
+	}
+	blocks, err1 := strconv.ParseInt(f[0], 10, 64)
+	avail, err2 := strconv.ParseInt(f[1], 10, 64)
+	bsize, err3 := strconv.ParseInt(f[2], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || blocks <= 0 || bsize <= 0 || avail < 0 || avail > blocks {
+		return guestDisk{}
+	}
+	return guestDisk{Used: (blocks - avail) * bsize, Size: blocks * bsize}
+}
 
 var ssUsers = regexp.MustCompile(`users:\(\("((?:[^"\\]|\\.)*)",pid=(\d+)`)
 
@@ -48,6 +90,7 @@ var ssUsers = regexp.MustCompile(`users:\(\("((?:[^"\\]|\\.)*)",pid=(\d+)`)
 // auto-forward sees them) with ps's age and memory by pid.
 func parseStatusProcs(out string) []listeningProc {
 	out, _, _ = strings.Cut(out, "#mux")
+	out, _, _ = strings.Cut(out, "#df")
 	ssPart, psPart, _ := strings.Cut(out, "#ps")
 	type psRow struct {
 		age time.Duration
@@ -134,23 +177,29 @@ func writeListening(w io.Writer, procs []listeningProc) {
 	}
 }
 
-// guestListeningMux asks the guest, best effort, for its listening
-// processes and the multiplexer that runs now (I-509): "herdr", "tmux",
-// or "" when the guest did not answer. It rides a multiplexed connection
-// when one is open and never leaves a new one behind (ControlMaster=no),
-// so a status does not hold a gateway session for ControlPersist's ten
-// minutes.
-func guestListeningMux(ctx context.Context, t sshTarget) ([]listeningProc, string) {
+// guestStatus is what status reads from the guest itself.
+type guestStatus struct {
+	procs []listeningProc
+	mux   string // "herdr", "tmux", or "" when the guest did not answer
+	disk  guestDisk
+}
+
+// guestStatusRead asks the guest, best effort, for its listening
+// processes, its root filesystem and the multiplexer that runs now
+// (I-509). It rides a multiplexed connection when one is open and never
+// leaves a new one behind (ControlMaster=no), so a status does not hold a
+// gateway session for ControlPersist's ten minutes.
+func guestStatusRead(ctx context.Context, t sshTarget) guestStatus {
 	ctx, cancel := context.WithTimeout(ctx, statusProcsTimeout)
 	defer cancel()
 	args := append([]string{"-o", "ControlMaster=no", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes"}, t.Args...)
 	out, err := runSSH(ctx, sshTarget{Args: args}, statusProcsScript, nil)
 	if err != nil && !strings.Contains(string(out), "#mux") {
-		return nil, ""
+		return guestStatus{}
 	}
 	mux := multiplexer.Tmux
 	if _, m, ok := strings.Cut(string(out), "#mux"); ok && strings.TrimSpace(m) == multiplexer.Herdr {
 		mux = multiplexer.Herdr
 	}
-	return parseStatusProcs(string(out)), mux
+	return guestStatus{procs: parseStatusProcs(string(out)), mux: mux, disk: parseStatusDisk(string(out))}
 }

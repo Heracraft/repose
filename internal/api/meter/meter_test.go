@@ -240,3 +240,36 @@ func TestIngestStoresCPUPressure(t *testing.T) {
 		t.Fatalf("B: values past the bound were not clamped: pressure %d wait %d", p, w)
 	}
 }
+
+// The guest's root filesystem (DECISIONS I-567) is stored beside the
+// volume's allocated figure and read back by LatestSample; a size past the
+// volume is dropped, and the allocated figure is kept either way.
+func TestIngestStoresRootFilesystem(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := meter.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now().UTC().Truncate(time.Second)
+	ing.SetNow(func() time.Time { return now })
+	pidA, gidA := seed(t, pool, "large", now.Add(-time.Hour))
+	pidB, gidB := seed(t, pool, "large", now.Add(-time.Hour))
+	ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: now.Unix(), Guests: []*hostdv1.GuestSample{
+		{GuestId: gidA.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{GuestdOk: true},
+			DiskAllocBytes: 40 << 30, DiskUsedBytes: 39 << 30, RootUsedBytes: 33 << 30, RootSizeBytes: 39 << 30},
+		{GuestId: gidB.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{GuestdOk: true},
+			DiskAllocBytes: 40 << 30, DiskUsedBytes: 5 << 30, RootUsedBytes: 1 << 30, RootSizeBytes: 1 << 50},
+	}})
+	a, ok, err := meter.LatestSample(ctx, pool, pidA)
+	if err != nil || !ok {
+		t.Fatalf("latest A: %v %v", ok, err)
+	}
+	if a.RootUsed != 33<<30 || a.RootSize != 39<<30 || a.DiskUsed != 39<<30 {
+		t.Fatalf("A: root %d of %d, disk_used %d", a.RootUsed, a.RootSize, a.DiskUsed)
+	}
+	b, ok, err := meter.LatestSample(ctx, pool, pidB)
+	if err != nil || !ok {
+		t.Fatalf("latest B: %v %v", ok, err)
+	}
+	if b.RootUsed != 0 || b.RootSize != 0 || b.DiskUsed != 5<<30 {
+		t.Fatalf("B: a size past the volume was kept: root %d of %d, disk_used %d", b.RootUsed, b.RootSize, b.DiskUsed)
+	}
+}

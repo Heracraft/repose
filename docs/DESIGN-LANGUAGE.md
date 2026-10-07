@@ -219,8 +219,9 @@ stands over the headline at x=216 at 1440 and at x=20 at 390 (I-397). Its
 links are Docs and Pricing at every width, GitHub from `sm` up, and the
 sign-in button; Pricing is in the footer too.
 The right side holds plain text links in `--ink-muted`; the current page
-is ink with a 1px underline, no bold shift and no accent colour. No
-hamburger on the dashboard; the docs' menu button sits at the right end
+is ink with a 1px underline, no bold shift and no accent colour. The
+dashboard's are Projects, Billing, Settings, Account, Docs from `sm` up
+(I-568) and Sign out. No hamburger on the dashboard; the docs' menu button sits at the right end
 below `lg`.
 
 Every page's content column is the header's column: `max-w-5xl`, and

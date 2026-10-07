@@ -3252,8 +3252,15 @@ type GuestSample struct {
 	// sample (guest-written; mem_rss_bytes is what the host has backed,
 	// which never shrinks without a balloon). DECISIONS I-493.
 	GuestMemUsedBytes uint64 `protobuf:"varint,14,opt,name=guest_mem_used_bytes,json=guestMemUsedBytes,proto3" json:"guest_mem_used_bytes,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The guest's root filesystem, used and size in bytes, as statfs in the
+	// guest sees it (guest-written; 0 for both when the guest did not say or
+	// said something past the volume). disk_used_bytes is the thin volume's
+	// allocated blocks, which keep a deleted file's blocks until the guest's
+	// weekly fstrim. DECISIONS I-567.
+	RootUsedBytes uint64 `protobuf:"varint,15,opt,name=root_used_bytes,json=rootUsedBytes,proto3" json:"root_used_bytes,omitempty"`
+	RootSizeBytes uint64 `protobuf:"varint,16,opt,name=root_size_bytes,json=rootSizeBytes,proto3" json:"root_size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GuestSample) Reset() {
@@ -3380,6 +3387,20 @@ func (x *GuestSample) GetHostCpuWaitUsDelta() uint64 {
 func (x *GuestSample) GetGuestMemUsedBytes() uint64 {
 	if x != nil {
 		return x.GuestMemUsedBytes
+	}
+	return 0
+}
+
+func (x *GuestSample) GetRootUsedBytes() uint64 {
+	if x != nil {
+		return x.RootUsedBytes
+	}
+	return 0
+}
+
+func (x *GuestSample) GetRootSizeBytes() uint64 {
+	if x != nil {
+		return x.RootSizeBytes
 	}
 	return 0
 }
@@ -4413,7 +4434,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\ftmux_clients\x18\x02 \x01(\rR\vtmuxClients\x122\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
-	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xca\x04\n" +
+	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\x9a\x05\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -4430,7 +4451,9 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x05procs\x18\v \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\x121\n" +
 	"\x15cpu_pressure_us_delta\x18\f \x01(\x04R\x12cpuPressureUsDelta\x122\n" +
 	"\x16host_cpu_wait_us_delta\x18\r \x01(\x04R\x12hostCpuWaitUsDelta\x12/\n" +
-	"\x14guest_mem_used_bytes\x18\x0e \x01(\x04R\x11guestMemUsedBytes\"\x81\x01\n" +
+	"\x14guest_mem_used_bytes\x18\x0e \x01(\x04R\x11guestMemUsedBytes\x12&\n" +
+	"\x0froot_used_bytes\x18\x0f \x01(\x04R\rrootUsedBytes\x12&\n" +
+	"\x0froot_size_bytes\x18\x10 \x01(\x04R\rrootSizeBytes\"\x81\x01\n" +
 	"\n" +
 	"HostSample\x12\x19\n" +
 	"\bmem_free\x18\x01 \x01(\x04R\amemFree\x12\x1b\n" +

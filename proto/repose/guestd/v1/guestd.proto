@@ -78,6 +78,11 @@ message SampleResult {
   // MemTotal less MemAvailable from the guest's /proc/meminfo, in bytes;
   // 0 when it cannot be read (DECISIONS I-493).
   uint64 mem_used_bytes = 5;
+  // The root filesystem from statfs, in bytes: blocks less those available
+  // to dev (so root's reserve counts as used, as the disk_high warning
+  // counts it), and blocks. Both 0 when statfs fails (DECISIONS I-567).
+  uint64 root_used_bytes = 6;
+  uint64 root_size_bytes = 7;
 }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 

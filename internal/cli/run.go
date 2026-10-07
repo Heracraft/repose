@@ -1041,7 +1041,7 @@ func failedStart(e *Env, project *Project, op *Op, pr *progress) error {
 	switch op.Error.Code {
 	case "build_failed", "eval_failed", "closure_too_large", "build_timeout":
 		RenderBuildError(e.ErrOut, op.Error.Code, op.Error.Message, "repose.nix", nil)
-		_, _ = fmt.Fprintf(e.ErrOut, "Fix it with `repose config edit --project %s`.\n", project.Slug)
+		_, _ = fmt.Fprintf(e.ErrOut, "Fix it with `repose config edit %s`.\n", project.Slug)
 		return silent(ExitBuildFailed)
 	}
 	return e.opFailed("start", project.Slug, op.Error, nextAfterFailedStart(project.Slug, op.Error.Code))

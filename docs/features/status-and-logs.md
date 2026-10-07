@@ -34,6 +34,16 @@ multiplexer until its next start. When the guest does not answer within
 that ssh's few seconds, the word comes from the project's stored
 `multiplexer`.
 
+The same ssh reads the guest's root filesystem (`stat -f /`), and `disk`
+is its used over its size, counted as guestd's `disk_high` counts it.
+A guest that did not answer falls back to the api's `root_used_bytes`
+and `root_size_bytes`, the same figure from the newest minute sample;
+a stopped project, or a sample without it, shows the disk's size alone
+(DECISIONS I-567). At 90 percent or more a line under the host
+line reads `disk 95 percent full; \`repose resize todo-app 80G\` grows
+it`, the size double the disk up to 320 GB. AGENTS names the one agent,
+or counts several by state: `3 agents: 1 needs_input, 2 working`.
+
 ```
 $ repose logs                    # console, last 200 lines, follow with -f
 $ repose logs --kind build       # the last build's output
@@ -44,7 +54,10 @@ $ repose logs --kind ops         # create/start/stop/apply/snapshot history
 not apply, uptime only while running), followed by one line per project
 in `error` with the reason the api recorded and the command that fixes
 it, e.g. `age-calculator: the environment's agent (guestd) stopped
-answering; \`repose start\` restarts it.` (DECISIONS I-153). `--json` is
+answering; \`repose start\` restarts it.` (DECISIONS I-153). While a
+listed project's disk is 90 percent full or more (the api's root
+filesystem figure), a `DISK` column reads `93% full` for it and `-` for
+the rest, there only then, as `LEFT` is (I-567). `--json` is
 the api's list, unchanged. `repose status`, `logs` and `events` take the
 project as their argument (`repose logs izma -f`, I-155).
 
@@ -53,7 +66,8 @@ project as their argument (`repose logs izma -f`, I-155).
 Status:
 
 - `repose ls` lists every non-destroyed project with class, state,
-  uptime since the last `running` transition, per-agent state, and cost
+  uptime since the last `running` transition, agent state (counted by
+  state when there are several, I-567), and cost
   today and month to date in dollars from `usage_hours` plus the current
   partial hour estimated at the class rate. `repose status` prints the
   same columns for one project, then its detail lines.
@@ -108,7 +122,9 @@ promised, DECISIONS I-96):
   the same `usage_hours` rows. Not sortable, and no sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
   signals, cost (today, this month, and the month projected at the
-  current run rate), disk with a resize control, events newest first, the
+  current run rate), disk (the guest's root filesystem used, of the
+  volume's size, and `N percent full` at 90 or more, I-567) with a
+  resize control, events newest first, the
   last build with a link to the config page, and snapshots with restore
   and restore-as-new. Start, Stop, Resize and Destroy are the header
   actions; Destroy makes you type the slug.
