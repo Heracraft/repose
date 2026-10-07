@@ -15,7 +15,6 @@ import (
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
-	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/psi"
 )
@@ -50,22 +49,24 @@ func (h *Handler) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, Budget)
 	defer cancel()
 
+	// The /proc walk comes first and whatever the deadline: it takes no
+	// lock and never waits, while Signals waits for the watcher's lock,
+	// which a refresh holds through its tree walks. Skipped after a
+	// Signals that ran past the budget, it left ssh_sessions 0 beside
+	// the cached tmux_clients, and hostd and the api do not read
+	// partial, so status showed `sessions 0   tmux clients 1` on an
+	// attached machine and a herdr machine, whose clients are only in
+	// ssh_sessions, read as unused (cli-small-fixes review, 2026-10-07).
+	procs, sessions, procErr := h.watcher.procs.read(h.uid)
+
 	signals, fresh := h.watcher.Signals()
 	partial := !fresh
-
-	var procs []*hostdv1.ProcSample
-	if ctx.Err() == nil {
-		procs2, sessions, err := h.watcher.procs.read(h.uid)
-		if err != nil {
-			h.log.Warn("could not read the process table",
-				"event", "sample", "error_code", sysdep.CodeOf(err))
-			partial = true
-		} else {
-			procs = procs2
-			signals.SshSessions = sessions
-		}
-	} else {
+	if procErr != nil {
+		h.log.Warn("could not read the process table",
+			"event", "sample", "error_code", sysdep.CodeOf(procErr))
 		partial = true
+	} else {
+		signals.SshSessions = sessions
 	}
 	if ctx.Err() != nil {
 		partial = true

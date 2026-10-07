@@ -14604,11 +14604,21 @@ api has no filesystem number; the fix is a `root_used_bytes` and
 I-493 did for `mem_used_bytes` (guestd, hostd, api, a migration and four
 interface docs), and the dashboard then shows it. Seen and left: the
 `snapshot 20h17m ago` is right (nightly at 03:00 host time, R3-6, plus
-every stop); `sessions 0` beside `tmux clients 1` needs a look at the
-guest's `sshd-session` processes while attached (guestd counts `sshd`
-and `sshd-session` owned by `dev`), which this branch could not do.
-`TestStatusDiskIsTheGuestsFilesystem`, `TestAgentStateCountsEveryAgent`.
-Needs a CLI release; the guide line ships with the base.
+every stop). `sessions 0` beside `tmux clients 1` while attached: the
+count itself is right (OpenSSH 10.5 on kanali runs the session as
+`sshd-session` owned by `dev`, which guestd counts), but guestd's Sample
+skipped its /proc walk when the one-second budget had run out by the
+time `Signals` got the watcher's lock, which a refresh holds through its
+tree walks, and sent `ssh_sessions` 0 beside the cached `tmux_clients`;
+hostd and the api ignore `partial`, so the zero was stored as true, and
+a herdr machine, whose clients are only in `ssh_sessions`, could read as
+unused. The walk now runs first and whatever the deadline (it takes no
+lock), and the sample is still `partial` past the budget. Not proven to
+be the owner's case, which was not reproduced; it is the one path in the
+code that gives that pair. `TestStatusDiskIsTheGuestsFilesystem`,
+`TestAgentStateCountsEveryAgent`,
+`TestSamplePastItsBudgetStillCountsSSHSessions`. Needs a CLI release;
+the guide line and the guestd change ship with the base.
 
 **I-568. The dashboard's header links to the docs, and the agent guide
 says how to hand the user a file.** (cli-small-fixes, 2026-10-07;

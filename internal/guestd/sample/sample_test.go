@@ -94,6 +94,38 @@ func TestSampleReportsPartialOnAStaleCache(t *testing.T) {
 	}
 }
 
+// A sample past its budget still counts the ssh sessions. The /proc walk
+// was skipped once Signals had waited out the budget on the watcher's lock,
+// and the sample went out with ssh_sessions 0 beside the cached
+// tmux_clients: `sessions 0   tmux clients 1` on an attached machine.
+func TestSamplePastItsBudgetStillCountsSSHSessions(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{
+		{pid: 102, ppid: 1, comm: "sshd-session", uid: 1000},
+		{pid: 103, ppid: 102, comm: "tmux: client", uid: 1000},
+	})
+	run.Match["list-windows"] = tmuxOutput()
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	w.Refresh(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the budget is already spent
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+	res, err := h.Sample(ctx)
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	sig := res.GetSignals()
+	if sig.GetSshSessions() != 1 || sig.GetTmuxClients() != 1 {
+		t.Errorf("ssh_sessions %d, tmux_clients %d past the budget, want 1 and 1", sig.GetSshSessions(), sig.GetTmuxClients())
+	}
+	if len(res.GetProcs()) == 0 {
+		t.Error("no process samples past the budget")
+	}
+	if !res.GetPartial() {
+		t.Error("a sample past its budget is partial")
+	}
+}
+
 func TestSampleIsUnder20Milliseconds(t *testing.T) {
 	// A guest of a few hundred processes, which is a busy one.
 	var procs []fakeProc
