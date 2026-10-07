@@ -230,7 +230,8 @@ test('the disk meter counts what the projects hold and says what waits while it 
 	await expect(disk).not.toContainText('over');
 	await setBilling({ disk_held_gb: 112.4 });
 	await page.reload();
-	await expect(disk).toContainText('112.4 GB of 100 GB · over');
+	await expect(disk).toContainText('112.4 GB of 100 GB');
+	await expect(disk).toContainText('over');
 	await expect(disk).toContainText(
 		'Creating, restoring and forking projects, and growing a disk, wait until your projects hold less.'
 	);
@@ -314,11 +315,14 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await expect(page.getByTestId('change-plan')).toContainText('Downgrade to Solo ($29 a month');
 	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
 	const err = page.getByTestId('change-error');
+	// The api's sentence, the disk counted by what the projects hold (I-585).
 	await expect(err).toContainText(
-		'Solo holds 8 GB of memory for running machines and 100 GB of disk'
+		'your account does not fit the Solo plan yet: 16 GB running (it allows 8)'
 	);
-	await expect(err).toContainText('you have 16 GB of memory running');
-	await expect(err).toContainText('Stop machines or destroy projects first.');
+	await expect(err).toContainText('GB of disk held by your projects (it allows 100)');
+	await expect(err).toContainText(
+		'stop machines, or destroy projects or delete files in them, first'
+	);
 });
 
 test('on Pro both other plans are downgrades, and Plus is refused while three large machines run', async ({
@@ -343,9 +347,8 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	const err = page.getByTestId('change-error');
 	await expect(err).toContainText(
-		'Plus holds 16 GB of memory for running machines and 250 GB of disk'
+		'your account does not fit the Plus plan yet: 24 GB running (it allows 16)'
 	);
-	await expect(err).toContainText('you have 24 GB of memory running');
 	await stopAll();
 });
 

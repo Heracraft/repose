@@ -562,8 +562,8 @@
 								{#if up}
 									Takes effect at once; Paddle prorates the rest of this period.
 								{:else}
-									Takes effect at the renewal on {dateOnly(sub.period_end)}; what runs and what
-									your projects hold have to fit it first.
+									Takes effect at the renewal on {dateOnly(sub.period_end)}; what runs and what your
+									projects hold have to fit it first.
 								{/if}
 							</p>
 							<button
