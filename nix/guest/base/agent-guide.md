@@ -63,6 +63,7 @@ The user may have added other repositories to this machine as folders beside it,
 - When memory runs out, test runs and dev servers are killed before agents, tmux and herdr. `sudo dmesg | grep -i killed` shows what went. <!-- /docs/machine#memory-and-disk -->
 - `df -h /home/dev` shows free disk. Past 90 percent, one build or download can fill it, and then writes fail with "No space left on device"; tell the user then, since only they can grow it, with `repose resize 80G` (any size) on their laptop. <!-- /docs/machine#memory-and-disk -->
 - `sudo systemctl start repose-store-gc` deletes the nix store paths this machine downloaded or built that nothing uses, and nix profile generations older than 14 days; it also runs weekly. <!-- /docs/machine#memory-and-disk -->
+- A deleted file counts toward the user's plan disk until the daily `fstrim`; `sudo fstrim /` gives its space back now. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
 - The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every vCPU busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->
 
@@ -94,7 +95,7 @@ The user may have added other repositories to this machine as folders beside it,
 
 ## Limits
 
-- The user's plan buys memory that may run at once (Solo 8 GB, Plus 16 GB, Pro 32 GB), disk that may be allocated and egress for the month. A start refused with exit code 7 and a message naming the machine using the memory is the user's call: they stop one or upgrade. Don't work around it. <!-- /docs/limits#your-plan -->
+- The user's plan buys memory that may run at once (Solo 8 GB, Plus 16 GB, Pro 32 GB), disk for what its projects hold and egress for the month. A start refused with exit code 7 and a message naming the machine using the memory is the user's call: they stop one or upgrade. Don't work around it. <!-- /docs/limits#your-plan -->
 - Data this machine sends to the internet counts against the user's monthly egress allowance (250 GB on Solo, 100 GB during its $20 introductory months, 500 GB on Plus, 1 TB on Pro); every GB past it costs them $0.05, and at four times the allowance their machines stop until the month turns. Incoming data is free, disk is a hard limit: don't download, serve or upload large files needlessly. <!-- /docs/limits#egress -->
 - Nothing on the internet can connect to this machine. Outbound TCP and UDP are allowed, up to 200 Mbit/s; ping to the internet gets no reply, so check connectivity with `curl -sI https://example.com`. <!-- /docs/limits#network --> <!-- /docs/machine#network -->
 - Outbound port 25 is blocked. Send mail through a provider's API or its submission port (587 or 465). <!-- /docs/limits#network -->

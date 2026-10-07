@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -28,6 +29,8 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 	} else {
 		guest <- guestStatus{}
 	}
+	bill := make(chan *Billing, 1)
+	go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
 	route, _ := e.Client.ProjectRoute(ctx, project.ID)
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
@@ -37,6 +40,9 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 		mux = multiplexer.Normalize(project.Multiplexer)
 	}
 	writeStatusLinesMux(e.Out, project, route, snaps, events, mux, g.disk)
+	if l := diskOverPlanLine(<-bill); l != "" {
+		_, _ = fmt.Fprintf(e.Out, "  %s\n", l)
+	}
 	writeListening(e.Out, g.procs)
 	return nil
 }
@@ -45,6 +51,11 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 // ignoring cwd, with a header row and, under a project in `error`, why
 // (DECISIONS I-153). --json is the api's list, unchanged.
 func ProjectsCmd(ctx context.Context, e *Env) error {
+	// The plan's disk is read beside the list, for the table only.
+	bill := make(chan *Billing, 1)
+	if !e.JSON && !e.Quiet {
+		go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
+	}
 	projects, err := e.Client.ListProjects(ctx)
 	if err != nil {
 		return err
@@ -66,7 +77,27 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	writeProjectsTable(e.Out, projects)
+	if l := diskOverPlanLine(<-bill); l != "" {
+		_, _ = fmt.Fprintln(e.Out, l)
+	}
 	return nil
+}
+
+// diskOverPlanLine is the line `repose ls` and `repose status` print
+// while the projects hold more than the plan's disk (DECISIONS I-585):
+// creating, restoring, forking and growing a disk are refused until they
+// hold less, which the user would otherwise learn only from a refusal.
+// Empty within the plan, with no plan, or from an api that does not say.
+func diskOverPlanLine(b *Billing) string {
+	if b == nil || b.Subscription == nil || b.Usage.DiskHeldGB == nil || b.Usage.DiskGB <= 0 {
+		return ""
+	}
+	held := *b.Usage.DiskHeldGB
+	if held <= float64(b.Usage.DiskGB) {
+		return ""
+	}
+	return fmt.Sprintf("disk: your projects hold %s GB of the plan's %d GB; creating, restoring, forking and growing a disk are refused until they hold less",
+		strconv.FormatFloat(held, 'f', -1, 64), b.Usage.DiskGB)
 }
 
 func writeProjectsTable(w io.Writer, projects []Project) {
@@ -196,7 +227,7 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 // its size, from the guest's own answer or else the api's newest sample;
 // with neither, the volume's size alone. The api's disk_used_bytes is not
 // shown: it counts the volume's allocated blocks, which a deleted file
-// keeps until the weekly fstrim (I-567).
+// keeps until the guest's daily fstrim (I-567, I-585).
 func statusDisk(p *Project, gd guestDisk) string {
 	if gd.Size > 0 {
 		return fmt.Sprintf("%s/%s", humanBytes(gd.Used), humanBytes(gd.Size))

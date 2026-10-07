@@ -110,6 +110,15 @@ func addProject(t *testing.T, pool *db.Pool, a account, slug, class, state strin
 	return id
 }
 
+// held sets the bytes a project's volume holds, as the meter ingest does
+// from a sample (DECISIONS I-585).
+func held(t *testing.T, pool *db.Pool, projectID uuid.UUID, bytes int64) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), "update projects set disk_held_bytes = $2, disk_held_at = now() where id = $1", projectID, bytes); err != nil {
+		t.Fatalf("held: %v", err)
+	}
+}
+
 // usageHour writes one usage_hours row directly (the rollup's output).
 func usageHour(t *testing.T, pool *db.Pool, projectID uuid.UUID, hour time.Time, class string, runningSeconds int, egress int64, p billing.Period) {
 	t.Helper()

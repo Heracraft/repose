@@ -807,7 +807,7 @@
 				<h2 class="text-xl font-semibold">Disk</h2>
 				<!-- Used is the guest's root filesystem, what its writes run out
 				     of; the volume's allocated figure keeps deleted files until
-				     the weekly fstrim and is not shown (I-567). -->
+				     the daily fstrim and is not shown (I-567, I-585). -->
 				<p class="mt-3 text-sm tabular-nums">
 					{project.root_used_bytes !== undefined && project.root_size_bytes
 						? gb(project.root_used_bytes)

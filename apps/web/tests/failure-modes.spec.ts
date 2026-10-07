@@ -143,7 +143,8 @@ test('disk_limit on a resize is told like a start refusal, with a Change plan li
 	await page.getByRole('button', { name: 'Grow' }).click();
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'disk_limit');
-	await expect(refusal).toContainText("would pass Solo's 100 GB");
+	// A disk is a ceiling; one disk may be at most the plan's whole disk (I-585).
+	await expect(refusal).toContainText("one project's disk can be at most 100 GB");
 	await expect(refusal.getByRole('link', { name: 'Change plan' })).toHaveAttribute(
 		'href',
 		'/billing'

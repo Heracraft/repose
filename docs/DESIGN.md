@@ -58,8 +58,10 @@ write Nix.
   from snapshot onto another host.
 
 Each user's limits are enforced in the API, not the host: the plan's memory
-caps what runs at once, its disk caps what is kept, and one cap of 100
-projects per account, running or stopped, bounds abuse (DECISIONS I-569).
+caps what runs at once, its disk caps what is kept, counted by the bytes
+each project's volume holds rather than its size (DECISIONS I-585), and
+one cap of 100 projects per account, running or stopped, bounds abuse
+(DECISIONS I-569).
 
 ## 4. Hosts
 
@@ -89,7 +91,9 @@ from `nix/hosts/`. The host configuration declares:
   guest-to-host, a drop rule for `169.254.169.254` (Azure IMDS hands out
   managed-identity tokens), per-guest egress shaping at 200 Mbit/s.
 - An LVM thin pool `vg-guests/thin` on one Premium SSD v2 managed data disk,
-  2 TB to start, one thin volume per guest.
+  2 TB to start, one thin volume per guest. The volumes' sizes sum past the
+  pool by design (plans count what volumes hold, I-585); the pool is
+  guarded by what it holds (I-586, below).
 - `virtiofsd` per guest, exporting `/nix/store` read-only.
 - Kernel with KVM enabled, `vhost_vsock`, `nf_tables`, and the Cloud Hypervisor
   package from nixpkgs (v53 at time of writing).
@@ -103,6 +107,21 @@ large or 14 small. v7 sizes expose disks over NVMe only: OS at
 `/dev/nvme0n1`, the data disk resolved at install time (DECISIONS I-41). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added manually:
 an alert fires at 80 percent reserved memory and a human runs the OpenTofu
 apply for the next host.
+
+**Thin pool capacity** (DECISIONS I-586). A full pool fails or stalls the
+writes of every guest on it, so it is watched by what it holds, data or
+metadata whichever is fuller, and never by the volumes' sizes. hostd
+reports the pool's size and free bytes in every heartbeat. At 70 percent
+the scheduler places no new project there (a create, a restore or fork as
+a new project) and hostd sends `pool_high`, which is the `PoolHigh`
+warning: the remaining 30 percent is room for the guests already on the
+host to grow into while a human grows the data disk (an online Premium SSD
+v2 resize, `pvresize`, `lvextend`). lvm autoextends the pool into the VG's
+5 percent headroom at 80. hostd refuses a create, restore or grow at 85,
+`PoolFull` pages at 90, and hostd refuses a start at 95: a stopped
+project lives on its host and a start adds a writer, so at 95 it waits
+for the operator rather than risk the pool. Nothing stops a running guest
+for the pool.
 
 **Benchmark gate.** Deferred (DECISIONS I-12): the separate M0 benchmark
 was not run; the first M1 host measured itself instead (`RESEARCH.md` §11
@@ -127,8 +146,12 @@ result.
 | large | 4 | 8 GB | 40 GB | $99 |
 | xl | 8 | 16 GB | 80 GB | $199 |
 
-Volumes are thin-provisioned, resizable upward from the CLI, billed on
-allocated size. Resize is one `lvextend` on the host plus an online filesystem
+Volumes are thin-provisioned, resizable upward from the CLI. The plan's
+disk counts the bytes a volume holds (the thin volume's allocated blocks),
+and its size is only the ceiling it may grow to (DECISIONS I-585,
+replacing "billed on allocated size" of R5-5). The guest trims its free
+blocks daily and at every stop, so a deleted file stops counting within a
+day. Resize is one `lvextend` on the host plus an online filesystem
 grow issued by `guestd`.
 
 **Base image (the platform NixOS module).** Everything a guest has regardless
@@ -291,8 +314,9 @@ Postgres holds users, projects, hosts, guests, volumes, snapshots, secrets
 config revisions, build logs. Schema in `interfaces/db-schema.md`.
 
 The scheduler is a function, not a service: on `create`, pick the host with
-the most free reserved memory that is `ready`, reserve the guest's memory in a
-transaction, and send the create command. A host that has not heartbeated for
+the most free reserved memory that is `ready` and whose thin pool stays at
+most 70 percent used with the new volume's first bytes in it (I-586),
+reserve the guest's memory in a transaction, and send the create command. A host that has not heartbeated for
 90 seconds is `unreachable` and receives no placements.
 
 **Deployment.** `api` and the dashboard are single-container Coolify
@@ -423,7 +447,9 @@ disk and 250 GB of egress; Plus, $59, buys 16 GB, 250 GB and 500 GB;
 Pro, $99, buys 32 GB, 500 GB and 1000 GB (I-362). A first Solo
 subscription pays $20 and has 100 GB of egress for its first three months
 (I-497).
-A plan sells no project count: a stopped project costs only its disk, and
+A plan sells no project count: a stopped project costs only the disk it
+holds, the plan's disk counting what each volume holds and not its size
+(I-585), and
 one cap of 100 projects per account, running or stopped and the same on
 every plan, bounds abuse (I-569); egress past the
 allowance is $0.05 a GB as one line on the next invoice, and at four times
@@ -434,7 +460,10 @@ and the reasoning.
 Meters, sampled by hostd every 60 seconds and aggregated hourly by the API
 into `usage_hours`, are the record of what ran: guest-hours by size class
 (what `repose status` shows), disk allocated, egress bytes (what the
-overage line and the hard stop read). Nothing is priced per hour.
+overage line and the hard stop read). Nothing is priced per hour. Each
+sample's thin volume figure, for a stopped guest as for a running one, is
+also kept on the project as `disk_held_bytes`, which the disk gate reads
+(I-585).
 
 A failed payment refuses new starts from day 0, stops the running machines
 on day 3, and destroys nothing for 30 days.

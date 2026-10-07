@@ -380,8 +380,10 @@ reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
 - **Pricing's sentence and spec line** (I-397, recorded in I-401). The
   head sentence is "Seven days free, card at checkout. Prices in USD,
   before tax. A plan's memory is shared by the machines you have
-  running; a stopped machine uses none." (it was "Three plans. Seven
-  days free, card at checkout."): the three cards show there are three,
+  running; a stopped machine uses none. Its disk counts the bytes your
+  projects hold." (it was "Three plans. Seven days free, card at
+  checkout."; the disk sentence came with I-585, so a buyer reads 100 GB
+  as room for many projects, most of them stopped): the three cards show there are three,
   and the currency, tax and how memory is counted are
   `docs/PRICING.md`'s, facts the cards do not show. Each card's spec
   reads "N GB of memory" (it was "N GB running at once", which did not

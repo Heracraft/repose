@@ -1,7 +1,8 @@
 # Stop, start, destroy
 
 A project's guest is always on until the user stops it (DECISIONS R1-5).
-Stopping snapshots and deallocates; the disk stays and keeps being billed.
+Stopping snapshots and deallocates; the disk stays, trimmed at shutdown,
+and what it holds keeps counting toward the plan's disk (I-585).
 Destroying deletes the disk and keeps the last snapshot for 30 days.
 
 ## What the user sees

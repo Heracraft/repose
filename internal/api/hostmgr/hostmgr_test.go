@@ -169,6 +169,13 @@ func TestRegisterSessionSendSweep(t *testing.T) {
 		hr, _ := store.GetHost(ctx, h.pool, hostID)
 		return hr != nil && hr.State == "ready" && hr.LastHeartbeatAt != nil
 	})
+	// The pool's size follows hello and the heartbeat past the one
+	// registered (500 GB here; the fake host's pool is 1 TB), since
+	// autoextend grows it and placement reads it (DECISIONS I-586).
+	waitFor(t, "pool size from the heartbeat", func() bool {
+		hr, _ := store.GetHost(ctx, h.pool, hostID)
+		return hr != nil && hr.PoolBytes == 1<<40
+	})
 	var replica string
 	if err := h.pool.QueryRow(ctx, "select replica_id from host_sessions where host_id = $1", hostID).Scan(&replica); err != nil || replica != "replica-1" {
 		t.Fatalf("host_sessions: %q %v", replica, err)

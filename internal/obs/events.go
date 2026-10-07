@@ -73,9 +73,13 @@ const (
 	EventBillingGateRefused = "gate_refused"
 	EventBillingStopped     = "billing_stopped"
 	EventBillingEnforce     = "billing_enforce"
-	EventNotifySend         = "notify_send"
-	EventNotifyFail         = "notify_fail"
-	EventAdminAction        = "admin_action"
+	// EventBillingDiskOverPlan is a user whose projects came to hold more
+	// than the plan's disk (DECISIONS I-585), logged once per period
+	// with the disk_over_plan email.
+	EventBillingDiskOverPlan = "disk_over_plan"
+	EventNotifySend          = "notify_send"
+	EventNotifyFail          = "notify_fail"
+	EventAdminAction         = "admin_action"
 	// EventPartitionDropFail is the §6 failure mode: the meter_samples or
 	// proc_samples partition drop did not run, so disk grows and nothing
 	// else breaks.

@@ -57,7 +57,8 @@ overage lines sent, `repose_api_billing_gate_refused_total{reason}` the
 the subscription events applied and `repose_api_billing_stops_total{reason}`
 the machines the api stopped for billing. The log lines are
 `webhook_received` (kind, result), `overage_charged` (user_id, result,
-cents, gb) and `gate_refused` (user_id, reason, plan): never the body of a
+cents, gb), `gate_refused` (user_id, reason, plan) and `disk_over_plan`
+(user_id, plan; once a period, with its email, I-585): never the body of a
 webhook, an email, a card or an amount a tenant typed.
 
 The fleet as a whole: `repose_api_seats_total` and `repose_api_seats_held`

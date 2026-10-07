@@ -175,13 +175,17 @@ type Config struct {
 	Lookup         func(name string) (uid, gid int, err error)
 	MinVolumeBytes uint64
 	MaxVolumeBytes uint64
-	PoolRefusePct  float64
-	PoolWarnPct    float64
-	// PoolOvercommit bounds the virtual sizes of the pool's thin volumes,
-	// as a multiple of the pool's size (DECISIONS I-449).
-	PoolOvercommit float64
-	StoreHighPct   float64
-	GuestdRetry    time.Duration
+	// The thin pool's thresholds, in percent of the pool used, data or
+	// metadata whichever is fuller (DECISIONS I-586): PoolWarnPct sends
+	// pool_high (the api stops placing new projects at the same 70),
+	// PoolRefusePct refuses a create, a restore and a grow, and
+	// PoolStartRefusePct refuses a start. A running guest is never
+	// stopped for the pool.
+	PoolRefusePct      float64
+	PoolWarnPct        float64
+	PoolStartRefusePct float64
+	StoreHighPct       float64
+	GuestdRetry        time.Duration
 	// GuestdBootRetry is the dial interval until a monitor's first guestd
 	// session: a booting guest's guestd starts listening at an unknown
 	// moment on every start's critical path, and a 2 s retry cost a
@@ -245,13 +249,13 @@ func (c Config) Defaults() Config {
 		c.MaxVolumeBytes = 2 << 40
 	}
 	if c.PoolRefusePct == 0 {
-		c.PoolRefusePct = 90
+		c.PoolRefusePct = 85
 	}
 	if c.PoolWarnPct == 0 {
-		c.PoolWarnPct = 80
+		c.PoolWarnPct = 70
 	}
-	if c.PoolOvercommit == 0 {
-		c.PoolOvercommit = 1.5
+	if c.PoolStartRefusePct == 0 {
+		c.PoolStartRefusePct = 95
 	}
 	if c.StoreHighPct == 0 {
 		c.StoreHighPct = 80
@@ -674,17 +678,34 @@ func (m *Manager) PoolFreeBytes() uint64 {
 	return free
 }
 
+// PoolBytes is the thin pool's data size, 0 when lvs fails.
+func (m *Manager) PoolBytes() uint64 {
+	size, _, err := m.d.LVM.PoolStats(m.ctx)
+	if err != nil {
+		return 0
+	}
+	return size
+}
+
+// poolUsedPct is how full the thin pool is: its data or its metadata,
+// whichever is fuller, since either running out fails every guest's
+// writes (DECISIONS I-586).
 func (m *Manager) poolUsedPct() (float64, error) {
 	size, free, err := m.d.LVM.PoolStats(m.ctx)
 	if err != nil || size == 0 {
 		return 0, err
 	}
-	return float64(size-free) / float64(size) * 100, nil
+	pct := float64(size-free) / float64(size) * 100
+	meta, err := m.d.LVM.PoolMetadataPercent(m.ctx)
+	if err != nil {
+		return 0, err
+	}
+	return max(pct, meta), nil
 }
 
 // Hello builds the reconciliation message for the stream.
 func (m *Manager) Hello() *hostdv1.Hello {
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes()}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes()}
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
 		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure})
@@ -694,7 +715,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 
 // Heartbeat builds the periodic heartbeat.
 func (m *Manager) Heartbeat() *hostdv1.Heartbeat {
-	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), Draining: m.Draining()}
+	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), Draining: m.Draining()}
 	if m.d.Load1 != nil {
 		hb.Load1 = m.d.Load1()
 	}

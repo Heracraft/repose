@@ -65,6 +65,11 @@
 		!!billing && !sub && !settingUp && (setupTimedOut || holdActive || anyAvailable)
 	);
 	let accountStatus = $derived(me?.billing.status);
+	// What the projects hold, which the plan's disk counts (I-585); an api
+	// older than that sends only disk_allocated_gb.
+	let diskHeld = $derived(
+		billing ? (billing.usage.disk_held_gb ?? billing.usage.disk_allocated_gb) : 0
+	);
 
 	async function load() {
 		// One failure, one report (DESIGN-LANGUAGE "Toasts", I-395): an
@@ -466,10 +471,13 @@
 					note={runsAtOnce(plan)}
 				/>
 				<Meter
-					label="Disk allocated"
-					used={billing.usage.disk_allocated_gb}
+					label="Disk held"
+					used={diskHeld}
 					limit={billing.usage.disk_gb}
 					format={gbs}
+					note={diskHeld > billing.usage.disk_gb
+						? 'Creating, restoring and forking projects, and growing a disk, wait until your projects hold less. A deleted file stops counting within a day, or when its machine stops.'
+						: undefined}
 				/>
 				<Meter
 					label="Egress this period"
@@ -554,8 +562,8 @@
 								{#if up}
 									Takes effect at once; Paddle prorates the rest of this period.
 								{:else}
-									Takes effect at the renewal on {dateOnly(sub.period_end)}; what runs and what is
-									allocated has to fit it first.
+									Takes effect at the renewal on {dateOnly(sub.period_end)}; what runs and what
+									your projects hold have to fit it first.
 								{/if}
 							</p>
 							<button

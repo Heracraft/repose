@@ -107,19 +107,60 @@ func TestGateEveryReason(t *testing.T) {
 		t.Fatalf("xl beside three large on Pro: %+v", r)
 	}
 
-	// disk_limit: 100 GB on Solo, 70 allocated, 40 more asked.
+	// disk_limit counts what the projects hold, not their disk sizes
+	// (I-585). Six 40 GB projects holding 1 GB each are 6 GB of Solo's
+	// 100: another create fits.
 	d := seedAccount(t, pool, "solo", "active", "small", "stopped")
-	addProject(t, pool, d, "big", "small", "stopped", 30<<30)
-	r = refusal(t, g.Check(ctx, user(t, pool, d), billing.Request{AddDiskBytes: 40 << 30}))
-	if r.Reason != "disk_limit" || r.Message != "Your Solo plan allocates up to 100 GB of disk and your projects use 70 GB; this needs 40 GB more. Destroy a project, or upgrade at "+url+"." {
+	held(t, pool, d.ProjectID, 1<<30)
+	for i := 0; i < 5; i++ {
+		held(t, pool, addProject(t, pool, d, "large"+string(rune('a'+i)), "large", "stopped", 40<<30), 1<<30)
+	}
+	create := billing.Request{Class: "small", Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: 20 << 30}
+	if err := g.Check(ctx, user(t, pool, d), create); err != nil {
+		t.Fatalf("a create beside six projects holding 6 GB: %v", err)
+	}
+	// 99.5 GB held: a new project's first gigabyte passes the plan.
+	big := addProject(t, pool, d, "big", "small", "stopped", 200<<30)
+	held(t, pool, big, 99<<30-6<<30+1<<29)
+	r = refusal(t, g.Check(ctx, user(t, pool, d), create))
+	if r.Reason != "disk_limit" || r.Message != "Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at "+url+"." {
 		t.Fatalf("disk_limit: %+v", r)
 	}
-	if err := g.Check(ctx, user(t, pool, d), billing.Request{AddDiskBytes: 30 << 30}); err != nil {
-		t.Fatalf("30 more fits: %v", err)
+	if r.Detail["used_gb"] != int64(100) || r.Detail["held_gb"] != 99.5 || r.Detail["limit_gb"] != 100 {
+		t.Fatalf("disk_limit detail: %+v", r.Detail)
 	}
-	// Growing an existing volume counts the growth, not the whole volume.
-	if err := g.Check(ctx, user(t, pool, d), billing.Request{AddDiskBytes: 30 << 30, Project: d.ProjectID}); err != nil {
-		t.Fatalf("grow: %v", err)
+	// Growing a disk adds nothing at once: it fits while the projects hold
+	// no more than the plan, and one disk may be the plan's whole 100 GB.
+	if err := g.Check(ctx, user(t, pool, d), billing.Request{Disk: true, VolumeBytes: 100 << 30, Project: d.ProjectID}); err != nil {
+		t.Fatalf("grow to the plan's disk: %v", err)
+	}
+	r = refusal(t, g.Check(ctx, user(t, pool, d), billing.Request{Disk: true, VolumeBytes: 101 << 30, Project: d.ProjectID}))
+	if r.Reason != "disk_limit" || r.Message != "Your Solo plan has 100 GB of disk, so one project's disk can be at most 100 GB. Upgrade at "+url+"." {
+		t.Fatalf("one disk past the plan: %+v", r)
+	}
+	// Over the plan: a grow is refused and says what they hold; a start
+	// of a stopped project is not, since starting it is how files go.
+	held(t, pool, big, 98<<30)
+	r = refusal(t, g.Check(ctx, user(t, pool, d), billing.Request{Disk: true, VolumeBytes: 60 << 30, Project: d.ProjectID}))
+	if r.Message != "Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at "+url+"." {
+		t.Fatalf("grow while over: %+v", r)
+	}
+	if err := g.Check(ctx, user(t, pool, d), billing.Request{Class: "large", Project: big}); err != nil {
+		t.Fatalf("start while over the disk: %v", err)
+	}
+	// A fork of three copies counts three times what the source holds.
+	held(t, pool, big, 30<<30)
+	r = refusal(t, g.Check(ctx, user(t, pool, d), billing.Request{Disk: true, AddHeldBytes: 3 * (30 << 30), VolumeBytes: 40 << 30}))
+	if r.Reason != "disk_limit" || !strings.Contains(r.Message, "hold 36 GB") || !strings.Contains(r.Message, "about 90 GB more") {
+		t.Fatalf("fork: %+v", r)
+	}
+	// A project with no figure at all counts at its disk size.
+	if _, err := pool.Exec(ctx, "update projects set disk_held_bytes = null where id = $1", big); err != nil {
+		t.Fatal(err)
+	}
+	r = refusal(t, g.Check(ctx, user(t, pool, d), create))
+	if !strings.Contains(r.Message, "hold 206 GB") {
+		t.Fatalf("no figure: %+v", r)
 	}
 
 	// egress_limit: 1 TB on Solo this period.
@@ -155,7 +196,7 @@ func TestGateEveryReason(t *testing.T) {
 
 	// Exempt passes everything (I-16); BILLING_ENFORCE=false too.
 	x := seedAccount(t, pool, "", "exempt", "xl", "running")
-	if err := g.Check(ctx, user(t, pool, x), billing.Request{Class: "xl", AddDiskBytes: 5 << 40}); err != nil {
+	if err := g.Check(ctx, user(t, pool, x), billing.Request{Class: "xl", Disk: true, AddHeldBytes: 5 << 40, VolumeBytes: 5 << 40}); err != nil {
 		t.Fatalf("exempt: %v", err)
 	}
 	g.Enforce = false

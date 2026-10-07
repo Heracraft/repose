@@ -210,7 +210,7 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	await page.goto('/billing');
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $20 on');
 	await expect(page.getByTestId('plan-status')).toContainText('; $29 a month from');
-	await expect(page.getByTestId('meter-disk-allocated')).toContainText('of 100 GB');
+	await expect(page.getByTestId('meter-disk-held')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
 	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
 	await expect(egress).toContainText('300 GB of 100 GB');
@@ -218,6 +218,22 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
+});
+
+test('the disk meter counts what the projects hold and says what waits while it is over', async ({
+	page
+}) => {
+	await setBilling({ mode: 'active', plan: 'solo', disk_held_gb: 37.5 });
+	await page.goto('/billing');
+	const disk = page.getByTestId('meter-disk-held');
+	await expect(disk).toContainText('37.5 GB of 100 GB');
+	await expect(disk).not.toContainText('over');
+	await setBilling({ disk_held_gb: 112.4 });
+	await page.reload();
+	await expect(disk).toContainText('112.4 GB of 100 GB · over');
+	await expect(disk).toContainText(
+		'Creating, restoring and forking projects, and growing a disk, wait until your projects hold less.'
+	);
 });
 
 test('an active plan shows its renewal, receipts through Paddle, and invoices with PDF links', async ({

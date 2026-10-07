@@ -26,9 +26,9 @@ Seven days on any plan. Your card is taken at checkout and first charged on day 
 ## What a plan means
 
 - **Memory.** Starting a machine that would put your running machines past the plan is refused, and the message names the machine using the memory: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` An `xl` needs Plus or Pro.
-- **Disk.** Creating a project or growing a disk past the plan's total is refused. Disk counts by the size you chose, running or stopped; snapshots are free.
+- **Disk.** Counts the data your projects hold, running or stopped. A new `large` has a 40 GB disk and counts the gigabyte or so it holds at first; a disk's size is only how far that project can grow, and one project's disk can be at most the plan's whole disk. While your projects hold more than the plan's disk, creating, restoring and forking projects, and growing a disk, are refused, with one email; your machines keep running and starting. A file you delete stops counting within a day, or when its machine stops. Snapshots are free.
 - **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice as one line. At four times the allowance (1 TB on Solo, 400 GB during its introductory months, 2 TB on Plus, 4 TB on Pro) your machines stop until the month turns, and you get an email.
-- **Projects.** A plan doesn't count them: stop one and start another within the plan's memory. A stopped project uses only its disk.
+- **Projects.** A plan doesn't count them: stop one and start another within the plan's memory. A stopped project uses only the disk it holds.
 
 Example: after the first 3 months, a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
 
@@ -40,11 +40,11 @@ Example: after the first 3 months, a Solo user with a `large` running all month,
 todo-app   large  running   2h14m   …   today 2h14m  month 41h
 ```
 
-The dashboard's **Billing** page shows the same against your plan: memory running, disk allocated, egress this month and the overage so far, plus your invoices. Hours are totalled a few minutes past each hour, so figures can trail by up to an hour.
+The dashboard's **Billing** page shows the same against your plan: memory running, the disk your projects hold, egress this month and the overage so far, plus your invoices. Hours are totalled a few minutes past each hour, so figures can trail by up to an hour.
 
 ## Changing and cancelling
 
-Upgrading to a bigger plan takes effect at once; Paddle prorates the difference on your next invoice. Downgrading takes effect at your next renewal, and is refused while your running machines or allocated disk would not fit the smaller plan; stop or destroy some first. Cancelling ends the plan at the end of the month you have paid for: machines run until then, stop then, and their snapshots stay 30 days. You can undo a cancellation until it takes effect.
+Upgrading to a bigger plan takes effect at once; Paddle prorates the difference on your next invoice. Downgrading takes effect at your next renewal, and is refused while your running machines or the disk your projects hold would not fit the smaller plan; stop machines, or destroy projects or delete files in them, first. Cancelling ends the plan at the end of the month you have paid for: machines run until then, stop then, and their snapshots stay 30 days. You can undo a cancellation until it takes effect.
 
 The card, the billing address and your receipts are in Paddle's portal, reached from the Billing page.
 

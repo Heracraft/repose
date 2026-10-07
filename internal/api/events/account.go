@@ -30,6 +30,7 @@ var AccountKinds = map[string]bool{
 	"subscription_ended":     true,
 	"plan_changed":           true,
 	"egress_stopped":         true,
+	"disk_over_plan":         true,
 }
 
 // ErrNotAccountKind is InsertAccount's answer to a kind outside

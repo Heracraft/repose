@@ -90,6 +90,9 @@ message Hello {
   repeated GuestStatus guests = 2;
   uint64 free_mem_bytes = 3;
   uint64 pool_free_bytes = 4;
+  // The thin pool's data size, which autoextend grows; 0 from a hostd
+  // older than I-586, which the api reads as "unknown" (DECISIONS I-586).
+  uint64 pool_bytes = 5;
 }
 
 message Heartbeat {
@@ -98,6 +101,8 @@ message Heartbeat {
   double load1 = 3;
   uint32 running_guests = 4;
   bool draining = 5;
+  // As Hello's pool_bytes (DECISIONS I-586).
+  uint64 pool_bytes = 6;
 }
 
 message Secret { string name = 1; bytes value = 2; }
@@ -292,7 +297,7 @@ message GuestSample {
   // guest sees it (guest-written; 0 for both when the guest did not say or
   // said something past the volume). disk_used_bytes is the thin volume's
   // allocated blocks, which keep a deleted file's blocks until the guest's
-  // weekly fstrim. DECISIONS I-567.
+  // fstrim (daily, and at every stop: I-585). DECISIONS I-567.
   uint64 root_used_bytes = 15;
   uint64 root_size_bytes = 16;
 }

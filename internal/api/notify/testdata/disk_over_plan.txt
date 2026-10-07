@@ -1,0 +1,10 @@
+Your projects hold more than your plan's disk
+
+Your projects hold 112.4 GB and Solo has 100 GB of disk. Your machines keep running and starting. Creating, restoring and forking projects, and growing a disk, are refused until they hold less.
+
+Destroying a project frees what it holds. A deleted file stops counting within a day, or when its machine stops.
+
+Your plan: https://repose.herakraft.co/billing
+
+--
+repose. Open the dashboard: https://repose.herakraft.co

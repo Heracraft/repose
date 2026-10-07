@@ -437,15 +437,32 @@ another name does too.
 
 ## PoolFull
 
-Thin pool under 10 percent free.
+Thin pool under 10 percent free. By now the api has placed nothing new on
+the host since 70 percent (`PoolHigh`), and hostd refuses creates,
+restores and grows since 85; at 95 it refuses starts too (DECISIONS
+I-586). Running guests keep writing. A pool that reaches 100 percent
+queues every guest's writes for 60 seconds (dm-thin's `no_space_timeout`)
+and then fails them, which is every tenant on the host at once: act now.
 
-1. `lvs vg-guests`: data percent and metadata percent. Metadata full is
-   worse (writes fail across every volume): `lvextend --poolmetadatasize`.
-2. Extend the data disk in Azure (`tofu apply` with a larger
+1. `lvs -a vg-guests`: data percent and metadata percent. Metadata full
+   is as bad (writes fail across every volume): `lvextend
+   --poolmetadatasize +1G vg-guests/thin` if `vgs vg-guests` has room.
+2. Leftover `snap-*` volumes from an interrupted snapshot hold their
+   origin's old blocks: `lvs vg-guests | grep snap-`; one that is not
+   uploading (`journalctl -u hostd | grep snapshot`) can go with
+   `lvremove -y vg-guests/snap-…` (hostd's reconcile does the same at its
+   next start, I-68).
+3. Extend the data disk in Azure (`tofu apply` with a larger
    `data_disk_gb`, online for Premium SSD v2), then `pvresize` and
-   `lvextend -l +100%FREE vg-guests/thin`.
-3. Find who: `repose-admin projects list --host host-NN --sort disk`.
-   Over-allocated thin volumes are fine; used space is what matters.
+   `lvextend -l +100%FREE vg-guests/thin`. This is the fix; the rest buys
+   time.
+4. Find who is writing: `repose-admin projects list --host host-NN --sort
+   disk` (the newest sample's allocated bytes). Volume sizes summing past
+   the pool is by design (plans count what volumes hold, I-585); used
+   space is what matters. Past 97 percent with the disk grow still
+   minutes away, stopping the fastest-growing guest (`repose-admin
+   projects stop <id>`) is the operator's call: it ends that tenant's
+   processes and saves every other tenant's writes. Tell the tenant.
 
 ## StoreFull
 
@@ -840,24 +857,49 @@ list`.
    retries the install from the image. The data disk is a separate resource
    with `prevent_destroy`, so it is not touched.
 
-## PoolHigh (thin pool at 80 percent)
+## PoolHigh
 
-`host_warning{kind="pool_high"}` from hostd, or
-`repose_lvm_pool_data_percent > 80` from the host's textfile collector.
-lvm.conf autoextends the pool by 10 percent of its size into the 5 percent
-VG headroom at this threshold, once; after that the pool fills for real.
+The thin pool is over 70 percent used (data, or `host_warning{kind=
+"pool_high"}` from hostd, which counts metadata too) for 15 minutes. The
+api places no new project on the host from here: a create, or a restore
+or fork as a new project, goes to another host or, on a one-host fleet,
+waits as `the host has no room for this project right now` (DECISIONS
+I-586). Projects already on the host keep starting, stopping and
+restoring in place. The 30 percent left is room for those guests to grow
+into: plans count what volumes hold (I-585), so the volumes' sizes sum
+past the pool by design.
+
+Why 70: the next thresholds are 80 (lvm autoextends the pool once, by 10
+percent of its size into the VG's 5 percent headroom), 85 (hostd refuses
+creates, restores and grows), 90 (`PoolFull` pages) and 95 (hostd
+refuses starts). Growing the data disk takes a human an hour or two, and
+the 15 percent between 70 and 85 is 300 GB of a 2 TB pool (71 GB of
+host-01's 476 GiB). One `large` guest writes at most 120 MB/s (I-450),
+about 40 minutes for 300 GB; several writing flat out take less, which
+is why `PoolFull` pages at 90.
 
 1. `lvs vg-guests` on the host: data and metadata percent, and whether
-   `thin` still has room to grow (`vgs vg-guests` free space). Metadata
-   over 80 percent is worse; see "PoolFull".
-2. Plan the disk grow now: `tofu apply` with a larger `data_disk_gb`
-   (online for Premium SSD v2), then on the host `pvresize <pv>` and
-   `lvextend -l +95%FREE vg-guests/thin`. At 90 percent hostd refuses
-   `CreateGuest` and `Restore` with `insufficient_capacity`; existing
-   guests keep running.
-3. `repose-admin projects list --host host-NN --sort disk` for who is
-   using it; `repose-admin hosts drain host-NN` if the grow cannot happen
-   before it fills.
+   `thin` still has room to grow (`vgs vg-guests` free space).
+2. Grow the disk now: `tofu apply` with a larger `data_disk_gb` (online
+   for Premium SSD v2), then on the host `pvresize <pv>` and `lvextend -l
+   +95%FREE vg-guests/thin`. The next heartbeat carries the new size and
+   placement opens again below 70.
+3. `repose-admin projects list --host host-NN --sort disk` for who holds
+   it. If a second host exists and the grow must wait, nothing else is
+   needed: new projects already go elsewhere.
+
+## PoolMetadataHigh
+
+The thin pool's metadata is over 80 percent (`repose_lvm_pool_metadata_
+percent` from the textfile collector). Metadata maps every allocated
+block; running out fails every volume's writes as data running out does,
+and autoextend grows data only. hostd's 85 and 95 percent refusals count
+metadata as they count data (I-586).
+
+1. `lvs -a -o lv_name,lv_size,metadata_percent vg-guests` and `vgs
+   vg-guests` for free space.
+2. `lvextend --poolmetadatasize +1G vg-guests/thin` (online). Without VG
+   room, grow the data disk first ("PoolHigh" step 2).
 
 ## StoreHigh (store at 80 percent)
 
@@ -1547,11 +1589,14 @@ locally from `repose-snapshot.timer`.
 3. Results, events and up to 60 minutes of samples are buffered and sent
    on reconnect; longer outages lose samples (`repose_host_samples_dropped_total`).
 
-## hostd: thin pool over 90 percent
+## hostd: thin pool over 85 percent
 
-`host_warning{pool_high}` at 80 percent, and CreateGuest and Restore return
-`insufficient_capacity: thin pool 9x% full` from 90. See "PoolFull" above
-for extending the pool; existing guests keep running throughout.
+`host_warning{pool_high}` from 70 percent; CreateGuest, Restore and
+ResizeVolume return `insufficient_capacity: thin pool 8x% full` from 85,
+and StartGuest from 95, counting data or metadata, whichever is fuller
+(DECISIONS I-586). Users read `the host has no room for this project
+right now`. See "PoolHigh" and "PoolFull" above; running guests keep
+running throughout.
 
 ## hostd: store over 80 percent
 

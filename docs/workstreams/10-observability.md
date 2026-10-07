@@ -201,6 +201,8 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `BuildQueueStuck` | `repose_host_builds_running >= 2` and no `build_done` for 45m | warn |
 | `GatewayAuthSpike` | `rate(repose_gateway_auth_fail_total[5m]) > 1` | warn |
 | `EgressHigh` | Postgres: any project over 1 TB in 24h (checked hourly by api, exported as `repose_api_egress_alert_projects`) | warn |
+| `PoolHigh` | `1 - pool_free_bytes / pool_bytes > 0.7` for 15m: no new projects placed there (I-586) | warn |
+| `PoolMetadataHigh` | `repose_lvm_pool_metadata_percent > 80` for 5m (I-586) | page |
 | `PoolFull` | `pool_free_bytes / pool_bytes < 0.1` | page |
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |

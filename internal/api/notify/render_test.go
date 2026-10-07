@@ -80,6 +80,7 @@ func fixtures() map[string]notify.Message {
 		"subscription_ended":     account("subscription_ended", map[string]any{"plan": "solo", "ended_at": "2026-10-27T14:00:00Z", "retention_until": "2026-11-26T14:00:00Z"}),
 		"plan_changed":           account("plan_changed", map[string]any{"from_plan": "solo", "to_plan": "pro", "effective_at": "2026-09-27T15:04:00Z"}),
 		"egress_stopped":         account("egress_stopped", map[string]any{"plan": "solo", "egress_gb": 1002.4, "limit_gb": 250, "until": "2026-10-27T14:00:00Z"}),
+		"disk_over_plan":         account("disk_over_plan", map[string]any{"plan": "solo", "held_gb": 112.4, "limit_gb": 100}),
 	}
 }
 

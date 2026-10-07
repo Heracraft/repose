@@ -23,6 +23,9 @@ const (
 	KindSubscriptionEnded     = "subscription_ended"
 	KindPlanChanged           = "plan_changed"
 	KindEgressStopped         = "egress_stopped"
+	// KindDiskOverPlan is the email when the projects come to hold more
+	// than the plan's disk (DECISIONS I-585), once per period.
+	KindDiskOverPlan = "disk_over_plan"
 	// KindBillingStopped is the per-project event the 3-day stop records
 	// (13-notifications.md §5.6); it predates I-291 and keeps its name.
 	KindBillingStopped = "billing_stopped"
@@ -76,6 +79,14 @@ type EgressStoppedPayload struct {
 	EgressGB float64   `json:"egress_gb"`
 	LimitGB  int       `json:"limit_gb"`
 	Until    time.Time `json:"until"`
+}
+
+// DiskOverPlanPayload is disk_over_plan's summary: what the projects
+// hold against the plan's disk.
+type DiskOverPlanPayload struct {
+	Plan    string  `json:"plan"`
+	HeldGB  float64 `json:"held_gb"`
+	LimitGB int     `json:"limit_gb"`
 }
 
 // trialEnding is the payload for a trialing subscription: charged at

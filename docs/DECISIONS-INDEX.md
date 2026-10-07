@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-583 entries.
+585 entries.
 
 ## Scope
 
@@ -36,7 +36,7 @@ pointer, not a summary.
 - **R5-1** hostd builds each guest's microvm.nix runner on demand and starts it as a transient systemd unit — L99
 - **R5-2** One in-guest Go agent (`guestd`) on vsock only — L104
 - **R5-4** User builds: substitutes from cache.nixos.org and the platform overlay cache; source builds allowed, capped at 30 minutes and 8 cores; evaluation capped at 60 seconds; per-project closure cap 20 GB — L108
-- **R5-5** Default volumes 20/40/80 GB thin, resizable up, billed on allocated. Egress shaped at 200 Mbit/s, 500 GB/month included — L113
+- **R5-5** Default volumes 20/40/80 GB thin, resizable up, billed on allocated. Egress shaped at 200 Mbit/s, 500 GB/month included — amended by I-585; L113
 - **R4-5** Base bumps apply automatically weekly (security sooner) with a per-project hold flag and a changelog line in status — L116
 - **R4-4** Builds run on the project's host; a central builder plus cache comes when there is more than one host — L120
 
@@ -367,7 +367,7 @@ pointer, not a summary.
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7533
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7546
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7571
-- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; L7593
+- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; L7593
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; L7671
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; L7710
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7736
@@ -514,7 +514,7 @@ pointer, not a summary.
 - **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11523
 - **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11543
 - **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11555
-- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; L11587
+- **I-449** The pool's thin volumes together are at most 1.5 times the pool — 2026-10-03; partly superseded by I-586; L11587
 - **I-450** Each guest's disk is rate-limited by its size class — 2026-10-03; L11615
 - **I-451** What a guest receives from outside the host is shaped to 1 Gbit/s (amends I-217) — 2026-10-03; L11634
 - **I-452** A guest's console reaches its log at 2 KiB a second, and the console has a log buffer of its own — 2026-10-03; L11654
@@ -611,7 +611,9 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L14468
 - **I-541** `BROWSER` prints the URL — 2026-10-05; L14486
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L14495
-- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; L14545
+- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L14545
 - **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L14652
-- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; L14683
+- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L14683
 - **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; L14754
+- **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L14778
+- **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L14880

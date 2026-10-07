@@ -46,8 +46,9 @@ var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,r
 
 // guestDisk is the guest's root filesystem as statfs sees it: what the
 // guest's writes run out of. The api's disk_used_bytes is the host
-// volume's allocated blocks, which only a weekly fstrim gives back, so it
-// reads near full on a disk with room (kanali, 2026-10-07: 39.5 of 40 GB
+// volume's allocated blocks, which only the guest's fstrim gives back
+// (daily, and at every stop since I-585), so it can read fuller than a
+// disk with room (kanali, 2026-10-07: 39.5 of 40 GB
 // allocated, 33 GB used). The api's root_used_bytes and root_size_bytes
 // are the same figure from the newest sample (apiDisk). Zero Size means
 // the guest did not say.

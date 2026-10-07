@@ -349,15 +349,17 @@ subscription makes the account `past_due` and emits `payment_failed`
 Unknown types are recorded and ignored. `Sign(secret, ts, body)` is the
 scheme the fake and the tests use.
 
-**The gate.** `gate.go`: `Gate.Check(user, Request{Class, AddDiskBytes,
-Project})` returns a `*Refusal{Reason, Message, Detail}`: `suspended`,
+**The gate.** `gate.go`: `Gate.Check(user, Request{Class, Disk,
+AddHeldBytes, VolumeBytes, Project})` (I-585) returns a `*Refusal{Reason, Message, Detail}`: `suspended`,
 `subscription_required` (`detail.waitlist` from the waitlist row),
 `past_due`, `egress_limit` (the period's `usage_hours.egress_bytes` over
 the account at or past `EgressHardStopBytes`, `detail.until`),
 `plan_limit` (`RunningMemory` over `running|starting|restoring|creating|
 building` except `Project`, plus the class, against `MemoryGB`;
-`detail.projects` the slugs), `disk_limit` (`AllocatedDisk` of every live
-project plus `AddDiskBytes`). `message` is the whole sentence ("Your Solo
+`detail.projects` the slugs), `disk_limit` (`HeldDisk` of every live
+project, each its `disk_held_bytes` or else `volume_bytes`, plus
+`AddHeldBytes`, or a `VolumeBytes` past the plan's disk; I-585, which
+replaced `AllocatedDisk`). `message` is the whole sentence ("Your Solo
 plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at
 https://repose.herakraft.co/billing."). Exempt passes everything;
 `Enforce = false` passes everything. Call sites: `POST /projects` (class
@@ -421,7 +423,7 @@ and the sentence; a live subscription → `409 conflict subscribed`; then
 `EnsureCustomer` and the transaction), `ChangePlan` (upgrade at once with
 a free seat else `409 no_seat`; downgrade scheduled at `period_end`, kept
 in `scheduled_plan`, refused `409 over_plan {running_gb,
-disk_allocated_gb}` while the account does not fit), `Cancel`
+disk_held_gb, disk_allocated_gb}` while the account does not fit), `Cancel`
 (`next_billing_period`, `cancel_at`, `subscription_cancelled`; `409
 already_cancelled`), `Resume` (`409 not_cancelled`), `Portal` (`{"for":
 "payment_method"}` for the deep link), `Invoices` (Paddle's transactions

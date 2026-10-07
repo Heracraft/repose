@@ -71,13 +71,13 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) error {
 	}
 	start := body.Start == nil || *body.Start
 	// Restoring in place needs the memory to start; as a new project it
-	// allocates a volume too.
+	// adds a volume holding about what the source holds (I-585).
 	req := billing.Request{Project: src.ID}
 	if start {
 		req.Class = src.Class
 	}
 	if body.AsNewProject != nil {
-		req.AddDiskBytes = src.VolumeBytes
+		req.Disk, req.AddHeldBytes, req.VolumeBytes = true, src.HeldBytes(), src.VolumeBytes
 		req.Project = uuid.Nil
 	}
 	if err := s.gate(r, u, req); err != nil {

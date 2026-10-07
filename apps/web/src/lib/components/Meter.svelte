@@ -1,6 +1,6 @@
 <!--
   One share of a plan's limit as a thin bar: what is used of what the plan
-  holds (memory running now, disk allocated, egress this period). One
+  holds (memory running now, disk the projects hold, egress this period). One
   series, so no legend; the numbers beside it carry the reading and the
   bar is a picture of them. The fill is ink; past the limit it turns amber
   and the words say "over", so the state is never colour alone.

@@ -635,7 +635,7 @@ func (e *Engine) placementWaits(ctx context.Context, op *store.Op, p *store.Proj
 	if e.now().Sub(op.CreatedAt) >= e.cfg.PlacementWait {
 		return false
 	}
-	ok, err := scheduler.Freeing(ctx, e.pool, p.Class, p.VolumeBytes, e.now())
+	ok, err := scheduler.Freeing(ctx, e.pool, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 	if err != nil || !ok {
 		return false
 	}

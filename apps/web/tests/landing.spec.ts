@@ -13,7 +13,7 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	await expect(
 		pricing.getByText(
-			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none."
+			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none. Its disk counts the bytes your projects hold."
 		)
 	).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);

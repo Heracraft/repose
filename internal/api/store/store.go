@@ -91,9 +91,25 @@ type Project struct {
 	// Multiplexer is what the guest's next start runs, tmux or herdr
 	// (0017, DECISIONS I-502); project_json carries it to the guest.
 	Multiplexer string `db:"multiplexer"`
+	// DiskHeldBytes is the bytes the project's volume holds, the figure
+	// the plan's disk counts (0019, DECISIONS I-585): the thin volume's
+	// allocated blocks from the newest sample, or the estimate a new
+	// project starts with while DiskHeldAt is nil. Nil on a row with
+	// neither, which counts at VolumeBytes (HeldBytes).
+	DiskHeldBytes *int64     `db:"disk_held_bytes"`
+	DiskHeldAt    *time.Time `db:"disk_held_at"`
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer`
+// HeldBytes is the bytes the plan's disk counts for p: the measured or
+// estimated figure, else the volume's size (DECISIONS I-585).
+func (p *Project) HeldBytes() int64 {
+	if p.DiskHeldBytes != nil && *p.DiskHeldBytes >= 0 {
+		return *p.DiskHeldBytes
+	}
+	return p.VolumeBytes
+}
+
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at`
 
 // Host is a hosts row.
 type Host struct {

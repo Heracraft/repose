@@ -85,13 +85,14 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 		return errf("invalid", "name must match [A-Za-z0-9._-]{1,64}")
 	}
 	start := body.Start == nil || *body.Start
-	// The gate sees one machine of the class and the volumes of all N; the
-	// memory of the rest is checked as each fork's restore starts it.
+	// The gate sees one machine of the class and the bytes all N copies
+	// hold, each what the source holds (I-585); the memory of the rest is
+	// checked as each fork's restore starts it.
 	gateClass := ""
 	if start {
 		gateClass = class
 	}
-	if err := s.gate(r, u, billing.Request{Class: gateClass, AddDiskBytes: src.VolumeBytes * int64(count)}); err != nil {
+	if err := s.gate(r, u, billing.Request{Class: gateClass, Disk: true, AddHeldBytes: src.HeldBytes() * int64(count), VolumeBytes: src.VolumeBytes}); err != nil {
 		return err
 	}
 	if u.CancelledAt != nil {

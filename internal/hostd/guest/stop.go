@@ -189,7 +189,7 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 		return errf(CodeInvalidArgument, "volume_bytes %d above the %d maximum", c.NewBytes, m.cfg.MaxVolumeBytes)
 	}
 	if c.NewBytes > g.VolumeBytes {
-		if err := m.poolBudget(VolumeName(g.GuestID), c.NewBytes); err != nil {
+		if err := m.poolRoom(); err != nil {
 			return err
 		}
 		if err := m.d.LVM.ExtendVolume(ctx, VolumeName(g.GuestID), c.NewBytes); err != nil {

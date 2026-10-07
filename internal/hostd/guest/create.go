@@ -78,14 +78,7 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	if volumeBytes < m.cfg.MinVolumeBytes || volumeBytes > m.cfg.MaxVolumeBytes {
 		return errf(CodeInvalidArgument, "volume_bytes %d outside %d..%d", volumeBytes, m.cfg.MinVolumeBytes, m.cfg.MaxVolumeBytes)
 	}
-	pct, err := m.poolUsedPct()
-	if err != nil {
-		return errf(CodeInternal, "thin pool: %v", err)
-	}
-	if pct >= m.cfg.PoolRefusePct {
-		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
-	}
-	if err := m.poolBudget(VolumeName(guestID), volumeBytes); err != nil {
+	if err := m.poolRoom(); err != nil {
 		return err
 	}
 	if needMem && m.FreeMemBytes() < (c.MemMiB+OverheadMiB)<<20 {
@@ -94,26 +87,18 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	return nil
 }
 
-// poolBudget refuses a volume of bytes, created or grown to that size,
-// that would take the shared thin pool's allocation past its budget
-// (DECISIONS I-449). A thin volume takes pool space only as it is
-// written, so the pool is sold more than once: the virtual sizes of every
-// thin volume in the pool (guests and the caches' volume; not snapshots,
-// not name itself) together with this one may not pass PoolOvercommit
-// times the pool. There is no bound on one volume: a plan's whole disk
-// may be one project's (the owner's choice in I-449). Volumes already over
-// the budget keep running and starting; they cannot grow.
-func (m *Manager) poolBudget(name string, bytes uint64) *Error {
-	size, _, err := m.d.LVM.PoolStats(m.ctx)
+// poolRoom refuses an operation that would put more data in the thin
+// pool (a create, a restore, growing a volume) once the pool is
+// PoolRefusePct used (DECISIONS I-586). Volumes are counted by what they
+// hold, not their sizes (I-585, which replaced I-449's bound on the sum
+// of the sizes), so the pool's real use is the measure.
+func (m *Manager) poolRoom() *Error {
+	pct, err := m.poolUsedPct()
 	if err != nil {
 		return errf(CodeInternal, "thin pool: %v", err)
 	}
-	alloc, err := m.d.LVM.Allocated(m.ctx, name)
-	if err != nil {
-		return errf(CodeInternal, "lvs: %v", err)
-	}
-	if budget := float64(size) * m.cfg.PoolOvercommit; float64(alloc+bytes) > budget {
-		return errf(CodeInsufficientCapacity, "thin pool allocation budget: %d GB allocated, %d GB more would pass %d GB", alloc>>30, bytes>>30, uint64(budget)>>30)
+	if pct >= m.cfg.PoolRefusePct {
+		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
 	}
 	return nil
 }
@@ -551,6 +536,12 @@ func (m *Manager) start(ctx context.Context, c *hostdv1.StartGuest) *Error {
 	}
 	if m.FreeMemBytes() < (Classes[g.Class].MemMiB+OverheadMiB)<<20 {
 		return errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", g.Class)
+	}
+	// A start adds no bytes, but a running guest writes: past
+	// PoolStartRefusePct the pool is minutes from full, and one more
+	// writer risks every guest on it (DECISIONS I-586).
+	if pct, err := m.poolUsedPct(); err == nil && pct >= m.cfg.PoolStartRefusePct {
+		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
 	}
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
 	// that restarted still has the guest's secrets and sshd material.

@@ -168,6 +168,11 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
 		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize)
+	if held, ok := heldBytes(g); ok {
+		// The plan's disk counts this figure (DECISIONS I-585); a sample
+		// older than the one already recorded leaves it.
+		batch.Queue("update projects set disk_held_bytes = $2, disk_held_at = $3 where id = $1 and (disk_held_at is null or disk_held_at < $3)", pid, held, ts)
+	}
 	if guestFields {
 		seen := map[string]bool{}
 		for _, p := range g.Procs {
@@ -183,6 +188,18 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		}
 	}
 	return i.pool.SendBatch(ctx, batch).Close()
+}
+
+// heldBytes is the bytes the guest's volume holds as the host measured
+// them: the thin volume's allocated blocks (lvs data_percent of its
+// size), sampled for a stopped guest as for a running one. ok is false
+// when the sample has none (lvs failed, or a stopping guest's last
+// network sample) or one that cannot be true (more than the volume).
+func heldBytes(g *hostdv1.GuestSample) (int64, bool) {
+	if g.DiskUsedBytes == 0 || g.DiskUsedBytes > g.DiskAllocBytes || g.DiskAllocBytes > math.MaxInt64 {
+		return 0, false
+	}
+	return int64(g.DiskUsedBytes), true
 }
 
 // rootFS is the guest's root filesystem from a sample (DECISIONS I-567),

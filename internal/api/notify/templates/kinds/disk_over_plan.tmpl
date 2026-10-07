@@ -1,0 +1,6 @@
+{{define "heading"}}Your projects hold more than your plan's disk{{end}}
+{{define "body"}}Your projects hold {{if .P.Has "held_gb"}}{{.P.GB "held_gb"}}{{else}}more{{end}} and {{.P.Plan "plan"}} has {{if .P.Has "limit_gb"}}{{.P.GB "limit_gb"}}{{else}}less{{end}} of disk. Your machines keep running and starting. Creating, restoring and forking projects, and growing a disk, are refused until they hold less.
+
+Destroying a project frees what it holds. A deleted file stops counting within a day, or when its machine stops.{{end}}
+{{define "link_label"}}Your plan{{end}}
+{{define "link_url"}}{{.Billing}}{{end}}

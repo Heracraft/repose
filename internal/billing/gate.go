@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,13 +45,20 @@ type Refusal struct {
 func (r *Refusal) Error() string { return "payment_required: " + r.Message }
 
 // Request is what the caller is about to do: start a machine of Class
-// (empty when no memory is asked for), allocate AddDiskBytes more disk
-// (0 when none; a new volume's size, or the growth of an existing one),
-// on behalf of Project (uuid.Nil for a new one), which is excluded from
-// the running memory it is checked against.
+// (empty when no memory is asked for), on behalf of Project (uuid.Nil
+// for a new one), which is excluded from the running memory it is
+// checked against. Disk asks the disk question (DECISIONS I-585): the
+// action may make the projects hold more (a create, a restore or a fork
+// as a new project, growing a volume). AddHeldBytes is about what it
+// adds at once (a new volume's first bytes, the copy of a source's), 0
+// for growing a volume, which raises only the ceiling. VolumeBytes is
+// the disk size asked for, new or grown: one project's disk may be at
+// most the plan's whole disk.
 type Request struct {
 	Class        string
-	AddDiskBytes int64
+	Disk         bool
+	AddHeldBytes int64
+	VolumeBytes  int64
 	Project      uuid.UUID
 }
 
@@ -149,22 +157,45 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 				Detail: map[string]any{"reason": ReasonPlanLimit, "plan": plan.ID, "limit_gb": plan.MemoryGB, "used_gb": usedGB, "projects": slugs}}, nil
 		}
 	}
-	if req.AddDiskBytes > 0 {
-		// Every live project counts, the one being grown included at its
-		// current size: AddDiskBytes is the growth.
-		allocated, _, err := AllocatedDisk(ctx, g.pool, u.ID, uuid.Nil)
+	if req.Disk {
+		// The plan's disk counts the bytes the projects' volumes hold,
+		// not their sizes (I-585). Starting a stopped project is never
+		// refused for disk: its bytes are already counted, and starting
+		// it is how files are deleted to get under.
+		limit := int64(plan.DiskGB) << 30
+		if req.VolumeBytes > limit {
+			return &Refusal{Reason: ReasonDiskLimit,
+				Message: fmt.Sprintf("Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at %s.", plan.Name, plan.DiskGB, plan.DiskGB, url),
+				Detail:  map[string]any{"reason": ReasonDiskLimit, "plan": plan.ID, "limit_gb": plan.DiskGB, "volume_gb": GBCeil(req.VolumeBytes)}}, nil
+		}
+		held, _, err := HeldDisk(ctx, g.pool, u.ID)
 		if err != nil {
 			return nil, err
 		}
-		usedGB := GBCeil(allocated)
-		if usedGB+GBCeil(req.AddDiskBytes) > int64(plan.DiskGB) {
-			return &Refusal{Reason: ReasonDiskLimit,
-				Message: fmt.Sprintf("Your %s plan allocates up to %d GB of disk and your projects use %d GB; this needs %d GB more. Destroy a project, or upgrade at %s.",
-					plan.Name, plan.DiskGB, usedGB, GBCeil(req.AddDiskBytes), url),
-				Detail: map[string]any{"reason": ReasonDiskLimit, "plan": plan.ID, "limit_gb": plan.DiskGB, "used_gb": usedGB}}, nil
+		if held+req.AddHeldBytes > limit {
+			return &Refusal{Reason: ReasonDiskLimit, Message: diskLimitMessage(plan, held, req.AddHeldBytes, url),
+				Detail: map[string]any{"reason": ReasonDiskLimit, "plan": plan.ID, "limit_gb": plan.DiskGB, "used_gb": GBCeil(held), "held_gb": gbTenths(held), "need_gb": gbTenths(req.AddHeldBytes)}}, nil
 		}
 	}
 	return nil, nil
+}
+
+// diskLimitMessage is the disk_limit sentence: what the projects hold
+// against the plan's disk and, when this would take them past it, about
+// how much it adds. A deleted file stops counting when the guest trims
+// its disk: daily, and when the machine stops (I-585).
+func diskLimitMessage(plan Plan, held, add int64, url string) string {
+	fix := fmt.Sprintf("Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at %s.", url)
+	if held >= int64(plan.DiskGB)<<30 || add <= 0 {
+		return fmt.Sprintf("Your projects hold %s GB and your %s plan has %d GB of disk. %s", fmtGB(held), plan.Name, plan.DiskGB, fix)
+	}
+	return fmt.Sprintf("Your projects hold %s GB and your %s plan has %d GB of disk; this needs about %s GB more. %s", fmtGB(held), plan.Name, plan.DiskGB, fmtGB(add), fix)
+}
+
+// fmtGB prints bytes as GB rounded up to a tenth, without a trailing
+// ".0": 1.5, 104, 0.1.
+func fmtGB(bytes int64) string {
+	return strconv.FormatFloat(gbTenths(bytes), 'f', -1, 64)
 }
 
 // planLimitMessage names the machines using the memory, or the class that

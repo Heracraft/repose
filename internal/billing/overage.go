@@ -65,7 +65,54 @@ func (o *Overage) Run(ctx context.Context) (charges []Charge, stopped []uuid.UUI
 		return charges, nil, err
 	}
 	stopped, err = o.hardStops(ctx)
+	if err != nil {
+		return charges, stopped, err
+	}
+	_, err = o.DiskOverPlan(ctx)
 	return charges, stopped, err
+}
+
+// DiskOverPlan writes a disk_over_plan email for every user whose
+// projects hold more than the plan's disk, once per period (DECISIONS
+// I-585). Nothing is stopped: the gate refuses what would add bytes
+// (create, restore, fork, growing a disk) until they hold less. It
+// returns the users it wrote to.
+func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
+	now := o.Now().UTC()
+	rows, err := o.pool.Query(ctx, "select "+subCols+" from subscriptions where status in ('trialing','active','past_due') order by created_at")
+	if err != nil {
+		return nil, err
+	}
+	subs, err := pgx.CollectRows(rows, pgx.RowToStructByName[Sub])
+	if err != nil {
+		return nil, err
+	}
+	var told []uuid.UUID
+	for i := range subs {
+		sub := &subs[i]
+		period := sub.Period(now)
+		plan := sub.PlanFor(period.Start)
+		held, _, err := HeldDisk(ctx, o.pool, sub.UserID)
+		if err != nil {
+			return told, err
+		}
+		if held <= int64(plan.DiskGB)<<30 {
+			continue
+		}
+		n, err := accountEventCount(ctx, o.pool, sub.UserID, KindDiskOverPlan, period.Start)
+		if err != nil {
+			return told, err
+		}
+		if n > 0 {
+			continue
+		}
+		if _, err := events.InsertAccount(ctx, o.pool, sub.UserID, now, KindDiskOverPlan, DiskOverPlanPayload{Plan: plan.ID, HeldGB: gbTenths(held), LimitGB: plan.DiskGB}); err != nil {
+			return told, err
+		}
+		o.log.Info("projects hold more than the plan's disk", "event", obs.EventBillingDiskOverPlan, "user_id", sub.UserID.String(), "plan", plan.ID)
+		told = append(told, sub.UserID)
+	}
+	return told, nil
 }
 
 // chargeDue sends the line for every subscription about to bill.

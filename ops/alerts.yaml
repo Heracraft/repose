@@ -30,6 +30,33 @@ groups:
           description: "{{ $value | humanizePercentage }} of usable memory is reserved by running guests. Add a host before the next XL create fails."
           runbook: "docs/ops/RUNBOOK.md#hostmemory80"
 
+      - alert: PoolHigh
+        # The plan's disk counts what volumes hold, not their sizes, so
+        # the pool is overcommitted by design (DECISIONS I-585, I-586). At
+        # 70 percent used the api stops placing new projects on the host
+        # and hostd sends pool_high; the guests already there keep growing
+        # into the rest. A human grows the disk before PoolFull.
+        expr: 1 - repose_host_pool_free_bytes / repose_host_pool_bytes > 0.7
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "thin pool on {{ $labels.host_id }} is over 70 percent full; no new projects go there"
+          description: "{{ $value | humanizePercentage }} of vg-guests/thin is used. Grow the data disk before it reaches 85, where creates, restores and grows are refused."
+          runbook: "docs/ops/RUNBOOK.md#poolhigh"
+
+      - alert: PoolMetadataHigh
+        # Thin pool metadata running out fails every volume's writes the
+        # way data does, and autoextend grows data only (I-586).
+        expr: repose_lvm_pool_metadata_percent > 80
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "thin pool metadata on {{ $labels.host_id }} is over 80 percent"
+          description: "{{ $value }} percent of vg-guests/thin's metadata is used. hostd refuses creates at 85 and starts at 95."
+          runbook: "docs/ops/RUNBOOK.md#poolmetadatahigh"
+
       - alert: PoolFull
         # A full thin pool means every guest's writes fail at once, so this
         # pages: guests are not down yet, but they are about to be.

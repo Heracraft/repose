@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,6 +148,10 @@ type BillingState struct {
 	} `json:"waitlist,omitempty"`
 	// EgressGB is this period's egress.
 	EgressGB *float64 `json:"egress_gb,omitempty"`
+	// DiskHeldGB sets what the projects hold in all (DECISIONS I-585), in
+	// place of the sum of their disk_used_bytes; a negative value clears
+	// it.
+	DiskHeldGB *float64 `json:"disk_held_gb,omitempty"`
 	// Invoices replaces the list; nil keeps it, an empty list empties it.
 	Invoices *[]Invoice `json:"invoices,omitempty"`
 	// IntroUsed marks the account as having had a subscription before, so
@@ -167,6 +172,7 @@ type billingState struct {
 	waiting       int
 	waitlist      *WaitlistPlace
 	egressGB      float64
+	diskHeldGB    *float64
 	invoices      *[]Invoice
 	introUsed     bool
 	checkouts     map[string]string // transaction id -> plan
@@ -347,6 +353,14 @@ func (f *Fake) SetBillingState(s BillingState) error {
 	if s.IntroUsed != nil {
 		f.bill.introUsed = *s.IntroUsed
 	}
+	if s.DiskHeldGB != nil {
+		if *s.DiskHeldGB < 0 {
+			f.bill.diskHeldGB = nil
+		} else {
+			v := *s.DiskHeldGB
+			f.bill.diskHeldGB = &v
+		}
+	}
 	if s.Invoices != nil {
 		list := *s.Invoices
 		f.bill.invoices = &list
@@ -472,13 +486,26 @@ func (f *Fake) runningGB(u *userRec, exclude *project) int {
 	return n
 }
 
-func (f *Fake) diskAllocatedGB(u *userRec) float64 {
+// diskHeldGB is what the user's projects hold, as the api counts the
+// plan's disk (DECISIONS I-585): each project's disk_used_bytes, the
+// bytes its volume holds, or the override a test set.
+func (f *Fake) diskHeldGB(u *userRec) float64 {
+	if f.bill.diskHeldGB != nil {
+		return *f.bill.diskHeldGB
+	}
 	var b int64
 	for _, p := range f.userProjects(u) {
-		b += p.VolumeBytes
+		if p.State == "destroying" {
+			continue
+		}
+		b += p.DiskUsedBytes
 	}
-	return float64(b) / (1 << 30)
+	return math.Ceil(float64(b)*10/(1<<30)) / 10
 }
+
+// newProjectHeldGB is what a new project adds at once, as the api's
+// billing.NewProjectHeldBytes.
+const newProjectHeldGB = 1.0
 
 func (f *Fake) runningSlugs(u *userRec, exclude *project) []string {
 	var out []string
@@ -506,11 +533,24 @@ func (f *Fake) overageCents(plan *PlanDef) int64 {
 	return int64(math.Ceil(over * overageCentsPerGB))
 }
 
+// diskAsk is the disk question of a gate (I-585): about what the action
+// adds to what the projects hold, in GB, and the disk size it asks for.
+type diskAsk struct {
+	addGB       float64
+	volumeBytes int64
+}
+
+// fmtGB prints a GB figure to a tenth without a trailing ".0".
+func fmtGB(gb float64) string {
+	return strconv.FormatFloat(math.Ceil(gb*10)/10, 'f', -1, 64)
+}
+
 // gate is every compute gate (api.md "payment_required"): the class about
-// to run (or "" when nothing starts) and the disk about to be allocated.
-// exclude is the project whose own class is being counted, so a restart
-// of a running project does not count itself twice.
-func (f *Fake) gate(u *userRec, class string, addDiskBytes int64, exclude *project) *apiError {
+// to run (or "" when nothing starts) and the disk question (nil when the
+// action adds nothing the plan's disk counts). exclude is the project
+// whose own class is being counted, so a restart of a running project
+// does not count itself twice.
+func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *apiError {
 	switch f.bill.mode {
 	case BillingOff, BillingExempt:
 		return nil
@@ -553,13 +593,23 @@ func (f *Fake) gate(u *userRec, class string, addDiskBytes int64, exclude *proje
 				withDetail(map[string]any{"reason": "plan_limit", "plan": plan.ID, "limit_gb": plan.MemoryGB, "used_gb": used, "projects": slugs})
 		}
 	}
-	if addDiskBytes > 0 {
-		used := f.diskAllocatedGB(u)
-		add := float64(addDiskBytes) / (1 << 30)
-		if used+add > float64(plan.DiskGB) {
-			return errf("payment_required", "Another %.0f GB of disk would pass %s's %d GB (%.0f GB allocated). Destroy a project, shrink the request or upgrade.",
-				add, plan.Name, plan.DiskGB, used).
-				withDetail(map[string]any{"reason": "disk_limit", "plan": plan.ID, "limit_gb": plan.DiskGB, "used_gb": used})
+	if disk != nil {
+		// The plan's disk counts what the projects hold; a disk size is
+		// only the ceiling one project grows to (I-585).
+		held := f.diskHeldGB(u)
+		if float64(disk.volumeBytes)/(1<<30) > float64(plan.DiskGB) {
+			return errf("payment_required", "Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at https://repose.herakraft.co/billing.",
+				plan.Name, plan.DiskGB, plan.DiskGB).
+				withDetail(map[string]any{"reason": "disk_limit", "plan": plan.ID, "limit_gb": plan.DiskGB, "volume_gb": disk.volumeBytes >> 30})
+		}
+		if held+disk.addGB > float64(plan.DiskGB) {
+			msg := fmt.Sprintf("Your projects hold %s GB and your %s plan has %d GB of disk", fmtGB(held), plan.Name, plan.DiskGB)
+			if held < float64(plan.DiskGB) && disk.addGB > 0 {
+				msg += fmt.Sprintf("; this needs about %s GB more", fmtGB(disk.addGB))
+			}
+			msg += ". Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing."
+			return errf("payment_required", "%s", msg).
+				withDetail(map[string]any{"reason": "disk_limit", "plan": plan.ID, "limit_gb": plan.DiskGB, "used_gb": math.Ceil(held), "held_gb": held, "need_gb": disk.addGB})
 		}
 	}
 	return nil
@@ -592,6 +642,7 @@ type subscriptionView struct {
 type usageView struct {
 	RunningGB        int     `json:"running_gb"`
 	MemoryGB         int     `json:"memory_gb"`
+	DiskHeldGB       float64 `json:"disk_held_gb"`
 	DiskAllocatedGB  float64 `json:"disk_allocated_gb"`
 	DiskGB           int     `json:"disk_gb"`
 	EgressGB         float64 `json:"egress_gb"`
@@ -659,7 +710,9 @@ func (f *Fake) subscriptionOf() *subscriptionView {
 }
 
 func (f *Fake) usageOf(u *userRec) usageView {
-	v := usageView{RunningGB: f.runningGB(u, nil), DiskAllocatedGB: f.diskAllocatedGB(u), EgressGB: f.bill.egressGB, Projects: len(f.userProjects(u))}
+	held := f.diskHeldGB(u)
+	// disk_allocated_gb carries the held figure for one release, as the api's.
+	v := usageView{RunningGB: f.runningGB(u, nil), DiskHeldGB: held, DiskAllocatedGB: math.Ceil(held), EgressGB: f.bill.egressGB, Projects: len(f.userProjects(u))}
 	if plan := f.currentPlan(); plan != nil {
 		v.MemoryGB, v.DiskGB, v.EgressIncludedGB, v.ProjectLimit = plan.MemoryGB, plan.DiskGB, plan.EgressGB, plan.ProjectLimit
 		v.OverageCents = f.overageCents(plan)
@@ -833,11 +886,11 @@ func (f *Fake) billingPlan(w http.ResponseWriter, r *http.Request) *apiError {
 		f.bill.scheduledPlan = ""
 		writeJSON(w, http.StatusOK, map[string]any{"plan": to.ID, "scheduled_plan": nil, "effective_at": now})
 	default:
-		running, disk := f.runningGB(u, nil), f.diskAllocatedGB(u)
+		running, disk := f.runningGB(u, nil), f.diskHeldGB(u)
 		if running > to.MemoryGB || disk > float64(to.DiskGB) {
-			return errf("conflict", "%s holds %d GB of memory for running machines and %d GB of disk; you have %d GB of memory running and %.0f GB allocated. Stop machines or destroy projects first.",
-				to.Name, to.MemoryGB, to.DiskGB, running, disk).
-				withDetail(map[string]any{"reason": "over_plan", "running_gb": running, "disk_allocated_gb": disk})
+			return errf("conflict", "your account does not fit the %s plan yet: %d GB running (it allows %d) and %s GB of disk held by your projects (it allows %d); stop machines, or destroy projects or delete files in them, first",
+				to.Name, running, to.MemoryGB, fmtGB(disk), to.DiskGB).
+				withDetail(map[string]any{"reason": "over_plan", "running_gb": running, "disk_held_gb": disk, "disk_allocated_gb": math.Ceil(disk)})
 		}
 		f.bill.scheduledPlan = to.ID
 		writeJSON(w, http.StatusOK, map[string]any{"plan": cur.ID, "scheduled_plan": to.ID, "effective_at": f.bill.periodEnd})
