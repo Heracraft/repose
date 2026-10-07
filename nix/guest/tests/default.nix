@@ -410,10 +410,16 @@ in
           unit = guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemd-run --user --wait --pipe --quiet cat /proc/self/oom_score_adj").strip()
           assert unit == "0", unit
           assert guest.succeed("systemctl show -p OOMScoreAdjust --value sshd.service").strip() == "-800"
+          # This node runs fake-guestd, so the tmux server and its panes
+          # keep the 0 their unit gives them (upstream's was 200); guestd's
+          # -800 on the server is the guestd test's I-200 subtest.
           server = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
-          guest.wait_until_succeeds(f"test $(cat /proc/{server}/oom_score_adj) = -800", timeout=30)
+          assert adj(server) == 0, adj(server)
           pane = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pane_pid}'").strip()
-          guest.wait_until_succeeds(f"test $(cat /proc/{pane}/oom_score_adj) = 0", timeout=30)
+          assert adj(pane) == 0, adj(pane)
+          # A child's protection is capped by its parent's; the slices'
+          # values rely on memory_recursiveprot (systemd's mount option).
+          guest.succeed("grep -E '^cgroup2 /sys/fs/cgroup .*memory_recursiveprot' /proc/mounts")
           # MemoryLow, in bytes, on each slice and unit of the path.
           def low(path):
               return int(guest.succeed(f"cat /sys/fs/cgroup/{path}/memory.low").strip())
@@ -428,7 +434,11 @@ in
           assert low("user.slice/user-1000.slice/user@1000.service/app.slice") == 48 * M
           assert low("user.slice/user-1000.slice/user@1000.service/app.slice/repose-tmux-session.service") == 48 * M
           assert guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p OOMPolicy --value repose-tmux-session.service").strip() == "continue"
-          guest.succeed("test ! -e /sys/kernel/mm/lru_gen/min_ttl_ms || test $(cat /sys/kernel/mm/lru_gen/min_ttl_ms) = 1000")
+          # nixpkgs' kernels have CONFIG_LRU_GEN and turn it on.
+          assert guest.succeed("cat /sys/kernel/mm/lru_gen/min_ttl_ms").strip() == "1000"
+          # The test framework panics the VM on an OOM (panic_on_oom=2);
+          # a real guest does not.
+          guest.succeed("sysctl -w vm.panic_on_oom=0")
           # A pane that takes every byte: the kernel kills it, and the
           # manager, the tmux server and the session are still there.
           guest.succeed("echo 'b = []' > /tmp/hog.py && echo 'while True: b.append(b\"x\" * (64 << 20))' >> /tmp/hog.py && chmod 644 /tmp/hog.py")
@@ -438,8 +448,9 @@ in
           assert guest.succeed("systemctl show -p MainPID --value user@1000.service").strip() == manager
           assert guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip() == server
           guest.succeed("sudo -u dev tmux has-session -t =todo-app")
-          guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux|sshd|sshd-session|guestd)\\)'")
+          guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal)\\)'")
           guest.execute("sudo -u dev tmux kill-window -t todo-app:hog")
+          guest.succeed("sysctl -w vm.panic_on_oom=2")
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
           guest.succeed("sudo -u dev sh -c 'mkdir -p ~/factory && echo factory > ~/.repose/checkout'")
