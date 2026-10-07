@@ -25,13 +25,13 @@ func writeAtomic(path string, data []byte, mode fs.FileMode) error {
 		return err
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp) // a no-op after the rename
+	defer func() { _ = os.Remove(tmp) }() // a no-op after the rename
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Chmod(mode); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -173,7 +173,7 @@ func stripJSONC(b []byte) []byte {
 			out = append(out, '\n')
 		case c == '/' && i+1 < len(b) && b[i+1] == '*':
 			i += 2
-			for i+1 < len(b) && !(b[i] == '*' && b[i+1] == '/') {
+			for i+1 < len(b) && (b[i] != '*' || b[i+1] != '/') {
 				i++
 			}
 			i++

@@ -111,7 +111,7 @@ func TestRenderGolden(t *testing.T) {
 
 			outDir := filepath.Join(caseDir, "out")
 			if *updateGolden {
-				os.RemoveAll(outDir)
+				_ = os.RemoveAll(outDir)
 				for rel, body := range got {
 					f := filepath.Join(outDir, filepath.FromSlash(rel))
 					if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {

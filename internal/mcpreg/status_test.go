@@ -37,7 +37,7 @@ func TestStatus(t *testing.T) {
 	          "gone":{"command":"no-such-command-repose"}},
 	  "skipped":[{"name":"xcode","reason":"an Apple app"}]}`)
 	writeFile(t, filepath.Join(home, ".repose/mcp/forward/apple-notes.json"), `{"version":1,"name":"apple-notes"}`)
-	os.Unsetenv("LINEAR_TOKEN_T")
+	_ = os.Unsetenv("LINEAR_TOKEN_T")
 
 	var stderr bytes.Buffer
 	Sync(p, Agents, &stderr)
@@ -138,9 +138,9 @@ func TestPrepare(t *testing.T) {
 	  "linear":{"command":"sh","args":["--token","${PROBE_LINEAR_T}"],"env":{"R":"${PROBE_REGION:-eu}"}},
 	  "two":{"command":"sh","env":{"A":"${PROBE_B_T}","B":"${PROBE_A_T}","C":"${PROBE_TOKEN}"}}}}`)
 	t.Setenv("REPOSE_DUP_T", "agent")
-	os.Unsetenv("PROBE_LINEAR_T")
-	os.Unsetenv("PROBE_A_T")
-	os.Unsetenv("PROBE_B_T")
+	_ = os.Unsetenv("PROBE_LINEAR_T")
+	_ = os.Unsetenv("PROBE_A_T")
+	_ = os.Unsetenv("PROBE_B_T")
 	path, argv, env, err := Prepare(p, "probe")
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +253,7 @@ func TestRemoteNeedsSecret(t *testing.T) {
 	writeFile(t, filepath.Join(root, "etc/repose/pi-extension.js"), `pi.registerMcpServer`)
 	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{
 	  "notion":{"type":"http","url":"https://mcp.notion.com/mcp","headers":{"Authorization":"Bearer ${NOTION_T}"}}}}`)
-	os.Unsetenv("NOTION_T")
+	_ = os.Unsetenv("NOTION_T")
 	var stderr bytes.Buffer
 	Sync(p, Agents, &stderr)
 	if stderr.Len() != 0 {

@@ -45,17 +45,17 @@ func isMCP(argv []string) ([]string, bool) {
 
 func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, mcpUsage)
+		_, _ = fmt.Fprint(stderr, mcpUsage)
 		return 2
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Fprint(stdout, mcpUsage)
+		_, _ = fmt.Fprint(stdout, mcpUsage)
 		return 0
 	case "sync":
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintln(stderr, "repose-mcp: no home directory; MCP servers not updated")
+			_, _ = fmt.Fprintln(stderr, "repose-mcp: no home directory; MCP servers not updated")
 			return 0
 		}
 		agents := args[1:]
@@ -66,12 +66,12 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	case "run":
 		if len(args) != 2 && len(args) != 3 {
-			fmt.Fprint(stderr, mcpUsage)
+			_, _ = fmt.Fprint(stderr, mcpUsage)
 			return 2
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintln(stderr, "repose-mcp: no home directory")
+			_, _ = fmt.Fprintln(stderr, "repose-mcp: no home directory")
 			return 1
 		}
 		checkout := ""
@@ -81,29 +81,29 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		path, argv, env, err := mcpreg.PrepareIn(mcpreg.DefaultPaths(home), args[1], checkout)
 		var le *mcpreg.LaunchError
 		if errors.As(err, &le) {
-			fmt.Fprintln(stderr, le.Msg)
+			_, _ = fmt.Fprintln(stderr, le.Msg)
 			return le.Code
 		}
 		if err != nil {
-			fmt.Fprintln(stderr, "repose-mcp:", err)
+			_, _ = fmt.Fprintln(stderr, "repose-mcp:", err)
 			return 1
 		}
 		err = execve(path, argv, env)
-		fmt.Fprintf(stderr, "repose-mcp: %s did not start: %v\n", args[1], err)
+		_, _ = fmt.Fprintf(stderr, "repose-mcp: %s did not start: %v\n", args[1], err)
 		return 126
 	case "status":
 		if len(args) != 2 || args[1] != "--json" {
-			fmt.Fprint(stderr, mcpUsage)
+			_, _ = fmt.Fprint(stderr, mcpUsage)
 			return 2
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintln(stderr, "repose-mcp: no home directory")
+			_, _ = fmt.Fprintln(stderr, "repose-mcp: no home directory")
 			return 1
 		}
 		st, err := mcpreg.ReadStatus(mcpreg.DefaultPaths(home))
 		if err != nil {
-			fmt.Fprintln(stderr, "repose-mcp:", err)
+			_, _ = fmt.Fprintln(stderr, "repose-mcp:", err)
 			return 1
 		}
 		enc := json.NewEncoder(stdout)
@@ -119,6 +119,6 @@ func runMCP(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if mcpreg.ValidName(args[0]) && len(args) == 1 {
 		return mcpshim.Serve(args[0], stdin, stdout, stderr)
 	}
-	fmt.Fprint(stderr, mcpUsage)
+	_, _ = fmt.Fprint(stderr, mcpUsage)
 	return 2
 }

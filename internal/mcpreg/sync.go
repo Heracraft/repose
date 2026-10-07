@@ -25,7 +25,7 @@ func KnownAgent(agent string) bool {
 // ~/.repose/mcp/.lock. Problems are lines on stderr; nothing here fails the
 // caller, since agent-setup runs it before every agent start.
 func Sync(p Paths, agents []string, stderr io.Writer) {
-	warn := func(s string) { fmt.Fprintln(stderr, "repose-mcp:", s) }
+	warn := func(s string) { _, _ = fmt.Fprintln(stderr, "repose-mcp:", s) }
 	if err := os.MkdirAll(p.Dir(), 0o700); err != nil {
 		warn("cannot make ~/.repose/mcp: " + err.Error())
 		return

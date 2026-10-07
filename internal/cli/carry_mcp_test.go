@@ -164,7 +164,7 @@ func TestClassifyMCPServer(t *testing.T) {
 				}
 			}
 			sort.Strings(got)
-			if !reflect.DeepEqual(got, tc.secrets) && !(len(got) == 0 && len(tc.secrets) == 0) {
+			if !reflect.DeepEqual(got, tc.secrets) && (len(got) != 0 || len(tc.secrets) != 0) {
 				t.Fatalf("secrets = %v, want %v", got, tc.secrets)
 			}
 			if v.cmd != tc.cmd {
@@ -364,7 +364,9 @@ func TestTemplateMCPSecrets(t *testing.T) {
 	}
 	// Only the import, which asks for them, sees the values.
 	values := map[string]string{}
-	collectMCP(home, "", nil, values)
+	if _, err := collectMCP(home, "", nil, values); err != nil {
+		t.Fatal(err)
+	}
 	if values["API_TOKEN"] != "NEVER-LINEAR-2" || values["SENTRY_API_TOKEN"] != "NEVER-SENTRY-2" || len(values) != 2 {
 		t.Errorf("values = %d entries", len(values))
 	}

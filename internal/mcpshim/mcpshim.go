@@ -70,7 +70,7 @@ func busyText(name string) string {
 func Serve(name string, stdin io.Reader, stdout, stderr io.Writer) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(stderr, "repose-mcp: no home directory")
+		_, _ = fmt.Fprintln(stderr, "repose-mcp: no home directory")
 		return 1
 	}
 	return serve(mcpreg.DefaultPaths(home), name, stdin, stdout, stderr)
@@ -118,7 +118,7 @@ func serve(p mcpreg.Paths, name string, stdin io.Reader, stdout, stderr io.Write
 		s.cache = f
 		s.tools = f.Tools
 	} else if err != nil {
-		fmt.Fprintf(stderr, "repose-mcp: %s: ~/.repose/mcp/forward/%s.json does not parse; answering with no tools\n", name, name)
+		_, _ = fmt.Fprintf(stderr, "repose-mcp: %s: ~/.repose/mcp/forward/%s.json does not parse; answering with no tools\n", name, name)
 	}
 	if s.tools == nil {
 		s.tools = []json.RawMessage{}
@@ -447,7 +447,7 @@ func (s *shim) connect() bool {
 	}
 	_ = json.Unmarshal(res, &ir)
 	if ir.ProtocolVersion != "" && ir.ProtocolVersion != told {
-		fmt.Fprintf(s.stderr, "repose-mcp: %s: the server on the laptop chose protocol %s; the agent was told %s\n", s.name, ir.ProtocolVersion, told)
+		_, _ = fmt.Fprintf(s.stderr, "repose-mcp: %s: the server on the laptop chose protocol %s; the agent was told %s\n", s.name, ir.ProtocolVersion, told)
 	}
 	if err := l.send(notification("notifications/initialized")); err != nil {
 		return fail()

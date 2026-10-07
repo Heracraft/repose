@@ -22,11 +22,11 @@ func flockFile(path string, wait time.Duration) (func(), error) {
 		if err == nil {
 			return func() {
 				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // closing releases it anyway
-				f.Close()
+				_ = f.Close()
 			}, nil
 		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		time.Sleep(50 * time.Millisecond)

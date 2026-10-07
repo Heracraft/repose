@@ -17,7 +17,7 @@ func TestExpand(t *testing.T) {
 	}
 	t.Setenv("TOKEN", "from-env")
 	t.Setenv("ONLY_ENV", "env-value")
-	os.Unsetenv("UNSET_X")
+	_ = os.Unsetenv("UNSET_X")
 	cases := []struct{ in, want string }{
 		{"${TOKEN}", "from-file"},
 		{"Bearer ${TOKEN}", "Bearer from-file"},
@@ -44,8 +44,8 @@ func TestNeeds(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "HAVE"), []byte("x"), 0o400); err != nil {
 		t.Fatal(err)
 	}
-	os.Unsetenv("LACK_A")
-	os.Unsetenv("LACK_B")
+	_ = os.Unsetenv("LACK_A")
+	_ = os.Unsetenv("LACK_B")
 	s := Server{
 		"command": "npx",
 		"args":    []any{"--x", "${LACK_A}", "${HOME}/y"},

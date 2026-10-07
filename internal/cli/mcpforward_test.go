@@ -157,8 +157,8 @@ func TestFindLaptopMCP(t *testing.T) {
 		t.Errorf("linear: %v", err)
 	}
 	// An unset ${VAR} would reach the server as its literal text.
-	os.Unsetenv("MCP_TEST_UNSET")
-	os.Unsetenv("MCP_TEST_UNSET_B")
+	_ = os.Unsetenv("MCP_TEST_UNSET")
+	_ = os.Unsetenv("MCP_TEST_UNSET_B")
 	if _, err := findLaptopMCP(home, root, "unset"); err == nil || err.Error() != "unset in your Claude Code config uses ${MCP_TEST_UNSET} and ${MCP_TEST_UNSET_B}, which this shell does not set. Set them and run the forward again." {
 		t.Errorf("unset: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestMCPEndProcesses(t *testing.T) {
 		cmu.Unlock()
 	}
 	served := make(chan struct{})
-	go func() { end.serve(toEndR); close(served) }()
+	go func() { _ = end.serve(toEndR); close(served) }()
 	fl := readFrames(fromEndR)
 	fw := mcpshim.NewFrameWriter(toEndW)
 	_ = fw.Write(mcpshim.FrameHello, 0, []byte(mcpshim.FrameVersion))
@@ -351,7 +351,7 @@ func TestMCPEndMachineStrings(t *testing.T) {
 	end.onReady = func(r mcpshim.Ready) { mu.Lock(); got = append(got, "ready "+r.Name+" "+r.Error); mu.Unlock() }
 	end.onGone = func(n string) { mu.Lock(); got = append(got, "gone "+n); mu.Unlock() }
 	served := make(chan struct{})
-	go func() { end.serve(toEndR); close(served) }()
+	go func() { _ = end.serve(toEndR); close(served) }()
 	fw := mcpshim.NewFrameWriter(toEndW)
 	_ = fw.Write(mcpshim.FrameHello, 0, []byte(mcpshim.FrameVersion))
 	_ = fw.Write(mcpshim.FrameReady, 0, mcpshim.ReadyFrame(mcpshim.Ready{Name: "probe", Error: "bad\x1b]52;c;aGk=\x07 start\u009b2J"}))
