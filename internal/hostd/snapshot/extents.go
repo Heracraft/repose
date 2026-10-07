@@ -56,6 +56,10 @@ type usedLayout struct {
 // errNotExtentable is why a device is streamed raw instead.
 type errNotExtentable struct{ reason string }
 
+// reasonNeedsRecovery is the refusal a journal replay can lift
+// (Pipeline.ReplayJournal, DECISIONS I-594).
+const reasonNeedsRecovery = "journal needs recovery"
+
 func (e *errNotExtentable) Error() string { return "raw snapshot: " + e.reason }
 
 // parseDumpe2fs reads `dumpe2fs <dev>` output: the geometry from the
@@ -98,7 +102,7 @@ func parseDumpe2fs(out []byte) (*usedLayout, error) {
 		case "Filesystem features":
 			for _, f := range strings.Fields(v) {
 				if f == "needs_recovery" {
-					return nil, &errNotExtentable{"journal needs recovery"}
+					return nil, &errNotExtentable{reasonNeedsRecovery}
 				}
 			}
 		case "Filesystem state":
@@ -561,6 +565,23 @@ func (p *Pipeline) layout(ctx context.Context, dev string) (*usedLayout, error) 
 		return nil, &errNotExtentable{"dumpe2fs failed (not ext4?)"}
 	}
 	return parseDumpe2fs(res.Stdout)
+}
+
+// replayJournal replays dev's ext4 journal and nothing else (`e2fsck -E
+// journal_only -p`), sandboxed with write access to dev alone when
+// p.Sandbox, as restore's e2fsck is. Exit 0 and 1 are a filesystem e2fsck
+// left consistent; anything else is a failure.
+func (p *Pipeline) replayJournal(ctx context.Context, dev string) error {
+	argv := []string{"e2fsck", "-E", "journal_only", "-p", dev}
+	if p.Sandbox {
+		argv = shell.Sandboxed(dev, true, argv...)
+	}
+	_, err := p.R.Run(ctx, argv...)
+	var ee *shell.ExitError
+	if errors.As(err, &ee) && ee.Result.ExitCode == 1 {
+		return nil
+	}
+	return err
 }
 
 // deviceSize is the byte size of a block device or regular file.

@@ -172,10 +172,10 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	// The format and the used bytes say what the duration was spent on:
 	// an extent snapshot reads what the filesystem uses, a raw one reads
 	// the whole volume (I-164).
-	format, why, used := "raw", "", uint64(0)
+	format, why, used, replayed := "raw", "", uint64(0), false
 	if md, ok := r.(snapshot.Moder); ok {
 		mo := md.Mode()
-		format, why, used = mo.Format, mo.Why, mo.UsedBytes
+		format, why, used, replayed = mo.Format, mo.Why, mo.UsedBytes, mo.JournalReplayed
 	}
 	// read_wait_ms is how long the stream waited for the device (0 when
 	// unknown): close to duration_ms means the disk set the pace; well
@@ -186,7 +186,7 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	}
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(),
 		"freeze_ms", t.freeze.Milliseconds(), "read_wait_ms", readWaitMs,
-		"format", format, "raw_reason", why, "used_bytes", used, "volume_bytes", g.VolumeBytes)
+		"format", format, "raw_reason", why, "journal_replayed", replayed, "used_bytes", used, "volume_bytes", g.VolumeBytes)
 	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
 	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil
 }

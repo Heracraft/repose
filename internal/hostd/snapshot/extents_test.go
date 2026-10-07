@@ -272,3 +272,130 @@ func TestLayoutSandboxed(t *testing.T) {
 		t.Fatalf("dumpe2fs argv %s", argv)
 	}
 }
+
+// journalWrite leaves img's journal holding one committed transaction
+// that writes data at block blk, and the filesystem flagged
+// needs_recovery: what a guest killed after a commit leaves, without a
+// mount.
+func journalWrite(t *testing.T, img string, blk string, data []byte) {
+	t.Helper()
+	dir := t.TempDir()
+	block := filepath.Join(dir, "block")
+	if err := os.WriteFile(block, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmds := filepath.Join(dir, "cmds")
+	if err := os.WriteFile(cmds, []byte("jo\njw -b "+blk+" "+block+"\njc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("debugfs", "-w", "-f", cmds, img).CombinedOutput(); err != nil {
+		t.Fatalf("debugfs journal write: %v %s", err, out)
+	}
+	out, err := exec.Command("dumpe2fs", "-h", img).Output()
+	if err != nil || !strings.Contains(string(out), "needs_recovery") {
+		t.Fatalf("the image's journal does not need recovery: %v\n%s", err, out)
+	}
+}
+
+// TestKilledGuestSnapshotReplaysItsJournal: an ext4 whose journal holds a
+// committed write its blocks do not show yet (a killed guest) goes out as
+// extents once Read has replayed the journal on the device it reads, and
+// the restored volume holds the journal's write and passes e2fsck. Before
+// I-594 it went out raw, reading and restoring the whole volume.
+func TestKilledGuestSnapshotReplaysItsJournal(t *testing.T) {
+	needTools(t, "mkfs.ext4", "dumpe2fs", "e2fsck", "debugfs", "zstd")
+	random := make([]byte, 2<<20)
+	_, _ = rand.Read(random)
+	before := bytes.Repeat([]byte("A"), 4096)
+	after := bytes.Repeat([]byte("B"), 4096)
+	const size = 1 << 30
+	img := mkfsImage(t, size, map[string][]byte{"f": before, "d/random": random})
+	out, err := exec.Command("debugfs", "-R", "bmap /f 0", img).Output()
+	if err != nil {
+		t.Fatalf("debugfs bmap: %v", err)
+	}
+	journalWrite(t, img, strings.TrimSpace(string(out)), after)
+
+	dst := emptyDevice(t, size)
+	p := &Pipeline{R: shell.Exec{}, ReplayJournal: true}
+	n, mode := roundTrip(t, p, img, dst)
+	if mode.Format != "extents" || !mode.JournalReplayed {
+		t.Fatalf("mode %+v, want extents after a journal replay", mode)
+	}
+	if n > 4<<20 {
+		t.Fatalf("compressed stream is %d bytes for 2 MB of files on a 1 GB volume", n)
+	}
+	if out, err := exec.Command("e2fsck", "-fn", dst).CombinedOutput(); err != nil {
+		t.Fatalf("e2fsck on the restored volume: %v\n%s", err, out)
+	}
+	if got := debugfsCat(t, dst, "/f"); !bytes.Equal(got, after) {
+		t.Fatalf("/f after restore starts %q, want the journal's write", got[:8])
+	}
+	if got := debugfsCat(t, dst, "/d/random"); !bytes.Equal(got, random) {
+		t.Fatal("/d/random differs after restore")
+	}
+}
+
+// TestJournalReplayIsOptInAndSandboxed: without ReplayJournal, Read never
+// writes to the device (a volume that needs recovery goes out raw, as
+// before); with it and Sandbox, the replay runs in shell.Sandboxed with
+// write access to that device alone, exit 1 (e2fsck changed something)
+// is success, and a failed replay goes out raw saying so.
+func TestJournalReplayIsOptInAndSandboxed(t *testing.T) {
+	head := "Filesystem features:      has_journal extent 64bit needs_recovery\nFilesystem state:         clean\nBlock count:              32768\nFirst block:              0\nBlock size:               4096\nBlocks per group:         32768\nGroup 0: (Blocks 0-32767)\n  Free blocks: 100-32767\n"
+	dev := "/dev/vg-guests/snap-1"
+	newFake := func(e2fsckExit int) *shell.Fake {
+		return &shell.Fake{Scripts: []shell.Script{
+			{Prefix: []string{"dumpe2fs"}, Result: shell.Result{Stdout: []byte(head)}},
+			{Prefix: []string{"systemd-run"}, Handle: func(argv []string) (shell.Result, error) {
+				if strings.Contains(strings.Join(argv, " "), "-- dumpe2fs") {
+					return shell.Result{Stdout: []byte(head)}, nil
+				}
+				res := shell.Result{ExitCode: e2fsckExit}
+				if e2fsckExit != 0 {
+					return res, &shell.ExitError{Argv: argv, Result: res}
+				}
+				return res, nil
+			}},
+		}}
+	}
+
+	off := newFake(0)
+	r, err := (&Pipeline{R: off}).Read(context.Background(), dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	if mode := r.(Moder).Mode(); mode.Format != "raw" || mode.Why != reasonNeedsRecovery || mode.JournalReplayed {
+		t.Fatalf("without ReplayJournal: mode %+v", mode)
+	}
+	for _, c := range off.Calls {
+		if strings.Contains(strings.Join(c, " "), "e2fsck") {
+			t.Fatalf("without ReplayJournal Read ran %v", c)
+		}
+	}
+
+	for _, exit := range []int{1, 8} {
+		f := newFake(exit)
+		p := &Pipeline{R: f, Sandbox: true, ReplayJournal: true}
+		err := p.replayJournal(context.Background(), dev)
+		if (exit == 1) != (err == nil) {
+			t.Fatalf("e2fsck exit %d: replay error %v", exit, err)
+		}
+		argv := strings.Join(f.Calls[0], " ")
+		if !strings.HasPrefix(argv, "systemd-run ") || !strings.Contains(argv, "DeviceAllow="+dev+" rw") ||
+			!strings.HasSuffix(argv, "-- e2fsck -E journal_only -p "+dev) {
+			t.Fatalf("replay argv %s", argv)
+		}
+	}
+
+	f := newFake(8)
+	r, err = (&Pipeline{R: f, Sandbox: true, ReplayJournal: true}).Read(context.Background(), dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	if mode := r.(Moder).Mode(); mode.Format != "raw" || mode.Why != "journal replay failed" || mode.JournalReplayed {
+		t.Fatalf("after a failed replay: mode %+v", mode)
+	}
+}
