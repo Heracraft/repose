@@ -482,8 +482,9 @@ hostd cannot talk to a guest's guestd for 5 minutes.
    tenant filled memory) usually killed guestd; the kernel line names it.
    `repose-admin projects restart <id>` (stop without snapshot, since
    freeze needs guestd, then start).
-3. Sampling for that guest is missing for the window; billing uses the
-   last known state, so a running guest is still billed.
+3. Sampling for that guest is missing for the window; usage uses the
+   last known state, so a running guest keeps counting running hours and
+   memory toward its plan.
 
 ## HostScrapeDown
 
