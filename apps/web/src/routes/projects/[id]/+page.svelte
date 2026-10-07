@@ -676,7 +676,11 @@
 				{/if}
 			</div>
 
-			<section class="card min-w-0 sm:col-span-2" data-testid="usage-card" aria-labelledby="usage-title">
+			<section
+				class="card min-w-0 sm:col-span-2"
+				data-testid="usage-card"
+				aria-labelledby="usage-title"
+			>
 				<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
 					<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
 					<!-- The current window is marked the way the config tabs mark
