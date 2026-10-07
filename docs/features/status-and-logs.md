@@ -34,6 +34,14 @@ multiplexer until its next start. When the guest does not answer within
 that ssh's few seconds, the word comes from the project's stored
 `multiplexer`.
 
+The same ssh reads the guest's root filesystem (`stat -f /`), and `disk`
+is its used over its size, counted as guestd's `disk_high` counts it; a
+stopped project, or a guest that did not answer, shows the disk's size
+alone (DECISIONS I-567). At 90 percent or more a line under the host
+line reads `disk 95 percent full; \`repose resize todo-app 80G\` grows
+it`, the size double the disk up to 320 GB. AGENTS names the one agent,
+or counts several by state: `3 agents: 1 needs_input, 2 working`.
+
 ```
 $ repose logs                    # console, last 200 lines, follow with -f
 $ repose logs --kind build       # the last build's output
@@ -53,7 +61,8 @@ project as their argument (`repose logs izma -f`, I-155).
 Status:
 
 - `repose ls` lists every non-destroyed project with class, state,
-  uptime since the last `running` transition, per-agent state, and cost
+  uptime since the last `running` transition, agent state (counted by
+  state when there are several, I-567), and cost
   today and month to date in dollars from `usage_hours` plus the current
   partial hour estimated at the class rate. `repose status` prints the
   same columns for one project, then its detail lines.

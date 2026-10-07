@@ -35,8 +35,8 @@ other name is a nixpkgs attribute path, such as `gcc`, `nodejs_22`,
 The fragment:
 
 ```
-$ repose config show              # print it; --revisions lists revisions
-$ repose config edit              # opens $EDITOR on the fragment, applies on save
+$ repose config show [PROJECT]    # print it; --revisions lists revisions (I-566)
+$ repose config edit [PROJECT]    # opens $EDITOR on the fragment, applies on save
 $ repose config apply ./repose.nix
 $ repose config apply              # no ./repose.nix: apply the current configuration again (I-321)
 ```
