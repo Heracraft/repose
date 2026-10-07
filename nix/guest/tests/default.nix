@@ -2603,13 +2603,20 @@ in
     testScript = ''
       import os
       import base64
+      def boot():
+          # The driver gives the backdoor shell 300 s from the first
+          # connect; a guest base under nested KVM (kanali) takes longer,
+          # so wait for the boot on the console first, then connect.
+          guest.start()
+          guest.wait_for_console_text("Reached target Multi-User System", timeout=1800)
+          guest.wait_for_unit("multi-user.target")
+
       def repaired(line):
           # Stage 1 writes it to the console and the kernel log.
           out = guest.succeed("dmesg | grep 'repose: store overlay' || true")
           assert line in out, out
 
-      guest.start()
-      guest.wait_for_unit("multi-user.target")
+      boot()
       repaired("repose: store overlay: 0 whiteouts removed")
       upper = guest.succeed("awk '$2 == \"/nix/store\" { print $4 }' /proc/mounts | tr , '\\n' | grep '^upperdir=' | cut -d= -f2").strip()
       upper = upper.splitlines()[0].removeprefix("/mnt-root")
@@ -2636,8 +2643,7 @@ in
           # Last, the running system itself; nothing in it runs after this.
           guest.succeed(f"nix-store --delete --ignore-liveness {system} && {coreutils}/test -c {upper}/{sysname} && {coreutils}/sync")
           guest.crash()
-          guest.start()
-          guest.wait_for_unit("multi-user.target")
+          boot()
           repaired("repose: store overlay: 3 whiteouts removed, 2 of them over shared store paths")
           guest.succeed(f"test -x {system}/init && test -f {probe}")
           for name in [sysname, pname, fake]:
@@ -2678,8 +2684,7 @@ in
 
       with subtest("the next start removes those too and boots"):
           guest.shutdown()
-          guest.start()
-          guest.wait_for_unit("multi-user.target")
+          boot()
           if n > 0:
               repaired(f"repose: store overlay: {n} whiteouts removed, {n} of them over shared store paths")
           else:
