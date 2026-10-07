@@ -442,7 +442,7 @@ func TestBuildMCPCarryIsFast(t *testing.T) {
 		}
 	}
 	t.Logf("buildMCPCarry on a 5 MB ~/.claude.json: %v", best)
-	if best > 50*time.Millisecond {
+	if best > 50*time.Millisecond && !raceEnabled {
 		t.Fatalf("buildMCPCarry took %v, want under 50ms", best)
 	}
 }
