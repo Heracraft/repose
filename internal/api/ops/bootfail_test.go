@@ -193,3 +193,60 @@ func TestCreateWhoseBootFailsSaysHow(t *testing.T) {
 		t.Fatalf("project %s %v", p.State, p.LastError)
 	}
 }
+
+// I-589: a switch guestd refuses because a nix garbage collection inside
+// the machine hid the new system says so and what repairs it; the
+// revision stays built, so `repose stop` then `repose start` boots the
+// machine's current system (whose stage 1 removes the whiteouts, I-587)
+// and switches to it. An older guestd's not_found keeps its sentence.
+func TestApplyOfAHiddenSystemSaysStopAndStartRepairsIt(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("hid")
+	p := h.CreateRunning(u, "hidden")
+	pid := p.ID
+	rid := addBuiltRevision(t, h, pid, "/nix/store/hidden-system")
+	h.Fake.SetFail("ApplyConfig", "store_path_hidden")
+	h.Fake.SetFailMessage("ApplyConfig", "switch failed: store_path_hidden: switch: 1 of the store paths /nix/store/hidden-system needs are hidden in this machine's store")
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindApply, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanApply()}))
+	if op.State != "error" || op.Error == nil {
+		t.Fatalf("apply: %s %+v", op.State, op.Error)
+	}
+	msg, _ := op.Error["message"].(string)
+	if op.Error["code"] != "store_path_hidden" || !strings.Contains(msg, "nix garbage collection inside the machine hid parts of the new system") ||
+		!strings.Contains(msg, "`repose stop` then `repose start`") {
+		t.Fatalf("error %v", op.Error)
+	}
+	p = h.Project(pid)
+	if p.State != "running" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "store_path_hidden: a nix garbage collection") {
+		t.Fatalf("project %s last_error %v", p.State, p.LastError)
+	}
+	if st, _ := revisionStatus(t, h, rid); st != "built" {
+		t.Fatalf("revision %s, want built", st)
+	}
+
+	// What the sentence says to do: stop, then start, which boots and
+	// then applies the pending revision.
+	h.Fake.SetFail("ApplyConfig", "")
+	h.Fake.SetFailMessage("ApplyConfig", "")
+	if op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Params: map[string]any{"snapshot": false}, Phases: ops.PlanStop()})); op.State != "done" {
+		t.Fatal(op.Error)
+	}
+	pending, err := ops.PendingRevision(h.Ctx, h.Pool, h.Project(pid))
+	if err != nil || !pending {
+		t.Fatalf("pending revision after the refused apply: %v %v", pending, err)
+	}
+	n := len(h.Fake.Commands())
+	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &pid, Phases: ops.PlanStart(true)}))
+	if op.State != "done" || op.Result["warning"] != nil {
+		t.Fatalf("start: %s %v %v", op.State, op.Error, op.Result)
+	}
+	if got := kinds(commandsSince(h, n)); got != "StartGuest,ApplyConfig" {
+		t.Fatalf("commands %s", got)
+	}
+	if st, _ := revisionStatus(t, h, rid); st != "applied" {
+		t.Fatalf("revision after stop and start %s, want applied", st)
+	}
+	if p := h.Project(pid); p.LastError != nil {
+		t.Fatalf("last_error after the repair %q", *p.LastError)
+	}
+}

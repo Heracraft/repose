@@ -205,8 +205,8 @@ func TestViewRootsWithoutAnOverlay(t *testing.T) {
 
 // I-589: a switch to a closure a whiteout hides fails with a message that
 // says so and what repairs it, before anything is registered or
-// activated; so does one whose requisite is hidden. kanali, 2026-10-06,
-// got "not in the store share" and hostd's `internal`.
+// activated, with its own code; so does one whose requisite is hidden.
+// kanali, 2026-10-06, got "not in the store share" and hostd's `internal`.
 func TestSwitchRefusesAClosureAWhiteoutHides(t *testing.T) {
 	sys, lib := storeName('a', "nixos-system-next"), storeName('b', "systemd")
 	p, v := overlayRoot(t, "/mnt-root", sys, lib)
@@ -219,7 +219,7 @@ func TestSwitchRefusesAClosureAWhiteoutHides(t *testing.T) {
 		t.Fatal("a hidden closure switched")
 	}
 	msg := err.Error()
-	if sysdep.CodeOf(err) != sysdep.CodeNotFound || !strings.Contains(msg, "hidden in this machine's store") ||
+	if sysdep.CodeOf(err) != sysdep.CodeStorePathHidden || !strings.Contains(msg, "hidden in this machine's store") ||
 		!strings.Contains(msg, "Restart the machine") || !strings.Contains(msg, "1 of the store paths") {
 		t.Fatalf("error = %s: %q", sysdep.CodeOf(err), msg)
 	}

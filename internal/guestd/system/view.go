@@ -341,7 +341,7 @@ func (h *Handler) checkHidden(closure string, registration []byte) error {
 	}
 	h.log.Warn("switch refused: store paths hidden by whiteouts", "event", "switch",
 		"result", "store_paths_hidden", "hidden", len(hidden))
-	return sysdep.NotFound("switch: %d of the store paths %s needs are hidden in this machine's store, %s first: "+
+	return sysdep.Errf(sysdep.CodeStorePathHidden, "switch: %d of the store paths %s needs are hidden in this machine's store, %s first: "+
 		"a nix garbage collection inside the machine deleted them. Restart the machine; a start repairs its store",
 		len(hidden), closure, hidden[0])
 }

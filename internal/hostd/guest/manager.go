@@ -64,6 +64,9 @@ const (
 	CodeClosureTooLarge      = "closure_too_large"
 	CodeGuestUnresponsive    = "guest_unresponsive"
 	CodeInternal             = "internal"
+	// CodeStorePathHidden is guestd's Switch refusal of a closure an
+	// overlayfs whiteout in the guest's store hides (DECISIONS I-589).
+	CodeStorePathHidden = "store_path_hidden"
 	// CodeBootFailed (bootfail.go) is the eleventh, since I-592.
 )
 

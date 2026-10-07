@@ -15972,21 +15972,42 @@ tests `TestRegisterPathsRootsEverySharedPath`,
 VM test `guest-store-whiteouts` runs `nix-collect-garbage -d` and checks
 no listed shared path gained a whiteout.
 
-**I-589. A switch to a closure a whiteout hides fails saying so.**
-(store-whiteouts, 2026-10-07) kanali's nightly ApplyConfig failed with
-guestd's `not_found: ... is not in the store share`, which names the
-host's GC, and hostd reported `internal`. Before anything else, `Switch`
-now checks the closure and every path its registration lists against
-the upper dir; a 0:0 character device over any of them fails it with
-`not_found` and "switch: N of the store paths <closure> needs are hidden
-in this machine's store, <path> first: a nix garbage collection inside
-the machine deleted them. Restart the machine; a start repairs its
-store" (I-587). guestd keeps to hostd's error codes (sysdep), and hostd
-already passes the message through in `switch failed: not_found: ...`;
-how the api and CLI word that is the lifecycle-errors work's. The
+**I-589. A switch to a closure a whiteout hides fails saying so, with
+its own code.** (store-whiteouts, 2026-10-07) kanali's nightly
+ApplyConfig failed with guestd's `not_found: ... is not in the store
+share`, which names the host's GC, and hostd reported `internal`; I-593
+then passed `not_found` through and the api says "the new system is not
+in the machine's store", which is true of a host that collected it but
+names neither the cause nor the repair here. Before anything else,
+`Switch` now checks the closure and every path its registration lists
+against the upper dir; a 0:0 character device over any of them fails it
+with a new code, `store_path_hidden`, and "switch: N of the store paths
+<closure> needs are hidden in this machine's store, <path> first: a nix
+garbage collection inside the machine deleted them. Restart the machine;
+a start repairs its store". hostd passes the code through with I-593's
+`not_found` and `invalid_argument` (`switchCodes`); the api's sentence is
+"a nix garbage collection inside the machine hid parts of the new system,
+so it keeps its current one; `repose stop` then `repose start` repairs the
+machine's store and applies the new system". That is what happens: the
+revision stays `built` (only `boot_failed` marks one failed, I-590), so
+the start after the stop is `start_guest, apply_config`; the boot of the
+system the machine has removes the whiteouts in stage 1 (I-587) and the
+apply then switches in place (or, for a new kernel, reboots onto it, with
+I-590's fallback if that boot fails). `repose ls`, `repose status` and
+the dashboard show the sentence for a running project the way they show
+I-590's `boot_failed`, until the start clears `last_error`. Old shapes for
+one release: a guestd from before this answers `not_found` and keeps
+I-593's sentence; a hostd from before I-593 turns the new code into
+`internal` with guestd's message, as it did every Switch error. The
 whiteouts cannot be removed while the overlay is mounted, so the guest
-does not repair them itself. Troubleshooting has the message. Unit test
-`TestSwitchRefusesAClosureAWhiteoutHides`.
+does not repair them itself. Interfaces: `grpc-hostd.md` (error codes,
+ApplyConfig row), `vsock-guestd.md` (Switch row). Tests:
+`TestSwitchRefusesAClosureAWhiteoutHides` (guestd),
+`TestSwitchStorePathHiddenKeepsItsCode` (hostd),
+`TestApplyOfAHiddenSystemSaysStopAndStartRepairsIt` (api: the sentence,
+`last_error`, the revision built, then stop and start applying it),
+`TestRunningProjectWithAHiddenSystemSaysSo` (cli), `bootfail.test.ts`
+(dashboard).
 **I-590. A boot that never reaches Ready falls back to the guest's last
 good closure, once, and the start ends running with a warning.**
 (lifecycle-errors, 2026-10-07; the kanali incident.) At 17:40Z `repose

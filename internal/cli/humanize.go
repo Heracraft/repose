@@ -40,6 +40,8 @@ func reasonFor(code, message string) string {
 		return "its configuration is larger than the environment allows"
 	case "not_found":
 		return "the host no longer has its guest"
+	case "store_path_hidden":
+		return "a nix garbage collection inside the machine hid parts of its new system"
 	case "host_unreachable", "unreachable":
 		return "its host is not reachable"
 	case "payment_required":
@@ -221,13 +223,15 @@ func nextAfterFailedStart(slug, code string) string {
 
 // bootFallbackReason is what a running project's last_error says after
 // a start or reboot whose new system did not boot, so that it runs its
-// previous one (DECISIONS I-590); "" for any other project.
+// previous one (DECISIONS I-590), or after a switch refused because a nix
+// garbage collection inside the machine hid the new system (I-589); ""
+// for any other project.
 func bootFallbackReason(p *Project) string {
 	if p.State != "running" || p.LastError == nil {
 		return ""
 	}
 	code, msg := splitLastError(*p.LastError)
-	if code != "boot_failed" {
+	if code != "boot_failed" && code != "store_path_hidden" {
 		return ""
 	}
 	return strings.TrimSpace(msg)

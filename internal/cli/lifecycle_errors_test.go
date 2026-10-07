@@ -133,3 +133,26 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 		t.Fatalf("stdout %q stderr %q", out.String(), errOut.String())
 	}
 }
+
+// I-589: a running project whose switch was refused because a nix GC
+// inside it hid the new system says so in ls and status until a start
+// repairs it; any other running project's last_error stays out.
+func TestRunningProjectWithAHiddenSystemSaysSo(t *testing.T) {
+	msg := "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` repairs the machine's store and applies the new system"
+	le := "store_path_hidden: " + msg
+	if got := bootFallbackReason(&Project{Slug: "kanali", State: "running", LastError: &le}); got != msg {
+		t.Fatalf("reason %q", got)
+	}
+	var st strings.Builder
+	writeStatusLines(&st, &Project{Slug: "kanali", State: "running", LastError: &le}, nil, nil, nil)
+	if !strings.Contains(st.String(), "  a nix garbage collection inside the machine hid parts of the new system") {
+		t.Fatalf("status = %q", st.String())
+	}
+	other := "internal: switch failed"
+	if got := bootFallbackReason(&Project{Slug: "kanali", State: "running", LastError: &other}); got != "" {
+		t.Fatalf("other last_error shown: %q", got)
+	}
+	if got := reasonFor("store_path_hidden", ""); !strings.Contains(got, "nix garbage collection") {
+		t.Fatalf("reasonFor %q", got)
+	}
+}

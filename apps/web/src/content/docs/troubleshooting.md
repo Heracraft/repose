@@ -41,6 +41,8 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason. That system isn't tried again on its own; the next base update, or a change to the configuration, builds a new one. `repose logs todo-app --kind console` shows what the failed boot printed.
 
+**`todo-app: a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one`.** A garbage collection run on the machine on an older base deleted store paths that repose shares with it and that the new system needs. The machine keeps running what it had. `repose stop todo-app`, then `repose start todo-app`: the start puts the paths back and switches to the new system.
+
 **`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** Something on the machine removed store paths that the new system needs, usually a `nix-collect-garbage` or `nix store gc` run inside it. The machine keeps running what it had.
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout waits for the destroy, then creates a fresh `todo-app`; see [Start over with a fresh machine](/docs/lifecycle#start-over-with-a-fresh-machine).
@@ -84,8 +86,6 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 **Processes get killed, or the machine is slow under load.** It ran out of memory: `sudo dmesg | grep -i killed` names what the kernel stopped. Stop what you don't need (`repose status` lists dev servers still listening), or give the machine more memory with `repose resize --size large` or `--size xl`, which restarts it. See [Changing the size](/docs/machine#changing-the-size).
 
 **A secret isn't in a program's environment.** Programs read their environment when they start. Open a new tmux window, or restart the program or agent.
-
-**`hidden in this machine's store`.** A nix garbage collection run on the machine on an older base deleted store paths repose shares with it, and the configuration needs them. `repose stop todo-app`, then `repose start todo-app`: the start puts them back and boots the newest configuration.
 
 **`config error` or exit code 10.** The build failed and nothing changed. The message names the problem; `repose logs --kind build` has the full log. Fix it with `repose config edit` or `repose config remove`.
 

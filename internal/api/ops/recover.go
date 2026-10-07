@@ -11,6 +11,10 @@ import (
 const (
 	codeGuestUnresponsive = "guest_unresponsive"
 	codeNotFound          = "not_found"
+	// codeStorePathHidden is guestd's refusal, through hostd, of a
+	// switch to a system a nix garbage collection inside the machine hid
+	// (DECISIONS I-589).
+	codeStorePathHidden = "store_path_hidden"
 )
 
 // PlanRestart is a start that reboots the guest instead of trusting what
@@ -164,6 +168,13 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 			// guestd's store does not show the new system (I-593); the
 			// machine runs what it ran.
 			return "the new system is not in the machine's store, so it was not switched to and keeps its current system", true
+		}
+	case codeStorePathHidden:
+		if phase == PhaseApplyConfig {
+			// The revision stays built: the next start boots the system
+			// the machine has, whose stage 1 removes the whiteouts
+			// (I-587), then switches to it.
+			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` repairs the machine's store and applies the new system", true
 		}
 	case "host_unreachable":
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true

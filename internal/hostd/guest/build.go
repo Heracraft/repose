@@ -270,7 +270,7 @@ func (m *Manager) bootable(ctx context.Context, closure string) *Error {
 
 // switchCodes are guestd's Switch error codes hostd passes to the api as
 // they are; any other is internal (I-593).
-var switchCodes = map[string]bool{CodeInvalidArgument: true, CodeNotFound: true}
+var switchCodes = map[string]bool{CodeInvalidArgument: true, CodeNotFound: true, CodeStorePathHidden: true}
 
 func switchCode(code string) string {
 	if switchCodes[code] {

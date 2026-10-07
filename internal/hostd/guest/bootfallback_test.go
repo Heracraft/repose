@@ -309,3 +309,20 @@ func (h *harness) runs(id string) int {
 	}
 	return n
 }
+
+// I-589: guestd's refusal of a closure a whiteout in the guest's store
+// hides reaches the api with its own code and message, not as not_found
+// (whose sentence says the system is missing) or internal.
+func TestSwitchStorePathHiddenKeepsItsCode(t *testing.T) {
+	h := newHarness(t, nil)
+	h.gopts.Fail = map[string]*guestdv1.Error{"Switch": {Code: "store_path_hidden", Message: "switch: 1 of the store paths /nix/store/x-nixos-system needs are hidden in this machine's store"}}
+	h.create(gid1)
+	other := fakeClosure(t, "nixos-system-v2")
+	res := h.mustFail(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: other}), CodeStorePathHidden)
+	if !strings.Contains(res.Error.Message, "hidden in this machine's store") {
+		t.Fatalf("message %q", res.Error.Message)
+	}
+	if g := h.guest(gid1); g.SystemClosure != h.closure {
+		t.Fatalf("a refused switch moved the guest: %+v", g)
+	}
+}
