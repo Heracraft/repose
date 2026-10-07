@@ -176,7 +176,7 @@ List the tools the next `repose run` would install on the machine, and why, and 
 
 ### `repose ls`
 
-Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. A `DISK` column appears while a listed project's disk is 90 percent full or more, as `93% full`. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
 repose ls -q | xargs -n1 repose stop
@@ -186,7 +186,7 @@ repose ls -q | xargs -n1 repose stop
 
 One project in detail, including processes listening on ports, the idle line when it has had nobody on it for a day, and when a temporary one is destroyed. `--json`, `--watch` (every 5 seconds).
 
-`disk` is the machine's filesystem, used over size, read from the machine while it runs; otherwise it is the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB.
+`disk` is the machine's filesystem, used over size, as the machine reports it; a stopped machine, or one that has not reported, shows the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB.
 
 ### `repose start [PROJECT]`
 

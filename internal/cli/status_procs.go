@@ -48,7 +48,9 @@ var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,r
 // guest's writes run out of. The api's disk_used_bytes is the host
 // volume's allocated blocks, which only a weekly fstrim gives back, so it
 // reads near full on a disk with room (kanali, 2026-10-07: 39.5 of 40 GB
-// allocated, 33 GB used). Zero Size means the guest did not say.
+// allocated, 33 GB used). The api's root_used_bytes and root_size_bytes
+// are the same figure from the newest sample (apiDisk). Zero Size means
+// the guest did not say.
 type guestDisk struct {
 	Used, Size int64
 }

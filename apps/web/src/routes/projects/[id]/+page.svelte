@@ -33,6 +33,7 @@
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
 	import { pct, cpuTime, type Pt } from '$lib/usage';
+	import { diskFullPercent } from '$lib/disk';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type {
 		Me,
@@ -800,11 +801,22 @@
 
 			<div class="card">
 				<h2 class="text-xl font-semibold">Disk</h2>
+				<!-- Used is the guest's root filesystem, what its writes run out
+				     of; the volume's allocated figure keeps deleted files until
+				     the weekly fstrim and is not shown (I-567). -->
 				<p class="mt-3 text-sm tabular-nums">
-					{project.disk_used_bytes !== undefined ? gb(project.disk_used_bytes) : '—'} of {gb(
-						project.volume_bytes
-					)}
+					{project.root_used_bytes !== undefined && project.root_size_bytes
+						? gb(project.root_used_bytes)
+						: '—'} of {gb(project.volume_bytes)}
 				</p>
+				{#if diskFullPercent(project) !== null}
+					<p
+						class="mt-1 text-sm text-amber-700 tabular-nums dark:text-amber-400"
+						data-testid="disk-full"
+					>
+						{diskFullPercent(project)} percent full
+					</p>
+				{/if}
 				{#if !showResize}
 					{#if largerSizes.length > 0}
 						<button type="button" id="resize-open" class="btn-ghost mt-2 px-0" onclick={openResize}

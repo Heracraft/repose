@@ -81,6 +81,39 @@ test('a disk at the largest size has no Grow to offer', async ({ page }) => {
 	await expect(page.getByText('320 GB is the largest size.')).toBeVisible();
 });
 
+// The Disk card's used figure is the guest's root filesystem, and a disk
+// 90 percent full or more says so beside Resize (I-567). The allocated
+// disk_used_bytes, near full on kanali with 6 GB free, is not shown.
+test('a nearly full disk says how full it is', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'disk-full-app',
+		remote_url: 'github.com/heracraft/disk-full-app'
+	});
+	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByText(/^1 GB of \d+ GB$/)).toBeVisible();
+	await expect(page.getByTestId('disk-full')).toHaveCount(0);
+
+	await page.route(`**/v1/projects/${p.id}`, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		const res = await route.fetch();
+		const json = await res.json();
+		await route.fulfill({
+			response: res,
+			json: {
+				...json,
+				volume_bytes: 40 * 2 ** 30,
+				disk_used_bytes: 39.5 * 2 ** 30,
+				root_used_bytes: 37 * 2 ** 30,
+				root_size_bytes: 39 * 2 ** 30
+			}
+		});
+	});
+	await page.reload();
+	await expect(page.getByText(/^37 GB of 40 GB$/)).toBeVisible();
+	await expect(page.getByTestId('disk-full')).toHaveText('94 percent full');
+	await expect(page.getByText('39.5 GB')).toHaveCount(0);
+});
+
 /** Serves one snapshot for the project, so the list has a row to act on. */
 async function oneSnapshot(page: import('@playwright/test').Page, projectId: string) {
 	await page.route(`**/v1/projects/${projectId}/snapshots`, (route) =>

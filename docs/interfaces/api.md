@@ -62,6 +62,7 @@ unique; it is the second half of the SSH login name.
 Project { id, name, slug, remote_url, class, state, host_id?, guest_ip?,
           agent_default, hold_base_updates, base_version, config_revision_id,
           volume_bytes, disk_used_bytes?, created_at, started_at?,
+          root_used_bytes?, root_size_bytes?,          -- the guest's root filesystem (I-567)
           signals?: {ssh_sessions, tmux_clients, agents: [{agent, window, state}],
                      guestd_ok},
           cost_today_cents, cost_month_cents,          -- 0 since I-289, kept one release
@@ -76,6 +77,17 @@ DestroyedProject { id, name, slug, class, remote_url?, volume_bytes,
           destroyed_at, name_free, restorable_until?,
           snapshot: {id, created_at, bytes, reason, expires_at?} }
 ```
+
+`disk_used_bytes` is the thin volume's allocated blocks from the newest
+sample (`lvs data_percent`), which keep a deleted file's blocks until the
+guest's weekly `fstrim`; it is unchanged and the CLI and dashboard no
+longer show it. `root_used_bytes` and `root_size_bytes` are the guest's
+root filesystem from the same sample, statfs's blocks less those
+available to `dev` and its blocks, in bytes: what the guest's writes run
+out of, and what `repose status`, `repose ls` and the dashboard's Disk
+card show (I-567). Both are absent when the newest sample has none (a
+stopped project, a guest or hostd older than I-567, a guest that did not
+answer); a client treats that as unknown.
 
 `last_error` is the sentence the last failed op left (I-159), `null`
 once an op succeeds; on a `stopped` project it may instead be

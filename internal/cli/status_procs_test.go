@@ -108,6 +108,22 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 		t.Errorf("a guest that did not answer shows the volume's size alone:\n%s", b.String())
 	}
 
+	// A guest that did not answer over SSH: the api's newest sample has
+	// the same figure (root_used_bytes, root_size_bytes), and the line.
+	b.Reset()
+	fromAPI := *p
+	fromAPI.RootUsedBytes, fromAPI.RootSizeBytes = 37<<30, 39<<30
+	writeStatusLinesMux(&b, &fromAPI, route, nil, nil, "tmux", guestDisk{})
+	if !strings.Contains(b.String(), "disk 37.0 GB/39.0 GB") || !strings.Contains(b.String(), "disk 94 percent full;") {
+		t.Errorf("the api's root filesystem is not the fallback:\n%s", b.String())
+	}
+	// The guest's own answer wins over the api's minute-old sample.
+	b.Reset()
+	writeStatusLinesMux(&b, &fromAPI, route, nil, nil, "tmux", guestDisk{Used: 30 << 30, Size: 39 << 30})
+	if !strings.Contains(b.String(), "disk 30.0 GB/39.0 GB") || strings.Contains(b.String(), "percent full") {
+		t.Errorf("the guest's answer did not win:\n%s", b.String())
+	}
+
 	big := &Project{Slug: "big", VolumeBytes: 320 << 30}
 	if l := diskFullLine(big, guestDisk{Used: 99, Size: 100}); l != "disk 99 percent full" {
 		t.Errorf("at the largest size: %q", l)
@@ -115,6 +131,29 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	mid := &Project{Slug: "mid", VolumeBytes: 200 << 30}
 	if l := diskFullLine(mid, guestDisk{Used: 91, Size: 100}); !strings.Contains(l, "`repose resize mid 320G`") {
 		t.Errorf("past half the largest size: %q", l)
+	}
+}
+
+// repose ls marks a nearly full disk in a DISK column, there only while a
+// listed project has one (I-567), from the api's root filesystem figure;
+// the allocated disk_used_bytes never counts.
+func TestLsMarksANearlyFullDisk(t *testing.T) {
+	roomy := Project{Slug: "roomy", Class: "small", State: "running", VolumeBytes: 20 << 30, DiskUsedBytes: 20 << 30, RootUsedBytes: 5 << 30, RootSizeBytes: 19 << 30}
+	full := Project{Slug: "full", Class: "large", State: "running", VolumeBytes: 40 << 30, RootUsedBytes: 37 << 30, RootSizeBytes: 39 << 30}
+	old := Project{Slug: "old", Class: "small", State: "stopped", VolumeBytes: 20 << 30, DiskUsedBytes: 19 << 30}
+	var b bytes.Buffer
+	writeProjectsTable(&b, []Project{roomy, old})
+	if strings.Contains(b.String(), "DISK") || strings.Contains(b.String(), "full") {
+		t.Errorf("DISK with no nearly full disk listed:\n%s", b.String())
+	}
+	b.Reset()
+	writeProjectsTable(&b, []Project{roomy, full, old})
+	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	if len(lines) != 4 || !strings.HasSuffix(strings.TrimSpace(lines[0]), "DISK") {
+		t.Fatalf("no DISK column, or a line past the table:\n%s", b.String())
+	}
+	if !strings.HasSuffix(lines[2], "94% full") || !strings.HasSuffix(strings.TrimSpace(lines[1]), "-") || !strings.HasSuffix(strings.TrimSpace(lines[3]), "-") {
+		t.Errorf("DISK cells:\n%s", b.String())
 	}
 }
 

@@ -73,14 +73,19 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 	now := time.Now()
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
-	left := false
+	// DISK, a nearly full disk (I-567), likewise.
+	left, disk := false, false
 	for i := range projects {
 		left = left || projects[i].ExpiresAt != nil
+		disk = disk || diskFullCell(&projects[i]) != ""
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	head := "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
 	if left {
 		head += "\tLEFT"
+	}
+	if disk {
+		head += "\tDISK"
 	}
 	_, _ = fmt.Fprintln(tw, head)
 	for i := range projects {
@@ -90,6 +95,9 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 			runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
 		if left {
 			row += "\t" + orDash(tempLeft(p, now))
+		}
+		if disk {
+			row += "\t" + orDash(diskFullCell(p))
 		}
 		_, _ = fmt.Fprintln(tw, row)
 	}
@@ -128,6 +136,9 @@ func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, e
 // sessions line has no tmux clients, since herdr's arrive over SSH
 // (I-509); and its root filesystem, which the disk figure is (I-567).
 func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event, mux string, gd guestDisk) {
+	if gd.Size <= 0 {
+		gd = apiDisk(p)
+	}
 	_, _ = fmt.Fprintln(w, statusFirstLineMux(p, mux))
 	if r := abuseStopReason(p); r != "" {
 		// DECISIONS I-239: the platform stopped it, and says why.
@@ -182,9 +193,10 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 }
 
 // statusDisk is the disk figure: the guest's root filesystem, used over
-// its size, when the guest answered; else the volume's size alone. The
-// api's disk_used_bytes is not shown: it counts the volume's allocated
-// blocks, which a deleted file keeps until the weekly fstrim (I-567).
+// its size, from the guest's own answer or else the api's newest sample;
+// with neither, the volume's size alone. The api's disk_used_bytes is not
+// shown: it counts the volume's allocated blocks, which a deleted file
+// keeps until the weekly fstrim (I-567).
 func statusDisk(p *Project, gd guestDisk) string {
 	if gd.Size > 0 {
 		return fmt.Sprintf("%s/%s", humanBytes(gd.Used), humanBytes(gd.Size))
@@ -218,6 +230,26 @@ func diskFullLine(p *Project, gd guestDisk) string {
 		return line
 	}
 	return fmt.Sprintf("%s; `repose resize %s %dG` grows it", line, p.Slug, min(2*gb, maxDiskGB))
+}
+
+// apiDisk is the guest's root filesystem as the api's newest sample has
+// it (I-567): what status shows when the guest did not answer over SSH,
+// and what `repose ls` reads. Zero Size when the api did not say.
+func apiDisk(p *Project) guestDisk {
+	if p.RootSizeBytes <= 0 || p.RootUsedBytes < 0 || p.RootUsedBytes > p.RootSizeBytes {
+		return guestDisk{}
+	}
+	return guestDisk{Used: p.RootUsedBytes, Size: p.RootSizeBytes}
+}
+
+// diskFullCell is `repose ls`'s DISK column: "93% full" at DiskFullPercent
+// or more, else empty. The column is there only while a listed project
+// has one, as LEFT is (I-567, I-484).
+func diskFullCell(p *Project) string {
+	if d := apiDisk(p); d.Size > 0 && d.Percent() >= DiskFullPercent {
+		return fmt.Sprintf("%d%% full", d.Percent())
+	}
+	return ""
 }
 
 func statusFirstLine(p *Project) string {

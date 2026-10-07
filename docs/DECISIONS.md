@@ -14596,13 +14596,37 @@ alone, `claude: working` on a machine with five; it now names one agent
 and counts several by state, `needs_input` first (`5 agents: 1
 needs_input, 3 working, 1 idle`), as lifecycle.md's "lists each agent"
 meant. The agent guide's disk line says writes fail past 90 percent and
-to tell the user, who alone can resize. Not done here: `repose ls` and
-the dashboard's Disk card still have only the allocated figure, since the
-api has no filesystem number; the fix is a `root_used_bytes` and
-`root_size_bytes` in guestd's `SampleResult`, carried by hostd's
-`GuestSample` to a `meter_samples` column and the project's JSON, as
-I-493 did for `mem_used_bytes` (guestd, hostd, api, a migration and four
-interface docs), and the dashboard then shows it. Seen and left: the
+to tell the user, who alone can resize. The api carries the same figure
+(same branch, follow-up): guestd's `SampleResult` gains
+`root_used_bytes` and `root_size_bytes` (statfs of `/` on each Sample,
+a syscall, no fork), hostd's `GuestSample` carries them (fields 15 and
+16, both sent as 0 unless the size is non-zero, no larger than the
+volume, and used is no larger than the size; the api checks the same),
+migration 0018 stores them as `meter_samples.root_used` and `root_size`,
+and the project's JSON has `root_used_bytes` and `root_size_bytes` from
+the newest sample, absent when it has none. `disk_used_bytes` keeps its
+meaning, the allocated figure: the operator's `repose-admin` project list
+reads `max(disk_used)` for the host pool, billing reads `disk_alloc` (the
+volume's size) and not `disk_used`, and changing what an existing field
+counts would give an old CLI or dashboard a different number under the
+same name; nothing user-facing shows it now. An old hostd or guest sends
+0 for both, the old shape, accepted. `repose status` keeps its `stat -f
+/`: the SSH probe runs anyway for the listeners, and its answer is
+seconds old where the sample can be a minute old, so the guest's answer
+wins and the api's figure is the fallback when the guest does not answer
+over SSH; with neither, the size alone. `repose ls` gains a `DISK`
+column, present only while a listed project is at 90 percent or more as
+`LEFT` is (I-484), reading `93% full` for it and `-` for the rest: one
+cell, no line per row. The dashboard's Disk card shows the root
+filesystem's used of the volume's size (the size that Resize offers to
+grow; `—` without a figure) and `N percent full` under it at 90 or more,
+beside Resize. The samples route's `disk_used_bytes` points stay the
+allocated figure; no chart draws them. `TestSampleCarriesRootFilesystem`,
+`TestSamplesCarryRootFilesystem`, `TestBoundRootFS`,
+`TestIngestStoresRootFilesystem`, `TestProjectCarriesRootFilesystem`,
+`TestMigrateUpDownUp` (0018), `TestLsMarksANearlyFullDisk`, disk.test.ts,
+project-lifecycle.spec.ts 'a nearly full disk says how full it is'.
+Seen and left: the
 `snapshot 20h17m ago` is right (nightly at 03:00 host time, R3-6, plus
 every stop). `sessions 0` beside `tmux clients 1` while attached: the
 count itself is right (OpenSSH 10.5 on kanali runs the session as

@@ -212,6 +212,28 @@ func TestSampleCarriesGuestMemoryUsed(t *testing.T) {
 	}
 }
 
+// The root filesystem of I-567 rides the sample: under the test root it is
+// the temp directory's filesystem, a real one, so statfs answers.
+func TestSampleCarriesRootFilesystem(t *testing.T) {
+	w, run, _, clk, _ := newWatcherFixture(t, []fakeProc{{pid: 100, ppid: 1, comm: "node", ticks: 5}})
+	run.Match["list-windows"] = tmuxOutput()
+	w.Refresh(context.Background())
+	h := NewHandler(w.paths, w, quietLog(), clk.now)
+	res, err := h.Sample(context.Background())
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if res.GetRootSizeBytes() == 0 || res.GetRootUsedBytes() > res.GetRootSizeBytes() {
+		t.Fatalf("root used %d of %d", res.GetRootUsedBytes(), res.GetRootSizeBytes())
+	}
+}
+
+func TestRootFSMissingPathIsZero(t *testing.T) {
+	if used, size := rootFS(filepath.Join(t.TempDir(), "missing")); used != 0 || size != 0 {
+		t.Fatalf("missing path gave %d of %d", used, size)
+	}
+}
+
 func TestMemUsed(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "meminfo")
 	for in, want := range map[string]uint64{

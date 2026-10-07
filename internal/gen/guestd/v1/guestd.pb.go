@@ -1291,7 +1291,12 @@ type SampleResult struct {
 	CpuPressureUsTotal uint64 `protobuf:"varint,4,opt,name=cpu_pressure_us_total,json=cpuPressureUsTotal,proto3" json:"cpu_pressure_us_total,omitempty"`
 	// MemTotal less MemAvailable from the guest's /proc/meminfo, in bytes;
 	// 0 when it cannot be read (DECISIONS I-493).
-	MemUsedBytes  uint64 `protobuf:"varint,5,opt,name=mem_used_bytes,json=memUsedBytes,proto3" json:"mem_used_bytes,omitempty"`
+	MemUsedBytes uint64 `protobuf:"varint,5,opt,name=mem_used_bytes,json=memUsedBytes,proto3" json:"mem_used_bytes,omitempty"`
+	// The root filesystem from statfs, in bytes: blocks less those available
+	// to dev (so root's reserve counts as used, as the disk_high warning
+	// counts it), and blocks. Both 0 when statfs fails (DECISIONS I-567).
+	RootUsedBytes uint64 `protobuf:"varint,6,opt,name=root_used_bytes,json=rootUsedBytes,proto3" json:"root_used_bytes,omitempty"`
+	RootSizeBytes uint64 `protobuf:"varint,7,opt,name=root_size_bytes,json=rootSizeBytes,proto3" json:"root_size_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1357,6 +1362,20 @@ func (x *SampleResult) GetCpuPressureUsTotal() uint64 {
 func (x *SampleResult) GetMemUsedBytes() uint64 {
 	if x != nil {
 		return x.MemUsedBytes
+	}
+	return 0
+}
+
+func (x *SampleResult) GetRootUsedBytes() uint64 {
+	if x != nil {
+		return x.RootUsedBytes
+	}
+	return 0
+}
+
+func (x *SampleResult) GetRootSizeBytes() uint64 {
+	if x != nil {
+		return x.RootSizeBytes
 	}
 	return 0
 }
@@ -2100,13 +2119,15 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\fneeds_reboot\x18\x02 \x01(\bR\vneedsReboot\x12\x16\n" +
 	"\x06output\x18\x03 \x01(\fR\x06output\"+\n" +
 	"\fGrowFsResult\x12\x1b\n" +
-	"\tnew_bytes\x18\x01 \x01(\x04R\bnewBytes\"\xed\x01\n" +
+	"\tnew_bytes\x18\x01 \x01(\x04R\bnewBytes\"\xbd\x02\n" +
 	"\fSampleResult\x127\n" +
 	"\asignals\x18\x01 \x01(\v2\x1d.repose.hostd.v1.GuestSignalsR\asignals\x121\n" +
 	"\x05procs\x18\x02 \x03(\v2\x1b.repose.hostd.v1.ProcSampleR\x05procs\x12\x18\n" +
 	"\apartial\x18\x03 \x01(\bR\apartial\x121\n" +
 	"\x15cpu_pressure_us_total\x18\x04 \x01(\x04R\x12cpuPressureUsTotal\x12$\n" +
-	"\x0emem_used_bytes\x18\x05 \x01(\x04R\fmemUsedBytes\"Y\n" +
+	"\x0emem_used_bytes\x18\x05 \x01(\x04R\fmemUsedBytes\x12&\n" +
+	"\x0froot_used_bytes\x18\x06 \x01(\x04R\rrootUsedBytes\x12&\n" +
+	"\x0froot_size_bytes\x18\a \x01(\x04R\rrootSizeBytes\"Y\n" +
 	"\n" +
 	"ExecResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +

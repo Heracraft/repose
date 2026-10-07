@@ -64,3 +64,37 @@ func TestAdvancePressure(t *testing.T) {
 		t.Fatalf("cpu cursor shared with pressure: %d", d)
 	}
 }
+
+// The guest's root filesystem (DECISIONS I-567) rides the sample beside the
+// volume's allocated figure, and a size past the volume is dropped.
+func TestSamplesCarryRootFilesystem(t *testing.T) {
+	h := newHarness(t, nil)
+	h.gopts.Sample = &guestdv1.SampleResult{
+		Signals:       &hostdv1.GuestSignals{GuestdOk: true},
+		RootUsedBytes: 20 << 30,
+		RootSizeBytes: 30 << 30,
+	}
+	h.create(gid1)
+	gs := h.m.CollectSamples(context.Background()).Guests[0]
+	if gs.RootUsedBytes != 20<<30 || gs.RootSizeBytes != 30<<30 {
+		t.Fatalf("root %d of %d, want 20 GiB of 30 GiB", gs.RootUsedBytes, gs.RootSizeBytes)
+	}
+	if gs.DiskAllocBytes < gs.RootSizeBytes {
+		t.Fatalf("volume %d smaller than the root filesystem", gs.DiskAllocBytes)
+	}
+}
+
+func TestBoundRootFS(t *testing.T) {
+	for _, c := range []struct{ used, size, volume, wantUsed, wantSize uint64 }{
+		{20, 30, 40, 20, 30},
+		{0, 0, 40, 0, 0},   // an old guest
+		{20, 50, 40, 0, 0}, // larger than the volume
+		{31, 30, 40, 0, 0}, // used past size
+		{20, 30, 0, 0, 0},  // no volume figure
+	} {
+		u, s := boundRootFS(c.used, c.size, c.volume)
+		if u != c.wantUsed || s != c.wantSize {
+			t.Errorf("boundRootFS(%d, %d, %d) = %d, %d; want %d, %d", c.used, c.size, c.volume, u, s, c.wantUsed, c.wantSize)
+		}
+	}
+}

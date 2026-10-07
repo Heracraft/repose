@@ -77,12 +77,14 @@ func (h *Handler) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
 	// reason to mark the sample partial.
 	pressure, _ := psi.ReadSomeTotal(h.paths.CPUPressure())
 	memUsed := memUsed(h.paths.MemInfo())
+	rootUsed, rootSize := rootFS(h.paths.RootMount())
 
 	took := h.now().Sub(start)
 	h.log.Debug("sample taken",
 		"event", "sample", "duration_ms", took.Milliseconds(),
 		"procs", len(procs), "partial", partial)
-	return &guestdv1.SampleResult{Signals: signals, Procs: procs, Partial: partial, CpuPressureUsTotal: pressure, MemUsedBytes: memUsed}, nil
+	return &guestdv1.SampleResult{Signals: signals, Procs: procs, Partial: partial, CpuPressureUsTotal: pressure, MemUsedBytes: memUsed,
+		RootUsedBytes: rootUsed, RootSizeBytes: rootSize}, nil
 }
 
 // WindowOfPane resolves a tmux pane id to its window name, for the hook socket

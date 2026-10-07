@@ -112,3 +112,44 @@ func TestProjectSamples(t *testing.T) {
 		t.Fatalf("another user's project: %d %s", r.status, r.raw)
 	}
 }
+
+// TestProjectCarriesRootFilesystem: GET /projects/:id carries the guest's
+// root filesystem from the newest sample beside disk_used_bytes, the
+// volume's allocated figure, and leaves it out when the sample has none
+// (a guest older than I-567).
+func TestProjectCarriesRootFilesystem(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-root", "rooted")
+	e.subscribe(t, "sub-root", "")
+	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt' where logto_sub = 'sub-root'"); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "full", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	id := r.body["id"].(string)
+	e.waitOp(t, r)
+	// A minute ahead, so a sample the fake host sends meanwhile is older.
+	ts := time.Now().UTC().Add(time.Minute)
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, disk_used, root_used, root_size)
+		values ($1, $2, 'running', 'large', $3, $4, $5)`, ts, id, int64(39500)<<20, int64(33)<<30, int64(39)<<30); err != nil {
+		t.Fatal(err)
+	}
+	g := e.do(t, tok, "GET", "/projects/"+id, nil)
+	if g.body["root_used_bytes"] != float64(int64(33)<<30) || g.body["root_size_bytes"] != float64(int64(39)<<30) {
+		t.Fatalf("root %v of %v: %s", g.body["root_used_bytes"], g.body["root_size_bytes"], g.raw)
+	}
+	if g.body["disk_used_bytes"] != float64(int64(39500)<<20) {
+		t.Fatalf("disk_used_bytes %v, want the allocated figure", g.body["disk_used_bytes"])
+	}
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, disk_used)
+		values ($1, $2, 'running', 'large', $3)`, ts.Add(time.Minute), id, int64(1)<<30); err != nil {
+		t.Fatal(err)
+	}
+	g = e.do(t, tok, "GET", "/projects/"+id, nil)
+	if _, ok := g.body["root_size_bytes"]; ok {
+		t.Fatalf("root_size_bytes from a sample without it: %s", g.raw)
+	}
+}
