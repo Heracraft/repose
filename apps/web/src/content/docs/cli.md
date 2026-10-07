@@ -55,7 +55,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. It stops with exit code 6 when the machine has uncommitted changes your laptop would write over. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one.
+Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them; the machine's changes to other files stay. When the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
@@ -358,7 +358,7 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 | 3    | Not logged in.                                                                                                                                                                              |
 | 4    | No such project.                                                                                                                                                                            |
 | 5    | The machine isn't running.                                                                                                                                                                  |
-| 6    | The machine has uncommitted changes; the sync stopped.                                                                                                                                      |
+| 6    | The machine changed files the sync would write; the sync stopped.                                                                                                                           |
 | 7    | Account or payment problem.                                                                                                                                                                 |
 | 8    | No capacity right now; try again in a few minutes. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10   | The configuration build failed.                                                                                                                                                             |

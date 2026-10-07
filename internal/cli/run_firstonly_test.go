@@ -141,8 +141,9 @@ func TestRunSyncsIntoANewMachine(t *testing.T) {
 }
 
 // `repose sync` is the explicit sync: it lays the laptop's work over an
-// existing checkout, and still refuses over an agent's uncommitted work,
-// naming its own flags.
+// existing checkout, keeps an agent's uncommitted work at other paths,
+// and refuses over the agent's work at a path it writes, naming its own
+// flags (I-573).
 func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -162,23 +163,41 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("newer\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+		t.Fatalf("sync beside the agent's timing.txt: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newer\n" {
+		t.Fatalf("guest README.md = %q, want the laptop's", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "timing.txt")); string(b) != "agent\n" {
+		t.Fatalf("the agent's timing.txt = %q, want it kept", b)
+	}
+
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("newest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitDirtyRemoteTree {
 		t.Fatalf("err = %v, want exit %d", err, ExitDirtyRemoteTree)
 	}
-	for _, want := range []string{"`repose sync` copies", "repose sync --stash-remote", "repose sync --discard-remote"} {
+	for _, want := range []string{"  README.md\n", "repose sync --stash-remote", "--discard-remote"} {
 		if !strings.Contains(ee.msg, want) {
 			t.Errorf("refusal = %q, want %q", ee.msg, want)
 		}
 	}
-	if strings.Contains(ee.msg, "repose run") {
-		t.Errorf("refusal = %q, still sends the user to run", ee.msg)
+	for _, not := range []string{"repose run", "timing.txt"} {
+		if strings.Contains(ee.msg, not) {
+			t.Errorf("refusal = %q, names %q", ee.msg, not)
+		}
 	}
 	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, StashRemote: true}, false); err != nil {
 		t.Fatalf("sync --stash-remote: %v", err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newer\n" {
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newest\n" {
 		t.Fatalf("guest README.md = %q, want the laptop's", b)
 	}
 }

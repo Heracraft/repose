@@ -107,6 +107,11 @@ func TestSyncDirtyRemoteRefused(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent was here\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The laptop writes the same file, so the sync would write over the
+	// agent's change (I-573).
+	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
 	ee, ok := err.(*exitError)

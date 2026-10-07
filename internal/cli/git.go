@@ -117,3 +117,30 @@ func gitDiffsBinary(dir string) (staged, unstaged string, err error) {
 	}
 	return staged, unstaged, nil
 }
+
+// gitDiffNames lists every path the laptop's staged and unstaged diffs
+// touch, both sides of a rename, as git stores them (no quoting). The
+// sync's overlap check compares them with the guest's own changes
+// (DECISIONS I-573). Submodules are left out, as in gitDiffsBinary.
+func gitDiffNames(dir string) ([]string, error) {
+	var names []string
+	seen := map[string]bool{}
+	for _, args := range [][]string{
+		{"diff", "--cached", "--name-only", "-z", "--no-renames", "--ignore-submodules=all"},
+		{"diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range strings.Split(string(out), "\x00") {
+			if n != "" && !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
+	}
+	return names, nil
+}

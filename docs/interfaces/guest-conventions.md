@@ -573,6 +573,7 @@ state and is named once.
 | markers | `/home/dev/.repose/carry/<item>` | the hash of the laptop input last applied; the probe prints them as `#marker <item> <hash>`, and `#marker tools-notices waiting` while `~/.repose/tools-notices` is non-empty |
 | the tool logins' files (DECISIONS I-224) | `/home/dev/.repose/creds-paths`, one expanded path per line | written with marker `creds` after the logins; the probe prints `#credsmissing` when one of them is gone, and the logins are sent again |
 | the last completed sync's key (DECISIONS I-224) | `.git/repose-synced-key` in the checkout | hex sha256 of what the laptop sent; emptied before the apply touches the checkout, written at its end; the probe prints `#synckey`, `#head` and `#headref` |
+| what the last apply left, per path (DECISIONS I-573) | `.git/repose-synced-paths` in the checkout | NUL-separated: the `HEAD` the apply left, then `<hash>` and `<path>` for each path the laptop's work wrote (a blob hash, `l:<target>` for a symlink, a submodule's `<HEAD> <tree>`, `-` for none, `?` for anything else); rewritten at the end of every apply. A path whose content still matches, under the same `HEAD`, is the last sync's own: the next apply stashes it rather than treating it as the guest's work. Read and written only by the sync's own scripts; a missing file means none of the guest's changes is the last sync's |
 
 ### Tools carry (DECISIONS I-221, I-222)
 

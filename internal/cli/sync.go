@@ -81,7 +81,14 @@ type SyncSummary struct {
 	Untracked int
 	Commits   int // commits the laptop sent that the guest did not have
 	Detached  bool
-	Diverged  bool // the guest's branch has commits the laptop does not; left alone
+	Diverged  bool // the guest's branch has commits the laptop does not and they could not be merged; left alone
+	// Merged: the guest's branch had commits the laptop does not, and the
+	// laptop's commit was merged into it (I-574).
+	Merged bool
+	// GuestKept counts the guest's own changes (files dirty or untracked
+	// there) that the sync left in place: none of them is a path the sync
+	// writes (I-573).
+	GuestKept int
 	// StashedLastSync: the guest still held the previous sync's changes
 	// and nothing else, and they were stashed ("repose run: last sync")
 	// before this sync's were laid down (I-210).
@@ -212,44 +219,31 @@ if command -v repose-herdr-workspace >/dev/null 2>&1 && %[3]s; then repose-herdr
 `, w, homeShell(probe.checkout), muxProbeScript)
 }
 
-// dirtyTreeError is 07-cli.md §6's exit 6, carrying the file list for the
-// message in §5.5b. It is only returned when the laptop has new work
-// that would land on the guest's changes (I-248); with nothing new the
-// run attaches instead.
+// dirtyTreeError is 07-cli.md §6's exit 6: the guest changed files that
+// this sync would write (I-573), named here. Guest changes at other paths
+// never refuse; they are kept.
 type dirtyTreeError struct{ files []string }
 
-// dirtyListMax is how many of the guest's changed files the refusal
-// names; the rest are counted.
+// dirtyListMax is how many of the overlapping files the refusal names;
+// the rest are counted.
 const dirtyListMax = 8
 
 func (e *dirtyTreeError) Error() string {
 	var b strings.Builder
-	b.WriteString("`repose sync` copies your laptop's work onto the machine. It doesn't restart or rebuild anything.\n")
 	files := "1 file"
 	if len(e.files) != 1 {
 		files = fmt.Sprintf("%d files", len(e.files))
 	}
-	_, _ = fmt.Fprintf(&b, "The machine has uncommitted changes your laptop doesn't have (%s), probably an agent's:\n", files)
+	_, _ = fmt.Fprintf(&b, "Not synced: the machine changed %s that your laptop changed too:\n", files)
 	for i, f := range e.files {
 		if i == dirtyListMax && len(e.files) > dirtyListMax+1 {
 			_, _ = fmt.Fprintf(&b, "  and %d more\n", len(e.files)-dirtyListMax)
 			break
 		}
-		_, _ = fmt.Fprintf(&b, "  %s\n", porcelainPath(f))
+		_, _ = fmt.Fprintf(&b, "  %s\n", f)
 	}
-	b.WriteString("Your laptop has new work as well, so syncing now would write over them. Nothing was changed. Pick one:\n")
-	b.WriteString("  repose attach                  look at the machine first\n")
-	b.WriteString("  repose sync --stash-remote     put the machine's changes in git stash, then sync\n")
-	b.WriteString("  repose sync --discard-remote   throw the machine's changes away, then sync")
+	b.WriteString("`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away.")
 	return b.String()
-}
-
-// porcelainPath drops `git status --porcelain`'s two status letters.
-func porcelainPath(l string) string {
-	if len(l) > 3 && l[2] == ' ' {
-		return l[3:]
-	}
-	return l
 }
 
 // guestProbe is what the first round trip learns about the guest's
@@ -625,10 +619,10 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 	if opts.FirstOnly && len(probe.tips) > 0 {
 		return skipCheckout(ctx, t, localRepoDir, opts, probe, wantRefs, nothingNew, branch, head, len(localDirty), len(untracked))
 	}
+	// A guest with its own changes is not refused here: the apply finds
+	// which of them are at paths this sync writes, against the tree as it
+	// is then, and refuses only for those (I-573).
 	guestChanged := len(probe.dirty) > 0 && !probe.syncedOnly
-	if guestChanged && !nothingNew && !opts.StashRemote && !opts.DiscardRemote {
-		return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: probe.dirty}).Error()}
-	}
 	if opts.BeforeApply != nil {
 		if err := opts.BeforeApply(probe.markers); err != nil {
 			return nil, err
@@ -746,6 +740,30 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 			return nil, err
 		}
 	}
+	// Every path the laptop's own work writes in the guest, for the
+	// apply's overlap check and its record of what this sync left (I-573):
+	// both sides of the diffs, the untracked files, and each bundled
+	// submodule (checked out and patched as a whole).
+	diffNames, err := gitDiffNames(localRepoDir)
+	if err != nil {
+		return nil, stepFailed("diff your working tree", err, "")
+	}
+	var pathsZ bytes.Buffer
+	for _, group := range [][]string{diffNames, untracked} {
+		for _, n := range group {
+			pathsZ.WriteString(filepath.ToSlash(n) + "\x00")
+		}
+	}
+	for _, sb := range subs {
+		if !sb.Shallow {
+			pathsZ.WriteString(sb.Path + "\x00")
+		}
+	}
+	if pathsZ.Len() > 0 {
+		if err := tarAddBytes(tw, "paths", pathsZ.Bytes()); err != nil {
+			return nil, err
+		}
+	}
 	summary.SkippedBig = skipped
 	summary.SkippedDirs = skippedDirs
 	summary.SkippedCap = skippedCap
@@ -818,19 +836,20 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		// never matches.
 		script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + freshShellScript(slug, probe) +
 			fmt.Sprintf("printf '%%s\\n' %s > \"$repose_synced-key\"\n", syncedKeyLines(syncKey, head, track, subs))
-		// Right after the unpack, before anything touches the checkout:
-		// the stash below needs the identity the git part carries.
-		script = strings.Replace(script, applyUnpack, applyUnpack+carryScript+": > \"$repose_synced-key\"\n", 1)
+		// After the overlap check, before anything touches the checkout:
+		// the stash and the merge below need the identity the git part
+		// carries, and a refused sync copies nothing.
+		script = strings.Replace(script, applyCarryHere, carryScript+": > \"$repose_synced-key\"\n", 1)
 	}
 	res, err := runSSH(ctx, t, script, payload)
 	if err != nil {
 		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, carryFailed) {
 			return nil, stepFailed("copy your tool logins to the guest", err, "")
 		}
-		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncedChanged) {
-			// An agent wrote between the probe and the apply: its work
-			// now, not the last sync's, so it is refused like any other.
-			return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: probe.dirty}).Error()}
+		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncOverlap) {
+			// The guest changed paths this sync writes: nothing was
+			// touched, and the refusal names only those (I-573).
+			return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: overlapFiles(se.Stderr)}).Error()}
 		}
 		if se, ok := err.(*sshError); ok && (strings.Contains(se.Stderr, "patch does not apply") || strings.Contains(se.Stderr, "patch failed")) {
 			return nil, stepFailed("apply your uncommitted changes in the guest", err, "Commit or stash them on the laptop and run again.")
@@ -849,8 +868,13 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 			summary.Detached = true
 		case "#diverged":
 			summary.Detached, summary.Diverged = true, true
+		case "#merged":
+			summary.Merged = true
 		case "#stashedsync":
 			summary.StashedLastSync = true
+		}
+		if rest, ok := strings.CutPrefix(l, "#guestkept "); ok {
+			_, _ = fmt.Sscanf(rest, "%d", &summary.GuestKept)
 		}
 		if rest, ok := strings.CutPrefix(l, "#subfailed "); ok {
 			summary.SubFailed = append(summary.SubFailed, rest)
@@ -990,41 +1014,63 @@ while IFS= read -r l || [ -n "$l" ]; do printf '%s%%s
 `, shQuote(carryFailed), carryLinePrefix), nil
 }
 
-// applyScript is the second round trip: unpack the payload, set the
-// guest's tree aside if asked, fetch the bundle, move the refs, check
-// out, and lay the staged and unstaged diffs and the untracked files on
-// top.
+// applyScript is the second round trip: unpack the payload, fetch the
+// bundle, decide between a fast-forward, a merge and a detached checkout,
+// refuse if the guest changed a path the sync writes, set the last
+// sync's own changes (or, if asked, all of the guest's) aside, move the
+// refs, check out, and lay the staged and unstaged diffs and the
+// untracked files on top. The guest's other changes stay where they are.
 func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle bool, opts SyncOptions, probe guestProbe, subScript string) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "set -e\ncd %s\n", homeShell(dir))
 	b.WriteString(syncedFP)
+	b.WriteString(syncGuardFns)
 	b.WriteString(applyUnpack)
-	if len(probe.dirty) == 0 {
-		// Clean when the probe looked; an agent may have written since,
-		// and the tar below would overwrite a file at a path the laptop
-		// also sends. Same exit as a change since the probe.
-		_, _ = fmt.Fprintf(&b, "[ -z \"$(repose_dirty)\" ] || { echo %s >&2; exit 3; }\n", shQuote(syncedChanged))
-	}
-	if len(probe.dirty) > 0 {
-		switch {
-		case opts.DiscardRemote:
-			b.WriteString(inEverySub("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi; repose_git clean -fdq"))
-			b.WriteString("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi\nrepose_git clean -fdq\n")
-		case opts.StashRemote:
-			b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run'"))
-			b.WriteString("repose_git stash push -q -u -m 'repose run'\n")
-		case probe.syncedOnly:
-			// The last sync's own changes, which the laptop still has (or
-			// has replaced): stashed, not thrown away, so a write that
-			// lands after this check is still recoverable; and not at all
-			// if something moved since the probe looked.
-			_, _ = fmt.Fprintf(&b, "if [ \"$(repose_fp)\" != \"$(cat \"$repose_synced\" 2>/dev/null)\" ]; then echo %s >&2; exit 3; fi\n", shQuote(syncedChanged))
-			b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run: last sync'\n" + pruneSyncStashes))
-			b.WriteString("repose_git stash push -q -u -m 'repose run: last sync'\necho '#stashedsync'\n" + pruneSyncStashes)
-		}
-	}
 	if hasBundle {
+		// Objects only: no ref moves and the tree is untouched, so the
+		// overlap check below can read the commit it would check out.
 		_, _ = fmt.Fprintf(&b, "git fetch -q \"$t/bundle\" %s\n", strings.Join(bundleRefs, " "))
+	}
+	// What the checkout moves to: the laptop's commit, or, when the
+	// guest's branch has commits the laptop lacks, the tree of a merge of
+	// the two when git can make it cleanly and the guest's commits leave
+	// the laptop's uncommitted paths alone (I-574).
+	_, _ = fmt.Fprintf(&b, "repose_target=%s\nrepose_merge=\n", head)
+	if branch != "" {
+		br := shQuote("refs/heads/" + branch)
+		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify %[1]s) && ! git merge-base --is-ancestor "$cur" %[2]s && [ "$(git symbolic-ref -q HEAD || true)" = %[1]s ] && git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then
+  if repose_mt=$(git merge-tree --write-tree --no-messages "$cur" %[2]s 2>/dev/null) && repose_mb=$(git merge-base "$cur" %[2]s) && ! repose_touches "$repose_mb" "$cur"; then
+    repose_target=$(printf '%%s\n' "$repose_mt" | head -n 1)
+    repose_merge=yes
+  fi
+fi
+`, br, head)
+	}
+	if !opts.StashRemote && !opts.DiscardRemote {
+		// Exit 3 naming each path the guest changed that the sync would
+		// write; nothing has been touched yet (I-573).
+		b.WriteString("repose_guard \"$repose_target\"\n")
+	}
+	b.WriteString(applyCarryHere)
+	switch {
+	case opts.DiscardRemote:
+		b.WriteString(inEverySub("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi; repose_git clean -fdq"))
+		b.WriteString("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi\nrepose_git clean -fdq\n")
+	case opts.StashRemote:
+		b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run'"))
+		b.WriteString("repose_git stash push -q -u -m 'repose run'\n")
+	case len(probe.dirty) > 0 && probe.syncedOnly:
+		// The last sync's own changes and nothing else, which the laptop
+		// still has (or has replaced): stashed whole, not thrown away, so
+		// a write that lands after this check is still recoverable. If
+		// the tree moved since the probe, only the paths the last sync
+		// left as they were go to the stash (I-210, I-573).
+		b.WriteString("if [ \"$(repose_fp)\" = \"$(cat \"$repose_synced\" 2>/dev/null)\" ]; then\n")
+		b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run: last sync'\n" + pruneSyncStashes))
+		b.WriteString("repose_git stash push -q -u -m 'repose run: last sync'\necho '#stashedsync'\n" + pruneSyncStashes)
+		b.WriteString("else\nrepose_stash_own\nfi\n")
+	default:
+		b.WriteString("repose_stash_own\n")
 	}
 	if track != "" {
 		ref := shQuote("refs/remotes/origin/" + branch)
@@ -1036,15 +1082,25 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 		}
 	}
 	if branch == "" {
-		_, _ = fmt.Fprintf(&b, "git checkout -q --detach %s\necho '#detached'\n", head)
+		_, _ = fmt.Fprintf(&b, "repose_git checkout -q --detach %s\necho '#detached'\n", head)
 	} else {
 		br := shQuote(branch)
+		// A branch behind the laptop is fast-forwarded; one with commits
+		// the laptop lacks gets the merge decided above, with the user's
+		// carried identity, unsigned and without the repository's hooks;
+		// failing that it is left where it is and the laptop's commit is
+		// checked out detached (I-150, I-574).
 		_, _ = fmt.Fprintf(&b, `if cur=$(git rev-parse -q --verify refs/heads/%[1]s); then
-  if git merge-base --is-ancestor "$cur" %[2]s; then git checkout -q -B %[1]s %[2]s; else git checkout -q --detach %[2]s; echo '#diverged'; fi
+  if git merge-base --is-ancestor "$cur" %[2]s; then repose_git checkout -q -B %[1]s %[2]s
+  elif [ -n "$repose_merge" ] && repose_git merge -q --no-ff --no-edit --no-verify --no-autostash --no-verify-signatures --no-gpg-sign -m %[3]s %[2]s >/dev/null 2>&1; then echo '#merged'
+  else
+    if git rev-parse -q --verify MERGE_HEAD >/dev/null; then git merge --abort; fi
+    repose_git checkout -q --detach %[2]s; echo '#diverged'
+  fi
 else
-  git checkout -q -b %[1]s %[2]s
+  repose_git checkout -q -b %[1]s %[2]s
 fi
-`, br, head)
+`, br, head, shQuote(mergeMessage(branch)))
 		if track != "" {
 			_, _ = fmt.Fprintf(&b, "git branch -q --set-upstream-to=%s %s >/dev/null 2>&1 || true\n", shQuote("origin/"+branch), br)
 		}
@@ -1061,6 +1117,131 @@ fi
 	b.WriteString("if [ -f \"$t/untracked.tar\" ]; then tar -x -f \"$t/untracked.tar\"; fi\n")
 	return b.String()
 }
+
+// mergeMessage is the subject of the merge commit a sync makes on the
+// guest's branch (I-574).
+func mergeMessage(branch string) string {
+	return "Merge the laptop's " + branch + " (repose sync)"
+}
+
+// applyCarryHere marks where syncGuest puts the carry and the clearing of
+// the sync key: after the overlap check, before the checkout is touched.
+const applyCarryHere = "# repose: carry and key\n"
+
+// syncOverlap is the apply's stderr when the guest changed paths this
+// sync writes; each such path follows on its own line after "#overlap ".
+const syncOverlap = "repose: the machine changed files this sync writes"
+
+// overlapFiles reads the paths the apply named after syncOverlap.
+func overlapFiles(stderr string) []string {
+	var files []string
+	for _, l := range strings.Split(stderr, "\n") {
+		if f, ok := strings.CutPrefix(l, "#overlap "); ok && f != "" {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
+// syncGuardFns are the apply's overlap check and its record of what the
+// sync left (I-573). They need bash (read with an empty delimiter) and gawk (NUL records),
+// which the base has; $t is the unpacked payload, whose `paths` lists,
+// NUL-separated, every path the laptop's own work writes: both sides of
+// its staged and unstaged diffs, its untracked files and its bundled
+// submodules.
+//
+// repose_hash names a path's content: a blob hash for a file, the link
+// target for a symlink, the fingerprint of a checked-out submodule (its
+// HEAD and its `git add -A` tree), "-" for nothing there, "?" for
+// anything else, which never matches.
+//
+// .git/repose-synced-paths is the record: the HEAD the last apply left,
+// then "<hash>\0<path>\0" for each of that sync's paths as it left them.
+// repose_own prints, NUL-separated, the ones still exactly so with HEAD
+// unchanged: the last sync's own changes, not the guest's.
+//
+// repose_guard TARGET takes the paths the checkout to TARGET (a commit
+// or a tree) changes, plus the laptop's paths, and the guest's dirty and
+// untracked files (every file, -uall; a rename counts at both paths). A
+// guest path that is the last sync's own goes to $t/ownd for the stash.
+// Any other that equals a written path, sits under one, or holds one
+// below it is an overlap: all of them are printed after syncOverlap on
+// stderr and the apply exits 3 before anything is touched. The rest are
+// the guest's own changes elsewhere, kept, and counted as #guestkept.
+//
+// repose_touches BASE TIP: whether the commits BASE..TIP change any of
+// the laptop's paths, which would put a merge's version under the
+// laptop's uncommitted work.
+var syncGuardFns = `repose_hash() {
+  if [ -e "$1/.git" ]; then (cd "$1" && repose_fp1)
+  elif [ -L "$1" ]; then printf 'l:%s\n' "$(readlink "$1")"
+  elif [ -f "$1" ]; then git hash-object --no-filters -- "$1" 2>/dev/null || echo '?'
+  elif [ -e "$1" ]; then echo '?'
+  else echo -
+  fi
+}
+repose_own() {
+  [ -s "$repose_synced-paths" ] || return 0
+  {
+    IFS= read -r -d '' h || return 0
+    [ "$h" = "$(git rev-parse -q --verify HEAD || echo none)" ] || return 0
+    while IFS= read -r -d '' h && IFS= read -r -d '' p; do
+      case $h in '?'|failed|*' failed') continue ;; esac
+      if [ "$h" = "$(repose_hash "$p")" ]; then printf '%s\0' "$p"; fi
+    done
+  } < "$repose_synced-paths"
+}
+repose_guard() {
+  : > "$t/w"
+  if [ -f "$t/paths" ]; then cat "$t/paths" >> "$t/w"; fi
+  if git rev-parse -q --verify HEAD >/dev/null; then
+    git diff --name-only -z --no-renames --ignore-submodules=none HEAD "$1" -- >> "$t/w"
+  else
+    git ls-tree -r -z --name-only "$1" >> "$t/w"
+  fi
+  repose_git status --porcelain=v1 -z -uall --ignore-submodules=none > "$t/st"
+  repose_own > "$t/own"
+  : > "$t/ownd"; : > "$t/kept"; : > "$t/overlap"
+  awk -v RS='\0' -v ownd="$t/ownd" -v kept="$t/kept" -v overlap="$t/overlap" '
+    FILENAME == ARGV[1] { if ($0 == "") next; w[$0] = 1; n = split($0, a, "/"); d = a[1]; for (i = 2; i <= n; i++) { wd[d] = 1; d = d "/" a[i] } next }
+    FILENAME == ARGV[2] { if ($0 != "") own[$0] = 1; next }
+    {
+      if (orig) { orig = 0; p = $0 } else { if ($0 == "") next; x = substr($0, 1, 1); p = substr($0, 4); if (x == "R" || x == "C") orig = 1 }
+      sub(/\/$/, "", p)
+      if (p in own) { printf "%s\n", p > ownd; next }
+      hit = (p in w) || (p in wd)
+      n = split(p, a, "/"); d = a[1]
+      for (i = 2; i <= n && !hit; i++) { if (d in w) hit = 1; d = d "/" a[i] }
+      if (hit) printf "%s\n", p > overlap; else printf "%s\n", p > kept
+    }' "$t/w" "$t/own" "$t/st"
+  if [ -s "$t/overlap" ]; then
+    { echo '` + syncOverlap + `'; sed 's/^/#overlap /' "$t/overlap"; } >&2
+    exit 3
+  fi
+  if [ -s "$t/kept" ]; then printf '#guestkept %s\n' "$(grep -c '' "$t/kept")"; fi
+}
+repose_stash_own() {
+  [ -s "$t/ownd" ] || return 0
+  while IFS= read -r p; do
+    if [ -e "$p/.git" ]; then (cd "$p" && repose_git stash push -q -u -m 'repose run: last sync') || exit 1; fi
+  done < "$t/ownd"
+  GIT_LITERAL_PATHSPECS=1 git $repose_c stash push -q -u -m 'repose run: last sync' --pathspec-from-file="$t/ownd"
+  echo '#stashedsync'
+` + pruneSyncStashes + `}
+repose_touches() {
+  [ -s "$t/paths" ] || return 1
+  git diff --name-only -z --no-renames "$1" "$2" -- > "$t/agent"
+  awk -v RS='\0' '
+    FILENAME == ARGV[1] { if ($0 == "") next; a[$0] = 1; n = split($0, s, "/"); d = s[1]; for (i = 2; i <= n; i++) { ad[d] = 1; d = d "/" s[i] } next }
+    {
+      if ($0 == "") next
+      if (($0 in a) || ($0 in ad)) f = 1
+      n = split($0, s, "/"); d = s[1]
+      for (i = 2; i <= n; i++) { if (d in a) f = 1; d = d "/" s[i] }
+    }
+    END { exit !f }' "$t/agent" "$t/paths"
+}
+`
 
 // inEverySub runs cmd in each checked-out submodule of the guest's
 // checkout, nested ones included, before the superproject's own: a stash
@@ -1102,20 +1283,26 @@ for d in $drop; do
 done
 `, syncStashKeep)
 
-// syncedChanged is the apply's stderr when the tree it was told was the
-// last sync's own changed after the probe.
-const syncedChanged = "repose: the guest's tree changed since the sync looked at it"
-
-// recordSyncedScript ends the apply: when the sync left the tree dirty
-// (the laptop's diff, its untracked files), the fingerprint of that
-// state is stored in the checkout's .git, for the next probe (I-210);
-// a clean tree needs none.
-const recordSyncedScript = `if [ -n "$(repose_dirty | head -n 1)" ]; then
+// recordSyncedScript ends the apply. When the sync left the tree dirty
+// with nothing but its own work (the laptop's diff, its untracked files),
+// the fingerprint of that state is stored in the checkout's .git for the
+// next probe (I-210); a clean tree needs none, and neither does one where
+// the guest's own changes were kept, which are not the sync's (I-573).
+// The per-path record (syncGuardFns) is written either way.
+const recordSyncedScript = `if [ -s "$t/kept" ]; then
+  rm -f "$repose_synced"
+elif [ -n "$(repose_dirty | head -n 1)" ]; then
   fp=$(repose_fp)
   if [ "$fp" = failed ]; then rm -f "$repose_synced"; else printf '%s\n' "$fp" > "$repose_synced"; fi
 else
   rm -f "$repose_synced"
 fi
+{
+  printf '%s\0' "$(git rev-parse -q --verify HEAD || echo none)"
+  if [ -f "$t/paths" ]; then
+    while IFS= read -r -d '' p; do printf '%s\0%s\0' "$(repose_hash "$p")" "$p"; done < "$t/paths"
+  fi
+} > "$repose_synced-paths"
 `
 
 // originURLFor is guestd's rule for the origin it sets (internal/guestd/
@@ -1353,9 +1540,9 @@ func (s *SyncSummary) String() string {
 			what = fmt.Sprintf("%d files", s.GuestFiles)
 		}
 		if s.GuestFiles > 0 {
-			return fmt.Sprintf("Nothing new to sync. The machine has changes your laptop doesn't have (%s); `repose sync --stash-remote` puts them in git stash and lays your laptop's work over them.", what)
+			return fmt.Sprintf("Nothing new to sync. The machine has changes your laptop doesn't have (%s).", what)
 		}
-		return fmt.Sprintf("Nothing new to sync. The machine has %s; `git fetch repose` brings them to your laptop.", what)
+		return fmt.Sprintf("Nothing new to sync. The machine has %s.", what)
 	}
 	line := fmt.Sprintf("Synced: %d modified, %d untracked", s.Modified, s.Untracked)
 	switch {
@@ -1370,8 +1557,17 @@ func (s *SyncSummary) String() string {
 	case s.Commits > 1:
 		line += fmt.Sprintf(" (%d new commits)", s.Commits)
 	}
+	if s.Merged {
+		line += ", merged with the machine's " + s.Branch
+	}
 	if s.ClonedFrom != "" {
 		line += ", history cloned from " + s.ClonedFrom
+	}
+	switch {
+	case s.GuestKept == 1:
+		line += "; kept the machine's changes to 1 file"
+	case s.GuestKept > 1:
+		line += fmt.Sprintf("; kept the machine's changes to %d files", s.GuestKept)
 	}
 	if s.StashedLastSync {
 		line += "; the last sync's changes stashed in the guest"
@@ -1409,16 +1605,16 @@ func (s *SyncSummary) Warnings() []string {
 		w = append(w, fmt.Sprintf("Removed the %d .env files an earlier repose run copied to the machine: repose secrets choose has env off.", s.EnvRemoved))
 	}
 	if len(s.EnvLeft) > 0 {
-		w = append(w, fmt.Sprintf("Left %s on the machine: it changed there since it was copied. Delete it there if it should go.", strings.Join(s.EnvLeft, ", ")))
+		w = append(w, fmt.Sprintf("Left %s on the machine: it changed there since it was copied.", strings.Join(s.EnvLeft, ", ")))
 	}
 	if s.Diverged {
-		w = append(w, fmt.Sprintf("The guest's %s has commits your laptop does not have; it was left as it is and the guest is on %s, detached. `git fetch repose` brings them to your laptop (or `repose attach` to look).", s.Branch, short))
+		w = append(w, fmt.Sprintf("The machine's %s has commits that could not be merged with yours, so it was left as it is and the machine is on %s, detached. `git fetch repose` brings that branch here.", s.Branch, short))
 	}
 	for _, f := range s.SkippedBig {
 		w = append(w, fmt.Sprintf("Skipped %s: over 100 MB.", f))
 	}
 	if len(s.SkippedDirs) > 0 {
-		w = append(w, fmt.Sprintf("Not sent: %s (dependencies and caches; install them in the guest). Add them to .gitignore to keep them out of git too.", strings.Join(s.SkippedDirs, ", ")))
+		w = append(w, fmt.Sprintf("Not sent: %s (dependencies and caches).", strings.Join(s.SkippedDirs, ", ")))
 	}
 	if s.SkippedCap > 0 {
 		w = append(w, fmt.Sprintf("Skipped %d untracked files past the 500 MB limit for one sync. Commit what matters, or add large directories to .gitignore or `sync.exclude`.", s.SkippedCap))

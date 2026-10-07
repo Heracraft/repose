@@ -331,9 +331,12 @@ and no `--name` is an error with a one-line fix.
 4. Sync: the laptop's commits travel in a git bundle over SSH (the guest
    never fetches from origin, nothing is pushed), the laptop's `HEAD` is
    checked out, and staged and unstaged changes follow as two diffs, with
-   untracked files as a tar. If the guest's tree has changes of its own,
-   refuse and offer `--stash-remote` or `--discard-remote`
-   (`features/sync-at-launch.md`). Since DECISIONS I-367 `run` does this
+   untracked files as a tar. If the guest changed files the sync would
+   write, refuse, name them and offer `--stash-remote` or
+   `--discard-remote`; its changes elsewhere stay (DECISIONS I-573,
+   `features/sync-at-launch.md`). A guest branch with commits the laptop
+   lacks takes a merge of the laptop's commit when git can make it
+   cleanly (I-574). Since DECISIONS I-367 `run` does this
    only into a guest whose checkout has no commit yet; `repose sync` does
    it on demand.
 5. Sync credential files listed in `features/secrets.md` (gh, Codex,

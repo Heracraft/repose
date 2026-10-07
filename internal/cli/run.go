@@ -73,7 +73,7 @@ const sshRetryInterval = time.Second
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
 // attachOnly runs only steps 1 (resolve, no create), 3, 4, 8 — what
 // `repose attach` is (§5.5's last paragraph).
-func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error {
+func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retErr error) {
 	// A project this checkout ran before, with its ssh master still up:
 	// attach needs no api call, and run's probe goes out beside the api's
 	// answer instead of after it (DECISIONS I-223).
@@ -179,6 +179,16 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		}
 	}
 	project := res.Project
+	// made is the project this command created, until the sync or carry
+	// reaches it. Ctrl-C before then: it is this command's own and nothing
+	// has used it, so the directory does not keep it (the next plain run
+	// would land on it unasked) and one line says it exists (I-575).
+	var made *Project
+	defer func() {
+		if made != nil && retErr != nil && ctx.Err() != nil {
+			retErr = interruptedCreate(e, made)
+		}
+	}()
 	if project == nil {
 		if attachOnly {
 			return errNoProjectFoundFor(res.Remote, e.Command)
@@ -188,6 +198,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		if err != nil {
 			return err
 		}
+		made = project
 	}
 
 	endEnsure := timeSpan("phase ensure-running")
@@ -234,6 +245,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 	endConnect()
 	pr.End()
 	_, _ = fmt.Fprintf(e.Out, "Connected to %s (%s)\n", project.Slug, project.Class)
+	made = nil
 	idleNote(project.ID)
 	// Another checkout of the machine (I-480): the folder's, or the one
 	// PROJECT:CHECKOUT names. --on the first time makes it.
@@ -391,6 +403,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		endSync()
 		pr.End()
 		checkout = &summary.Checkout
+		if !summary.Skipped && target.Checkout == "" {
+			e.linkExplicitSync(project, opts)
+		}
 		if l := syncResultLine(summary, opts.NoAttach); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
 		}
@@ -523,6 +538,55 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) error
 		return nil
 	}
 	return attach(window)
+}
+
+// linkExplicitSync remembers this directory for project after `repose
+// sync PROJECT` (or `--project`, or a run's first sync) laid the
+// directory's work into it, when nothing else can find it: the directory
+// has no git remote, neither has the project, and the directory has no
+// project of its own in the cache. The next plain `repose sync` here then
+// lands on the same machine instead of creating one named after the
+// directory (DECISIONS I-575, narrowing I-152 for this case).
+func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
+	explicit := e.resolveArg(opts.ProjectArg)
+	if explicit == "" || strings.Contains(explicit, ":") || project.RemoteURL != "" || e.extraCheckout() != nil {
+		return
+	}
+	deps := defaultResolveDeps()
+	if deps.RemoteFor(e.Cwd) != "" {
+		return
+	}
+	key := dirKey(e.Cwd, deps)
+	if _, ok := e.Cache.ByDir[key]; ok {
+		return
+	}
+	if e.Cache.ByDir == nil {
+		e.Cache.ByDir = map[string]string{}
+	}
+	e.Cache.ByDir[key] = project.ID
+	if err := e.saveCache(); err != nil {
+		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+}
+
+// interruptedCreate is runRun's error when Ctrl-C came after it created
+// p and before anything used it (DECISIONS I-575): the directory's cache
+// forgets p, so the next plain run here does not land on it unasked, and
+// the line names it. The api has no cancel for a create in flight, so the
+// project stays until the user removes it.
+func interruptedCreate(e *Env, p *Project) error {
+	forgetProject(&e.Cache, p.ID)
+	// From the file as it is: the create's own save added the entries,
+	// and a save of e.Cache only removes what its load had (mergeInto).
+	disk, err := loadProjectsCache(e.Dir)
+	if err == nil {
+		forgetProject(&disk, p.ID)
+		err = saveProjectsCache(e.Dir, disk)
+	}
+	if err != nil {
+		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+	return exitf(ExitInterrupted, "Interrupted. %s was created and stays on your account; `repose rm %s` removes it.", p.Slug, p.Slug)
 }
 
 // syncResultLine is what a run prints about its sync. With nothing new on

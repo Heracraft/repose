@@ -197,8 +197,10 @@ Order:
 
 1. PROJECT / `--project` / `REPOSE_PROJECT`: id or slug, resolved via `GET
    /projects`. Writes nothing to the cache (DECISIONS I-152).
-2. `projects.json` `by_dir[<repo root, else cwd>]` (set only when `run`
-   created a project with no remote there), used only when that project's
+2. `projects.json` `by_dir[<repo root, else cwd>]` (set when `run`
+   created a project with no remote there, or when a sync into a named
+   project with no remote came from a directory with no remote and no
+   entry, DECISIONS I-575), used only when that project's
    `remote_url` equals the directory's normalised remote (both empty for
    such a project); a mismatched or 404 entry is deleted.
 3. `git remote get-url origin` in the cwd's repo root, normalised
@@ -214,7 +216,10 @@ Order:
 
 No git remote and no `--name` on `run`: create a project named after the
 repository root, else the cwd, with characters outside `[A-Za-z0-9._-]`
-replaced by `-`, and write `by_dir` for it (DECISIONS I-358).
+replaced by `-`, and write `by_dir` for it (DECISIONS I-358). A Ctrl-C
+after the create and before the connect removes that entry and exits 130
+with ``Interrupted. <slug> was created and stays on your account;
+`repose rm <slug>` removes it.`` (DECISIONS I-575).
 
 ### 5.4 Certificates and SSH files
 
@@ -306,12 +311,12 @@ $ repose run
       checkout"); with none, make `~/<laptop folder>` (the slug when that
       name is taken), record it in `~/.repose/checkout` and `git init` it
       (I-368); then report `git status --porcelain`, every commit a ref or `HEAD`
-      points at, and whether `origin` exists. If the status is non-empty
-      and neither `--stash-remote` nor `--discard-remote`: exit 6 with
-
-      the refusal in `features/sync-at-launch.md`, but only when the
-      laptop has new work since the guest's last sync; with nothing new
-      the checkout is left alone and the run attaches (DECISIONS I-248).
+      points at, and whether `origin` exists. With a non-empty status and
+      nothing new on the laptop since the guest's last sync, the checkout
+      is left alone (DECISIONS I-248). Otherwise the overlap check of step
+      d decides: exit 6 with the refusal in `features/sync-at-launch.md`
+      only when the guest changed a path the sync writes (DECISIONS
+      I-573).
 
       `--stash-remote` runs `git stash push -u -m "repose run"`,
       `--discard-remote` runs `git reset --hard && git clean -fd`; both run
@@ -321,15 +326,17 @@ $ repose run
       and untracked files, not an agent's: no exit 6, and step d stashes it
       first (`git stash push -u -m "repose run: last sync"`, said in the
       summary line; stashes with exactly that message past the newest 10
-      are dropped, others never), after checking the fingerprint again (a change in
-      between is exit 6). Each checked-out submodule, nested ones too,
+      are dropped, others never), after checking the fingerprint again (a
+      change in between stashes only the paths the per-path record of
+      step d still matches, I-573). Each checked-out submodule, nested ones too,
       adds its own `HEAD` and `git add -A` tree to the fingerprint, and
       the stash, discard and last-sync stash run in each of them as well
       (I-263).
       Every status here runs with `-c status.showUntrackedFiles=normal -c
       submodule.recurse=false --ignore-submodules=none`. Step d ends by
-      writing the fingerprint when it leaves the tree dirty, and removing
-      the file when it does not (DECISIONS I-210).
+      writing the fingerprint when it leaves the tree dirty with nothing
+      of the guest's kept, and removing the file otherwise (DECISIONS
+      I-210), and by writing `.git/repose-synced-paths` (I-573).
    c. Local: of the guest's commits, keep the ones this checkout has; `git
       bundle create` `HEAD` and `refs/remotes/origin/<branch>` excluding
       them (`--stdin`, so the list never hits the command line). Nothing is
@@ -338,12 +345,23 @@ $ repose run
       is asked: an unpushed commit travels like any other.
    d. Remote, one ssh whose stdin is one tar (the bundle, `git diff
       --cached --binary` and `git diff --binary`, a tar of the untracked
-      list): `git fetch` from the bundle;
+      list, and `paths`: every path the laptop's own work writes, NUL
+      separated): `git fetch` from the bundle; when the guest is on
+      `<branch>` and it has commits the laptop lacks, decide on a merge
+      (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
+      commits since the merge base leave `paths` alone, a committer
+      identity); without `--stash-remote` or `--discard-remote`, the
+      overlap check of `features/sync-at-launch.md` (I-573: the guest's
+      dirty and untracked files against `paths` plus what the checkout to
+      `H` or the merge tree changes; any overlap exits 3 naming them,
+      before anything else runs); then the logins and carry; set aside the
+      last sync's own paths (or everything, with a flag);
       move `origin/<branch>` forward to the laptop's value; add `origin`
       (guestd's `git@host:owner/repo.git`) if missing; check out `H` on
       `<branch>`, creating it or fast-forwarding it, or, when the guest's
-      branch has commits the laptop lacks, leave the branch alone and check
-      `H` out detached with a warning; set the branch's upstream; apply
+      branch has commits the laptop lacks, merge `H` into it as decided,
+      else leave the branch alone and check `H` out detached with a
+      warning; set the branch's upstream; apply
       the staged diff with `git apply --index` and the unstaged one with
       `git apply` (I-258); extract the untracked tar. Skip files over
       100 MB with a warning, dependency/cache directories at any depth
@@ -358,7 +376,9 @@ $ repose run
       superproject's diffs pass `--ignore-submodules=all`. A shallow
       submodule is fetched by the guest itself, a failure a warning.
    e. Print `Synced: 4 modified, 2 untracked`, plus `(3 new commits)` when
-      commits travelled.
+      commits travelled, `, merged with the machine's <branch>` after a
+      merge, and `; kept the machine's changes to N files` when the guest
+      had changes elsewhere.
    f. A project created with `--name` in a directory that has no git
       remote takes the same path without `origin` or remote-tracking refs
       (this replaced I-138's whole-tree commit): its commits travel, and a

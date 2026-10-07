@@ -322,8 +322,9 @@ func TestSyncTwiceWithADirtyLaptopTree(t *testing.T) {
 		t.Fatalf("guest README.md = %q", b)
 	}
 
-	// An agent's changes: a synced file edited, then a new file. With new
-	// laptop work each refuses, and nothing in the guest is touched.
+	// An agent's changes: a synced file edited (which the laptop still
+	// sends), then a new file as well. With new laptop work each refuses
+	// over the synced file, names only it, and touches nothing (I-573).
 	for i, change := range []struct{ rel, body string }{{"notes/todo.md", "the agent's edit\n"}, {"agent-scratch.txt", "new\n"}} {
 		write(f.guestRepo(), change.rel, change.body)
 		write(f.local, "README.md", fmt.Sprintf("edited on the laptop, round %d\n", i))
@@ -331,6 +332,9 @@ func TestSyncTwiceWithADirtyLaptopTree(t *testing.T) {
 		ee, ok := err.(*exitError)
 		if !ok || ee.code != ExitDirtyRemoteTree {
 			t.Fatalf("after the agent wrote %s: err = %v, want exit %d", change.rel, err, ExitDirtyRemoteTree)
+		}
+		if !strings.Contains(ee.msg, "  notes/todo.md\n") || strings.Contains(ee.msg, "agent-scratch.txt") || strings.Contains(ee.msg, "README.md") {
+			t.Fatalf("refusal after %s = %q, want notes/todo.md alone", change.rel, ee.msg)
 		}
 		if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), change.rel)); string(b) != change.body {
 			t.Fatalf("%s changed by a refused run: %q", change.rel, b)

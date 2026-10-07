@@ -127,13 +127,17 @@ func TestSyncIntoAnEmptyGuestRepo(t *testing.T) {
 	}
 }
 
-// TestSyncLeavesADivergedGuestBranchAlone: an agent committed on the
-// guest's branch; the laptop is behind. The sync must not move that
-// branch (the agent's commit would only survive in the reflog), so it
-// checks the laptop's commit out detached and says so.
-func TestSyncLeavesADivergedGuestBranchAlone(t *testing.T) {
+// TestSyncMergesADivergedGuestBranch: an agent committed on the guest's
+// branch and the laptop has commits of its own. The guest's branch takes
+// a merge of the laptop's commit, so the agent's commit stays on it and
+// the checkout has the laptop's work, with no detached HEAD (I-574).
+func TestSyncMergesADivergedGuestBranch(t *testing.T) {
 	f := newSyncFixture(t)
-	mustRun(t, f.guestRepo(), "git", "commit", "-q", "--allow-empty", "-m", "agent's work")
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "agent.go"), []byte("package agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, f.guestRepo(), "git", "add", "agent.go")
+	mustRun(t, f.guestRepo(), "git", "commit", "-q", "-m", "agent's work")
 	agentHead := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -145,14 +149,98 @@ func TestSyncLeavesADivergedGuestBranchAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syncGuest: %v", err)
 	}
-	if !summary.Diverged || len(summary.Warnings()) == 0 {
-		t.Fatalf("summary = %+v, want diverged with a warning", summary)
+	if !summary.Merged || summary.Diverged || summary.Detached || len(summary.Warnings()) != 0 {
+		t.Fatalf("summary = %+v %v, want merged with no warning", summary, summary.Warnings())
+	}
+	if !strings.Contains(summary.String(), "(1 new commit), merged with the machine's main") {
+		t.Fatalf("summary line = %q", summary.String())
+	}
+	if ref := mustRun(t, f.guestRepo(), "git", "symbolic-ref", "-q", "HEAD"); ref != "refs/heads/main" {
+		t.Fatalf("guest HEAD = %q, want main", ref)
+	}
+	for _, c := range []string{agentHead, head} {
+		if out, err := exec.Command("git", "-C", f.guestRepo(), "merge-base", "--is-ancestor", c, "HEAD").CombinedOutput(); err != nil {
+			t.Fatalf("%s is not in the guest's main: %v %s", c, err, out)
+		}
+	}
+	if got := mustRun(t, f.guestRepo(), "git", "log", "-1", "--format=%s"); got != "Merge the laptop's main (repose sync)" {
+		t.Fatalf("merge commit subject = %q", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "laptop\n" {
+		t.Fatalf("README.md = %q", b)
+	}
+	if st := mustRun(t, f.guestRepo(), "git", "status", "--porcelain"); st != "" {
+		t.Fatalf("guest tree after the merge: %q", st)
+	}
+}
+
+// TestSyncLeavesAConflictingGuestBranchAlone: the agent's commit and the
+// laptop's change the same line. No merge is made: the guest's branch
+// stays on the agent's commit and the laptop's commit is checked out
+// detached, with one warning (I-150, I-574).
+func TestSyncLeavesAConflictingGuestBranchAlone(t *testing.T) {
+	f := newSyncFixture(t)
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, f.guestRepo(), "git", "commit", "-q", "-am", "agent's work")
+	agentHead := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "laptop's work")
+	head := mustRun(t, f.local, "git", "rev-parse", "HEAD")
+
+	summary, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("syncGuest: %v", err)
+	}
+	if !summary.Diverged || summary.Merged {
+		t.Fatalf("summary = %+v, want diverged", summary)
+	}
+	want := "The machine's main has commits that could not be merged with yours, so it was left as it is and the machine is on " + head[:7] + ", detached. `git fetch repose` brings that branch here."
+	if w := summary.Warnings(); len(w) != 1 || w[0] != want {
+		t.Fatalf("warnings = %q, want %q", w, want)
 	}
 	if got := mustRun(t, f.guestRepo(), "git", "rev-parse", "refs/heads/main"); got != agentHead {
 		t.Fatalf("guest main moved to %s; the agent's %s must stay", got, agentHead)
 	}
 	if got := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD"); got != head {
 		t.Fatalf("guest HEAD = %s, want the laptop's %s", got, head)
+	}
+	if _, err := os.Stat(filepath.Join(f.guestRepo(), ".git", "MERGE_HEAD")); err == nil {
+		t.Fatal("a merge was left in progress")
+	}
+}
+
+// The laptop's uncommitted edit is to a file the agent's commits changed:
+// a merge would put the agent's version under it, so the branch is left
+// alone and the laptop's commit is checked out detached (I-574).
+func TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork(t *testing.T) {
+	f := newSyncFixture(t)
+	if err := os.WriteFile(filepath.Join(f.guestRepo(), "notes.md"), []byte("agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, f.guestRepo(), "git", "add", "notes.md")
+	mustRun(t, f.guestRepo(), "git", "commit", "-q", "-m", "agent's notes")
+	agentHead := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD")
+	mustRun(t, f.local, "git", "commit", "-q", "--allow-empty", "-m", "laptop's work")
+	if err := os.WriteFile(filepath.Join(f.local, "notes.md"), []byte("laptop, untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
+	if err != nil {
+		t.Fatalf("syncGuest: %v", err)
+	}
+	if !summary.Diverged || summary.Merged {
+		t.Fatalf("summary = %+v, want diverged", summary)
+	}
+	if got := mustRun(t, f.guestRepo(), "git", "rev-parse", "refs/heads/main"); got != agentHead {
+		t.Fatalf("guest main moved to %s", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "notes.md")); string(b) != "laptop, untracked\n" {
+		t.Fatalf("notes.md = %q", b)
 	}
 }
 

@@ -28,8 +28,6 @@ var quietAllowed = map[string]string{
 	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
 	"login.go:runLogin:No plan yet. Choose one at https://repos":                  "blocked: nothing runs without a plan",
-	"sync.go:String:Nothing new to sync. The machine has cha":                     "a refusal: the sync did nothing",
-	"sync.go:Warnings:The guest's %s has commits your laptop d":                   "a warning: the guest's commits were left detached",
 	"creds.go:skippedCredNotice: login an earlier repose run copied to t":         "says why a copy was removed",
 	"sync.go:Warnings:Removed the .env file an earlier repose ":                   "says why a copy was removed",
 	"sync.go:Warnings:Removed the %d .env files an earlier rep":                   "says why a copy was removed",

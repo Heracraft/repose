@@ -14541,3 +14541,144 @@ the starship sentence (the machine already runs starship, so a prompt
 needs only its config file; aliases work through I-519), and that a tmux config reaches the running
 session. Not covered: a VM test that switches a running guest's
 personal layer off with a pane open; it needs the dev box.
+
+**I-573. A sync refuses only over the machine's changes to the paths it
+writes, names only those, and keeps the rest.** (sync-overlap, owner's
+dogfood, 2026-10-07; amends R3-12, I-248 and I-210) The owner's `repose
+sync` in `job search` refused three times over six files an agent had
+left (two of them untracked scratch files, one a `.playwright-mcp/`
+directory) while the laptop only had commits that touched none of them,
+and kept refusing as the agent committed them down to three: "it just
+says the agent is dirty but it doesn't actually know whether it'd
+overwrite". It did not: `syncGuest` refused whenever the guest's
+`git status --porcelain` was non-empty (untracked files included) and
+the laptop had anything new, before it compared a single path. I-248
+rejected comparing file lists, but for another question: whether the
+laptop had moved, which the sync key answers. Which files a sync would
+write over is a different question, and only a path comparison answers
+it. Now:
+- The laptop sends, in the apply's tar, `paths`: both sides of its staged
+  and unstaged diffs (`--no-renames`), its untracked files after the
+  filters, and each bundled submodule.
+- The apply, after `git fetch` from the bundle and before the logins, the
+  carry or anything that touches the checkout, adds the paths the
+  checkout to its target changes (`git diff --name-only HEAD <target>`, or
+  `git ls-tree` of the target in an empty repository) and reads the
+  guest's changes with `git status --porcelain=v1 -z -uall` (every
+  untracked file, not the directory; both paths of a rename). A guest path
+  that equals a written path, sits under one, or holds one below it is an
+  overlap. Any overlap exits 3 with the paths on stderr; the CLI exits 6
+  with `Not synced: the machine changed N files that your laptop changed
+  too:`, the overlapping paths (eight, then "and N more") and one line
+  for the two flags. Nothing has been written: no stash, no logins.
+- With no overlap the sync goes on. `git checkout`, `git merge` and `git
+  apply` carry edits to other files, and the untracked tar writes only
+  the laptop's paths, so the guest's other changes stay as they were, and
+  the summary line ends `; kept the machine's changes to N files`.
+- The last sync's own changes (I-210) still never count as the guest's,
+  now per path: the end of each apply writes `.git/repose-synced-paths`,
+  the `HEAD` it left and a hash of each of the laptop's paths (a blob
+  hash, a link target, a submodule's `HEAD` and tree). A dirty path that
+  still matches under the same `HEAD` is the last sync's: it never
+  overlaps, and the apply stashes those paths alone (`git stash push -u
+  -m "repose run: last sync" --pathspec-from-file`) before laying the
+  laptop's current work down. The whole-tree fingerprint stays for the
+  common case and is written only when no guest change was kept, since
+  a kept change is not the sync's; a fingerprint that moved after the
+  probe now falls back to the per-path stash instead of exit 6, as the
+  overlap check already ran on the tree as it was.
+- `--stash-remote` and `--discard-remote` keep their meaning (all of the
+  guest's changes, no check). `repose run` syncs only into a checkout with
+  no commit (I-367), and its first sync goes through the same check.
+The check runs in the apply rather than the probe because the probe goes
+out before the laptop knows what it sends (I-223, I-284) and because the
+target of a merge (I-574) is only known in the guest. Costs: a refused
+sync has sent its bundle (objects only, no ref moves), and the apply
+reads `git status -uall`, which descends into untracked directories.
+The submodule rule is coarse: any change inside a bundled submodule
+overlaps. The copy also drops the lines nobody asked for: "`repose sync`
+copies your laptop's work onto the machine. It doesn't restart or
+rebuild anything", "probably an agent's", `repose attach` as a choice,
+the `--stash-remote` hint after "Nothing new to sync", the `git fetch
+repose` hint after it, "Delete it there if it should go" and the
+`.gitignore` advice after "Not sent". `TestSyncKeepsTheGuestsChangesElsewhere`,
+`TestSyncRefusesNamingTheOverlap`, `TestSyncWithOnlyUntrackedGuestFilesElsewhere`,
+`TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds`,
+`TestSyncRefusesOverTheOldPathOfAGuestRename`,
+`TestSyncRefusalNamesOnlyTheOverlap`, `TestSyncCommandSyncsAnExistingCheckout`.
+Interfaces: guest-conventions.md (`.git/repose-synced-paths`). Needs a CLI
+release; the agent guide line of I-574 needs a base publish.
+*Rejected:* comparing in the laptop (it cannot see a merge's tree, nor
+the guest's untracked files without a third round trip); a prompt
+("sync anyway?"), for I-248's reason.
+
+**I-574. A guest branch with commits the laptop lacks takes a merge of
+the laptop's commit when git can make it cleanly.** (sync-overlap,
+owner's dogfood, 2026-10-07; amends I-150) The owner's sync above went
+through on its fourth try and left the machine on d5ea57e, detached,
+with the agent's commits on `master`; the agent then had to merge by
+hand, and an agent that did not notice would have committed on a
+detached `HEAD`, which `git fetch repose` does not bring back. I-150
+detaches so that an agent's work is never moved off its branch; a merge
+keeps it there and puts the laptop's work on the branch too. The apply,
+after the fetch, merges when the guest is on that branch, `git
+merge-tree --write-tree` finds no conflict, the guest's commits since
+the merge base touch none of the laptop's own paths (I-573's `paths`; a
+merge would put the agent's version under the laptop's uncommitted
+work), and git has a committer identity. The merge is `git merge
+--no-ff --no-edit --no-verify --no-autostash --no-verify-signatures
+--no-gpg-sign -m "Merge the laptop's <branch> (repose sync)"`: the
+user's carried identity, unsigned like every commit made on a machine,
+without the repository's hooks or a carried `merge.ff=only` or
+`merge.autoStash`. The summary line says `, merged with the machine's
+<branch>`. Otherwise the branch is left alone and the laptop's commit is
+checked out detached as before, with a shorter warning (``The machine's
+main has commits that could not be merged with yours, so it was left as
+it is and the machine is on 4f2a9c1, detached. `git fetch repose`
+brings that branch here.``), and the agent guide now says what a detached
+checkout after a sync means and what to do before committing. A merge
+that fails after it started is aborted and falls back to the detached
+checkout. `TestSyncMergesADivergedGuestBranch`,
+`TestSyncLeavesAConflictingGuestBranchAlone`,
+`TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork`,
+`TestSyncMergesBesideTheGuestsUncommittedFiles`. *Rejected:* rebasing
+the agent's commits onto the laptop's (rewrites commits an agent may
+have pushed); refusing (the laptop's work would not reach the machine
+at all); a merge on a guest that is on another branch (it would have to
+switch the agent's branch first).
+
+**I-575. Ctrl-C after a run or sync created a project leaves no
+directory link behind and names the project; a sync into a named
+project links a directory nothing else can find.** (sync-overlap,
+owner's dogfood, 2026-10-07; amends I-152 and I-358) In `job search`,
+whose laptop checkout has no git remote, a plain `repose sync` printed
+`Created job-search (large)`; the owner meant his machine `job` and
+pressed Ctrl-C. `job-search` stayed on the account and in `by_dir`, so
+the next plain sync there would have used it unasked. `job` was not
+found because nothing linked the directory to it: a project with no
+remote is found only through `by_dir`, which only the run that creates
+such a project writes, and an explicit project (`--project job`, as the
+owner then used) never writes it (I-152). Either `job` was made from
+another directory or laptop, or its entry was lost, and its name is not
+the directory's, so no name match would have found it either. Now:
+- When `run` or `sync` created the project and the command ends
+  interrupted before it connected, the CLI removes the project from
+  `projects.json` and exits 130 with ``Interrupted. job-search was created
+  and stays on your account; `repose rm job-search` removes it.`` The
+  project is not removed for the user: the api refuses a destroy while
+  the create op runs (`ErrOpInProgress`), and waiting for it is what the
+  Ctrl-C asked not to do.
+- A sync into a project named on the command line (`repose sync job`,
+  `--project`, or a run's first sync), with no remote, from a directory
+  with no remote and no `by_dir` entry, writes `by_dir` for that project:
+  the directory's work is now in it, so a plain `repose sync` there means
+  it. A directory that has an entry keeps it, and a directory with a
+  remote is found by its remote as before.
+`TestSyncInterruptedAfterCreateForgetsTheProject`,
+`TestSyncWithAProjectLinksAnUnlinkedDirectory`,
+`TestSyncWithAProjectLeavesACheckoutWithARemoteUnlinked`. *Rejected:*
+destroying the project on Ctrl-C (refused by the api mid-create, see
+above); keeping the entry and printing the line (the next plain sync
+would still land on a project the user stopped); picking an existing
+project whose name matches the directory (a second laptop's unrelated
+folder of the same name would sync into it).
