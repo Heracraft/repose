@@ -412,13 +412,18 @@
           tmux set-option -t =w: status-right forward
           features=$(tmux show -s terminal-features | wc -l)
           $reload
-          [ "$(tmux show -gv status-position)" = top ] || { echo "first run changed the server" >&2; exit 1; }
+          [ "$(tmux show -gv status-position)" = top ] || { echo "first run lost the file's option" >&2; exit 1; }
+          defaults=$(tmux -L probe -f /dev/null start-server \; list-keys | wc -l)
+          keys_ok() { tmux list-keys -T prefix d >/dev/null && [ "$(tmux list-keys | wc -l)" -ge "$defaults" ]; }
+          keys_ok || { echo "default bindings missing after the first run" >&2; exit 1; }
+          [ "$(tmux show -s terminal-features | wc -l)" -eq "$features" ] || { echo "first run appended to terminal-features" >&2; exit 1; }
           rm $conf
           $reload
           [ "$(tmux show -gv status-position)" = bottom ] || { echo "status-position survived removal" >&2; exit 1; }
           ! tmux list-keys -T prefix | grep -q reposecheck || { echo "binding survived removal" >&2; exit 1; }
           [ "$(tmux show -s terminal-features | wc -l)" -lt "$features" ] || { echo "terminal-features kept the file's entry" >&2; exit 1; }
           [ "$(tmux show -v -t =w: status-right)" = forward ] || { echo "session option lost" >&2; exit 1; }
+          [ "$(tmux list-keys | wc -l)" -eq "$defaults" ] && keys_ok || { echo "key tables are not tmux's defaults after removal" >&2; exit 1; }
           printf 'set -g status-position top\n' > $conf
           $reload
           [ "$(tmux show -gv status-position)" = top ] || { echo "added file not loaded" >&2; exit 1; }

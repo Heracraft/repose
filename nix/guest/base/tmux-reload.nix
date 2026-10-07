@@ -16,11 +16,13 @@
 # window and pane are left as they are.
 #
 # It runs as dev after each home-manager activation (microvm.nix). With no
-# server running, or on the first run, it only records the files' digest.
-{ writeShellApplication, tmux, coreutils, gawk }:
+# server running (as at boot) it only records the files' digest; the first
+# run on a running machine reloads, so the base that brings this script
+# also brings its tmux changes to sessions already open.
+{ writeShellApplication, tmux, coreutils, gawk, gnugrep }:
 writeShellApplication {
   name = "repose-tmux-reload";
-  runtimeInputs = [ tmux coreutils gawk ];
+  runtimeInputs = [ tmux coreutils gawk gnugrep ];
   text = ''
     state="''${XDG_STATE_HOME:-$HOME/.local/state}/repose/tmux-conf.sha256"
     config="''${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -36,33 +38,46 @@ writeShellApplication {
     sum=$(for f in "''${files[@]}"; do printf '== %s\n' "$f"; cat "$f" 2>/dev/null || true; done | sha256sum | cut -d' ' -f1)
     mkdir -p "$(dirname "$state")"
     prev=$(cat "$state" 2>/dev/null || true)
-    printf '%s\n' "$sum" > "$state"
 
-    if [ -z "$prev" ] || [ "$prev" = "$sum" ] || ! tmux list-sessions >/dev/null 2>&1; then
+    # Every tmux call is bounded: a hung server, or a config that blocks
+    # in run-shell or if-shell, must not hold the switch.
+    t() { timeout 10 tmux "$@"; }
+
+    # No server (as at boot): it reads the files when it starts.
+    if [ "$prev" = "$sum" ] || ! t list-sessions >/dev/null 2>&1; then
+      printf '%s\n' "$sum" > "$state"
       exit 0
     fi
 
     tmp=$(mktemp)
     trap 'rm -f "$tmp"' EXIT
 
-    # tmux's default key bindings, from a server that read no file.
+    # tmux's default key bindings, from a server that read no file. Without
+    # them nothing is reset: an empty key table would leave the session
+    # with no way to detach or switch windows.
     probe="repose-reload-$$"
-    tmux -L "$probe" -f /dev/null start-server \; list-keys > "$tmp"
-    tmux -L "$probe" kill-server 2>/dev/null || true
+    t -L "$probe" -f /dev/null start-server \; list-keys > "$tmp" || true
+    t -L "$probe" kill-server 2>/dev/null || true
+    if [ "$(grep -c '^bind-key' "$tmp" || true)" -lt 100 ]; then
+      echo "repose-tmux-reload: could not read tmux's default key bindings; tmux left as it was" >&2
+      exit 1
+    fi
 
     names() { awk '{ sub(/\[.*/, "", $1); print $1 }' | sort -u; }
-    tmux show-options -s | names | while read -r o; do tmux set-option -su "$o" 2>/dev/null || true; done
-    tmux show-options -g | names | while read -r o; do tmux set-option -gu "$o" 2>/dev/null || true; done
-    tmux show-options -gw | names | while read -r o; do tmux set-option -gwu "$o" 2>/dev/null || true; done
-    tmux list-keys | awk '$2 == "-T" { print $3 } $2 != "-T" { print $4 }' | sort -u \
-      | while read -r t; do tmux unbind-key -a -T "$t" 2>/dev/null || true; done
-    tmux source-file "$tmp" || true
+    t show-options -s | names | while read -r o; do t set-option -su "$o" 2>/dev/null || true; done
+    t show-options -g | names | while read -r o; do t set-option -gu "$o" 2>/dev/null || true; done
+    t show-options -gw | names | while read -r o; do t set-option -gwu "$o" 2>/dev/null || true; done
+    t list-keys | awk '$2 == "-T" { print $3 } $2 != "-T" { print $4 }' | sort -u \
+      | while read -r k; do t unbind-key -a -T "$k" 2>/dev/null || true; done
+    rc=0
+    t source-file "$tmp" || rc=1
 
     # A file with an error still loads its other lines, as at server start.
-    rc=0
     for f in "''${files[@]}"; do
-      if [ -r "$f" ]; then tmux source-file "$f" || rc=1; fi
+      if [ -r "$f" ]; then t source-file "$f" || rc=1; fi
     done
+    # Recorded only now: a reload cut short runs again at the next switch.
+    printf '%s\n' "$sum" > "$state"
     echo "repose-tmux-reload: reloaded tmux's configuration"
     exit "$rc"
   '';

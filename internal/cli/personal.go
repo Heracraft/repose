@@ -168,7 +168,9 @@ func (e *Env) personalApply(ctx context.Context, v *personalView, err error) (li
 			st := v.State
 			st.MissingNoted = v.Account.Rev()
 			if b, err := json.Marshal(st); err == nil {
-				_ = writeFileAtomic(e.personalStatePath(), b, 0o600)
+				if err := writeFileAtomic(e.personalStatePath(), b, 0o600); err != nil {
+					e.warn("Could not record the machine.nix notice (%s); the next run shows it again.", oneLine(err.Error()))
+				}
 			}
 			return []string{fmt.Sprintf("%s is gone, but your account still has machine.nix and every machine gets it.", e.displayPath(e.machineNixPath()))}, has
 		}
@@ -339,7 +341,11 @@ func GlobalApplyCmd(ctx context.Context, e *Env, path string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && path == e.machineNixPath() {
-			if acct, aerr := e.Client.GetPersonal(ctx); aerr == nil && strings.TrimSpace(acct.Fragment) != "" {
+			acct, aerr := e.Client.GetPersonal(ctx)
+			if aerr != nil {
+				return exitf(ExitUsage, "No %s, and could not read machine.nix from your account (%s).", e.displayPath(path), oneLine(aerr.Error()))
+			}
+			if strings.TrimSpace(acct.Fragment) != "" {
 				return exitf(ExitUsage, "No %s, but your account has machine.nix (revision %s) and every machine gets it. `repose config --global apply /dev/null` removes it; `repose config --global edit` brings it back to this laptop.", e.displayPath(path), shortRev(acct.Rev()))
 			}
 			return exitf(ExitUsage, "No %s yet. `repose config --global edit` starts one, or `repose config --global add ripgrep`.", e.displayPath(path))
