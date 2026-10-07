@@ -70,7 +70,7 @@ func Hostname(name string) string {
 	}
 	for i := 0; i < len(name); i++ {
 		c := name[i]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 			return ""
 		}
 	}
