@@ -1,8 +1,10 @@
 # Stop, start, destroy
 
 A project's guest is always on until the user stops it (DECISIONS R1-5).
-Stopping snapshots and deallocates; the disk stays and keeps being billed.
-Destroying deletes the disk and keeps the last snapshot for 30 days.
+Stopping snapshots and deallocates; the disk stays and keeps counting
+toward the plan's disk total, and the stopped project costs nothing
+(DECISIONS I-289, I-570). Destroying deletes the disk and keeps the last
+snapshot for 30 days.
 
 ## What the user sees
 
@@ -13,10 +15,10 @@ and elapsed time on a terminal, or one line per phase elsewhere (I-154).
 ```
 $ repose stop todo-app
 Snapshotting and stopping todo-app...
-Stopped todo-app in 38s. Snapshot 0192… (2.1 GB). Disk is still billed.
+Stopped todo-app in 11s with a 2.1 GB snapshot.
 
 $ repose stop --no-snapshot
-Stopped todo-app in 6.2s. Disk is still billed.
+Stopped todo-app in 6.2s.
 
 $ repose start todo-app
 Starting todo-app...
@@ -56,20 +58,21 @@ Could not destroy age-calculator: the host could not remove the volume (internal
 …`, plus `restoring`, `destroying`, `destroyed`, `error`. The enum is in
 `interfaces/README.md` and the CLI shows the same words.
 
-| State | Guest | Volume | Billed | Reachable |
+| State | Guest | Volume | Counts toward the plan | Reachable |
 |---|---|---|---|---|
-| creating, building | none yet | allocating | no | no |
-| starting | booting | attached | guest-hours from `running` | no |
-| running | on | attached | guest-hours + GB-month + egress | yes |
-| stopping | shutting down, snapshotting | attached | until `stopped` | no |
-| stopped | none | kept | GB-month only | no (`repose start`) |
-| restoring | none | being rewritten | GB-month | no |
-| destroying | none | deleting | until `destroyed` | no |
-| destroyed | none | gone | nothing; last snapshot kept 30 days at no charge | no |
-| error | may be on | attached | as `stopped` | maybe |
+| creating, building | none yet | allocating | disk, project | no |
+| starting | booting | attached | memory, disk, project | no |
+| running | on | attached | memory, disk, project, egress | yes |
+| stopping | shutting down, snapshotting | attached | memory until `stopped` | no |
+| stopped | none | kept | disk, project | no (`repose start`) |
+| restoring | none | being rewritten | disk, project | no |
+| destroying | none | deleting | disk until `destroyed` | no |
+| destroyed | none | gone | nothing; last snapshot kept 30 days | no |
+| error | may be on | attached | as `stopped`, memory while on | maybe |
 
-Guest-hours accrue per minute of `running` and are rounded up to the minute,
-not the hour. PRICING.md has the rates.
+A plan is a monthly price for memory that may run at once, disk, egress
+and a number of projects (DECISIONS I-289); nothing is billed by the hour,
+and a stopped project costs nothing. Hours are still counted and shown.
 
 ## Behaviour that must hold
 
@@ -85,10 +88,17 @@ Stop:
   when the project's newest sample showed agents working or waiting; idle
   agents are not named, and the line names no command (DECISIONS I-500,
   I-484). After 60 seconds without a
-  clean shutdown, hostd shuts the VM down through Cloud Hypervisor.
-- The snapshot happens after the guest is down, so it is clean, not merely
-  crash-consistent. `--no-snapshot` skips it and prints that the newest
-  snapshot is now the last nightly one.
+  clean shutdown, hostd shuts the VM down through Cloud Hypervisor. The
+  guest's user manager, which holds every tmux pane and agent, gets 10
+  seconds to stop before what is left of it is killed (I-572).
+- The snapshot is taken at a filesystem freeze just before the shutdown
+  starts, and uploads while the guest shuts down; the stop waits for the
+  longer of the two (I-404). Its time follows the data the filesystem
+  uses, read eight chunks at a time (I-571). `--no-snapshot` skips it.
+- The stop line is `Stopped <slug> in <time> with a <size> snapshot.`,
+  or `Stopped <slug> in <time>.` without one; a stop whose snapshot failed
+  says so on stderr (I-158). It says nothing about cost: a stopped project
+  costs nothing (I-570).
 - SSH sessions to a stopping guest are closed; the gateway rejects new ones
   with `todo-app is stopped; run \`repose start\`` from the moment the
   state leaves `running`.

@@ -287,15 +287,18 @@ func (f *Fake) snapshot(p *project, reason string) *Snapshot {
 	return s
 }
 
-func (f *Fake) stop(p *project, snapshot bool) {
+// stop stops p and returns the snapshot it took, or nil.
+func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
+	var s *Snapshot
 	if p.State == "running" && snapshot {
-		f.snapshot(p, "stop")
+		s = f.snapshot(p, "stop")
 	}
 	p.State = "stopped"
 	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
 	f.event(p, "guest.stopped", "", "guest stopped")
+	return s
 }
 
 func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *apiError) {
@@ -677,7 +680,11 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	o := f.newOp(p, "stop")
 	if p.State != "stopped" {
-		f.stop(p, body.Snapshot == nil || *body.Snapshot)
+		// The api's stop op carries the snapshot it recorded, as a
+		// snapshot op does.
+		if s := f.stop(p, body.Snapshot == nil || *body.Snapshot); s != nil {
+			o.Result = map[string]any{"snapshot_id": s.ID}
+		}
 	}
 	return opResult(w, o)
 }

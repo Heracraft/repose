@@ -438,10 +438,11 @@ measures them):
 ### 5.6 stop, start, destroy, resize
 
 - `stop [PROJECT]`: `POST /stop {snapshot: !--no-snapshot}`, phase on the
-  op, then `Stopped <slug> in <time>. Snapshot <id> (1.2 GB). Disk is
-  still billed.` Already stopped: says so, exit 0. Success lines say what
-  happened and stop; a next command is for failures and refusals
-  (DECISIONS I-484).
+  op, then `Stopped <slug> in <time> with a 1.2 GB snapshot.` (`Stopped
+  <slug> in <time>.` without one). Already stopped: says so, exit 0.
+  Success lines say what happened and stop; a next command is for
+  failures and refusals (DECISIONS I-484). Nothing about cost: a stopped
+  project costs nothing (I-570).
 - `start [PROJECT]`: `POST /start`, wait, print `<slug> is running
   (<class>), ready in <time>.` Does not
   sync. When the api answers `restart: true` (a project in `error`, or a
@@ -482,7 +483,7 @@ measures them):
 
 ```
 $ repose status
-todo-app   large   running   2h14m   claude: working   today $0.31   month $12.40
+todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
   host eastus/h-01   ip 10.64.0.7   disk 8.1/40 GB   snapshot 6h ago
   sessions 1   tmux clients 1   docker 2
   last event 12m ago: claude completed "ran tests, 3 failures fixed"

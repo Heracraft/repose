@@ -213,7 +213,7 @@ When a machine runs out of memory, the kernel kills a process rather than let th
 
 Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now.
 
-Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk is [billed](/docs/billing) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
+Grow the disk with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink, and the larger disk counts toward your [plan's disk total](/docs/billing#what-a-plan-means) from then on. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
 
 ## Seeing what the machine is doing
 
@@ -234,4 +234,4 @@ A project's size is chosen when it's created (`repose run --size`, default `larg
 
 The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it (taking a snapshot), changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. Asking for the size a project already has does nothing.
 
-It prints what the new size gives and costs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. Hours are billed at the size the machine ran at; see [Pricing](/docs/billing). `xl` counts toward the [limit on xl projects](/docs/limits).
+It prints what the new size gives and which plan it needs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. While the machine runs, its size counts toward the memory your [plan](/docs/billing) runs at once. `xl` counts toward the [limit on xl projects](/docs/limits).

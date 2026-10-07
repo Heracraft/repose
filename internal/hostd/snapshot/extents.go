@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
@@ -195,11 +198,93 @@ func (l *usedLayout) usedBytes() uint64 {
 	return n
 }
 
+// snapshotReaders is how many chunks a snapshot reads at once. Read one
+// 4 MiB chunk at a time, the next read waited for the chunk to go through
+// zstd, and a stop's snapshot ran at 370 to 460 MB/s of used data on
+// host-01 (24 s for waterville's 9.8 GB, 2026-10-06). Read eight at a
+// time with O_DIRECT, the same 2.5 GB of a guest volume went through
+// `zstd -T4 -3` at 900 MB/s, against 365 MB/s for one buffered reader
+// (DECISIONS I-571).
+const snapshotReaders = 8
+
+// maxChunkReads bounds the chunks read at once across every snapshot
+// stream in hostd, and so the chunk buffers held: 32 of 4 MiB is
+// 128 MiB. A lone stop's snapshot still gets its snapshotReaders; the
+// nightly `hostd snapshot-all` starts every running guest's snapshot at
+// once, and 40 streams of 8 would have held 1.3 GB (DECISIONS I-571).
+const maxChunkReads = 32
+
+// chunkSlots holds one token per chunk being read or waiting to be
+// emitted, in any stream. A stream's head chunk is always one it holds
+// and its read needs no slot to finish, so every stream makes progress
+// while others wait for slots.
+var chunkSlots = make(chan struct{}, maxChunkReads)
+
+// chunkBufs keeps the aligned chunk buffers between uses; a buffer is
+// taken only while its chunk holds a slot.
+var chunkBufs = sync.Pool{New: func() any {
+	b := alignedBuffer(extentChunk)
+	return &b
+}}
+
+// chunkReadsInUse and chunkReadsPeak count the slots held now and the
+// most ever held at once, for the bound's test.
+var chunkReadsInUse, chunkReadsPeak atomic.Int64
+
+// acquireChunk waits for a slot and returns a buffer for it, or nil when
+// quit closes first.
+func acquireChunk(quit <-chan struct{}) *[]byte {
+	select {
+	case chunkSlots <- struct{}{}:
+	case <-quit:
+		return nil
+	}
+	n := chunkReadsInUse.Add(1)
+	for {
+		p := chunkReadsPeak.Load()
+		if n <= p || chunkReadsPeak.CompareAndSwap(p, n) {
+			break
+		}
+	}
+	return chunkBufs.Get().(*[]byte)
+}
+
+// releaseChunk returns b to the pool and frees its slot.
+func releaseChunk(b *[]byte) {
+	chunkBufs.Put(b)
+	chunkReadsInUse.Add(-1)
+	<-chunkSlots
+}
+
+// extentRead is one chunk of a used range: read by a reader goroutine,
+// emitted in order by writeExtents.
+type extentRead struct {
+	off  uint64
+	n    int
+	bufp *[]byte // from acquireChunk; released once emitted
+	buf  []byte
+	got  int
+	runs [][2]int // the maximal runs of non-zero pieces in buf[:got]
+	err  error
+	done chan struct{}
+}
+
 // writeExtents reads the used ranges of dev and writes the uncompressed
 // extent stream to w, skipping pieces that are all zero (the inode tables
 // that mkfs left to lazy init, blocks the guest freed but the bitmap still
-// holds). It returns the bytes it read from dev.
-func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64, error) {
+// holds). It returns the bytes it read from dev. snapshotReaders chunks
+// are read at once, through direct (an O_DIRECT handle on the same
+// device, or nil) where a chunk is aligned for it and through dev
+// otherwise; the stream is the same either way.
+func writeExtents(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer) (uint64, error) {
+	return writeExtentsTimed(dev, direct, size, l, w, nil)
+}
+
+// writeExtentsTimed is writeExtents that also adds to *waited (when not
+// nil) the time the stream spent waiting for a chunk to be read: the
+// part of the snapshot's time the disk set. The rest went on writing to
+// w, that is zstd and the upload behind it (DECISIONS I-571).
+func writeExtentsTimed(dev, direct *os.File, size uint64, l *usedLayout, w io.Writer, waited *time.Duration) (uint64, error) {
 	bw := bufio.NewWriterSize(w, 1<<20)
 	var hdr [16]byte
 	copy(hdr[:8], extentMagic)
@@ -207,8 +292,40 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 	if _, err := bw.Write(hdr[:]); err != nil {
 		return 0, err
 	}
-	buf := make([]byte, extentChunk)
-	zero := make([]byte, extentPiece)
+	// own bounds this stream's chunks out at once; chunkSlots, every
+	// stream's together.
+	own := make(chan struct{}, snapshotReaders)
+	queue := make(chan *extentRead, snapshotReaders)
+	quit := make(chan struct{})
+	// The producer hands out chunks in order, each read by its own
+	// goroutine into a buffer that holds a slot until it is emitted; at
+	// most snapshotReaders are out at once in this stream, and
+	// maxChunkReads in all.
+	go func() {
+		defer close(queue)
+		for _, r := range l.used {
+			end := min(r[1], size) // a filesystem never extends past its device
+			for off := r[0]; off < end; {
+				select {
+				case own <- struct{}{}:
+				case <-quit:
+					return
+				}
+				bufp := acquireChunk(quit)
+				if bufp == nil {
+					<-own
+					return
+				}
+				buf := *bufp
+				n := int(min(uint64(len(buf)), end-off))
+				j := &extentRead{off: off, n: n, bufp: bufp, buf: buf, done: make(chan struct{})}
+				go readChunk(dev, direct, j)
+				queue <- j // never blocks: the queue holds as many as own allows
+				off += uint64(n)
+			}
+		}
+	}()
+
 	var read, data uint64
 	record := func(off uint64, b []byte) error {
 		var h [16]byte
@@ -221,40 +338,41 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 		data += uint64(len(b))
 		return err
 	}
-	for _, r := range l.used {
-		end := min(r[1], size) // a filesystem never extends past its device
-		for off := r[0]; off < end; {
-			n := min(uint64(len(buf)), end-off)
-			got, err := dev.ReadAt(buf[:n], int64(off))
-			if err != nil && (!errors.Is(err, io.EOF) || got == 0) {
-				return read, fmt.Errorf("read at %d: %w", off, err)
-			}
-			chunk := buf[:got]
-			read += uint64(got)
-			// Emit each maximal run of non-zero pieces as one record.
-			runStart := -1
-			for p := 0; p < len(chunk); p += extentPiece {
-				q := min(p+extentPiece, len(chunk))
-				if bytes.Equal(chunk[p:q], zero[:q-p]) {
-					if runStart >= 0 {
-						if err := record(off+uint64(runStart), chunk[runStart:p]); err != nil {
-							return read, err
-						}
-						runStart = -1
-					}
-					continue
-				}
-				if runStart < 0 {
-					runStart = p
-				}
-			}
-			if runStart >= 0 {
-				if err := record(off+uint64(runStart), chunk[runStart:]); err != nil {
-					return read, err
-				}
-			}
-			off += uint64(got)
+	var werr error
+	for {
+		// Waiting for the next chunk is waiting for its read, or for a
+		// slot when other snapshots hold all of them: the disk, or the
+		// host's share of it.
+		t0 := time.Now()
+		j, ok := <-queue
+		if !ok {
+			break
 		}
+		<-j.done
+		if waited != nil {
+			*waited += time.Since(t0)
+		}
+		if werr == nil {
+			if j.err != nil {
+				werr = j.err
+			} else {
+				read += uint64(j.got)
+				for _, run := range j.runs {
+					if err := record(j.off+uint64(run[0]), j.buf[run[0]:run[1]]); err != nil {
+						werr = err
+						break
+					}
+				}
+			}
+			if werr != nil {
+				close(quit) // the producer stops; the chunks already out are waited for here
+			}
+		}
+		releaseChunk(j.bufp)
+		<-own
+	}
+	if werr != nil {
+		return read, werr
 	}
 	var t [16]byte
 	binary.LittleEndian.PutUint64(t[:8], trailerMark)
@@ -263,6 +381,60 @@ func writeExtents(dev *os.File, size uint64, l *usedLayout, w io.Writer) (uint64
 		return read, err
 	}
 	return read, bw.Flush()
+}
+
+// readChunk reads j's chunk, through direct when the chunk is aligned for
+// O_DIRECT and through dev otherwise or when the direct read fails, and
+// finds its non-zero runs.
+func readChunk(dev, direct *os.File, j *extentRead) {
+	defer close(j.done)
+	buf := j.buf[:j.n]
+	got, err := 0, error(nil)
+	if direct != nil && j.off%directAlign == 0 && j.n%directAlign == 0 {
+		got, err = direct.ReadAt(buf, int64(j.off))
+		if err != nil && !(errors.Is(err, io.EOF) && got > 0) {
+			got, err = 0, nil
+			direct = nil // read it again through the page cache below
+		}
+	} else {
+		direct = nil
+	}
+	if direct == nil {
+		got, err = dev.ReadAt(buf, int64(j.off))
+	}
+	if err != nil && (!errors.Is(err, io.EOF) || got == 0) {
+		j.err = fmt.Errorf("read at %d: %w", j.off, err)
+		return
+	}
+	j.got = got
+	j.runs = nonZeroRuns(buf[:got])
+}
+
+// zeroPiece is extentPiece zero bytes, compared against and never written.
+var zeroPiece = make([]byte, extentPiece)
+
+// nonZeroRuns returns each maximal run of non-zero extentPiece pieces in
+// chunk as [start, end), the records an extent stream holds for it.
+func nonZeroRuns(chunk []byte) [][2]int {
+	var runs [][2]int
+	runStart := -1
+	for p := 0; p < len(chunk); p += extentPiece {
+		q := min(p+extentPiece, len(chunk))
+		if bytes.Equal(chunk[p:q], zeroPiece[:q-p]) {
+			if runStart >= 0 {
+				runs = append(runs, [2]int{runStart, p})
+				runStart = -1
+			}
+			continue
+		}
+		if runStart < 0 {
+			runStart = p
+		}
+	}
+	if runStart >= 0 {
+		runs = append(runs, [2]int{runStart, len(chunk)})
+	}
+	return runs
 }
 
 // readExtents applies an extent stream (magic already peeked, not

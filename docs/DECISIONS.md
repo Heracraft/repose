@@ -15330,3 +15330,106 @@ and the interactive bash, zsh and fish ones with a stub at the helper's
 store path) with a PATH that lacks the helper, under `ulimit -u 128`,
 and expects one answer and status 127; CI builds it.
 No shipped base had I-516's handler.
+**I-570. A stop says how long it took and how big its snapshot is, and
+nothing about cost.** (dogfood, 2026-10-07: "Stopped waterville in 24s.
+Snapshot 01a10e86-e9fd-71b8-80a6-4b74cd7d1196 (2.6 GB). Disk is still
+billed." "wtf bro") The billing claim was false: since I-289 a plan buys
+memory that may run at once, disk, egress and a number of projects; a
+stopped project costs nothing, and its disk counts toward the plan's disk
+total whether it runs or not (billing.md). This amends I-484, which kept
+`Disk is still billed.` as a fact worth a line. The snapshot's id went
+too: nobody types a 36-character id from a stop line, and `repose
+snapshots` lists it where it is used. The size stays, since it is what
+the stop's time went on. `repose stop` prints `Stopped NAME in 11s with
+a 2.1 GB snapshot.`, `Stopped NAME in 6.2s.` with `--no-snapshot`, and
+`NAME is already stopped.`; the size is that of the snapshot the stop
+op's result names (`snapshot_id`, which the api has set since
+recordSnapshot), so a stop whose snapshot failed (I-158, which says so
+on stderr) never shows an older snapshot's size. With an api that names
+none, the newest snapshot is used when a stop took it and the project
+carries no error. The same false claim went from the other places that
+carried it: `repose fork`'s footer after its table ("billed like any
+project", cut whole under I-484), its `--help`, and the public docs
+(lifecycle, index, cli, machine: "costs only its disk", "billed like
+any project", "the larger disk is billed", "hours are billed at the
+size") now say what counts toward the plan. lifecycle.md also stops
+promising a cost and a projected monthly cost on the project page, which
+shows neither. Tests: `TestStopLineSaysWhatTheStopDid`,
+`TestStopNamesInterruptedAgents` and the fork summary test, updated.
+
+**I-571. A snapshot reads eight chunks at a time, around the page
+cache, and hostd logs a stop's phases.** (dogfood, 2026-10-07: stops of
+24 s and 43 s.) hostd's log on host-01 for the two stops: waterville
+froze in 160 ms, was down 5.1 s after the stop began and finished its
+snapshot (9.8 GB used, 2.77 GB stored) at 24.1 s; parth-event froze in
+970 ms, was down at 6.2 s and finished its snapshot (5.1 GB used,
+0.96 GB stored) at 42.4 s. Every other stop since 2026-10-01 holding
+2 GB or more read its used data at 370 to 530 MB/s, so a stop's time
+was the snapshot's, about a second for each 400 MB used; parth-event's 121 MB/s was an outlier
+whose cause the log cannot show (no overlapping snapshot or restore on
+the host; kanali, on the same data disk, was out of memory at the time).
+The guest's shutdown took 3 to 6 s in 68 of 87 stops since 2026-09-28.
+I-404's 650 to 700 MB/s was the read alone, measured on volumes a
+restore had just written. The pipeline read one 4 MiB chunk, handed it
+to zstd, and only then read the next. Measured on host-01 against
+waterville's stopped volume (read only, 2026-10-07): one O_DIRECT
+reader 637 to 690 MB/s, eight at once 1,277 to 1,715 MB/s; the same
+2.5 GB of it through `zstd -T4 -3` went at 365 MB/s from one buffered
+reader and 898 MB/s from eight O_DIRECT readers (987 at `-T8`). This
+amends I-404, which tried eight O_DIRECT reads in flight and kept the
+page cache because the time was the same on those volumes. writeExtents
+now reads `snapshotReaders` (8) chunks at once into aligned buffers and
+emits them in order, so the stream is byte for byte the one the serial
+reader wrote; a chunk goes through O_DIRECT when the filesystem block,
+the device size and the chunk allow it, through the page cache
+otherwise or when the direct read fails. Reading around the page cache
+also stops a snapshot from filling the host's page cache with a guest's
+disk. Eight 4 MiB buffers per stream would have made the nightly
+`hostd snapshot-all`, which starts every running guest's snapshot at
+once, hold 32 MiB per guest (1.3 GB for 40); reads are bounded host-wide
+instead: `maxChunkReads` (32 chunks, 128 MiB) slots shared by every
+snapshot stream in hostd, each chunk holding one from its read until it
+is emitted, with buffers from a pool taken only under a slot. A lone
+stop still reads eight at a time; a stream's head chunk is always its
+own, so no stream waits on another's slots forever. `read_wait_ms`
+counts the wait for a slot too. The number of snapshots at once stays
+unbounded, as before: nothing caps `snapshot-all`, and a cap there
+would queue a user's stop behind other guests' nightly snapshots, a
+trade left for its own decision. zstd stays at `-T4`: the guests share
+those cores. Expected: a
+stop the size of waterville's in about 11 s instead of 24; to be checked
+on host-01 after the hostd switch. Phase timings, durations only:
+`snapshot done` gains `freeze_ms` and `read_wait_ms` (how long the
+stream waited for the device; close to `duration_ms` means the disk set
+the pace, since the stream is written to zstd through a pipe and a
+plain read time would include zstd's and the upload's pauses); stopGuest logs
+`guest stopped` with `power_off_ms`, `duration_ms` and `escalated`
+(`none`, `hypervisor`, `kill`); a stop with a snapshot logs `stop
+timings` with `down_ms` and `total_ms`. RUNBOOK "Snapshot, stop or
+destroy slow" says how to read them. The CLI and the api add nothing:
+the CLI printed 24 s for a hostd command of 24.2 s. Tests:
+`TestParallelSnapshotReadMatchesSerial` (buffered and O_DIRECT streams
+equal the old serial reader's, including unaligned ranges, a range
+past the device and an unaligned device size, and restore to the
+source), `TestParallelSnapshotReadStopsOnAFailedRead`,
+`TestParallelSnapshotReadStopsWhenTheWriterFails`,
+`TestSnapshotReadsShareAHostBound` (ten streams at once hold at most
+32 chunks and each stream equals the serial one), `TestStopLogsItsPhases`. *Not done:* incremental snapshots (I-404).
+
+**I-572. A guest's shutdown waits at most 10 s for dev's user
+manager.** (found with I-571, 2026-10-07) The only unit any guest console on host-01
+showed holding a shutdown was `user@1000.service` ("A stop job is running
+for User Manager for UID 1000", 76 such lines across the consoles,
+2026-10-07), which holds every tmux pane, shell and agent; one of
+waterville's earlier stops waited 22 s on it, and 10 of 87 stops since
+2026-09-28 took 10 s or more to go down (up to 27 s, and once 88 s). Its stop bound was
+systemd's 2 minutes. `systemd.services."user@".serviceConfig.TimeoutStopSec
+= "10s"` (users.nix) kills what is left of it after 10 s. A process that
+has ignored SIGTERM and SIGHUP for 10 s during a poweroff is not
+finishing anything, and a stop's snapshot is taken before the shutdown
+begins (I-404); a `--no-snapshot` stop keeps the disk as the kill left
+it, which is what a crash leaves and ext4's journal recovers. A
+switch never restarts `user@`, but its daemon-reload rereads the unit,
+so a running guest's next stop is bounded once a switch has applied the
+base that carries it. Test: guest-base
+asserts `TimeoutStopUSec=10s` on `user@1000.service`.

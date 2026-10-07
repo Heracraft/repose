@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -120,4 +121,71 @@ func TestStopWithAFailedFreezeStopsNothing(t *testing.T) {
 		t.Fatal("uploaded without a freeze")
 	}
 	noSnapLeft(t, h)
+}
+
+// logLines returns the logged lines whose msg is msg, decoded.
+func logLines(t *testing.T, h *harness, msg string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, line := range strings.Split(h.logs.String(), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("log line is not JSON: %v", err)
+		}
+		if m["msg"] == msg {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// TestStopLogsItsPhases: a stop logs how long the guest took to go down
+// and how, and a stop with a snapshot what it waited for, so a slow stop
+// can be read from the log (DECISIONS I-571). The 24 s and 43 s stops of
+// 2026-10-06 had to be pieced together from timestamps.
+func TestStopLogsItsPhases(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.lvm.SetData("g-"+gid1, []byte("the tenant's filesystem"))
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: true}))
+
+	stopped := logLines(t, h, "guest stopped")
+	if len(stopped) != 1 {
+		t.Fatalf("%d \"guest stopped\" lines", len(stopped))
+	}
+	if _, ok := stopped[0]["power_off_ms"].(float64); !ok || stopped[0]["escalated"] != "none" || stopped[0]["event"] != "guest_stop" {
+		t.Fatalf("guest stopped: %v", stopped[0])
+	}
+	timings := logLines(t, h, "stop timings")
+	if len(timings) != 1 {
+		t.Fatalf("%d \"stop timings\" lines", len(timings))
+	}
+	down, ok1 := timings[0]["down_ms"].(float64)
+	total, ok2 := timings[0]["total_ms"].(float64)
+	if !ok1 || !ok2 || down > total || timings[0]["snapshot_ok"] != true {
+		t.Fatalf("stop timings: %v", timings[0])
+	}
+	done := logLines(t, h, "snapshot done")
+	if len(done) != 1 {
+		t.Fatalf("%d \"snapshot done\" lines", len(done))
+	}
+	for _, k := range []string{"freeze_ms", "read_wait_ms", "duration_ms"} {
+		if _, ok := done[0][k].(float64); !ok {
+			t.Fatalf("snapshot done has no %s: %v", k, done[0])
+		}
+	}
+
+	// Without a snapshot there is no "stop timings" line; the guest's own
+	// line is the whole stop.
+	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	if n := len(logLines(t, h, "guest stopped")); n != 2 {
+		t.Fatalf("%d \"guest stopped\" lines after two stops", n)
+	}
+	if n := len(logLines(t, h, "stop timings")); n != 1 {
+		t.Fatalf("%d \"stop timings\" lines after one stop with a snapshot", n)
+	}
 }

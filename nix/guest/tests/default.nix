@@ -321,6 +321,9 @@ in
           guest.succeed("sudo -u dev sudo -n -i true")
           status = guest.succeed("passwd -S root")
           assert " L " in status or status.split()[1] in ("L", "LK"), status
+          # I-572: a stop waits at most 10 s for dev's user manager.
+          out = guest.succeed("systemctl show -p TimeoutStopUSec user@1000.service").strip()
+          assert out == "TimeoutStopUSec=10s", out
 
       with subtest("sysctls"):
           assert guest.succeed("sysctl -n fs.inotify.max_user_watches").strip() == "1048576"

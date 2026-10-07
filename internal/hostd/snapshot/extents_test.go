@@ -200,7 +200,7 @@ func TestExtentStreamRefusesATruncatedOrOversizedStream(t *testing.T) {
 	f, _ := os.Open(src)
 	defer func() { _ = f.Close() }()
 	var s bytes.Buffer
-	if _, err := writeExtents(f, 1<<20, &usedLayout{blockSize: 4096, blocks: 256, used: [][2]uint64{{0, 1 << 20}}}, &s); err != nil {
+	if _, err := writeExtents(f, nil, 1<<20, &usedLayout{blockSize: 4096, blocks: 256, used: [][2]uint64{{0, 1 << 20}}}, &s); err != nil {
 		t.Fatal(err)
 	}
 	ok := emptyDevice(t, 1<<20)

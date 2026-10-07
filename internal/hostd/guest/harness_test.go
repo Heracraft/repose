@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +114,26 @@ type harness struct {
 	cgWait  atomic.Uint64 // every guest unit's cpu.pressure some total
 	noBoot  map[string]bool
 	cfg     Config
+	logs    lockedBuffer // every line the manager logged, JSON
+}
+
+// lockedBuffer is a bytes.Buffer the manager's goroutines may write at once.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.b = append(l.b, p...)
+	return len(p), nil
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return string(l.b)
 }
 
 const (
@@ -208,7 +227,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	// The strict test logger: every line the manager writes during these
 	// tests must name an event and carry no never-log field
 	// (docs/workstreams/10-observability.md §5).
-	logger := obs.NewTestLogger(t, obs.ComponentHostd, io.Discard)
+	logger := obs.NewTestLogger(t, obs.ComponentHostd, &h.logs)
 	h.metrics = metrics.New()
 	m, err := New(cfg, Deps{
 		State: st, LVM: h.lvm, Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
