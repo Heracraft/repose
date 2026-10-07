@@ -38,7 +38,7 @@ var (
 func Hold(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(stderr, "repose-mcp: no home directory")
+		_, _ = fmt.Fprintln(stderr, "repose-mcp: no home directory")
 		return 1
 	}
 	return hold(mcpreg.DefaultPaths(home), args, stdin, stdout, stderr)
@@ -59,7 +59,7 @@ func hold(p mcpreg.Paths, args []string, stdin io.Reader, stdout, stderr io.Writ
 	seen := map[string]bool{}
 	for _, n := range args {
 		if !mcpreg.ValidName(n) || mcpreg.Reserved[n] {
-			fmt.Fprintf(stderr, "repose-mcp: %q is not a server name repose can forward\n", n)
+			_, _ = fmt.Fprintf(stderr, "repose-mcp: %q is not a server name repose can forward\n", n)
 			return 2
 		}
 		if !seen[n] {
@@ -68,7 +68,7 @@ func hold(p mcpreg.Paths, args []string, stdin io.Reader, stdout, stderr io.Writ
 		}
 	}
 	if len(names) == 0 {
-		fmt.Fprint(stderr, holdUsage)
+		_, _ = fmt.Fprint(stderr, holdUsage)
 		return 2
 	}
 	if remove {
@@ -86,11 +86,11 @@ func removeForwards(p mcpreg.Paths, names []string, stdout, stderr io.Writer) in
 	for _, n := range names {
 		ok, err := mcpreg.RemoveForward(p, n)
 		if err != nil {
-			fmt.Fprintf(stderr, "repose-mcp: cannot remove ~/.repose/mcp/forward/%s.json: %v\n", n, err)
+			_, _ = fmt.Fprintf(stderr, "repose-mcp: cannot remove ~/.repose/mcp/forward/%s.json: %v\n", n, err)
 			return 1
 		}
 		if !ok {
-			fmt.Fprintln(stdout, n)
+			_, _ = fmt.Fprintln(stdout, n)
 		}
 		removed = removed || ok
 	}
@@ -139,7 +139,7 @@ func (h *holder) run(names []string) int {
 	}
 	go h.readLoop()
 	if err := os.MkdirAll(h.p.SocketDir, 0o700); err != nil {
-		fmt.Fprintf(h.stderr, "repose-mcp: cannot make %s: %v\n", h.p.SocketDir, err)
+		_, _ = fmt.Fprintf(h.stderr, "repose-mcp: cannot make %s: %v\n", h.p.SocketDir, err)
 		return 1
 	}
 	var wg sync.WaitGroup

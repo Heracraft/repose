@@ -929,7 +929,8 @@ func argPath(a string) string {
 		}
 		a = v
 	}
-	if !(strings.HasPrefix(a, "/") || strings.HasPrefix(a, "~") || strings.HasPrefix(a, "$HOME") || strings.HasPrefix(a, "${HOME}") || (len(a) >= 3 && a[1] == ':' && (a[2] == '\\' || a[2] == '/'))) {
+	pathLike := strings.HasPrefix(a, "/") || strings.HasPrefix(a, "~") || strings.HasPrefix(a, "$HOME") || strings.HasPrefix(a, "${HOME}") || (len(a) >= 3 && a[1] == ':' && (a[2] == '\\' || a[2] == '/'))
+	if !pathLike {
 		return ""
 	}
 	if i := strings.Index(a, ":/"); i > 1 {
@@ -1012,7 +1013,7 @@ func (c *mcpClassifier) templateURL(server, raw string) string {
 		parts := strings.Split(query, "&")
 		for i, kv := range parts {
 			k, v, ok := strings.Cut(kv, "=")
-			if !ok || v == "" || strings.Contains(v, "${") || !(mcpQuerySecret.MatchString(k) || mcpTokenLike(v)) {
+			if !ok || v == "" || strings.Contains(v, "${") || (!mcpQuerySecret.MatchString(k) && !mcpTokenLike(v)) {
 				continue
 			}
 			parts[i] = k + "=${" + c.assign(server, k, "", v) + "}"
