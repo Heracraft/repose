@@ -571,6 +571,41 @@ in
           assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
           guest.fail("test -e /home/dev/.claude.json.lock")
 
+      with subtest("the carry's own payload reaches claude and codex through repose-agent-setup (I-556, design 3.2.5)"):
+          # nix/guest/tests/mcp-carry is what the CLI sends for a fixture
+          # laptop config (TestMCPCarryGoldenPayload keeps it current): run
+          # it the way ssh runs the carry, as dev with the tar on stdin.
+          out = guest.succeed("cd /home/dev && sudo -H -u dev bash -c \"$(cat ${./mcp-carry/script.sh})\" < ${./mcp-carry/payload.tar}")
+          print(out)
+          assert "#failed" not in out, out
+          assert "#mcpleft 1 notes (an Apple app)" in out, out
+          assert "#mcpsecret LINEAR_TOKEN linear laptop" in out, out
+          lj = json.loads(guest.succeed("cat /home/dev/.repose/mcp/laptop.json"))
+          assert set(lj["user"]) == {"probe", "linear"} and lj["user"]["probe"]["env"] == {"PROBE_TOKEN": "''${PROBE_TOKEN}"}, lj
+          assert guest.succeed("stat -c %a /home/dev/.repose/mcp/laptop.json").strip() == "600"
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+          status, out = guest.execute("sudo -u dev bash -lc 'cd /home/dev && timeout 120 claude mcp list' 2>&1")
+          print(out)
+          for n in ["probe", "linear", "playwright"]:
+              assert re.search(rf"^{n}: ", out, re.M), (n, out)
+          cx = {e["name"]: e for e in json.loads(guest.succeed("sudo -u dev bash -lc 'cd /tmp && codex mcp list --json'"))}
+          assert cx["probe"]["transport"]["command"] == "repose-mcp" and cx["probe"]["transport"]["args"] == ["run", "probe"], cx
+          assert cx["linear"]["transport"].get("url") == "https://mcp.linear.app/mcp" and cx["linear"]["transport"].get("bearer_token_env_var") == "LINEAR_TOKEN", cx
+          assert "notes" not in cx, cx
+          # Codex's launcher refuses to start probe without its secret.
+          guest.succeed("mv /run/repose/secrets/PROBE_TOKEN /run/repose/PROBE_TOKEN.away")
+          status, out = guest.execute("sudo -u dev env -u PROBE_TOKEN repose-mcp run probe 2>&1")
+          assert status == 1 and "probe needs the secret PROBE_TOKEN; set it with `repose secrets set PROBE_TOKEN`" in out, (status, out)
+          guest.succeed("mv /run/repose/PROBE_TOKEN.away /run/repose/secrets/PROBE_TOKEN")
+          st = json.loads(guest.succeed("sudo -u dev repose-mcp status --json"))
+          row = [r for r in st["servers"] if r["name"] == "notes"]
+          assert row and row[0]["from"] == "laptop" and row[0]["agents"] == [] and row[0]["state"] == "an Apple app", st
+          # Back to no laptop servers for the subtests that follow.
+          write_laptop({"version": 1})
+          for a in ["claude", "codex"]:
+              guest.succeed(f"sudo -u dev repose-agent-setup {a}")
+
       with subtest("a forwarded server reaches every agent, and answers while the laptop is away (I-557)"):
           import shlex
           assert guest.succeed("stat -c '%U %a' /run/repose/mcp").strip() == "dev 700"
@@ -1751,8 +1786,14 @@ in
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
               "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
               "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini -p hi"),
-              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "pi --provider fake --model m -p hi"),
+              "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "env PATH=/tmp/pishim:$PATH pi --provider fake --model m -p hi"),
           }
+          # I-554: pi starts both platform servers, seen by wrappers on its
+          # PATH that log each start and exec the real command (the
+          # registry names them by name, not by path).
+          for b in ["playwright-mcp", "chrome-devtools-mcp"]:
+              real = dev(f"command -v {b}").strip()
+              dev(f"mkdir -p /tmp/pishim && printf '#!/bin/sh\\necho {b} >> /tmp/pi-mcp-starts\\nexec {real} \"$@\"\\n' > /tmp/pishim/{b} && chmod +x /tmp/pishim/{b}")
           sentinel = "This is a repose machine"
           for agent, (mark, env, cmd) in runs.items():
               guest.succeed("rm -rf /tmp/caps/*")
@@ -1763,10 +1804,14 @@ in
               # I-553, I-554: the platform browser tools reach the model.
               # pi lists codemode servers by name instead of their tools.
               # Codex (code mode) names no MCP tool in the request; its
-              # registration is checked with codex mcp list above.
+              # registration is checked with codex mcp list above
+              # (DECISIONS I-553).
               tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
               if tool:
                   assert tool in bodies, f"{agent}: {tool} is not in what it sent"
+              if agent == "pi":
+                  starts = guest.succeed("cat /tmp/pi-mcp-starts 2>/dev/null || true").split()
+                  assert {"playwright-mcp", "chrome-devtools-mcp"} <= set(starts), f"pi started {starts}"
           after = dev("cd ~ && sha256sum " + " ".join(files))
           assert before == after, (before, after)
 

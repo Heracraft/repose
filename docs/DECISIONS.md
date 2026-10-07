@@ -13122,6 +13122,32 @@ list` shows both `connected`, `playwright disabled` under the user's
 `Connected` with no trust warning, and `Blocked` under `mcp.excluded`.
 The VM subtests in guest-base, guest-agent-guide and guest-desktop need
 the dev box.
+Gap fixes on the same branch: the guest-agent-guide capture run asserts
+that each agent's first request names the browser tool, and leaves Codex
+out of that assertion: Codex 0.157.1 in code mode sends the model no MCP
+tool by name (its tools reach the model through the code-mode runtime),
+so the request body has nothing to match, and Codex's registration is
+asserted from `codex mcp list --json` in guest-base instead. The guide
+tells agents they have the browser tools, "Codex not while
+`~/.codex/config.toml` is a symlink", the one case where an agent lacks
+them (I-555). Evidence from a run of the real binaries on kanali (not the
+VM) against `repose-mcp sync` output from this branch, in a temp HOME,
+with a probe stdio server that logs whether it received its secret:
+Claude Code 2.1.283 `claude mcp list` shows `playwright`,
+`chrome-devtools` and the carried probe Connected, and the probe got the
+secret through `${PROBE_TOKEN}`; Codex 0.157.1 `codex mcp list` shows all
+of them, and `codex exec` started `repose-mcp run probe`, which gave the
+probe the real value from the secret file (Codex strips the environment,
+so a `REPOSE_SECRETS_DIR` set outside does not reach the launcher; on a
+guest the default `/run/repose/secrets` applies); opencode 1.18.34 reads
+`~/.config/opencode/config.json` and the probe connected with the secret;
+Gemini CLI 0.61.0 loads `~/.gemini/extensions/repose-mcp` and the probe
+connected with the secret, once its system-defaults file with folder
+trust off sat in a root-owned directory that is not world-writable (it
+rejected one under `/var/tmp`; the guest's `/etc` qualifies); pi 1.0.4
+with the branch's `pi-extension.js` registered all four servers (named as
+`mcp__*` code-mode servers in the request to a fake model) and started
+the probe with the secret.
 
 **I-554. pi moves to 1.0.4 for built-in MCP.**
 (mcp-platform, 2026-10-06) pi 0.87.1 has no MCP. 0.99 added it, with
@@ -13147,6 +13173,11 @@ request whose system prompt holds the guide and `<mcp_servers>` listing
 `mcp__chrome_devtools` and `mcp__playwright` (codemode exposure); with
 the off-switch entry the list holds `mcp__chrome_devtools` alone; the
 `before_agent_start` hook still receives `systemPromptOptions.sections`.
+Gap fixes on the same branch: the guest-agent-guide capture run also
+proves pi starts both platform servers, through wrappers on its `PATH`
+that log each start and exec the real `playwright-mcp` and
+`chrome-devtools-mcp` (the registry names them by command name), instead
+of a grep for `registerMcpServer`.
 
 **I-555. repose keeps one MCP list per machine and renders it into each agent's own config.**
 (mcp-registry, 2026-10-06; amends I-246) The carry of the laptop's
@@ -13221,6 +13252,29 @@ commented `config.json` is left as written with one warning per held
 change. A `~/.codex/config.toml` symlink gets `notify` through the link
 when its target is a writable file; for a read-only target
 (home-manager's store) agent-setup names the missing `notify` on stderr.
+Gap fixes on the same branch: `repose-mcp run NAME` refuses to start a
+server that references a secret without a default that neither
+`/run/repose/secrets` nor the environment holds, exit 1 with one line
+naming it and `repose secrets set NAME`: started anyway, the server sent
+the literal `${LINEAR_TOKEN}` to its service as a token and the user saw
+that service's auth error (found by running the real Codex against the
+launcher). `${NAME:-default}` is unchanged. A registry file that does not
+parse, or whose `version` is newer than the base reads, costs only its
+own servers: before, one bad `laptop.json` or `forward/NAME.json` stopped
+every render, platform servers included, and since agent-setup no longer
+merges `/etc/repose/mcp.json` itself on a base with `repose-mcp`, a fresh
+Claude Code or Codex lost the browser tools. Sync names each such file on
+stderr, status lists it under `problems`, and a newer `rendered.json`
+reads as missing (only an entry equal to what sync writes now is then
+repose's). `repose-mcp status` names why an agent lacks a server sync
+meant to give it when the cause is a file sync leaves alone: a symlinked
+`~/.codex/config.toml`, a Codex name in a form repose does not edit, a
+commented opencode `config.json`. agent-setup writes `notify` into a
+symlinked Codex config's target by temp file and rename beside it, so a
+full disk or a kill cannot leave the user's dotfile half written, and
+names a target it cannot write once per target
+(`~/.repose/mcp/codex-link-warned`), not at every Codex start. Evidence:
+the real-binary run recorded in I-553.
 
 **I-556. `run` and `attach` carry the laptop's Claude Code MCP servers,
 with credentials replaced by secret references.** (mcp-carry,
@@ -13316,6 +13370,24 @@ prints only when the laptop has a server to carry. `secrets import
 --mcp` says only that it could not read the servers when
 `~/.claude.json` fails to parse, without the carry's clause about the
 machine.
+Gap fixes on the same branch: the skip reasons a user reads say what to
+fix ("its name has characters other than letters, digits, - and _",
+"type X, which repose does not copy"), and `xcrun` (Xcode's
+`xcrun mcpbridge`) counts as an Apple app. The "Left on your laptop" line
+offers `repose mcp forward` only for servers forward can run (a command
+and a name it takes), naming them when only some can, since forward
+refuses an HTTP server. A name and its reason are cut separately, on a
+rune boundary, so a long non-ASCII name keeps its reason and valid UTF-8.
+A missing command's line names `repose config add PACKAGE`. The guest
+script's extra tool directories come from `REPOSE_TOOL_DIRS` when set,
+so the old-base test hides `repose-mcp` on a host that has it. The VM
+subtest design 3.2.5 asked for now exists: guest-base runs the payload
+this CLI sends for a fixture (`nix/guest/tests/mcp-carry`, kept current
+by `TestMCPCarryGoldenPayload`) and checks `claude mcp list` and `codex
+mcp list --json` after `repose-agent-setup`. Not covered still: the OAuth
+sign-in end to end while attached; the public docs say it needs an
+attach, as the callback's port reaches the laptop only through the
+attach's port forward.
 
 **I-557. `repose mcp forward` runs laptop-bound MCP servers through a
 guest shim that answers for an absent laptop.** (mcp-forward,
@@ -13401,6 +13473,37 @@ before. A first forward's line keeps "Agents already running list it
 after a restart.", which the design's preview dropped: an agent reads
 its MCP config at start, so one already running has no entry for the
 new name and list_changed cannot reach it.
+Gap fixes on the same branch: two attaches to one project used to end
+each other's `[mcp] forward`: the second hold took the socket, the first
+dropped the name for good, and when the second attach ended its hold
+removed the socket while the first attach was still open. An attach's
+forward now runs `repose-mcp hold --wait`, which takes NAME only while no
+other live hold answers on the socket (a `$/repose/holder` probe the hold
+answers itself, so no laptop server starts), and after a takeover waits
+quietly to take it back; so NAME stays forwarded while any attach lives,
+and a foreground `repose mcp forward` still takes it over and hands it
+back when it ends. The shim pings every 5 s, during a connect's replay
+too, and calls the laptop away after 20 s with no answer: a hold that
+still held the socket for a sleeping laptop made each call wait the
+replay's 60 s. A connect that fails marks the laptop away, so calls
+during the retries answer at once. A cached initialize of `null` no
+longer panics the shim, and hold refuses such a result. The laptop end
+treats output that does not start with the hold's hello as no hold (a
+shell startup file that prints), ends the forward with a line that says
+so, and once its frames stop closes the hold's stdin and kills the ssh
+after 3 s, where before it hung silently. SIGHUP and SIGTERM end the
+forward like Ctrl-C, since the servers' own process groups never get
+them. A dropped connection is named once per outage; a reconnect that
+fails asks the api whether the machine still runs and ends with exit 5
+when it stopped, where before the line repeated every 30 s forever. A
+failure on the machine's side (socket, cache file) carries `"where":
+"machine"` in the ready frame and prints as the machine's. A laptop entry
+with a `${VAR}` this shell lacks is refused before the forward starts.
+On Windows `[mcp] forward` does nothing (no session helper), and attach
+now says so in one line. `TestMCPForwardLaptopSilent` stops the forward's
+ssh with SIGSTOP, so nothing closes, and the call gets the away answer
+from missed pings alone (20.0 s); `TestMCPForwardEndToEnd`'s Ctrl-C step
+closes the socket, which its comment now says.
 
 **I-558. `repose mcp list` shows each MCP server on a machine, where it
 came from and which agents have it.** (mcp-list, 2026-10-06; amends
@@ -13432,3 +13535,14 @@ yes/no hide the reason, which is the point); starting each server to
 probe it (slow, and a server that needs the laptop would fail the
 probe for the wrong reason). Not covered here: a live run against a
 machine on a real base.
+Gap fixes on the same branch: names and states pass the CLI's
+`terminalText` before printing, since a cloned repository's `.mcp.json`
+names a row; the status's `problems` print on stderr after the rows; an
+agent that lacks a server says why when a file repose leaves alone is the
+cause. *Not built:* a `codex: restart to see new tools` STATE for a
+forward whose tools changed (critic correction 9). The status reads files
+and cannot tell which running Codex sessions loaded the older list: shown
+whenever the cache changed it would stay wrong after every restart, and
+telling sessions apart means matching Codex processes' start times against
+the cache's, which is guessing. The forward's own line says it at the
+moment the tools change, which is when the user can act.

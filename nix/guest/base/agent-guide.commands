@@ -21,6 +21,7 @@ pi
 repose-ask needs
 repose-checkout needs
 repose-guest-profile needs
+repose-mcp needs
 repose-notify needs
 sh
 sudo

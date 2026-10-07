@@ -272,6 +272,13 @@ forward never touch an agent file. repose writes `~/.claude.json` from
 three places, sync, agent-setup's onboarding keys and the CLI's folder
 trust write (I-486), and each holds Claude Code's own lock.
 
+A registry file that does not parse, or whose `version` is newer than the
+base reads (a newer CLI wrote it), costs only its own servers: sync leaves
+them out with one stderr line, the platform servers and every other
+source still render, and `repose-mcp status --json` lists the line under
+`problems`. A `rendered.json` of a newer version reads as missing, so only
+an entry equal to what sync writes now counts as repose's.
+
 An entry is repose's only while it holds what repose wrote; a user who
 edits one owns it from then on, and a user's server of the same name wins
 (I-246's rule, now for every agent). opencode merges same-name servers
@@ -389,7 +396,9 @@ Definitions are the laptop's, in order: Claude Code's local scope for the
 repository, its user scope, Claude Desktop (macOS), `$CODEX_HOME` or
 `~/.codex/config.toml`, `~/.gemini/settings.json`, or `-- COMMAND ARGS`
 for one NAME. `${VAR}` expands from the laptop's environment, so tokens
-stay there. The server runs in the laptop's repository, or home, or the
+stay there, and an entry with a `${VAR}` the laptop's environment lacks
+is refused before anything starts (the server would send the literal text
+as a token). The server runs in the laptop's repository, or home, or the
 entry's `cwd`. An HTTP entry is refused (forwarding loopback HTTP servers
 is deferred); an unknown NAME lists every name each config has.
 
@@ -416,8 +425,17 @@ NAME at its next start. The ready frame carries the tool count and whether
 the registration is new or the tools changed, for the CLI's one line. A
 new hold of the same NAME unlinks and rebinds the socket; the old one sees
 the socket's inode change within a second, ends its streams and sends
-gone. `repose-mcp hold --remove NAME...` deletes the registration and
-syncs; the CLI's `--remove` runs it.
+gone. An attach's forward (`[mcp] forward`) runs `repose-mcp hold --wait
+NAME...` instead: it takes NAME only while no other live hold answers on
+the socket (a `$/repose/holder` probe line the hold answers itself, so no
+server starts on the laptop), and after a takeover it ends its streams,
+sends nothing and waits to take NAME back. So two attaches to one project
+keep NAME forwarded until the last ends, and a `repose mcp forward` run
+meanwhile takes it and hands it back when it ends. Failures on the
+machine's side (the socket, the cache file) carry `"where": "machine"` in
+the ready frame, and the CLI names the machine for them. `repose-mcp hold
+--remove NAME...` deletes the registration and syncs; the CLI's
+`--remove` runs it.
 
 The shim, `repose-mcp NAME`, is what every agent's config starts. It
 answers `initialize` (protocol version the older of the agent's and the
@@ -429,20 +447,32 @@ the tools and passes lines both ways; tools that differ from what the
 agent has send `notifications/tools/list_changed` (Codex ignores it, which
 the CLI's line says). A server choosing another protocol revision than the
 agent was told is a stderr line, and the session goes on. The shim pings
-every 10 s; two misses, or the socket closing, mark the laptop away:
+every 5 s, during the connect's replay as well; 20 s with no answer, or
+the socket closing, mark the laptop away (so a hold whose laptop sleeps
+before sshd reaps it ends a connect in 20 s, where the replay alone waits
+60 s), and so does a connect that fails:
 pending requests are answered (a tools/call with `isError`), every later
 tools/call answers `NAME runs on the user's laptop, which isn't connected.
 Ask them to run repose mcp forward NAME there.`, list methods answer from
 the cache, and the shim retries every 5 s. A sleeping laptop shows within
-about 20 s, where sshd alone takes 2 minutes.
+about 20 s, where sshd alone takes 2 minutes. A cached initialize that is
+not an object is answered as an empty one, and hold refuses a server whose
+initialize result is null, so no such cache is written.
 
 The laptop prints one line per name when it is registered, one per call
 (`claude called apple-notes.search_notes`, agent from the initialize's
-`clientInfo`, tool name only), and a line when the connection drops and
-it reconnects with a backoff up to 30 s. A base without the forward is
-named once and not retried. Windows has no session helper, so `[mcp]
-forward` does nothing there; the foreground command needs only ssh's
-stdio.
+`clientInfo`, tool name only), and a line when a connection that ran
+drops; it reconnects with a backoff up to 30 s, says nothing for a
+reconnect that fails, and after each one asks the api whether the machine
+still runs, ending with exit 5 when it stopped. A base without the forward
+is named once and not retried. Output from the hold that does not start
+with its hello (a shell startup file on the machine that prints) ends the
+forward with a line that says so; once the frames stop making sense the
+laptop closes the hold's stdin and kills its ssh after 3 s, so nothing
+hangs. SIGHUP and SIGTERM end the forward like Ctrl-C, since the servers'
+own process groups never get them. Windows has no session helper, so
+`[mcp] forward` does nothing there, and attach prints one line saying so;
+the foreground command needs only ssh's stdio.
 
 ### List: `repose mcp list [PROJECT]` (DECISIONS I-558)
 
@@ -458,7 +488,12 @@ one tab-separated line per server and no header, as `secrets list`.
 `--json` prints the machine's document as it came. It reads files and
 starts no server, so it answers in the time of one SSH command. A base
 without `repose-mcp` (exit 127) gets one line: the base predates the list
-and it works after the machine's next update. Needs the machine running.
+and it works after the machine's next update. Each of the document's
+`problems` (a registry file sync left out) is a line on stderr after the
+rows. An agent that lacks a server sync meant to give it says why in
+STATE: `codex: ~/.codex/config.toml is a link, which repose does not
+write`, or the Codex or opencode file holds the name in a form repose
+leaves alone. Needs the machine running.
 
 ## Depends on
 
@@ -471,6 +506,9 @@ pane-idle heuristic, AgentState), 05 (events ingest), 07 (`--agent`,
 Carrying the laptop's Codex, Gemini CLI and opencode MCP configs (only
 Claude Code's travels, I-556). Forwarding loopback HTTP servers on the
 laptop (Figma Dev Mode at `127.0.0.1:3845/mcp`): the laptop end would be an
-HTTP client of that URL, and the guest side stays as it is. Agents
+HTTP client of that URL, and the guest side stays as it is. `repose mcp
+login NAME`, an OAuth sign-in for a carried server from the laptop, for
+when no attach is open to carry the callback (today the sign-in is `/mcp`
+in Claude Code on the machine while attached). Agents
 beyond the five (DECISIONS R2-11: anything nixpkgs does not package is a
 package the platform maintains).

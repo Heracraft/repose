@@ -18,16 +18,17 @@ import (
 const mcpUsage = `usage: repose-mcp sync [AGENT...]
        repose-mcp run NAME
        repose-mcp status --json
-       repose-mcp hold [--remove] NAME...
+       repose-mcp hold [--wait|--remove] NAME...
        repose-mcp NAME
 
 sync renders ~/.repose/mcp into each AGENT's config (all five by default)
 and always exits 0. run starts the carried stdio server NAME with its
-${NAME} references filled from the machine's secrets. status prints what
-each agent has as JSON. hold and NAME are the two ends of repose mcp
-forward: hold serves the laptop's servers on /run/repose/mcp/NAME.sock for
+${NAME} references filled from the machine's secrets, and refuses when
+one is missing. status prints what each agent has as JSON. hold and NAME
+are the two ends of repose mcp forward: hold serves the laptop's servers on /run/repose/mcp/NAME.sock for
 as long as its stdin lasts, and NAME is the stdio server agents start.
-hold --remove takes NAME off every agent.
+hold --wait takes NAME only while no other hold serves it (an attach's
+forward); hold --remove takes NAME off every agent.
 `
 
 // isMCP reports whether this binary runs as repose-mcp, from its name or

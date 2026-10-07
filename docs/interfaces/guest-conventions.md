@@ -276,6 +276,13 @@ and agent-setup skips it).
 | `agents/<agent>.json` | `sync` | what repose renders for that agent: `{"mcpServers": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "skipped"?: [{"name","reason"}]}`; pi's machine guide extension reads `agents/pi.json` |
 | `rendered.json` | `sync` | `{"version":1, "agents": {AGENT: {"user": {NAME: entry}, "projects"?: {path: {NAME: entry}}, "held"?: {NAME: entry}}}}`: the entries sync last left in each agent's config as repose's; `held` is what sync could not write under a name Codex holds in a form repose does not edit, so the warning comes once per value |
 | `.lock` | `sync` | `flock` held around every sync, for every agent (agents start in parallel, and `hold` syncs too) |
+| `codex-link-warned` | `repose-agent-setup codex` | the target of a symlinked `~/.codex/config.toml` it could not add `notify` to, so the warning prints once per target |
+
+Each file's `version` is the shape it has; a reader that finds a higher
+one than it knows (`laptop.json` and `forward/NAME.json` 1,
+`rendered.json` 1) reads that file as absent and says so once per sync,
+and so does a file that does not parse: such a file costs only its own
+servers, never another source's.
 
 Sources claim a name in this order, and a later source's server of a
 claimed name is skipped: `/etc/repose/mcp.json` (the platform), each
@@ -321,9 +328,11 @@ edited by whole tables, from a `[mcp_servers.NAME]` header to the line
 before the next header outside `mcp_servers.NAME.*`; a name held in
 another form (dotted keys, an inline table) is left alone with a warning,
 printed again only when the value `sync` would write changes, and an edit that does not parse back to exactly the intended servers is
-not written. A `~/.codex/config.toml` that is a symlink is not edited
-(home-manager or a dotfiles repo made it; the rename would replace the
-link); `agents/codex.json` still records what Codex would get. A file
+not written. A `~/.codex/config.toml` that is a symlink gets no MCP
+servers (home-manager or a dotfiles repo made it; the rename would replace
+the link); `agents/codex.json` still records what Codex would get, and
+`repose-agent-setup` adds only `notify` to the link's target, by temp file
+and rename in the target's directory, keeping the target's mode. A file
 that is not valid JSON or TOML is left alone. The
 Gemini CLI extension directory is repose's by name and is removed when
 nothing is rendered for it.
@@ -334,9 +343,10 @@ nothing is rendered for it.
 |---|---|---|
 | `repose-mcp sync [AGENT...]` | the rendering above, for each AGENT (all five when none); warnings on stderr, `repose-mcp: ` first | 0 always |
 | `repose-mcp run NAME` | starts the carried stdio server NAME (the user scope's, else the first checkout's): each `${X}` and `${X:-default}` in its command, arguments and env filled from `/run/repose/secrets/X` (`REPOSE_SECRETS_DIR` moves it, for tests), else the environment; a `${X}` without a default that neither holds (or holds empty) stops it before the start; then execs it with the caller's environment plus the server's env | 127 with `repose-mcp: NAME is not in ~/.repose/mcp/laptop.json`, or when the command is missing; 1 for a remote server, or with ``repose-mcp: NAME needs the secret X; set it with `repose secrets set X` on your laptop, then restart the agent.`` (several: ``the secrets X, Y; set each with `repose secrets set NAME` ``); else the server's |
-| `repose-mcp status --json` | what each agent has, read from the files; starts no server | 0, or 1 when the registry does not parse |
-| `repose-mcp NAME` | the forward's shim for NAME, the stdio server every agent's config starts (`internal/mcpshim`): answers `initialize` and `tools/list` from `forward/NAME.json`; after the agent's `notifications/initialized` connects to `/run/repose/mcp/NAME.sock`, replays the agent's initialize, and passes lines both ways, lines the server sent before the link was up first; while a connect is in progress it holds every request but the list methods and `ping` (answered from the cache) and sends them once the link is up; pings with `$/repose/ping` every 10 s, and after two misses, or a connect that fails, answers each `tools/call` with `isError` and `NAME runs on the user's laptop, which isn't connected. Ask them to run repose mcp forward NAME there.`; reconnects at once after a closed socket and every 5 s after missed pings or a failed connect, and sends `notifications/tools/list_changed` when the tools differ | 0 when the agent closes stdin |
-| `repose-mcp hold NAME...` | the forward's endpoint, the remote command of the laptop's ssh: stdin and stdout carry frames (a type byte, a big-endian uint32 stream id and length, the payload; `H` hello `1`, `O` open NAME, `D` data, `C` close, `R` ready JSON `{"name","tools","new"?,"changed"?,"error"?}`, `G` gone NAME; laptop to hold, `A` keepalive every 10 s, no payload, which an older hold ignores). Each stream is queued without blocking the frame loop, up to 16 MB, and a stream past that is closed. Per NAME: fills `forward/NAME.json` through a stream of its own, syncs the agents `rendered.json` names on a first registration, binds `/run/repose/mcp/NAME.sock` (replacing the file), carries each connection as a stream, at most 8 at once (the ninth gets one `$/repose/busy` line and is closed). Touches `/run/repose/mcp/NAME.alive` at each `A`. Hands NAME over when the socket's inode changes (a newer hold), sending `G` | 0 when stdin ends or every NAME has gone; 2 for a name outside the pattern above or a reserved one |
+| `repose-mcp status --json` | what each agent has, read from the files; starts no server | 0 (a registry file that does not parse is a `problems` line) |
+| `repose-mcp NAME` | the forward's shim for NAME, the stdio server every agent's config starts (`internal/mcpshim`): answers `initialize` and `tools/list` from `forward/NAME.json`; after the agent's `notifications/initialized` connects to `/run/repose/mcp/NAME.sock`, replays the agent's initialize, and passes lines both ways, lines the server sent before the link was up first; while a connect is in progress it holds every request but the list methods and `ping` (answered from the cache) and sends them once the link is up; pings with `$/repose/ping` every 5 s, during a connect's replay as well, and after 20 s with no answer, or a connect that fails, answers each `tools/call` with `isError` and `NAME runs on the user's laptop, which isn't connected. Ask them to run repose mcp forward NAME there.`; reconnects at once after a closed socket and every 5 s after missed pings or a failed connect, and sends `notifications/tools/list_changed` when the tools differ | 0 when the agent closes stdin |
+| `repose-mcp hold NAME...` | the forward's endpoint, the remote command of the laptop's ssh: stdin and stdout carry frames (a type byte, a big-endian uint32 stream id and length, the payload; `H` hello `1`, `O` open NAME, `D` data, `C` close, `R` ready JSON `{"name","tools","new"?,"changed"?,"error"?,"where"?}`, `where` `machine` for an error on the machine's side (the socket, the cache file; absent from an older hold, read as the laptop's server), `G` gone NAME; laptop to hold, `A` keepalive every 10 s, no payload, which an older hold ignores). Each stream is queued without blocking the frame loop, up to 16 MB, and a stream past that is closed. Per NAME: fills `forward/NAME.json` through a stream of its own, syncs the agents `rendered.json` names on a first registration, binds `/run/repose/mcp/NAME.sock` (replacing the file), carries each connection as a stream, at most 8 at once (the ninth gets one `$/repose/busy` line and is closed). Touches `/run/repose/mcp/NAME.alive` at each `A`. Hands NAME over when the socket's inode changes (a newer hold), sending `G`. A connection's first line `{"jsonrpc":"2.0","method":"$/repose/holder"}` is answered with the same line and closed, with no stream: the probe a waiting hold sends. The laptop's end reads output that does not start with `H` as no hold at all | 0 when stdin ends or every NAME has gone; 2 for a name outside the pattern above or a reserved one |
+| `repose-mcp hold --wait NAME...` | `hold` for an attach's `[mcp] forward`: before taking NAME, and again after another hold takes it over, waits (probing once a second) until no live hold answers on the socket; sends no `G` | as `hold` |
 | `repose-mcp hold --remove NAME...` | deletes each `forward/NAME.json` and syncs as above; prints each NAME that had none, one per line | 0; 1 when a file cannot be removed |
 
 A base before the forward has a `repose-mcp` whose `NAME` and `hold` exit 1
@@ -352,7 +362,8 @@ I-557 calls either, so the frame protocol has no older shape to keep.
  "servers": [
    {"name": "linear", "from": "laptop", "agents": ["claude", "codex", "opencode"],
     "state": "needs LINEAR_TOKEN; gemini: ...", "needs": ["LINEAR_TOKEN"],
-    "missing": ["fooctl"], "skipped": {"gemini": "..."}, "checkout": "/home/dev/app"}]}
+    "missing": ["fooctl"], "skipped": {"gemini": "..."}, "checkout": "/home/dev/app"}],
+ "problems": ["~/.repose/mcp/laptop.json does not parse (...); servers from your laptop are left out until the next repose run or attach rewrites it"]}
 ```
 
 One row per server name and source. `from` is `repose` (the platform),
@@ -370,7 +381,11 @@ false`, Gemini CLI's `mcp.excluded`), has the server, in the order of
 that neither `/run/repose/secrets` nor the environment holds (`HOME`,
 `USER`, `PWD`, `TMPDIR`, `PATH`, `SHELL`, `LANG`, `XDG_*` never count);
 `missing` is a stdio command not on `PATH`; `skipped` maps an agent that
-lacks the server to the reason. `state` joins, with `; `, the carry's
+lacks the server to the reason: the renderer's, or a file sync leaves
+alone (`~/.codex/config.toml is a link, which repose does not write`, `...
+holds it in a form repose does not edit`, `~/.config/opencode/config.json
+has comments, which a rewrite would lose`). `problems` (absent when none)
+are the registry files sync left out, one line each. `state` joins, with `; `, the carry's
 reason, `laptop not connected` for a forward whose
 `/run/repose/mcp/NAME.sock` is absent or whose `NAME.alive` is more than
 30 s old, `needs A, B`, `CMD missing` and

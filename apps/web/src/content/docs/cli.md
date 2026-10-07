@@ -155,7 +155,7 @@ Only one bridge to a machine at a time. A laptop that goes to sleep keeps its br
 
 ### `repose mcp forward NAME...`
 
-Let the agents on the machine use MCP servers that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`. It runs on your laptop with your apps, files and tokens; `${VAR}` in its config comes from your laptop's environment. Each agent session on the machine gets its own copy over SSH, and each call is listed here by agent and tool. See [MCP servers](/docs/agents#mcp-servers).
+Let the agents on the machine use MCP servers that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`. It runs on your laptop with your apps, files and tokens; `${VAR}` in its config comes from your laptop's environment, and a `${VAR}` that environment lacks stops the forward before it starts. Only servers that start with a command can be forwarded; an HTTP server on your laptop can't be yet. Each agent session on the machine gets its own copy over SSH, and each call is listed here by agent and tool. See [MCP servers](/docs/agents#mcp-servers).
 
 ```
 $ repose mcp forward apple-notes
@@ -168,7 +168,7 @@ claude called apple-notes.search_notes
 $ repose mcp forward notes -- node ~/mcp/notes.js
 ```
 
-The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
+The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached, except on Windows, where it does nothing and `attach` says so.
 
 | Flag       | What it does                                                          |
 | ---------- | --------------------------------------------------------------------- |
@@ -189,7 +189,7 @@ apple-notes  forward  claude codex gemini opencode pi
 my-db        machine  claude
 ```
 
-FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE starts with the checkout for a server from one (`~/todo-app`), and is otherwise empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
+FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE starts with the checkout for a server from one (`~/todo-app`), and is otherwise empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`, and an agent that lacks a server says why (`codex: ~/.codex/config.toml is a link, which repose does not write`). A file on the machine that repose had to leave out, such as a `laptop.json` that doesn't parse, is named on stderr after the rows. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
 
 | Flag     | What it does                                                                                        |
 | -------- | --------------------------------------------------------------------------------------------------- |
@@ -350,7 +350,7 @@ forward = ["figma"]
 | `default_agent`   | `claude` | Agent for new projects.                                                                                                                                                                                     |
 | `sync.exclude`    | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`     | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
-| `mcp.forward`     | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project.                                                                                                  |
+| `mcp.forward`     | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                            |
 | `projects`        | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
 | `api_url`         | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`    | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
@@ -372,6 +372,7 @@ forward = ["figma"]
 | `REPOSE=1`                | Set on every repose machine, so scripts can tell where they run.                                                                                 |
 | `XDG_CONFIG_HOME`         | If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`.                                                                                       |
 | `CLAUDE_CONFIG_DIR`       | Where your laptop's Claude Code setup is copied from, instead of `~/.claude`.                                                                    |
+| `CODEX_HOME`              | Where `repose mcp forward` reads your Codex config, instead of `~/.codex`.                                                                       |
 | `VISUAL`, `EDITOR`        | The editor for `repose config edit`. Default `vi`.                                                                                               |
 | `WAYLAND_DISPLAY`         | On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set.                                                           |
 | `DISPLAY`                 | Otherwise it reads the X11 clipboard with `xclip`.                                                                                               |

@@ -556,8 +556,8 @@ pointer, not a summary.
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; L13033
 - **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13060
 - **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; L13081
-- **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13126
-- **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13151
-- **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13225
-- **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13320
-- **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13405
+- **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13152
+- **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13182
+- **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13279
+- **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13392
+- **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13508

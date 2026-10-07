@@ -1,9 +1,9 @@
 package mcpreg
 
 import (
-	"fmt"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
