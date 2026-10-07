@@ -145,9 +145,14 @@ let
   # base's unit of the same name in /etc/systemd/user, so a fragment could
   # replace repose-tmux-session or repose-herdr-server, the units every
   # agent runs in. The repose- prefix is the base's (DECISIONS I-563).
+  # The menu's npm installs (internal/menu/catalog.yaml) write
+  # repose-npm-<tool> units into the fragment, and saved project files
+  # carry those names, so a repose-npm- name the base does not define
+  # itself is the fragment's to write.
+  menuUnit = n: lib.hasPrefix "repose-npm-" n && !(config.systemd.user.services ? ${n});
   unitRefusals = map
     (n: "systemd.user.services.${n}: not allowed in a fragment; names starting with repose- belong to the machine")
-    (lib.filter (lib.hasPrefix "repose-") (builtins.attrNames hm.systemd.user.services));
+    (lib.filter (n: lib.hasPrefix "repose-" n && !menuUnit n) (builtins.attrNames hm.systemd.user.services));
 
   # Sourced by /etc/profile.d/repose.sh (env.nix): every login and
   # interactive shell, and every agent wrapper, whose tmux server may have
