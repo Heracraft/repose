@@ -69,19 +69,19 @@ Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within ab
 
 Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, and they have no unsubscribe link. Paddle, which handles the payments, sends its own receipts and its own note when a card is declined; ours are about your machines.
 
-| Subject                                    | When                                                                                                                                                                 |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Welcome to repose`                        | You signed in for the first time. Install, `repose run`, choose a plan.                                                                                              |
-| `You're on the waitlist`                   | Every seat was taken when you tried to choose a plan. Your place, and what happens next ([When repose is full](/docs/limits#when-repose-is-full)).                   |
-| `A seat is yours for 72 hours`             | It's your turn. Choose a plan within 72 hours; after that the seat goes to the next person.                                                                          |
-| `Your seat hold ran out`                   | You didn't choose a plan in time. You're back on the list, at the back, and get another email at your next turn.                                                     |
-| `Your free week ends soon`                 | Two days before the first charge: the plan, the amount, the date. Cancel before then and nothing is charged.                                                         |
-| `Your payment failed`                      | A charge didn't go through. Update your card in the billing portal; your machines keep running for three days, then stop until a payment arrives.                    |
-| `Your guests were stopped for non-payment` | Three days after a failed payment your machines were snapshotted and stopped.                                                                                        |
-| `Your plan is ending`                      | You cancelled. The plan runs until the end of the period; your machines stop then and their snapshots are kept 30 days.                                              |
-| `Your plan has ended`                      | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
-| `Your plan changed`                        | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
-| `Your machines were stopped: egress limit` | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
+| Subject                                        | When                                                                                                                                                                 |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Welcome to repose`                            | You signed in for the first time. Install, `repose run`, choose a plan.                                                                                              |
+| `You're on the waitlist`                       | Every seat was taken when you tried to choose a plan. Your place, and what happens next ([When repose is full](/docs/limits#when-repose-is-full)).                   |
+| `A seat is yours for 72 hours`                 | It's your turn. Choose a plan within 72 hours; after that the seat goes to the next person.                                                                          |
+| `Your seat hold ran out`                       | You didn't choose a plan in time. You're back on the list, at the back, and get another email at your next turn.                                                     |
+| `Your free week ends soon`                     | Two days before the first charge: the plan, the amount, the date. Cancel before then and nothing is charged.                                                         |
+| `Your payment failed`                          | A charge didn't go through. Update your card in the billing portal; your machines keep running for three days, then stop until a payment arrives.                    |
+| `Your machines were stopped: a payment failed` | Three days after a failed payment your machines were snapshotted and stopped.                                                                                        |
+| `Your plan is ending`                          | You cancelled. The plan runs until the end of the period; your machines stop then and their snapshots are kept 30 days.                                              |
+| `Your plan has ended`                          | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
+| `Your plan changed`                            | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
+| `Your machines were stopped: egress limit`     | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
 
 ## Agents can message you and ask questions
 

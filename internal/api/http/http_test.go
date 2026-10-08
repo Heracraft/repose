@@ -819,11 +819,12 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	if r := e.do(t, tok, "GET", "/projects/"+newID, nil); r.status != 200 || r.body["state"] != "running" || r.body["slug"] != "todo-yesterday" {
 		t.Fatalf("restored project: %d %s", r.status, r.raw)
 	}
-	// Suspended users get forbidden everywhere but GET /me.
+	// Suspended users get 402 suspended, with the sentence, everywhere but
+	// GET /me, GET /billing and the portal.
 	if _, err := e.h.Pool.Exec(ctx, "update users set suspended_at = now() where logto_sub = 'sub-alice'"); err != nil {
 		t.Fatal(err)
 	}
-	if r := e.do(t, tok, "GET", "/projects", nil); r.status != 403 || errCode(r) != "forbidden" || !strings.Contains(string(r.raw), "account suspended") {
+	if r := e.do(t, tok, "GET", "/projects", nil); r.status != 402 || errCode(r) != "payment_required" || !strings.Contains(string(r.raw), `"reason":"suspended"`) || !strings.Contains(string(r.raw), "Your account is suspended.") {
 		t.Fatalf("suspended: %d %s", r.status, r.raw)
 	}
 	if r := e.do(t, tok, "GET", "/me", nil); r.status != 200 {

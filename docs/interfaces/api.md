@@ -312,7 +312,9 @@ a volume) and carries `detail.reason`:
 
 `message` is the whole sentence in every case, so an older CLI that prints
 it is right. A `suspended` account may only call `GET /me`, `GET /billing`
-and `POST /billing/portal`.
+and `POST /billing/portal`; every other route answers `402
+payment_required` with `detail.reason: suspended` and the same sentence
+(I-600; an older api answers `403 forbidden` "account suspended").
 
 ## Internal (gateway)
 

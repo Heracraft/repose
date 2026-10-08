@@ -16579,3 +16579,41 @@ commit. Checked by `TestEnsureEntryStopsAtCtrlC` (Ctrl-C while another
 process holds the lock returns at once), `TestEnsureEntryJoinsTheBackgroundAdd`
 (one add, the phase line; after a failure, no second add),
 `TestRunHelperForegroundEnds`, `TestEnsureEntry`, `TestHerdrRemoteChild`.
+
+**I-600. Paddle's sandbox runs prod's billing until the live switch, and
+what the first end-to-end gate run fixed.** (paddle-sandbox, 2026-10-08;
+owner: "Paddle sandbox logged in in a tab. Handle integration end to
+end", then chose to wire prod to the sandbox knowing a test card admits
+anyone until live keys replace it.) `api` and `api-grpc` on Coolify carry
+the sandbox block from `paddle-bootstrap` plus `PADDLE_API_KEY` and
+`PADDLE_CLIENT_TOKEN` (runtime only, literal); the sandbox's default
+payment link is `https://repose.herakraft.co/billing`. The M4 gate
+(`docs/ops/M4-GATE.md`) then ran on prod with a throwaway email account:
+checkout to `trial`, the 8 GB refusal, `active`, `past_due` with one email
+per failure run, day 2's email, the 3-day stop and suspension, a payment
+lifting it, the overage line on Paddle's next transaction ($0.50 plus
+tax), and the egress hard stop. Five things changed. (1) The bootstrap
+created the destination with `traffic_source: platform`, and Paddle
+refuses a simulation for such a destination, so step 3 could not run. In
+the sandbox it now creates it with `all`, and a rerun switches an older
+one; live stays `platform`. (2) The auth middleware answered a suspended
+account `403 forbidden` "account suspended", so `repose start` printed
+that and exited 1, though `api.md` and the fake answer `402
+payment_required` with `detail.reason: suspended` and a sentence, which
+the CLI maps to exit 7. Every route a suspended account may not call now
+answers the gate's 402 (`Gate.Suspended`). (3) The `billing_stopped`
+email's subject said "Your guests were stopped for non-payment"; it is
+now "Your machines were stopped: a payment failed", like
+`egress_stopped`. (4) Paddle.js loads its overlay stylesheet from
+`cdn.paddle.com` (`sandbox-cdn.paddle.com` in the sandbox), which
+`style-src` refused; both are allowed. (5) The runbook was wrong in four
+places: a `transaction.completed` alone leaves a trialing subscription's
+account in `trial` (simulate `subscription.activated` first, as Paddle
+sends at a trial's end); step 4's row sat before `period_start` and in
+an hour the rollup rewrites; a first Solo's allowance is the intro's 100
+GB; and `overage-now` makes Paddle send a real `subscription.updated`
+that undoes simulated states, so step 4 runs after step 3.
+`ops/paddle/simulate.py` sends the three simulations about the account's
+own subscription. Not changed, for the owner: the intro discount's
+generated code shows in Paddle's order summary (I-497 says it is never
+shown), so a Solo customer who cancels can type it at a later checkout.

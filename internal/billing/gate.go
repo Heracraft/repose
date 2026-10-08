@@ -104,10 +104,16 @@ func (g *Gate) Check(ctx context.Context, u *store.User, req Request) error {
 	return nil
 }
 
+// Suspended is the refusal a suspended account gets, from the gate and
+// from every route the account may not call (api.md "payment_required").
+func (g *Gate) Suspended() *Refusal {
+	return &Refusal{Reason: ReasonSuspended, Message: fmt.Sprintf("Your account is suspended. Pay at %s to lift it, or email support.", g.cfg.BillingURL()), Detail: map[string]any{"reason": ReasonSuspended}}
+}
+
 func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal, error) {
 	url := g.cfg.BillingURL()
 	if u.SuspendedAt != nil || u.BillingStatus == "suspended" {
-		return &Refusal{Reason: ReasonSuspended, Message: fmt.Sprintf("Your account is suspended. Pay at %s to lift it, or email support.", url), Detail: map[string]any{"reason": ReasonSuspended}}, nil
+		return g.Suspended(), nil
 	}
 	sub, err := LiveSubscription(ctx, g.pool, u.ID)
 	if err != nil {
