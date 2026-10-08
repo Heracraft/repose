@@ -826,7 +826,7 @@ in
           # The real hold, with a fake laptop end on its stdio: what the
           # laptop's ssh carries in production (no -R; the gateway relays
           # forwarded-tcpip only, I-296).
-          guest.succeed("sudo -u dev sh -c 'cd /home/dev && nohup python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe > /tmp/fake-laptop.log 2>&1 &'")
+          guest.succeed("sudo -u dev sh -c 'cd /home/dev && nohup python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe < /dev/null > /tmp/fake-laptop.log 2>&1 &'")
           ready = guest.wait_until_succeeds("grep '^ready ' /tmp/fake-laptop.log", timeout=60)
           r = json.loads(ready.split(" ", 1)[1])
           assert r == {"name": "fwprobe", "tools": 1, "new": True}, r
