@@ -299,7 +299,7 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
-	verb := map[string]string{"completed": "finished", "needs_input": "needs input", "error": "hit an error", "agent_message": "says", "agent_question": "asks", "idle_running": "idle, still billing", "temp_expiring": "destroyed in an hour", "temp_destroyed": "temporary machine destroyed", "personal_failed": "machine.nix did not apply"}[m.Kind]
+	verb := map[string]string{"completed": "finished", "needs_input": "needs input", "error": "hit an error", "agent_message": "says", "agent_question": "asks", "idle_running": "idle, still billing", "temp_expiring": "destroyed in an hour", "temp_destroyed": "temporary machine destroyed", "personal_failed": "machine.nix did not apply", "boot_failed": "new system did not boot"}[m.Kind]
 	if verb == "" {
 		verb = strings.ReplaceAll(m.Kind, "_", " ")
 	}
@@ -420,7 +420,7 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	switch m.Kind {
 	case "needs_input":
 		prio, tag = "5", "question"
-	case "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed":
+	case "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed", "boot_failed":
 		prio, tag = "4", "x"
 	case "agent_message":
 		prio, tag = "3", "speech_balloon"

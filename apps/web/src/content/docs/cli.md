@@ -262,11 +262,13 @@ Snapshot the project now and start copies of it as new projects, each on its own
 
 Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. Disks can't shrink. A larger disk adds nothing to your plan's disk total, which counts what your projects hold, and one disk can be at most the plan's whole disk. A single argument that reads as a size is the disk; anything else is the project.
 
-`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it (taking a snapshot), changes it and starts it again, which ends every process on it, agents included. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size).
+`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size).
 
 ### `repose logs [PROJECT]`
 
 `--kind console|build|ops` (default `console`), `--since 1h` (a duration, or a time such as `2026-09-28T10:00:00Z`), `-f`/`--follow` to follow, `--json`. Each line starts with its time.
+
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, for its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log, `ops` one line per operation with its result.
 
 ### `repose events [PROJECT]`
 

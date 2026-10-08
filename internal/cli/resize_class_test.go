@@ -98,7 +98,7 @@ func TestResizeClass(t *testing.T) {
 		if err := ResizeClassCmd(ctx, e, p.ID, "small", func(prompt string) (bool, error) { asked = prompt; return false, nil }); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(asked, "agents included") || !strings.HasSuffix(asked, "[y/N] ") {
+		if !strings.Contains(asked, "agents included") || !strings.HasSuffix(asked, "[y/N] ") || strings.Contains(asked, "snapshot") {
 			t.Fatalf("prompt %q", asked)
 		}
 		if got := get(t, e, p.ID); got.Class != "large" || got.State != "running" {
@@ -119,6 +119,11 @@ func TestResizeClass(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "Changed todo-app from large to small: 2 vCPU, 4 GB memory; fits the Solo plan. Running again") {
 			t.Fatalf("output %q", out.String())
+		}
+		// The disk stays on the host, untouched; a snapshot was most of
+		// the restart's time (I-595).
+		if snaps, err := e.Client.ListSnapshots(ctx, p.ID); err != nil || len(snaps) != 0 {
+			t.Fatalf("a size change took snapshots %+v (%v)", snaps, err)
 		}
 	})
 

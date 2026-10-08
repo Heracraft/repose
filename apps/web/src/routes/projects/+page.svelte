@@ -8,6 +8,7 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { abuseStopReason } from '$lib/abuse';
+	import { bootFallbackReason } from '$lib/bootfail';
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -83,12 +84,15 @@
 	}
 
 	/**
-	 * The sentence after "code: " in last_error, for a project in error or
-	 * one the platform stopped because a miner was running (I-239).
+	 * The sentence after "code: " in last_error, for a project in error,
+	 * one the platform stopped because a miner was running (I-239), or one
+	 * running its previous system because its new one did not boot (I-590).
 	 */
 	function reason(p: Project): string {
 		const abuse = abuseStopReason(p);
 		if (abuse) return abuse;
+		const boot = bootFallbackReason(p);
+		if (boot) return boot;
 		if (p.state !== 'error' || !p.last_error) return '';
 		const i = p.last_error.indexOf(': ');
 		return i > 0 ? p.last_error.slice(i + 2) : p.last_error;

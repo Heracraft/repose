@@ -36,8 +36,14 @@ func Execute(version string) int {
 	// Ctrl-C cancels the command's context, so a spinner line is cleared
 	// and child ssh processes are ended, instead of the process dying
 	// mid-line.
+	// The first Ctrl-C is the command's to handle; after it the handler
+	// goes, so a second one ends a command whose cleanup is stuck (the
+	// forwards' teardown, a slow ssh) the way it ends any program
+	// (DECISIONS I-598). Code that must restore the terminal (the input
+	// proxy, a hidden prompt, a herdr client) holds its own handler.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	go func() { <-ctx.Done(); stop() }()
 	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return ExitOK
@@ -1160,7 +1166,7 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Grow the project's disk (e.g. 80G), or change its size with --size",
 		Long: "With DISK, grows the project's disk (e.g. 80G); disks can't shrink.\n" +
 			"With --size, changes the project's size: small, large or xl. A stopped project starts at the\n" +
-			"new size; a running one is stopped (with a snapshot), changed and started again, after a\n" +
+			"new size; a running one is stopped, changed and started again, after a\n" +
 			"confirmation that --yes skips.\n" +
 			"PROJECT defaults to this checkout's project; one argument that reads as a size is DISK.",
 		Args:              resizeArgs,

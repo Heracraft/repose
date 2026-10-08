@@ -35,14 +35,14 @@ $ repose run "add a dark mode toggle"
 ✓ Created todo-app (large, herdr)  0.3s
 ...
 Ready in 38s.
-todo-app is in herdr's sidebar.
+todo-app is in herdr's sidebar. Ctrl-C ends its forwards.
 ```
 
-`run` opened a tab in the `todo-app` workspace on the machine, started Claude Code there and typed the prompt. The machine is now in herdr's sidebar under its name; select it to watch the agent. The `repose` command stays in its pane and keeps your ports forwarded until you press Ctrl-C.
+`run` opened a tab in the machine's `checkout` workspace, started Claude Code there and typed the prompt. The machine is now in herdr's sidebar as `todo-app`, with `checkout` under it; select it to watch the agent. The `repose` command stays in its pane and keeps your ports forwarded until you press Ctrl-C.
 
 From a terminal outside herdr, the same command opens herdr's client on the machine (`herdr --remote todo-app.repose`) instead.
 
-A second prompt opens another tab, `claude-2`. With `--worktree` the agent gets its own git worktree, which herdr shows under the repository:
+A second prompt opens another tab, `claude-2`. With `--worktree` the agent gets its own git worktree, which herdr shows under `checkout`:
 
 ```
 repose run --worktree "write the tests for the toggle"
@@ -53,7 +53,7 @@ repose run --worktree "write the tests for the toggle"
 ```
 $ repose ps
 WORKSPACE             AGENT   NAME      STATE
-todo-app              claude  claude*   working
+checkout              claude  claude*   working
 todo-app-worktree-1   claude  claude-2  idle
 ```
 

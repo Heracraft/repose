@@ -270,7 +270,7 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 	defer e.keepTokenFresh()()
 	// The cache keeps no expiry: a temporary machine is never cached
 	// (I-351), so the guess is never one.
-	return true, mux.Attach(e, attachReq{Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
+	return true, mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the

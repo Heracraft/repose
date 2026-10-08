@@ -48,7 +48,9 @@ Events (see agents.md for how each agent produces them):
   `destroy_failed` (DECISIONS I-165: the CLI no longer waits for a
   destroy, so its failure is announced), `personal_failed` (I-490: the
   account's machine.nix did not build or switch on that project, which
-  keeps its revision), `host_moved` and
+  keeps its revision), `boot_failed` (I-590: a start or forced reboot
+  gave the machine a new system that never reached Ready, and it runs its
+  previous one; title `<project>: new system did not boot`), `host_moved` and
   `abuse_stopped` (I-239: the guest was stopped because a cryptocurrency
   miner was running; the summary says which process and, on the third
   stop in 24 hours, that the project cannot start until reviewed),

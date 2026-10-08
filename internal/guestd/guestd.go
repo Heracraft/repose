@@ -230,6 +230,11 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.asks.Run(ctx)
 	go s.warn.Run(ctx)
 	go s.readyProbe(ctx)
+	// The roots of the shared store's paths (DECISIONS I-588) are brought
+	// up to date by every registration; this covers a guestd that started
+	// without one, such as the first run of a guestd an in-place switch
+	// installed.
+	go s.system.SyncViewRoots(ctx)
 	go func() {
 		<-ctx.Done()
 		_ = l.Close()

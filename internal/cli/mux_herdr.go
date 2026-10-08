@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/heracraft/repose/internal/multiplexer"
 )
 
@@ -61,18 +63,79 @@ type herdrReply struct {
 }
 
 // herdrState is the agents and workspaces of one listing, and the label
-// of the workspace the command works in.
+// of the workspace the command works in. Alias is the label the machine's
+// own checkout had before I-597 (its directory name), which a machine
+// whose workspace has not been renamed yet still shows.
 type herdrState struct {
 	Label      string
+	Alias      string
 	Agents     []herdrAgent
 	Workspaces []herdrWorkspace
 }
 
-// herdrStateScript prints the folder's workspace label (the checkout's
-// directory name, "home" with none, another checkout's name), then herdr's
-// agents and workspaces, each answer on its own line behind a marker.
+// herdrCheckoutLabel is the label of the workspace in the machine's own
+// checkout (DECISIONS I-597). The laptop herdr's sidebar names the
+// machine after the project, which is usually the checkout's directory
+// name too, so a workspace labelled with that name showed the project
+// twice (`recruiting` under `recruiting`). Another checkout's workspace
+// keeps its name, and a machine with no checkout has `home`.
+const herdrCheckoutLabel = "checkout"
+
+// herdrMainVar is shell that sets repose_main to the machine's own
+// checkout (checkoutVar's rule; $HOME when it has none), whatever folder
+// the command works in.
+func herdrMainVar(slug string) string {
+	return checkoutVar(slug, "") + "repose_main=$repose_co\n"
+}
+
+// herdrLabelShell sets repose_l to the label of the workspace for folder
+// $repose_d, after herdrMainVar: home, checkout, or the folder's name.
+const herdrLabelShell = `if [ "$repose_d" = "$HOME" ]; then repose_l=home; elif [ "$repose_d" = "$repose_main" ]; then repose_l=` + herdrCheckoutLabel + `; else repose_l=${repose_d##*/}; fi
+`
+
+// herdrRenameShell, after herdrMainVar, gives the machine's own checkout
+// the label I-597 names when its workspace still has the old one (the
+// directory's name, from a base before I-597 or a CLI before it): the
+// workspace, its tabs and agents stay as they are. A machine with no
+// checkout, or one that already has the label, is left alone.
+const herdrRenameShell = `repose_old=${repose_main##*/}
+if [ "$repose_main" != "$HOME" ] && [ "$repose_old" != home ] && [ "$repose_old" != ` + herdrCheckoutLabel + ` ] && repose_wl=$(herdr workspace list 2>/dev/null); then
+  if ! printf '%s' "$repose_wl" | jq -e '.result.workspaces | any(.label == "` + herdrCheckoutLabel + `")' >/dev/null 2>&1; then
+    repose_id=$(printf '%s' "$repose_wl" | jq -r --arg l "$repose_old" 'first(.result.workspaces[] | select(.label == $l) | .workspace_id) // empty' 2>/dev/null || true)
+    if [ -n "$repose_id" ]; then herdr workspace rename "$repose_id" ` + herdrCheckoutLabel + ` >/dev/null 2>&1 || true; fi
+  fi
+fi
+`
+
+// herdrTidyShell, after herdrMainVar, closes the workspaces that only
+// repeat the checkout's once the checkout has its own (DECISIONS I-596):
+// `home`, which the server made while the machine had no checkout yet
+// (its first boot comes before the first sync), and one with the old
+// label that a base before I-597 made again at a start. It is the herdr
+// side of the tmux `shell` window's respawn: only a workspace that is one
+// tab with one pane whose shell runs nothing in the foreground goes;
+// anything else is left as it is. It reads the pane's process group and
+// the shell's pid from herdr, nothing more.
+const herdrTidyShell = `repose_old=${repose_main##*/}
+if [ "$repose_main" != "$HOME" ] && repose_wl=$(herdr workspace list 2>/dev/null) && printf '%s' "$repose_wl" | jq -e '.result.workspaces | any(.label == "` + herdrCheckoutLabel + `")' >/dev/null 2>&1; then
+  for repose_id in $(printf '%s' "$repose_wl" | jq -r --arg l "$repose_old" '.result.workspaces[] | select((.label == "home" or .label == $l) and .label != "` + herdrCheckoutLabel + `" and .tab_count == 1 and .pane_count == 1) | .workspace_id' 2>/dev/null || true); do
+    repose_pp=$(herdr pane list 2>/dev/null | jq -r --arg w "$repose_id" 'first(.result.panes[] | select(.workspace_id == $w) | .pane_id) // empty' 2>/dev/null || true)
+    [ -n "$repose_pp" ] || continue
+    if herdr pane process-info --pane "$repose_pp" 2>/dev/null | jq -e '.result.process_info | .foreground_process_group_id == .shell_pid' >/dev/null 2>&1; then
+      herdr workspace close "$repose_id" >/dev/null 2>&1 || true
+    fi
+  done
+fi
+`
+
+// herdrStateScript prints the folder's workspace label (`checkout` for
+// the machine's own checkout, with its old label as "#alias", `home` with
+// none, another checkout's name), then herdr's agents and workspaces,
+// each answer on its own line behind a marker.
 func herdrStateScript(slug, extra string) string {
-	return checkoutVar(slug, extra) + `if [ "$repose_co" = "$HOME" ]; then echo '#label home'; else printf '#label %s\n' "${repose_co##*/}"; fi
+	return herdrMainVar(slug) + checkoutVar(slug, extra) + `repose_d=$repose_co
+` + herdrLabelShell + `printf '#label %s\n' "$repose_l"
+if [ "$repose_l" = ` + herdrCheckoutLabel + ` ]; then printf '#alias %s\n' "${repose_d##*/}"; fi
 printf '#agents '; herdr agent list
 printf '#workspaces '; herdr workspace list
 `
@@ -86,6 +149,8 @@ func parseHerdrState(out string) (herdrState, error) {
 		switch {
 		case strings.HasPrefix(l, "#label "):
 			st.Label = strings.TrimPrefix(l, "#label ")
+		case strings.HasPrefix(l, "#alias "):
+			st.Alias = strings.TrimPrefix(l, "#alias ")
 		case strings.HasPrefix(l, "#agents "):
 			var r herdrReply
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(l, "#agents ")), &r); err != nil {
@@ -143,7 +208,7 @@ func (st herdrState) pick(agent string) (string, bool) {
 		if a.Name != "" {
 			taken[a.Name] = true
 		}
-		if a.Agent == agent && labels[a.WorkspaceID] == st.Label {
+		if l := labels[a.WorkspaceID]; a.Agent == agent && (l == st.Label || (st.Alias != "" && l == st.Alias)) {
 			others = true
 		}
 	}
@@ -197,6 +262,7 @@ func herdrStartScript(s agentStart, extra string) string {
 		focus = "--focus"
 	}
 	var b strings.Builder
+	b.WriteString(herdrMainVar(s.Slug))
 	b.WriteString(checkoutVar(s.Slug, extra))
 	fmt.Fprintf(&b, "repose_d=%s\n", herdrDir(s.Dir))
 	b.WriteString(agentTrustScript(s.Agent, `"$repose_d"`, s.MCPApprovals))
@@ -206,15 +272,20 @@ func herdrStartScript(s agentStart, extra string) string {
 repose_l=${repose_d##*/}
 `)
 	} else {
-		b.WriteString(`if [ "$repose_d" = "$HOME" ]; then repose_l=home; else repose_l=${repose_d##*/}; fi
+		b.WriteString(herdrLabelShell)
+		b.WriteString(`if [ "$repose_l" = ` + herdrCheckoutLabel + ` ]; then
+` + herdrRenameShell + `fi
 `)
 	}
-	fmt.Fprintf(&b, `if [ -z "$repose_ws" ]; then
+	b.WriteString(`if [ -z "$repose_ws" ]; then
   repose_ws=$(herdr workspace list | jq -r --arg l "$repose_l" 'first(.result.workspaces[] | select(.label == $l) | .workspace_id) // empty')
   [ -n "$repose_ws" ] || repose_ws=$(herdr workspace create --cwd "$repose_d" --label "$repose_l" --no-focus | jq -r '.result.workspace.workspace_id // empty')
 fi
 [ -n "$repose_ws" ] || { echo 'herdr made no workspace' >&2; exit 1; }
-repose_p=$(herdr tab create --workspace "$repose_ws" --cwd "$repose_d" --label %[1]s %[2]s | jq -r '.result.root_pane.pane_id // empty')
+if [ "$repose_l" = ` + herdrCheckoutLabel + ` ]; then
+` + herdrTidyShell + `fi
+`)
+	fmt.Fprintf(&b, `repose_p=$(herdr tab create --workspace "$repose_ws" --cwd "$repose_d" --label %[1]s %[2]s | jq -r '.result.root_pane.pane_id // empty')
 [ -n "$repose_p" ] || { echo 'herdr made no tab' >&2; exit 1; }
 printf '#pane %%s\n' "$repose_p"
 `, shQuote(s.Name), focus)
@@ -352,12 +423,24 @@ repose_ws=$(herdr workspace list | jq -r --arg l %[1]s 'first(.result.workspaces
 // client; with herdr 0.9.0 or newer on the laptop, `herdr --remote` as
 // the CLI's child; otherwise `ssh -t <slug>.repose herdr` under the
 // input proxy and the reattacher.
+//
+// Everything before the client opens follows the command's context, so
+// Ctrl-C there ends the command at once ("Interrupted.", exit 130)
+// instead of being swallowed by the CLI's handler while a sidebar add or
+// the focus step runs on (DECISIONS I-598).
 func (herdrMux) Attach(e *Env, a attachReq) error {
+	ctx := a.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	slug := a.Project.Slug
 	if script := herdrFocusScript(slug, a.Target.Checkout, a.Window); script != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_, err := runSSH(ctx, a.Target, script, nil)
+		fctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		_, err := runSSH(fctx, a.Target, script, nil)
 		cancel()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		var se *sshError
 		if errors.As(err, &se) && se.ExitCode == 2 {
 			return exitf(ExitUsage, "%s", strings.TrimSpace(se.Stderr))
@@ -368,13 +451,20 @@ func (herdrMux) Attach(e *Env, a attachReq) error {
 		}
 	}
 	lh := laptopHerdr()
-	switch chooseHerdrPath(lh, a.Project, a.Target, func() bool { return lh.ensureEntry(e, slug) }) {
+	path := chooseHerdrPath(lh, a.Project, a.Target, func() bool {
+		ok, _ := lh.ensureEntry(ctx, e, slug)
+		return ok
+	})
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	switch path {
 	case herdrPathSidebar:
 		if a.Release != nil {
 			a.Release()
 		}
-		_, _ = fmt.Fprintf(e.Out, "%s is in herdr's sidebar.\n", slug)
-		return runHelperForeground(e, a.Helper)
+		_, _ = fmt.Fprintln(e.Out, sidebarLine(slug, a.Helper))
+		return runHelperForeground(ctx, e, a.Helper)
 	case herdrPathRemote:
 		startSessionHelper(e, a.Helper)
 		err := lh.remote(slug)
@@ -426,20 +516,44 @@ func plainAlias(t sshTarget, slug string) bool {
 	return len(t.Args) == 1 && t.Args[0] == slug+".repose"
 }
 
+// helperStays says the session helper has something that lasts as long
+// as the attach (port and MCP forwards, the browser bridge), as opposed
+// to the carry alone, which ends by itself.
+func helperStays(opts sessionOptions) bool {
+	return opts.Forward || opts.Bridge || len(opts.MCP) > 0
+}
+
+// sidebarLine is what rule 1 prints: the machine is in the sidebar, and,
+// when the command stays to keep forwards up, how it ends (I-598), so a
+// command that does not return reads as what it is.
+func sidebarLine(slug string, opts sessionOptions) string {
+	if helperStays(opts) {
+		return slug + " is in herdr's sidebar. Ctrl-C ends its forwards."
+	}
+	return slug + " is in herdr's sidebar."
+}
+
 // runHelperForeground is rule 1: the session helper (forwards, the
-// bridge, the carry) in this process until Ctrl-C, which exits 0. Its
-// messages print here, in the laptop pane the user ran it from.
-func runHelperForeground(e *Env, opts sessionOptions) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+// bridge, the carry) in this process until Ctrl-C (or SIGTERM), which
+// exits 0; with nothing that lasts (forwards off, no bridge) it returns
+// once the carry is done. Its messages print here, in the laptop pane
+// the user ran it from. A Ctrl-C that came before it started (ctx done)
+// ends it at once. After the first Ctrl-C the helper's handler is gone,
+// so a second one ends the process while the forwards are taken down
+// (I-598).
+func runHelperForeground(parent context.Context, e *Env, opts sessionOptions) error {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go func() { <-ctx.Done(); stop() }()
 	show := func(msg string) { _, _ = fmt.Fprintln(e.ErrOut, msg) }
 	alive := func() bool { return ctx.Err() == nil }
-	if !opts.Carry && !opts.Forward && !opts.Bridge {
-		<-ctx.Done()
+	if !opts.Carry && !helperStays(opts) {
 		return nil
 	}
 	_ = runSessionWith(ctx, opts, alive, show)
-	<-ctx.Done()
 	return nil
 }
 
@@ -583,8 +697,20 @@ func (h *laptopHerdrCLI) remote(slug string) error {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	defer signal.Stop(sig)
+	// The terminal as herdr found it: a herdr killed by a signal (a Ctrl-C
+	// that came while it connected, before its own handler; a crash)
+	// leaves raw mode and its screen modes on, and the shell after the CLI
+	// would read keys without echo (I-598).
+	fd := int(os.Stdin.Fd())
+	saved, _ := term.GetState(fd)
 	timingf("herdr --remote (attach)")
 	err := cmd.Run()
+	if saved != nil {
+		_ = term.Restore(fd, saved)
+		if cmd.ProcessState != nil && !cmd.ProcessState.Exited() {
+			_, _ = os.Stdout.WriteString(terminalReset)
+		}
+	}
 	var xe *exec.ExitError
 	if errors.As(err, &xe) {
 		return silent(xe.ExitCode())
@@ -594,3 +720,9 @@ func (h *laptopHerdrCLI) remote(slug string) error {
 	}
 	return nil
 }
+
+// terminalReset turns off what a full-screen client switches on, for
+// when it died without doing so itself: the alternate screen (back to
+// the normal one), a hidden cursor, mouse reporting, bracketed paste and
+// the kitty keyboard protocol.
+const terminalReset = "\x1b[?1049l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[<u"

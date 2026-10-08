@@ -41,6 +41,9 @@ type Guest struct {
 	// Restore delivered (I-26), passed through as hostd does to guestd's
 	// SetupProject; its `multiplexer` key names the session unit (I-503).
 	ProjectJSON []byte
+	// LastGood is the closure the guest last reached Ready on, which a
+	// boot of a bad closure falls back to (DECISIONS I-590).
+	LastGood string
 }
 
 // Options tune the fake.
@@ -72,6 +75,28 @@ type Fake struct {
 	// asks are the questions the fake's guests "know" (DECISIONS I-244):
 	// question_id -> the AnswerQuestion that closed it, nil while open.
 	asks map[string]*hostdv1.AnswerQuestion
+	// bad are closures that never reach Ready, with what their boot
+	// prints (I-590, I-592).
+	bad map[string]string
+}
+
+// BadBootMessage is the fake's classification of a bad closure's boot,
+// hostd's sentence for a stage 2 that is not in the store.
+const BadBootMessage = "the system it boots is missing from the machine's store (stage 1 found no stage 2 init)"
+
+// SetBadClosure makes every boot of closure fail as hostd reports one
+// that never reached Ready, printing console; "" makes it good again.
+func (f *Fake) SetBadClosure(closure, console string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.bad == nil {
+		f.bad = map[string]string{}
+	}
+	if console == "" {
+		delete(f.bad, closure)
+		return
+	}
+	f.bad[closure] = console
 }
 
 // New returns a fake with defaults.
@@ -209,6 +234,12 @@ func (f *Fake) stateOf(g *Guest) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return g.State
+}
+
+// bootFailed is hostd's answer for a boot that never reached Ready with
+// nothing to fall back to (I-592).
+func bootFailed(id, console string) *hostdv1.Result {
+	return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}}
 }
 
 func unresponsive(id string, g *Guest) *hostdv1.Result {
@@ -427,9 +458,17 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			g.Secrets[s.Name] = s.Value
 		}
 		f.guests[g.GuestID] = g
+		console, bad := f.bad[g.Closure]
 		f.mu.Unlock()
 		f.setState(g, "creating", "")
 		f.setState(g, "starting", "")
+		if bad {
+			f.setState(g, "error", BadBootMessage)
+			return bootFailed(id, console)
+		}
+		f.mu.Lock()
+		g.LastGood = g.Closure
+		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID}}
@@ -450,11 +489,39 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			if c.StartGuest.Class != "" {
 				g.Class = c.StartGuest.Class // I-260, as hostd
 			}
+			console, bad := f.bad[g.Closure]
 			f.mu.Unlock()
 			f.setState(g, "starting", "")
+			if bad {
+				// As hostd: fall back to the last good closure once, or
+				// fail with the boot's reason when there is none.
+				f.mu.Lock()
+				failed, good := g.Closure, g.LastGood
+				_, goodBad := f.bad[good]
+				if good == "" || good == failed || goodBad {
+					f.mu.Unlock()
+					f.setState(g, "error", BadBootMessage)
+					return bootFailed(id, console)
+				}
+				g.Closure = good
+				f.mu.Unlock()
+				f.setState(g, "running", "")
+				return ok(func(r *hostdv1.Result) {
+					r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: good, FailedClosure: failed,
+						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}}}
+				})
+			}
+			f.mu.Lock()
+			g.LastGood = g.Closure
+			f.mu.Unlock()
 			f.setState(g, "running", "")
 		}
-		return ok(nil)
+		f.mu.Lock()
+		booted := g.Closure
+		f.mu.Unlock()
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted}}
+		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()
 		g, e := get(c.StopGuest.GuestId)
@@ -532,8 +599,16 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return unresponsive(id, g)
 		}
 		needsReboot := e == nil && f.opts.KernelChanged && g.Closure != c.ApplyConfig.SystemClosure && !c.ApplyConfig.ForceReboot
+		if console, bad := f.bad[c.ApplyConfig.SystemClosure]; e == nil && bad && g.State == "running" && c.ApplyConfig.ForceReboot {
+			// The forced reboot fell back to the closure it ran (I-590).
+			f.mu.Unlock()
+			return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage + "; the machine runs its previous system", ConsoleTail: console}}
+		}
 		if e == nil && !needsReboot {
 			g.Closure = c.ApplyConfig.SystemClosure
+			if g.State == "running" {
+				g.LastGood = g.Closure
+			}
 		}
 		f.mu.Unlock()
 		if e != nil {

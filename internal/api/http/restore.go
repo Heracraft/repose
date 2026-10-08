@@ -147,7 +147,7 @@ func (s *Server) restoreByName(w http.ResponseWriter, r *http.Request) error {
 	obs.Logger(ctx, s.d.Log).Info("restore accepted", "event", "restored", "project_id", target.ID.String(), "from_project_id", src.ID.String(), "snapshot_id", snap.ID.String())
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"op_id": opID, "project_id": target.ID, "name": target.Name, "slug": target.Slug,
-		"snapshot_id": snap.ID, "snapshot_created_at": snap.TakenAt, "from_project_id": src.ID,
+		"snapshot_id": snap.ID, "snapshot_created_at": snap.TakenAt, "snapshot_bytes": snap.Bytes, "from_project_id": src.ID,
 	})
 	return nil
 }

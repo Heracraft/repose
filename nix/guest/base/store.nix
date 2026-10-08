@@ -106,13 +106,13 @@ let
     '';
   };
 
-  # The guest's own garbage collection (DECISIONS I-529). A whole-store GC
-  # is unsafe here: deleting a path that is also in the lower layer
-  # (/nix/.ro-store, the host's copy) leaves an overlayfs whiteout in the
-  # upper dir, which hides the host's copy for good, and a later switch or
-  # rollback that registers that path again (I-67; I-463 keeps up to 16
-  # earlier closures and the rev-* roots in view) finds it empty. So this
-  # deletes only dead paths that exist in the upper dir alone.
+  # The guest's own garbage collection (DECISIONS I-529). Deleting a path
+  # that is also in the lower layer (/nix/.ro-store, the host's copy)
+  # leaves an overlayfs whiteout in the upper dir, which hides the host's
+  # copy. guestd roots every such path the database lists (I-588) and a
+  # start removes whiteouts (I-587, boot.nix), so a whole-store GC is safe
+  # now; this one still deletes only dead paths that exist in the upper
+  # dir alone, and leaves the system's generations to hostd.
   gc = pkgs.writeShellApplication {
     name = "repose-store-gc";
     runtimeInputs = [ pkgs.nix pkgs.coreutils pkgs.findutils pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.util-linux ];
@@ -209,11 +209,9 @@ in
       trusted-users = [ "root" "dev" ];
       allowed-users = [ "root" "dev" ];
     };
-    # Never a whole-store GC inside the guest (nix.gc, min-free,
-    # nix-collect-garbage): deleting a path the host also has writes a
-    # whiteout into the overlay's upper dir, which keeps hiding the host's
-    # copy after a later switch or rollback registers that path again
-    # (I-67, I-463). repose-store-gc below deletes upper-only paths.
+    # No scheduled whole-store GC (nix.gc, min-free): repose-store-gc
+    # below deletes upper-only paths. One a user or agent runs is safe:
+    # guestd roots the paths the host shares (I-588).
     gc.automatic = false;
     optimise.automatic = false;
   };

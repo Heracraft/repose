@@ -301,7 +301,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// session has ended goes at once (I-352).
 		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
 		defer e.keepTokenFresh()()
-		return mux.Attach(e, attachReq{Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
+		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
 	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).
@@ -985,7 +985,7 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 			if se != nil {
 				detail = sshStderrDetail(se.Stderr)
 			}
-			msg := "Guest is running but SSH did not answer in 60s. `repose logs --kind console` may show why."
+			msg := "Guest is running but SSH did not answer in 60s. `repose stop` and then `repose start` restart it."
 			if detail != "" {
 				msg += "\nLast error from ssh: " + detail
 			}
@@ -1071,6 +1071,10 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			if op.State == "error" {
 				return failedStart(e, project, op, pr)
 			}
+			if w := opWarning(op); w != "" {
+				pr.Fail()
+				e.warn("%s: %s.", project.Slug, strings.TrimSuffix(w, "."))
+			}
 			if e.guestUp != nil && project.State != "stopping" {
 				e.guestUp(project)
 			}
@@ -1115,15 +1119,23 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		}
 		return err
 	}
+	// The first phase of a start names the request, and the project's
+	// states name the rest; its ✓ would print as the boot begins, so it
+	// has none (a resize printed "✓ Started kanali" and then that the
+	// start failed, 2026-10-07). A restart says why when the reason is
+	// its agent; a project in error is restarted because of its error.
 	byState := true
 	switch {
 	case sr.Create:
 		pr.Phase("Creating "+project.Slug, "Created "+project.Slug)
-	case sr.Restart:
+	case sr.Restart && project.State == "running" && guestdDead(project):
 		pr.Phase(fmt.Sprintf("Restarting %s (its agent stopped answering)", project.Slug), "Restarted "+project.Slug)
 		byState = false
+	case sr.Restart:
+		pr.Phase("Restarting "+project.Slug, "Restarted "+project.Slug)
+		byState = false
 	default:
-		pr.Phase("Starting "+project.Slug, "Started "+project.Slug)
+		pr.Phase("Starting "+project.Slug, "")
 	}
 	op, err := waitOpPhased(ctx, e, project, sr.OpID, pr, byState)
 	if err != nil {
@@ -1132,7 +1144,14 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	if op.State == "error" {
 		return failedStart(e, project, op, pr)
 	}
-	pr.End()
+	if w := opWarning(op); w != "" {
+		// Running, but not as asked (DECISIONS I-590): no ✓ for the
+		// phase that did not do what it says.
+		pr.Fail()
+		e.warn("%s: %s.", project.Slug, strings.TrimSuffix(w, "."))
+	} else {
+		pr.End()
+	}
 	if e.guestUp != nil {
 		// The first connection goes out now, beside the read below
 		// (I-237).
@@ -1220,6 +1239,13 @@ func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr
 					pr.Phase(label, done)
 				}
 			},
+			// A start's switch of the running machine to a new
+			// revision is its own step, not more booting (I-590).
+			phase: func(phase string) {
+				if phase == "apply_config" && last == "running" {
+					pr.Phase("Switching "+project.Slug+" to its new system", "Switched "+project.Slug+" to its new system")
+				}
+			},
 			read: func() string {
 				p, err := e.Client.GetProject(ctx, project.ID)
 				if err != nil {
@@ -1234,6 +1260,19 @@ func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr
 		out = e.ErrOut
 	}
 	return waitOpWith(ctx, e.Client, project.ID, opID, out, w)
+}
+
+// opWarning is the sentence a finished op left in result.warning: the
+// machine runs, but not as asked (its switch failed, or its new system
+// did not boot and it runs its previous one, DECISIONS I-590); "" when
+// there is none.
+func opWarning(op *Op) string {
+	w, ok := op.Result["warning"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	m, _ := w["message"].(string)
+	return strings.TrimSpace(m)
 }
 
 // waitOp polls an op to completion, streaming its build log to out if one

@@ -26,6 +26,8 @@ func reasonFor(code, message string) string {
 	switch code {
 	case "guest_unresponsive":
 		return "the environment's agent (guestd) stopped responding"
+	case "boot_failed":
+		return "the environment did not boot"
 	case "insufficient_capacity", "capacity":
 		return "the host had no room for it right now"
 	case "build_failed":
@@ -38,6 +40,8 @@ func reasonFor(code, message string) string {
 		return "its configuration is larger than the environment allows"
 	case "not_found":
 		return "the host no longer has its guest"
+	case "store_path_hidden":
+		return "a nix garbage collection inside the machine hid parts of its new system"
 	case "host_unreachable", "unreachable":
 		return "its host is not reachable"
 	case "payment_required":
@@ -171,7 +175,7 @@ func notRunningMessage(p *Project) string {
 		if reason == "" {
 			reason = "its last operation failed"
 		}
-		return fmt.Sprintf("%s is in an error state: %s", s, withNext(reason, fmt.Sprintf("`repose start %s` restarts it; if that fails too, `repose logs %s --kind console` shows the guest's console.", s, s)))
+		return fmt.Sprintf("%s is in an error state: %s", s, withNext(reason, fmt.Sprintf("`repose start %s` restarts it.", s)))
 	default:
 		return fmt.Sprintf("%s is %s, not running. Try `repose start %s`.", s, p.State, s)
 	}
@@ -209,9 +213,26 @@ func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
 		return "Try again in a few minutes; we have been alerted."
-	case "guest_unresponsive":
-		return fmt.Sprintf("Try `repose stop %s` and then `repose start %s`; `repose logs %s --kind console` shows what the guest printed.", slug, slug, slug)
-	default:
+	case "guest_unresponsive", "boot_failed":
+		// hostd kept the console of this boot (DECISIONS I-592).
 		return fmt.Sprintf("`repose logs %s --kind console` shows what the guest printed; `repose start %s` tries again.", slug, slug)
+	default:
+		return fmt.Sprintf("`repose start %s` tries again.", slug)
 	}
+}
+
+// bootFallbackReason is what a running project's last_error says after
+// a start or reboot whose new system did not boot, so that it runs its
+// previous one (DECISIONS I-590), or after a switch refused because a nix
+// garbage collection inside the machine hid the new system (I-589); ""
+// for any other project.
+func bootFallbackReason(p *Project) string {
+	if p.State != "running" || p.LastError == nil {
+		return ""
+	}
+	code, msg := splitLastError(*p.LastError)
+	if code != "boot_failed" && code != "store_path_hidden" {
+		return ""
+	}
+	return strings.TrimSpace(msg)
 }

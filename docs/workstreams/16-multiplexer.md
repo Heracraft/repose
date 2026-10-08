@@ -341,9 +341,10 @@ owner (or the conductor) instead of editing it.
   running; guest-conventions "herdr", Workspace.
 - **Agent names and workspace labels** (`mux-cli` makes them,
   `mux-guestd` turns them into keys): agents named `<agent>` and
-  `<agent>-N`, the lowest free N from 2; workspaces labelled with the
-  checkout's directory name, another checkout's name, or for a worktree
-  whatever `herdr worktree open` gives (it groups under the repository).
+  `<agent>-N`, the lowest free N from 2; workspaces labelled `checkout`
+  for the machine's own checkout (I-597; its directory name before),
+  another checkout's name, or for a worktree whatever `herdr worktree
+  open` gives (it groups under the repository).
 - **Hook windows** (`mux-guestd` on both ends): `herdr:<pane_id>`.
 - **Warnings** (`mux-guestd` sends, `mux-api` accepts): `herdr_down`.
 - **The gate** (`mux-api` answers, `mux-cli` handles): `409 conflict`,

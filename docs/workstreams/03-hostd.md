@@ -329,8 +329,12 @@ Snapshot:
    mounted, so a frozen running guest qualifies, I-171) is streamed in the extent format
    (DECISIONS I-164): the blocks the bitmaps mark used, minus 64 KiB
    pieces that are all zero, framed as offset/length records, through
-   `zstd -T4 -3`. Anything else (a killed guest's journal, a volume that
-   is not ext4) falls back to `dd if=/dev/vg-guests/snap-... bs=4M
+   `zstd -T4 -3`. A killed guest's journal (`needs_recovery`) is first
+   replayed on the snapshot (`e2fsck -E journal_only -p`, sandboxed with
+   write access to the snapshot alone; the guest's volume is untouched),
+   after which the snapshot qualifies (I-594). Anything else (a replay
+   that fails, a state other than `clean`, a volume that is not ext4)
+   falls back to `dd if=/dev/vg-guests/snap-... bs=4M
    status=none | zstd -T4 -3`, which reads the whole volume. Either goes
    into the Azure Blob Go SDK's
    block-blob `UploadStream` (block size 8 MiB, concurrency 4). azcopy is
@@ -350,8 +354,8 @@ unallocated blocks read as zeros and zstd compresses them to almost
 nothing), but time does not. Before I-164
 every snapshot took that path: 15-16 s for every 20 GB volume and 32-34 s
 for every 40 GB one on host-01, whether it carried 1.5 MB or 227 MB. The
-`snapshot done` line carries `format`, `raw_reason`, `used_bytes` and
-`volume_bytes`, so a slow snapshot says which path it took. Uploaded
+`snapshot done` line carries `format`, `raw_reason`, `journal_replayed`,
+`used_bytes` and `volume_bytes`, so a slow snapshot says which path it took. Uploaded
 bytes are reported in the Result so the cost stays visible.
 
 Restore:

@@ -17,11 +17,13 @@ func LogsCmd(ctx context.Context, e *Env, projectArg, kind, since string, follow
 	}
 	cur := sinceArg(since, time.Now())
 	var last time.Time
+	printed := 0
 	for {
 		lines, err := e.Client.ProjectLogs(ctx, project.ID, kind, cur)
 		if err != nil {
 			return err
 		}
+		printed += len(lines)
 		for _, l := range lines {
 			// A line at or before the cursor was printed by the previous
 			// poll (the api's since is inclusive for ops).
@@ -37,6 +39,11 @@ func LogsCmd(ctx context.Context, e *Env, projectArg, kind, since string, follow
 			_, _ = fmt.Fprintln(e.Out, logLineText(l, kind))
 		}
 		if !follow {
+			if printed == 0 && !e.JSON {
+				// Nothing printed and exit 0 read as a command that did
+				// nothing (2026-10-07): say whose logs were empty.
+				_, _ = fmt.Fprintln(e.ErrOut, emptyLogsLine(project.Slug, kind))
+			}
 			return nil
 		}
 		if n := len(lines); n > 0 && !lines[n-1].TS.IsZero() {
@@ -48,6 +55,19 @@ func LogsCmd(ctx context.Context, e *Env, projectArg, kind, since string, follow
 		} else if err := sleepOrDone(ctx, 2*time.Second); err != nil {
 			return err
 		}
+	}
+}
+
+// emptyLogsLine says which project's logs of that kind were empty. The
+// console holds only boots that failed (DECISIONS I-592).
+func emptyLogsLine(slug, kind string) string {
+	switch kind {
+	case "build":
+		return fmt.Sprintf("%s has no build log.", slug)
+	case "ops":
+		return fmt.Sprintf("%s has no operations.", slug)
+	default:
+		return fmt.Sprintf("%s has no console output: repose keeps a machine's console only from a boot that failed.", slug)
 	}
 }
 

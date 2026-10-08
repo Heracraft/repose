@@ -64,6 +64,7 @@ The user may have added other repositories to this machine as folders beside it,
 - `df -h /home/dev` shows free disk. Past 90 percent, one build or download can fill it, and then writes fail with "No space left on device"; tell the user then, since only they can grow it, with `repose resize 80G` (any size) on their laptop. <!-- /docs/machine#memory-and-disk -->
 - `sudo systemctl start repose-store-gc` deletes the nix store paths this machine downloaded or built that nothing uses, and nix profile generations older than 14 days; it also runs weekly. <!-- /docs/machine#memory-and-disk -->
 - A deleted file counts toward the user's plan disk until the daily `fstrim`; `sudo fstrim /` gives its space back now. <!-- /docs/machine#memory-and-disk -->
+- `nix-collect-garbage` and `nix store gc` are safe here: they keep the store paths repose shares with this machine. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
 - The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every vCPU busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->
 

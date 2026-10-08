@@ -64,6 +64,10 @@ const (
 	CodeClosureTooLarge      = "closure_too_large"
 	CodeGuestUnresponsive    = "guest_unresponsive"
 	CodeInternal             = "internal"
+	// CodeStorePathHidden is guestd's Switch refusal of a closure an
+	// overlayfs whiteout in the guest's store hides (DECISIONS I-589).
+	CodeStorePathHidden = "store_path_hidden"
+	// CodeBootFailed (bootfail.go) is the eleventh, since I-592.
 )
 
 // Reserved secret names (DECISIONS I-10).
@@ -115,6 +119,14 @@ type Error struct {
 	Message      string
 	FragmentLine int32
 	PersonalLine int32 // the line in personal.nix (machine.nix), DECISIONS I-490
+	// ConsoleTail is the end of the console of a boot that never reached
+	// Ready (I-592): tenant output, sent to the api, never logged.
+	ConsoleTail string
+	// NoReady marks a boot whose guestd never sent Ready, the failure a
+	// boot falls back from (I-590); Reason is then the fixed sentence the
+	// console was classified as.
+	NoReady bool
+	Reason  string
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -1068,8 +1080,8 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		r, err := m.create(ctx, c.CreateGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Create{Create: r} })
 	case *hostdv1.Command_StartGuest:
-		err := m.start(ctx, c.StartGuest)
-		return payloadOrErr(id, err, nil)
+		r, err := m.start(ctx, id, c.StartGuest)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Start{Start: r} })
 	case *hostdv1.Command_StopGuest:
 		r, err := m.stopCmd(ctx, c.StopGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Stop{Stop: r} })
@@ -1083,7 +1095,7 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		r, err := m.build(ctx, id, c.Build)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Build{Build: r} })
 	case *hostdv1.Command_ApplyConfig:
-		r, err := m.apply(ctx, c.ApplyConfig)
+		r, err := m.apply(ctx, id, c.ApplyConfig)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Apply{Apply: r} })
 	case *hostdv1.Command_Snapshot:
 		r, err := m.snapshotCmd(ctx, c.Snapshot)
@@ -1122,5 +1134,5 @@ func payloadOrErr(id string, err *Error, set func(*hostdv1.Result)) *hostdv1.Res
 }
 
 func errResult(id string, e *Error) *hostdv1.Result {
-	return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: e.Code, Message: e.Message, FragmentLine: e.FragmentLine, PersonalLine: e.PersonalLine}}
+	return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: e.Code, Message: e.Message, FragmentLine: e.FragmentLine, PersonalLine: e.PersonalLine, ConsoleTail: e.ConsoleTail}}
 }

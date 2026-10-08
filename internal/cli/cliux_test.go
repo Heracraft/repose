@@ -181,8 +181,10 @@ func TestAttachToAnErroredGuestSaysError(t *testing.T) {
 }
 
 // TestStartFromErrorSaysRestarting is the I-157 contract seen from the
-// CLI: a start of a project in error is a restart, and the progress line
-// says why.
+// CLI: a start of a project in error is a restart. The progress line
+// names no cause it does not know: a project in error is restarted for
+// its error, which may be a boot that never reached its agent (kanali,
+// 2026-10-07, said "its agent stopped answering").
 func TestStartFromErrorSaysRestarting(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -198,7 +200,7 @@ func TestStartFromErrorSaysRestarting(t *testing.T) {
 	if err := StartCmd(ctx, e, "izma"); err != nil {
 		t.Fatalf("StartCmd: %v", err)
 	}
-	if !strings.Contains(errOut.String(), "Restarting izma (its agent stopped answering)...") {
+	if !strings.Contains(errOut.String(), "Restarting izma...") || strings.Contains(errOut.String(), "agent stopped answering") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 	if !strings.Contains(out.String(), "izma is running") {

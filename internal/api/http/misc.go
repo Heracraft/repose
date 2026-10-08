@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -57,8 +58,9 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 }
 
 // projectLogs serves JSON lines: build (the newest build's log), ops (one
-// line per operation), console (the console excerpts hostd attached to
-// failed ops; the full console goes to Loki, docs/ops/OBSERVABILITY.md).
+// line per operation), console (the console hostd captured from boots
+// that never reached Ready, which it attaches to the op's result (I-592);
+// the full console goes to Loki, docs/ops/OBSERVABILITY.md).
 func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProjectAny(r)
 	if err != nil {
@@ -124,12 +126,31 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	case "console":
+		// Each boot hostd captured: its console's lines, each with the
+		// time its op finished (one boot, one time), oldest boot first.
+		// An op from before I-592 carries no console; its error's
+		// sentence stands in, as it did.
 		opsList, err := store.ListProjectOps(ctx, s.d.Pool, p.ID, 20)
 		if err != nil {
 			return err
 		}
 		for i := len(opsList) - 1; i >= 0; i-- {
 			op := opsList[i]
+			ts := op.FinishedAt
+			if ts == nil {
+				ts = &op.UpdatedAt
+			}
+			if !since.IsZero() && !ts.After(since) {
+				continue
+			}
+			if tail, _ := op.Result["console"].(string); tail != "" {
+				for _, l := range strings.Split(tail, "\n") {
+					if err := enc.Encode(map[string]any{"ts": ts, "op_id": op.ID, "kind": "console", "line": l}); err != nil {
+						return nil
+					}
+				}
+				continue
+			}
 			if op.Error == nil {
 				continue
 			}
@@ -137,7 +158,7 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 			if msg == "" {
 				continue
 			}
-			if err := enc.Encode(map[string]any{"ts": op.FinishedAt, "op_id": op.ID, "kind": op.Kind, "line": msg}); err != nil {
+			if err := enc.Encode(map[string]any{"ts": ts, "op_id": op.ID, "kind": op.Kind, "line": msg}); err != nil {
 				return nil
 			}
 		}

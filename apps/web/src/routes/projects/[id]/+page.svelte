@@ -27,6 +27,7 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { abuseStopReason } from '$lib/abuse';
+	import { bootFallbackReason } from '$lib/bootfail';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import QuestionsCard from '$lib/components/QuestionsCard.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -590,6 +591,12 @@
 		{#if abuseStopReason(project)}
 			<div class="banner banner--warn mt-4" data-testid="abuse-stop">
 				{abuseStopReason(project)}
+			</div>
+		{/if}
+
+		{#if bootFallbackReason(project)}
+			<div class="banner banner--warn mt-4" data-testid="boot-fallback">
+				{bootFallbackReason(project)}
 			</div>
 		{/if}
 

@@ -109,13 +109,19 @@ func (m *Manager) kernelChanged(projectID string, res *nixbuild.Result) bool {
 	return false
 }
 
-func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.ApplyResult, *Error) {
+func (m *Manager) apply(ctx context.Context, commandID string, c *hostdv1.ApplyConfig) (*hostdv1.ApplyResult, *Error) {
 	g, gerr := m.getGuest(c.GuestId)
 	if gerr != nil {
 		return nil, gerr
 	}
 	if c.SystemClosure == "" {
 		return nil, errf(CodeInvalidArgument, "system_closure required")
+	}
+	// A resend of a forced reboot that fell back (I-590): the guest runs,
+	// or is left, on its last good closure; answer as the first run did
+	// rather than adopting the closure that failed again.
+	if fb := g.BootFallback; fb != nil && fb.CommandID == commandID && fb.Failed == c.SystemClosure {
+		return nil, applyBootFailed(fb, "")
 	}
 	if ok, err := m.d.Nix.PathExists(ctx, c.SystemClosure); err != nil {
 		return nil, errf(CodeInternal, "nix path-info: %v", err)
@@ -133,7 +139,15 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 			m.log(g).Warn("apply refused: record says not running but the hypervisor is", "event", "apply_state_drift", "state", g.State)
 			return nil, errf(CodeInternal, "the machine is running but the host's record says %s; nothing was applied, try again in a minute", g.State)
 		}
-		// A stopped guest only needs the root moved; the next start boots it.
+		// A stopped guest only needs the root moved; the next start boots
+		// it. What that boot reads from the host must be there now: the
+		// kernel, initrd and init the runner is rendered from, and every
+		// path the store view will be filled with (I-591). What only the
+		// guest's disk decides (its store's upper layer) shows at the
+		// boot, which falls back when it never reaches Ready (I-590).
+		if err := m.bootable(ctx, c.SystemClosure); err != nil {
+			return nil, err
+		}
 		if err := m.adoptClosure(g, c.SystemClosure); err != nil {
 			return nil, err
 		}
@@ -172,7 +186,10 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 			if sw != nil {
 				out = string(sw.Output)
 			}
-			return nil, errf(CodeInternal, "switch failed: %s: %s\n\n%s", re.Code, re.Message, out)
+			// guestd's code is one of hostd's (sysdep/errors.go): a
+			// closure its store does not show is not_found, not internal
+			// (I-593). The guest keeps running what it ran.
+			return nil, errf(switchCode(re.Code), "switch failed: %s: %s\n\n%s", re.Code, re.Message, out)
 		}
 		return nil, errf(CodeGuestUnresponsive, "guestd Switch: %v", err)
 	}
@@ -191,12 +208,21 @@ func (m *Manager) apply(ctx context.Context, c *hostdv1.ApplyConfig) (*hostdv1.A
 		if err := m.adoptClosure(g, c.SystemClosure); err != nil {
 			return nil, err
 		}
-		if err := m.boot(ctx, g, stepRunner); err != nil {
+		g.BootFallback = nil
+		fb, tail, err := m.bootOrFallBack(ctx, g, commandID)
+		if err != nil {
 			return nil, err
+		}
+		if fb != nil {
+			// The new system never reached Ready and the guest runs its
+			// last good one again: the apply did not take (I-590).
+			return nil, applyBootFailed(fb, tail)
 		}
 		m.log(g).Info("apply rebooted", "event", "switch_done", "rebooted", true)
 		return &hostdv1.ApplyResult{Rebooted: true}, nil
 	}
+	// guestd activated it and answered: the disk runs this closure (I-590).
+	m.markGood(g, c.SystemClosure)
 	if err := m.adoptClosure(g, c.SystemClosure); err != nil {
 		return nil, err
 	}
@@ -228,6 +254,37 @@ func (m *Manager) adoptClosure(g *state.Guest, closure string) *Error {
 	}
 	m.writeGuestJSON(g)
 	return nil
+}
+
+// bootable checks what a boot of closure reads from the host: its kernel,
+// initrd and init, and its requisites, which fill the store view (I-591).
+func (m *Manager) bootable(ctx context.Context, closure string) *Error {
+	if _, err := nixbuild.ClosureInfo(closure); err != nil {
+		return errf(CodeNotFound, "system closure %s cannot boot: %v", closure, err)
+	}
+	if _, err := m.d.Nix.Requisites(ctx, closure); err != nil {
+		return errf(CodeNotFound, "system closure %s is not whole in the host store: %v", closure, err)
+	}
+	return nil
+}
+
+// switchCodes are guestd's Switch error codes hostd passes to the api as
+// they are; any other is internal (I-593).
+var switchCodes = map[string]bool{CodeInvalidArgument: true, CodeNotFound: true, CodeStorePathHidden: true}
+
+func switchCode(code string) string {
+	if switchCodes[code] {
+		return code
+	}
+	return CodeInternal
+}
+
+// applyBootFailed is a forced reboot that fell back: boot_failed, with
+// the sentence the console was classified as, the guest running its last
+// good closure. Never guest_unresponsive, which the api answers with a
+// reboot onto the same closure.
+func applyBootFailed(fb *state.BootFallback, tail string) *Error {
+	return &Error{Code: CodeBootFailed, Message: fb.Message + "; the machine runs its previous system", ConsoleTail: tail}
 }
 
 var _ = time.Second

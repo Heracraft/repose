@@ -61,6 +61,80 @@ in
   # The activation script now runs in stage 2's init, as before 24.11.
   boot.initrd.systemd.enable = lib.mkForce false;
 
+  # DECISIONS I-587: before stage 2, remove the overlayfs whiteouts in the
+  # store's upper dir. A nix command in the guest that deletes a path the
+  # host shares (the lower layer, /nix/.ro-store) leaves one there (a 0:0
+  # character device) and it hides the host's copy from then on, the
+  # system the guest is about to boot included (kanali, 2026-10-06:
+  # "stage 2 init script ... not found"). guestd roots every shared path
+  # so nix no longer deletes one (I-588); this repairs what was done
+  # before, or by a deletion that ignores roots. Every whiteout directly
+  # in the upper store dir goes, hiding a shared path or not: one with no
+  # lower counterpart hides nothing today but would hide the path the
+  # first time a later start or switch shares it again. Nothing else is
+  # touched, and nothing at all when there is no whiteout. The upper dir
+  # is changed only while the overlay is unmounted, as overlayfs
+  # requires; the remount takes the line stage 1 wrote to its fstab. The
+  # upper root's opaque xattr needs no handling: overlayfs never reads it
+  # on the root of a mount ("root is always merge"), and only a write
+  # straight into the upper dir could set it there. No overlay (another
+  # store layout): nothing happens.
+  # The repair is a scripted-initrd hook, which nixpkgs plans to remove in
+  # 26.11; a move to systemd's initrd must bring it along, so this fails
+  # the evaluation rather than drop it quietly.
+  assertions = [{
+    assertion = !config.boot.initrd.systemd.enable;
+    message = "repose: the store whiteout repair (DECISIONS I-587) runs in the scripted initrd; port it to the systemd initrd before enabling it";
+  }];
+  boot.initrd.postMountCommands = lib.mkAfter ''
+    # On the console and in the kernel log, which stage 2's journal and
+    # `dmesg` keep.
+    reposeSay() {
+      echo "$1"
+      echo "<5>$1" > /dev/kmsg 2>/dev/null || true
+    }
+    reposeStoreRepair() {
+      local opts upper lower list total shared f name l
+      opts=$(awk '$2 == "/mnt-root/nix/store" && $3 == "overlay" { print $4; exit }' /proc/mounts)
+      [ -n "$opts" ] || return 0
+      upper=$(echo "$opts" | tr ',' '\n' | sed -n 's/^upperdir=//p')
+      lower=$(echo "$opts" | tr ',' '\n' | sed -n 's/^lowerdir=//p')
+      [ -n "$upper" ] && [ -d "$upper" ] || return 0
+      list=/repose-store-whiteouts
+      : > "$list"
+      find "$upper" -mindepth 1 -maxdepth 1 -type c > "$list.c" 2>/dev/null || true
+      while IFS= read -r f; do
+        [ "$(stat -c '%t:%T' "$f" 2>/dev/null)" = "0:0" ] && echo "$f" >> "$list"
+      done < "$list.c"
+      total=$(wc -l < "$list")
+      if [ "$total" -eq 0 ]; then
+        reposeSay "repose: store overlay: 0 whiteouts removed"
+        return 0
+      fi
+      if ! umount /mnt-root/nix/store; then
+        reposeSay "repose: store overlay busy; $total whiteouts left in place"
+        return 0
+      fi
+      shared=0
+      while IFS= read -r f; do
+        name=''${f##*/}
+        for l in $(echo "$lower" | tr ':' ' '); do
+          if [ -e "$l/$name" ] || [ -L "$l/$name" ]; then
+            shared=$((shared + 1))
+            break
+          fi
+        done
+        rm -f "$f"
+      done < "$list"
+      if ! mount /mnt-root/nix/store; then
+        reposeSay "repose: store overlay remount failed; retrying"
+        mount /mnt-root/nix/store || fail
+      fi
+      reposeSay "repose: store overlay: $total whiteouts removed, $shared of them over shared store paths"
+    }
+    reposeStoreRepair
+  '';
+
   boot.loader.grub.enable = false;
   boot.loader.systemd-boot.enable = false;
   boot.loader.efi.canTouchEfiVariables = false;

@@ -141,9 +141,10 @@ todo-app uses herdr from its next start; tmux runs until then.
 
 On a herdr project the commands on this page work through herdr:
 
-- `repose run "prompt"` opens a tab in the checkout's workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under the repository in herdr's sidebar.
-- `repose attach` from a terminal inside herdr on your laptop opens nothing new: the machine is in herdr's sidebar, and the command prints `todo-app is in herdr's sidebar.` and keeps port forwards and the browser bridge going until you press Ctrl-C. Elsewhere, with herdr 0.9.0 or newer installed, it opens `herdr --remote todo-app.repose`. Without herdr on the laptop, it runs herdr's client on the machine over SSH.
-- `repose ps` lists herdr's agents with their workspace and state. `repose paste` sends the image's path to the focused pane, or to an agent's pane with `--window NAME`.
+- In herdr's sidebar the machine carries the project's name, and the checkout's workspace under it is `checkout`. Another checkout added with `--on` has its own name, and a machine with no checkout has `home`.
+- `repose run "prompt"` opens a tab in the `checkout` workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under `checkout` in herdr's sidebar.
+- `repose attach` from a terminal inside herdr on your laptop opens nothing new: the machine is in herdr's sidebar, and the command prints `todo-app is in herdr's sidebar. Ctrl-C ends its forwards.` and keeps port forwards and the browser bridge going until you press Ctrl-C. With forwarding off (`REPOSE_NO_FORWARD=1`) and no bridge, it prints the first sentence and returns. Elsewhere, with herdr 0.9.0 or newer installed, it opens `herdr --remote todo-app.repose`. Without herdr on the laptop, it runs herdr's client on the machine over SSH.
+- `repose ps` lists herdr's agents with their workspace (`checkout` for the checkout) and state. `repose paste` sends the image's path to the focused pane, or to an agent's pane with `--window NAME`.
 - `repose status` shows `herdr` after the size. The dashboard shows it on a stopped machine, which starts with herdr.
 - From herdr on your laptop (the sidebar or `herdr --remote`), a dropped file or `Ctrl+V` goes to herdr, and nothing is copied to the machine. Use `repose paste` for an image on the clipboard and [`repose cp`](/docs/sync#single-files) for a file. herdr's client over SSH, without herdr on the laptop, copies drops and pastes as tmux does.
 - If herdr has stopped on the machine, `run` and `attach` say `herdr is not running on todo-app` and exit 1. `repose stop` and `repose start` bring it back.

@@ -356,7 +356,7 @@ $ cd ~/src/todo-app && repose run
 ✓ Created todo-app (large, herdr)  0.3s
 ...
 Ready in 38s.
-todo-app is in herdr's sidebar.
+todo-app is in herdr's sidebar. Ctrl-C ends its forwards.
 ```
 
 Switching a running machine:
@@ -431,10 +431,17 @@ that same command switched a running machine (I-542).
 
 1. `HERDR_ENV=1` (a laptop herdr pane), the project is not temporary, and
    the machine is in the laptop herdr's sidebar (the reconcile below has
-   just made sure): the CLI prints `<slug> is in herdr's sidebar.` and
-   stays in the foreground as the session helper (port forwards, the
-   browser bridge, the carry) until Ctrl-C, which exits 0. No client
-   opens inside the pane.
+   just made sure): the CLI prints `<slug> is in herdr's sidebar. Ctrl-C
+   ends its forwards.` and stays in the foreground as the session helper
+   (port forwards, the browser bridge, MCP forwards) until Ctrl-C, which
+   exits 0. With none of those on (`REPOSE_NO_FORWARD=1`, no bridge, no
+   MCP forward) it prints `<slug> is in herdr's sidebar.`, runs the carry
+   when it has one, and exits 0 (I-598). No client opens inside the
+   pane. When the entry is still being added (the reconcile's add, or
+   this command's), the CLI waits for that one add, showing `Adding
+   <slug> to herdr's sidebar` after half a second; an add that already
+   failed in this command is not run again, and the attach takes the
+   next rule.
 2. `herdr` 0.9.0 or newer on the laptop PATH: `herdr --remote
    <slug>.repose --session default` runs as a child of the CLI, never
    through exec, so the session helper lives as long as it does. herdr's
@@ -443,13 +450,29 @@ that same command switched a running machine (I-542).
 3. Otherwise `ssh -t <slug>.repose herdr` under the input proxy and the
    reattacher, as a tmux attach runs.
 
+Ctrl-C (I-598). Until a client or the helper has the terminal (the
+focus step, the sidebar's add and its lock, the choice of rule), Ctrl-C
+ends the command at once with `Interrupted.` and exit 130, and stops the
+laptop herdr commands it started. In rule 1 the first Ctrl-C takes the
+forwards down and exits 0; a second one ends the process at once. In
+rule 2 the CLI puts the terminal back as herdr found it when herdr
+exits: a herdr killed by a signal leaves no raw mode, alternate screen,
+hidden cursor, mouse reporting or bracketed paste behind. Everywhere in
+the CLI a second Ctrl-C ends a command whose cleanup is still running
+after the first.
+
 **A prompt on herdr** is one ssh script:
 
 1. The folder trust of Claude Code and Codex, as on tmux (I-486, I-544).
-2. The workspace for the folder (checkout, worktree or other checkout),
-   created when missing.
+2. The workspace for the folder, created when missing: `checkout` for
+   the machine's own checkout (one labelled with its directory name, the
+   label before I-597, is renamed to it), the worktree's from `herdr
+   worktree open`, another checkout's name, or `home` on a machine with
+   no checkout. In the checkout it then closes an idle `home` workspace
+   (guest-conventions "The checkout", I-596).
 3. `herdr agent list` (it prints herdr's JSON answer) picks the name, `claude` or the lowest free
-   `claude-N`, and counts the same agent in that workspace. With one
+   `claude-N`, and counts the same agent in that workspace (under either
+   of its labels). With one
    there, `run` prints `Another claude tab is open; two agents share one
    working tree. \`repose run --worktree\` gives the next one its own.`
 4. `herdr tab create --workspace W --cwd DIR --label NAME --no-focus`.

@@ -41,6 +41,9 @@ var notifyKinds = map[string]bool{
 	// The account's machine.nix did not build or apply on a project
 	// (DECISIONS I-490).
 	"personal_failed": true,
+	// A start or forced reboot whose new system never reached Ready; the
+	// machine runs its previous one (DECISIONS I-590).
+	"boot_failed": true,
 }
 
 // GuestKinds are the notifying kinds a guest may report, over vsock or the

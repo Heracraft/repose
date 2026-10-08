@@ -35,6 +35,13 @@ type Pipeline struct {
 	// shell.Sandboxed rather than as hostd (DECISIONS I-465). hostd sets
 	// it; tests on image files leave it off.
 	Sandbox bool
+	// ReplayJournal lets Read replay the journal of an ext4 volume that
+	// needs recovery (a guest that was killed, or crashed) before it reads
+	// the volume, so the volume goes out as extents rather than raw
+	// (DECISIONS I-594). Read writes to dev only then, so it is set only
+	// where dev is a throwaway copy: hostd reads LVM snapshots, never a
+	// guest's own volume.
+	ReplayJournal bool
 }
 
 // Mode names how a stream was produced, for the snapshot log line.
@@ -45,6 +52,9 @@ type Mode struct {
 	Why string
 	// UsedBytes is what the filesystem says it uses (extents only).
 	UsedBytes uint64
+	// JournalReplayed: the volume's journal needed recovery and was
+	// replayed on the snapshot before it was read (I-594).
+	JournalReplayed bool
 }
 
 // Moder is implemented by the readers Pipeline returns.
@@ -105,18 +115,38 @@ func (p *procReader) Close() error {
 // Read implements Streamer.
 func (p *Pipeline) Read(ctx context.Context, dev string) (io.ReadCloser, error) {
 	l, lerr := p.layout(ctx, dev)
+	replayed := false
+	var ne *errNotExtentable
+	if p.ReplayJournal && errors.As(lerr, &ne) && ne.reason == reasonNeedsRecovery {
+		// A killed guest's journal holds committed writes its bitmaps do
+		// not show yet. Replayed, as the guest's kernel would at its next
+		// mount, the bitmaps can be trusted and only the used blocks are
+		// read: kanali's raw snapshot read all 100 GB of its volume for
+		// 157 s, and its restore wrote them back for 115 s (I-594). A
+		// failed replay leaves the journal to the restore's e2fsck, as
+		// before: the raw image carries it.
+		if err := p.replayJournal(ctx, dev); err != nil {
+			lerr = &errNotExtentable{"journal replay failed"}
+		} else {
+			replayed = true
+			l, lerr = p.layout(ctx, dev)
+		}
+	}
 	if lerr == nil {
-		return p.readExtents(ctx, dev, l)
+		return p.readExtents(ctx, dev, l, replayed)
 	}
 	why := lerr.Error()
-	var ne *errNotExtentable
 	if errors.As(lerr, &ne) {
 		why = ne.reason
 	}
-	return p.readRaw(ctx, dev, why)
+	r, err := p.readRaw(ctx, dev, why)
+	if pr, ok := r.(*procReader); ok && replayed {
+		pr.mode.JournalReplayed = true
+	}
+	return r, err
 }
 
-func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout) (io.ReadCloser, error) {
+func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout, replayed bool) (io.ReadCloser, error) {
 	f, err := os.Open(dev)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", dev, err)
@@ -160,7 +190,7 @@ func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout) (
 		}
 		return nil
 	}
-	return &procReader{ReadCloser: zs.Stdout(), wait: []func() error{zs.Wait, stop}, mode: Mode{Format: "extents", UsedBytes: l.usedBytes()}, rt: rt}, nil
+	return &procReader{ReadCloser: zs.Stdout(), wait: []func() error{zs.Wait, stop}, mode: Mode{Format: "extents", UsedBytes: l.usedBytes(), JournalReplayed: replayed}, rt: rt}, nil
 }
 
 func (p *Pipeline) readRaw(ctx context.Context, dev, why string) (io.ReadCloser, error) {

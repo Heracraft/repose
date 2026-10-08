@@ -690,6 +690,9 @@ type Fake struct {
 	// Closures maps a closure to its requisites; a closure not in it is
 	// its own only requisite.
 	Closures map[string][]string
+	// FailRequisites makes Requisites fail, as for a path half removed
+	// from the store.
+	FailRequisites bool
 }
 
 // Build implements Builder.
@@ -718,6 +721,9 @@ func (f *Fake) Build(ctx context.Context, req Request, log func(string)) (*Resul
 func (f *Fake) Requisites(_ context.Context, paths ...string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.FailRequisites {
+		return nil, errors.New("nix-store -qR: path is not valid")
+	}
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range paths {

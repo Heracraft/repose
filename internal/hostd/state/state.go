@@ -48,7 +48,17 @@ type Guest struct {
 	// PastClosures are the system closures this guest ran before, newest
 	// first, at most MaxPastClosures: its store view holds them too, since
 	// its nix database still lists their paths as valid (I-463).
-	PastClosures []string          `json:"past_closures,omitempty"`
+	PastClosures []string `json:"past_closures,omitempty"`
+	// LastGoodClosure is the newest system closure this guest's disk is
+	// known to run: one that reached Ready at a boot, or that guestd
+	// switched to in place. A boot of another closure that never reaches
+	// Ready boots this one instead, once (DECISIONS I-590). Empty on a
+	// record from before then until the guest next boots or switches, and
+	// on a new or restored guest until its first boot.
+	LastGoodClosure string `json:"last_good_closure,omitempty"`
+	// BootFallback is the last boot that fell back to LastGoodClosure,
+	// kept so a command resent with the same id answers the same way.
+	BootFallback *BootFallback     `json:"boot_fallback,omitempty"`
 	State        string            `json:"state"`
 	Reason       string            `json:"reason,omitempty"`
 	IP           string            `json:"ip"`
@@ -66,6 +76,17 @@ type Guest struct {
 	BootID       string            `json:"boot_id,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
+}
+
+// BootFallback records a boot of Failed that never reached Ready and was
+// replaced by a boot of the guest's last good closure. Code and Message
+// are hostd's fixed classification of the failure (never console text).
+type BootFallback struct {
+	CommandID string    `json:"command_id"`
+	Failed    string    `json:"failed"`
+	Code      string    `json:"code"`
+	Message   string    `json:"message"`
+	At        time.Time `json:"at"`
 }
 
 // MaxPastClosures bounds Guest.PastClosures.

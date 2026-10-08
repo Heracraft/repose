@@ -16070,3 +16070,512 @@ Docs and fits at 390/360"; routes.spec.ts "/account redirects
 permanently to /settings"; settings-account.spec.ts "settings carries the
 account section first and no heading twice"; machine-nix.spec.ts follows
 the Config page's link to `/settings#machine-nix`.
+
+**I-587. A start removes the whiteouts in the store overlay's upper dir
+before stage 2.** (store-whiteouts, 2026-10-07; amends I-529) kanali
+(2026-10-06) would not boot: a whole-store GC inside it had deleted
+paths the lower layer (the host's view, I-463) also served, and
+overlayfs wrote 3,621 whiteouts (0:0 character devices) into
+`/nix/.rw-store/store`, one over the system it then booted, so stage 1
+said "stage 2 init script ... not found". The snapshot carries the
+upper dir, so a restore reproduced it; it was repaired by hand with
+debugfs. The scripted initrd (I-231) now runs, in
+`boot.initrd.postMountCommands`, a pass over the upper store dir's top
+level: it lists the character devices whose device number is 0:0, and
+only when there is one unmounts `/mnt-root/nix/store`, removes them,
+and mounts it again from the line stage 1 wrote to its fstab (overlayfs
+leaves a change to a mounted layer undefined). Every top-level whiteout
+goes, not only those over a lower path: one over a path the view does
+not serve today hides nothing, but would hide it the first time a later
+start or switch shares that path again, and a switch error that says
+"a restart repairs it" would then be false. Nothing else is touched;
+a healthy guest pays a `find -maxdepth 1 -type c` and no remount. The
+console and the kernel log (so `dmesg` and the journal) get one line,
+`repose: store overlay: N whiteouts removed, M of them over shared store
+paths`. The upper root's
+`trusted.overlay.opaque` needs nothing: overlayfs never reads it on a
+mount's root ("root is always merge", `ovl_get_root`; on kanali's 6.18 kernel an upper dir with it set still showed the lower file), and only a write
+straight into the upper dir could set it. With no overlay on
+`/mnt-root/nix/store` the pass does nothing. nixpkgs deprecates the
+scripted initrd for removal in 26.11, so the base asserts it is in use:
+a move to systemd's initrd fails evaluation until the repair is ported. A whiteout inside a store
+path's directory is not looked at: nix deletes whole paths, and the
+directory's own whiteout replaces it. VM test `guest-store-whiteouts`.
+
+**I-588. guestd roots every store path the host shares into the guest,
+so no nix garbage collection inside it deletes one.** (store-whiteouts,
+2026-10-07; amends I-529 and I-225) I-529 kept the guest's own GC to
+upper-only paths, but `nix-collect-garbage`, `nix store gc` and
+`nix-store --gc` stayed one command away for an agent freeing disk, and
+nothing stopped them. guestd now keeps `/nix/var/nix/gcroots/repose-view/`
+with one symlink per store path in the overlay's lower dirs (read from
+`/proc/mounts`, as `repose-pin-profile` does) that the guest's database
+lists as valid (one `nix-store --check-validity --print-invalid` per 2,000
+paths): exactly the paths whose deletion would write a whiteout. Rooting
+each served path, rather than the top-level closures hostd registers,
+covers the closures registered on earlier boots of the volume (I-463's
+past closures and `rev-*` roots), which hostd does not send again, and
+guests from before this change. The set is brought up to date at every
+`RegisterPaths` (each start, and each in-place switch through
+`Switch`'s registration) and when guestd starts (a guestd an in-place
+switch installed runs before any registration); new roots go in before
+stale ones go out, each renamed into place, under one lock. A failure is
+logged (`view_roots`, counts only) and fails nothing: the start's repair
+(I-587) still undoes what a GC did. A path the database does not list
+cannot be rooted (nix skips such a root) and a whole-store GC deletes
+unlisted store entries; in production that is a kept revision this
+volume never ran, which nothing in the guest uses, and the next start
+removes its whiteout. Registering the whole view would close that too,
+but one closure's `--dump-db` is already about 0.5 MB of the vsock
+protocol's 1 MiB frame (1,128 paths on kanali). `RegisterPaths` also
+stops skipping a registration it loaded before (I-225) when a path it
+lists is no longer valid: a GC that deleted the booted system left it
+invalid in the database after the start brought its files back. A
+rooted path is refused by `nix-store --delete` ("still alive");
+`repose-store-gc` (I-529) is unchanged and still deletes upper-only dead
+paths. `guestd call register-paths` is added for the VM test and
+operators. Docs: machine.md "Memory and disk", the agent guide. Unit
+tests `TestRegisterPathsRootsEverySharedPath`,
+`TestRegisterPathsReloadsARegistrationTheDatabaseLost`,
+`TestViewRootsWhenValidityIsUnknown`, `TestViewRootsWithoutAnOverlay`;
+VM test `guest-store-whiteouts` runs `nix-collect-garbage -d` and checks
+no listed shared path gained a whiteout.
+
+**I-589. A switch to a closure a whiteout hides fails saying so, with
+its own code.** (store-whiteouts, 2026-10-07) kanali's nightly
+ApplyConfig failed with guestd's `not_found: ... is not in the store
+share`, which names the host's GC, and hostd reported `internal`; I-593
+then passed `not_found` through and the api says "the new system is not
+in the machine's store", which is true of a host that collected it but
+names neither the cause nor the repair here. Before anything else,
+`Switch` now checks the closure and every path its registration lists
+against the upper dir; a 0:0 character device over any of them fails it
+with a new code, `store_path_hidden`, and "switch: N of the store paths
+<closure> needs are hidden in this machine's store, <path> first: a nix
+garbage collection inside the machine deleted them. Restart the machine;
+a start repairs its store". hostd passes the code through with I-593's
+`not_found` and `invalid_argument` (`switchCodes`); the api's sentence is
+"a nix garbage collection inside the machine hid parts of the new system,
+so it keeps its current one; `repose stop` then `repose start` repairs the
+machine's store and applies the new system". That is what happens: the
+revision stays `built` (only `boot_failed` marks one failed, I-590), so
+the start after the stop is `start_guest, apply_config`; the boot of the
+system the machine has removes the whiteouts in stage 1 (I-587) and the
+apply then switches in place (or, for a new kernel, reboots onto it, with
+I-590's fallback if that boot fails). `repose ls`, `repose status` and
+the dashboard show the sentence for a running project the way they show
+I-590's `boot_failed`, until the start clears `last_error`. Old shapes for
+one release: a guestd from before this answers `not_found` and keeps
+I-593's sentence; a hostd from before I-593 turns the new code into
+`internal` with guestd's message, as it did every Switch error. The
+whiteouts cannot be removed while the overlay is mounted, so the guest
+does not repair them itself. Interfaces: `grpc-hostd.md` (error codes,
+ApplyConfig row), `vsock-guestd.md` (Switch row). Tests:
+`TestSwitchRefusesAClosureAWhiteoutHides` (guestd),
+`TestSwitchStorePathHiddenKeepsItsCode` (hostd),
+`TestApplyOfAHiddenSystemSaysStopAndStartRepairsIt` (api: the sentence,
+`last_error`, the revision built, then stop and start applying it),
+`TestRunningProjectWithAHiddenSystemSaysSo` (cli), `bootfail.test.ts`
+(dashboard).
+**I-590. A boot that never reaches Ready falls back to the guest's last
+good closure, once, and the start ends running with a warning.**
+(lifecycle-errors, 2026-10-07; the kanali incident.) At 17:40Z `repose
+start kanali` adopted a new closure on the stopped guest, booted it, and
+stage 1 found no stage 2 init (an in-guest GC had whited the system out
+of the store's upper layer, I-529); the guest stayed in error, unbootable
+while the closure it had run that morning was still on the host. hostd
+now records per guest `last_good_closure`: the closure that last reached
+Ready and took its delivery at a boot, or that guestd switched to in
+place and answered on; it is rooted as `good-<guest_id>` in
+`/nix/var/nix/gcroots/repose/` (removed on destroy) so the host GC keeps
+it. A StartGuest, or an ApplyConfig with force_reboot, whose boot never
+gets Ready (not a failure before step 10, not a failed delivery after
+Ready) and whose guest has a last good closure other than the one that
+failed, still whole on the host, adopts that closure and boots it, once.
+The failure is written to the guest record (`boot_fallback`: command id,
+the closure that failed, code, hostd's fixed sentence) before the second
+boot, so a resend of the same command after a hostd restart, whether the
+second boot finished (the guest runs) or not (the record already names
+the closure to boot), answers with the same fallback and never adopts
+the failed closure again. StartGuest's result gains a `StartResult`
+payload (`booted_closure`, and after a fallback `failed_closure` and
+`boot_error`); a forced reboot that fell back answers `boot_failed`
+("...; the machine runs its previous system"), never
+`guest_unresponsive`, which the api answers with a reboot onto the same
+closure. If the last good closure fails too the start fails with the
+first failure: two boots, no third. A first boot (CreateGuest), a
+restored guest (a new record; the snapshot does not carry hostd's
+record, and the api's applied revision, which this decision keeps true,
+is what a restore boots) and a record from before this decision have no
+last good closure until a boot or switch reaches Ready; reconcile gives
+a guest it finds running the closure it runs, and re-roots a recorded
+one. A class change boots the fallback at the new class. The api, on a
+fallback: marks the revisions of the closure that failed `failed` (error
+`boot_failed: ...`), makes the newest revision of the booted closure the
+applied one again (`config_revision_id`, `base_version`), sets the
+project running with `last_error = "boot_failed: its new system did not
+boot, so it runs its previous one: <reason>; ..."`, puts the same
+sentence in `ops.result.warning {code, message}`, and records a
+`boot_failed` event (notifies, "<project>: new system did not boot"). A
+start's apply phase that fails for good (not `guest_unresponsive`, which
+I-157 still answers with a restart) no longer ends the op in error with a
+running project marked `error`, which is what sent the next `repose
+start` into the reboot at 17:40Z: the apply is skipped with the same
+warning and `last_error`, a restart's boot goes on with what the guest
+has, and the op ends done; a `boot_failed` revision is marked failed
+there too. Nothing retries a failed revision by itself: a start applies
+only `built` revisions, and the base sweep skips a project whose newest
+revision is on the latest base and not applied, so the nightly never
+loops a guest through reboots; the next base or configuration change
+builds a new revision, which a start tries once. A failed in-place switch leaves the revision
+`built`, tried in place again at the next start, which costs no reboot.
+The CLI prints a start's warning on stderr as "<project>: <sentence>."
+without a ✓ for the phase that did not do what it says; `repose ls` and
+`repose status` show a running project's `boot_failed` last_error, and so
+does the dashboard (list and project page). *Rejected:* falling back to
+any past closure (only one that reached Ready is known to boot); keeping
+the op in error with the project running (the CLI's "Could not start" for
+a machine that runs); hostd refusing a closure that failed before (it
+cannot tell the user's deliberate retry from an automatic one, and the
+api, which can, no longer sends one). TestStartFallsBackToLastGoodClosure,
+TestStartFallbackResentMidBoot, TestFallbackThatFailsTooEndsInError,
+TestForcedRebootFallsBack, TestReconcileGivesARunningGuestItsLastGood
+(hostd); TestRestartWhoseNewSystemDoesNotBootRunsThePreviousOne,
+TestStartWhoseSwitchFailsStaysRunning,
+TestRestartWhoseApplyIsRefusedStillBoots (api);
+TestStartWithAWarningSaysIt (cli); bootfail.test.ts (web).
+
+**I-591. ApplyConfig on a stopped guest checks what the boot will read
+from the host.** (lifecycle-errors, 2026-10-07.) It moved the root and
+answered ok with nothing checked beyond `nix path-info`, so a closure
+whose kernel, initrd or init was missing, or whose requisites were not
+whole, failed later at step 5 or 8 of the next start. It now reads the
+closure's kernel, initrd and init (what step 5 renders the hypervisor
+from) and its requisites (what step 8 fills the store view with), and
+answers `not_found` naming what is missing, leaving the root where it
+was. What only the guest's disk decides, a whiteout in its store's upper
+layer as on kanali, cannot be seen from the host while the guest is
+stopped; I-590's fallback covers it at the boot.
+TestOfflineApplyChecksTheClosure.
+
+**I-592. A boot that never reaches Ready is classified from its console,
+and the console reaches its owner through `repose logs --kind console`.**
+(lifecycle-errors, 2026-10-07; amends status-and-logs.md "Logs" and
+cli.md's `repose logs`; a new hostd error code, grpc-hostd.md.) kanali's
+stage 1 printed "stage 2 init script ... not found" into
+`/var/lib/repose/guests/<id>/console.log` on the host, and the user read
+"the environment booted but its agent (guestd) never answered", which
+was false, while `repose logs --kind console` showed one-line op errors
+(the docs promised the serial console, 200 lines, followed over SSE,
+which nothing ever served). hostd notes where each boot's output starts
+in console.log and, when Ready never comes, reads the end of what that
+boot printed (at most 200 lines and 16 KiB) and classifies it: "stage 2
+init script ... not found", a kernel panic, a failed fsck, and stage 1's
+generic error line are the new code `boot_failed` with a fixed sentence
+("the system it boots is missing from the machine's store (stage 1 found
+no stage 2 init)", "the guest's kernel panicked while booting", "the
+check of the machine's disk failed while booting", "the boot stopped in
+stage 1, before the machine's system started"); output that reached the
+system ("Welcome to NixOS", systemd), or nothing recognisable, stays
+`guest_unresponsive` with its step-10 message and a sentence that says
+which. The sentence goes in `Error.message` and log fields; the console
+text goes only in `Error.console_tail` (field 5) and
+`StartResult.boot_error.console_tail`, never in a log line
+(OBSERVABILITY.md): it is the tenant's output. The api stores it in
+`ops.result.console` (left out of the op's read), and `GET
+/projects/:id/logs?kind=console` serves those lines, one JSON line per
+console line with the op's finish time and `kind: "console"`, for the
+project's last 20 ops, oldest first, honouring `since`; an op from before
+this decision still gives its error sentence. The api's sentence for
+`boot_failed` is "the environment did not boot: <reason>; `repose logs
+--kind console` shows what it printed" ("the new system did not boot"
+for an apply), and for a boot's `guest_unresponsive` "the environment did
+not answer within a minute of starting; ...", no longer "booted". The CLI
+points at the console only after a boot failure (`boot_failed`,
+`guest_unresponsive`), no longer after every failed start, in the error
+state line or after "SSH did not answer", where no console was kept. An
+api older than this hostd shows a `boot_failed` message as it is and
+stores no console; this api reads a hostd older than it as before.
+`repose logs` that finds nothing says so on stderr, naming the project
+(it printed nothing and exited 0 on 2026-10-07; with no project here it
+exits 4 with the usual message, as it already did). *Rejected:* serving
+the live console through the api (hostd's stream carries no tenant
+output, and the full log is the operators', in Loki); putting console
+lines in `message` or `detail`, which the api logs and shows on every op
+read. TestBootFailureWithoutLastGoodReportsTheConsole, TestClassifyConsole
+(hostd); TestCreateWhoseBootFailsSaysHow (api ops);
+TestConsoleLogsServeTheFailedBoot (api http); TestLogsSaysWhatItFound,
+TestFailedStartPointsAtTheConsoleOnlyForABoot (cli).
+
+**I-593. A Switch error guestd codes reaches the api with its code.**
+(lifecycle-errors, 2026-10-07.) On 2026-10-06 04:00Z the nightly
+ApplyConfig of kanali failed in guestd with `not_found: switch: ... is
+not in the store share`, and hostd answered `internal: switch failed:
+...`, which read as a platform fault. hostd now passes guestd's Switch
+code through when it is one of hostd's (`not_found`, `invalid_argument`;
+the list is `switchCodes` in internal/hostd/guest/build.go) and keeps
+`internal` for any other; the message is unchanged. The api's sentence
+for an apply's `not_found` is "the new system is not in the machine's
+store, so it was not switched to and keeps its current system"; the
+revision stays `built`. A code another change adds to guestd's Switch
+(a closure hidden by a whiteout, say) is added to `switchCodes`,
+grpc-hostd.md's list and the api's `humanError` together.
+TestSwitchNotFoundIsNotInternal (hostd); TestStartWhoseSwitchFailsStaysRunning (api).
+
+**Amends I-157's progress line.** `repose start` of a project in error
+says "Restarting <project>" and names "its agent stopped answering" only
+when the project runs and its newest sample says so; a start's first
+phase ("Starting <project>") has no ✓, which printed as soon as the boot
+began, before a resize's start failed (2026-10-07 17:38Z); a start's
+switch of the running machine is its own phase ("Switching <project> to
+its new system"). This paragraph is part of I-590.
+TestStartFromErrorSaysRestarting, TestResizeClassPrintsNoSuccessBeforeTheStartFails.
+
+**I-599. A refusal of the user's own certificate does not count towards
+the gateway's per-source ban, and failures and bans are logged.**
+(lifecycle-errors, 2026-10-07; amends ssh-gateway.md step 1 and I-435's
+ban.) From 20:12Z, when the owner stopped kanali, to about 20:36Z the dev
+box (one address for several agents) could not reach any project:
+`kex_exchange_identification: ... repose gateway: too many authentication
+attempts from your address`. Every `ssh kanali.repose` against the
+stopped project offered a valid certificate, got the `kanali is stopped`
+banner, and failed the handshake, and the gateway counted every failed
+handshake towards the ban (20 in 10 minutes, then 10 minutes refused),
+so a laptop retrying its own stopped project, or one whose project id
+changed in an rm and restore (kanali 01a0ef90 to 01a11778, so the old
+certificate's principal no longer matched), locked itself out of every
+project. Nothing was logged: OpenSSH offers the plain key after the
+refused certificate, the connection's recorded result became `no_cert`,
+which was logged at debug only, and the ban had no line at all. Now a
+connection on which the client offered the user's own current
+certificate (signed by the User CA, within validity, not revoked, its
+`key_id` handle the login's) and that was then refused for the project
+(a state other than running, no such project, a principal from before a
+restore, the control plane away, the guest's host unreachable) ends
+`refused`: it neither counts nor clears earlier failures. Everything
+else counts as before: no certificate, another CA, expired, revoked,
+another user's handle, a bad login, a broken handshake. The decision is
+made at the key query, before the client proves it holds the key; a
+third party holding a copy of a user's certificate could make
+uncounted attempts that can never authenticate, still bound by the 4
+handshakes per source, the 10 s auth timeout and the edge's 20 new
+connections a second. The connection's log result keeps the refusal
+that mattered (a later `no_cert` from the plain key does not replace
+it), and `auth_fail` is written at info for every refusal with
+`counted` and, for a counted one, `failures`, within a budget of 2 lines
+a second and 60 at once whose dropped lines are counted in the next
+line's `suppressed`; a ban writes `auth_ban` (warn) with `source_prefix`
+(the /24 or /48, never the address), `failures`, `window_s`, `ban_s`,
+within 1 line every 10 s and 20 at once. A connection turned away for the
+gateway's own pre-auth budget no longer clears the source's failures.
+TestOwnCertificateRefusalsNeverBanTheSource,
+TestFailuresStillBanAndTheBanIsLogged, TestLimiterRefusalsNeitherCountNorClear,
+TestLogBucketBoundsAndReportsDrops.
+**I-594. A snapshot of a killed guest replays its journal on the LVM
+snapshot and goes out as extents.** (lifecycle-speed, kanali incident,
+2026-10-07: "destroying took forever", "restore 2m17s, was the disk that
+big?") hostd's log on host-01: kanali's destroy (accepted 17:42:30Z,
+api log) stopped a guest in `error` whose boot had died in stage 1
+after mounting its root, so the volume's journal still needed recovery.
+The final snapshot fell back to raw (`raw_reason: journal needs
+recovery`) and read the whole 100 GB volume: 156.9 s for 9.77 GB
+stored. DestroyGuest itself then took under a second; `repose ls` read
+`destroying` for those 2 min 37 s because the snapshot phase was
+running, not because the api waited on anything after hostd's result.
+The restore of that raw blob decompressed and scanned 100 GB again:
+`write_ms` 115227 of a 121 s restore, after a 15 s checksum pass
+(I-462) and before a 5.8 s e2fsck. The same volume's extent snapshot at
+17:38 (the resize's stop) held 37.3 GB used in 8.6 GB and took 56.5 s.
+I-164 sent such a volume raw because its bitmaps cannot be trusted
+until the journal is replayed; but what hostd reads is an LVM thin
+snapshot, which is writable and thrown away after the upload. When
+`dumpe2fs` reports `needs_recovery`, hostd now runs `e2fsck -E
+journal_only -p` on the snapshot (sandboxed like restore's e2fsck,
+I-465, with write access to that device alone; exit 0 or 1 is success),
+which replays the journal exactly as the guest's kernel would at its
+next mount, then runs `dumpe2fs` again. A clean result goes out as
+extents; anything else (a failed replay, `state not clean`) goes out
+raw as before, with `raw_reason` `journal replay failed` for the
+first. The guest's own volume is never written: its next boot replays
+the same journal, so a restore of the snapshot and a start of the
+volume reach the same filesystem. The replay writes at most the
+journal's size into the pool as the snapshot's own blocks, freed with
+the snapshot. `snapshot done` gains `journal_replayed`. Measured on
+kanali (the dev guest, read-write only on files in /tmp): an ext4 image
+copied while loop-mounted after `sync` (a crash-consistent copy:
+`needs_recovery`, `orphan_present`) replays in under a second, then
+reads `state: clean`, no `needs_recovery`, and `e2fsck -fn` passes.
+Expected on host-01: a killed guest's snapshot and its restore take
+the time of what the volume holds (kanali: about 56 s and about the
+same to write back) instead of the whole volume's. Checked but not
+changed: the resize's 25 s `power_off_ms` was kanali on base
+2026.10.05.1, before I-572 bounded dev's user manager at 10 s (base
+2026.10.07); kanali never took that base because its switch failed
+(the whiteouts, another worker's). The rest of a large snapshot's time
+is zstd: on kanali's CPU (host-01's Xeon 6973P), 3 GB of a dev home
+went through `zstd -T4 -3` in 2.8 s (1.06 GB/s, 706 MB out), `-T8 -3`
+in 1.9 s, `-T4 -1` in 2.0 s (776 MB out, 10 percent more stored);
+kanali's stop read 37 GB in 56 s with `read_wait_ms` 25769, so zstd
+and the upload set the other half. A faster level or more threads is
+a trade between guests' cores, stored bytes and a stop's time that
+I-571 left at `-T4 -3`; it stays there until host-01's own probe
+(the conductor's live check) says what it buys. The restore's
+separate checksum pass (I-462, 15 s for 9.8 GB) stays: it exists so
+no byte of a changed blob is ever decompressed. Tests:
+`TestKilledGuestSnapshotReplaysItsJournal` (a committed journal
+transaction written with debugfs `jw` over a file's block: extents,
+`JournalReplayed`, the restored file holds the journal's write, e2fsck
+-fn clean; it fails with `format: raw` when `ReplayJournal` is off),
+`TestJournalReplayIsOptInAndSandboxed` (no e2fsck without the flag;
+the sandboxed argv; exit 1 is success; a failed replay goes raw saying
+so). This amends I-164, whose raw fallback covered a killed guest.
+*Rejected:* replaying on the guest's volume (a stopped guest's volume
+is the user's disk and its next boot does it; hostd writing to it
+while a start may be queued is a race for nothing); `e2fsck -fp` on
+the snapshot (a full check reads every inode table: minutes on a
+100 GB volume for what the restore's own e2fsck already does).
+
+**I-595. A size change restarts without a snapshot, and a restore says
+how big its snapshot was.** (lifecycle-speed, 2026-10-07; owner: "we
+only improved speed for restore and stop? nobody thought of resize and
+others?") kanali's `repose resize --size xl` on host-01: the stop took
+a snapshot (56.5 s of 37.3 GB used, 8.6 GB stored) and powered off for
+25 s (I-594: an old base), the start took 10 s, so the change took
+about 80 s, of which the snapshot was 70 percent. A stop's snapshot is
+the project's off-host copy while it sits stopped (I-404); a size
+change does not leave the project stopped: the same volume, on the same
+host, boots again within seconds, and nothing about a class touches the
+disk. A running project's protection is the nightly snapshot, as it was
+a minute before the change; `repose snapshots create` takes one first
+for a user who wants it. `repose resize --size` on a running project
+now stops it with `snapshot: false`, labels the step `Stopping NAME`,
+and its question and help no longer mention a snapshot. This amends
+I-260's "stopped with a snapshot". Expected on host-01: a size change
+of a guest on base 2026.10.07 in about 15 s (a 3 to 10 s shutdown and
+a 10 s start) whatever its disk holds. The restore's last line names
+the snapshot's stored size, as the stop's does since I-570, so a slow
+restore says what it went on, for example `Restored kanali from its 8.6 GB snapshot
+of 2026-10-07 17:38 in 1m01s; it is running (xl).` `POST
+/projects/restore` answers `snapshot_bytes` (api.md), and the CLI
+prints the old line with an api that sends none. lifecycle.md says that
+a project reads `destroying` while its final snapshot is taken and that
+this takes longer the more its disk holds. Other lifecycle commands
+checked against hostd's log and the code: a disk grow is an online
+`lvextend` (1 s, ResizeVolume at 17:37:45); a size change on a stopped
+project is a PATCH; a stop of a guest in `error` takes no snapshot of
+its own (3 s at 17:40:37); a fork takes a running snapshot (freeze,
+extents) and restores it, so I-594 and I-571 are what speed it; a
+destroy of a stopped project keeps its final snapshot (the stop's was
+taken before the shutdown's writes, I-404, so it is not the disk being
+destroyed). Tests: `TestResizeClass` (no snapshot is taken; the
+question names none), `TestRestoreByName` (api: `snapshot_bytes`
+equals the snapshot's bytes), `TestDestroyThenRestoreByName`,
+`TestRestoreWithoutANameInACheckout` and `TestRestoreWaitsForADestroyInProgress` (the line with
+the size). *Rejected:* skipping the snapshot only when the newest is
+minutes old (a recent snapshot protects against nothing the class
+change risks, so the age is not the question); a `--snapshot` flag on
+`resize` (`repose snapshots create` already says it).
+**I-596. On herdr, the sync that makes the checkout closes the idle
+`home` workspace, as tmux respawns its `shell` window.** (herdr-run-fixes,
+2026-10-07; owner's dogfood note "why does `repose run` attach both the
+home folder and the checkout folder"; amends I-509) A new machine boots
+before its first sync, so `repose-herdr-server`'s workspace step finds
+no checkout and makes `home` in `/home/dev`; the sync then makes the
+checkout and runs the step again, which adds the checkout's workspace.
+Both stayed, and the laptop's sidebar showed two workspaces for one
+project. tmux had the same start and moves its idle `shell` window into
+the checkout (`respawn-pane`); herdr cannot move a workspace, so the CLI
+closes it instead: after the sync's workspace step, and in every
+`repose run PROMPT` in the checkout (which mends a machine made before
+this), each workspace labelled `home` that is one tab with one pane whose
+shell runs nothing in the foreground goes, once the checkout's own
+workspace exists. The idle test is `herdr pane process-info`'s
+foreground process group against the shell's pid, read on the guest by
+jq, nothing printed; a workspace running anything stays. The sync's step
+also runs while the unit is `activating` (the server's own step may
+still wait for herdr then), where it used to skip. *Rejected:* never
+making `home` (a machine with no checkout needs a workspace, and herdr
+makes one in the home directory on the first client anyway); closing
+`home` whatever runs in it (a user's dev server in it would die). Built:
+`herdrTidyShell` in `internal/cli/mux_herdr.go`, called by
+`freshShellScript` (`sync.go`) and `herdrStartScript`. Checked by
+`TestHerdrScriptsAgainstHerdr` against herdr 0.9.3 (a busy `home` stays,
+an idle one goes).
+
+**I-597. In herdr the machine's own checkout is the workspace
+`checkout`.** (herdr-run-fixes, 2026-10-07; owner's dogfood note
+"`repose run` inside `recruiting` gives `Recruiting > recruiting` on the
+sidebar"; amends I-509 and I-501's workspace step) The laptop herdr's
+sidebar shows the machine, labelled with the slug (I-510), and its
+workspaces under it; the agents list shows machine, workspace and tab on
+one row. The checkout's workspace was labelled with its directory name,
+which is the slug for nearly every project, so the project showed twice.
+Each level now says one thing: the machine is the project, the workspace
+says which folder (`checkout` for the machine's own, another checkout's
+name for `--on`, I-480; `home` with no checkout; a worktree's from
+`herdr worktree open`, grouped under `checkout`), and the tab is the
+agent (`claude`, `claude-2`). `repose ps`'s WORKSPACE column shows the
+same labels. Contract change, old shape for one release: a base before
+this labels the checkout's workspace with the directory name. The base's
+`repose-herdr-workspace` and the CLI (the sync's step and each prompt)
+rename a workspace with that label to `checkout` when there is no
+`checkout`, keeping its tabs and agents; the CLI counts it as the
+checkout's for the shared-tree warning until then; and once `checkout`
+exists, an idle duplicate with the old label (an old base's step at a
+start) is closed as I-596 closes `home`. guestd reads labels only to
+prefix agents of listed checkouts (I-504), and `checkout` is never one
+the CLI lists (the checkout itself never is). *Rejected:* labelling the
+sidebar's machine with something other than the slug (the slug is the
+name every command takes); leaving the workspace unlabelled (herdr's
+own label is the repository's name, the same repetition); the branch
+(herdr shows it on the row below). Built: `herdrCheckoutLabel`,
+`herdrLabelShell`, `herdrRenameShell` in `internal/cli/mux_herdr.go`;
+`nix/guest/base/herdr.nix`'s workspace step; the VM test `guest-base`
+asserts `checkout` and the rename (not run here: VM tests do not boot
+in a guest). Checked by
+`TestHerdrStateCheckoutLabel` and `TestHerdrScriptsAgainstHerdr` (herdr
+0.9.3: the old label renamed, `ps` rows under `checkout`), and the
+built `repose-herdr-workspace` run against herdr 0.9.3 (fresh,
+again, old label: one `checkout` each time).
+
+**I-598. A herdr attach stops at Ctrl-C, waits once for the sidebar's
+add, and says what keeps it running.** (herdr-run-fixes, 2026-10-07;
+owner's dogfood note "`repose run --multiplexer=herdr` hangs and leaves
+something pending in the terminal"; amends I-509, I-510, I-542) From
+code, four ways the command sat with no output and Ctrl-C did nothing.
+(1) The herdr attach ran on `context.Background()`: the focus step (30
+s), the sidebar's lock and `herdr machine add` (60 s) never saw the
+command's Ctrl-C, which the CLI's handler swallowed, and the attach went
+on to print the sidebar line and wait for a second Ctrl-C. The attach
+now takes the command's context (`attachReq.Ctx`); Ctrl-C before a
+client or the helper holds the terminal ends the command with
+`Interrupted.`, exit 130, and kills the laptop herdr commands it ran;
+the lock is taken with a cancellable poll (`lockFileCtx`). (2) In rule 1
+the attach's `ensureEntry` queued on the lock behind the background
+reconcile's add of the same machine, then, when that add failed, ran a
+second add of up to a minute. Adds in one process are now one per slug
+(`herdrInFlight`): a second caller waits for the first, an add that
+failed is not tried again in that command, and a wait past half a
+second shows `Adding <slug> to herdr's sidebar` on stderr. (3) Rule 1
+waited for Ctrl-C even with nothing to keep up (forwards off, no bridge),
+and never started MCP forwards; it now returns once the carry is done
+when nothing lasts, counts MCP forwards as lasting, and its line says
+how it ends: `<slug> is in herdr's sidebar. Ctrl-C ends its forwards.`.
+(4) After the first Ctrl-C the CLI kept its handler, so while the
+forwards were taken down (up to 10 s of ssh) a second Ctrl-C did
+nothing; the top-level handler now goes after the first, and a second
+Ctrl-C ends the process, as in any program. Code that must restore the
+terminal (the input proxy, hidden prompts, the herdr client's wait)
+keeps its own handler. And rule 2 puts the terminal back as herdr found
+it (`term.GetState` before, `Restore` after) and, when herdr died by a
+signal, turns off the alternate screen, hidden cursor, mouse reporting,
+bracketed paste and the kitty keyboard protocol, which a herdr killed
+mid-connect (a Ctrl-C before its own handler) left on. Not changed: the
+exec path's 10 s wait for adds (it runs only with the input proxy off),
+and the probe, which counts `activating` as herdr (I-542). Not
+reproduced: the owner's laptop is unreachable, so which of these the
+owner hit is inferred; the manual check is in the herdr-run-fixes
+commit. Checked by `TestEnsureEntryStopsAtCtrlC` (Ctrl-C while another
+process holds the lock returns at once), `TestEnsureEntryJoinsTheBackgroundAdd`
+(one add, the phase line; after a failure, no second add),
+`TestRunHelperForegroundEnds`, `TestEnsureEntry`, `TestHerdrRemoteChild`.

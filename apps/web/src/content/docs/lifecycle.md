@@ -102,13 +102,16 @@ Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
 Destroying todo-app. Its final snapshot is kept for 30 days.
 ```
 
-This deletes the machine and its disk and stops all charges for the project. It stops counting toward your [project cap](/docs/limits#projects) at once, while it's still `destroying`. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
+This deletes the machine and its disk and stops all charges for the project. It reads `destroying` while its final snapshot is taken, which takes longer the more the disk holds (about a minute for 40 GB), and stops counting toward your [project cap](/docs/limits#projects) at once. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
 
 Within 30 days, bring it back, running, with its size, configuration and git remote:
 
 ```
-repose ls --destroyed
-repose restore todo-app
+$ repose ls --destroyed
+PROJECT   CLASS  DESTROYED         SNAPSHOT          SIZE    RESTORABLE UNTIL  EARLIER
+todo-app  large  2026-10-07 17:42  2026-10-07 17:42  2.1 GB  2026-11-06        -
+$ repose restore todo-app
+Restored todo-app from its 2.1 GB snapshot of 2026-10-07 17:42 in 41s; it is running (large).
 ```
 
 `--as NEW-NAME` restores under another name, and `--snapshot ID` picks an older snapshot. A restore started while the destroy is still running waits for it. After 30 days the snapshot is deleted.
@@ -222,7 +225,7 @@ Each copy is a project: it counts toward the [100 projects an account can have](
 ## Logs and events
 
 ```
-repose logs               # boot and kernel output
+repose logs               # what a boot that failed printed
 repose logs --kind build  # the last configuration build
 repose logs --kind ops    # create, start, stop, snapshot history
 repose events             # agent and project events, last 24 hours

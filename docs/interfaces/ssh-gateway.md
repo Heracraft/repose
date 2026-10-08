@@ -33,7 +33,13 @@ Two CAs, both ed25519, private keys in the api's secret store:
    handshake (an IPv6 source counted by its /64), a banned source, or a
    gateway with 512 connections in the handshake gets one plain line
    (`repose gateway: <message>`) before any SSH version string and is
-   closed (DECISIONS I-435). Otherwise present the host certificate. The
+   closed (DECISIONS I-435). A source is banned for 10 minutes after 20
+   failed authentications within 10 minutes; a connection that offered
+   the user's own current certificate (User CA, validity, revocation and
+   the login's handle all checked) and was refused for the project
+   (stopped or another state, no such project, a principal from before a
+   restore, the control plane away) is not a failure and does not clear
+   earlier ones (I-599). Otherwise present the host certificate. The
    handshake and authentication must finish within 10 seconds.
 2. Public-key auth only. Verify the offered certificate: signed by User CA,
    within validity, a validity span no longer than the gateway's

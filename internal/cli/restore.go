@@ -48,7 +48,10 @@ type RestoreResult struct {
 	Slug              string    `json:"slug"`
 	SnapshotID        string    `json:"snapshot_id"`
 	SnapshotCreatedAt time.Time `json:"snapshot_created_at"`
-	FromProjectID     string    `json:"from_project_id"`
+	// SnapshotBytes is the snapshot's stored size; 0 from an api older
+	// than I-595.
+	SnapshotBytes int64  `json:"snapshot_bytes,omitempty"`
+	FromProjectID string `json:"from_project_id"`
 }
 
 // destroyedPage is how many destroyed projects each request asks for.
@@ -212,8 +215,14 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 		return err
 	}
 	refreshSSHAccess(ctx, e, p.Slug)
-	_, _ = fmt.Fprintf(e.Out, "Restored %s from its snapshot of %s in %s; it is %s (%s).\n",
-		p.Slug, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(pr.Total()), stateWords(p.State), p.Class)
+	// The snapshot's size is what the restore's time went on, as a stop's
+	// is (I-570, I-595).
+	from := "its snapshot"
+	if res.SnapshotBytes > 0 {
+		from = "its " + humanBytes(res.SnapshotBytes) + " snapshot"
+	}
+	_, _ = fmt.Fprintf(e.Out, "Restored %s from %s of %s in %s; it is %s (%s).\n",
+		p.Slug, from, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(pr.Total()), stateWords(p.State), p.Class)
 	return nil
 }
 

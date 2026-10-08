@@ -81,7 +81,9 @@ component must emit:
   `restore_fail` (I-403), `stream_connect`,
   `stream_disconnect`, `guestd_lost`, `guestd_regained`, `pool_warning`,
   `store_warning`, `egress_blocked` (a guest over a block's threshold,
-  DECISIONS I-238..I-240).
+  DECISIONS I-238..I-240), `boot_fallback` (a boot that never reached
+  Ready booted the guest's last good closure; carries the code, never
+  console text, I-590).
 - guestd: `ready`, `freeze`, `thaw`, `freeze_timeout`, `switch`,
   `agent_event`, `agent_state`, `oom_priority` (I-200, counts only),
   `hook_bad_payload`, `agent_question` (I-244: ids, states, counts and
@@ -97,10 +99,16 @@ component must emit:
   was already on the host, DECISIONS I-160), `rollup_done`, `webhook_received`,
   `overage_charged`, `gate_refused` (I-289),
   `notify_send`, `notify_fail`, `admin_action`, `abuse_stop` (I-239),
-  `waitlist_join`, `waitlist_admit`, `waitlist_admit_fail` (I-269).
+  `waitlist_join`, `waitlist_admit`, `waitlist_admit_fail` (I-269),
+  `boot_fallback` (a start whose boot fell back, I-590), `op_console`
+  (a failed boot's console not stored; never its text, I-592).
 - gateway: `session_open`, `session_close`, `auth_fail` (reason enum:
-  `bad_cert|expired|revoked|wrong_principal|stopped|not_found`),
-  `route_fail`, `dial_fail`.
+  `bad_cert|expired|revoked|wrong_principal|stopped|not_found`; since
+  I-599 also `counted` and, when it counts towards the source's ban,
+  `failures`; at most 2 a second with 60 at once, the dropped ones counted
+  in the next line's `suppressed`), `auth_ban` (a source banned:
+  `source_prefix`, `failures`, `window_s`, `ban_s`; at most one every 10 s
+  with 20 at once, I-599), `route_fail`, `dial_fail`.
 - cli: only to a local file `~/.config/repose/cli.log` at debug level when
   `--verbose`; nothing is shipped from laptops.
 

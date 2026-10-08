@@ -263,8 +263,8 @@ A running project's newest snapshot is older than 36 hours.
 
 A stop, destroy or nightly snapshot takes tens of seconds for a volume
 that holds little. On the host, `journalctl -t hostd | grep '"snapshot
-done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
-`volume_bytes` and `duration_ms` (DECISIONS I-164).
+done"'`: the line carries `format`, `raw_reason`, `journal_replayed`,
+`used_bytes`, `volume_bytes` and `duration_ms` (DECISIONS I-164).
 
 - `format: extents`: time should follow `used_bytes` (reading) and
   `bytes` (the upload). Slow with little data means the disk or Blob is
@@ -282,11 +282,21 @@ done"'`: the line carries `format`, `raw_reason`, `used_bytes`,
   10 s is the guest's user manager waiting on a pane process (I-572);
   the guest's `console.log` shows `A stop job is running for User
   Manager for UID 1000`.
-- `format: raw` reads the whole volume (about 16 s per 20 GB on host-01).
-  `raw_reason` says why: `journal needs recovery` (the guest was killed,
-  not shut down, or, for a running guest, its freeze did not hold until
+- `journal_replayed: true`: the guest was killed, not shut down (a
+  start that never reached guestd, a stop escalated to `kill`), and hostd
+  replayed its journal on the LVM snapshot before reading it, so it still
+  went out as extents (I-594). The guest's own volume is not touched; its
+  next boot replays the same journal.
+- `format: raw` reads the whole volume (about 16 s per 20 GB on host-01;
+  kanali's 100 GB took 157 s, and its restore wrote it back for 115 s),
+  and a restore of it decompresses the whole volume again.
+  `raw_reason` says why: `journal replay failed` (hostd's `e2fsck -E
+  journal_only` on the snapshot failed: run `e2fsck -fn` on a fresh LVM
+  snapshot of the volume to see why), `journal needs recovery` (a hostd
+  older than I-594, or, for a running guest, its freeze did not hold until
   the LVM snapshot: guestd's 10 s watchdog thawed first; the next
-  snapshot goes back to extents; I-171), `dumpe2fs
+  snapshot goes back to extents; I-171), `filesystem state not clean`
+  (the kernel found an error; the guest's next boot runs e2fsck), `dumpe2fs
   failed (not ext4?)` (someone reformatted the volume), `N of M groups
   listed` (dumpe2fs output cut short: check the host's e2fsprogs). A
   hostd older than I-164 has no `format` field and always reads raw.
@@ -315,7 +325,14 @@ More than one auth failure per second at the gateway.
 1. Grafana gateway dashboard: failures by `reason`. `no_cert` or `bad_ca`
    in volume from one source is a scan; the gateway rate-limits per source
    IP after 20 failures (fail2ban-style, built in) and refuses further auth
-   for 10 minutes. Nothing to do unless it persists for hours; then add the
+   for 10 minutes. Each counted failure is an `auth_fail` line with
+   `"counted":true` and the source's `failures`, and the ban an `auth_ban`
+   line with its `source_prefix` (I-599). A user's own certificate refused
+   for its project (stopped, gone, a principal from before a restore, the
+   api away) is `"counted":false` and never bans; a user who reports the
+   one-line `too many authentication attempts` refusal from a known
+   address is behind a source that failed 20 times without a certificate
+   of theirs. Nothing to do unless it persists for hours; then add the
    source to the edge NSG deny list. `route_error` in volume means the
    gateway cannot reach the api (see "Gateway relay failures").
 2. `expired` in volume means the CLI's silent refresh is broken for many
@@ -343,7 +360,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
-| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
+| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
 | `login name must be <project>.<user>` | a malformed SSH login name | the user's SSH config is wrong; `repose run` rewrites it |
 
 A relay ends when its certificate is revoked or expires (I-436):
@@ -2177,8 +2194,10 @@ or `POST /certs` itself fails.
 `Guest is running but SSH did not answer in 60s.` after the API already
 reports the project `running`.
 
-1. `repose logs --kind console` — sshd not started yet (guest still
-   booting past `running`), or a boot failure, both show here.
+1. The guest reached Ready, so `repose logs --kind console` has nothing
+   of this boot (it keeps only boots that never reached Ready, I-592).
+   On the host, `tail -n 200 /var/lib/repose/guests/<guest_id>/console.log`
+   shows whether sshd started.
 2. `repose status` for `sessions`/`tmux clients`: if the API's state is
    stale (host lost contact), `hosts` on the host-01 side and
    `repose-admin hosts show` tell you whether the host itself is

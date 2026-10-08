@@ -86,8 +86,29 @@ func (l *limiter) beginAuth(src string) bool {
 	return true
 }
 
-// endAuth releases the slot; failed records a failure towards the ban.
-func (l *limiter) endAuth(src string, failed bool) {
+// authOutcome is how a connection's authentication phase ended, for the
+// ban (DECISIONS I-599).
+type authOutcome int
+
+const (
+	// authOK: a certificate authenticated; the source's failures clear.
+	authOK authOutcome = iota
+	// authFailed: no certificate of the user was offered (no certificate,
+	// another CA, expired, revoked, another handle, a bad login, a broken
+	// handshake). It counts towards the ban.
+	authFailed
+	// authRefused: the user's own current certificate was offered and the
+	// connection was refused for the project (stopped, not found, in
+	// error, a principal from before a restore, the control plane away).
+	// It neither counts nor clears: a laptop retrying its own stopped
+	// project must not lock itself out of every project.
+	authRefused
+)
+
+// endAuth releases the slot and applies the outcome. failures is the
+// source's count in the window after a counted failure, and banned
+// reports that this failure started a ban.
+func (l *limiter) endAuth(src string, outcome authOutcome) (failures int, banned bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.inAuth[src] <= 1 {
@@ -95,9 +116,12 @@ func (l *limiter) endAuth(src string, failed bool) {
 	} else {
 		l.inAuth[src]--
 	}
-	if !failed {
+	switch outcome {
+	case authOK:
 		delete(l.failures, src)
-		return
+		return 0, false
+	case authRefused:
+		return 0, false
 	}
 	now := l.clock()
 	kept := l.failures[src][:0]
@@ -110,7 +134,7 @@ func (l *limiter) endAuth(src string, failed bool) {
 	if len(kept) >= banFailures {
 		l.banned[src] = now.Add(banDuration)
 		delete(l.failures, src)
-		return
+		return len(kept), true
 	}
 	l.failures[src] = kept
 	// Bound the maps under a distributed scan.
@@ -121,6 +145,47 @@ func (l *limiter) endAuth(src string, failed bool) {
 			}
 		}
 	}
+	return len(kept), false
+}
+
+// logBucket bounds the gateway's auth log lines, so a scan from many
+// sources cannot flood the journal (I-599): rate lines a second, burst at
+// once; what it drops is counted and reported on the next line it lets
+// through.
+type logBucket struct {
+	mu         sync.Mutex
+	rate       float64
+	burst      float64
+	tokens     float64
+	last       time.Time
+	suppressed int
+	clock      func() time.Time
+}
+
+func newLogBucket(rate, burst float64, clock func() time.Time) *logBucket {
+	return &logBucket{rate: rate, burst: burst, tokens: burst, clock: clock}
+}
+
+// take reports whether a line may be written and how many were dropped
+// since the last one that was.
+func (b *logBucket) take() (ok bool, dropped int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := b.clock()
+	if !b.last.IsZero() {
+		b.tokens += now.Sub(b.last).Seconds() * b.rate
+		if b.tokens > b.burst {
+			b.tokens = b.burst
+		}
+	}
+	b.last = now
+	if b.tokens < 1 {
+		b.suppressed++
+		return false, 0
+	}
+	b.tokens--
+	dropped, b.suppressed = b.suppressed, 0
+	return true, dropped
 }
 
 // keyedCounter caps the connections held per key (a user id).

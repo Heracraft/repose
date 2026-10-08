@@ -30,8 +30,16 @@ session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
 to `tmux attach`, so new windows open there. On a herdr machine the sync runs
 `repose-herdr-workspace` instead (see "herdr"), only when the command
-exists and `repose-herdr-server` is active, and herdr's tabs open in
-the workspace's directory.
+exists and `repose-herdr-server` is active, activating or reloading, and
+herdr's tabs open in the workspace's directory. The same step, and every
+`repose run PROMPT` in the checkout, then closes each workspace labelled
+`home` (or with the checkout's directory name, the label before I-597)
+that is one tab with one pane whose shell runs nothing in the
+foreground (`herdr pane process-info`: the foreground process group is
+the shell's pid), once the `checkout` workspace exists: the server made
+`home` at the first boot, before the sync made the checkout, and it
+would stay in the sidebar beside the checkout's (I-596). A workspace
+that runs anything is left as it is.
 
 ### Other checkouts
 
@@ -96,6 +104,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
 | `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
+| `/nix/var/nix/gcroots/repose-view/` | guestd: one root per store path the lower layer (`/nix/.ro-store`) serves and the guest's database lists, named by its basename; updated at every `RegisterPaths` and at guestd's start (DECISIONS I-588) |
+| stage 1 | removes every whiteout (0:0 character device) at the top of the overlay's upper store dir before stage 2 and prints `repose: store overlay: N whiteouts removed, M of them over shared store paths` on the console and in the kernel log (DECISIONS I-587) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
 | `fstrim.timer` | daily (NixOS's default is weekly): discards the root filesystem's free blocks, so a deleted file's blocks leave the host's thin volume, whose allocated blocks are what the plan's disk counts (DECISIONS I-585) |
 | `repose-trim-on-stop.service` | active from boot; its stop runs `fstrim /` at shutdown (at most 20 s), so a stopped project is counted at what it holds (DECISIONS I-585) |
@@ -299,10 +309,12 @@ project whose `project.json` names herdr runs its server.
   after five tries until the next start.
 - **Workspace.** `ExecStartPost=-repose-herdr-workspace` (a failure
   never stops the server). The command, as dev: when `herdr workspace
-  list` (herdr prints its JSON answer) has no workspace whose label is
-  the checkout's directory name (`basename "$(repose-checkout)"`; `home`
-  when the machine has none), it runs `herdr workspace create --cwd
-  "$(repose-checkout)" --label <that name> --no-focus`. It exits 0 at
+  list` (herdr prints its JSON answer) has no workspace labelled
+  `checkout` (`home` when the machine has no checkout; I-597), it renames
+  the workspace labelled with the checkout's directory name (`basename
+  "$(repose-checkout)"`, the label before I-597) to `checkout` with
+  `herdr workspace rename`, or when there is none runs `herdr workspace
+  create --cwd "$(repose-checkout)" --label <that label> --no-focus`. It exits 0 at
   once when `repose-herdr-server.service` is neither active nor
   activating, waits at most 10 s of wall time for herdr to answer (each
   `workspace list` capped at 2 s; exit 0 when it never does), gives the
@@ -311,6 +323,10 @@ project whose `project.json` names herdr runs its server.
   `respawn-pane` (see "The checkout"); on a base without it the CLI skips
   the step. Another checkout's workspace (I-480) is labelled with that
   checkout's name and is made by the CLI when it first opens a tab there.
+  Old shape, one release: a base before I-597 labels the checkout's
+  workspace with the directory's name; the CLI renames it to `checkout`
+  when it finds one and no `checkout` (the sync step and every prompt),
+  and counts it as the checkout's until then.
 - **Seeded config.** When `~/.config/herdr/config.toml` is absent (no
   file and no link), the server unit's `ExecStartPre` writes `[terminal]`
   `shell_mode = "login"` and `[update]` `version_check = false`, owned by

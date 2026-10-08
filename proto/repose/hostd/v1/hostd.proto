@@ -231,6 +231,11 @@ message Error {
   // The line in the personal layer (personal.nix, machine.nix to the
   // user) when the error is located there; 0 otherwise (DECISIONS I-490).
   int32 personal_line = 4;
+  // The end of the guest's console from a boot that never reached Ready
+  // (boot_failed, guest_unresponsive at boot), at most 200 lines and
+  // 16 KiB (DECISIONS I-592). Tenant output: the api shows it to the
+  // project's owner through `repose logs --kind console` and nobody logs it.
+  string console_tail = 5;
 }
 
 message Result {
@@ -244,12 +249,18 @@ message Result {
     ApplyResult apply = 13;
     SnapshotResult snapshot = 14;
     ExecResult exec = 15;
+    StartResult start = 16;  // DECISIONS I-590; absent from a hostd before it
   }
 }
 message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; }
 message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
+// StartResult says which system a started guest runs. failed_closure is
+// set when the boot of the guest's recorded closure never reached Ready
+// and hostd booted booted_closure, the last one that did, instead
+// (DECISIONS I-590); boot_error is then why that boot failed.
+message StartResult { string booted_closure = 1; string failed_closure = 2; Error boot_error = 3; }
 message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 
