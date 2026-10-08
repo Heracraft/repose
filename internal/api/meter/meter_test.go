@@ -273,3 +273,45 @@ func TestIngestStoresRootFilesystem(t *testing.T) {
 		t.Fatalf("B: a size past the volume was kept: root %d of %d, disk_used %d", b.RootUsed, b.RootSize, b.DiskUsed)
 	}
 }
+
+// Each sample's thin volume figure becomes the project's disk_held_bytes,
+// what the plan's disk counts (DECISIONS I-585): a stopped guest's too,
+// never from an older sample, and never a figure that cannot be true.
+func TestIngestRecordsDiskHeld(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := meter.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now().UTC().Truncate(time.Second)
+	ing.SetNow(func() time.Time { return now })
+	pid, gid := seed(t, pool, "large", now.Add(-time.Hour))
+	heldOf := func() (*int64, *time.Time) {
+		t.Helper()
+		var b *int64
+		var at *time.Time
+		if err := pool.QueryRow(ctx, "select disk_held_bytes, disk_held_at from projects where id = $1", pid).Scan(&b, &at); err != nil {
+			t.Fatal(err)
+		}
+		return b, at
+	}
+	send := func(ts time.Time, used, size uint64) {
+		ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: ts.Unix(), Guests: []*hostdv1.GuestSample{
+			{GuestId: gid.String(), State: "stopped", Class: "large", DiskAllocBytes: size, DiskUsedBytes: used},
+		}})
+	}
+	send(now, 7<<30, 40<<30)
+	if b, at := heldOf(); b == nil || *b != 7<<30 || at == nil || !at.Equal(now) {
+		t.Fatalf("stopped guest's sample: %v %v", b, at)
+	}
+	// An older sample, a sample with no figure, and one past the volume
+	// leave it.
+	send(now.Add(-time.Minute), 9<<30, 40<<30)
+	send(now.Add(time.Minute), 0, 40<<30)
+	send(now.Add(2*time.Minute), 41<<30, 40<<30)
+	if b, _ := heldOf(); *b != 7<<30 {
+		t.Fatalf("held %d after samples that must not count", *b)
+	}
+	send(now.Add(3*time.Minute), 2<<30, 40<<30)
+	if b, _ := heldOf(); *b != 2<<30 {
+		t.Fatalf("a trim's lower figure was not taken: %d", *b)
+	}
+}

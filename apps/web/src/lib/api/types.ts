@@ -118,6 +118,10 @@ export interface Subscription {
 export interface Usage {
 	running_gb: number;
 	memory_gb: number;
+	/** What the projects' volumes hold, the figure the plan's disk counts
+	 *  (I-585); absent from an api older than that. */
+	disk_held_gb?: number;
+	/** The same figure rounded up to a GB, kept one release (I-585). */
 	disk_allocated_gb: number;
 	disk_gb: number;
 	egress_gb: number;
@@ -212,7 +216,7 @@ export interface Project {
 	config_revision_id: string;
 	volume_bytes: number;
 	/** The volume's allocated blocks, which keep a deleted file's blocks
-	 * until the weekly fstrim; not shown (I-567). */
+	 * until the daily fstrim; not shown (I-567, I-585). */
 	disk_used_bytes?: number;
 	/** The guest's root filesystem from the newest sample (I-567); absent
 	 * from a guest older than it or one that did not answer. */

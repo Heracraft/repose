@@ -218,7 +218,7 @@ List the tools the next `repose run` would install on the machine, and why, and 
 
 ### `repose ls`
 
-Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. A `DISK` column appears while a listed project's disk is 90 percent full or more, as `93% full`. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. A `DISK` column appears while a listed project's disk is 90 percent full or more, as `93% full`. While your projects hold more than your plan's disk, a line under the table says so: [creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
 repose ls -q | xargs -n1 repose stop
@@ -228,7 +228,7 @@ repose ls -q | xargs -n1 repose stop
 
 One project in detail, including processes listening on ports, the idle line when it has had nobody on it for a day, and when a temporary one is destroyed. `--json`, `--watch` (every 5 seconds).
 
-`disk` is the machine's filesystem, used over size, as the machine reports it; a stopped machine, or one that has not reported, shows the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB.
+`disk` is the machine's filesystem, used over size, as the machine reports it; a stopped machine, or one that has not reported, shows the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB. While your projects hold more than your plan's disk, a line says that too.
 
 ### `repose start [PROJECT]`
 
@@ -256,11 +256,11 @@ Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another 
 
 ### `repose fork [PROJECT]`
 
-Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy is a project: it counts toward the [100 an account can have](/docs/limits#projects) and your plan's disk, and toward the plan's memory while it runs. If the copies would take you past 100, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
+Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy is a project: it counts toward the [100 an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
 
 ### `repose resize [PROJECT] [DISK]`
 
-Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. Disks can't shrink, and the larger disk counts toward your plan's disk total from then on. A single argument that reads as a size is the disk; anything else is the project.
+Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. Disks can't shrink. A larger disk adds nothing to your plan's disk total, which counts what your projects hold, and one disk can be at most the plan's whole disk. A single argument that reads as a size is the disk; anything else is the project.
 
 `--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it (taking a snapshot), changes it and starts it again, which ends every process on it, agents included. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size).
 

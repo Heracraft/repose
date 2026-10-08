@@ -108,12 +108,16 @@ they stop an actor the component map does not draw.
 7. **Resource limits per guest**: `MemoryMax`, `CPUQuota`, shaping both
    ways on the tap (200 Mbit/s out, 1 Gbit/s in from outside the host),
    a disk rate limit per class, a cap on tracked connections, a console log
-   rate, build time and closure caps, and the host's thin volumes together
-   bounded at 1.5 times the shared pool (DECISIONS I-217, I-449..I-453).
-   Stops: a tenant degrading neighbours, or filling a table or buffer the
-   host's other guests depend on. Not stopped: one tenant writing its own
-   volume, up to its plan's disk, can still fill a pool smaller than that
-   (the owner's choice in I-449; the remedy is a larger data disk).
+   rate, build time and closure caps, and the shared thin pool guarded by
+   what it holds: no new project past 70 percent, no create, restore or
+   grow past 85, no start past 95, a page at 90 (DECISIONS I-217,
+   I-450..I-453, I-586, which replaced I-449's bound on the sum of the
+   volumes' sizes). Stops: a tenant degrading neighbours, or filling a
+   table or buffer the host's other guests depend on. Not stopped: running
+   guests writing their own volumes, each up to its size, can still fill
+   the pool; plans count bytes held, so the sizes on a host sum past the
+   pool by design, and the PoolHigh and PoolFull alerts call a human to
+   grow the data disk well before that (I-586).
 8. **Restricted Nix evaluation** of user fragments: pure, `restrict-eval`,
    no import-from-derivation, sandboxed builds, capped. A fixed-output
    build shares the host's network namespace (Nix gives only those

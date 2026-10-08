@@ -210,7 +210,7 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	await page.goto('/billing');
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $20 on');
 	await expect(page.getByTestId('plan-status')).toContainText('; $29 a month from');
-	await expect(page.getByTestId('meter-disk-allocated')).toContainText('of 100 GB');
+	await expect(page.getByTestId('meter-disk-held')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
 	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
 	await expect(egress).toContainText('300 GB of 100 GB');
@@ -218,6 +218,22 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
+});
+
+test('the disk meter counts what the projects hold and says what is refused while it is over', async ({
+	page
+}) => {
+	await setBilling({ mode: 'active', plan: 'solo', disk_held_gb: 37.5 });
+	await page.goto('/billing');
+	const disk = page.getByTestId('meter-disk-held');
+	await expect(disk).toContainText('37.5 GB of 100 GB');
+	await expect(disk).not.toContainText('over');
+	await setBilling({ disk_held_gb: 112.4 });
+	await page.reload();
+	await expect(disk).toContainText('112.4 GB of 100 GB · over');
+	await expect(disk).toContainText(
+		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
+	);
 });
 
 test('an active plan shows its renewal, receipts through Paddle, and invoices with PDF links', async ({
@@ -298,11 +314,14 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await expect(page.getByTestId('change-plan')).toContainText('Downgrade to Solo ($29 a month');
 	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
 	const err = page.getByTestId('change-error');
+	// The api's sentence, the disk counted by what the projects hold (I-585).
 	await expect(err).toContainText(
-		'Solo holds 8 GB of memory for running machines and 100 GB of disk'
+		'your account does not fit the Solo plan yet: 16 GB running (it allows 8)'
 	);
-	await expect(err).toContainText('you have 16 GB of memory running');
-	await expect(err).toContainText('Stop machines or destroy projects first.');
+	await expect(err).toContainText('GB of disk held by your projects (it allows 100)');
+	await expect(err).toContainText(
+		'stop machines, or destroy projects or delete files in them, first'
+	);
 });
 
 test('on Pro both other plans are downgrades, and Plus is refused while three large machines run', async ({
@@ -327,9 +346,8 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	const err = page.getByTestId('change-error');
 	await expect(err).toContainText(
-		'Plus holds 16 GB of memory for running machines and 250 GB of disk'
+		'your account does not fit the Plus plan yet: 24 GB running (it allows 16)'
 	);
-	await expect(err).toContainText('you have 24 GB of memory running');
 	await stopAll();
 });
 

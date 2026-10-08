@@ -13,12 +13,14 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	await expect(
 		pricing.getByText(
-			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none."
+			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none. A plan's disk counts the data your projects hold."
 		)
 	).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
 	await expect(pricing.getByText('$20')).toBeVisible();
-	await expect(pricing.getByText('First 3 months for new subscribers, then $29 and 250 GB egress')).toBeVisible();
+	await expect(
+		pricing.getByText('First 3 months for new subscribers, then $29 and 250 GB egress')
+	).toBeVisible();
 	await expect(pricing.getByText('$59')).toBeVisible();
 	await expect(pricing.getByText('$99')).toBeVisible();
 	await expect(pricing.getByText('8 GB of memory · 100 GB disk · 100 GB egress')).toBeVisible();

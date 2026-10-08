@@ -84,6 +84,8 @@ create table if not exists projects (
   volume_bytes bigint,
   tz text,
   multiplexer text not null default 'tmux',
+  disk_held_bytes bigint,
+  disk_held_at timestamptz,
   started_at timestamptz,
   stopped_at timestamptz,
   destroyed_at timestamptz,

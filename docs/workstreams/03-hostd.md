@@ -345,8 +345,9 @@ Snapshot:
 
 The raw fallback reads the whole logical volume: upload size stays
 proportional to real data (the pool runs with `--discards passdown` and
-guestd runs `fstrim /` weekly, so unallocated blocks read as zeros and
-zstd compresses them to almost nothing), but time does not. Before I-164
+the guest runs `fstrim /` daily and at every stop (I-585), so
+unallocated blocks read as zeros and zstd compresses them to almost
+nothing), but time does not. Before I-164
 every snapshot took that path: 15-16 s for every 20 GB volume and 32-34 s
 for every 40 GB one on host-01, whether it carried 1.5 MB or 227 MB. The
 `snapshot done` line carries `format`, `raw_reason`, `used_bytes` and
@@ -427,7 +428,7 @@ workstream 10's.
 |---|---|---|
 | Join token already used | exit status 3, unit stops retrying | journal: `register: join token already used`; infra alert on failed host registration after 5 min |
 | api unreachable at start | keeps retrying the stream, serves running guests, runs nightly snapshots locally | `repose_host_stream_connected 0`; alert after 5 min |
-| Thin pool over 90 percent | `host_warning{pool_high}`; CreateGuest and Restore return `insufficient_capacity: thin pool 9x% full` | api alerts operator; CLI: `host is out of disk; try again later or contact support` |
+| Thin pool over 85 percent, data or metadata (I-586; `pool_high` from 70) | `host_warning{pool_high}`; CreateGuest, Restore and ResizeVolume return `insufficient_capacity: thin pool 8x% full`, and StartGuest from 95 percent | api alerts operator; CLI: `host is out of disk; try again later or contact support` |
 | Store over 80 percent | `host_warning{store_high}`; Build refuses with `insufficient_capacity: host store full` | same shape |
 | Guest never sends Ready | after 60 s: stop CH, tear down, state `error` reason `guest did not become ready` | CLI: `guest failed to boot; console log attached` with the last 50 console lines from the api |
 | virtiofsd crashes while guest runs | guest sees I/O errors on the store; hostd notices the unit exit, marks `error` reason `virtiofsd exited`, stops the guest cleanly | user: `environment crashed (store share); restarting` and the api issues StartGuest |

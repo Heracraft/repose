@@ -90,4 +90,4 @@ When the agent has committed, `git fetch repose` in your checkout brings its com
 repose stop
 ```
 
-A stopped machine costs nothing. The next `repose run` starts it again in about 10 seconds with your files where you left them. Running processes, agents included, don't survive a stop.
+A stopped machine costs nothing; what its disk holds counts toward your plan's disk. The next `repose run` starts it again in about 10 seconds with your files where you left them. Running processes, agents included, don't survive a stop.

@@ -471,7 +471,7 @@ func (e *Env) createProject(ctx context.Context, u *store.User, name, class stri
 	}
 	var opID uuid.UUID
 	err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
-		if _, err := tx.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, config_revision_id) values ($1, $2, $3, $4, $5, 'creating', $6, $7)", pid, u.ID, name, slug, class, scheduler.DefaultVolume(class), rid); err != nil {
+		if _, err := tx.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, config_revision_id, disk_held_bytes) values ($1, $2, $3, $4, $5, 'creating', $6, $7, $8)", pid, u.ID, name, slug, class, scheduler.DefaultVolume(class), rid, billing.NewProjectHeldBytes); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, httpapi.DefaultFragment); err != nil {

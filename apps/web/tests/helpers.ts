@@ -68,6 +68,8 @@ export interface BillingState {
 	seats?: { total: number; held: number; waiting: number };
 	waitlist?: { position: number; invited?: boolean; hold_hours?: number };
 	egress_gb?: number;
+	/** What the projects hold in all (I-585); negative clears the override. */
+	disk_held_gb?: number;
 	invoices?: unknown[];
 	/** The account had a subscription before: no introductory price (I-497). */
 	intro_used?: boolean;
@@ -96,6 +98,7 @@ export async function resetBilling(): Promise<void> {
 		seats: { total: 30, held: 12, waiting: 0 },
 		waitlist: { position: 0 },
 		egress_gb: 0,
+		disk_held_gb: -1,
 		scheduled_plan: '',
 		cancelled: false,
 		intro_used: false

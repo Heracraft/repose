@@ -134,7 +134,8 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 	}
 	if x.latest != nil {
 		// disk_used_bytes is the thin volume's allocated blocks, which keep
-		// a deleted file's blocks until the weekly fstrim; root_* is the
+		// a deleted file's blocks until the guest's daily fstrim (I-585),
+		// and are what the plan's disk counts; root_* is the
 		// guest's root filesystem, what its writes run out of (I-567).
 		out["disk_used_bytes"] = x.latest.DiskUsed
 		if x.latest.RootSize > 0 {
@@ -287,7 +288,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	// The compute gate (I-289): a plan, its memory for this class and its
 	// disk for the new volume. No waitlist gate here since I-290: checkout
 	// is where the seats question is answered.
-	if err := s.gate(r, u, billing.Request{Class: body.Class, AddDiskBytes: scheduler.DefaultVolume(body.Class)}); err != nil {
+	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: scheduler.DefaultVolume(body.Class)}); err != nil {
 		return err
 	}
 	if u.CancelledAt != nil {
@@ -313,8 +314,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux)
+		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, billing.NewProjectHeldBytes)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -798,8 +799,10 @@ func (s *Server) resizeProject(w http.ResponseWriter, r *http.Request) error {
 	if p.GuestID == nil {
 		return errf("conflict", "%s has no guest yet", p.Slug)
 	}
-	// Growing a volume allocates disk against the plan (I-289).
-	if err := s.gate(r, userFrom(r.Context()), billing.Request{AddDiskBytes: body.VolumeBytes - p.VolumeBytes, Project: p.ID}); err != nil {
+	// Growing a volume raises its ceiling and holds nothing more at once;
+	// it is refused past the plan's disk, or while the projects already
+	// hold more than it (I-585).
+	if err := s.gate(r, userFrom(r.Context()), billing.Request{Disk: true, VolumeBytes: body.VolumeBytes, Project: p.ID}); err != nil {
 		return err
 	}
 	pid := p.ID

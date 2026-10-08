@@ -33,6 +33,7 @@
     ./env.nix
     ./guestd.nix
     ./store.nix
+    ./trim.nix
     ./profile.nix
     ./version.nix
   ];

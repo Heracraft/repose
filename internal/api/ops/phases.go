@@ -528,7 +528,7 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 				}
 				picked = h.ID
 			} else {
-				pk, err := scheduler.PickHost(ctx, tx, p.Class, p.VolumeBytes, e.now())
+				pk, err := scheduler.PickHost(ctx, tx, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 				if err != nil {
 					return err
 				}
@@ -820,7 +820,7 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	}
 	if hostID == uuid.Nil {
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
-			pk, err := scheduler.PickHost(ctx, tx, p.Class, p.VolumeBytes, e.now())
+			pk, err := scheduler.PickHost(ctx, tx, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 			if err != nil {
 				return err
 			}

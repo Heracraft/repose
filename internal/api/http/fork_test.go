@@ -88,6 +88,23 @@ func TestFork(t *testing.T) {
 		t.Fatalf("a refused fork created projects: %d live", n)
 	}
 
+	// A new project is counted at a new volume's first bytes until its
+	// samples say more, and a fork at what its source holds (I-585).
+	heldOf := func(id string) int64 {
+		t.Helper()
+		var b int64
+		if err := e.h.Pool.QueryRow(ctx, "select disk_held_bytes from projects where id = $1", id).Scan(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	if b := heldOf(pid); b != billing.NewProjectHeldBytes {
+		t.Fatalf("a new project holds %d", b)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update projects set disk_held_bytes = 7::bigint<<30 where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+
 	// Two forks.
 	req := uuid.NewString()
 	body := map[string]any{"snapshot_id": sid, "count": 2, "request_id": req}
@@ -142,6 +159,11 @@ func TestFork(t *testing.T) {
 		}
 		if srcLower == 0 || same != 0 {
 			t.Fatalf("fork %d: the source has %d sshd rows, %d of them shared with the fork (%d sshd rows of its own)", i, srcLower, same, lower)
+		}
+	}
+	for i, id := range ids {
+		if b := heldOf(id); b != 7<<30 {
+			t.Fatalf("fork %d holds %d, want the source's 7 GB", i, b)
 		}
 	}
 	// The source keeps its remote and keeps running.

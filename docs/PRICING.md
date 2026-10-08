@@ -2,9 +2,9 @@
 
 A monthly plan through Paddle, chosen before the first machine starts, with
 a card at checkout and a week free. A plan buys memory that may run at once,
-disk that may be allocated, and egress for the month; a plan sells no
-project count, and a stopped project costs only its disk (DECISIONS
-I-569). The shape is flat because the pitch is "the agent
+disk for the bytes its projects hold, and egress for the month; a plan
+sells no project count, and a stopped project costs only the disk it holds
+(DECISIONS I-569, I-585). The shape is flat because the pitch is "the agent
 keeps working after the laptop closes", and an hourly meter told people to
 stop machines at night (DECISIONS I-289, superseding R2-12, R4-7, R4-8,
 I-77, I-179 to I-185 and I-205; the hourly design is kept in
@@ -55,11 +55,20 @@ What a plan means, in rules:
   refused with `payment_required`, `detail.reason = plan_limit`, and the
   message names the machines using the memory: stop one or upgrade. An
   `xl` needs Plus or Pro, and the refusal names Plus.
-- **Disk.** The sum of the allocated volume sizes of a user's live projects
-  never exceeds the plan's disk. Creating a project or growing a volume past
-  it is refused with `detail.reason = disk_limit`. Allocated, not used,
-  because thin provisioning reserves it and the user chose the size.
-  Snapshots are included and not counted.
+- **Disk.** The bytes a user's live projects' volumes hold, running or
+  stopped, against the plan's disk (DECISIONS I-585). What a volume holds
+  is its thin volume's allocated blocks, which is what the host's disk
+  pays for; the guest trims its free blocks daily and at every stop, so a
+  deleted file stops counting within a day. A volume's size (20, 40, 80 GB
+  by class, or what a resize set) is only the ceiling one project can grow
+  to, and may be at most the plan's whole disk. While the projects hold
+  more than the plan's disk, a create, a restore or fork as a new project,
+  and growing a volume are refused with `detail.reason = disk_limit`; a
+  create counts a new volume's first 1 GB, a restore or fork its source's
+  figure per copy. Nothing stops: running machines keep running, stopped
+  ones start (starting one is how its files are deleted), and one
+  `disk_over_plan` email a period says so. It is a cap, with no overage
+  price. Snapshots are blob storage, included and not counted.
 - **Egress.** Bytes leaving the user's machines for the internet, summed
   over the billing period. Traffic to the gateway (SSH, the browser view,
   hooks) is not counted; ingress is free. Past the allowance, $0.05 a GB is
@@ -70,7 +79,8 @@ What a plan means, in rules:
   `egress_stopped` email; that is the stolen-card ceiling, not a price.
 - **Projects.** No count on any plan: memory caps what runs and disk caps
   what is kept, so a user stops one project and starts another within the
-  plan. One abuse bound, 100 projects per account (running or stopped,
+  plan, and keeps many stopped ones: Solo's 100 GB holds a dozen projects
+  of 8 GB each, whatever their disk sizes. One abuse bound, 100 projects per account (running or stopped,
   the same on every plan and without one), stops a runaway script; it is
   in the Limits doc, not on the pricing page or the plan cards, and an
   operator can raise it for one account (DECISIONS I-569). Destroyed
@@ -127,8 +137,8 @@ A plan is cancelled from the dashboard or Paddle's portal and ends at the
 period's end; machines run until then and stop at it, with the 30-day
 retention from that day. Upgrading (to a plan with more seats) takes effect at once,
 prorated by Paddle. Downgrading takes effect at the next renewal and is
-refused while the user's running memory or allocated disk would not fit the
-smaller plan. Deleting the account cancels the subscription at once, after
+refused while the user's running memory or the disk their projects hold
+would not fit the smaller plan. Deleting the account cancels the subscription at once, after
 any pending egress overage is charged, because Paddle drops one-time charges
 on a cancelled subscription.
 

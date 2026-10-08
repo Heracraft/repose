@@ -219,7 +219,7 @@ func unresponsive(id string, g *Guest) *hostdv1.Result {
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40}
+	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40}
 	for _, g := range f.guests {
 		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure})
 	}
@@ -265,7 +265,7 @@ func (f *Fake) Run(ctx context.Context, conn grpc.ClientConnInterface) error {
 				}
 				dr := f.draining
 				f.mu.Unlock()
-				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Heartbeat{Heartbeat: &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}}}) // a dead stream ends Recv
+				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Heartbeat{Heartbeat: &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}}}) // a dead stream ends Recv
 			case <-sm.C:
 				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Samples{Samples: f.Samples()}}) // same
 			}

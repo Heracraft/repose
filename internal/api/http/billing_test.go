@@ -58,22 +58,33 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 	if r.status != 402 || errDetail(r, "reason") != "plan_limit" || !strings.Contains(errMessage(r), "an xl machine needs 16 GB. Upgrade to Plus") {
 		t.Fatalf("xl on solo: %d %s", r.status, r.raw)
 	}
-	// Growing the volume past 100 GB: disk_limit.
+	// The plan's disk counts what the projects hold (I-585). One disk may
+	// be at most the plan's whole 100 GB.
 	r = e.do(t, tok, "POST", "/projects/"+pid+"/resize", map[string]any{"volume_bytes": int64(200) << 30})
-	if r.status != 402 || errDetail(r, "reason") != "disk_limit" || !strings.Contains(errMessage(r), "allocates up to 100 GB of disk and your projects use 40 GB; this needs 160 GB more") {
+	if r.status != 402 || errDetail(r, "reason") != "disk_limit" || !strings.Contains(errMessage(r), "Your Solo plan has 100 GB of disk, so one project's disk can be at most 100 GB.") {
 		t.Fatalf("disk_limit on resize: %d %s", r.status, r.raw)
 	}
-	// A second project whose volume would pass the plan: disk_limit on create.
-	if _, err := e.h.Pool.Exec(ctx, "update projects set volume_bytes = $2 where id = $1", pid, int64(90)<<30); err != nil {
-		t.Fatal(err)
+	// Projects holding 99.5 GB: a new project's first gigabyte is refused.
+	// disk_held_at ahead of the fake host's samples keeps them from
+	// replacing the figure.
+	setHeld := func(bytes int64) {
+		t.Helper()
+		if _, err := e.h.Pool.Exec(ctx, "update projects set disk_held_bytes = $2, disk_held_at = now() + interval '1 day' where id = $1", pid, bytes); err != nil {
+			t.Fatal(err)
+		}
 	}
+	setHeld(99<<30 + 1<<29)
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "fat", "class": "small"})
-	if r.status != 402 || errDetail(r, "reason") != "disk_limit" {
+	if r.status != 402 || errDetail(r, "reason") != "disk_limit" || !strings.Contains(errMessage(r), "Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more.") {
 		t.Fatalf("disk_limit on create: %d %s", r.status, r.raw)
 	}
-	if _, err := e.h.Pool.Exec(ctx, "update projects set volume_bytes = $2 where id = $1", pid, int64(40)<<30); err != nil {
-		t.Fatal(err)
+	// Over the plan, growing a disk is refused too.
+	setHeld(120 << 30)
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/resize", map[string]any{"volume_bytes": int64(60) << 30})
+	if r.status != 402 || errDetail(r, "reason") != "disk_limit" || !strings.Contains(errMessage(r), "Your projects hold 120 GB") {
+		t.Fatalf("disk_limit on resize while over: %d %s", r.status, r.raw)
 	}
+	setHeld(5 << 30)
 	// Egress past four times the allowance: egress_limit until period_end.
 	var periodStart, periodEnd time.Time
 	if err := e.h.Pool.QueryRow(ctx, "select period_start, period_end from subscriptions where id = 'sub_sub-gate'").Scan(&periodStart, &periodEnd); err != nil {
@@ -259,6 +270,11 @@ func TestBillingRoutes(t *testing.T) {
 		if _, ok := r.body[k]; !ok {
 			t.Errorf("overview lacks %s", k)
 		}
+	}
+	// The disk is what the projects hold (I-585); disk_allocated_gb stays
+	// one release with the same figure, rounded up to a GB.
+	if u := r.body["usage"].(map[string]any); u["disk_held_gb"] != float64(0) || u["disk_allocated_gb"] != float64(0) {
+		t.Fatalf("usage disk: %v", u)
 	}
 	plans := r.body["plans"].([]any)
 	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(5900) || plans[2].(map[string]any)["price_cents"] != float64(9900) {

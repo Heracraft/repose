@@ -228,7 +228,7 @@ func TestBillingPlanChange(t *testing.T) {
 	r = call(t, f, "POST", "/v1/billing/plan", tok, map[string]string{"plan": "solo"})
 	wantErr(t, r, 409, "conflict")
 	d := detailOf(t, r)
-	if d["reason"] != "over_plan" || d["running_gb"] != float64(16) || d["disk_allocated_gb"] == nil {
+	if d["reason"] != "over_plan" || d["running_gb"] != float64(16) || d["disk_held_gb"] == nil || d["disk_allocated_gb"] == nil {
 		t.Fatalf("over_plan detail: %s", r.body)
 	}
 	// Stop one and the downgrade is scheduled for the period's end.
@@ -435,13 +435,43 @@ func TestBillingGates(t *testing.T) {
 		t.Fatalf("xl on solo: %s", r.body)
 	}
 
-	// disk_limit: growing past Solo's 100 GB.
+	// disk_limit: one disk past Solo's 100 GB.
 	r = call(t, f, "POST", "/v1/projects/"+id+"/resize", tok, map[string]int64{"volume_bytes": 200 << 30})
 	wantErr(t, r, 402, "payment_required")
 	d = detailOf(t, r)
-	if d["reason"] != "disk_limit" || d["limit_gb"] != float64(100) || d["plan"] != "solo" || d["used_gb"] == nil {
+	if d["reason"] != "disk_limit" || d["limit_gb"] != float64(100) || d["plan"] != "solo" || d["volume_gb"] != float64(200) {
 		t.Fatalf("disk_limit detail: %s", r.body)
 	}
+	// The plan's disk counts what the projects hold (I-585): two projects
+	// of 40 and 20 GB hold 1 GB each, and a third fits.
+	r = call(t, f, "GET", "/v1/billing", tok, nil)
+	var ov struct {
+		Usage map[string]any `json:"usage"`
+	}
+	r.json(t, &ov)
+	if u := ov.Usage; u["disk_held_gb"] != float64(2) || u["disk_allocated_gb"] != float64(2) {
+		t.Fatalf("usage: %s", r.body)
+	}
+	// Holding 99.5 GB, a new project is refused, and so is growing a disk.
+	held := func(gb float64) {
+		t.Helper()
+		if err := f.SetBillingState(BillingState{DiskHeldGB: &gb}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held(99.5)
+	r = call(t, f, "POST", "/v1/projects", tok, map[string]string{"name": "third", "remote_url": "github.com/x/third", "class": "small"})
+	wantErr(t, r, 402, "payment_required")
+	if d := detailOf(t, r); d["reason"] != "disk_limit" || d["held_gb"] != 99.5 || !strings.Contains(string(r.body), "hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more") {
+		t.Fatalf("create over the disk: %s", r.body)
+	}
+	held(101)
+	r = call(t, f, "POST", "/v1/projects/"+id+"/resize", tok, map[string]int64{"volume_bytes": 60 << 30})
+	wantErr(t, r, 402, "payment_required")
+	if detailOf(t, r)["reason"] != "disk_limit" {
+		t.Fatalf("grow over the disk: %s", r.body)
+	}
+	held(-1)
 
 	// egress_limit: four times the allowance stops everything. During
 	// Solo's introductory offer the allowance is 100 GB (I-497).

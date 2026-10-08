@@ -23,7 +23,7 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
               -- record is sum(credit_ledger.cents) (09 §5.3)
 
 hosts        (id pk, name text unique, hostname text, sku text, provider text, region text,
-              mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,
+              mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,  -- pool_bytes: registered, then the newest heartbeat's (I-586)
               wg_pubkey text, wg_ip inet, state text,  -- registering|ready|draining|unreachable|retired|lost
               draining bool, free_mem_bytes bigint, pool_free_bytes bigint, load1 float, running_guests int,
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
@@ -41,6 +41,12 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               multiplexer text not null default 'tmux'
                 check (multiplexer in ('tmux','herdr')),  -- what the next start runs (0017, I-502)
+              disk_held_bytes bigint null, disk_held_at timestamptz null,
+                -- what the volume holds, which the plan's disk counts (0019, I-585):
+                -- the newest sample's thin volume allocated blocks, or, with
+                -- disk_held_at null, the estimate a new project starts with
+                -- (1 GB; a restore's or fork's source figure); both null
+                -- counts volume_bytes
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null)
 

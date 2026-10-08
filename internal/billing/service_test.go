@@ -219,8 +219,20 @@ func TestPlanChangesCancelResume(t *testing.T) {
 	addProject(t, pool, a, "second", "large", "running", 40<<30)
 	_, err = s.ChangePlan(ctx, user(t, pool, a), "solo")
 	var over *billing.OverPlanError
-	if !errors.As(err, &over) || over.RunningGB != 16 || over.DiskAllocatedGB != 80 {
+	if !errors.As(err, &over) || over.RunningGB != 16 || over.DiskHeldBytes != 80<<30 {
 		t.Fatalf("over plan: %v", err)
+	}
+	// Stopped but holding 120 GB of Solo's 100: refused for the disk
+	// alone (I-585).
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopped', disk_held_bytes = 60::bigint<<30 where user_id = $1", a.UserID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ChangePlan(ctx, user(t, pool, a), "solo")
+	if !errors.As(err, &over) || over.RunningGB != 0 || over.DiskHeldBytes != 120<<30 {
+		t.Fatalf("over plan on disk: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "update projects set disk_held_bytes = 10::bigint<<30 where user_id = $1", a.UserID); err != nil {
+		t.Fatal(err)
 	}
 	// Stopped, it is scheduled for period_end.
 	if _, err := pool.Exec(ctx, "update projects set state = 'stopped' where user_id = $1", a.UserID); err != nil {

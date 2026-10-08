@@ -43,6 +43,54 @@ tests:
               description: "85% of usable memory is reserved by running guests. Add a host before the next XL create fails."
               runbook: "docs/ops/RUNBOOK.md#hostmemory80"
 
+  # --- PoolHigh -----------------------------------------------------------
+  - interval: 1m
+    name: PoolHigh warns past 70 percent used and not at 69
+    input_series:
+      - series: 'repose_host_pool_free_bytes{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "310+0x20 250+0x20"
+      - series: 'repose_host_pool_bytes{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "1000+0x41"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PoolHigh
+        exp_alerts: []
+      - eval_time: 37m
+        alertname: PoolHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "thin pool on host-01 is over 70 percent full; no new projects go there"
+              description: "75% of vg-guests/thin is used. Grow the data disk before it reaches 85, where creates, restores and grows are refused."
+              runbook: "docs/ops/RUNBOOK.md#poolhigh"
+
+  # --- PoolMetadataHigh ---------------------------------------------------
+  - interval: 1m
+    name: PoolMetadataHigh pages past 80 percent metadata
+    input_series:
+      - series: 'repose_lvm_pool_metadata_percent{job="hosts",instance="10.255.0.7:9100",host_id="host-01"}'
+        values: "80+0x10 81+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PoolMetadataHigh
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: PoolMetadataHigh
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: hosts
+              instance: 10.255.0.7:9100
+              host_id: host-01
+            exp_annotations:
+              summary: "thin pool metadata on host-01 is over 80 percent"
+              description: "81 percent of vg-guests/thin's metadata is used. hostd refuses creates at 85 and starts at 95."
+              runbook: "docs/ops/RUNBOOK.md#poolmetadatahigh"
+
   # --- PoolFull -----------------------------------------------------------
   - interval: 1m
     name: PoolFull pages under 10 percent free

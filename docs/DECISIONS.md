@@ -11622,7 +11622,9 @@ Not done
 here: the api's scheduler still places by free space alone and learns of
 the budget only from hostd's refusal, and nothing yet acts at 90 percent
 beyond refusing creates. Tests: `internal/hostd/guest/poolbudget_test.go`,
-`internal/hostd/lvm` `TestRealAllocated`.
+`internal/hostd/lvm` `TestRealAllocated`. *Superseded by I-586:* the bound
+on the sum of the sizes and both tests are gone; the pool is guarded by
+what it holds, and one disk may still be the plan's whole disk.
 
 **I-450. Each guest's disk is rate-limited by its size class.** (security
 review, 2026-10-03) Every guest volume is on one data disk (16,000 IOPS and
@@ -15744,7 +15746,10 @@ projects (a count that binds only running projects is the memory pool
 said worse); reading `users.project_limit` as an exact cap (keeps the
 owner at 6 until an operator edits the row, and makes every early
 account's 3 or 10 a silent block); a migration rewriting the rows (a
-data change for a value the code can read safely).
+data change for a value the code can read safely). *Amended by I-585:*
+the plan's disk counts what projects hold, so the 100-project cap is
+what bounds an account of nearly empty projects.
+
 **I-566. The snapshot, secrets-list and config show/edit commands take
 the project as their first argument.** (cli-small-fixes, 2026-10-07;
 owner's dogfood notes) `repose snapshots create parth-event` failed with
@@ -15871,6 +15876,170 @@ guide (the guide is one file in the shared base). auth.spec.ts "the
 dashboard header links to the docs"; `TestAgentGuideCommandsExist` with
 `jq` added. *Amended by I-578:* Account moved into Settings, and Docs shows at
 every width.
+
+**I-585. The plan's disk counts the bytes each project's volume holds; a
+disk's size is only the ceiling it can grow to.** (owner, 2026-10-07:
+users keep many projects, most stopped, a few running; memory caps what
+runs) The gate summed each live project's `volume_bytes` (20, 40 or 80
+GB by class, running or stopped), so Solo's 100 GB held two `large`
+projects and the 100-project cap of I-569 never bound. This amends
+I-569, I-289, R5-5 and I-567: I-569's point (b) and its "Why 100" and
+"Open for the owner" paragraphs (the cap is now what bounds an account
+of nearly empty projects), what I-289's plan disk buys, R5-5's "billed
+on allocated", and I-567's weekly `fstrim` (daily and at every stop
+now).
+
+Which figure. A volume holds its thin LV's allocated blocks: `lvs
+data_percent` of its size, host-measured, which is what the host's pool
+pays for and what `meter_samples.disk_used` already carried. hostd's
+`CollectSamples` calls `VolumeStats` for every guest in its state,
+stopped ones included, so a stopped project has a current figure every
+minute without the guest running (prod, 2026-10-07: the four stopped
+projects' newest samples were 27 s old, holding 1.4 to 41.9 GB). The
+guest's `root_used` was not taken: it exists only while the guest runs,
+and it is guest-written, so a tenant could report less. The meter ingest
+keeps the newest non-zero figure no larger than the volume on
+`projects.disk_held_bytes` (migration 0019, with `disk_held_at`; the
+migration backfills each project's newest sample), only from a sample
+newer than the one recorded. `HeldDisk` sums `coalesce(disk_held_bytes,
+volume_bytes)` over live projects not being destroyed. A new project
+starts with an estimate, `NewProjectHeldBytes` = 1 GiB (40 creates on
+prod held 0.14 to 1.4 GB in their first minute, most under 0.5); a
+restore or fork as a new project starts at its source's figure; a row
+with neither counts its size. Snapshots are not counted: they are Blob
+storage, small (used blocks, compressed) and fixed in retention, and the
+plan's disk is about the host's disk.
+
+Deleted files. Allocated blocks keep a deleted file until the guest
+trims: NixOS's `fstrim.timer` is weekly by default, and prod showed it
+(kanali held 42.5 GB on a 40 GiB volume whose filesystem used 33). The
+guest base now sets `services.fstrim.interval = "daily"` and adds
+`repose-trim-on-stop.service`, whose stop runs `fstrim /` at shutdown
+(at most 20 s; hostd waits 60), so a stopped project is counted at what
+it holds. hostd snapshots before the shutdown (I-404) and a snapshot
+reads the filesystem's used blocks (I-164), so neither changes. Measured
+on kanali: `fstrim /` gave back 7.1 GiB in 8.3 s after three days of
+agent work, and 0.4 GiB in 0.34 s right after. A restore or fork writes
+only the snapshot's used extents (I-164, I-403), so a copy starts tight.
+
+The gate (`billing.Request` now has `Disk`, `AddHeldBytes`,
+`VolumeBytes` in place of `AddDiskBytes`). A create, a restore or fork
+as a new project, and growing a volume are refused with `disk_limit`
+when what the projects hold plus about what this adds passes the plan's
+disk: 1 GiB for a create, the source's figure per copy for a restore or
+fork, nothing for a grow, which raises only the ceiling and so is
+refused only while the projects already hold more than the plan. One
+disk may be at most the plan's whole disk (the bound I-449's owner
+choice kept). A start is never refused for disk: its bytes are already
+counted, and starting it is how its files get deleted. Nothing stops
+when the projects pass the plan: running machines keep running. The
+billing tick sends one `disk_over_plan` email a period; `repose ls` and
+`repose status` print "disk: your projects hold N GB of the plan's M GB;
+creating, restoring, forking and growing a disk are refused until they
+hold less" (they read `GET /billing` beside their other calls); the
+billing page's meter is "Disk held", with a note while over. It stays a
+cap: no overage price. A downgrade's `over_plan` compares the held
+figure. The message: "Your projects hold 99.5 GB and your Solo plan has
+100 GB of disk; this needs about 1 GB more. Destroy a project, or delete
+files in one (they stop counting within a day, or when it stops), or
+upgrade at ...".
+
+Contract. `GET /billing` `usage.disk_held_gb` (GB rounded up to a
+tenth) is new; `usage.disk_allocated_gb` stays one release and carries
+the same figure rounded up to a whole GB, so an older dashboard or CLI
+compares what the gate compares. `over_plan` detail gains
+`disk_held_gb` beside `disk_allocated_gb` (same figure). `disk_limit`
+detail carries `used_gb` (held, rounded up), `held_gb` and `need_gb`,
+or `volume_gb` for a disk past the plan. The fake api models it
+(`disk_held_gb` in its billing state for tests; each project's
+`disk_used_bytes` otherwise).
+
+Risk kept: an account over its plan can still start a stopped project
+and write, so start, fill, stop and the next one can hold more than the
+plan. It is bounded by memory (a few machines at once), each class's
+disk rate (I-450) and the host's pool guard (I-586), and the email and
+the admin view show it; refusing starts while far over is the next step
+if anyone does it.
+
+The owner confirmed three choices on 2026-10-07: a create adds 1 GiB;
+a disk grow is refused while the projects hold more than the plan; the
+plan totals stay 100, 250 and 500 GB.
+
+`TestGateEveryReason`, `TestDiskOverPlanEmail`, `TestChangePlan`
+(billing), `TestIngestRecordsDiskHeld` (meter), `TestBillingGateBlocksCompute`,
+`TestBillingRoutes`, `TestFork` (api), `TestMigrateUpDownUp` (db),
+`TestGoldenEmails` (notify), the fake's `TestPlanGate` and
+`TestChangePlan`, `TestDiskOverPlanLine` (cli), billing.spec.ts "the disk
+meter counts what the projects hold", failure-modes.spec.ts, the guest
+VM test's I-585 subtest (written, not run here). *Rejected:* the guest's
+filesystem figure (running only, guest-written); counting snapshots
+(Blob, not host disk); `discard` on the guest's mount (trims on every
+delete, which slows the large deletes agents run); refusing starts while
+over (locks a user out of the files they need to delete); an overage
+price for disk (the owner asked for a cap); lowering the plan totals (a
+pricing change, not made here).
+
+**I-586. The thin pool is guarded by what it holds: no new project past
+70 percent, no create, restore or grow past 85, no start past 95.**
+(owner, 2026-10-07, with I-585) Counting plans by bytes held overcommits
+each host's pool by design: the volumes' sizes on a host sum far past
+the pool, and a pool out of data or metadata stalls, then fails, every
+guest's writes. This replaces I-449's bound on the sum of the volumes'
+sizes (1.5 times the pool), which would have refused creates once about
+17 `large` volumes lived on host-01's 476 GiB pool.
+
+What existed: the scheduler placed where `pool_free_bytes` was at least
+the volume's size; hostd refused a create or restore at 90 percent
+data, and I-449's budget; `pool_high` at 80; `PoolFull` paged under 10
+percent free; lvm autoextends at 80 percent by 10 percent into the VG's
+5 percent headroom; the textfile collector exported data and metadata
+percent. `hosts.pool_bytes` was set only at registration (prod host-01:
+0), so nothing in the api knew the pool's size.
+
+Now, in percent used, data or metadata whichever is fuller: 70, the
+scheduler places no new project on the host (`PickHost` and `Freeing`
+require `pool_free_bytes - first_bytes >= 30 percent of pool_bytes`,
+where the first bytes are the new project's estimate or a restore's
+source figure) and hostd sends `pool_high` (`PoolWarnPct` 70), which
+the new `PoolHigh` alert raises as a warning; 80, autoextend, once; 85,
+hostd refuses CreateGuest, Restore and ResizeVolume (`PoolRefusePct`,
+was 90); 90, `PoolFull` pages; 95, hostd refuses StartGuest
+(`PoolStartRefusePct`, new). A stopped project lives on its host and
+starts only there, and a start adds a writer to a pool minutes from
+full, so at 95 it waits for the operator; the user reads "the host has
+no room for this project right now". Nothing stops a running guest for
+the pool. Metadata: `LVM.PoolMetadataPercent` (`lvs metadata_percent`)
+counts in hostd's checks, and `PoolMetadataHigh` pages at 80 percent,
+since it can fill before the data does. Why 70: the 15 points to 85 are 300
+GB of a 2 TB pool (71 GB of host-01's 476 GiB), about 40 minutes of one
+`large` writing flat out at its 120 MB/s (I-450), hours of ordinary
+agent work, and the disk grow (online Premium SSD v2, `pvresize`,
+`lvextend`) is an hour of a human's time; `PoolFull` at 90 pages in case
+several write at once.
+
+hostd's Hello (field 5) and Heartbeat (field 6) carry `pool_bytes`, and
+the api keeps the newest non-zero one, since autoextend and disk grows
+change the size after registration. A hostd older than this sends 0:
+the registered size stays, and a host with no size is placed on by the
+whole volume free, as before. Guest slots: a stopped project keeps its
+guest address from the host's /22 (1,020), and with nearly empty
+projects an account may keep 100, so placement also requires fewer than
+`HostGuestSlots` = 1,000 live projects on the host (I-569 had named this
+the ceiling to watch). RUNBOOK "PoolHigh", "PoolMetadataHigh",
+"PoolFull" (what to do at 100 percent) and DESIGN §4 "Thin pool
+capacity" say it for the operator.
+
+`TestPickByPoolRoom`, `TestPickCountsGuestSlots`, `TestPickTable`
+(scheduler), `TestPoolRoom`, `TestHeartbeatCarriesPoolSize`,
+`TestPoolHighAtPlacementThreshold` (hostd), `TestRealPoolMetadataPercent`
+(lvm), `TestRegisterSessionSendSweep` (hostmgr: the heartbeat's size
+replaces the registered one), `promtool test rules` for PoolHigh and
+PoolMetadataHigh. *Rejected:* keeping I-449's budget at a larger ratio
+(any ratio of sizes either refuses what I-585 sells or bounds nothing);
+refusing starts earlier (a stopped user's own files, and the pool has
+room); stopping guests automatically near full (an operator's call per
+tenant, RUNBOOK "PoolFull"); placing by free guest indexes reported by
+hostd (the live project count is the same number without a new field).
 
 **I-578. The Account page is a section of Settings, and the dashboard
 header shows Docs at every width.** (header-docs-phone, 2026-10-07;

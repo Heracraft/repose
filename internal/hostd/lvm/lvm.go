@@ -30,10 +30,10 @@ type LVM interface {
 	VolumeStats(ctx context.Context, name string) (size, used uint64, err error)
 	// PoolStats returns the thin pool's size and free bytes.
 	PoolStats(ctx context.Context) (size, free uint64, err error)
-	// Allocated returns the sum of the virtual sizes of the pool's thin
-	// volumes, except snapshots (snap-*, which share their origin's blocks
-	// and live only while one uploads) and the volume named except.
-	Allocated(ctx context.Context, except string) (uint64, error)
+	// PoolMetadataPercent returns how full the thin pool's metadata is:
+	// a pool out of metadata fails every volume's writes as one out of
+	// data does (DECISIONS I-586).
+	PoolMetadataPercent(ctx context.Context) (float64, error)
 	// Fsck runs e2fsck -fp and returns its exit code (0 or 1 is clean).
 	Fsck(ctx context.Context, name string) (int, error)
 	// ListVolumes returns every volume name in the group except the pool.
@@ -216,29 +216,24 @@ func (l *Real) PoolStats(ctx context.Context) (uint64, uint64, error) {
 	return size, size - used, nil
 }
 
-// Allocated implements LVM with one lvs of the volume group.
-func (l *Real) Allocated(ctx context.Context, except string) (uint64, error) {
-	rows, err := l.lvs(ctx, l.VG, "lv_name,lv_size,pool_lv")
+// PoolMetadataPercent implements LVM.
+func (l *Real) PoolMetadataPercent(ctx context.Context) (float64, error) {
+	rows, err := l.lvs(ctx, l.VG+"/"+l.Pool, "metadata_percent")
 	if err != nil {
 		return 0, err
 	}
-	var sum uint64
-	for _, r := range rows {
-		f := strings.Split(r, "|")
-		if len(f) < 3 {
-			return 0, fmt.Errorf("lvs: unexpected row %q", r)
-		}
-		name, pool := strings.TrimSpace(f[0]), strings.TrimSpace(f[2])
-		if pool != l.Pool || name == except || strings.HasPrefix(name, "snap-") {
-			continue
-		}
-		size, err := strconv.ParseUint(strings.TrimSpace(f[1]), 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("lvs: size %q: %w", f[1], err)
-		}
-		sum += size
+	if len(rows) == 0 {
+		return 0, fmt.Errorf("lvs: no row for pool %s", l.Pool)
 	}
-	return sum, nil
+	p := strings.TrimSpace(rows[0])
+	if p == "" {
+		return 0, nil
+	}
+	pct, err := strconv.ParseFloat(p, 64)
+	if err != nil {
+		return 0, fmt.Errorf("lvs: metadata_percent %q: %w", p, err)
+	}
+	return pct, nil
 }
 
 // Fsck implements LVM.
@@ -286,9 +281,11 @@ type Fake struct {
 	Volumes  map[string]*FakeVolume
 	PoolSize uint64
 	PoolFree uint64
-	FailOn   map[string]error
-	FsckExit int
-	Ops      []string
+	// PoolMetaPct is the pool's metadata percent used.
+	PoolMetaPct float64
+	FailOn      map[string]error
+	FsckExit    int
+	Ops         []string
 }
 
 // NewFake returns a Fake with a 1 TB pool.
@@ -421,17 +418,11 @@ func (f *Fake) PoolStats(context.Context) (uint64, uint64, error) {
 	return f.PoolSize, f.PoolFree, nil
 }
 
-// Allocated implements LVM.
-func (f *Fake) Allocated(_ context.Context, except string) (uint64, error) {
+// PoolMetadataPercent implements LVM.
+func (f *Fake) PoolMetadataPercent(context.Context) (float64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var sum uint64
-	for name, v := range f.Volumes {
-		if name != except && !strings.HasPrefix(name, "snap-") {
-			sum += v.Size
-		}
-	}
-	return sum, nil
+	return f.PoolMetaPct, nil
 }
 
 // Fsck implements LVM.

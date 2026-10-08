@@ -7,11 +7,13 @@ order: 31
 
 ## Your plan
 
-A plan buys memory for running machines, disk that may be allocated, and egress for the month ([Pricing](/docs/billing)). Solo gives running machines 8 GB of memory (one `large`, or two `small`), Plus 16 GB (one `xl`, two `large`, any mix), Pro 32 GB (two `xl`, four `large`, any mix). Starting a machine that would pass it is refused with exit code 7 and a message that names the machine using the memory; stop it, or upgrade. An `xl` needs Plus or Pro.
+A plan buys memory for running machines, disk for what your projects hold, and egress for the month ([Pricing](/docs/billing)). Solo gives running machines 8 GB of memory (one `large`, or two `small`), Plus 16 GB (one `xl`, two `large`, any mix), Pro 32 GB (two `xl`, four `large`, any mix). Starting a machine that would pass it is refused with exit code 7 and a message that names the machine using the memory; stop it, or upgrade. An `xl` needs Plus or Pro.
 
 ## Projects
 
-Your plan's memory limits what runs at once, and its disk limits what you keep: Solo allocates up to 100 GB across your projects, running or stopped, Plus 250 GB and Pro 500 GB. A new project's disk is 20 GB for `small`, 40 GB for `large` and 80 GB for `xl`. Stop a project and start another whenever you like; a stopped project uses only its disk.
+Your plan's memory limits what runs at once, and its disk limits what you keep: Solo's 100 GB counts the data your projects hold, running or stopped, as do Plus's 250 GB and Pro's 500 GB. A new project's disk is 20 GB for `small`, 40 GB for `large` and 80 GB for `xl`; that is how far it can grow, and it counts only what it holds. Stop a project and start another whenever you like; a stopped project uses no memory, only the disk it holds.
+
+While your projects hold more than the plan's disk, creating, restoring or forking a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Nothing stops: your machines keep running, stopped ones start, and you get one email a month about it. `repose ls`, `repose status` and the Billing page say so too.
 
 An account can have 100 projects, running or stopped, on every plan. Past that, creating, restoring or forking a project is refused: `You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.`
 
@@ -46,7 +48,7 @@ Data your machines send to the internet is counted against the month's allowance
 ## Disk and console
 
 - Disk reads and writes together are limited by size: `small` 2,000 operations a second and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.
-- A disk can grow only as far as the server it runs on has room. A [resize](/docs/machine#memory-and-disk) past that fails with `the host has no room for this project right now`, even within your plan's disk.
+- A disk can grow only as far as the server it runs on has room. A [resize](/docs/machine#memory-and-disk) past that fails with `the host has no room for this project right now`, even within your plan's disk, and so does starting a stopped project on a server whose disk is nearly full.
 - The boot and console log that `repose logs --kind console` shows keeps up to 2 KB a second from the machine's serial console, after the first 1 MB. Output past that is dropped, and the log has a line saying how many bytes went. Your programs' own output in a terminal or a log file isn't affected.
 
 ## What isn't allowed

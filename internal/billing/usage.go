@@ -42,14 +42,25 @@ func RunningMemory(ctx context.Context, q store.Querier, userID uuid.UUID, excep
 	return out, gb, rows.Err()
 }
 
-// AllocatedDisk is the sum of the user's live projects' volume sizes in
-// bytes, except one project (the one being grown). A project being
-// destroyed is left out, as it is from the project count (DECISIONS I-300):
-// its volume goes when the destroy finishes.
-func AllocatedDisk(ctx context.Context, q store.Querier, userID uuid.UUID, except uuid.UUID) (int64, int, error) {
+// HeldSQL is the bytes a projects row counts against the plan's disk
+// (DECISIONS I-585): the bytes its volume holds, measured or estimated,
+// else the volume's size. store.Project.HeldBytes is the same in Go.
+const HeldSQL = "coalesce(disk_held_bytes, volume_bytes)"
+
+// NewProjectHeldBytes is what a new project's volume is counted at until
+// its first sample: a fresh volume held 0.14 to 1.4 GB in its first
+// minute on prod (40 creates, 2026-10-07), most under 0.5 GB.
+const NewProjectHeldBytes int64 = 1 << 30
+
+// HeldDisk is the bytes the user's live projects' volumes hold, and how
+// many projects that is. A project being destroyed is left out, as it
+// is from the project count (DECISIONS I-300): its volume goes when the
+// destroy finishes. The disk size of each is only the ceiling it may
+// grow to and does not count (I-585).
+func HeldDisk(ctx context.Context, q store.Querier, userID uuid.UUID) (int64, int, error) {
 	var bytes int64
 	var n int
-	err := q.QueryRow(ctx, "select coalesce(sum(volume_bytes), 0), count(*) from projects where user_id = $1 and destroyed_at is null and state <> 'destroying' and id <> $2", userID, except).Scan(&bytes, &n)
+	err := q.QueryRow(ctx, "select coalesce(sum("+HeldSQL+"), 0)::bigint, count(*) from projects where user_id = $1 and destroyed_at is null and state <> 'destroying'", userID).Scan(&bytes, &n)
 	return bytes, n, err
 }
 
@@ -98,7 +109,7 @@ type Usage struct {
 	Period           Period
 	RunningGB        int
 	Running          []RunningProject
-	DiskAllocatedGB  int64
+	DiskHeldBytes    int64
 	Projects         int
 	EgressBytes      int64
 	EgressIncludedGB int
@@ -113,16 +124,30 @@ func LoadUsage(ctx context.Context, q store.Querier, userID uuid.UUID, plan Plan
 	if u.Running, u.RunningGB, err = RunningMemory(ctx, q, userID, uuid.Nil); err != nil {
 		return u, err
 	}
-	var disk int64
-	if disk, u.Projects, err = AllocatedDisk(ctx, q, userID, uuid.Nil); err != nil {
+	if u.DiskHeldBytes, u.Projects, err = HeldDisk(ctx, q, userID); err != nil {
 		return u, err
 	}
-	u.DiskAllocatedGB = GBCeil(disk)
 	if u.EgressBytes, err = PeriodEgress(ctx, q, userID, p); err != nil {
 		return u, err
 	}
 	u.OverageGB, u.OverageCents = OverageCents(plan, u.EgressBytes)
 	return u, nil
+}
+
+// DiskHeldGB is the held bytes in GB to one decimal, as /billing shows
+// them.
+func (u Usage) DiskHeldGB() float64 { return gbTenths(u.DiskHeldBytes) }
+
+// DiskOver reports whether the projects hold more than the plan's disk.
+func (u Usage) DiskOver() bool { return u.DiskHeldBytes > int64(u.Plan.DiskGB)<<30 }
+
+// gbTenths is bytes in GB rounded up to a tenth, so a figure over the
+// plan never reads as equal to it.
+func gbTenths(bytes int64) float64 {
+	if bytes <= 0 {
+		return 0
+	}
+	return float64((bytes*10+(1<<30-1))>>30) / 10
 }
 
 // EgressStopped reports whether the period's egress passed the plan's
@@ -133,7 +158,9 @@ func (u Usage) EgressStopped() bool { return u.EgressBytes >= u.Plan.EgressHardS
 func (u Usage) JSON() map[string]any {
 	return map[string]any{
 		"running_gb": u.RunningGB, "memory_gb": u.Plan.MemoryGB,
-		"disk_allocated_gb": u.DiskAllocatedGB, "disk_gb": u.Plan.DiskGB,
+		// disk_allocated_gb carries the held figure for one release, so an
+		// older client compares the number the gate does (I-585).
+		"disk_held_gb": u.DiskHeldGB(), "disk_allocated_gb": GBCeil(u.DiskHeldBytes), "disk_gb": u.Plan.DiskGB,
 		"egress_gb": float64(u.EgressBytes) / (1 << 30), "egress_included_gb": u.EgressIncludedGB,
 		"overage_cents": u.OverageCents, "projects": u.Projects, "project_limit": ProjectCap,
 		"period_start": u.Period.Start, "period_end": u.Period.End,

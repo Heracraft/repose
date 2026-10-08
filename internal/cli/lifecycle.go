@@ -114,8 +114,8 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 	if err != nil {
 		return err
 	}
-	// A stopped project costs nothing; its disk counts toward the plan's
-	// disk total, which `repose ls` and the Billing page show. The line
+	// A stopped project costs nothing; what its disk holds counts toward
+	// the plan's disk total (I-585), which the Billing page shows. The line
 	// says what the stop did: how long it took and the snapshot's size,
 	// which is what that time went on (DECISIONS I-570). The snapshot's id
 	// is for `repose snapshots`, where it is used.

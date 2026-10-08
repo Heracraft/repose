@@ -55,7 +55,7 @@ much runs, and nothing is metered by the hour. The other reasons
 | `detail.reason` | When | What the user reads |
 |---|---|---|
 | `plan_limit` | the running memory plus this machine's class would pass the plan's | `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` (an `xl` on Solo: `an xl machine needs 16 GB. Upgrade to Plus`) |
-| `disk_limit` | the allocated disk plus this volume would pass the plan's | `Your Solo plan allocates up to 100 GB of disk and your projects use 70 GB; this needs 40 GB more. Destroy a project, or upgrade at …` |
+| `disk_limit` | what the projects hold plus about what this adds (a create's first 1 GB, a restore's or fork's source figure per copy; nothing for growing a disk) would pass the plan's disk, or one disk would be larger than the plan's whole disk (I-585) | `Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at …` |
 | `egress_limit` | this period's egress passed four times the allowance | `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at …, or wait for the period to end.` |
 | `past_due` | the last payment failed | `Your last payment failed. Update your card at … to start machines again.` |
 | `suspended` | three days past due, or an operator suspension | `Your account is suspended. Pay at … to lift it, or email support.` |
@@ -104,7 +104,7 @@ address and downloads receipts. Paddle sends its own receipt emails.
 Upgrading to a bigger plan takes effect at once, prorated by Paddle on the
 next invoice, and needs the extra seats free. Downgrading takes effect at
 the next renewal and is refused (`409 conflict`, `detail.reason =
-over_plan`) while the running memory or allocated disk would not fit the
+over_plan`) while the running memory or the disk the projects hold would not fit the
 smaller plan; stop or
 destroy first. Cancelling ends the plan at the period's end (during the
 trial, at the trial's end): machines run until then, stop at it, and the

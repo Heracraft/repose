@@ -111,9 +111,10 @@ func (s *Server) billingPlan(w http.ResponseWriter, r *http.Request) error {
 	case errors.Is(err, billing.ErrNoSeat):
 		return withDetail(errf("conflict", "no seat is free for the upgrade right now; try again later"), map[string]any{"reason": "no_seat"})
 	case errors.As(err, &over):
-		return withDetail(errf("conflict", "your account does not fit the %s plan yet: %d GB running (it allows %d) and %d GB of disk allocated (it allows %d); stop or destroy some first",
-			over.Plan.Name, over.RunningGB, over.Plan.MemoryGB, over.DiskAllocatedGB, over.Plan.DiskGB),
-			map[string]any{"reason": "over_plan", "running_gb": over.RunningGB, "disk_allocated_gb": over.DiskAllocatedGB})
+		// disk_allocated_gb is the held figure too, kept one release (I-585).
+		return withDetail(errf("conflict", "your account does not fit the %s plan yet: %d GB running (it allows %d) and %s GB of disk held by your projects (it allows %d); stop machines, or destroy projects or delete files in them, first",
+			over.Plan.Name, over.RunningGB, over.Plan.MemoryGB, over.HeldGBText(), over.Plan.DiskGB),
+			map[string]any{"reason": "over_plan", "running_gb": over.RunningGB, "disk_held_gb": over.DiskHeldGB(), "disk_allocated_gb": billing.GBCeil(over.DiskHeldBytes)})
 	case err != nil:
 		return err
 	}

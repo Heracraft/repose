@@ -314,7 +314,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 	}
 	// The billing gate runs on every create, fork and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
-	if e := f.gate(u, class, classes[class], nil); e != nil {
+	if e := f.gate(u, class, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
 		return nil, e
 	}
 	if e := f.projectCap(u, 1); e != nil {
@@ -642,7 +642,7 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 		return errf("conflict", "%s is already starting", p.Slug)
 	}
 	if p.State != "running" {
-		if e := f.gate(userFrom(r), p.Class, 0, p); e != nil {
+		if e := f.gate(userFrom(r), p.Class, nil, p); e != nil {
 			return e
 		}
 	}
@@ -842,7 +842,7 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.VolumeBytes <= p.VolumeBytes {
 		return invalid("volume_bytes: volumes only grow").withDetail(map[string]any{"volume_bytes": p.VolumeBytes})
 	}
-	if e := f.gate(userFrom(r), "", body.VolumeBytes-p.VolumeBytes, nil); e != nil {
+	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, nil); e != nil {
 		return e
 	}
 	o := f.newOp(p, "resize")
@@ -1375,6 +1375,7 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return e
 		}
 		f.copyMultiplexer(p, np)
+		copyHeld(p, np)
 		for n, s := range p.secrets {
 			c := *s
 			np.secrets[n] = &c
@@ -1473,8 +1474,17 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 		return nil, e
 	}
 	f.copyMultiplexer(p, np)
+	copyHeld(p, np)
 	f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
 	return np, nil
+}
+
+// copyHeld starts a restored or forked copy at what its source holds,
+// as the api's insertRestored does (DECISIONS I-585).
+func copyHeld(src, np *project) {
+	if src.DiskUsedBytes > 0 {
+		np.DiskUsedBytes = src.DiskUsedBytes
+	}
 }
 
 // restorable is p's newest snapshot that has not expired, or nil.

@@ -1,6 +1,6 @@
 <!--
   One share of a plan's limit as a thin bar: what is used of what the plan
-  holds (memory running now, disk allocated, egress this period). One
+  holds (memory running now, disk the projects hold, egress this period). One
   series, so no legend; the numbers beside it carry the reading and the
   bar is a picture of them. The fill is ink; past the limit it turns amber
   and the words say "over", so the state is never colour alone.
@@ -33,7 +33,7 @@
 	<div class="flex items-baseline justify-between gap-4 text-sm">
 		<span class="font-medium">{label}</span>
 		<span class="font-mono text-compact text-ink-muted tabular-nums">
-			{reading}{#if over}<span class="text-amber-700 dark:text-amber-400"> · over</span>{/if}
+			{reading}{#if over}<span class="text-amber-700 dark:text-amber-400">{' · over'}</span>{/if}
 		</span>
 	</div>
 	<!-- aria-valuenow stops at the limit, which is all a meter can hold, so

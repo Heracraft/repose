@@ -65,11 +65,18 @@ HostMessage = oneof { Hello hello; Heartbeat hb; Result result; Samples samples;
 ```
 
 **Hello** (first message): `host_id`, current guest states (so the api can
-reconcile after a hostd restart), free memory, pool free bytes.
+reconcile after a hostd restart), free memory, pool free bytes, and
+`pool_bytes` (field 5, I-586), the thin pool's data size.
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
-places nothing on a draining host). A Heartbeat also goes right before
+places nothing on a draining host), and `pool_bytes` (field 6, I-586). The
+api keeps `hosts.pool_bytes` from the newest non-zero `pool_bytes`, since
+autoextend grows the pool after registration, and places a new project
+only where the pool stays at most 70 percent used with the new volume's
+first bytes in it. A hostd older than I-586 sends 0, which keeps the
+registered size, and on a host with no size the api places by the whole
+volume free, as before. A Heartbeat also goes right before
 every Result, so `free_mem_bytes` already counts a guest the command
 stopped, destroyed or created when the api places the next one
 (DECISIONS I-409).
@@ -83,7 +90,7 @@ command_id returns the stored result) and one of:
 | `StartGuest` | guest_id, plus optionally the same delivery fields as CreateGuest: secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, project_json (I-26: hostd keeps none of them on disk, so the api sends them on every start; a StartGuest with only guest_id is accepted while hostd still has them in memory), and class (I-260: the project's class; when it differs from the recorded one, hostd boots at the new class and records it; empty keeps the recorded class, so an api that does not send it is still accepted) | |
 | `StopGuest` | guest_id, snapshot_first (bool), timeout_s | snapshot_id if taken (assigned by the api), blob_path, bytes (I-26), sha256 (I-462) |
 | `DestroyGuest` | guest_id, keep_volume (bool) | |
-| `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` when the new size would pass the host's pool budget (as for `CreateGuest` and `Restore`, DECISIONS I-449) |
+| `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` while the thin pool is 85 percent used or more, data or metadata (as `CreateGuest` and `Restore` are; DECISIONS I-586, which replaced I-449's bound on the sum of the volumes' sizes). `StartGuest` is refused the same way at 95 percent |
 | `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
 | `ApplyConfig` | guest_id, system_closure, force_reboot (bool) | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied) |
 | `Snapshot` | guest_id, reason (`scheduled|stop|manual`) | snapshot_id, blob_path, bytes, sha256 (I-462: hex SHA-256 of the bytes uploaded; hostd checks the store holds `bytes` before answering) |
@@ -233,8 +240,11 @@ accepted.
 
 Root filesystem (DECISIONS I-567). `disk_used_bytes` is the thin
 volume's allocated blocks (`lvs data_percent`, host-measured), which
-keep a deleted file's blocks until the guest's weekly `fstrim`; it keeps
-that meaning. `root_used_bytes` and `root_size_bytes` are the guest's
+keep a deleted file's blocks until the guest's `fstrim` (daily, and at
+every stop since I-585); it keeps that meaning, and is sampled for a
+stopped guest as for a running one. The api keeps the newest non-zero
+figure no larger than `disk_alloc_bytes` as the project's
+`disk_held_bytes`, which the plan's disk counts (I-585). `root_used_bytes` and `root_size_bytes` are the guest's
 root filesystem from statfs (blocks less those available to `dev`, and
 blocks), guest-written: hostd sends both as 0 unless the size is
 non-zero, no larger than `disk_alloc_bytes`, and used is no larger than

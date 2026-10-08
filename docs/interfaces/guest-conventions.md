@@ -97,6 +97,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
 | `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
+| `fstrim.timer` | daily (NixOS's default is weekly): discards the root filesystem's free blocks, so a deleted file's blocks leave the host's thin volume, whose allocated blocks are what the plan's disk counts (DECISIONS I-585) |
+| `repose-trim-on-stop.service` | active from boot; its stop runs `fstrim /` at shutdown (at most 20 s), so a stopped project is counted at what it holds (DECISIONS I-585) |
 | `/var/log/repose/console.log` | not used; console goes to the serial device and hostd captures it |
 
 ## tmux

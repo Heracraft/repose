@@ -399,6 +399,27 @@ func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]Log
 	return lines, nil
 }
 
+// Billing is the part of GET /billing the CLI reads: whether there is a
+// plan, and the disk its projects hold against it (DECISIONS I-585).
+type Billing struct {
+	Subscription *struct {
+		Plan string `json:"plan"`
+	} `json:"subscription"`
+	Usage struct {
+		// DiskHeldGB is absent from an api older than I-585.
+		DiskHeldGB *float64 `json:"disk_held_gb"`
+		DiskGB     int      `json:"disk_gb"`
+	} `json:"usage"`
+}
+
+func (c *Client) GetBilling(ctx context.Context) (*Billing, error) {
+	var b Billing
+	if err := c.get(ctx, "/billing", &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
 func (c *Client) BillingPortal(ctx context.Context) (string, error) {
 	var r struct {
 		URL string `json:"url"`

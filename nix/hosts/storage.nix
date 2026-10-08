@@ -47,8 +47,9 @@ in
   environment.etc."lvm/lvm.conf".text = lib.mkAfter ''
     activation {
       # Grow the pool by 10 percent of its size into the VG headroom every
-      # time it passes 80 percent full. hostd's pool_high warning fires at
-      # the same threshold, which is when a human adds a disk or drains.
+      # time it passes 80 percent full. hostd's pool_high warning fires
+      # earlier, at 70, where the api stops placing new projects on the
+      # host and a human grows the disk (DECISIONS I-586).
       thin_pool_autoextend_threshold = 80
       thin_pool_autoextend_percent = 10
       monitoring = 1

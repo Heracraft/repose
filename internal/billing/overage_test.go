@@ -193,3 +193,38 @@ func TestEgressHardStop(t *testing.T) {
 		t.Fatalf("enforce off: %v %v", stopped, err)
 	}
 }
+
+// Projects that come to hold more than the plan's disk get one
+// disk_over_plan email a period, and nothing is stopped (DECISIONS I-585).
+func TestDiskOverPlanEmail(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePaddle()
+	defer f.Close()
+	stop := &stopRecorder{}
+	o := billing.NewOverage(pool, nil, testConfig(f), stop, nop(), quiet())
+	ctx := context.Background()
+	a := seedAccount(t, pool, "solo", "active", "large", "running")
+	o.Now = at(a.Period.Start.Add(10 * 24 * time.Hour))
+	held(t, pool, a.ProjectID, 100<<30)
+	if told, err := o.DiskOverPlan(ctx); err != nil || len(told) != 0 {
+		t.Fatalf("at the plan's disk: %v %v", told, err)
+	}
+	other := addProject(t, pool, a, "other", "large", "stopped", 40<<30)
+	held(t, pool, other, 12<<30+400<<20)
+	if _, _, err := o.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if k := eventKinds(t, pool, a); len(k) != 1 || k[0] != "disk_over_plan" {
+		t.Fatalf("events %v", k)
+	}
+	if p := accountEmail(t, pool, a, "disk_over_plan", "112.4 GB", "Solo has 100 GB of disk", "keep running and starting"); p["plan"] != "solo" || p["held_gb"] != 112.4 || p["limit_gb"] != float64(100) {
+		t.Fatalf("payload %v", p)
+	}
+	if len(stop.calls) != 0 {
+		t.Fatalf("a machine was stopped for the disk: %+v", stop.calls)
+	}
+	// Once a period.
+	if told, err := o.DiskOverPlan(ctx); err != nil || len(told) != 0 || len(eventKinds(t, pool, a)) != 1 {
+		t.Fatalf("second run: %v %v", told, err)
+	}
+}

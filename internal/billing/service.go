@@ -68,15 +68,22 @@ func (e *WaitlistedError) Message() string {
 }
 
 // OverPlanError refuses a downgrade the account would not fit in.
+// DiskHeldBytes is what the projects' volumes hold (DECISIONS I-585).
 type OverPlanError struct {
-	RunningGB       int
-	DiskAllocatedGB int64
-	Plan            Plan
+	RunningGB     int
+	DiskHeldBytes int64
+	Plan          Plan
 }
 
 func (e *OverPlanError) Error() string {
-	return fmt.Sprintf("%d GB running and %d GB of disk do not fit the %s plan (%d GB, %d GB)", e.RunningGB, e.DiskAllocatedGB, e.Plan.Name, e.Plan.MemoryGB, e.Plan.DiskGB)
+	return fmt.Sprintf("%d GB running and %s GB of disk held do not fit the %s plan (%d GB, %d GB)", e.RunningGB, fmtGB(e.DiskHeldBytes), e.Plan.Name, e.Plan.MemoryGB, e.Plan.DiskGB)
 }
+
+// DiskHeldGB is the held figure to a tenth of a GB.
+func (e *OverPlanError) DiskHeldGB() float64 { return gbTenths(e.DiskHeldBytes) }
+
+// HeldGBText is the held figure as the message prints it.
+func (e *OverPlanError) HeldGBText() string { return fmtGB(e.DiskHeldBytes) }
 
 // Overview is GET /billing.
 func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, error) {
@@ -293,8 +300,8 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 	if err != nil {
 		return PlanChange{}, err
 	}
-	if usage.RunningGB > target.MemoryGB || usage.DiskAllocatedGB > int64(target.DiskGB) {
-		return PlanChange{}, &OverPlanError{RunningGB: usage.RunningGB, DiskAllocatedGB: usage.DiskAllocatedGB, Plan: target}
+	if usage.RunningGB > target.MemoryGB || usage.DiskOver() {
+		return PlanChange{}, &OverPlanError{RunningGB: usage.RunningGB, DiskHeldBytes: usage.DiskHeldBytes, Plan: target}
 	}
 	if _, err := s.paddle.UpdateSubscriptionItems(ctx, sub.ID, s.cfg.PlanPrice(target.ID), ProrateNextBillingCycle); err != nil {
 		return PlanChange{}, fmt.Errorf("schedule the downgrade: %w", err)

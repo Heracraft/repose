@@ -174,6 +174,7 @@ produces Paddle's email about the card and ours about the machines.
 | `subscription_ended` | Your plan has ended | billing, at the end: machines stopped, the retention date, how to come back | `{plan, ended_at, retention_until}` |
 | `plan_changed` | Your plan changed | billing, on an upgrade or a scheduled downgrade | `{from_plan, to_plan, effective_at}` |
 | `egress_stopped` | Your machines were stopped: egress limit | billing, at four times the egress allowance: the period's egress, the limit, until when, the upgrade link | `{plan, egress_gb, limit_gb, until}` |
+| `disk_over_plan` | Your projects hold more than your plan's disk | billing's hourly tick, once a period, when the projects hold more than the plan's disk (I-585): what they hold, the plan's disk, that machines keep running and starting, what is refused until they hold less, and that a deleted file stops counting within a day or at the machine's stop | `{plan, held_gb, limit_gb}` |
 
 `billing_stopped` (`Your guests were stopped for non-payment`) and
 `abuse_stopped` (`Your guest was stopped: a cryptocurrency miner was

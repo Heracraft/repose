@@ -166,8 +166,8 @@ paths before an in-place switch.
 
 The pool starts at 95 percent of the data disk and autoextends into the
 remaining 5 percent when 80 percent full. hostd's `host_warning{kind:
-"pool_80"}` fires from the same threshold, which is when an operator adds a
-disk or drains the host. A full thin pool makes every guest's writes fail
+"pool_high"}` fires earlier, at 70 percent, where the api stops placing new
+projects on the host and an operator grows the disk (DECISIONS I-586). A full thin pool makes every guest's writes fail
 at once; the two mechanisms exist so that never happens silently.
 
 ### Memory reservation
@@ -217,7 +217,7 @@ by drain, `nixos-rebuild boot`, reboot, undrain. `system.autoUpgrade` is off.
 | Data disk missing at install | disko fails with `device /dev/disk/azure/scsi1/lun0 not found`; nixos-anywhere aborts before touching the OS disk. Attach the disk, rerun. |
 | `host.json` absent at boot (registration never ran) | `repose-host-net.service` logs `no host.json; bridge not configured` and exits 0; hostd starts, sees no registration, retries `Register` every 30 s using the join token, logs `waiting for join token` if that is missing too. Alert `host_unregistered` after 10 minutes (10-observability). |
 | Join token rejected | hostd logs `register: join token invalid or used`; same alert. Operator mints a new one with `repose-admin hosts add --reissue <host>` and writes it to `/run/repose/join-token`. |
-| Thin pool at 80 percent | `host_warning{pool_80}` event, Grafana alert; autoextend consumes the headroom; at 95 percent hostd refuses `CreateGuest` and `ResizeVolume` with `insufficient_capacity` and existing guests keep running. |
+| Thin pool at 70 percent, data or metadata | `host_warning{pool_high}` event, `PoolHigh` alert, no new placements; autoextend consumes the headroom at 80; at 85 percent hostd refuses `CreateGuest`, `Restore` and `ResizeVolume`, and at 95 `StartGuest`, with `insufficient_capacity`; existing guests keep running (DECISIONS I-586). |
 | Store at 80 percent | `host_warning{store_80}`; `nix.settings.min-free` triggers GC of unrooted paths; builds fail with `closure_too_large` before touching the last 50 GB. |
 | WireGuard handshake fails | `wg show wg0` shows no handshake; hostd's gRPC still works (it goes over the Azure NIC), so the api sees the host but the gateway cannot reach guests; alert `host_wg_down` from the edge side. |
 | hostd crashes | Restarts in 2 s; guests are untouched (transient units, `KillMode=process`); hostd reconciles from `state.db` and `systemctl list-units 'guest@*'`. |

@@ -326,6 +326,7 @@ var platformSubjects = map[string]string{
 	"subscription_ended":     "Your plan has ended",
 	"plan_changed":           "Your plan changed",
 	"egress_stopped":         "Your machines were stopped: egress limit",
+	"disk_over_plan":         "Your projects hold more than your plan's disk",
 }
 
 // Subject is the email subject line: Title for agent events, the

@@ -43,7 +43,7 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; its disk counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
+The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
@@ -217,7 +217,7 @@ git merge fork-2/main
 
 Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`.
 
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects) and your plan's disk, and toward the plan's memory while it runs. If the copies would take you past 100, `repose fork` creates none of them. `--size small` makes copies that take less of that memory and disk; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. `--size small` makes copies that take less of that memory; `--name` changes their names.
 
 ## Logs and events
 

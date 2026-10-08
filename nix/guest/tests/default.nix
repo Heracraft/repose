@@ -984,6 +984,12 @@ in
           guest.succeed(f"test -x {glibc}/lib/ld-linux-x86-64.so.2")
           guest.succeed("/tmp/link/t")
 
+      with subtest("I-585: the volume is trimmed daily and when the machine stops"):
+          guest.succeed("systemctl cat fstrim.timer | grep -qx 'OnCalendar=daily'")
+          guest.succeed("systemctl is-enabled fstrim.timer")
+          guest.succeed("systemctl is-active repose-trim-on-stop.service")
+          guest.succeed("systemctl cat repose-trim-on-stop.service | grep -q '^ExecStop=.*/fstrim /$'")
+
       with subtest("guest profile script"):
           prof = json.loads(guest.succeed("sudo -u dev repose-guest-profile"))
           assert prof["slug"] == "todo-app" and prof["dir"] == "/home/dev/factory", prof

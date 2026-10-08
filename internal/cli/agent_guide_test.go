@@ -57,6 +57,7 @@ var guestCommands = map[string]string{
 	"grep":     "system:NixOS's base system path",
 	"df":       "system:NixOS's base system path (coreutils)",
 	"dmesg":    "system:NixOS's base system path (util-linux)",
+	"fstrim":   "system:NixOS's base system path (util-linux); base/trim.nix runs it daily (I-585)",
 	"curl":     "nix/guest/base/tool-list.nix:curl",
 	"jq":       "nix/guest/base/tool-list.nix:jq",
 	"git":      "nix/guest/base/tool-list.nix:git",
