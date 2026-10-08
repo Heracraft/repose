@@ -391,7 +391,8 @@ in
           guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
           guest.succeed("kill -KILL $(sudo -u dev tmux display-message -p '#{pid}')")
           guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=30)
-          assert user_q("systemctl --user is-active repose-tmux-session.service") == "active"
+          # The session answers before the unit's start finishes.
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-tmux-session.service", timeout=30)
 
       with subtest("I-538: the tmux server, its panes and a dev login get 524288 open files"):
           pid = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
@@ -683,7 +684,8 @@ in
           assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
           assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
           put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"playwright": {"enabled": false}}}')
-          out = dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list")
+          # opencode colours its list; the driver's log shows it without.
+          out = re.sub(r"\x1b\[[0-9;]*m", "", dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list"))
           assert re.search(r"playwright\s+disabled", out), out
           put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
           out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
