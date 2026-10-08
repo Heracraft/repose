@@ -559,7 +559,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// PoolStartRefusePct the pool is minutes from full, and one more
 	// writer risks every guest on it (DECISIONS I-586).
 	if pct, err := m.poolUsedPct(); err == nil && pct >= m.cfg.PoolStartRefusePct {
-		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
+		return nil, errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
 	}
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
 	// that restarted still has the guest's secrets and sshd material.

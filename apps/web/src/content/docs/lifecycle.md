@@ -107,11 +107,8 @@ This deletes the machine and its disk and stops all charges for the project. It 
 Within 30 days, bring it back, running, with its size, configuration and git remote:
 
 ```
-$ repose ls --destroyed
-PROJECT   CLASS  DESTROYED         SNAPSHOT          SIZE    RESTORABLE UNTIL  EARLIER
-todo-app  large  2026-10-07 17:42  2026-10-07 17:42  2.1 GB  2026-11-06        -
-$ repose restore todo-app
-Restored todo-app from its 2.1 GB snapshot of 2026-10-07 17:42 in 41s; it is running (large).
+repose ls --destroyed
+repose restore todo-app
 ```
 
 `--as NEW-NAME` restores under another name, and `--snapshot ID` picks an older snapshot. A restore started while the destroy is still running waits for it. After 30 days the snapshot is deleted.

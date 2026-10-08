@@ -33,7 +33,7 @@
 	<div class="flex items-baseline justify-between gap-4 text-sm">
 		<span class="font-medium">{label}</span>
 		<span class="font-mono text-compact text-ink-muted tabular-nums">
-			{reading}{#if over}<span class="text-amber-700 dark:text-amber-400">{' · over'}</span>{/if}
+			{reading}{#if over}<span class="text-amber-700 dark:text-amber-400">&nbsp;· over</span>{/if}
 		</span>
 	</div>
 	<!-- aria-valuenow stops at the limit, which is all a meter can hold, so

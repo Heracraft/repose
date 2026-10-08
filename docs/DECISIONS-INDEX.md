@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-606 entries.
+619 entries.
 
 ## Scope
 
@@ -234,7 +234,7 @@ pointer, not a summary.
 - **I-147** A start applies only a built revision newer than the one the guest runs — 2026-09-21; L3201
 - **I-148** The activation's output goes to a file, and hostd asks again once when guestd went away mid-switch — 2026-09-21; L3214
 - **I-156** A destroy the user asked for always finishes; DELETE answers with the op to wait on — 2026-09-23; L3230
-- **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; L3262
+- **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; partly amended by I-593; L3262
 - **I-158** Stop, resize and snapshot on a dead guestd — 2026-09-23; L3283
 - **I-159** An op's error message is a sentence; the host's wording is `detail` — 2026-09-23; L3300
 - **I-160** A create reuses a closure the host already runs — 2026-09-23; L3312
@@ -248,7 +248,7 @@ pointer, not a summary.
 - **I-153** The CLI says what actually happened: the true state, why, and the next command — 2026-09-23; L3532
 - **I-154** Long commands show live phases — 2026-09-23; L3567
 - **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-557; amended by I-566; L3584
-- **I-164** A snapshot reads the blocks the filesystem uses, not the whole volume — 2026-09-23; L3606
+- **I-164** A snapshot reads the blocks the filesystem uses, not the whole volume — 2026-09-23; amended by I-594; L3606
 - **I-165** A destroy stops the guest first, reads `destroying` from the moment it is accepted, and says so when it fails — 2026-09-23; L3657
 - **I-166** `repose destroy` returns when the api has accepted the destroy — 2026-09-23; L3690
 - **I-167** Restore by name: `GET /projects/destroyed`, `POST /projects/restore`, `repose restore NAME` — 2026-09-23; L3720
@@ -309,7 +309,7 @@ pointer, not a summary.
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5063
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5094
 - **I-224** The sync's writes are one ssh, and none when nothing changed — L5141
-- **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — L5175
+- **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — amended by I-588; L5175
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5204
 - **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-520; amended by I-563; L5274
 - **I-230** Guest disks are opened O_DIRECT, and guest@ units get a MemoryHigh 128 MiB under MemoryMax — 2026-09-23; L5332
@@ -344,7 +344,7 @@ pointer, not a summary.
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6582
 - **I-262** An idle running machine is announced, never stopped — 2026-09-26; L6599
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; L6643
-- **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; L6704
+- **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6704
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6749
 - **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; amended by I-488; L6775
 - **I-264** tmux passes modified keys, OSC 8 links and passthrough to the laptop's terminal — 2026-09-26; partly amended by I-515; L6822
@@ -584,7 +584,7 @@ pointer, not a summary.
 - **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L14132
 - **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L14150
 - **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L14175
-- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; L14192
+- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; partly amended by I-597; L14192
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L14230
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14264
 - **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L14280
@@ -592,8 +592,8 @@ pointer, not a summary.
 - **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L14329
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14344
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L14355
-- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; L14374
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; L14409
+- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; amended by I-596; amended by I-597; amended by I-598; L14374
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; amended by I-598; L14409
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14431
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14442
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14458
@@ -602,14 +602,14 @@ pointer, not a summary.
 - **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14635
 - **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14654
 - **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14690
-- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; L14717
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; amended by I-598; L14717
 - **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14782
 - **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14795
 - **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14809
 - **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14828
 - **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14854
 - **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14867
-- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; L14891
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; amended by I-587; amended by I-588; L14891
 - **I-530** dev is a trusted nix user — 2026-10-06; L14930
 - **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14944
 - **I-532** The guest has no nix channels — 2026-10-06; L14965
@@ -638,3 +638,16 @@ pointer, not a summary.
 - **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15880
 - **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L15982
 - **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; L16044
+- **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16074
+- **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16105
+- **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16144
+- **I-590** A boot that never reaches Ready falls back to the guest's last good closure, once, and the start ends running with a warning — 2026-10-07; L16180
+- **I-591** ApplyConfig on a stopped guest checks what the boot will read from the host — 2026-10-07; L16248
+- **I-592** A boot that never reaches Ready is classified from its console, and the console reaches its owner through `repose logs --kind console` — 2026-10-07; L16261
+- **I-593** A Switch error guestd codes reaches the api with its code — 2026-10-07; L16310
+- **I-599** A refusal of the user's own certificate does not count towards the gateway's per-source ban, and failures and bans are logged — 2026-10-07; L16334
+- **I-594** A snapshot of a killed guest replays its journal on the LVM snapshot and goes out as extents — 2026-10-07; L16374
+- **I-595** A size change restarts without a snapshot, and a restore says how big its snapshot was — 2026-10-07; L16438
+- **I-596** On herdr, the sync that makes the checkout closes the idle `home` workspace, as tmux respawns its `shell` window — 2026-10-07; L16478
+- **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16505
+- **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16541
