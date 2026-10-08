@@ -76,6 +76,18 @@ Identity:
   the account (DECISIONS I-575). Any other command that finds no project exits 4 (`No
   repose project here, and this directory has no git remote. Name one:
   ...`).
+- The home folder (the laptop's home directory, a folder above it, or a
+  folder in a repository rooted at one of those) is no project's
+  (DECISIONS I-601). Without an explicit project nothing resolves there:
+  no `by_dir`, no `checkouts`, no remote lookup, and an old `by_dir`
+  entry for it is deleted when read. A plain `run` exits 2 (`Your home
+  folder is not a project. cd into one, or pass --name NAME or
+  --temp.`); other commands exit 4 asking for the name. `run --name` and
+  `run --temp` there sync nothing, write no `by_dir`, send no
+  `remote_url` and add no `repose` git remote; `sync` and `run --on`
+  exit 2. Its subfolders are ordinary directories.
+- `repose rm` deletes every `by_dir` and `checkouts` entry naming the
+  destroyed project (DECISIONS I-601).
 - The project name becomes the slug: lowercase, `[a-z0-9-]`, other characters
   replaced by `-`, runs collapsed, 1 to 40 characters. `Todo App` and
   `todo-app` collide, and the CLI says so with the existing project's name.

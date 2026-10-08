@@ -150,7 +150,20 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as your home directory, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`.
+In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
+
+### From your home folder
+
+Your home folder, and every folder above it, belongs to no machine. There, `repose run --name NAME` creates NAME or uses it, and syncs nothing, so you can start as many machines as you like from a fresh terminal:
+
+```
+$ cd ~
+$ repose run --name scratch "try the new API"
+$ repose run --name notes
+$ repose run --temp
+```
+
+A plain `repose run` there stops with `Your home folder is not a project. cd into one, or pass --name NAME or --temp.` Commands that act on a machine, such as `repose rm` or `repose stop`, need its name there. `repose sync` and `run --on` stop with an error. A home folder that is a git repository, such as a dotfiles repository, is never synced and gets no `repose` git remote.
 
 ## Temporary machines
 
@@ -174,10 +187,10 @@ Not a git repository, so nothing was synced.
 - `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours. It's counted from when the machine was made.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
-- If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working.
+- If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
-- Exiting the last window of its tmux session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
-- A temporary machine always runs tmux, whatever `default_multiplexer` says. herdr opens a new shell when its last tab closes, so the session would never end. `--temp --multiplexer herdr` stops with an error, and so does `--multiplexer herdr` on a temporary machine until `repose keep` makes it a normal one.
+- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
+- On herdr, closing tabs never destroys it: herdr opens a new shell when its last tab closes, so the session never ends. It goes when its time runs out, or at `repose rm`. A temporary machine picks its multiplexer as any new machine does, and appears in herdr's sidebar on your laptop.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
 

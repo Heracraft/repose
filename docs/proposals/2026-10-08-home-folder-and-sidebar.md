@@ -1,6 +1,6 @@
 # The home folder, loose machines and herdr's sidebar (proposal, 2026-10-08)
 
-**Status: proposal. Nothing here is decided and no code is written.** It
+**Status: decided 2026-10-08 as I-601 (Part 1: A as recommended with plainer text, B put aside, C skipped, D) and I-602 (temporary machines on herdr go at their expiry). Part 2: docs only.** It
 changes behaviour only through `DECISIONS.md` entries that amend I-152,
 I-358, I-575 and I-510. The public docs change in the same commit as the
 code.

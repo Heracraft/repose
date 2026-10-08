@@ -332,7 +332,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
 			}
-			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+			if err := checkMultiplexerFlag(opts.Multiplexer); err != nil {
 				return err
 			}
 			e, err := env()
@@ -415,7 +415,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := checkMultiplexerFlag(opts.Multiplexer, opts.Temp > 0); err != nil {
+			if err := checkMultiplexerFlag(opts.Multiplexer); err != nil {
 				return err
 			}
 			e, err := env()
