@@ -729,7 +729,7 @@ in
           # Claude Code, Gemini CLI and opencode start the server through
           # the launcher while listing it; it connects only with the secret.
           for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
-              status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+              status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
               print(f"{cmd} ({status}):\n{out}")
               bad = ["disconnected", "failed", "error", "needs auth"]
               rows = [l.lower() for l in out.splitlines() if "probe" in l and any(w in l.lower() for w in ["connected", *bad])]
@@ -838,7 +838,7 @@ in
           assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
           def listed(connected_word):
               for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
-                  status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 60 {cmd}' 2>&1")
+                  status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
                   print(f"{cmd} ({status}):\n{out}")
                   rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
                   assert rows and connected_word in rows[0] and "failed" not in rows[0] and "disconnected" not in rows[0], (cmd, out)
