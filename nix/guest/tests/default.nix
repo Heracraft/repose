@@ -554,7 +554,7 @@ in
           assert old not in new and len(new) == 1, (old, new)
           user("herdr server stop")
           guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
-          guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q factory", timeout=40)
+          guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q checkout", timeout=40)
           assert unit_state("repose-herdr-server.service") == "active"
           # Back to tmux for the subtests below.
           user("systemctl --user stop repose-herdr-server.service")
