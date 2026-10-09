@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 )
 
 // paymentRequiredMessage is what every command prints for the api's
@@ -84,4 +88,79 @@ func namePlanFix(e *APIError) string {
 		return strings.Replace(e.Message, slugs[0]+" is using it. Stop it, or upgrade", slugs[0]+" is using it. `repose stop "+slugs[0]+"` frees it, or upgrade", 1)
 	}
 	return strings.Replace(e.Message, " are using it. Stop one, or upgrade", " are using it. `repose stop "+strings.Join(slugs, " ")+"` frees it, or upgrade", 1)
+}
+
+// planWaitable is whether a run refused for having no plan may wait for
+// one (DECISIONS I-634): a person at the terminal, and no --json. Tests
+// replace it.
+var planWaitable = func(e *Env) bool {
+	return !e.JSON && canPrompt(os.Stdin) && isatty(os.Stderr)
+}
+
+// planPoll is how often the wait for a plan reads the account; planWaitMax
+// is how long it waits before the run exits 7 as it would have.
+var (
+	planPoll    = 3 * time.Second
+	planWaitMax = 30 * time.Minute
+	openForPlan = openBrowser
+)
+
+// noPlanYet is the refusal a plan bought on the billing page lifts: the
+// gate's subscription_required with nobody waiting for a seat. A
+// waitlisted account cannot buy one, and every other reason (past_due,
+// plan_limit) is not fixed by a checkout.
+func noPlanYet(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) || ae.Code != "payment_required" {
+		return false
+	}
+	if r, _ := ae.Detail["reason"].(string); r != "subscription_required" {
+		return false
+	}
+	return ae.Detail["waitlist"] == nil
+}
+
+// hasPlan is an account whose next create or start the gate lets through.
+func hasPlan(me *Me) bool {
+	return me.Billing.Status == "exempt" || (me.Billing.Plan != nil && *me.Billing.Plan != "")
+}
+
+// waitForPlan is `repose run` on an account with no plan (DECISIONS
+// I-634): instead of exiting 7 and making the person type the command
+// again after checkout, it opens the billing page as login opens its
+// link, and goes on once GET /me shows a plan. It returns false, nil
+// when it cannot wait, so the caller exits 7 as before.
+func waitForPlan(ctx context.Context, e *Env, pr *progress) (bool, error) {
+	if !planWaitable(e) {
+		return false, nil
+	}
+	opts := loginOptsFromEnv(false, false)
+	if browserAvailable(opts.NoBrowser, opts.GuestEnv, opts.Display, opts.GOOS) {
+		_ = openForPlan(billingURL)
+	}
+	if pr == nil {
+		_, _ = fmt.Fprintf(e.ErrOut, "Waiting for a plan at %s...\n", billingURL)
+	} else {
+		pr.Phase("Waiting for a plan at "+billingURL, "")
+		defer pr.End()
+	}
+	deadline := time.Now().Add(planWaitMax)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(planPoll):
+		}
+		me, err := e.Client.GetMe(ctx)
+		if err != nil {
+			if transientAPIError(err) {
+				continue
+			}
+			return false, err
+		}
+		if hasPlan(me) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

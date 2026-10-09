@@ -62,12 +62,9 @@ func groupCommands(root *cobra.Command) {
 	}
 	root.ResetCommands()
 	root.AddCommand(ordered...)
+	root.AddCommand(newHelpTopicCmds()...)
+	root.SetHelpCommand(newHelpCmd())
 	root.InitDefaultHelpCmd()
-	for _, c := range root.Commands() {
-		if c.Name() == "help" {
-			c.Short = "Show help for a command"
-		}
-	}
 }
 
 // flagUsages is a flag set's help, wrapped at helpWidth. --temp's
@@ -121,6 +118,9 @@ Flags:
 Global Flags:
 {{globalFlagUsages . | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
 
-Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{if not .HasParent}}
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{if .HasHelpSubCommands}}
+
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad (print "help " .Name) 18}} {{.Short}}{{end}}{{end}}{{end}}{{if not .HasParent}}
 Docs: {{docsURL}}{{end}}
 `

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -98,6 +99,8 @@ var machineWordOK = []*regexp.Regexp{
 	regexp.MustCompile(`repose-guest-[a-z-]+`),
 	regexp.MustCompile(`fragment\.nix`),
 	regexp.MustCompile(`\bset-environment\b`),
+	// The help topic's name (I-635).
+	regexp.MustCompile(`help environment\b|topic: environment\b|^environment$`),
 }
 
 func machineWordsIn(s string) []string {
@@ -191,5 +194,43 @@ func TestMessagesSayMachine(t *testing.T) {
 			}
 			return true
 		})
+	}
+}
+
+// I-635: the three help topics print offline, and a topic that is no
+// command and no topic is a usage error naming what was meant.
+func TestHelpTopics(t *testing.T) {
+	run := func(args ...string) (string, error) {
+		root := newRootCmd("test")
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs(args)
+		_, err := root.ExecuteC()
+		return out.String(), err
+	}
+	out, err := run("help", "exit-codes")
+	if err != nil || !strings.Contains(out, "\n  130  Interrupted with Ctrl-C, at a question too.\n") {
+		t.Fatalf("exit-codes: %v\n%s", err, out)
+	}
+	out, err = run("help", "environment")
+	if err != nil || !strings.Contains(out, "\n  REPOSE_NO_BROWSER=1  ") {
+		t.Fatalf("environment: %v\n%s", err, out)
+	}
+	out, _ = run("--help")
+	if !strings.Contains(out, "Additional help topics:\n  help environment ") {
+		t.Fatalf("root help:\n%s", out)
+	}
+	_, err = run("help", "exit-code")
+	var ue cobraUsageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "Did you mean `repose help exit-codes`?") {
+		t.Fatalf("typo: %v", err)
+	}
+	_, err = run("help", "secrets", "lsit")
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "`repose help secrets list`") {
+		t.Fatalf("subcommand typo: %v", err)
+	}
+	if _, err := run("help", "secrets", "list"); err != nil {
+		t.Fatalf("help secrets list: %v", err)
 	}
 }

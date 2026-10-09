@@ -24,6 +24,7 @@ import (
 	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/eventverbs"
 )
 
 // Message is one notification to deliver.
@@ -300,10 +301,8 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
-	verb := map[string]string{"completed": "finished", "needs_input": "needs input", "error": "hit an error", "agent_message": "says", "agent_question": "asks", "idle_running": "unused for 24h, holding plan memory", "temp_expiring": "destroyed in an hour", "temp_destroyed": "temporary machine destroyed", "personal_failed": "machine.nix did not apply", "boot_failed": "new system did not boot"}[m.Kind]
-	if verb == "" {
-		verb = strings.ReplaceAll(m.Kind, "_", " ")
-	}
+	// The CLI's `repose events` says the same words (I-634).
+	verb := eventverbs.Verb(m.Kind)
 	if m.Agent != "" {
 		return fmt.Sprintf("%s: %s %s", m.Project, m.Agent, verb)
 	}

@@ -20,7 +20,7 @@ repose login
 
 ## 2. Choose a plan
 
-Choose a plan at [repose.herakraft.co/billing](https://repose.herakraft.co/billing) before the first machine; the first week is free. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+Choose a plan at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Run from a terminal on an account with no plan, `repose run` opens that page and waits, then goes on once you have one. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
 
 ## 3. Let it run without asking
 

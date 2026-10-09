@@ -102,6 +102,10 @@ type Env struct {
 	// machine has not opted out: the tool scan leaves the laptop's
 	// global tools to it (DECISIONS I-490).
 	personalOn bool
+	// longSSHWait is set by run, start and attach, which may have just
+	// booted the machine: its first ssh may take the whole minute
+	// (I-634).
+	longSSHWait bool
 }
 
 func (e *Env) target(slug string) sshTarget {

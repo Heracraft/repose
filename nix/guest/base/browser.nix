@@ -202,9 +202,19 @@ in
     # URL and succeed instead of failing to find xdg-open. A store path,
     # so nothing new lands on PATH; it never opens the agents' browser,
     # which would carry the user's logins there. A user's own BROWSER
-    # wins (DECISIONS I-541).
+    # wins (DECISIONS I-541). An https link is also left in
+    # ~/.cache/repose/open-urls, which an attached laptop's session
+    # helper takes and opens in the laptop's browser (I-634): Claude
+    # Code's /login calls BROWSER.
     BROWSER = "${pkgs.writeShellScript "repose-print-url" ''
       printf 'Open in your browser: %s\n' "$@" >&2
+      d="$HOME/.cache/repose"
+      for u in "$@"; do
+        case "$u" in
+          https://*) mkdir -p "$d" 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$u" >> "$d/open-urls" 2>/dev/null ;;
+        esac
+      done
+      exit 0
     ''}";
   };
 

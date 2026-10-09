@@ -64,7 +64,7 @@ func TestOpenForwardsToAnIPv6OnlyServer(t *testing.T) {
 
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	if err := waitForSSH(ctx, f.target, nil); err != nil {
+	if err := waitForSSH(ctx, f.target, sshWaitTimeout, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	out, err := runSSH(ctx, f.target, "ss -Hltn", nil)

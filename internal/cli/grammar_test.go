@@ -347,10 +347,10 @@ func TestNotifyShowAndTest(t *testing.T) {
 }
 
 func TestSetupLine(t *testing.T) {
-	if l := setupLine(&Project{AgentDefault: "claude"}); l != "" {
+	if l := setupLine(&Project{AgentDefault: "claude"}, ""); l != "" {
 		t.Errorf("defaults: %q", l)
 	}
-	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true}); l != "setup: agent codex, machine.nix off, base updates held" {
+	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true}, "claude"); l != "setup: agent codex, machine.nix off, base updates held" {
 		t.Errorf("all set: %q", l)
 	}
 }
@@ -411,5 +411,34 @@ func TestHelpHidesProjectWhereRefused(t *testing.T) {
 		if got := strings.Contains(out.String(), "--project NAME"); got != want {
 			t.Errorf("repose %s --help lists --project: %v, want %v\n%s", args, got, want, out.String())
 		}
+	}
+}
+
+// I-635: `run --agent X` without -p makes X the project's agent, at
+// creation and on a project that exists, and status names the agent
+// when it is not config.toml's default_agent.
+func TestRunAgentWithoutPromptSticks(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Agent: "codex", SetAgent: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	p, err := findByName(ctx, f.env.Client, testSlug)
+	if err != nil || p == nil || p.AgentDefault != "codex" {
+		t.Fatalf("created with %+v (%v)", p, err)
+	}
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Agent: "gemini", SetAgent: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ = findByName(ctx, f.env.Client, testSlug); p.AgentDefault != "gemini" {
+		t.Fatalf("after run --agent gemini: %q", p.AgentDefault)
+	}
+	if l := setupLine(&Project{AgentDefault: "claude"}, "codex"); l != "setup: agent claude" {
+		t.Fatalf("claude under default_agent codex: %q", l)
+	}
+	if l := setupLine(&Project{AgentDefault: "codex"}, "codex"); l != "" {
+		t.Fatalf("the default agent: %q", l)
 	}
 }

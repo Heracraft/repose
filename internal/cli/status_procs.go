@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -184,6 +185,12 @@ type guestStatus struct {
 	mux   string // "herdr", "tmux", or "" when the machine did not answer
 	disk  guestDisk
 	git   []gitRow // nil when the machine has no checkout or did not say
+	// probeErr is why the machine did not say (I-634): "ssh_timeout"
+	// when it did not answer in time, "ssh_failed" when ssh failed; ""
+	// when it answered.
+	probeErr string
+	// probeDetail is ssh's last error line, for the row.
+	probeDetail string
 }
 
 // guestStatusRead asks the guest, best effort, for its listening
@@ -204,7 +211,15 @@ func guestStatusRead(ctx context.Context, t sshTarget, slug string, have []strin
 	raw, err := runSSH(ctx, sshTarget{Args: args}, statusScript(slug), stdin)
 	out := string(raw)
 	if err != nil && !strings.Contains(out, "#mux") {
-		return guestStatus{}
+		var se *sshError
+		if ctx.Err() != nil || (errors.As(err, &se) && strings.Contains(strings.ToLower(se.Stderr), "timed out")) {
+			return guestStatus{probeErr: "ssh_timeout"}
+		}
+		g := guestStatus{probeErr: "ssh_failed"}
+		if errors.As(err, &se) {
+			g.probeDetail = sshStderrDetail(se.Stderr)
+		}
+		return g
 	}
 	mux := multiplexer.Tmux
 	if _, m, ok := strings.Cut(out, "#mux"); ok {
@@ -339,6 +354,25 @@ func laptopCommits(cwd string, p *Project) []string {
 //	checkout   main: 3 commits not on this laptop, 2 files not committed
 //	           worktree-1: nothing new
 func writeGitRows(w io.Writer, rows []gitRow, now time.Time) {
+	writeGitRowsOr(w, rows, now, "", "")
+}
+
+// writeGitRowsOr is writeGitRows, or, when the probe failed, one row
+// that says the checkout is unknown and why (I-634): no row would read
+// as a machine with no checkout.
+func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string) {
+	switch probeErr {
+	case "ssh_timeout":
+		statusRow(w, "checkout", fmt.Sprintf("unknown (no ssh answer in %d s)", int(statusProcsTimeout.Seconds())))
+		return
+	case "ssh_failed":
+		if detail != "" {
+			statusRow(w, "checkout", "unknown (ssh failed: "+detail+")")
+		} else {
+			statusRow(w, "checkout", "unknown (ssh failed)")
+		}
+		return
+	}
 	for i, r := range rows {
 		line := gitRowText(r, now)
 		if i == 0 {

@@ -92,7 +92,6 @@ func TestRunCommandArgs(t *testing.T) {
 		{[]string{"sync", "izma", "--project", "other"}, "izma and --project other name two projects"},
 		{[]string{"sync", "izma", "--name", "other"}, "izma and --name other name two projects"},
 		{[]string{"run", "-p", "x", "fix", "it"}, "run takes one PROJECT"},
-		{[]string{"run", "izma", "--agent", "codex"}, "--agent needs -p PROMPT"},
 		{[]string{"sync", "a", "b"}, "takes at most one PROJECT"},
 	} {
 		_, err := run(c.args...)

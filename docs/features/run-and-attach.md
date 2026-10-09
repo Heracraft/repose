@@ -172,6 +172,8 @@ I-199), shown in the session's status bar.
 Agent picker:
 
 - `--agent` accepts exactly `claude`, `opencode`, `codex`, `gemini`, `pi`.
+  Without `-p` it sets the project's `agent_default` (PATCH, or the
+  create's field), as `--multiplexer` sets its multiplexer (I-635).
   Anything else exits 2 listing the five. The default is the project's
   `agent_default`, set at creation from `default_agent` in the laptop's
   `~/.config/repose/config.toml` (`claude` unless set; I-241). An existing
@@ -228,7 +230,10 @@ Failure output:
   there's room.` (projects.md, "Limits"; DECISIONS I-269).
 - Build failed: exit 10, the Nix error verbatim, the fragment line if known,
   and `edit with \`repose config edit\``.
-- SSH does not answer within 60s of the API reporting `running`: exit 1,
+- SSH does not answer within 60s of the API reporting `running` (15 s
+  when the command found the machine already running: ps, exec, cp, ssh,
+  status, a run or attach that started nothing; a `Connecting to SLUG`
+  phase shows after the first failed attempt, I-634): exit 1,
   `Guest is running but SSH did not answer in 60s. \`repose logs --kind
   console\` may show why.`, followed by ssh's last error line. A gateway
   refusal (`Permission denied`, a revoked certificate) during that window

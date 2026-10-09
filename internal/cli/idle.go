@@ -39,6 +39,7 @@ func idleLine(p *Project, now time.Time) string {
 	line := "unused for " + idleFor(now.Sub(p.Idle.Since))
 	if p.Signals != nil {
 		var waiting []string
+		age := ""
 		for _, a := range p.Signals.Agents {
 			if a.State == "needs_input" {
 				name := a.Window
@@ -46,11 +47,14 @@ func idleLine(p *Project, now time.Time) string {
 					name = a.Agent
 				}
 				waiting = append(waiting, name)
+				// Its own wait's age, so the 26h before it is not read
+				// as how long it has waited (I-634).
+				age = waitAge(p, a, now)
 			}
 		}
 		switch {
 		case len(waiting) == 1:
-			line += "; " + waiting[0] + " needs input"
+			line += "; " + waiting[0] + " needs input" + age
 		case len(waiting) > 1:
 			line += "; " + strings.Join(waiting, ", ") + " need input"
 		}

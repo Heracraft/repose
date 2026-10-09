@@ -164,7 +164,11 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.SetVersionTemplate("repose {{.Version}} (herakraft)\n")
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return cobraUsageError{fmt.Errorf("%v\n`%s --help` shows its usage.", err, cmd.CommandPath())}
+		msg := err.Error()
+		if s := flagSuggestion(cmd, err); s != "" {
+			msg += ". " + s
+		}
+		return cobraUsageError{fmt.Errorf("%s\n`%s --help` shows its usage.", msg, cmd.CommandPath())}
 	})
 	root.PersistentFlags().StringVar(&g.project, "project", "", "act on project `NAME` or id (or $REPOSE_PROJECT)")
 	root.PersistentFlags().StringVar(&g.apiURL, "api-url", "", "api base url (or $REPOSE_API_URL)")
@@ -284,13 +288,38 @@ func checkSizeFlag(size string) error {
 // I-628): `repose secrets set todo-app FOO` is answered with `repose
 // secrets set FOO --project todo-app`.
 func argsN(min, max int, takes string) cobra.PositionalArgs {
+	return argsNOwn(min, max, takes, nil)
+}
+
+// argsNOwn is argsN for a command whose own words have a shape: own
+// says whether a word is one. The project in the corrected command is
+// then the one word that is not, wherever it was typed (`repose open
+// 8080 todo-app`), and with no such word, or several, no command is
+// shown (I-635).
+func argsNOwn(min, max int, takes string, own func(string) bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if len(args) >= min && (max < 0 || len(args) <= max) {
 			return nil
 		}
 		msg := fmt.Sprintf("%s takes %s, got %s", cmd.CommandPath(), takes, gotArgs(args))
 		if max >= 0 && len(args) == max+1 && !strings.Contains(cmd.Use, "PROJECT") && cmd.Flag("project") != nil {
-			msg += fmt.Sprintf(". A project goes in --project: %s", strings.Join(append(append([]string{cmd.CommandPath()}, args[1:]...), "--project", args[0]), " "))
+			at := 0
+			if own != nil {
+				at = -1
+				for i, a := range args {
+					if !own(a) {
+						if at >= 0 {
+							at = -1
+							break
+						}
+						at = i
+					}
+				}
+			}
+			if at >= 0 {
+				rest := append(append([]string{}, args[:at]...), args[at+1:]...)
+				msg += fmt.Sprintf(". A project goes in --project: %s", strings.Join(append(append([]string{cmd.CommandPath()}, rest...), "--project", args[at]), " "))
+			}
 		}
 		return cobraUsageError{errors.New(msg)}
 	}
@@ -409,6 +438,7 @@ func loginFirst(ctx context.Context, e *Env) (bool, error) {
 	}
 	opts := loginOptsFromEnv(false, false)
 	opts.Stdout = os.Stderr
+	opts.ForRun = true
 	if err := runLogin(ctx, e.Dir, e.Cfg, e.httpClient, opts); err != nil {
 		return false, err
 	}
@@ -475,9 +505,9 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if opts.Worktree && opts.Prompt == "" {
 				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs -p PROMPT")}
 			}
-			if opts.Agent != "" && opts.Prompt == "" {
-				return cobraUsageError{fmt.Errorf("--agent needs -p PROMPT")}
-			}
+			// --agent without -p makes it the project's agent, as
+			// --multiplexer makes its multiplexer (I-635).
+			opts.SetAgent = opts.Agent != "" && opts.Prompt == ""
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
 			}
@@ -498,7 +528,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return runRun(cmd.Context(), e, opts, false)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi (default: the project's agent)")
+	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
@@ -810,7 +840,10 @@ func newOpenCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"open no browser. The project is the folder's, or --project's.",
 		Example:    "  repose open 3000\n  repose open 8080:3000\n  repose open 5432 --project todo-app",
 		SuggestFor: []string{"port", "forward", "tunnel", "expose"},
-		Args:       argsN(0, 1, "at most one [LOCAL:]PORT"),
+		Args: argsNOwn(0, 1, "at most one [LOCAL:]PORT", func(a string) bool {
+			_, _, err := parseOpenPorts(a)
+			return err == nil
+		}),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if stop && !desktop {
 				return cobraUsageError{fmt.Errorf("--stop goes with --desktop: repose open --desktop --stop (or repose browser stop)")}

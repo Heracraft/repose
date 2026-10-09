@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/eventverbs"
 )
 
 // LogsCmd implements `repose logs [--kind console|build|ops] [--since T]
@@ -404,31 +406,10 @@ func (w *eventsWidths) fit(evs []Event) {
 	}
 }
 
-// eventVerbs are what an event's kind prints as, in `events` and on
-// `status`'s last event line: the agent words `ls` and `status` use
-// (done, needs input, unused: I-617); --json keeps the kind. A kind not here prints
-// with its separators as spaces.
-var eventVerbs = map[string]string{
-	"completed":            "done",
-	"needs_input":          "needs input",
-	"error":                "hit an error",
-	"agent_message":        "says",
-	"agent_question":       "asks",
-	"idle_running":         "unused",
-	"temp_expiring":        "expiring",
-	"temp_destroyed":       "destroyed",
-	"personal_failed":      "machine.nix failed",
-	"boot_failed":          "boot failed",
-	"guest_state_changed":  "machine",
-	"notifications_paused": "notifications paused",
-}
-
-func eventVerb(kind string) string {
-	if v, ok := eventVerbs[kind]; ok {
-		return v
-	}
-	return strings.NewReplacer("_", " ", ".", " ").Replace(kind)
-}
+// eventVerb is what an event's kind prints as, in `events` and on
+// `status`'s last event line: the notification's word for it, from one
+// table (I-634); --json keeps the kind.
+func eventVerb(kind string) string { return eventverbs.Verb(kind) }
 
 // eventAgent is the agent cell: the agent and its window, "-" for none.
 func eventAgent(ev Event) string {

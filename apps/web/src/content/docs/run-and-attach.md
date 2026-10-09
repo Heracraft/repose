@@ -28,6 +28,8 @@ Pick a different agent for one prompt with `--agent`:
 repose run --agent codex -p "port the build scripts to bun"
 ```
 
+Without `-p`, `repose run --agent codex` makes codex the agent `run -p` starts on this project from then on.
+
 The agent is the normal interactive program, the same as running `claude` yourself.
 
 Claude Code and Codex don't ask whether you trust the folder: `run` marks the folder it starts one of them in as trusted on the machine (the checkout, or the worktree with `--worktree`), in `~/.claude.json` or `~/.codex/config.toml`. If the agent asks anyway, `run` doesn't type your prompt into the question. It says so and attaches you to answer it; with `--no-attach` it exits with code 1. Running the agent yourself in another folder on the machine still asks.
@@ -256,6 +258,10 @@ repose paste
 
 - `repose paste todo-app` from anywhere; `--window claude-2` for another window; `--print` to only print the path.
 - It reads the clipboard with the same tools as Ctrl+V. Under WSL it reads the Linux clipboard, which may not have images copied in Windows.
+
+## Links the machine opens
+
+While you're attached, a program on the machine that opens an `https` link through `$BROWSER` opens it in your laptop's browser: Claude Code's `/login`, `gh pr create --web`, `gh browse`. It's also printed as `Open in your browser: URL`, which is all you get with nobody attached or with `REPOSE_NO_BROWSER=1` on your laptop. A link waits at most two minutes for an attach to take it, so attaching later never opens an old one. With two laptops attached, one of them opens it.
 
 ## Useful flags
 

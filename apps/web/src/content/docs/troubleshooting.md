@@ -39,7 +39,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
 
-**`todo-app is running but did not answer ssh in 60 s.`** `repose stop` and then `repose start` restart it.
+**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started the machine waits 60 s.
 
 ## Machine state
 

@@ -29,6 +29,10 @@ type loginOptions struct {
 	// it with a stub that hits the loopback callback directly instead of
 	// launching a real browser.
 	Open func(string) error
+	// ForRun is the login a first `repose run` does inline: the run waits
+	// for a plan itself and names the billing page then (I-634), so
+	// login's own no-plan line would print the URL twice.
+	ForRun bool
 }
 
 func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Client, opts loginOptions) error {
@@ -86,7 +90,7 @@ func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Clie
 		return exitf(ExitGeneric, "Logged in, but could not fetch your account: %v", err)
 	}
 	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", me.Handle, me.Email)
-	if me.Billing.Status == "none" || (me.Billing.Status == "" && !me.Billing.HasCard) {
+	if !opts.ForRun && (me.Billing.Status == "none" || (me.Billing.Status == "" && !me.Billing.HasCard)) {
 		_, _ = fmt.Fprintf(stdout, "No plan yet: %s\n", billingURL)
 	}
 	if !opts.GuestEnv {

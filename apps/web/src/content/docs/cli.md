@@ -14,7 +14,7 @@ Did you mean `repose ls`?
 `repose --help` shows its usage.
 ```
 
-Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it.
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
 
 ## Which project
 
@@ -37,7 +37,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | Flag                      | What it does                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it. On a machine where Claude Code has no login yet, the window opens on the login and PROMPT is typed after it.                                                                                                                                                                                                                                                  |
-| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`. Needs `-p`. Default: the project's agent, which for a new project is `default_agent`, else `claude`.                                                                                                                                                        |
+| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`, for `-p`. Default: the project's agent, which for a new project is `default_agent`, else `claude`. Without `-p`, NAME becomes the project's agent; `repose status` names it when it isn't `default_agent`.                                                                                                                                                        |
 | `-d`, `--no-attach`       | Don't attach afterwards. With `-p`, print the window the agent is in (`Window: claude-2`). If Claude Code has no login on the machine yet, exit 1 without typing the prompt.                                                                                                                                                                                                                            |
 | `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                                                                                                                                                                    |
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                                                                                                                   |
@@ -240,7 +240,7 @@ List the tools the next `repose run` would install on the machine, and why, and 
 
 ### `repose ls`
 
-Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS reads `working`, `idle` (at its prompt) or `needs input`. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS reads `working`, `idle` (at its prompt) or `needs input`, with the longest wait's age (`needs input 4h`); a `?` after it means the machine's last report is over two minutes old. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
 repose stop $(repose ls -q)
@@ -253,20 +253,20 @@ One project in detail:
 ```
 $ repose status
 todo-app  running 2h14m  large
-  agents     claude-2 needs input, claude working
+  agents     claude-2 needs input 4h, claude working
   checkout   main: 3 commits not on this laptop, 2 files not committed
              worktree-1: nothing new
   attached   nobody
   listening  node :5173 up 3d 410.0 MB
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
-  last event 14m ago, claude done "Added auth flow"
+  last event 14m ago, claude finished "Added auth flow"
 ```
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Run outside the project's checkout, your laptop can't tell which commits it has, so the line gives the last commit's age instead. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. A stopped machine, or one that hasn't reported, shows the disk's size alone. Lines above the rows say when the machine has been unused for a day, when a temporary one is destroyed, what differs from a new project's settings (`setup: agent codex`, machine.nix kept off, base updates held), when the disk is 90 percent full or more (with the `repose resize` that doubles it, up to 320 GB), and the plan lines `repose ls` prints. `-v` adds the server's name and the machine's address.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`.      |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that did not answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, and `git_at`, when it read them. |
 | `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A failed read doesn't end it. `--watch`, the old name, still works. |
 | `--wait STATE`       | Wait until the machine is in STATE (`running`, `stopped`, `error`, ...), then print the status. Exits 1 if it lands in `error` or is destroyed instead. |
 | `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`).                                                                                               |
@@ -277,7 +277,7 @@ Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` print
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the project as JSON when done, or an array of them for several projects or `--unused`.
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` The stop line ends with what stays on the machine: `Stopped todo-app in 11s with a 2.1 GB snapshot; 3 commits on main not fetched, 4 files not committed.` Commits are counted only in the project's checkout. `repose status` on the stopped machine shows the same rows, with when they were read. `--json` prints the project as JSON when done, or an array of them for several projects or `--unused`.
 
 ### `repose rm [PROJECT...]`
 
@@ -321,11 +321,11 @@ Grow the project's disk, for example `repose resize 80G`, or `repose resize todo
 
 ### `repose events [PROJECT]`
 
-Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
+Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened in the words its [notification](/docs/notifications) uses, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
 
 ```text
 2026-10-08T20:58:30-04:00  -           snapshot  taken (stop)
-2026-10-08T20:59:04-04:00  claude (1)  done      Added tests
+2026-10-08T20:59:04-04:00  claude (1)  finished  Added tests
 2026-10-08T21:12:40-04:00  claude (2)  asks      Drop old table?
 ```
 
@@ -387,7 +387,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason ntfy gave (`failed: the server answered 403`). Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version.                                                                                                                                                                                |
 | `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. `--help` has the line that loads it for each shell; so does [Install](/docs/install#shell-completion).                                                                                                                                                                  |
-| `repose help [COMMAND]`                         | Print help for a command.                                                                                                                                                                         |
+| `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
 ## config.toml
 
@@ -439,7 +439,7 @@ forward = ["figma"]
 | `REPOSE_TIMING=1`            | Print how long each step of `run` and `attach` took.                                                                                                                                        |
 | `REPOSE_NO_SPINNER=1`        | One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked.                                                                                                                    |
 | `REPOSE_NO_FASTPATH=1`       | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                                                                 |
-| `REPOSE_NO_BROWSER=1`        | Never open a browser, even with `repose login --browser`.                                                                                                                                   |
+| `REPOSE_NO_BROWSER=1`        | Never open a browser, even with `repose login --browser` or for a link the machine opens while you're attached.                                                                                                                                   |
 | `REPOSE_NO_INPUT_PROXY=1`    | Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`. `REPOSE_INPUT_PROXY=0` is its old name.                                   |
 | `REPOSE_NO_CLIPBOARD_PATH=1` | On macOS, leave the clipboard alone while you are attached, so `Cmd+V` with only an image on it pastes nothing; `Ctrl+V` still pastes the image. `REPOSE_CLIPBOARD_PATH=0` is its old name. |
 | `REPOSE_API_URL`             | Like `--api-url`.                                                                                                                                                                           |

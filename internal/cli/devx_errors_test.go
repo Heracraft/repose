@@ -151,6 +151,9 @@ func TestArgRefusalsNameTheFix(t *testing.T) {
 	}{
 		{[]string{"secrets", "set", "todo-app", "FOO"}, "repose secrets set takes one NAME, got 2 arguments: todo-app FOO. A project goes in --project: repose secrets set FOO --project todo-app"},
 		{[]string{"open", "todo-app", "80"}, "repose open takes at most one [LOCAL:]PORT, got 2 arguments: todo-app 80. A project goes in --project: repose open 80 --project todo-app"},
+		// The project is the word that is no port, wherever it is (I-635).
+		{[]string{"open", "8080", "todo-app"}, "repose open takes at most one [LOCAL:]PORT, got 2 arguments: 8080 todo-app. A project goes in --project: repose open 8080 --project todo-app"},
+		{[]string{"open", "8080", "3000"}, "repose open takes at most one [LOCAL:]PORT, got 2 arguments: 8080 3000"},
 		// `config add` with no names lists the menu (I-633); remove still
 		// needs one.
 		{[]string{"config", "remove"}, "repose config remove takes one or more package names, got no arguments"},
@@ -275,5 +278,54 @@ func TestNoticeAfterSkipsCompletion(t *testing.T) {
 	}
 	if !noticeAfter(nil) {
 		t.Error("noticeAfter(nil)")
+	}
+}
+
+// I-634: a command that found the machine running waits 15 s for ssh,
+// not a minute, and shows the wait once the first attempt fails; one
+// that booted it waits the minute.
+func TestSlowSSHShowsConnecting(t *testing.T) {
+	var errOut bytes.Buffer
+	e := &Env{ErrOut: &errOut}
+	if e.sshWait() != sshWaitShort || sshWaitShort != 15*time.Second {
+		t.Fatalf("wait %s for a running machine", e.sshWait())
+	}
+	e.longSSHWait = true
+	if e.sshWait() != sshWaitTimeout {
+		t.Fatalf("wait %s after a boot", e.sshWait())
+	}
+	slow, done := e.connectingPhase("todo-app")
+	target := sshTarget{Args: []string{"-o", "ConnectTimeout=1", "-p", "1", "127.0.0.1"}}
+	err := waitForSSH(context.Background(), target, 1500*time.Millisecond, slow, nil)
+	done()
+	if err == nil || !strings.Contains(err.Error(), "did not answer ssh in 1 s") {
+		t.Fatalf("err %v", err)
+	}
+	if got := errOut.String(); got != "Connecting to todo-app...\n" {
+		t.Fatalf("stderr %q", got)
+	}
+}
+
+// I-635: an unknown flag gets the flag the user meant, by its other
+// tools' spelling or by a typo, on the line that names it.
+func TestUnknownFlagSuggestions(t *testing.T) {
+	cases := map[string]string{
+		"run --detach":    "unknown flag: --detach. Did you mean -d (--no-attach)?\n`repose run --help` shows its usage.",
+		"stop --force":    "unknown flag: --force. Did you mean -y (--yes)?\n`repose stop --help` shows its usage.",
+		"rm --force":      "unknown flag: --force. Did you mean -y (--yes)?\n`repose rm --help` shows its usage.",
+		"ps -a":           "unknown shorthand flag: 'a' in -a. repose ps lists every window.\n`repose ps --help` shows its usage.",
+		"ls -a":           "unknown shorthand flag: 'a' in -a. repose ls lists every project, stopped ones too.\n`repose ls --help` shows its usage.",
+		"exec -w wt-1 ls": "unknown shorthand flag: 'w' in -w. Did you mean --workdir?\n`repose exec --help` shows its usage.",
+		"run --promt x":   "unknown flag: --promt. Did you mean -p (--prompt)?\n`repose run --help` shows its usage.",
+		"status -q":       "unknown shorthand flag: 'q' in -q\n`repose status --help` shows its usage.",
+	}
+	for args, want := range cases {
+		root := newRootCmd("test")
+		root.SetArgs(strings.Fields(args))
+		root.SetOut(&bytes.Buffer{})
+		_, err := root.ExecuteC()
+		if err == nil || err.Error() != want {
+			t.Errorf("%s:\n got %v\nwant %s", args, err, want)
+		}
 	}
 }

@@ -248,6 +248,9 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *progress, started time.Time) stopResult {
 	var r stopResult
 	var opID string
+	// What the stop leaves on the machine, read while it still answers
+	// (I-634).
+	left := probeBeforeStop(ctx, e, project)
 	r.err = retryOnOpConflict(ctx, func() error {
 		var err error
 		opID, err = e.Client.StopProject(ctx, project.ID, snapshot)
@@ -303,6 +306,8 @@ func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *p
 	} else {
 		r.line = fmt.Sprintf("Stopped %s in %s.", p.Slug, took)
 	}
+	r.line = withLeft(r.line, leftClause(left))
+	saveStopLeft(e.Dir, p.ID, left, time.Now())
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
 		// with last_error set; say so rather than implying a snapshot.

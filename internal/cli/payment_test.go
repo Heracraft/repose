@@ -2,8 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
 // payment_required prints the api's sentence verbatim and exits 7; an
@@ -73,5 +77,53 @@ func TestProjectLimitMessage(t *testing.T) {
 		if code := exitCodeFor(c.err, &buf); code != c.code || buf.String() != c.want {
 			t.Errorf("%s: exit %d, printed %q, want %q", c.name, code, buf.String(), c.want)
 		}
+	}
+}
+
+// I-634: a run on an account with no plan opens the billing page, waits
+// for the checkout, and goes on with the same create; without a person
+// at the terminal it exits 7 as before.
+func TestRunWaitsForAPlan(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	fake.SetBilling(fakeapi.BillingNone)
+	e := newLifecycleEnv(t, fake)
+	var errOut strings.Builder
+	e.ErrOut = &errOut
+	ctx := context.Background()
+
+	oldW, oldP, oldO := planWaitable, planPoll, openForPlan
+	defer func() { planWaitable, planPoll, openForPlan = oldW, oldP, oldO }()
+	planPoll = 10 * time.Millisecond
+
+	planWaitable = func(*Env) bool { return false }
+	_, err := createProjectForRun(ctx, e, "", RunOptions{Name: "todo-app"}, nil)
+	var out strings.Builder
+	if code := exitCodeFor(err, &out); code != ExitPaymentRequired {
+		t.Fatalf("off a terminal: exit %d, want 7 (%s)", code, out.String())
+	}
+
+	planWaitable = func(*Env) bool { return true }
+	t.Setenv(envNoBrowser, "")
+	t.Setenv(envDisplay, ":0")
+	t.Setenv(envInGuest, "")
+	var opened []string
+	openForPlan = func(u string) error { opened = append(opened, u); return nil }
+	go func() {
+		time.Sleep(40 * time.Millisecond)
+		fake.SetBilling(fakeapi.BillingTrial)
+	}()
+	p, err := createProjectForRun(ctx, e, "", RunOptions{Name: "todo-app"}, nil)
+	if err != nil {
+		t.Fatalf("after the checkout: %v (%s)", err, errOut.String())
+	}
+	if p.Slug != "todo-app" {
+		t.Fatalf("created %q", p.Slug)
+	}
+	if want := "Waiting for a plan at " + billingURL + "...\n"; errOut.String() != want {
+		t.Fatalf("stderr %q, want %q", errOut.String(), want)
+	}
+	if len(opened) != 1 || opened[0] != billingURL {
+		t.Fatalf("opened %v", opened)
 	}
 }

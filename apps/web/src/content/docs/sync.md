@@ -122,8 +122,8 @@ If the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect 
 
 ```text
 Not synced: the machine's checkout is in the middle of a git rebase.
-Finish or abort it there, or run `repose sync --discard-machine` to end
-it and move the machine's changes to its git stash.
+Finish or abort it there, or run `repose sync --discard-machine` to
+end it and move the machine's changes to its git stash.
 ```
 
 `--stash-machine` stops there too: a stash can't hold a merge or rebase in progress. `--discard-machine` ends the operation where it stands, then stashes as `--stash-machine` does, under the name `repose sync --discard-machine`. Commits a rebase had made stay in the machine's `git reflog`.

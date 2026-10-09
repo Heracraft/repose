@@ -94,6 +94,11 @@ type Project struct {
 	// which multiplexer.Normalize reads as tmux. What a running machine
 	// runs now is the guest's answer (muxFor), not this.
 	Multiplexer string `json:"multiplexer,omitempty"`
+
+	// waitedSince is, per agent window, when its current wait for an
+	// answer began, read from the project's events by the CLI (I-634);
+	// never sent or printed as JSON.
+	waitedSince map[string]time.Time
 }
 
 // ProjectIdle is Project.idle.

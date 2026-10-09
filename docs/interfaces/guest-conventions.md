@@ -970,7 +970,11 @@ was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`, `PUPPETEER_SKIP_DOWNLOAD=1`,
 `PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium),
 `BROWSER` (a store-path script that prints `Open in your browser: URL`
-to stderr and exits 0; I-541).
+to stderr and exits 0; I-541; since I-634 it also appends `SECONDS URL`
+for each `https://` argument to `~/.cache/repose/open-urls`, which an
+attached CLI's session helper renames away, reads and deletes on each
+poll, opening the links under two minutes old on the laptop; a base
+before I-634 writes no file and a CLI before it reads none).
 `GOPATH=/home/dev/go`, `CARGO_HOME=/home/dev/.cargo`,
 `RUSTUP_HOME=/home/dev/.rustup`, `BUN_INSTALL=/home/dev/.bun`,
 `DENO_INSTALL_ROOT=/home/dev/.deno`,

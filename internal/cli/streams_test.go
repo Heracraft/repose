@@ -140,7 +140,7 @@ func TestEventLine(t *testing.T) {
 		want string
 	}{
 		{Event{TS: ts, Kind: "completed", Agent: "claude", Window: "2", Summary: "Added tests\nfor billing"}, eventsWidths{agent: 10, verb: 8},
-			tm + "  claude (2)  done      Added tests for billing"},
+			tm + "  claude (2)  finished  Added tests for billing"},
 		{Event{TS: ts, Kind: "guest_state_changed", Summary: "running"}, eventsWidths{agent: 10, verb: 8},
 			tm + "  -           machine   running"},
 		// The noun is said once (I-631).

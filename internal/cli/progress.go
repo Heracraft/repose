@@ -167,6 +167,16 @@ func (p *progress) Relabel(label, done string) {
 	}
 }
 
+// busy reports whether a phase is running.
+func (p *progress) busy() bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.label != ""
+}
+
 // End finishes the current phase: on a terminal the spinner line becomes
 // the ✓ line (or disappears when the phase has no done text).
 func (p *progress) End() {

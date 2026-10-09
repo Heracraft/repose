@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +57,7 @@ func TestStatusRowsAreLabelled(t *testing.T) {
   docker     3 containers
   listening  node :5173 up 3d 410.0 MB
   disk       6.0 GB of 39.0 GB, snapshot 11h00m ago
-  last event 14m ago, claude done "Added auth flow"
+  last event 14m ago, claude finished "Added auth flow"
 `
 	if b.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", b.String(), want)
@@ -426,4 +427,78 @@ func (w *watchOut) String() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.b.String()
+}
+
+// I-634: a running machine that did not answer the probe gets a checkout
+// row that says so, and --json a git_error, so neither reads as a
+// machine with no checkout.
+func TestStatusSaysTheProbeFailed(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	p, err := fake.CreateProject("todo-app", "large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.SetState(p.ID, "running")
+	ctx := context.Background()
+	newE := func(json bool) (*Env, *discardWriter) {
+		out := &discardWriter{}
+		return &Env{Client: newClient(fake.URL()+"/v1", staticToken("tok")), Out: out, ErrOut: &discardWriter{}, Cache: newProjectsCache(), Cwd: t.TempDir(), JSON: json,
+			TargetFor: func(string) sshTarget { return sshTarget{Args: []string{"-p", "1", "127.0.0.1"}} }}, out
+	}
+	e, out := newE(false)
+	if err := StatusCmd(ctx, e, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.buf.String(), "\n  checkout   unknown (ssh failed: ") {
+		t.Fatalf("status:\n%s", out.buf.String())
+	}
+	e, out = newE(true)
+	if err := StatusCmd(ctx, e, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.buf.String(), `"git_error": "ssh_failed"`) {
+		t.Fatalf("json:\n%s", out.buf.String())
+	}
+
+	var b bytes.Buffer
+	writeGitRowsOr(&b, nil, time.Now(), "ssh_timeout", "")
+	if b.String() != "  checkout   unknown (no ssh answer in 4 s)\n" {
+		t.Fatalf("timeout row %q", b.String())
+	}
+}
+
+// I-634: an agent that needs input says how long it has waited, from
+// the event that began the wait; ls gives the longest; a stale sample
+// marks the states with `?`.
+func TestAgentWaitAges(t *testing.T) {
+	now := time.Now()
+	fresh := now.Add(-30 * time.Second)
+	p := &Project{State: "running", Idle: &ProjectIdle{Since: now.Add(-26 * time.Hour)}, Signals: &Signals{SampledAt: &fresh, Agents: []AgentSignal{
+		{Agent: "claude", Window: "claude", State: "working"},
+		{Agent: "claude", Window: "claude-2", State: "needs_input"},
+		{Agent: "codex", Window: "codex", State: "needs_input"},
+	}}}
+	noteWaits(p, []Event{
+		{TS: now.Add(-4 * time.Hour), Kind: "needs_input", Window: "claude-2"},
+		{TS: now.Add(-5 * time.Hour), Kind: "completed", Window: "claude-2"},
+		// codex's newest event is not a question: no age.
+		{TS: now.Add(-3 * time.Hour), Kind: "needs_input", Window: "codex"},
+		{TS: now.Add(-1 * time.Hour), Kind: "completed", Window: "codex"},
+	})
+	if got := agentList(p); got != "claude-2 needs input 4h, codex needs input, claude working" {
+		t.Fatalf("status row %q", got)
+	}
+	if got := agentState(p); got != "3 agents: 2 needs input (4h), 1 working" {
+		t.Fatalf("ls cell %q", got)
+	}
+	p.Signals.Agents = p.Signals.Agents[1:2]
+	if got := idleLine(p, now); got != "unused for 26h; claude-2 needs input 4h" {
+		t.Fatalf("idle line %q", got)
+	}
+	stale := now.Add(-10 * time.Minute)
+	p.Signals.SampledAt = &stale
+	if got := agentState(p); got != "claude: needs input? 4h" {
+		t.Fatalf("stale cell %q", got)
+	}
 }

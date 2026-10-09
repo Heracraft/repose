@@ -239,6 +239,13 @@ func TestDocsNameEveryCommandAndFlag(t *testing.T) {
 			}
 			return
 		}
+		if c.IsAdditionalHelpTopicCommand() {
+			// A help topic is `repose help NAME` (I-635).
+			if !strings.Contains(doc, "`repose help "+c.Name()+"`") {
+				missing = append(missing, path+": no `repose help "+c.Name()+"` in cli.md")
+			}
+			return
+		}
 		if c != root && !c.HasSubCommands() {
 			if _, ok := owned[path]; !ok {
 				missing = append(missing, path+": no `"+path+"` heading or table row")
@@ -554,4 +561,46 @@ func TestEveryDocsPageNamesRealCommands(t *testing.T) {
 // example: a placeholder or a slug such as todo-app.
 func looksLikeProjectWord(s string) bool {
 	return s == "PROJECT" || strings.HasPrefix(s, "PROJECT:") || strings.Contains(s, "-")
+}
+
+// The help topics print cli.md's three reference tables (I-635): each
+// row here is the row there, cell for cell, and no row is missing on
+// either side.
+func TestHelpTopicsMatchTheDocs(t *testing.T) {
+	doc := readCLIDoc(t)
+	for _, c := range []struct {
+		title string
+		rows  []topicRow
+	}{{"Environment variables", envTopic}, {"Exit codes", exitTopic}, {"config.toml", configTopic}} {
+		var docRows []topicRow
+		header := true
+		for _, line := range strings.Split(section(t, doc, c.title), "\n") {
+			if !strings.HasPrefix(line, "| ") {
+				continue
+			}
+			if header || strings.HasPrefix(line, "| ---") || strings.HasPrefix(line, "| -") {
+				header = false
+				continue
+			}
+			cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), " | ")
+			for i := range cells {
+				cells[i] = strings.TrimSpace(cells[i])
+			}
+			docRows = append(docRows, topicRow{keys: cells[:len(cells)-1], text: cells[len(cells)-1]})
+		}
+		if !reflect.DeepEqual(docRows, c.rows) {
+			for i := 0; i < max(len(docRows), len(c.rows)); i++ {
+				var d, h topicRow
+				if i < len(docRows) {
+					d = docRows[i]
+				}
+				if i < len(c.rows) {
+					h = c.rows[i]
+				}
+				if !reflect.DeepEqual(d, h) {
+					t.Errorf("%s row %d:\n cli.md %q %q\n help   %q %q", c.title, i, d.keys, d.text, h.keys, h.text)
+				}
+			}
+		}
+	}
 }

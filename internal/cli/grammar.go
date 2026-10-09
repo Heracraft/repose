@@ -84,9 +84,15 @@ func displayConfigTOML() string {
 // dashboard made that differ from a new project's (DECISIONS I-622): the
 // agent `run -p` starts, machine.nix kept off, base updates held. ""
 // when every one is the default.
-func setupLine(p *Project) string {
+func setupLine(p *Project, defaultAgent string) string {
 	var parts []string
-	if p.AgentDefault != "" && p.AgentDefault != "claude" {
+	// The agent shows when it is not the one config.toml names (claude
+	// without the key), so a project made before default_agent changed
+	// says why `run -p` starts another (I-635).
+	if defaultAgent == "" {
+		defaultAgent = "claude"
+	}
+	if p.AgentDefault != "" && p.AgentDefault != defaultAgent {
 		parts = append(parts, "agent "+p.AgentDefault)
 	}
 	if p.PersonalOptOut {

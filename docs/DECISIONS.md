@@ -15155,6 +15155,9 @@ stderr and exits 0, so no new command lands on PATH. It never opens the
 agents' Chromium: that would put the user's logins in the agents'
 browser. A user's own `BROWSER` wins. Python's `webbrowser.open`, which
 launched a separate Chromium, now prints too.
+*Later (I-634):* the script also leaves each `https` link in
+`~/.cache/repose/open-urls`; an attached laptop opens it in its own
+browser. Claude Code's `/login` calls `BROWSER`, checked against 2.1.283.
 **I-552. Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named.**
 (personal-removal, 2026-10-06; follows I-490, I-496) On kanali the owner
 pushed a machine.nix that themed tmux and reloaded it into the running
@@ -16746,6 +16749,9 @@ DESIGN. Not changed: the guest's wrapper comment in
 rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
 `TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
 `TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.
+*Later (I-635):* `--agent` without `-p` no longer exits 2. It makes
+the agent the project's own, as `--multiplexer` does; the agent is not
+dropped, which was the refusal's reason.
 
 **I-614. A confirmation is asked only on a terminal, a no exits 1,
 Ctrl-C at it ends the command, and `stop` asks before it ends a busy
@@ -17152,6 +17158,9 @@ event says `done` for `completed`, the word the other text output uses.
 The docs section is "Unused machines". `TestIdleLineOnStatusAndProjects`,
 `TestIdleOthersNoteOncePerStretch`, `TestAgentStateCountsEveryAgent`,
 `TestSubjectUsesPlatformWording`.
+*Later (I-634):* `completed` is `finished` in `repose events` too, and
+every kind takes the notification's word (`internal/eventverbs`): the
+phone said `finished` while the CLI said `done`.
 **I-606. Agents are addressed by window: `ps` shows each one's state and
 tree and prints its last lines, and `attach` opens a named window.**
 (cli-devx review 2026-10-08, items 1.2, 2.1-2.5, F7, G2; amends I-274,
@@ -17461,6 +17470,8 @@ what it says. `login` honours `--api-url` (it read only config.toml).
 Docs: cli.md Account, install.md, 07-cli §5.2. Tests:
 `TestLoginStatus`, `TestLogoutSaysWhatItRevoked`,
 `TestLoginDeviceCodeOpensTheLink`.
+*Later (I-634):* inside a first `repose run`, login prints no `No plan
+yet` line; the run waits for the plan and names the page once.
 
 **I-628. Usage errors name what the command takes and the line that
 works.** (2026-10-09, cli-devx review D2, C2, E7, 8.5) cobra's own
@@ -18001,3 +18012,98 @@ later line). Already done before this entry: attach starting a stopped
 machine and the stopped refusal's wording (I-631; reviews G7, C1, 6.5),
 `questions --json` keeping its old shape (I-631), `restore --snapshot`
 prefixes (I-631; D8).
+
+**I-634. The first run waits for a plan, links open on the laptop, and
+the CLI says what it does not know (cli-devx, 2026-10-09).** Amends
+I-289, I-541, I-606, I-615, I-616, I-617, I-625, I-627. *Made during
+implementation* (the third cli-devx pass over the two 2026-10-08
+reviews).
+- A `repose run` (or `start`, `attach`) refused with
+  `subscription_required` and no waitlist place, with a person at the
+  terminal and no `--json`, opens the billing page as login opens its
+  link (not with `REPOSE_NO_BROWSER=1` or without a display), shows
+  `Waiting for a plan at https://repose.herakraft.co/billing` as a
+  phase, reads `GET /me` every 3 s until the account has a plan (or is
+  exempt), and creates or starts as it would have. It gives up after 30
+  minutes with the exit 7 it had. Off a terminal it exits 7 at once.
+  Inside the run's inline login, login's `No plan yet` line is gone, so
+  the URL prints once. A fresh account no longer types the command
+  twice. `TestRunWaitsForAPlan`.
+- While a laptop is attached, the machine's `BROWSER` hands `https`
+  links to it: `repose-print-url` appends `SECONDS URL` to
+  `~/.cache/repose/open-urls`, and the session helper takes the file in
+  the poll it already makes each second for forwards (its own 2 s poll
+  with `REPOSE_NO_FORWARD=1`), by renaming it, and opens links under two
+  minutes old with the opener login uses. Claude Code's `/login` page
+  opens in the laptop's browser, so only the code is pasted back.
+  Rejected: scanning the tmux pane for the URL (it reads what the user
+  sees, and only finds Claude's); an `xdg-open` on PATH (I-541 kept
+  PATH clean, and `BROWSER` is enough). With nobody attached the link
+  is printed as before and expires unopened.
+  `TestOpenURLsTakenOnce`. Not run here: the guest VM test.
+- `ps`, `exec`, `cp`, `ssh` and `status`, which found the machine
+  running, wait 15 s for its first ssh answer instead of 60, and once
+  the first try fails show a `Connecting to SLUG` phase (a spinner, or
+  a line and the 30 s heartbeat off a terminal). A command that started
+  or created the machine (run, start, attach of a stopped one) waits the
+  minute. `TestSlowSSHShowsConnecting`.
+- `status` on a running machine whose probe failed prints `checkout
+  unknown (no ssh answer in 4 s)` or `unknown (ssh failed: REASON)`;
+  `--json` has `git_error` (`ssh_timeout`, `ssh_failed`) in place of
+  `git`. No row read as a machine with no checkout.
+  `TestStatusSaysTheProbeFailed`.
+- An agent that needs input says how long it has waited: `claude-2
+  needs input 4h` on status's agents row and its unused line, `1 needs
+  input (4h)` in ls for the longest wait. The time is the newest event
+  of that window when that event is `needs_input` or `agent_question`;
+  guestd's sample carries no state-change time, and adding one would
+  change hostd's proto for a figure the events already give. ls reads
+  events only for projects with an agent waiting. A `?` follows the
+  states when the sample is over two minutes old, as ps marks them.
+  `TestAgentWaitAges`.
+- One verb table, `internal/eventverbs`, serves the notification title
+  and `repose events`. The notification's words win: they reach the
+  phone and the email subject first, and a mail filter matches them.
+  `events` prints `finished` (was `done`), `machine.nix did not apply`,
+  `new system did not boot`, `unused for 24h, holding plan memory`,
+  `destroyed in an hour` and `temporary machine destroyed`.
+- `stop` reads the machine's checkout with status's git script before
+  the stop and ends its line with what stays there: `Stopped todo-app
+  in 11s with a 2.1 GB snapshot; 3 commits on main not fetched, 4 files
+  not committed.` Commits are counted only in the project's checkout;
+  elsewhere only files. The rows go to `~/.config/repose/stop-left.json`
+  and `status` shows them for the stopped machine, `(at the stop, 9h
+  ago)`, until it runs again; `--json` has them with `git_at`. A stop
+  that read nothing removes the entry. `TestStopSaysWhatItLeaves`.
+
+**I-635. Help topics, flag suggestions, and the project's agent from
+the CLI (cli-devx, 2026-10-09).** Amends I-276, I-603, I-622, I-628.
+*Made during implementation*.
+- `repose help environment`, `help exit-codes` and `help config-file`
+  print cli.md's three tables offline, listed under root help's
+  "Additional help topics". The rows live in `helptopics_data.go` as
+  cli.md's Markdown, and `TestHelpTopicsMatchTheDocs` fails when a row
+  differs, so neither can drift. `repose help NAME` with no such
+  command or topic exits 2 with `No help for "NAME".` and the same
+  did-you-mean as a mistyped command (cobra printed root help and
+  exited 0). `TestHelpTopics`.
+- An unknown flag gets a suggestion on the refusal's line: another
+  tool's spelling (`run --detach` names `-d (--no-attach)`, `stop`,
+  `rm` and `resize --force` name `-y (--yes)`), a typo of one of the
+  command's flags (`--promt`), or for an unknown `-x` the long flag
+  starting with x that has no letter (`exec -w` names `--workdir`).
+  Where the command needs no flag the line says why: `repose ps lists
+  every window.`, `repose ls lists every project, stopped ones too.`,
+  `repose sync does not attach.` A hidden `--detach` alias was not
+  added: one spelling per flag. `TestUnknownFlagSuggestions`.
+- I-628's corrected command takes as PROJECT the word that is not the
+  command's own: `repose open 8080 todo-app` now suggests `repose open
+  8080 --project todo-app` (it suggested `open todo-app --project
+  8080`). With no such word, or two, no command is printed.
+- `repose run --agent NAME` without `-p` makes NAME the project's agent
+  (PATCH `agent_default`, or the create's field), as `--multiplexer`
+  makes its multiplexer; no new verb or flag. `status`'s setup line
+  names the agent whenever it differs from config.toml's
+  `default_agent`, not from `claude`, so an older project that starts
+  Claude under `default_agent = "codex"` says so. `--agent`'s help
+  names `default_agent`. `TestRunAgentWithoutPromptSticks`.

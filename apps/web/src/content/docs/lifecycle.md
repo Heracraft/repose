@@ -15,13 +15,13 @@ To act on a project from elsewhere, name it: `repose attach todo-app`, `repose s
 $ repose ls
 PROJECT     SIZE   STATE    UP     AGENTS
 todo-app *  large  running  2h14m  claude: working
-api         xl     running  6h40m  2 agents: 1 needs input, 1 working
+api         xl     running  6h40m  codex: needs input 4h
 web         small  stopped  -      -
 Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
 this month
 ```
 
-`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
+`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
 
 `repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
@@ -41,13 +41,13 @@ $ repose stop todo-app
 todo-app has claude (working). Stopping ends it. Stop todo-app?
 [y/N] y
 Fetched 2 commits on repose/main.
-Stopped todo-app in 11s with a 2.1 GB snapshot.
+Stopped todo-app in 11s with a 2.1 GB snapshot; 1 file not committed.
 
 $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` Run in the project's checkout, it fetches the agent's commits before the machine stops, as `git fetch repose` would; with nothing new it prints no `Fetched` line. Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
+`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` Run in the project's checkout, it fetches the agent's commits before the machine stops, as `git fetch repose` would; with nothing new it prints no `Fetched` line. The stop line ends with what stays on the machine: commits your checkout hasn't fetched (counted only in the project's checkout) and files the agent didn't commit. `repose status` shows those rows for the stopped machine. Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
@@ -58,8 +58,8 @@ A machine is unused when it has been running for 24 hours with no SSH session, n
 ```
 $ repose ls
 PROJECT    SIZE   STATE    UP      AGENTS
-todo-app   large  running  31h02m  claude: needs input
-todo-app: unused for 26h; claude needs input
+todo-app   large  running  31h02m  claude: needs input 3h
+todo-app: unused for 26h; claude needs input 3h
 ```
 
 - `repose status` shows the same line, and the dashboard's project list shows `unused 26h` under the state.

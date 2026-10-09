@@ -15,8 +15,11 @@ import (
 
 // RunOptions is `repose run`'s flags (07-cli.md §5.1).
 type RunOptions struct {
-	Prompt        string
-	Agent         string
+	Prompt string
+	Agent  string
+	// SetAgent is --agent without -p: Agent becomes the project's agent,
+	// which `run -p` starts from then on (I-635).
+	SetAgent      bool
 	Size          string
 	Name          string
 	StashRemote   bool
@@ -70,7 +73,15 @@ func pollDelay(started time.Time) time.Duration {
 	}
 }
 
-const sshWaitTimeout = 60 * time.Second
+// sshWaitTimeout is how long a command that has just started or created
+// the machine waits for its first ssh answer; sshWaitShort is the wait of
+// one that found it running (ps, exec, cp, ssh, status), where a minute
+// of silence reads as a hang (DECISIONS I-634).
+var (
+	sshWaitTimeout = 60 * time.Second
+	sshWaitShort   = 15 * time.Second
+)
+
 const sshRetryInterval = time.Second
 
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
@@ -195,6 +206,17 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			runningMux = before
 		}
 	}
+	if !attachOnly && res.Project != nil && opts.SetAgent && res.Project.AgentDefault != opts.Agent {
+		// --agent without -p on a project that exists: it sticks.
+		got, err := e.Client.PatchProject(ctx, res.Project.ID, PatchProjectRequest{AgentDefault: &opts.Agent})
+		if err != nil {
+			return err
+		}
+		res.Project.AgentDefault = opts.Agent
+		if got != nil && got.AgentDefault != "" {
+			res.Project.AgentDefault = got.AgentDefault
+		}
+	}
 	project := res.Project
 	// made is the project this command created, until the sync or carry
 	// reaches it. Ctrl-C before then: it is this command's own and nothing
@@ -291,7 +313,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs()}
 	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
 		helper.MCPOff = true // I-556: attach honours the off switch too
 	}
@@ -829,7 +851,9 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		}
 	}
 	defer timeSpan("connect first ssh")()
-	err = waitForSSH(ctx, target, certRefusalHandler(func() error {
+	slow, done := e.connectingPhase(project.Slug)
+	defer done()
+	err = waitForSSH(ctx, target, e.sshWait(), slow, certRefusalHandler(func() error {
 		params.Force = true
 		_, err := ensureCert(ctx, e.Client, params, nil)
 		return err
@@ -838,6 +862,39 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		return sshTarget{}, err
 	}
 	return target, nil
+}
+
+// sshWait is how long this command waits for the machine's first ssh
+// answer: a minute after it started or created the machine, else
+// sshWaitShort (I-634).
+func (e *Env) sshWait() time.Duration {
+	if e.longSSHWait {
+		return sshWaitTimeout
+	}
+	return sshWaitShort
+}
+
+// connectingPhase is the "Connecting to SLUG" phase a slow first ssh
+// shows (I-634): a spinner on a terminal, a line and the heartbeat off
+// one. A command already in a phase (run's own) keeps it. done ends the
+// phase, if slow started one.
+func (e *Env) connectingPhase(slug string) (slow func(), done func()) {
+	var started *progress
+	slow = func() {
+		if e.JSON {
+			return
+		}
+		pr := e.active
+		if pr == nil {
+			pr = e.newProgress()
+		}
+		if pr.busy() {
+			return
+		}
+		pr.Phase("Connecting to "+slug, "")
+		started = pr
+	}
+	return slow, func() { started.End() }
 }
 
 // The gateway's refusals that are about the certificate itself
@@ -1045,12 +1102,18 @@ const attachTTYGuard = `[ -t 0 ] || { echo 'Attaching needs a terminal, and this
 // when it changed something worth an immediate retry (a re-issued
 // certificate). A failure on the laptop's side, which waiting does not
 // clear, ends the wait at once (DECISIONS I-625).
-func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (bool, error)) error {
-	deadline := time.Now().Add(sshWaitTimeout)
-	for {
+//
+// slow, when set, is called once after the first failure, so the command
+// can show that it is waiting (I-634).
+func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(), onRefused func(*sshError) (bool, error)) error {
+	deadline := time.Now().Add(wait)
+	for first := true; ; first = false {
 		err := runSSHOK(ctx, t, "true")
 		if err == nil {
 			return nil
+		}
+		if first && slow != nil {
+			slow()
 		}
 		var se *sshError
 		if errors.As(err, &se) && se.ExitCode == -1 {
@@ -1071,7 +1134,7 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 			}
 		}
 		if time.Now().After(deadline) {
-			msg := fmt.Sprintf("%s is running but did not answer ssh in %d s.", targetName(t), int(sshWaitTimeout.Seconds()))
+			msg := fmt.Sprintf("%s is running but did not answer ssh in %d s.", targetName(t), int(wait.Seconds()))
 			if se != nil {
 				if detail := sshStderrDetail(se.Stderr); detail != "" {
 					msg += " Last error from ssh: " + detail
@@ -1194,6 +1257,9 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	if project.State == "running" && !guestdDead(project) {
 		return nil
 	}
+	// Whatever follows boots the machine, or waits for a boot: its first
+	// ssh may take the whole minute (I-634).
+	e.longSSHWait = true
 	// A project just created (or being started by someone else) has an op
 	// in flight; starting it again is the conflict the first real run hit
 	// ("recruiting is already starting", DECISIONS I-106). Wait on that op
@@ -1248,6 +1314,18 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			sr, err = e.Client.StartProject(ctx, project.ID)
 			return err
 		})
+		if noPlanYet(err) {
+			// A stopped machine on an account whose plan ended (I-634).
+			if ok, werr := waitForPlan(ctx, e, pr); werr != nil {
+				return werr
+			} else if ok {
+				err = retryOnOpConflict(ctx, func() error {
+					var err error
+					sr, err = e.Client.StartProject(ctx, project.ID)
+					return err
+				})
+			}
+		}
 	}
 	if err != nil {
 		var apiErr *APIError
@@ -1608,6 +1686,9 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if isAgent(e.Cfg.DefaultAgent) {
 		req.AgentDefault = e.Cfg.DefaultAgent
 	}
+	if opts.SetAgent {
+		req.AgentDefault = opts.Agent
+	}
 	// The multiplexer (I-502): the flag, config.toml, a laptop herdr
 	// pane, else tmux, which is the api's default and is not sent.
 	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer)
@@ -1616,6 +1697,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	}
 
 	waited := map[string]bool{}
+	waitedPlan := false
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
 		if err != nil && ctx.Err() != nil {
@@ -1655,6 +1737,16 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 				return nil, err
 			}
 			return p, nil
+		}
+		if noPlanYet(err) && !waitedPlan {
+			// No plan yet (I-634): wait for the checkout, then create.
+			waitedPlan = true
+			if ok, werr := waitForPlan(ctx, e, pr); werr != nil {
+				return nil, werr
+			} else if ok {
+				attempt--
+				continue
+			}
 		}
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Code == "payment_required" {

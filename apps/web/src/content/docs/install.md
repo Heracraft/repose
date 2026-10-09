@@ -57,7 +57,7 @@ You stay logged in until you run `repose logout`.
 
 ## Choose a plan
 
-A machine starts only on an account with a plan. Choose one at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+A machine starts only on an account with a plan. Choose one at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Run from a terminal, `repose run`, `start` and `attach` on an account with no plan open that page and wait for it, then go on; off a terminal, or with `--json`, they exit 7. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
 
 ## Shell completion
 

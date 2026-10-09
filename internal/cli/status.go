@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -31,6 +32,12 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 type statusJSON struct {
 	*Project
 	Git []gitRow `json:"git,omitempty"`
+	// GitError is why git is absent from a running machine (I-634):
+	// ssh_timeout or ssh_failed. Absent when the machine answered.
+	GitError string `json:"git_error,omitempty"`
+	// GitAt is set on a stopped machine's rows: when this laptop read
+	// them, before its stop (I-634).
+	GitAt *time.Time `json:"git_at,omitempty"`
 }
 
 // statusFor prints project's status, read now.
@@ -45,9 +52,14 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	} else {
 		guest <- guestStatus{}
 	}
+	left, hasLeft := stoppedRows(e.Dir, project)
 	if e.JSON {
 		g := <-guest
-		return e.printJSON(statusJSON{Project: project, Git: g.git})
+		doc := statusJSON{Project: project, Git: g.git, GitError: g.probeErr}
+		if hasLeft {
+			doc.Git, doc.GitAt = left.Rows, &left.At
+		}
+		return e.printJSON(doc)
 	}
 	bill := make(chan *Billing, 1)
 	go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
@@ -57,6 +69,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
+	noteWaits(project, events)
 	g := <-guest
 	mux := g.mux
 	if mux == "" {
@@ -64,7 +77,8 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	writeStatus(e.Out, statusView{
 		p: project, route: route, snaps: snaps, events: events, mux: mux,
-		disk: g.disk, procs: g.procs, git: g.git, bill: <-bill, now: time.Now(),
+		disk: g.disk, procs: g.procs, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, bill: <-bill, now: time.Now(),
+		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent,
 	})
 	return nil
 }
@@ -113,6 +127,7 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		_, _ = fmt.Fprintf(e.Out, "No projects yet%s.\n", whose)
 		return nil
 	}
+	noteWaitsOf(ctx, e.Client, projects)
 	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects))
 	b := <-bill
 	pl := planLine(b)
@@ -347,8 +362,17 @@ type statusView struct {
 	disk   guestDisk
 	procs  []listeningProc
 	git    []gitRow
-	bill   *Billing
-	now    time.Time
+	// probeErr and probeDetail say why git is empty on a running
+	// machine (I-634).
+	probeErr, probeDetail string
+	// left is a stopped machine's rows from this laptop's stop of it.
+	left    stopLeft
+	hasLeft bool
+	// defaultAgent is config.toml's default_agent, which the setup line
+	// compares the project's agent with.
+	defaultAgent string
+	bill         *Billing
+	now          time.Time
 }
 
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
@@ -398,7 +422,7 @@ func writeStatus(w io.Writer, v statusView) {
 		// DECISIONS I-347: a temporary machine, and how long it has.
 		_, _ = fmt.Fprintf(w, "  temporary: %s\n", t)
 	}
-	if l := setupLine(p); l != "" {
+	if l := setupLine(p, v.defaultAgent); l != "" {
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
 	if p.State == "error" {
@@ -425,7 +449,11 @@ func writeStatus(w io.Writer, v statusView) {
 	if a := agentList(p); a != "" {
 		statusRow(w, "agents", a)
 	}
-	writeGitRows(w, v.git, v.now)
+	if v.hasLeft {
+		writeStoppedRows(w, v.left, v.now)
+	} else {
+		writeGitRowsOr(w, v.git, v.now, v.probeErr, v.probeDetail)
+	}
 	if running && p.Signals != nil {
 		statusRow(w, "attached", attachedCell(p.Signals, v.mux))
 		docker := p.Signals.Docker
@@ -617,12 +645,24 @@ func agentState(p *Project) string {
 	if p.Signals == nil || p.State != "running" || len(p.Signals.Agents) == 0 {
 		return ""
 	}
+	now := time.Now()
 	agents := p.Signals.Agents
 	if len(agents) == 1 {
 		if w := agentWord(agents[0].State); w != "" {
-			return fmt.Sprintf("%s: %s", agents[0].Agent, w)
+			return fmt.Sprintf("%s: %s%s%s", agents[0].Agent, w, staleMark(p, now), waitAge(p, agents[0], now))
 		}
 		return agents[0].Agent
+	}
+	// The longest wait is the one to act on (I-634).
+	var longest string
+	var longestD time.Duration
+	for _, a := range agents {
+		if a.State != "needs_input" {
+			continue
+		}
+		if t, ok := p.waitedSince[agentKey(a)]; ok && now.Sub(t) > longestD {
+			longestD, longest = now.Sub(t), waitAge(p, a, now)
+		}
 	}
 	counts := map[string]int{}
 	order := append([]string{}, agentStateOrder...)
@@ -638,13 +678,122 @@ func agentState(p *Project) string {
 	var parts []string
 	for _, st := range order {
 		if counts[st] > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", counts[st], agentWord(st)))
+			part := fmt.Sprintf("%d %s", counts[st], agentWord(st))
+			if st == "needs_input" && longest != "" {
+				part += " (" + strings.TrimSpace(longest) + ")"
+			}
+			parts = append(parts, part)
 		}
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("%d agents", len(agents))
 	}
-	return fmt.Sprintf("%d agents: %s", len(agents), strings.Join(parts, ", "))
+	return fmt.Sprintf("%d agents: %s%s", len(agents), strings.Join(parts, ", "), staleMark(p, now))
+}
+
+// agentKey is how an agent's window is matched to its events: the
+// window's name, else the agent's.
+func agentKey(a AgentSignal) string {
+	if a.Window != "" {
+		return a.Window
+	}
+	return a.Agent
+}
+
+// waitAge is " 4h" after an agent that needs input, for how long it has
+// waited: since the event that started its wait (I-634). "" when no
+// event says.
+func waitAge(p *Project, a AgentSignal, now time.Time) string {
+	if a.State != "needs_input" {
+		return ""
+	}
+	t, ok := p.waitedSince[agentKey(a)]
+	if !ok {
+		return ""
+	}
+	if d := now.Sub(t); d >= time.Minute {
+		return " " + compactAge(d)
+	}
+	return " now"
+}
+
+// staleMark is "?" after agent states read from a sample older than
+// signalFresh, as ps marks them (I-634): the agent may have moved on.
+func staleMark(p *Project, now time.Time) string {
+	if p.Signals != nil && p.Signals.SampledAt != nil && now.Sub(*p.Signals.SampledAt) >= signalFresh {
+		return "?"
+	}
+	return ""
+}
+
+// noteWaits reads, from a project's events, when each agent that needs
+// input began to wait: the newest event of its window, when that event
+// is the question (I-634). Anything after it (done, an error) means the
+// event that started this wait is not in the list.
+func noteWaits(p *Project, events []Event) {
+	if p.Signals == nil {
+		return
+	}
+	newest := map[string]Event{}
+	for _, ev := range events {
+		k := ev.Window
+		if k == "" {
+			k = ev.Agent
+		}
+		if k == "" {
+			continue
+		}
+		if cur, ok := newest[k]; !ok || ev.TS.After(cur.TS) {
+			newest[k] = ev
+		}
+	}
+	for _, a := range p.Signals.Agents {
+		if a.State != "needs_input" {
+			continue
+		}
+		ev, ok := newest[agentKey(a)]
+		if !ok || (ev.Kind != "needs_input" && ev.Kind != "agent_question") {
+			continue
+		}
+		if p.waitedSince == nil {
+			p.waitedSince = map[string]time.Time{}
+		}
+		p.waitedSince[agentKey(a)] = ev.TS
+	}
+}
+
+// needsAnswer reports whether an agent on p waits for an answer.
+func needsAnswer(p *Project) bool {
+	if p.Signals == nil || p.State != "running" {
+		return false
+	}
+	for _, a := range p.Signals.Agents {
+		if a.State == "needs_input" {
+			return true
+		}
+	}
+	return false
+}
+
+// noteWaitsOf reads the events of each project with an agent that needs
+// input, at once, for ls (I-634). A failed read leaves that project's
+// ages out.
+func noteWaitsOf(ctx context.Context, c *Client, projects []Project) {
+	var wg sync.WaitGroup
+	for i := range projects {
+		p := &projects[i]
+		if !needsAnswer(p) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if evs, err := c.ListEvents(ctx, p.ID, ""); err == nil {
+				noteWaits(p, evs)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // agentList is status's agents row: each agent by its window's name
@@ -662,6 +811,7 @@ func agentList(p *Project) string {
 	}
 	agents := slices.Clone(p.Signals.Agents)
 	sort.SliceStable(agents, func(i, j int) bool { return rank(agents[i].State) < rank(agents[j].State) })
+	now := time.Now()
 	parts := make([]string, 0, len(agents))
 	for _, a := range agents {
 		name := a.Window
@@ -669,7 +819,7 @@ func agentList(p *Project) string {
 			name = a.Agent
 		}
 		if w := agentWord(a.State); w != "" {
-			name += " " + w
+			name += " " + w + staleMark(p, now) + waitAge(p, a, now)
 		}
 		parts = append(parts, name)
 	}
