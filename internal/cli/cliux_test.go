@@ -478,18 +478,16 @@ func quietStdout(t *testing.T) {
 	t.Cleanup(func() { os.Stdout = old; _ = devnull.Close() })
 }
 
-func TestRunRefusesAPromptThatIsAProjectName(t *testing.T) {
-	fake := fakeapi.New(fakeapi.Options{})
-	defer fake.Close()
-	e := newLifecycleEnv(t, fake)
-	ctx := context.Background()
-	if _, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large"}); err != nil {
-		t.Fatal(err)
+// A one-word prompt that is a project's name is typed into the agent:
+// the prompt is -p since I-603, and run's argument is the project.
+func TestRunTypesAPromptThatIsAProjectName(t *testing.T) {
+	var opts RunOptions
+	if err := runArgs(&opts, []string{"izma"}, "", &strings.Builder{}); err != nil || opts.Name != "izma" || opts.Prompt != "" {
+		t.Fatalf("run izma: %+v %v", opts, err)
 	}
-	err := runRun(ctx, e, RunOptions{Prompt: "izma", Name: "x"}, false)
-	ee, ok := err.(*exitError)
-	if !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "repose run --project izma") {
-		t.Fatalf("err = %v", err)
+	opts = RunOptions{Prompt: "izma"}
+	if err := runArgs(&opts, nil, "", &strings.Builder{}); err != nil || opts.Prompt != "izma" || opts.Name != "" {
+		t.Fatalf("run -p izma: %+v %v", opts, err)
 	}
 }
 

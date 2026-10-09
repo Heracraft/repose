@@ -8,7 +8,7 @@ feature doc wins; on internals, the workstream doc wins.
 
 | Feature | One line | Status |
 |---|---|---|
-| [projects.md](projects.md) | How a directory becomes a project, `--name`, per-account limits | built |
+| [projects.md](projects.md) | How a directory becomes a project, `repose run NAME`, per-account limits | built |
 | [run-and-attach.md](run-and-attach.md) | `repose run`, `repose attach`, tmux sessions and windows, the agent picker | built |
 | [sync-at-launch.md](sync-at-launch.md) | Git plus the one-shot diff of uncommitted work, refuse-on-dirty | built |
 | [agents.md](agents.md) | The five agents, wrappers, hooks, Claude login, MCP support | built; `mcp forward` not built |

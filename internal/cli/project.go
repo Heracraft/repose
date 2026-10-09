@@ -81,8 +81,12 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 			return nil, err
 		}
 		if p != nil {
-			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote {
-				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run --name %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another --name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
+			if co := e.extraCheckout(); co != nil && co.ProjectID == p.ID {
+				// This folder is one of p's other checkouts (I-480).
+				return &ResolveResult{Project: p, Remote: remote, Checkout: co.Name}, nil
+			}
+			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote && !opts.NoSync {
+				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
 			}
 			return &ResolveResult{Project: p, Remote: remote}, nil
 		}
@@ -103,7 +107,7 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 		// A directory that is not a repository (the home directory, say)
 		// found its project through by_dir: the last one `run` made
 		// here. Say which, and how to get another (I-348, I-358).
-		e.warn("Using %s, the machine last made in this directory.", res.Project.Slug)
+		e.warn("Using %s, the machine last made in this folder.", res.Project.Slug)
 	}
 	return res, nil
 }
@@ -377,7 +381,7 @@ func isInvalid(err error) bool {
 
 // rememberProject caches a project under its remote and, when dir is not
 // "", under that directory (only `run` creating a project writes a
-// directory: a --name project with no remote has nothing else to be found
+// directory: a project named on run, with no remote, has nothing else to be found
 // by).
 func rememberProject(cache *ProjectsCache, remote, dir string, p Project) {
 	if remote != "" {

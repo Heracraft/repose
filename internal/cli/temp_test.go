@@ -196,7 +196,7 @@ func TestRunWithoutRemoteNamesTheProjectAfterTheDirectory(t *testing.T) {
 	if ps := listed(t, e2); len(ps) != 1 {
 		t.Fatalf("second run made another: %+v", ps)
 	}
-	if !strings.Contains(errOut.buf.String(), "Using job-search, the machine last made in this directory.") {
+	if !strings.Contains(errOut.buf.String(), "Using job-search, the machine last made in this folder.") {
 		t.Fatalf("stderr %q", errOut.buf.String())
 	}
 
@@ -351,7 +351,7 @@ func TestRunNameInHomePicksTheNamedProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr, "Using boxd, the machine last made in this directory.") {
+	if !strings.Contains(stderr, "Using boxd, the machine last made in this folder.") {
 		t.Fatalf("stderr %q", stderr)
 	}
 	// --temp: a new machine every time.

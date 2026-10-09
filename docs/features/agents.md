@@ -8,7 +8,7 @@ binaries, unmodified.
 ## What the user sees
 
 ```
-$ repose run "write tests for the payment module"
+$ repose run -p "write tests for the payment module"
 ...
 Starting claude...          (then attaches to the tmux window todo-app:claude)
 ```
@@ -16,7 +16,7 @@ Starting claude...          (then attaches to the tmux window todo-app:claude)
 First use of Claude in a guest with no credentials:
 
 ```
-$ repose run "write tests for the payment module"
+$ repose run -p "write tests for the payment module"
 Claude Code is not logged in on this guest yet. Finish the login in the window that opens, then re-run with your prompt.
 ```
 

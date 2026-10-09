@@ -65,7 +65,7 @@ func (e *Env) inHome() bool {
 
 // errHomeRun is a plain `repose run` in the home folder.
 func errHomeRun() error {
-	return exitf(ExitUsage, "Your home folder is not a project. cd into one, or pass --name NAME or --temp.")
+	return exitf(ExitUsage, "Your home folder is not a project. cd into one, or run `repose run NAME` or `repose run --temp`.")
 }
 
 // errHomeSync is `repose sync` in the home folder.

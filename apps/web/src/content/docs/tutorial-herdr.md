@@ -31,7 +31,7 @@ In the checkout, from a terminal in your laptop's herdr:
 
 ```
 $ cd ~/src/todo-app
-$ repose run "add a dark mode toggle"
+$ repose run -p "add a dark mode toggle"
 ✓ Created todo-app (large, herdr)  0.3s
 ...
 Ready in 38s.
@@ -45,7 +45,7 @@ From a terminal outside herdr, the same command opens herdr's client on the mach
 A second prompt opens another tab, `claude-2`. With `--worktree` the agent gets its own git worktree, which herdr shows under `checkout`:
 
 ```
-repose run --worktree "write the tests for the toggle"
+repose run --worktree -p "write the tests for the toggle"
 ```
 
 `repose ps` lists the agents and their state:
@@ -61,15 +61,7 @@ todo-app-worktree-1   claude  claude-2  idle
 
 `run` and `attach` add each running herdr project to your laptop herdr's machine list, and `repose rm` takes it out again, so the list matches your account. Entries for your other hosts stay as they are. If you disable a repose machine in herdr, it stays disabled. A stopped machine keeps its entry; herdr shows it as stopped until `repose start`.
 
-A machine in the sidebar holds an SSH connection open while your laptop's herdr runs, and that counts as someone using it: it doesn't get the idle notice. herdr has no button to disconnect one machine. Disable its entry by label when you're done with it for the day; its agents keep running, and `herdr machine enable` with the same id brings it back:
-
-```
-id=$(herdr machine list --json |
-  jq -r '.[] | select(.label=="todo-app") | .id')
-herdr machine disable "$id"
-```
-
-A temporary machine on herdr is in the sidebar too. Closing its tabs doesn't end it; it goes when its time runs out.
+A machine in the sidebar holds an SSH connection open while your laptop's herdr runs, and that counts as someone using it: it doesn't get the idle notice. Disable its entry when you're done with it for the day; its agents keep running. The commands are under [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux).
 
 ## After a stop and start
 

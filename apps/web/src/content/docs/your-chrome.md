@@ -24,7 +24,7 @@ With the switch on, Chrome asks you to allow each connection to it: a dialog in 
 Add `--bridge` to `run` or `attach`:
 
 ```
-repose run --bridge "test the staging checkout in my Chrome"
+repose run --bridge -p "test staging in my Chrome"
 ```
 
 Once the bridge is up, a message at the bottom of tmux says:

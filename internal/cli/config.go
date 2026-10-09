@@ -204,7 +204,7 @@ func deleteCredentials(dir string) error {
 }
 
 // ProjectsCache is projects.json: a local cache of (user, remote) -> project
-// and directory -> project for --name projects, regenerable from GET
+// and directory -> project for projects named on run, regenerable from GET
 // /projects.
 type ProjectsCache struct {
 	ByRemote map[string]CachedProject `json:"-"` // top-level keys, merged into MarshalJSON

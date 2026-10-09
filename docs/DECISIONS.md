@@ -16688,3 +16688,61 @@ user (needs a herdr socket call nobody has checked); a hard expiry for
 tmux too. `TestSwitchTemporaryToHerdr`, `TestPickMultiplexerOrder`, `TestRunNewProjectFromHerdrPane`,
 `TestPlanHerdrCatalog`, `TestHerdrAttachPath`,
 `TestTempHerdrExpiryIgnoresSessions`.
+
+**I-603. `repose run [PROJECT]` and `repose sync [PROJECT]`: the
+argument is the machine of that name, created if there is none, and the
+prompt is `-p`/`--prompt`.** (owner, 2026-10-08: "the run \"prompt\" is
+a gimmick"; supersedes R1-4's `run "prompt"`, the run half of I-155's
+exception and I-348's `--name`) `run` was the one project command whose
+argument was not the project (I-155), so starting a named machine from
+the home folder (I-601) took `--name`, and a one-word prompt equal to a
+slug had to be refused. Now:
+- `run PROJECT` and `sync PROJECT` mean what `--name PROJECT` meant
+  (I-348): the project of that name or slug wherever the command runs,
+  created when there is none, a second machine for a checkout whose
+  remote another project has, refused when it is another repository's.
+  An id or `PROJECT:CHECKOUT` (I-480) must exist, as with `--project`.
+  `sync PROJECT` before this had to exist; it now creates, as `run`
+  does, so the two read the same. A sync by name (`sync NAME`, or `run
+  NAME`'s first sync) into a project with no remote links an unlinked
+  checkout with no remote, as `--project` did (I-575); `--name` never
+  did. A temporary machine is never linked (I-351). From a folder `run
+  --on` added, the name of its machine means that checkout (I-480), as a
+  plain run there does. The early probe (I-223) guesses from the name
+  too, through the cache, and only when the cached project's remote is
+  this checkout's, so it never makes a folder on another repository's
+  machine. The refusal of another repository's project by name (I-348)
+  does not apply with `--no-sync`, where nothing is synced into it, as
+  `--project` never refused.
+- `-p`/`--prompt PROMPT` starts the agent; `--agent` and `--worktree`
+  (which needs `-p`) are unchanged. `fork --prompt` already had the name.
+- For one release the old shapes work: `--name` is hidden on both
+  commands, and several words, or one word with a space in it, are the
+  prompt, with ``The prompt goes after -p: `repose run -p 'fix the tests'`. This
+  form stops working in the next release.`` on stderr. A
+  single word with no space is a project from now on, so `repose run
+  refactor` makes a machine called `refactor`; the create line says so.
+  A project name with a space needs `--name` during that release. A
+  word beside `--project` or `--name` that is not the project they name
+  is the old prompt too (`repose run --project X fix`, the form an older
+  `fork` warning printed), so for that release `run Y --project X` types
+  `Y` into X's agent instead of exiting 2; the same name both ways is
+  the project.
+- The one-word-prompt refusal (`refusePromptThatIsASlug`) is gone.
+  `--agent` without `-p` exits 2, as `--worktree` does: it used to send
+  a one-word prompt (`repose run --agent claude todo-app`), and now
+  would be dropped in silence. `sync --temp 2h spike` counts its words
+  after `--temp` took the duration.
+- Accepted: `repose run -p fix tests`, unquoted, makes or uses a
+  machine `tests` and types `fix`; flags and words mix in any order, so
+  the CLI cannot tell. The docs say to quote a prompt of more than one
+  word. I-601's home-folder line now reads ``cd into one, or run
+  `repose run NAME` or `repose run --temp`.``. The positional wins over
+  `REPOSE_PROJECT`, as on every command.
+Docs: cli.md, run-and-attach, lifecycle, sync, agents, index, machine,
+troubleshooting, the tutorials; features, 07-cli, guest-conventions,
+DESIGN. Not changed: the guest's wrapper comment in
+`nix/overlay/agents/wrap.nix` (inside the wrapper's text, so editing it
+rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
+`TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
+`TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.

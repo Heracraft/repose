@@ -49,7 +49,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout waits for the destroy, then creates a fresh `todo-app`; see [Start over with a fresh machine](/docs/lifecycle#start-over-with-a-fresh-machine).
 
-**`The claude window closed before the attach`.** The agent `repose run "..."` started exited before you were attached, so you're in the machine's session instead. Start the agent again there, for example by typing `claude`. If it exits right away again, running it by hand shows why.
+**`The claude window closed before the attach`.** The agent `repose run -p "..."` started exited before you were attached, so you're in the machine's session instead. Start the agent again there, for example by typing `claude`. If it exits right away again, running it by hand shows why.
 
 **`No capacity right now`** or **`Could not create todo-app: no host with capacity`.** The servers are full. A start changes nothing. A new project is left in the error state with no machine; `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room. Try again in a few minutes. Right after `repose rm` or `repose stop` of another machine, a new one waits up to three minutes for that machine's memory instead of failing.
 

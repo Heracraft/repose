@@ -45,6 +45,7 @@ var quietAllowed = map[string]string{
 	"login.go:setUpPlainSSH:warning: could not write ~/.ssh/repose/c":             "a failure",
 	"run.go:failedStart:Fix it with `repose config edit %s`.\n":                   "a failure: the config did not build",
 	"temp.go:tempSessionEndedWith:Could not destroy %s (%s). It goes at it":       "a failure",
+	"run.go:runArgs:The prompt goes after -p: `repose run -p":                     "prevents a loss: the old prompt form stops working next release (I-603)",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",
 	"carry_mcp.go:mcpLines: repose mcp forward NAME runs one from h":              "unblocks: a server was left on the laptop (I-556, I-557)",
 	"carry_mcp.go:mcpLines: repose mcp forward ":                                  "unblocks: a server was left on the laptop (I-556, I-557)",

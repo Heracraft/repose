@@ -252,7 +252,7 @@ $ repose run --temp                          # this checkout, on a throwaway mac
 [tmux]
 
 $ cd ~/Downloads
-$ repose run --temp --name spike             # no git here: an empty machine
+$ repose run --temp spike             # no git here: an empty machine
 ✓ Created spike (large, temporary: destroyed Sep 29 14:05)  4s
 Not a git repository, so nothing was synced.
 
@@ -289,7 +289,7 @@ Create:
 - `--temp` always creates a new project. It never resolves the
   directory's project, `--project` with it exits 2, and it never writes
   `projects.json` (`by_dir` or a remote key).
-- The name is `--name`, or `tmp-` plus four lowercase base32 characters.
+- The name is PROJECT (`repose run --temp spike`), or `tmp-` plus four lowercase base32 characters.
   A taken name goes through run's usual `name-2` retry.
 - `POST /projects` carries `expires_in_s` and no `remote_url`; the api
   sets `expires_at = now() + expires_in_s` and refuses `expires_in_s`
