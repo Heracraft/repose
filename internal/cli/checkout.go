@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -26,9 +28,16 @@ const checkoutsFile = "~/.repose/checkouts"
 // checkout works. slug is a validated project slug. extra, when not "",
 // is one of the machine's other checkouts (I-480): ~/<extra>, whether
 // or not it exists yet.
+//
+// A name the machine does not list in checkoutsFile, with no directory of
+// its own, is refused there, exit 2 with noCheckoutMsg on stderr: only
+// `repose run --on` adds a checkout, so a typo in PROJECT:CHECKOUT never
+// makes an empty one (DECISIONS I-618).
 func checkoutVar(slug, extra string) string {
 	if extra != "" {
-		return fmt.Sprintf("repose_co=\"$HOME\"/%s\n", shQuote(extra))
+		return fmt.Sprintf(`repose_co="$HOME"/%[1]s
+if [ ! -d "$repose_co" ] && ! grep -qxF %[1]s %[2]s 2>/dev/null; then printf '%%s\n' %[3]s >&2; exit 2; fi
+`, shQuote(extra), checkoutsFile, shQuote(noCheckoutMsg(slug, extra)))
 	}
 	return fmt.Sprintf(`repose_n=
 [ -f %[1]s ] && IFS= read -r repose_n < %[1]s || true
@@ -37,6 +46,26 @@ if [ -n "$repose_n" ] && [ -d "$HOME/$repose_n" ]; then repose_co="$HOME/$repose
 elif [ -d "$HOME/%[2]s" ]; then repose_co="$HOME/%[2]s"
 else repose_co="$HOME"; fi
 `, checkoutFile, slug)
+}
+
+// noCheckoutMsg is the refusal for a checkout the machine does not have.
+func noCheckoutMsg(slug, extra string) string {
+	return fmt.Sprintf("%s has no checkout %s. `repose run --on %s` in its folder adds it.", slug, extra, slug)
+}
+
+// noCheckoutError is err as checkoutVar's refusal when it is one: exit 2
+// with its line, not a failed step.
+func noCheckoutError(err error) error {
+	var se *sshError
+	if !errors.As(err, &se) || se.ExitCode != 2 {
+		return nil
+	}
+	for _, l := range strings.Split(se.Stderr, "\n") {
+		if strings.Contains(l, " has no checkout ") && strings.HasSuffix(l, " in its folder adds it.") {
+			return exitf(ExitUsage, "%s", strings.TrimSpace(l))
+		}
+	}
+	return nil
 }
 
 // checkoutCreate is shell, after checkoutVar, that makes the checkout
@@ -193,4 +222,146 @@ func windowLabel(extra, agent string) string {
 // windowPrefix is extra's part of its window names.
 func windowPrefix(extra string) string {
 	return strings.ReplaceAll(extra, ".", "-")
+}
+
+// wholeMachineOnly refuses PROJECT:CHECKOUT on a command that acts on the
+// whole machine and would otherwise drop the checkout without a word
+// (DECISIONS I-618). run, attach, sync, exec, ssh, code and the commands
+// on connectRunning take it; rm removes the checkout.
+func wholeMachineOnly(e *Env, projectArg string) error {
+	p, co, ok := strings.Cut(e.resolveArg(projectArg), ":")
+	if !ok {
+		return nil
+	}
+	cmd := strings.TrimSuffix(e.Command, " --project")
+	if cmd == "" {
+		cmd = "repose"
+	}
+	return exitf(ExitUsage, "`%s` acts on the whole machine, so it takes %s, not %s:%s.", cmd, p, p, co)
+}
+
+// removeCheckoutScript checks, and with remove deletes, the machine's
+// other checkout name (DECISIONS I-618): its directory and the worktrees
+// `run --worktree` made from it, and its line in checkoutsFile. It prints
+// "#notlisted" and the "#listed <name>" lines for a name the machine does
+// not list, "#busy <n>" while n processes work in one of those
+// directories (an agent, a shell), else "#ok" or "#removed".
+func removeCheckoutScript(name string, remove bool) string {
+	act := "echo '#ok'"
+	if remove {
+		act = fmt.Sprintf(`rm -rf -- "$@"
+{ grep -vxF "$repose_n" %[1]s || true; } > %[1]s.new && mv %[1]s.new %[1]s
+echo '#removed'`, checkoutsFile)
+	}
+	return fmt.Sprintf(`cd "$HOME"
+repose_n=%[1]s
+if ! grep -qxF "$repose_n" %[2]s 2>/dev/null; then
+  echo '#notlisted'
+  [ ! -f %[2]s ] || sed 's/^/#listed /' %[2]s
+  exit 0
+fi
+set -- "$HOME/$repose_n"
+for d in "$HOME/$repose_n"-worktree-*; do
+  [ -f "$d/.git" ] && grep -qF "/$repose_n/.git/worktrees/" "$d/.git" && set -- "$@" "$d"
+done
+repose_busy=0
+for p in /proc/[0-9]*; do
+  c=$(readlink "$p/cwd" 2>/dev/null) || continue
+  for d in "$@"; do
+    case $c in "$d"|"$d"/*) repose_busy=$((repose_busy+1)); break ;; esac
+  done
+done
+if [ "$repose_busy" -gt 0 ]; then printf '#busy %%s\n' "$repose_busy"; exit 0; fi
+%[3]s
+`, shQuote(name), checkoutsFile, act)
+}
+
+// RemoveCheckoutCmd is `repose rm PROJECT:CHECKOUT` (DECISIONS I-618):
+// the machine's other checkout goes, with its worktrees, after a
+// question; the machine and its own checkout stay. Folders on this
+// laptop linked to it forget it.
+func RemoveCheckoutCmd(ctx context.Context, e *Env, projectArg string, yes bool, confirm func(prompt string) (bool, error)) error {
+	res, err := requireProjectRes(ctx, e, projectArg)
+	if err != nil {
+		return err
+	}
+	project, name := res.Project, res.Checkout
+	if project.State != "running" {
+		return notRunningError(project)
+	}
+	if !yes && confirm == nil {
+		return exitf(ExitUsage, "Removing %s:%s needs a confirmation; pass --yes to skip it.", project.Slug, name)
+	}
+	t, err := connect(ctx, e, project)
+	if err != nil {
+		return err
+	}
+	check := func(remove bool) (string, error) {
+		out, err := runSSH(ctx, t, removeCheckoutScript(name, remove), nil)
+		if err != nil {
+			return "", stepFailed("remove the checkout", err, "")
+		}
+		var listed []string
+		for _, l := range strings.Split(string(out), "\n") {
+			l = strings.TrimSpace(l)
+			if n, ok := strings.CutPrefix(l, "#listed "); ok {
+				listed = append(listed, n)
+			}
+		}
+		for _, l := range strings.Split(string(out), "\n") {
+			l = strings.TrimSpace(l)
+			switch {
+			case l == "#notlisted" && len(listed) == 0:
+				return "", exitf(ExitUsage, "%s has no checkouts besides its own.", project.Slug)
+			case l == "#notlisted":
+				return "", exitf(ExitUsage, "%s has no checkout %s. Its checkouts: %s.", project.Slug, name, strings.Join(listed, ", "))
+			case strings.HasPrefix(l, "#busy "):
+				n, _ := strconv.Atoi(strings.TrimPrefix(l, "#busy "))
+				return "", exitf(ExitDirtyRemoteTree, "Not removed: %d %s on %s %s in %s. Close the agents and shells there first.", n, plural(n, "process", "processes"), project.Slug, plural(n, "works", "work"), tildePath(name))
+			case l == "#ok", l == "#removed":
+				return l, nil
+			}
+		}
+		return "", stepFailed("remove the checkout", fmt.Errorf("the machine did not answer"), "")
+	}
+	if !yes {
+		if _, err := check(false); err != nil {
+			return err
+		}
+		ok, err := confirm(fmt.Sprintf("Remove %s from %s? It is deleted with its worktrees, uncommitted work and any commits you have not fetched or pushed. [y/N] ", tildePath(name), project.Slug))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			_, _ = fmt.Fprintln(e.Out, "Nothing removed.")
+			return nil
+		}
+	}
+	if _, err := check(true); err != nil {
+		return err
+	}
+	e.forgetCheckout(project.ID, name)
+	_, _ = fmt.Fprintf(e.Out, "Removed %s from %s.\n", tildePath(name), project.Slug)
+	return nil
+}
+
+// forgetCheckout drops every folder's link to the checkout name of the
+// project id, in e.Cache and in projects.json as it is on disk.
+func (e *Env) forgetCheckout(id, name string) {
+	drop := func(c *ProjectsCache) {
+		for k, co := range c.Checkouts {
+			if co.ProjectID == id && co.Name == name {
+				delete(c.Checkouts, k)
+			}
+		}
+	}
+	drop(&e.Cache)
+	disk, err := loadProjectsCache(e.Dir)
+	if err == nil {
+		drop(&disk)
+		err = saveProjectsCache(e.Dir, disk)
+	}
+	if err != nil {
+		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
 }

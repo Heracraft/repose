@@ -481,8 +481,18 @@ type destroyResult struct {
 // DELETE answers 202 {op_id}, I-156); a failed op is reported with the
 // project's actual state and the command to try again. Several projects
 // are resolved first and asked about once (I-615); a no ends the command
-// with exit 1 (I-614).
+// with exit 1 (I-614). One PROJECT:CHECKOUT removes that checkout, never
+// the machine (I-618).
 func DestroyProjectsCmd(ctx context.Context, e *Env, args []string, yes, wait bool, confirm func(prompt string) (bool, error)) error {
+	for _, a := range args {
+		if !strings.Contains(e.resolveArg(a), ":") {
+			continue
+		}
+		if len(args) > 1 {
+			return exitf(ExitUsage, "`repose rm %s` removes one checkout; pass it alone.", a)
+		}
+		return RemoveCheckoutCmd(ctx, e, a, yes, confirm)
+	}
 	projects, err := resolveProjects(ctx, e, args)
 	if err != nil {
 		return err
@@ -765,6 +775,9 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 // requireProject resolves the current project and reports the exact
 // not-found/no-remote errors of §5.3 for every command that is not `run`.
 func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, error) {
+	if err := wholeMachineOnly(e, projectArg); err != nil {
+		return nil, err
+	}
 	res, err := requireProjectRes(ctx, e, projectArg)
 	if err != nil {
 		return nil, err

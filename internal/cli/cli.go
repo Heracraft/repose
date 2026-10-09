@@ -388,7 +388,7 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var bridge bool
 	var bridgeAllow []string
 	cmd := &cobra.Command{
-		Use:               "attach [PROJECT]",
+		Use:               "attach [PROJECT[:CHECKOUT]]",
 		Short:             "Attach to a project's tmux session (this checkout's, or PROJECT)",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
@@ -420,7 +420,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var tempRaw string
 	cmd := &cobra.Command{
 		Use:               "sync [PROJECT]",
-		Short:             "Sync this checkout to its machine, creating or starting it if needed, without attaching",
+		Short:             "Send this checkout's changes to its machine (one way), creating or starting it if needed",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -462,8 +462,8 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
 	_ = cmd.Flags().MarkHidden("name")
 	addTempFlag(cmd, &tempRaw)
-	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the guest's uncommitted changes before syncing")
-	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "discard the guest's uncommitted changes before syncing")
+	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "move the machine's uncommitted changes to its git stash before syncing")
+	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "as --stash-remote, and also end a merge, rebase or other git operation in progress there")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -1103,10 +1103,14 @@ func keepArgs(cmd *cobra.Command, args []string) error {
 func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var yes, wait bool
 	cmd := &cobra.Command{
-		Use:               "rm [PROJECT...]",
-		Aliases:           []string{"destroy"},
-		SuggestFor:        []string{"delete", "remove"},
-		Short:             "Destroy projects (a final snapshot of each is kept for 30 days)",
+		Use:        "rm [PROJECT...]",
+		Aliases:    []string{"destroy"},
+		SuggestFor: []string{"delete", "remove"},
+		Short:      "Destroy projects (a final snapshot of each is kept for 30 days)",
+		Long: "Destroys each PROJECT (this checkout's, by default). A final snapshot is kept for 30 days,\n" +
+			"except for a temporary project.\n\n" +
+			"With PROJECT:CHECKOUT it removes only that checkout, one `repose run --on` added, with its\n" +
+			"worktrees, from the running machine. The machine and its own checkout stay.",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1121,6 +1125,10 @@ func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			var confirm func(string) (bool, error)
 			if !yes {
 				confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "destroying") }
+			}
+			if len(projects) == 1 && strings.Contains(e.resolveArg(projects[0]), ":") && !yes && !canPrompt(os.Stdin) {
+				// Refused before the connect (I-618).
+				confirm = nil
 			}
 			return DestroyProjectsCmd(cmd.Context(), e, projects, yes, wait, confirm)
 		},

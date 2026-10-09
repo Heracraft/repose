@@ -390,6 +390,8 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if target.Checkout != "" {
 			remoteURL = res.Remote
 		}
+		// Carry lines print only when they change (DECISIONS I-618).
+		noted := newCarryNoter(e.Dir, project.ID)
 		summary, err := syncGuest(ctx, target, repoRoot, project.Slug, SyncOptions{
 			StashRemote: opts.StashRemote, DiscardRemote: opts.DiscardRemote, FirstOnly: !opts.Sync,
 			Exclude: e.Cfg.SyncExclude, NoRemote: remoteURL == "", RemoteURL: remoteURL,
@@ -403,26 +405,26 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 					mcpAppr = b.mc.Approvals
 				}
 				if b.gcErr != nil {
-					e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(b.gcErr.Error()))
+					e.warn("Could not read your git config (%s); the machine keeps its own.", oneLine(b.gcErr.Error()))
 				}
 				if gc != nil {
 					for _, n := range gc.Notes {
-						e.warn("%s", n)
+						noted.warn(e, n)
 					}
 				}
 				if cc != nil {
 					for _, n := range cc.Notes {
-						e.warn("%s", n)
+						noted.warn(e, n)
 					}
 				}
 				for _, n := range b.mcNotes {
-					e.warn("%s", n)
+					noted.warn(e, n)
 				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
 					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
-						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
+						noted.warn(e, keptLoginLine(label))
 					},
 				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
 			},
@@ -438,6 +440,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		if l := syncResultLine(summary, opts.NoAttach); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
+			if summary.Skipped && !opts.NoAttach {
+				// The attach covers the terminal: the multiplexer shows
+				// the line too (DECISIONS I-618).
+				helper.Messages = append(helper.Messages, l)
+			}
 		}
 		if summary.Created {
 			_, _ = fmt.Fprintf(e.Out, "Checkout: %s on the machine\n", tildePath(summary.Checkout))
@@ -445,17 +452,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		for _, w := range summary.Warnings() {
 			_, _ = fmt.Fprintln(e.ErrOut, w)
 		}
-		if len(summary.Copied) > 0 {
-			_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(summary.Copied, ", "))
-			if l := loginsLine(summary.Copied, skip, chosen); l != "" {
-				_, _ = fmt.Fprintln(e.Out, l)
-			}
-		}
-		if summary.Carried != nil {
-			for _, l := range summary.Carried.Lines() {
-				_, _ = fmt.Fprintln(e.ErrOut, l)
-			}
-		}
+		noted.print(e, summary.Copied, skip, chosen, summary.Carried)
 	} else {
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
 	}
@@ -950,7 +947,7 @@ func attachColour(colorterm string) string {
 func attachCommand(slug, extra, window string) string {
 	co := checkoutVar(slug, extra)
 	if window == "" && extra != "" {
-		missing := fmt.Sprintf("%s has no checkout %s. `repose run --on %s` in its folder adds it.", slug, extra, slug)
+		missing := noCheckoutMsg(slug, extra)
 		return co + fmt.Sprintf(`[ -d "$repose_co" ] || { printf '%%s\n' %[3]s >&2; exit 2; }
 repose_w=$(tmux list-windows -t %[1]s -F '#{window_activity} #{window_name}' 2>/dev/null | while read -r a n; do case $n in %[2]s|%[2]s/*) printf '%%s %%s\n' "$a" "$n" ;; esac; done | sort -n | tail -n 1 | cut -d' ' -f2-)
 if [ -z "$repose_w" ]; then repose_w=%[2]s; tmux new-window -d -t %[1]s -n "$repose_w" -c "$repose_co"; fi
@@ -1765,28 +1762,29 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 	if strings.Contains(string(out), "#credsmissing") {
 		delete(markers, credsMarker)
 	}
+	noted := newCarryNoter(e.Dir, project.ID) // DECISIONS I-618
 	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {
-			e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(err.Error()))
+			e.warn("Could not read your git config (%s); the machine keeps its own.", oneLine(err.Error()))
 		}
 		if gc != nil {
 			for _, n := range gc.Notes {
-				e.warn("%s", n)
+				noted.warn(e, n)
 			}
 		}
 		co.Git = gc
 	}
 	if cc, _ := buildClaudeCarry(e.HomeDir); cc != nil {
 		for _, n := range cc.Notes {
-			e.warn("%s", n)
+			noted.warn(e, n)
 		}
 		co.Claude = cc
 	}
 	mc, notes := buildMCPCarry(e.HomeDir, repoDir, project.Slug, t.Checkout, toolBinsOf(co.Tools)) // I-556
 	for _, n := range notes {
-		e.warn("%s", n)
+		noted.warn(e, n)
 	}
 	co.MCP = mc
 	skip, chosen := e.loginSkip(project.Slug)
@@ -1794,24 +1792,14 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		RemoteURL: project.RemoteURL,
 		Skip:      skip,
 		Kept: func(label string) {
-			e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
+			noted.warn(e, keptLoginLine(label))
 		},
 	}, co)
 	if err != nil {
 		e.warn("%s", oneLine(err.Error()))
 		return checkout
 	}
-	if len(copied) > 0 {
-		_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(copied, ", "))
-		if l := loginsLine(copied, skip, chosen); l != "" {
-			_, _ = fmt.Fprintln(e.Out, l)
-		}
-	}
-	if carried != nil {
-		for _, l := range carried.Lines() {
-			_, _ = fmt.Fprintln(e.ErrOut, l)
-		}
-	}
+	noted.print(e, copied, skip, chosen, carried)
 	return checkout
 }
 

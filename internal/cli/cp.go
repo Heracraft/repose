@@ -82,10 +82,10 @@ func newCpCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cp [-r] SRC... DST",
 		Short: "Copy files to or from a project's machine (PROJECT:PATH, or :PATH for this checkout's)",
-		Long: `Copy files between the laptop and a guest with scp. One side names the
-guest: PROJECT:PATH for a project, :PATH for this checkout's. A relative
-guest path starts at the project's checkout (~/<slug>). Several sources
-copy into the destination directory, so a glob such as ./logs/* works.
+		Long: `Copy files between the laptop and a machine with scp. One side names the
+machine: PROJECT:PATH for a project's, :PATH for this checkout's. A relative
+path on the machine starts in its checkout. Several sources copy into the
+destination directory, so a glob such as ./logs/* works.
 
   repose cp :logs/x.log .
   repose cp izma:/tmp/trace.json .

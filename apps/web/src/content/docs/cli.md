@@ -16,7 +16,7 @@ Run `repose --help` for the commands.
 
 ## Which project
 
-Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count; see [From your home folder](/docs/lifecycle#from-your-home-folder).
+Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count; see [From your home folder](/docs/lifecycle#from-your-home-folder). `PROJECT:CHECKOUT` names a checkout that `run --on` added to the machine; `run`, `attach`, `sync`, `exec`, `ssh`, `code` and `rm` take it, and the other commands exit 2.
 
 Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
 
@@ -43,7 +43,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                                                                                                                  |
 | `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
-### `repose attach [PROJECT]`
+### `repose attach [PROJECT[:CHECKOUT]]`
 
 Attach to the project's tmux session without syncing; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
 
@@ -55,12 +55,12 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them, or when the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect there; the machine's changes to other files stay. When the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one. In a folder that isn't a git checkout, and in your home folder, it exits 2.
+Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them, or when the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect there; the machine's changes to other files stay. When the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one. In a folder that isn't a git checkout, and in your home folder, it exits 2. It sends only: nothing on the machine comes back to your laptop.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
-| `--stash-remote`          | Stash the machine's uncommitted changes before syncing.            |
-| `--discard-remote`        | Discard the machine's uncommitted changes before syncing.          |
+| `--stash-remote`          | Move the machine's uncommitted changes to its git stash before syncing. The summary names the stash commit. |
+| `--discard-remote`        | The same, and also end a merge, rebase, cherry-pick, revert or bisect in progress there. |
 | `--size small\|large\|xl` | Size of a new or stopped project, as on `run`.                     |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
@@ -77,7 +77,7 @@ WINDOW     COMMAND  ACTIVE
 2:codex    codex    12m ago
 ```
 
-### `repose exec [PROJECT] [--] COMMAND [ARG...]`
+### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
 Run one command in the checkout on the machine, with the environment an agent there has: your secrets and the project's dev shell. Output streams back and the exit code is the command's. The command is passed word for word, its own flags included, and no shell reads it; for a pipeline, run a shell yourself, as in the last example. If the first word names one of your projects, it is PROJECT. To run a command that has a project's name, put `--` before it. Put `-i` and `-t` before the command.
 
@@ -90,11 +90,11 @@ $ repose exec sh -c "npm run build && npm test"
 
 `-i`/`--interactive` passes your input to the command; without it the command reads nothing. `-t`/`--tty` gives it a terminal. Pass both, as with `docker exec`, for anything interactive.
 
-### `repose ssh [PROJECT]`
+### `repose ssh [PROJECT[:CHECKOUT]]`
 
 Open a shell on the machine in the checkout, outside tmux; `exit` ends it.
 
-### `repose code [PROJECT]`
+### `repose code [PROJECT[:CHECKOUT]]`
 
 Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over SSH to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. The machine must be running.
 
@@ -240,6 +240,8 @@ Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Seve
 ### `repose rm [PROJECT...]`
 
 Delete the machine and disk; a final snapshot is kept 30 days. Several projects get one question. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits until it's done. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
+
+`repose rm PROJECT:CHECKOUT` removes only a checkout that `run --on` added: its folder and its worktrees on the running machine, after the same question, and the link from your laptop folder. It exits 6 while a process works in one of those folders, and 2 for a name the machine doesn't have.
 
 `repose projects` and `repose destroy`, the old names, still work.
 

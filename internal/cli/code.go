@@ -163,7 +163,7 @@ func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var editor string
 	cmd := &cobra.Command{
-		Use:               "code [PROJECT]",
+		Use:               "code [PROJECT[:CHECKOUT]]",
 		Short:             "Open the project's checkout in VS Code, Cursor or Zed over SSH",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),

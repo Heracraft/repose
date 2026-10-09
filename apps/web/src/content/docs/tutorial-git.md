@@ -98,8 +98,8 @@ You edited `README.md` on your laptop while the agent was editing it on the mach
 ```text
 Not synced: the machine changed 1 file that your laptop changed too:
   README.md
-`repose sync --stash-remote` stashes the machine's changes first;
-`--discard-remote` throws them away.
+`repose sync --stash-remote` moves the machine's changes to its git
+stash first.
 ```
 
 The exit code is 6, so a script notices. Files the agent changed that your laptop didn't touch never stop a sync; they stay as the agent left them. Ask agents to commit: had the agent committed instead of leaving the file dirty, the sync would merge your laptop's commit into the agent's branch, or, when the two conflict, check your commit out detached and leave the agent's branch where it is. `git fetch repose` brings that branch to you to merge like any other.

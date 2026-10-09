@@ -6,7 +6,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -95,7 +98,7 @@ func (o *carryOutcome) Lines() []string {
 		out = append(out, "Time zone set to "+o.TZ+".")
 	}
 	for _, k := range o.Kept {
-		out = append(out, "Kept the guest's "+k+": it is newer than the laptop's.")
+		out = append(out, "Kept the machine's "+k+": it is newer than the laptop's.")
 	}
 	if len(o.Dropped) > 0 {
 		out = append(out, "Not carried (would not work in the guest): "+strings.Join(o.Dropped, ", ")+".")
@@ -356,4 +359,108 @@ var laptopTZ = func() string {
 		}
 	})
 	return laptopTZVal
+}
+
+// carryNotedName is the laptop file that remembers, for each project, the
+// carry lines `run` printed last (DECISIONS I-618): "Credentials: gh,
+// codex", a login or file the machine kept, what was not carried. A line
+// prints again only when its content changes, so the one new line is not
+// lost among ten that every run repeats.
+const carryNotedName = "carry-noted.json"
+
+// carryNoter decides which of a run's carry lines print. Lines are kept
+// as hashes, never as text.
+type carryNoter struct {
+	path    string
+	project string
+	all     map[string][]string // the file: project id -> line hashes
+	before  map[string]bool     // this project's hashes from the last run
+	now     []string
+}
+
+// newCarryNoter reads the file in dir for project. A file that cannot be
+// read costs one repeat of each line.
+func newCarryNoter(dir, project string) *carryNoter {
+	n := &carryNoter{project: project, all: map[string][]string{}, before: map[string]bool{}}
+	if dir == "" || project == "" {
+		return n
+	}
+	n.path = filepath.Join(dir, carryNotedName)
+	if b, err := os.ReadFile(n.path); err == nil {
+		_ = json.Unmarshal(b, &n.all) // a damaged cache only repeats lines
+	}
+	for _, h := range n.all[project] {
+		n.before[h] = true
+	}
+	return n
+}
+
+// fresh records line and reports whether it prints: one the last run of
+// this project did not print. A failure ("Could not ...") always prints
+// and is never recorded, since it is this run's news.
+func (n *carryNoter) fresh(line string) bool {
+	if n == nil {
+		return true
+	}
+	if strings.HasPrefix(line, "Could not ") {
+		return true
+	}
+	sum := sha256.Sum256([]byte(line))
+	h := hex.EncodeToString(sum[:8])
+	n.now = append(n.now, h)
+	return !n.before[h]
+}
+
+// save replaces the project's lines with this run's, so a line that
+// stops and later comes back prints again.
+func (n *carryNoter) save() {
+	if n == nil || n.path == "" {
+		return
+	}
+	if len(n.now) == 0 {
+		if _, ok := n.all[n.project]; !ok {
+			return
+		}
+		delete(n.all, n.project)
+	} else {
+		n.all[n.project] = n.now
+	}
+	if b, err := json.Marshal(n.all); err == nil {
+		_ = writeFileAtomic(n.path, b, 0o600) // best effort, see newCarryNoter
+	}
+}
+
+// keptLoginLine is the line for a login the machine kept because its
+// copy is newer than the laptop's.
+func keptLoginLine(label string) string {
+	return "Kept the machine's " + label + " login: it is newer than the laptop's."
+}
+
+// warn prints line on stderr when it is fresh.
+func (n *carryNoter) warn(e *Env, line string) {
+	if n.fresh(line) {
+		e.warn("%s", line)
+	}
+}
+
+// print is the end of a run's carry: the logins copied, the logins left
+// on the laptop and the carry's own lines, each when it is fresh; then
+// the record of what this run had to say.
+func (n *carryNoter) print(e *Env, copied []string, skip map[string]bool, chosen bool, carried *carryOutcome) {
+	if len(copied) > 0 {
+		if l := "Credentials: " + strings.Join(copied, ", "); n.fresh(l) {
+			_, _ = fmt.Fprintln(e.Out, l)
+		}
+		if l := loginsLine(copied, skip, chosen); l != "" && n.fresh(l) {
+			_, _ = fmt.Fprintln(e.Out, l)
+		}
+	}
+	if carried != nil {
+		for _, l := range carried.Lines() {
+			if n.fresh(l) {
+				_, _ = fmt.Fprintln(e.ErrOut, l)
+			}
+		}
+	}
+	n.save()
 }

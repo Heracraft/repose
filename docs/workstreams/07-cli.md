@@ -330,9 +330,11 @@ $ repose run
       only when the guest changed a path the sync writes (DECISIONS
       I-573).
 
-      `--stash-remote` runs `git stash push -u -m "repose run"`,
-      `--discard-remote` runs `git reset --hard && git clean -fd`; both run
-      at the start of step d's script. A non-empty status whose
+      `--stash-remote` runs `git stash push -u -m "repose sync
+      --stash-remote"`, `--discard-remote` ends a git operation in progress
+      and stashes the same way under its own name before `git reset --hard
+      && git clean -fd` (DECISIONS I-618); both run at the start of step
+      d's script. A non-empty status whose
       fingerprint (`HEAD` and the `git add -A` tree, built in a copy of the
       index) equals `.git/repose-synced` is the previous sync's own diff
       and untracked files, not an agent's: no exit 6, and step d stashes it

@@ -260,8 +260,8 @@ func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
 		opts SyncOptions
 		want string
 	}{
-		{"plain", SyncOptions{}, "Not synced: the machine's checkout is in the middle of a git merge. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes."},
-		{"stash", SyncOptions{StashRemote: true}, "Not synced: the machine's checkout is in the middle of a git merge, which `--stash-remote` can't keep. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes."},
+		{"plain", SyncOptions{}, "Not synced: the machine's checkout is in the middle of a git merge. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash."},
+		{"stash", SyncOptions{StashRemote: true}, "Not synced: the machine's checkout is in the middle of a git merge, which `--stash-remote` can't keep. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSyncFixture(t)
@@ -306,6 +306,16 @@ func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
 	wantFile(t, g, "laptop.go", "package laptop\n")
 	if _, err := os.Stat(filepath.Join(g, "side.txt")); err == nil {
 		t.Fatal("side.txt, the discarded merge's, is still there")
+	}
+	// The merge's files went to the stash, not away (I-618).
+	if list := mustRun(t, g, "git", "stash", "list"); !strings.Contains(list, "repose sync --discard-remote") {
+		t.Fatalf("stash list = %q", list)
+	}
+	if files := mustRun(t, g, "git", "stash", "show", "--include-untracked", "--name-only", "stash@{0}"); !strings.Contains(files, "side.txt") {
+		t.Fatalf("the stash holds %q, want side.txt", files)
+	}
+	if s.StashedFiles != 1 || s.StashRef == "" {
+		t.Fatalf("summary %+v, want 1 file stashed", s)
 	}
 }
 
@@ -367,7 +377,7 @@ func TestSyncNothingNewCountsOnlyTheGuestsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "Nothing new to sync. The machine has changes your laptop doesn't have (2 files)."; !s.GuestAhead || s.String() != want {
+	if want := "Nothing new to sync. The machine has uncommitted changes to 2 files."; !s.GuestAhead || s.String() != want {
 		t.Fatalf("summary %+v %q, want %q", s, s.String(), want)
 	}
 

@@ -76,7 +76,7 @@ Not synced: the machine changed 11 files that your laptop changed too:
   src/routes/login.ts
   ...(eight names in all)
   and 3 more
-`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away.
+`repose sync --stash-remote` moves the machine's changes to its git stash first.
 ```
 
 The guest's checkout has a git operation of its own in progress
@@ -84,7 +84,7 @@ The guest's checkout has a git operation of its own in progress
 
 ```
 $ repose sync
-Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes.
+Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash.
 ```
 
 A Ctrl-C after the sync created the project and before it connected
@@ -145,10 +145,12 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   revert or bisect in progress in the guest's checkout refuses the sync
   (exit 6, the refusal above naming the operation): a checkout would drop
   its state and a stash cannot hold it, so `--stash-remote` refuses too.
-  `--stash-remote` runs `git stash push -u -m "repose run"` in the guest
-  first; `--discard-remote` ends any such operation where `HEAD` is, then
-  runs `git reset --hard && git clean -fd`; with either there is no
-  overlap check. Neither asks for confirmation; the
+  `--stash-remote` runs `git stash push -u -m "repose sync --stash-remote"`
+  in the guest first; `--discard-remote` ends any such operation where
+  `HEAD` is, then stashes the same way under `repose sync
+  --discard-remote` (DECISIONS I-618); with either there is no overlap
+  check, and the summary ends "stashed the machine's changes to N files
+  (git stash <commit>)". Neither asks for confirmation; the
   flag itself is the confirmation.
 - A run with nothing new applies nothing (DECISIONS I-224): when the
   laptop would send exactly what the last completed sync sent (the same

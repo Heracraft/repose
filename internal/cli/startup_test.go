@@ -272,7 +272,7 @@ func TestUnchangedSyncSkipsTheApply(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		if !s.Unchanged || n != 1 || !strings.Contains(s.String(), "the guest already had them") {
+		if !s.Unchanged || n != 1 || !strings.Contains(s.String(), "the machine already had them") {
 			t.Fatalf("dirty=%v second sync: unchanged=%v, %d ssh, %q", dirty, s.Unchanged, n, s.String())
 		}
 		if dirty {

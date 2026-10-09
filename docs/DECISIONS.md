@@ -16918,3 +16918,85 @@ size prints `izma's disk is already 80G.` and exits 0, a smaller one
 exits 2 with `izma's disk is 80G and can only grow.` The success line is
 `Resized izma's disk to 120G.` `TestParseSizeNeedsAUnit`,
 `TestResizeDiskComparesFirst`, `TestParseResizeArgs`.
+**I-618. `sync`'s remote flags stash and say where; the no-op line
+counts commits and files apart; carry lines print when they change;
+`run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT`
+is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the
+checkout.** (devx-sync, from the 2026-10-08 CLI reviews: devx 5.3, 3.6,
+4.8, 1.1's sync line; ergonomics G6, B7; amends I-573, I-480, I-367,
+I-248) The reviews found `--discard-remote` offered beside
+`--stash-remote` in the exit-6 refusal as an equal choice, though it ran
+`git reset --hard && git clean -fd` over every submodule and kept no
+copy; `Credentials: gh, codex` and the kept-login lines printed on every
+run; the no-op line mixed the machine's commits with its uncommitted
+files; the `Not synced` line scrolled behind tmux; and `repose status
+todo-app:api` or `repose rm todo-app:api` dropped `:api` without a word
+(the second asked to destroy the whole machine), while a typo in CHECKOUT
+made an empty checkout. Now:
+- `--stash-remote` stashes as `repose sync --stash-remote` (was `repose
+  run`), `--discard-remote` ends a git operation in progress, then
+  stashes the same way under `repose sync --discard-remote` before its
+  reset and clean, which now find nothing to remove. Both add
+  `; stashed the machine's changes to N files (git stash <short commit>)`
+  to the summary (the superproject's paths, every untracked file
+  counted). The overlap refusal ends ``\`repose sync --stash-remote\`
+  moves the machine's changes to its git stash first.``; the busy
+  refusal still names `--discard-remote`, the one flag that ends the
+  operation, as "to end it and move the machine's changes to its git
+  stash". Both flags stay: they differ only on an operation in progress,
+  and merging them would make `--stash-remote` end a rebase unasked. No
+  agent-working prompt was added: with nothing destroyed, the flag is
+  the confirmation, as before.
+- With nothing new on the laptop: ``Nothing new to sync. The machine has
+  3 commits on main your laptop doesn't have, and uncommitted changes to
+  2 files.``, either half alone when the other is zero. The probe counts
+  the guest HEAD's commits not reachable from the last sync's laptop
+  HEAD and origin/<branch> (`#ahead`); once the laptop has the guest's
+  HEAD (`git fetch repose`) the count is none. No `git fetch repose`
+  hint: the review's proposal had one, and success lines name no next
+  command (I-485).
+- Carry lines (`Credentials:`, `Left on your laptop:`, kept logins and
+  files, `Not carried`, git and Claude notes, MCP lines) print only when
+  their text differs from what the last run of that project printed;
+  `carry-noted.json` keeps their hashes per project. A line that goes
+  away and comes back prints again. Lines starting `Could not` always
+  print. User-visible "guest" in these lines became "machine".
+- When `run` leaves the checkout alone and the laptop has work, the
+  `Not synced` line also goes to the session helper, which shows it on
+  tmux's status line or as a herdr notification once attached. No
+  `Sync first? [y/N]`, which G6 offered: I-367's reason (the owner did
+  not want every attach to weigh the two sides) stands.
+- Commands that act on the whole machine (`requireProject`) exit 2 on
+  `PROJECT:CHECKOUT`: ``\`repose status\` acts on the whole machine, so
+  it takes todo-app, not todo-app:api.``. `run`, `attach`, `sync`,
+  `exec` (its first word may be `PROJECT:CHECKOUT` now), `ssh`, `code`
+  and the `connectRunning` commands keep taking it; their usage reads
+  `[PROJECT[:CHECKOUT]]`.
+- A CHECKOUT the machine neither lists in `~/.repose/checkouts` nor has
+  a directory for is refused by the guest script itself, exit 2 with
+  ``todo-app has no checkout apii. `repose run --on todo-app` in its
+  folder adds it.``; only `run --on` adds one. A listed name whose
+  directory is gone is still made again by a sync.
+- `repose rm PROJECT:CHECKOUT` removes that checkout on the running
+  machine, after `Remove ~/api from todo-app? It is deleted with its
+  worktrees, uncommitted work and any commits you have not fetched or
+  pushed. [y/N]` (`-y` skips it; none without a terminal, exit 2):
+  `~/api`, the `~/api-worktree-N` that are its worktrees, its line in the
+  list, and every laptop folder's link to it. Exit 6 while a process
+  has its working directory in one of them; exit 2 for a name not
+  listed, naming the ones that are. It prints `Removed ~/api from
+  todo-app.`.
+- `sync`'s Short is "Send this checkout's changes to its machine (one
+  way), creating or starting it if needed", and cli.md says nothing
+  comes back. `cp --help` no longer says the checkout is `~/<slug>`.
+*Already done on this base:* B1 (`repose sync` outside a repository
+refuses before creating anything, I-601,
+`TestSyncOutsideARepositoryRefuses`). *Not done:* 6.6's `Create
+"downloads"? [Y/n]` question for a plain `run` outside a repository:
+I-358 and I-601 keep the empty machine as the owner's choice, and the
+home folder, the case that bit, already refuses. `TestSyncRemoteFlagsStashAndSaySo`,
+`TestSyncDiscardRemoteOnACleanMachine`, `TestOverlapRefusalOffersOnlyTheStash`,
+`TestGuestAheadLine`, `TestSyncCountsTheMachinesCommits`,
+`TestCarryNoterPrintsOnlyChanges`, `TestSessionShowsTheRunsMessages`,
+`TestWholeMachineCommandsRefuseACheckout`, `TestCheckoutsAreNamedNotMade`,
+`TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncedTreeIsStashed`.

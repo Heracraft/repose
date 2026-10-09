@@ -81,7 +81,7 @@ The checkouts share one machine, so they share these:
 - Ports. Two dev servers on port 3000 collide; give one another port.
 - Disk, snapshots and undo. `repose undo` and a restore roll back every checkout, and `repose destroy` deletes them all.
 
-The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with PROJECT, `--temp`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. To remove an added checkout, delete its folder on the machine and its line in `~/.repose/checkouts`; on your laptop, the folder's entry under `checkouts` in `~/.config/repose/projects.json`.
+The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with PROJECT, `--temp`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. `repose rm todo-app:api` removes the added checkout, with its worktrees, from the machine and from your laptop's list; the machine and its own checkout stay. A name the machine doesn't have is refused everywhere with exit code 2, so a typo never makes an empty checkout.
 
 ## Detach and come back
 

@@ -9,7 +9,7 @@ import (
 )
 
 // A second run with nothing new on the laptop printed "Synced: 3
-// modified, 0 untracked; the guest already had them" before attaching;
+// modified, 0 untracked; the machine already had them" before attaching;
 // it now says nothing about the sync, and `repose sync` says there was
 // nothing to send (I-303).
 func TestSecondRunIsQuietAboutAnUnchangedSync(t *testing.T) {

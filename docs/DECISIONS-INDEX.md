@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-628 entries.
+629 entries.
 
 ## Scope
 
@@ -327,7 +327,7 @@ pointer, not a summary.
 - **I-242** A feature without user docs is not done, and a test says so — 2026-09-24; L5903
 - **I-243** Every agent in the guest is told what the machine offers, from one source, without a word written into the user's files — 2026-09-24; L5941
 - **I-247** The laptop's ssh-agent is never forwarded; GitHub pushes go over HTTPS with the carried gh login — 2026-09-24; L5985
-- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; L6024
+- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; amended by I-618; L6024
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6056
 - **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; L6073
 - **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; L6121
@@ -432,7 +432,7 @@ pointer, not a summary.
 - **I-364** tmux's mouse mode is off in the guest — 2026-09-29; L9291
 - **I-365** `repose secrets set` echoes one `*` per character — 2026-09-29; L9306
 - **I-366** `run --no-sync` still copies the tool logins and the carry — 2026-09-29; L9323
-- **I-367** `repose run` syncs the checkout only into a machine that has no commit yet; `repose sync` is the explicit sync — 2026-09-29; L9342
+- **I-367** `repose run` syncs the checkout only into a machine that has no commit yet; `repose sync` is the explicit sync — 2026-09-29; amended by I-618; L9342
 - **I-368** The machine's checkout is named after the laptop folder of its first sync; a machine with no checkout works in the home directory — 2026-09-29; L9389
 - **I-369** One design foundation under every page; the dashboard no longer follows the recruiting app — 2026-09-30; L9461
 - **I-370** Shared text and edge tokens with a contrast floor: 4.5:1 for text, 3:1 for control edges and state marks — 2026-09-30; amended by I-391; L9481
@@ -540,7 +540,7 @@ pointer, not a summary.
 - **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12400
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12414
 - **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; amended by I-519; L12450
-- **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; L12574
+- **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; amended by I-618; L12574
 - **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; amended by I-570; L12613
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12678
 - **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12743
@@ -628,7 +628,7 @@ pointer, not a summary.
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L15340
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15367
 - **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15426
-- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L15443
+- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; L15443
 - **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15540
 - **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15598
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15643
@@ -660,3 +660,4 @@ pointer, not a summary.
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16864
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; L16879
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16909
+- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; L16921

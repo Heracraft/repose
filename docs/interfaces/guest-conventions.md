@@ -54,7 +54,10 @@ it picks the laptop folder's safe name, else `<name>-2`, `<name>-3`, ...,
 skipping the checkout, its `-worktree-N` directories, names already
 listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
-of the rule. Agent windows there are `<name>/<agent>` and
+of the rule, and exit 2 when `<name>` is neither listed nor a directory
+(I-618). `repose rm PROJECT:<name>` deletes the directory and its
+`<name>-worktree-N` worktrees and drops the name from the list, unless a
+process has its working directory in one of them. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
 the attach opens is `<name>`. guestd reads only the list of names, to
 prefix a herdr agent's key with its checkout (see "herdr", I-504).
