@@ -9,12 +9,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/heracraft/repose/internal/obs"
 )
 
 // DefaultURL is the redirect install.sh follows for "latest".
@@ -40,7 +43,7 @@ func New(url string, log *slog.Logger) *Latest {
 		url = DefaultURL
 	}
 	if log == nil {
-		log = slog.Default()
+		log = obs.NewLogger(obs.LogOptions{Component: obs.ComponentAPI, Writer: io.Discard})
 	}
 	return &Latest{url: url, log: log, client: &http.Client{
 		Timeout:       10 * time.Second,

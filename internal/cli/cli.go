@@ -168,7 +168,7 @@ func newRootCmd(version string) *cobra.Command {
 		if s := flagSuggestion(cmd, err); s != "" {
 			msg += ". " + s
 		}
-		return cobraUsageError{fmt.Errorf("%s\n`%s --help` shows its usage.", msg, cmd.CommandPath())}
+		return cobraUsageError{errors.New(msg + "\n`" + cmd.CommandPath() + " --help` shows its usage.")}
 	})
 	root.PersistentFlags().StringVar(&g.project, "project", "", "act on project `NAME` or id (or $REPOSE_PROJECT)")
 	root.PersistentFlags().StringVar(&g.apiURL, "api-url", "", "api base url (or $REPOSE_API_URL)")

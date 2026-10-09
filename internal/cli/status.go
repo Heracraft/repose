@@ -589,10 +589,6 @@ func diskFullCell(p *Project) string {
 	return ""
 }
 
-func statusFirstLine(p *Project) string {
-	return statusFirstLineMux(p, multiplexer.Normalize(p.Multiplexer))
-}
-
 // statusFirstLineMux is the header: the name, the state with its uptime,
 // the size, and herdr when it runs the terminals (tmux is not named). The
 // running hours it ended with since I-289 cost nothing on a plan, so they

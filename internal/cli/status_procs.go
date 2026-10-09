@@ -358,17 +358,13 @@ func laptopCommits(e *Env, p *Project) []string {
 	return ids
 }
 
-// writeGitRows prints the checkout row, one line per worktree:
+// writeGitRowsOr prints the checkout row, one line per worktree:
 //
 //	checkout   main: 3 commits not on this laptop, 2 files not committed
 //	           worktree-1: nothing new
-func writeGitRows(w io.Writer, rows []gitRow, now time.Time) {
-	writeGitRowsOr(w, rows, now, "", "")
-}
-
-// writeGitRowsOr is writeGitRows, or, when the probe failed, one row
-// that says the checkout is unknown and why (I-634): no row would read
-// as a machine with no checkout.
+//
+// or, when the probe failed, one row that says the checkout is unknown
+// and why (I-634): no row would read as a machine with no checkout.
 func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string) {
 	switch probeErr {
 	case "ssh_timeout":
