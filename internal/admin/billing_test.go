@@ -197,6 +197,18 @@ func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
 		s := map[string]any{"id": id("ntfset"), "type": "url", "destination": body["destination"], "endpoint_secret_key": "pdl_ntfset_made", "subscribed_events": []any{}}
 		f.settings[s["id"].(string)] = s
 		f.write(w, 201, s)
+	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/notification-settings/"):
+		// The bootstrap sets the destination's traffic source (I-600).
+		s, ok := f.settings[strings.TrimPrefix(r.URL.Path, "/notification-settings/")]
+		if !ok {
+			w.WriteHeader(404)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "entity_not_found", "detail": "no notification setting"}})
+			return
+		}
+		if ts, ok := body["traffic_source"]; ok {
+			s["traffic_source"] = ts
+		}
+		f.write(w, 200, s)
 	case r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/subscriptions/") && strings.HasSuffix(r.URL.Path, "/charge"):
 		sub := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/subscriptions/"), "/charge")
 		if !f.subs[sub] {
