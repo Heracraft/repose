@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-634 entries.
+635 entries.
 
 ## Scope
 
@@ -666,3 +666,4 @@ pointer, not a summary.
 - **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; L17107
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17161
 - **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17203
+- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; L17221

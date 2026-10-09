@@ -108,7 +108,7 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	var errOut, out strings.Builder
 	e.ErrOut, e.Out = &errOut, &out
 	ctx := context.Background()
-	err := LogsCmd(ctx, e, "", "console", "", false, nil)
+	err := LogsCmd(ctx, e, "", "console", "", 0, false, nil)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitProjectNotFound || !strings.Contains(ee.msg, "No repose project here") {
 		t.Fatalf("no project: err = %v", err)
@@ -117,7 +117,7 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := LogsCmd(ctx, e, "kanali", "console", "", false, nil); err != nil {
+	if err := LogsCmd(ctx, e, "kanali", "console", "", 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "" || !strings.Contains(errOut.String(), "kanali has no console output") {
@@ -126,7 +126,7 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	// A failed boot's console prints line by line.
 	errOut.Reset()
 	fake.SetConsole(p.ID, "<<< NixOS Stage 1 >>>", "stage 2 init script (/mnt-root/nix/store/x/init) not found")
-	if err := LogsCmd(ctx, e, "kanali", "console", "", false, nil); err != nil {
+	if err := LogsCmd(ctx, e, "kanali", "console", "", 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), " console stage 2 init script") || errOut.String() != "" {

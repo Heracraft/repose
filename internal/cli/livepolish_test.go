@@ -186,7 +186,7 @@ func TestProgressPrintsAPhaseOnce(t *testing.T) {
 	pr.Phase("Creating teksafari-org", "Created teksafari-org")
 	pr.Phase("Booting teksafari-org", "Booted teksafari-org")
 	pr.End()
-	if got := b.String(); got != "Creating teksafari-org...\nBooting teksafari-org...\n" {
+	if got := elapsedRE.ReplaceAllString(b.String(), "  T\n"); got != "Creating teksafari-org...\n✓ Created teksafari-org (large)  T\nBooting teksafari-org...\n✓ Booted teksafari-org  T\n" {
 		t.Fatalf("%q", got)
 	}
 	var tty strings.Builder

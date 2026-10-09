@@ -90,6 +90,8 @@ type StopOptions struct {
 	Yes      bool
 	// Confirm asks the question; nil when there is no terminal to ask on.
 	Confirm func(prompt string) (bool, error)
+	// Acted, when set, gets the projects the command resolved.
+	Acted *[]*Project
 }
 
 // stopResult is how one project's stop ended.
@@ -122,6 +124,9 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	}
 	if err != nil {
 		return err
+	}
+	if o.Acted != nil {
+		*o.Acted = projects
 	}
 	var running []*Project
 	for _, p := range projects {

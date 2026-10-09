@@ -534,7 +534,8 @@ func TestProgressOutput(t *testing.T) {
 	p.Phase("Building the environment", "Built the environment")
 	_, _ = p.Write([]byte("nix › building\n"))
 	p.End()
-	if plain.String() != "Creating izma...\nBuilding the environment...\nnix › building\n" {
+	// Off a terminal each phase ends with its ✓ line too (I-609).
+	if got := elapsedRE.ReplaceAllString(plain.String(), "  T\n"); got != "Creating izma...\n✓ Created izma  T\nBuilding the environment...\nnix › building\n✓ Built the environment  T\n" {
 		t.Fatalf("non-TTY output = %q", plain.String())
 	}
 

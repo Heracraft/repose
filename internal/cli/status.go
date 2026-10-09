@@ -47,7 +47,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	if e.JSON {
 		g := <-guest
-		return writeJSONOut(e.Out, statusJSON{Project: project, Git: g.git})
+		return e.printJSON(statusJSON{Project: project, Git: g.git})
 	}
 	bill := make(chan *Billing, 1)
 	go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()

@@ -233,7 +233,12 @@ type Event struct {
 	TS      time.Time `json:"ts"`
 	Kind    string    `json:"kind"`
 	Agent   string    `json:"agent,omitempty"`
+	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
+	// Project is the project's name, which the CLI adds (the api answers
+	// for one project); `repose events` outside a checkout covers them
+	// all (DECISIONS I-609).
+	Project string `json:"project,omitempty"`
 }
 
 type CatalogItem struct {

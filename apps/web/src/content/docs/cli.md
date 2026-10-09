@@ -64,6 +64,7 @@ Copy this checkout's current work to its machine, over the checkout already ther
 | `--size small\|large\|xl` | Size of a new or stopped project, as on `run`.                     |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
+| `--json`                  | Print the Project object as JSON when done; the text goes to stderr. |
 
 ### `repose ps [PROJECT] [WINDOW]`
 
@@ -254,17 +255,17 @@ todo-app  running 2h14m  large
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`.      |
-| `--watch`            | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed. A failed read doesn't end it.                              |
+| `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A failed read doesn't end it. `--watch`, the old name, still works. |
 | `--wait STATE`       | Wait until the machine is in STATE (`running`, `stopped`, `error`, ...), then print the status. Exits 1 if it lands in `error` or is destroyed instead. |
 | `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`).                                                                                               |
 
 ### `repose start [PROJECT]`
 
-Start a stopped machine, or restart one in `error`. Doesn't sync.
+Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` prints the Project object when done.
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--idle` stops every machine `repose ls` shows as [idle](/docs/lifecycle#idle-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.`
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--idle` stops every machine `repose ls` shows as [idle](/docs/lifecycle#idle-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--idle`.
 
 ### `repose rm [PROJECT...]`
 
@@ -292,21 +293,32 @@ Snapshot the project now and start copies of it as new projects, each on its own
 
 Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T` (`80G`, `80GB` and `80GiB` are the same); a bare number exits 2. Disks can't shrink: a smaller size exits 2 with the disk's size, and the size it already has does nothing. A larger disk adds nothing to your plan's disk total, which counts what your projects hold, and one disk can be at most the plan's whole disk. A single argument that reads as a size is the disk; anything else is the project.
 
-`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. A larger size your plan can't run beside what runs now is refused before the question, with exit code 7, and nothing is stopped. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size).
+`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. A larger size your plan can't run beside what runs now is refused before the question, with exit code 7, and nothing is stopped. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size). `--json` prints the Project object when done.
 
 ### `repose logs [PROJECT]`
 
-`--kind console|build|ops` (default `console`), `--since 1h` (a duration, or a time such as `2026-09-28T10:00:00Z`), `-f`/`--follow` to follow, `--json`. Each line starts with its time.
+`--kind console|build|ops` (default `console`), `--since` (below), `-n`/`--tail N` for the last N lines, `-f`/`--follow` to follow, `--json` for one JSON object per line. Each line starts with its local time.
 
-`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, for its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log, `ops` one line per operation with its result.
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, for its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log, `ops` one line per operation: its kind, how it ended (`done`, `failed`, or `running` while it runs), how long it took, and for a failed one its error code and message:
+
+```
+2026-10-08T21:38:02-04:00 stop done 4.2s
+```
+
+`--since` on `logs` and `events` takes a duration back from now (`90m`, `2d`, `1w`, `1d12h`), a date (`2026-10-01`, from local midnight) or an RFC 3339 time (`2026-10-01T08:00:00Z`). Anything else exits 2. `logs` has no default; `console` and `build` hold only the last boots and build.
 
 ### `repose events [PROJECT]`
 
-Every event in the window, oldest first, one per line: time, agent, kind, summary. `--since 72h` (default `24h`), `-f`/`--follow` to keep printing new ones as they come, `--json`.
+Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
+
+```
+2026-10-08T20:59:04-04:00  claude (1)  finished      Added tests for src/billing.ts; 14 pass
+2026-10-08T21:12:40-04:00  claude (2)  asks          Drop the legacy_users table?
+```
 
 ### `repose questions [PROJECT]`
 
-The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: `claude-2 on todo-app` is `repose attach todo-app -w claude-2`. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: `claude-2 on todo-app` is `repose attach todo-app -w claude-2`. `-q`/`--quiet` prints only the question ids. `--json` prints both: each question with `kind` `question`, and each agent at a terminal prompt with `kind` `terminal`, its `project` and `agent`. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
 
 ### `repose reply [PROJECT] [--] [ANSWER...]`
 
@@ -317,7 +329,7 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | Command                                          | What it does                                                                                                       |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `repose snapshots list [PROJECT]`                | Alias `ls`. `--json` for JSON, `-q`/`--quiet` for the ids only.                                                    |
-| `repose snapshots create [PROJECT]`              | Take one now; prints its id.                                                                                       |
+| `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the Snapshot object.                                                 |
 | `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk, after a question that says whether a snapshot keeps the disk as it is now. `--as-new NAME` restores into a new project instead; `--yes` skips the question. |
 
 ## Secrets
@@ -326,7 +338,7 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `repose secrets set NAME`       | Asks for the value. `--from-file PATH` or `--from-env` instead.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `repose secrets import [FILE]`  | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--mcp` sets the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config instead, for this project only, and asks once before replacing secrets the project already has (`-y`/`--yes` replaces them without asking). `--dry-run` lists the names and sends nothing.                                                                                                                     |
-| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`. `--json` for JSON.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `repose secrets rm NAME`        | Delete it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `repose secrets choose`         | Choose which of your laptop's logins and files `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files), `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle (space toggles, Enter saves, `q` leaves); otherwise it prints the list. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again, `--reset` drops the list. See [Secrets](/docs/secrets#choose-what-is-copied). |
 
@@ -430,6 +442,10 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                                                                                                 |
 
 `repose logout --purge` removes all of these but the `repose` remotes and `machine.nix`, which is yours; `git remote remove repose` removes one remote.
+
+## Output
+
+Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` print local RFC 3339 times with the offset. `--json` prints times in UTC. Progress lines go to stderr; without a terminal, each step prints a line when it starts, a line every 30 seconds while it runs, and a `✓` line with its time when it ends. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
 
 ## Exit codes
 

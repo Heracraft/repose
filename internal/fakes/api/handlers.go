@@ -253,7 +253,7 @@ func (f *Fake) event(p *project, kind, agent, summary string) *Event {
 }
 
 func (f *Fake) newOp(p *project, kind string) *op {
-	o := &op{id: f.nextID(), projectID: p.ID, kind: kind}
+	o := &op{id: f.nextID(), projectID: p.ID, kind: kind, created: f.now()}
 	o.State = "done"
 	o.LogURL = fmt.Sprintf("%s/v1/projects/%s/ops/%s/log", f.Server.URL, p.ID, o.id)
 	f.ops[o.id] = o
@@ -275,7 +275,9 @@ func (f *Fake) run(p *project) {
 	}
 	p.StartedAt = &now
 	p.Signals = &Signals{Agents: []AgentSignal{}, GuestdOK: true}
-	f.event(p, "guest.started", "", "guest started on "+hostID)
+	// The api's event for a state change: kind guest_state_changed, the
+	// state as its summary (internal/api/events, I-609).
+	f.event(p, "guest_state_changed", "", "running")
 }
 
 func (f *Fake) snapshot(p *project, reason string) *Snapshot {
@@ -297,7 +299,7 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
-	f.event(p, "guest.stopped", "", "guest stopped")
+	f.event(p, "guest_state_changed", "", "stopped")
 	return s
 }
 
@@ -1656,20 +1658,18 @@ func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	out := []Event{}
-	since := r.URL.Query().Get("since")
+	// since is RFC 3339 or absent, as on the api; anything else is
+	// invalid (DECISIONS I-609).
 	var sinceTS time.Time
-	sinceIsTime := false
-	if since != "" {
-		if t, err := time.Parse(time.RFC3339, since); err == nil {
-			sinceTS, sinceIsTime = t, true
+	if s := r.URL.Query().Get("since"); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return invalid("since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
 		}
+		sinceTS = t
 	}
 	for _, ev := range p.events {
-		switch {
-		case since == "":
-		case sinceIsTime && !ev.TS.After(sinceTS):
-			continue
-		case !sinceIsTime && ev.ID <= since:
+		if !sinceTS.IsZero() && !ev.TS.After(sinceTS) {
 			continue
 		}
 		out = append(out, *ev)
@@ -1707,10 +1707,13 @@ func (f *Fake) projectLogs(w http.ResponseWriter, r *http.Request) *apiError {
 	if kind != "console" && kind != "build" && kind != "ops" {
 		return invalid("kind: must be console, build or ops")
 	}
+	var since time.Time
 	if s := r.URL.Query().Get("since"); s != "" {
-		if _, err := time.Parse(time.RFC3339, s); err != nil {
-			return invalid("since: must be RFC 3339")
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return invalid("since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
 		}
+		since = t
 	}
 	p, e := f.projectAny(userFrom(r), r.PathValue("id"))
 	if e != nil {
@@ -1730,9 +1733,41 @@ func (f *Fake) projectLogs(w http.ResponseWriter, r *http.Request) *apiError {
 			lines = append(lines, map[string]any{"ts": ts, "kind": kind, "seq": i + 1, "line": l})
 		}
 	case "ops":
-		for _, ev := range p.events {
-			lines = append(lines, map[string]any{"ts": ev.TS, "kind": kind, "line": ev.Kind + ": " + ev.Summary})
+		// The api's shape (internal/api/http opsLogLine): one line per
+		// op, oldest first, with its kind, state, duration and error. This
+		// sent {kind: "ops", line} until I-609, which the CLI printed and
+		// the api never sent.
+		var ops []*op
+		for _, o := range f.ops {
+			if o.projectID == p.ID && !o.created.Before(since) {
+				ops = append(ops, o)
+			}
 		}
+		sort.SliceStable(ops, func(i, j int) bool {
+			if !ops[i].created.Equal(ops[j].created) {
+				return ops[i].created.Before(ops[j].created)
+			}
+			return ops[i].id < ops[j].id
+		})
+		for _, o := range ops {
+			l := map[string]any{"ts": o.created, "op_id": o.id, "kind": o.kind, "state": o.State, "finished_at": nil}
+			if o.State == "done" || o.State == "error" {
+				l["finished_at"], l["duration_ms"] = o.created, 0
+			}
+			if o.Error != "" {
+				l["error"] = map[string]any{"code": "failed", "message": o.Error}
+			}
+			lines = append(lines, l)
+		}
+	}
+	if kind != "ops" && !since.IsZero() {
+		kept := lines[:0]
+		for _, l := range lines {
+			if ts, _ := l["ts"].(time.Time); ts.After(since) {
+				kept = append(kept, l)
+			}
+		}
+		lines = kept
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)

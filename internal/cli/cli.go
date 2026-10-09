@@ -470,9 +470,10 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				opts.ProjectArg = g.project
 			}
 			opts.NoAttach, opts.Sync = true, true
-			return runRun(cmd.Context(), e, opts, false)
+			return withProjectJSON(cmd.Context(), e, opts.ProjectArg, func() error { return runRun(cmd.Context(), e, opts, false) }, func() *Project { return e.acted })
 		},
 	}
+	addProjectJSONFlag(cmd, g)
 	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl, for a machine this creates or starts")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
@@ -487,7 +488,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 }
 
 func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:               "start [PROJECT]",
 		Short:             "Start a project without syncing (restarts one in error)",
 		Args:              projectArgs,
@@ -501,9 +502,11 @@ func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return StartCmd(cmd.Context(), e, project)
+			return withProjectJSON(cmd.Context(), e, project, func() error { return StartCmd(cmd.Context(), e, project) }, nil)
 		},
 	}
+	addProjectJSONFlag(cmd, g)
+	return cmd
 }
 
 func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -536,12 +539,13 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if !yes && canPrompt(os.Stdin) {
 				o.Confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "stopping") }
 			}
-			return StopProjectsCmd(cmd.Context(), e, o)
+			return stopWithJSON(cmd.Context(), e, o)
 		},
 	}
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
 	cmd.Flags().BoolVar(&idle, "idle", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project object as JSON when done (an array for several or --idle)")
 	return cmd
 }
 
@@ -560,7 +564,7 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 				return err
 			}
 			if watch && wait != "" {
-				return cobraUsageError{fmt.Errorf("--watch and --wait are two different waits; pass one")}
+				return cobraUsageError{fmt.Errorf("--follow and --wait are two different waits; pass one")}
 			}
 			if cmd.Flags().Changed("timeout") && wait == "" {
 				return cobraUsageError{fmt.Errorf("--timeout goes with --wait")}
@@ -571,7 +575,9 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 			}
 			switch {
 			case watch:
-				return StatusWatch(cmd.Context(), e, project, e.Out == os.Stdout && canDrawSpinner(os.Stdout))
+				// Under --json each refresh is one line (NDJSON, I-609).
+				e.jsonLines = e.JSON
+				return StatusWatch(cmd.Context(), e, project, !e.JSON && e.Out == os.Stdout && canDrawSpinner(os.Stdout))
 			case wait != "":
 				return StatusWait(cmd.Context(), e, project, wait, timeout)
 			}
@@ -579,7 +585,10 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the Project object, with its checkout's git state, as JSON")
-	cmd.Flags().BoolVar(&watch, "watch", false, "redraw every 5 seconds until Ctrl-C")
+	cmd.Flags().BoolVarP(&watch, "follow", "f", false, "refresh every 5 seconds until Ctrl-C")
+	// --watch was the name until I-609; -f is what logs and events take.
+	cmd.Flags().BoolVar(&watch, "watch", false, "refresh every 5 seconds until Ctrl-C")
+	_ = cmd.Flags().MarkHidden("watch")
 	cmd.Flags().StringVar(&wait, "wait", "", "wait until the machine is in `STATE` (running, stopped, ...), then print the status")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long --wait waits, as a `DURATION` (30s, 5m), before exiting 1")
 	_ = cmd.RegisterFlagCompletionFunc("wait", cobra.FixedCompletions(projectStates, cobra.ShellCompDirectiveNoFileComp))
@@ -772,6 +781,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SecretsListCmd(cmd.Context(), e, project)
 		},
 	}
+	list.Flags().BoolVar(&g.json, "json", false, "print the names and dates as JSON")
 	rm := &cobra.Command{
 		Use:   "rm NAME",
 		Short: "Remove a secret",
@@ -1034,6 +1044,7 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SnapshotsCreateCmd(cmd.Context(), e, project)
 		},
 	}
+	create.Flags().BoolVar(&g.json, "json", false, "print the Snapshot object as JSON when done")
 	restore := &cobra.Command{
 		Use:               "restore [PROJECT] SNAPSHOT_ID",
 		Short:             "Restore a snapshot",
@@ -1309,23 +1320,26 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if bytes > 0 {
-				if err := ResizeCmd(cmd.Context(), e, project, bytes); err != nil {
-					return err
+			return withProjectJSON(cmd.Context(), e, project, func() error {
+				if bytes > 0 {
+					if err := ResizeCmd(cmd.Context(), e, project, bytes); err != nil {
+						return err
+					}
 				}
-			}
-			if size == "" {
-				return nil
-			}
-			var confirm func(string) (bool, error)
-			if !yes {
-				confirm = func(prompt string) (bool, error) {
-					return askYesNo(cmd.Context(), prompt, false, "restarting the machine")
+				if size == "" {
+					return nil
 				}
-			}
-			return ResizeClassCmd(cmd.Context(), e, project, size, confirm)
+				var confirm func(string) (bool, error)
+				if !yes {
+					confirm = func(prompt string) (bool, error) {
+						return askYesNo(cmd.Context(), prompt, false, "restarting the machine")
+					}
+				}
+				return ResizeClassCmd(cmd.Context(), e, project, size, confirm)
+			}, nil)
 		},
 	}
+	addProjectJSONFlag(cmd, g)
 	cmd.Flags().StringVar(&size, "size", "", "small|large|xl: change the project's size")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project: stop and start it without asking")
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
@@ -1387,6 +1401,7 @@ func completeResize(env func() (*Env, error)) func(*cobra.Command, []string, str
 func newLogsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var kind, since string
 	var follow bool
+	var tail int
 	cmd := &cobra.Command{
 		Use:               "logs [PROJECT]",
 		Short:             "Show a project's logs",
@@ -1401,12 +1416,13 @@ func newLogsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 			if err != nil {
 				return err
 			}
-			return LogsCmd(cmd.Context(), e, project, kind, since, follow, nil)
+			return LogsCmd(cmd.Context(), e, project, kind, since, tail, follow, nil)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print each line as JSON")
+	cmd.Flags().Bool("json", false, "print each line as JSON, one per line")
 	cmd.Flags().StringVar(&kind, "kind", "", "console|build|ops")
-	cmd.Flags().StringVar(&since, "since", "", "e.g. 1h")
+	cmd.Flags().StringVar(&since, "since", "", "only lines after this: 90m, 2d, 1w, 2026-10-01 or an RFC 3339 time")
+	cmd.Flags().IntVarP(&tail, "tail", "n", 0, "only the last N lines (then new ones with -f)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll for new lines every 2s")
 	_ = cmd.RegisterFlagCompletionFunc("kind", cobra.FixedCompletions([]string{"console", "build", "ops"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -1435,13 +1451,14 @@ func newEventsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 			return EventsCmd(cmd.Context(), e, project, since, follow, nil)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print each event as JSON")
-	cmd.Flags().StringVar(&since, "since", "24h", "e.g. 24h")
+	cmd.Flags().Bool("json", false, "print each event as JSON, one per line")
+	cmd.Flags().StringVar(&since, "since", "24h", "90m, 2d, 1w, 2026-10-01 or an RFC 3339 time")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll for new events every 10s")
 	return cmd
 }
 
 func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
+	var quiet bool
 	cmd := &cobra.Command{
 		Use:               "questions [PROJECT]",
 		Short:             "List the questions agents are waiting on you to answer",
@@ -1456,10 +1473,15 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 			if err != nil {
 				return err
 			}
+			if quiet && e.JSON {
+				return cobraUsageError{fmt.Errorf("-q and --json are two different outputs; pass one")}
+			}
+			e.Quiet = quiet
 			return QuestionsCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the questions as JSON")
+	cmd.Flags().Bool("json", false, "print the questions and terminal waits as JSON")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the question ids, one per line")
 	return cmd
 }
 
