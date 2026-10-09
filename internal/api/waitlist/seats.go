@@ -25,7 +25,7 @@ type Count struct {
 	Waiting int
 }
 
-// Seats is what checkout asks before it creates a Paddle transaction, and
+// Seats is what checkout asks before it creates a Polar checkout, and
 // what the webhook tells when a subscription arrives (DECISIONS I-289,
 // I-290). The billing package consumes it; this package implements it.
 type Seats interface {

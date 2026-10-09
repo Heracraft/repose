@@ -4,7 +4,7 @@ The charge for Pro ($59.00) did not go through. Update your card in the billing 
 
 Your machines keep running for three days. After that they are snapshotted and stopped until a payment arrives.
 
-Update your card: https://customer-portal.paddle.com/cpl_abc
+Update your card: https://polar.sh/repose/portal?customer_session_token=polar_cst_abc
 
 --
 repose. Open the dashboard: https://repose.herakraft.co

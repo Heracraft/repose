@@ -26,10 +26,10 @@ type M struct {
 	NotifyDeliveryLatencySeconds prometheus.Histogram
 	OutboxDepth                  prometheus.Gauge
 	OutboxLagSeconds             prometheus.Gauge
-	// BillingWebhookTotal counts Paddle webhook deliveries by event kind and
-	// result; PaddleWebhookRejected reads the bad_signature series.
+	// BillingWebhookTotal counts Polar webhook deliveries by event kind and
+	// result; BillingWebhookRejected reads the bad_signature series.
 	BillingWebhookTotal *prometheus.CounterVec
-	// BillingOverageChargesTotal counts egress overage lines sent to Paddle
+	// BillingOverageChargesTotal counts egress overage lines sent to Polar
 	// by result; OverageChargeFailed reads the error series.
 	BillingOverageChargesTotal *prometheus.CounterVec
 	// BillingGateRefusedTotal counts payment_required refusals by reason.
@@ -113,8 +113,8 @@ func New(reg prometheus.Registerer) *M {
 		NotifyDeliveryLatencySeconds: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "repose_api_notify_delivery_latency_seconds", Help: "Event timestamp to delivered timestamp, successful deliveries only.", Buckets: prometheus.ExponentialBuckets(1, 2, 12)}),
 		OutboxDepth:                  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_depth", Help: "Undelivered outbox rows."}),
 		OutboxLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_lag_seconds", Help: "Age of the oldest undelivered outbox row."}),
-		BillingWebhookTotal:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_webhook_total", Help: "Paddle webhook deliveries by event kind and result."}, []string{"kind", "result"}),
-		BillingOverageChargesTotal:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_overage_charges_total", Help: "Egress overage lines sent to Paddle by result."}, []string{"result"}),
+		BillingWebhookTotal:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_webhook_total", Help: "Polar webhook deliveries by event kind and result."}, []string{"kind", "result"}),
+		BillingOverageChargesTotal:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_overage_charges_total", Help: "Egress overage lines sent to Polar by result."}, []string{"result"}),
 		BillingGateRefusedTotal:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_gate_refused_total", Help: "Compute refused with payment_required, by reason."}, []string{"reason"}),
 		BillingSubscriptions:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_subscriptions_total", Help: "Subscription webhooks applied, by plan and status."}, []string{"plan", "status"}),
 		BillingStopsTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_stops_total", Help: "Machines the api stopped for billing, by reason."}, []string{"reason"}),
