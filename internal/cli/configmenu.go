@@ -71,12 +71,46 @@ func isAre(n int) string {
 	return "are"
 }
 
+// ConfigMenuListCmd is `repose config add` with no names: the menu's
+// entries, the names `config add` takes beside any nixpkgs attribute,
+// grouped as the dashboard's Config page groups them (review 8.5, I-633).
+// It needs no project.
+func ConfigMenuListCmd(ctx context.Context, e *Env) error {
+	items, err := e.Client.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, items)
+	}
+	var groups []string
+	byGroup := map[string][]CatalogItem{}
+	width := 0
+	for _, it := range items {
+		if _, ok := byGroup[it.Group]; !ok {
+			groups = append(groups, it.Group)
+		}
+		byGroup[it.Group] = append(byGroup[it.Group], it)
+		width = max(width, len(it.ID))
+	}
+	for i, g := range groups {
+		if i > 0 {
+			_, _ = fmt.Fprintln(e.Out)
+		}
+		_, _ = fmt.Fprintln(e.Out, g)
+		for _, it := range byGroup[g] {
+			_, _ = fmt.Fprintf(e.Out, "  %-*s  %s\n", width, it.ID, it.Description)
+		}
+	}
+	return nil
+}
+
 // ConfigAddCmd implements `repose config add <package>...`: each name is a
 // catalog id when the catalog has it, otherwise a nixpkgs attribute path.
 // The selection is PUT as the menu and the build streams as for apply.
 func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string) error {
 	if len(args) == 0 {
-		return exitf(ExitUsage, "Name at least one package: `repose config add gcc air`.")
+		return ConfigMenuListCmd(ctx, e)
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {

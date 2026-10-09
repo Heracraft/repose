@@ -402,7 +402,7 @@ func TestLsEmptyCountsDestroyed(t *testing.T) {
 	e := newLifecycleEnv(t, fake)
 	var out bytes.Buffer
 	e.Out = &out
-	if err := ProjectsCmd(ctx, e); err != nil || out.String() != "No projects yet.\n" {
+	if err := ProjectsCmd(ctx, e); err != nil || out.String() != "No projects yet for heracraft.\n" {
 		t.Fatalf("empty: %v %q", err, out.String())
 	}
 	p := runningProject(t, fake, e, "izma")
@@ -410,7 +410,7 @@ func TestLsEmptyCountsDestroyed(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := ProjectsCmd(ctx, e); err != nil || out.String() != "No projects. 1 destroyed in the last 30 days can be restored.\n" {
+	if err := ProjectsCmd(ctx, e); err != nil || out.String() != "No projects for heracraft. 1 destroyed in the last 30 days can be restored.\n" {
 		t.Fatalf("after rm: %v %q", err, out.String())
 	}
 }
@@ -500,5 +500,55 @@ func TestInterruptedStopSaysItGoesOn(t *testing.T) {
 	err := StopCmd(ctx, e, p.ID, true)
 	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. The stop of api goes on." {
 		t.Fatalf("Ctrl-C during the stop: %v", err)
+	}
+}
+
+// Ctrl-C during `resize --size` and `fork` says what is left (review A6,
+// I-633): the stop goes on and the size is the old one; the snapshot
+// goes on and nothing was forked; the copies exist and start.
+func TestInterruptedResizeAndForkSayWhatIsLeft(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	waiting := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/ops/") {
+			select {
+			case waiting <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
+			return
+		}
+		fake.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	e := newLifecycleEnv(t, fake)
+	p := runningProject(t, fake, e, "demo")
+	e.Client = newClient(srv.URL+"/v1", staticToken("tok"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-waiting; cancel() }()
+	to := "small"
+	if p.Class == "small" {
+		to = "large"
+	}
+	err := ResizeClassCmd(ctx, e, p.ID, to, func(string) (bool, error) { return true, nil })
+	if want := "Interrupted. The stop of demo goes on, and it stays " + p.Class + "."; exitCode(err) != ExitInterrupted || err.Error() != want {
+		t.Fatalf("resize: %v, want %q", err, want)
+	}
+
+	ctx, cancel = context.WithCancel(context.Background())
+	go func() { <-waiting; cancel() }()
+	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1})
+	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. The snapshot of demo goes on; nothing was forked." {
+		t.Fatalf("fork: %v", err)
+	}
+
+	res := &ForkResult{Projects: []ForkedProject{{Slug: "demo-fork-1"}, {Slug: "demo-fork-2"}}}
+	if got := interruptedFork(res, false).Error(); got != "Interrupted. demo-fork-1 and demo-fork-2 exist, and their starts go on." {
+		t.Errorf("two: %q", got)
+	}
+	if got := interruptedFork(&ForkResult{Projects: res.Projects[:1]}, true).Error(); got != "Interrupted. demo-fork-1 exists, and its restore goes on." {
+		t.Errorf("one, --no-start: %q", got)
 	}
 }

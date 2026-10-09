@@ -159,7 +159,7 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 			for _, p := range running {
 				slugs = append(slugs, p.Slug)
 			}
-			return &Refusal{Reason: ReasonPlanLimit, Message: planLimitMessage(plan, req.Class, slugs, url),
+			return &Refusal{Reason: ReasonPlanLimit, Message: PlanLimitMessage(plan, req.Class, slugs, url),
 				Detail: map[string]any{"reason": ReasonPlanLimit, "plan": plan.ID, "limit_gb": plan.MemoryGB, "used_gb": usedGB, "projects": slugs}}, nil
 		}
 	}
@@ -204,10 +204,11 @@ func fmtGB(bytes int64) string {
 	return strconv.FormatFloat(gbTenths(bytes), 'f', -1, 64)
 }
 
-// planLimitMessage names the machines using the memory, or the class that
+// PlanLimitMessage names the machines using the memory, or the class that
 // does not fit at all: "Your Solo plan runs 8 GB at once and todo-app is
 // using it. Stop it, or upgrade at https://repose.herakraft.co/billing."
-func planLimitMessage(plan Plan, class string, slugs []string, url string) string {
+// The fake api sends the same words; its test holds them equal.
+func PlanLimitMessage(plan Plan, class string, slugs []string, url string) string {
 	need := ClassMemoryGB(class)
 	if need > plan.MemoryGB {
 		return fmt.Sprintf("Your %s plan runs %d GB at once and an %s machine needs %d GB. Upgrade to %s at %s.", plan.Name, plan.MemoryGB, class, need, SmallestFor(class).Name, url)

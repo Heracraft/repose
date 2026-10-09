@@ -76,7 +76,7 @@ Not synced: the machine changed 11 files that your laptop changed too:
   src/routes/login.ts
   ...(eight names in all)
   and 3 more
-`repose sync --stash-remote` moves the machine's changes to its git stash first.
+`repose sync --stash-machine` moves the machine's changes to its git stash first.
 ```
 
 The guest's checkout has a git operation of its own in progress
@@ -84,7 +84,7 @@ The guest's checkout has a git operation of its own in progress
 
 ```
 $ repose sync
-Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash.
+Not synced: the machine's checkout is in the middle of a git rebase. Finish or abort it there, or run `repose sync --discard-machine` to end it and move the machine's changes to its git stash.
 ```
 
 A Ctrl-C after the sync created the project and before it connected
@@ -108,8 +108,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   and, when the laptop has work the guest never took (a sync key that
   differs, with a modified or untracked file or a commit the guest lacks
   to show for it), prints the "Not synced" line above. Never on
-  `attach`, `start`, or any other command. `run --stash-remote` and
-  `--discard-remote` exit 2 naming `repose sync` with the same flag.
+  `attach`, `start`, or any other command. `run --stash-machine` and
+  `--discard-machine` exit 2 naming `repose sync` with the same flag.
   Everything below describes `repose sync` and a run's first sync.
 - The guest's own changes refuse a sync only where the sync would write
   (DECISIONS I-573, which replaces the whole-tree refusal of R3-12 and
@@ -144,11 +144,11 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   Before the overlap check, a merge, rebase, `git am`, cherry-pick,
   revert or bisect in progress in the guest's checkout refuses the sync
   (exit 6, the refusal above naming the operation): a checkout would drop
-  its state and a stash cannot hold it, so `--stash-remote` refuses too.
-  `--stash-remote` runs `git stash push -u -m "repose sync --stash-remote"`
-  in the guest first; `--discard-remote` ends any such operation where
+  its state and a stash cannot hold it, so `--stash-machine` refuses too.
+  `--stash-machine` runs `git stash push -u -m "repose sync --stash-machine"`
+  in the guest first; `--discard-machine` ends any such operation where
   `HEAD` is, then stashes the same way under `repose sync
-  --discard-remote` (DECISIONS I-618); with either there is no overlap
+  --discard-machine` (DECISIONS I-618); with either there is no overlap
   check, and the summary ends "stashed the machine's changes to N files
   (git stash <commit>)". Neither asks for confirmation; the
   flag itself is the confirmation.
@@ -174,7 +174,7 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   the tree dirty and the fingerprint unchanged, the run goes on: the apply
   stashes those changes (`git stash push -u -m "repose run: last sync"`, so nothing
   misjudged is lost; only the newest 10 such stashes are kept, and the
-  user's own stashes and `--stash-remote`'s are never dropped), lays down the laptop's current ones, and the summary
+  user's own stashes and `--stash-machine`'s are never dropped), lays down the laptop's current ones, and the summary
   line ends "the last sync's changes stashed in the guest". An edit to a
   synced file, a new file, a commit, or a change inside a submodule
   (each checked-out submodule adds its own `HEAD` and tree to the
@@ -246,8 +246,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   and gitignored `.env` files follow the superproject's rules. A staged
   submodule change, addition or removal is staged in the guest too. The
   guest registers each one (`git submodule init` and `sync`), so its
-  `origin` is the URL `.gitmodules` names. `--stash-remote`,
-  `--discard-remote` and the last-sync stash act inside every submodule
+  `origin` is the URL `.gitmodules` names. `--stash-machine`,
+  `--discard-machine` and the last-sync stash act inside every submodule
   as well. A submodule the laptop never checked out stays empty in the
   guest. A shallow submodule cannot be bundled: the guest runs `git
   submodule update --init` for it itself (gh's login covers github.com);

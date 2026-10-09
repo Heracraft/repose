@@ -394,6 +394,14 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 	if e.Cache.ByRemote[remote].ProjectID != own || len(e.Cache.ByDir) != 0 {
 		t.Fatalf("cache moved: %+v %+v", e.Cache.ByRemote, e.Cache.ByDir)
 	}
+	// The second machine gets a git remote of its own name, as a fork's
+	// copy does, and `repose` stays the original's (I-633).
+	if got, want := remoteURLOf(f.local, "proj-experiment"), reposeRemoteURL("proj-experiment", checkoutName(f.local)); got != want {
+		t.Fatalf("remote proj-experiment = %q, want %q (stderr %q)", got, want, errOut.buf.String())
+	}
+	if h := reposeRemoteHost(remoteURLOf(f.local, reposeRemoteName)); h == "proj-experiment" {
+		t.Fatalf("the repose remote moved to the second machine")
+	}
 	// Again by name: the same second project.
 	e2, _, _ := freshEnv(f.env, f.local)
 	if err := runRun(ctx, e2, RunOptions{Name: "proj-experiment", NoAttach: true, NoSync: true}, false); err != nil {
@@ -407,8 +415,13 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true}, false)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "github.com/someone/else") {
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "github.com/someone/else") || !strings.Contains(ee.msg, "`repose run other`") {
 		t.Fatalf("--name of another repository's project: %v", err)
+	}
+	// The refusal names the command typed (I-633).
+	err = runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true, Sync: true}, false)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "`repose sync other`") {
+		t.Fatalf("sync of another repository's project: %v", err)
 	}
 }
 

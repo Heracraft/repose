@@ -90,7 +90,7 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	route := &Route{HostName: "host-01", GuestIP: "10.64.0.8"}
 	var b bytes.Buffer
 	writeStatusLinesMux(&b, p, route, nil, nil, "tmux", gd)
-	if !strings.Contains(b.String(), "disk       37.1 GB of 39.1 GB, no snapshot yet") {
+	if !strings.Contains(b.String(), "disk       37.1 GB of 39.1 GB (40G disk), no snapshot yet") {
 		t.Errorf("disk is not the guest's filesystem:\n%s", b.String())
 	}
 	if !strings.Contains(b.String(), "\n  disk 95 percent full; `repose resize kanali 80G` grows it\n") {
@@ -114,7 +114,7 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	fromAPI := *p
 	fromAPI.RootUsedBytes, fromAPI.RootSizeBytes = 37<<30, 39<<30
 	writeStatusLinesMux(&b, &fromAPI, route, nil, nil, "tmux", guestDisk{})
-	if !strings.Contains(b.String(), "disk       37.0 GB of 39.0 GB") || !strings.Contains(b.String(), "disk 94 percent full;") {
+	if !strings.Contains(b.String(), "disk       37.0 GB of 39.0 GB (40G disk)") || !strings.Contains(b.String(), "disk 94 percent full;") {
 		t.Errorf("the api's root filesystem is not the fallback:\n%s", b.String())
 	}
 	// The guest's own answer wins over the api's minute-old sample.

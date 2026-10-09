@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,8 +20,11 @@ import (
 
 // unknownCommand returns the message for args that name no command, or
 // "" when they do (or when cobra should report the problem itself, such
-// as a bad flag).
-func unknownCommand(root *cobra.Command, args []string) string {
+// as a bad flag). isProject, when not nil, says whether a word is one of
+// the user's projects: after a group whose bare form lists a project's
+// things (`repose snapshots todo-app`), the word gets the command that
+// takes it instead of a guess at a subcommand (I-633).
+func unknownCommand(root *cobra.Command, args []string, isProject func(string) bool) string {
 	if len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd) {
 		return "" // shell completion's hidden command, which cobra adds as it runs
 	}
@@ -44,7 +49,33 @@ func unknownCommand(root *cobra.Command, args []string) string {
 	if typed == "" {
 		return ""
 	}
+	if sub := cmd.Annotations[bareRunsKey]; sub != "" && isProject != nil && len(suggestCommands(cmd, typed)) == 0 && isProject(typed) {
+		return fmt.Sprintf("%s is a project: `%s %s %s`.", typed, cmd.CommandPath(), sub, typed)
+	}
 	return unknownCommandMessage(cmd, typed)
+}
+
+// slugShape is what a project's slug can be; any other word is not
+// looked up.
+var slugShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// projectWord is unknownCommand's isProject for Execute: the slugs in
+// projects.json first, then the account's list (two seconds at most, on
+// a path that already failed).
+func projectWord(word string) bool {
+	if !slugShape.MatchString(word) {
+		return false
+	}
+	if dir, err := configDir(); err == nil {
+		if c, err := loadProjectsCache(dir); err == nil {
+			for _, p := range c.ByRemote {
+				if p.Slug == word {
+					return true
+				}
+			}
+		}
+	}
+	return slices.Contains(projectSlugsForCompletion(func() (*Env, error) { return newEnv("", false, false) }), word)
 }
 
 // firstPositional is the first argument that is not a flag or a flag's

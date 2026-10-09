@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // classSpec is what a size class gives and which plan runs it, as
@@ -31,10 +32,6 @@ var planSpecs = []struct {
 	ID, Name string
 	MemGB    int
 }{{"solo", "Solo", 8}, {"plus", "Plus", 16}, {"pro", "Pro", 32}}
-
-// billingURL is where a plan is changed; the api's gate names the same
-// page in its refusals.
-const billingURL = "https://repose.herakraft.co/billing"
 
 // memoryStates are the project states that hold plan memory, as the
 // api's gate counts them (internal/billing/usage.go memoryStates).
@@ -139,15 +136,15 @@ func planMemoryRefusalOf(me *Me, list func() ([]Project, error), ask planAsk) st
 }
 
 // fixOr is the way out a memory refusal names: the caller's own (fork's
-// --no-start), else `repose stop` for the one machine in the way.
+// --no-start), else `repose stop` of the machines in the way.
 func fixOr(fix string, slugs []string) string {
 	if fix != "" {
 		return fix
 	}
-	if len(slugs) == 1 {
-		return fmt.Sprintf("`repose stop %s` frees it", slugs[0])
+	if len(slugs) == 0 {
+		return "Stop one"
 	}
-	return "Stop one"
+	return fmt.Sprintf("`repose stop %s` frees it", strings.Join(slugs, " "))
 }
 
 // classSummary is "4 vCPU, 8 GB memory; fits the Solo plan" or "8 vCPU,
@@ -232,6 +229,11 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 	pr.Phase("Stopping "+s, "")
 	op, err := waitOpPhased(ctx, e, project, opID, pr, false)
 	if err != nil {
+		if interrupted(ctx, err) {
+			// The stop was accepted and goes on; the size was not
+			// changed (review A6, I-633).
+			return exitf(ExitInterrupted, "Interrupted. The stop of %s goes on, and it stays %s.", s, from)
+		}
 		return err
 	}
 	if op.State == "error" {
@@ -250,6 +252,9 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		return perr
 	}
 	if err := ensureRunningFrom(ctx, e, project, pr, false); err != nil {
+		if interrupted(ctx, err) {
+			return exitf(ExitInterrupted, "Interrupted. %s is %s now; `repose start %s` starts it if it is stopped.", s, class, s)
+		}
 		return err
 	}
 	pr.Fail()

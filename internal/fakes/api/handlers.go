@@ -356,7 +356,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 		secrets:   map[string]*SecretMeta{},
 		eventKeys: map[string]bool{},
 	}
-	rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "applied", BaseVersion: baseVersion, AppliedAt: &now}
+	rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "applied", Fragment: fakeDefaultFragment, BaseVersion: baseVersion, AppliedAt: &now}
 	p.revisions = append(p.revisions, rev)
 	p.ConfigRevisionID = rev.ID
 	f.projects[p.ID] = p
@@ -1002,7 +1002,7 @@ func renderMenu(raw json.RawMessage) (string, *apiError) {
 }
 
 // fakeDefaultFragment is what a new project starts with in the real api
-// (internal/api/http DefaultFragment); the fake's first revision has none.
+// (internal/api/http DefaultFragment), and the fake's first revision too.
 const fakeDefaultFragment = "{ pkgs, ... }:\n{\n  home.packages = [ ];\n}\n"
 
 func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {

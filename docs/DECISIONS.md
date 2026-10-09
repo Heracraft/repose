@@ -17037,6 +17037,9 @@ home folder, the case that bit, already refuses. `TestSyncRemoteFlagsStashAndSay
 `TestCarryNoterPrintsOnlyChanges`, `TestSessionShowsTheRunsMessages`,
 `TestWholeMachineCommandsRefuseACheckout`, `TestCheckoutsAreNamedNotMade`,
 `TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncedTreeIsStashed`.
+*Later (I-633):* the flags are `--stash-machine` and `--discard-machine`
+(review C4): "remote" read as a git remote, and the repo's word for that
+side is the machine. The old names stay hidden for a release.
 **I-616. `repose status` is labelled rows with the checkout's git state;
 `ls` and `status` drop the running hours, show the plan, and mark the
 project this folder acts on.** (cli-devx, 2026-10-08; reviews
@@ -17117,6 +17120,14 @@ fetching before it snapshots (another command's change).
 `TestHereProjectID`, `TestPlanLineAndWarnings`, `TestLsPrintsThePlan`,
 `TestStatusWait`, `TestStatusWatchPrintsChangesAndRidesOutErrors`,
 `TestStatusShowsHostNameAndNewestEvent`, `TestMenuNameAndJoin`.
+*Later (I-633):* `start`'s help still said "a project's machine" and now
+says "Start a project, or restart one in error"; `keep` keeps "temporary
+machine", the docs' name for what `--temp` makes. The `ps` header
+(`todo-app · running · tmux`) and a stderr note when `REPOSE_PROJECT`
+disagrees with the folder are not done: the header repeats what the
+table and `status` show (I-484), and `stop`, `rm`, `resize` and
+`restore` name the project in their question or result line, while `ls`
+marks the one `REPOSE_PROJECT` picks.
 
 **I-617. One vocabulary for agents and machines: agents are `working`,
 `idle` or `needs input`; a machine nobody used for a day is unused.**
@@ -17413,6 +17424,9 @@ it refuses; nothing to enforce yet), and folding `version` with
 client must accept answers without it. Tests:
 `TestNewerCLINoticeOncePerRelease`, `TestVersionOlder`,
 `TestFetchReadsTheTagFromTheRedirect`, `TestAnswersNameTheLatestCLI`.
+*Later (I-633):* `repose version` and `repose --version` stay both
+(review G1): they print the same line, and docker, gh, kubectl and go
+users type either.
 
 **I-627. `repose login` opens its link, `login --status` names the
 account, `logout` says what it revoked, and a first `run` logs in.**
@@ -17521,6 +17535,8 @@ prompt). `TestEveryYesHasY`, `TestOneSpellingPerIdea`,
 `TestProjectFlagRefusedOnAccountCommands`, `TestBareGroupsRunTheirListing`,
 `TestParseOpenPorts`, `TestMatchID`, `TestResolveSnapshotID`,
 `TestDocsNameEveryCommandAndFlag`.
+*Later:* `restore --snapshot` and `fork --snapshot` take a prefix or
+suffix since I-631 (D8).
 
 **I-620. `repose secrets set` reads a piped value, refuses NAME=VALUE
 before asking, and every secrets line names the project.** (2026-10-09,
@@ -17614,6 +17630,11 @@ devx-status's and devx-agents' (I-606: windows are the noun).
 `TestFindRevision`, `TestConfigRevisionsAndApplyRevision`,
 `TestPersonalSwitch`, `TestNotifyShowAndTest`, `TestSetupLine`,
 `TestForkRemotes`, `TestOutboxTestSaysWhyNtfyFailed`.
+*Later (I-633):* `run NAME` and `sync NAME` into a machine that is not
+the checkout's own add a remote named after it, as a fork does. `fork
+--temp` is not done: the fork request has no expiry, so it needs an api
+change, and `repose rm todo-app-fork-1 todo-app-fork-2` ends the copies
+in one command.
 
 **I-629. One vocabulary across the 2026-10-08 CLI packages (cli-devx,
 2026-10-09).** Amends I-606, I-609, I-614, I-615, I-617, I-618.
@@ -17882,3 +17903,101 @@ added or touched).
 - troubleshooting.md drops "Your login is still there"; agents.md says
   the machine's guide covers repose-ask and a rule in CLAUDE.md or
   AGENTS.md overrides it.
+
+**I-633. The second cli-devx follow-up: the fake says the gate's words,
+a project word after a group, run's phase says what it does, a second
+machine gets its own remote, the stash flags say machine (cli-devx,
+2026-10-09).** Amends I-367, I-603, I-610, I-612, I-614, I-616, I-618,
+I-619, I-622, I-626. *Made during implementation* (a review of cli-devx
+against the two 2026-10-08 reviews, after main's r20261009-1 merged in).
+- The fake api's plan_limit sentence is `billing.PlanLimitMessage`'s,
+  word for word (it said `A large (8 GB) would pass ... Stop one or
+  upgrade.`), so tests and walks against the fake see the CLI's
+  rewrite. With several machines in the way the rewrite names them all:
+  ``a and b are using it. `repose stop a b` frees it, or upgrade at
+  ...``; `resize --size` and `fork` say the same. The fake's first
+  config revision is the api's default repose.nix, as a real project's
+  is, so `config show` on a new project prints it there too (an empty
+  answer was the fake's, and no empty-state line was added).
+  `TestPlanLimitMessageIsTheGates`, `TestPaymentRequiredMessage`.
+- `repose snapshots todo-app`, `config todo-app`, `mcp todo-app` and
+  `secrets todo-app`, where the word is one of the user's projects
+  (projects.json, then the account's list, two seconds at most) and no
+  subcommand's typo, exit 2 with ``todo-app is a project: `repose
+  snapshots list todo-app`.`` The word stays a subcommand slot (I-619).
+  `TestBareGroupsRunTheirListing`.
+- `run` into a machine that already has the checkout names its phase
+  `Copying logins`, not `Syncing`: after the first sync it copies only
+  logins and the carry (I-367). A run that creates the machine, and
+  `sync`, still say `Syncing`. Off a terminal, a phase resumed after a
+  line inside it (the `Worktree:` line, the shared-tree warning) does
+  not print its start again, so `Starting claude...` shows once.
+  `TestRunNamesItsPhaseForWhatItDoes`, `TestProgressResumeOffTerminal`.
+- No global git config is an empty list on git 2.55, which exits 128
+  for a missing ~/.gitconfig: the files ($GIT_CONFIG_GLOBAL, else
+  ~/.gitconfig and $XDG_CONFIG_HOME/git/config) are looked for first.
+  Every run and sync printed `Could not read your git config`.
+  `TestReadGitConfigWithoutAGlobalFile`.
+- `logs --since` with nothing in the window says so: `No operations on
+  todo-app in the last 1s.` (`todo-app has no operations` was false of
+  a project with four). `TestEmptyLogsLineNamesTheWindow`.
+- I-603's cross-repository refusal names the command typed (`repose
+  sync alpha`). The mcp row of `secrets choose` reads `Claude Code MCP
+  servers, without their tokens`, one parenthetical with the found
+  note. `secrets rm NOPE` says `todo-app has no secret NOPE.`, exit 1,
+  as `mcp rm` does. `TestRunNameInCheckoutMakesASecondProject`,
+  `TestLoginRowsHaveOneParenthetical`, `TestSecretsLinesNameTheProject`.
+- `status`'s disk row puts the disk's size after the filesystem's
+  figures, as `resize` names it: `1.0 GB of 78.0 GB (80G disk)`. `resize
+  80G` and then `of 78.0 GB` read as two answers (review 5.7); the
+  filesystem keeps part of the volume. `TestStatusDiskIsTheGuestsFilesystem`.
+- An attach with no terminal (`attach -w claude-2 </dev/null`) exits 1
+  with `Attaching needs a terminal, and this command has none.` before
+  tmux runs: `tmux attach -t session:window` made the window current and
+  then failed, so the next plain attach landed on it. Selecting in the
+  same tmux command would not help; tmux selects first.
+  `TestAttachNamedWindow`.
+- Ctrl-C during `resize --size` says `Interrupted. The stop of demo goes
+  on, and it stays large.`, or after the size changed `demo is xl now;
+  repose start demo starts it if it is stopped.`; during `fork`, `The
+  snapshot of demo goes on; nothing was forked.`, `The forks of demo may
+  have been created`, or `demo-fork-1 and demo-fork-2 exist, and their
+  starts go on.` (review A6, deferred by I-614).
+  `TestInterruptedResizeAndForkSayWhatIsLeft`.
+- `repose run NAME` and `sync NAME` into a machine that is not the
+  checkout's own add a git remote named after it, as `fork` does
+  (I-622), and `rm` removes it; lifecycle.md drops the hand-typed `git
+  remote add`. A temporary machine still gets none (I-612). `fork
+  --temp` is not done (I-622's later line). Review 4.2.
+- `repose config add` with no names lists the menu's entries by group
+  and exits 0 (it exited 2); `--global add` with none still exits 2.
+  Review 8.5. `TestConfigAddWithNoNamesListsTheMenu`.
+- `sync --stash-remote` and `--discard-remote` are `--stash-machine` and
+  `--discard-machine` (review C4): "remote" read as a git remote. The
+  old names stay hidden for a release, on `run` too, where all four
+  exit 2 naming `sync`. The stash on the machine is named `repose sync
+  --stash-machine`.
+- The empty `ls` names the account, and the server when it is not
+  repose's: `No projects yet for heracraft.` An empty list on another
+  account read as lost projects (review 8.5). `TestLsEmptyCountsDestroyed`.
+- `start`'s help says "Start a project, or restart one in error" (I-616
+  claimed it); `questions`' says it covers every project.
+- The quickstart's first task is `repose run -p "..."`, which creates
+  the machine, logs Claude Code in inline (I-607) and types the prompt:
+  the shell-first run and the detach-and-run-again step are gone. Its
+  last step says `repose stop` fetches the agent's commits first, and
+  that `attach` starts a stopped machine.
+- One `billingURL` constant in the CLI; status, waitlist, login and the
+  payment fallback used their own literals.
+- internal/cli's tests mark inherited descriptors close-on-exec, so a
+  fake guest's tmux server that outlives a timed-out test binary no
+  longer holds the `flock` lock the run was started under. RELEASE.md's
+  `go test -race` gets `-timeout 30m`: internal/cli alone takes about
+  15 minutes at GOMAXPROCS=2.
+*Rejected:* a line for the empty `config show` (the real api never
+answers empty; above); the `ps` header and the `REPOSE_PROJECT` notice
+(I-616's later line); folding `version` into `--version` (I-626's
+later line). Already done before this entry: attach starting a stopped
+machine and the stopped refusal's wording (I-631; reviews G7, C1, 6.5),
+`questions --json` keeping its old shape (I-631), `restore --snapshot`
+prefixes (I-631; D8).

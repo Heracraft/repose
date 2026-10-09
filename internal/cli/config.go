@@ -22,6 +22,10 @@ const defaultLogtoIssuer = "https://accounts.herakraft.co" // the owner's Logto 
 const defaultLogtoClientID = "jccig5bb3i4d78bq4farv"
 const apiResource = "https://api.repose.herakraft.co"
 
+// billingURL is where a plan is chosen or changed; the api's gate names
+// the same page. Every line that names it uses this.
+const billingURL = "https://repose.herakraft.co/billing"
+
 // Config is config.toml (docs/interfaces/cli-config.md).
 type Config struct {
 	APIURL string `toml:"api_url"`

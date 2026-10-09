@@ -173,6 +173,10 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		pr.Phase("Snapshotting "+src.Slug, "Snapshot of "+src.Slug+" taken")
 		op, err := waitOpPhased(ctx, e, src, opID, pr, false)
 		if err != nil {
+			if interrupted(ctx, err) {
+				// Ctrl-C says what exists (review A6, I-633).
+				return exitf(ExitInterrupted, "Interrupted. The snapshot of %s goes on; nothing was forked.", src.Slug)
+			}
 			return err
 		}
 		if op.State == "error" {
@@ -208,6 +212,9 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	res, err := forkWithRetry(ctx, e, src.ID, req)
 	if err != nil {
 		pr.Fail()
+		if interrupted(ctx, err) {
+			return exitf(ExitInterrupted, "Interrupted. The forks of %s may have been created; `repose ls` shows them.", src.Slug)
+		}
 		var apiErr *APIError
 		// The api's cap refusal (a create elsewhere since the check
 		// above, or /me unreadable) in the words every command uses.
@@ -237,6 +244,9 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		}
 		op, err := waitOp(ctx, e.Client, f.ProjectID, f.OpID, pr)
 		if err != nil {
+			if interrupted(ctx, err) {
+				return interruptedFork(res, opts.NoStart)
+			}
 			return err
 		}
 		if p, err := e.Client.GetProject(ctx, f.ProjectID); err == nil {
@@ -298,6 +308,34 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), verb, src.Slug, res.SnapshotID)
 	}
 	return nil
+}
+
+// interruptedFork is Ctrl-C while the copies start: they exist, and
+// their starts (or restores) go on without the CLI.
+func interruptedFork(res *ForkResult, noStart bool) error {
+	slugs := make([]string, len(res.Projects))
+	for i, f := range res.Projects {
+		slugs[i] = f.Slug
+	}
+	verb, goes := "start", "goes"
+	if noStart {
+		verb = "restore"
+	}
+	if len(slugs) > 1 {
+		verb, goes = verb+"s", "go"
+	}
+	exist := "exists"
+	if len(slugs) > 1 {
+		exist = "exist"
+	}
+	return exitf(ExitInterrupted, "Interrupted. %s %s, and %s %s on.", joinNames(slugs), exist, theirOrIts(len(slugs))+" "+verb, goes)
+}
+
+func theirOrIts(n int) string {
+	if n == 1 {
+		return "its"
+	}
+	return "their"
 }
 
 // forkWithRetry posts the fork, and posts it again with the same

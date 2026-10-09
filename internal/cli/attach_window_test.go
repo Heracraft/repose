@@ -119,12 +119,21 @@ func TestAttachNamedWindow(t *testing.T) {
 	if !errors.As(err, &se) || se.ExitCode != 2 || !strings.Contains(se.Stderr, testSlug+" has no window editor. `repose ps "+testSlug+"` lists them.") {
 		t.Fatalf("a missing window: %v", err)
 	}
-	// Without a terminal tmux refuses the attach itself: the check passed.
+	// Without a terminal the attach is refused after the window check,
+	// and the session's current window stays where it was (I-633).
+	before, err := runSSH(ctx, f.target, "tmux display-message -p -t "+testSlug+" '#{window_index}'", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, w := range []string{"editor-2", "1"} {
 		_, err = runSSH(ctx, f.target, attachNamedCommand(testSlug, "", w), nil)
-		if !errors.As(err, &se) || se.ExitCode == 2 || strings.Contains(se.Stderr, "has no window") {
+		if !errors.As(err, &se) || se.ExitCode != 1 || !strings.Contains(se.Stderr, "Attaching needs a terminal") {
 			t.Fatalf("window %s: %v", w, err)
 		}
+	}
+	after, err := runSSH(ctx, f.target, "tmux display-message -p -t "+testSlug+" '#{window_index}'", nil)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("current window moved from %q to %q (%v)", before, after, err)
 	}
 	if got := tmuxWindowTarget("todo", "12"); got != "=todo:12" {
 		t.Fatal(got)

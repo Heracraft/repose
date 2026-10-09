@@ -96,7 +96,7 @@ space toggles, enter saves, q leaves
   [x] codex     Codex CLI login
   [ ] opencode  opencode login (not logged in on this laptop)
   [x] env       gitignored .env files (2 in this checkout)
-  [x] mcp       Claude Code MCP servers (tokens stay on the laptop)
+  [x] mcp       Claude Code MCP servers, without their tokens
 ```
 
 Or name them, which also works in scripts:

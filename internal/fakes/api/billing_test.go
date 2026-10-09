@@ -412,7 +412,7 @@ func TestBillingGates(t *testing.T) {
 	if projects, _ := d["projects"].([]any); len(projects) != 1 || projects[0] != "first" {
 		t.Fatalf("plan_limit projects: %s", r.body)
 	}
-	if !strings.Contains(string(r.body), "first is using it. Stop one or upgrade.") {
+	if !strings.Contains(string(r.body), "first is using it. Stop it, or upgrade at") {
 		t.Fatalf("plan_limit message: %s", r.body)
 	}
 	// Stopped, the second one can be created; starting it again is the

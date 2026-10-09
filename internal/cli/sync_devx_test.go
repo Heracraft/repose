@@ -14,7 +14,7 @@ import (
 
 // DECISIONS I-618: the sync package of the 2026-10-08 CLI reviews.
 
-// --discard-remote and --stash-remote move every change on the machine to
+// --discard-machine and --stash-machine move every change on the machine to
 // a named stash and say how many files went and as which stash commit.
 func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
 	for _, tc := range []struct {
@@ -22,8 +22,8 @@ func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
 		opts SyncOptions
 		msg  string
 	}{
-		{"discard", SyncOptions{DiscardRemote: true}, "repose sync --discard-remote"},
-		{"stash", SyncOptions{StashRemote: true}, "repose sync --stash-remote"},
+		{"discard", SyncOptions{DiscardRemote: true}, "repose sync --discard-machine"},
+		{"stash", SyncOptions{StashRemote: true}, "repose sync --stash-machine"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSyncFixture(t)
@@ -51,7 +51,7 @@ func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
 			if s.StashedFiles != 3 || s.StashRef != ref {
 				t.Fatalf("summary stashed %d as %q, want 3 as %q", s.StashedFiles, s.StashRef, ref)
 			}
-			t.Logf("sync --%s-remote printed: %s", tc.name, s.String())
+			t.Logf("sync --%s-machine printed: %s", tc.name, s.String())
 			want := "Synced: 0 modified, 1 untracked; stashed the machine's changes to 3 files (git stash " + ref + ")"
 			if s.String() != want {
 				t.Fatalf("summary %q\nwant    %q", s.String(), want)
@@ -81,7 +81,7 @@ func TestSyncDiscardRemoteOnACleanMachine(t *testing.T) {
 // not the one that used to throw it away.
 func TestOverlapRefusalOffersOnlyTheStash(t *testing.T) {
 	msg := (&dirtyTreeError{files: []string{"a.go"}}).Error()
-	if strings.Contains(msg, "--discard-remote") || !strings.Contains(msg, "`repose sync --stash-remote` moves the machine's changes to its git stash first.") {
+	if strings.Contains(msg, "--discard-machine") || !strings.Contains(msg, "`repose sync --stash-machine` moves the machine's changes to its git stash first.") {
 		t.Fatalf("refusal:\n%s", msg)
 	}
 }

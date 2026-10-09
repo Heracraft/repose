@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -130,6 +131,12 @@ func SecretsRmCmd(ctx context.Context, e *Env, projectArg, name string) error {
 		return err
 	}
 	if err := e.Client.DeleteSecret(ctx, project.ID, name); err != nil {
+		// The api's generic not_found named no secret and no project;
+		// the line reads as `mcp rm`'s (I-633).
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && (apiErr.Code == "not_found" || apiErr.Status == 404) {
+			return exitf(ExitGeneric, "%s has no secret %s.", project.Slug, name)
+		}
 		return err
 	}
 	_, _ = fmt.Fprintf(e.Out, "Removed %s from %s.\n", name, project.Slug)

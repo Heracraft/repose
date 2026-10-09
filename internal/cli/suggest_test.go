@@ -38,7 +38,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		{[]string{"--version"}, ""},
 		{nil, ""},
 	} {
-		got := unknownCommand(newRootCmd("test"), tc.args)
+		got := unknownCommand(newRootCmd("test"), tc.args, nil)
 		if tc.want == "" {
 			if got != "" {
 				t.Errorf("%v: flagged as unknown:\n%s", tc.args, got)
@@ -50,7 +50,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		}
 	}
 	// A group names its own --help.
-	if got := unknownCommand(newRootCmd("test"), []string{"secrets", "qqq"}); !strings.Contains(got, "`repose secrets --help` shows its usage.") {
+	if got := unknownCommand(newRootCmd("test"), []string{"secrets", "qqq"}, nil); !strings.Contains(got, "`repose secrets --help` shows its usage.") {
 		t.Errorf("group hint missing:\n%s", got)
 	}
 }

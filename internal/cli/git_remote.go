@@ -206,26 +206,56 @@ func addForkRemotes(root, srcSlug string, forkSlugs []string) []string {
 	dir := m[2]
 	var added []string
 	for _, slug := range forkSlugs {
-		want := reposeRemoteURL(slug, dir)
-		switch cur := remoteURLOf(root, slug); {
-		case cur == want:
-			continue
-		case cur == "":
-			if _, err := gitCmd(root, "remote", "add", slug, want); err != nil {
-				continue
-			}
-		case reposeRemoteHost(cur) == slug:
-			if _, err := gitCmd(root, "remote", "set-url", slug, want); err != nil {
-				continue
-			}
-		default:
-			continue // the user's own remote of that name
+		if addMachineRemote(root, slug, dir) {
+			added = append(added, slug)
 		}
-		_, _ = gitCmd(root, "config", "remote."+slug+".pushurl", reposeRemotePushURL)
-		_, _ = gitCmd(root, "config", "remote."+slug+".skipFetchAll", "true")
-		added = append(added, slug)
 	}
 	return added
+}
+
+// addMachineRemote adds (or points again) the remote named slug at the
+// checkout dir on slug's machine, fetch-only and out of `git fetch
+// --all`, as `repose` is. It reports whether it changed anything; a
+// remote of that name that is not the CLI's is left alone.
+func addMachineRemote(root, slug, dir string) bool {
+	want := reposeRemoteURL(slug, dir)
+	switch cur := remoteURLOf(root, slug); {
+	case cur == want:
+		return false
+	case cur == "":
+		if _, err := gitCmd(root, "remote", "add", slug, want); err != nil {
+			return false
+		}
+	case reposeRemoteHost(cur) == slug:
+		if _, err := gitCmd(root, "remote", "set-url", slug, want); err != nil {
+			return false
+		}
+	default:
+		return false // the user's own remote of that name
+	}
+	_, _ = gitCmd(root, "config", "remote."+slug+".pushurl", reposeRemotePushURL)
+	_, _ = gitCmd(root, "config", "remote."+slug+".skipFetchAll", "true")
+	return true
+}
+
+// addSecondMachineRemote is `repose run NAME` and `repose sync NAME` into
+// a machine that is not this checkout's own (lifecycle.md "A second
+// machine for the same repository"): the checkout gets a remote named
+// after it, as a fork's copy does (I-622), so `git fetch NAME` brings
+// its work back without a hand-typed `git remote add` (I-633). A
+// temporary machine gets none (I-612), and `repose` stays the
+// checkout's own project's.
+func (e *Env) addSecondMachineRemote(p *Project, checkout string) {
+	if e.inHome() || p == nil || p.ExpiresAt != nil || checkout == "" || p.Slug == reposeRemoteName {
+		return
+	}
+	root := gitRepoRoot(e.Cwd)
+	if root == "" || e.checkoutOwnsProject(root, p) {
+		return
+	}
+	if addMachineRemote(root, p.Slug, checkout) {
+		_, _ = fmt.Fprintf(e.ErrOut, "Added the git remote %s.\n", p.Slug)
+	}
 }
 
 // forgetForkRemote removes the remote a fork added for slug, when the

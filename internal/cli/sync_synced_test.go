@@ -95,7 +95,7 @@ func TestSyncedTreeIgnoresShowUntrackedFilesNo(t *testing.T) {
 }
 
 // The last sync's changes are stashed, not reset away, so anything
-// misjudged can be recovered, and the summary says so. --discard-remote
+// misjudged can be recovered, and the summary says so. --discard-machine
 // stashes the whole tree under its own name (I-618).
 func TestSyncedTreeIsStashed(t *testing.T) {
 	f := newSyncFixture(t)
@@ -127,16 +127,16 @@ func TestSyncedTreeIsStashed(t *testing.T) {
 	stashes := mustRun(t, f.guestRepo(), "git", "stash", "list", "--format=%gs")
 	s, err = syncGuest(ctx, f.target, f.local, testSlug, SyncOptions{DiscardRemote: true})
 	if err != nil || s.StashedLastSync {
-		t.Fatalf("--discard-remote: %+v %v", s, err)
+		t.Fatalf("--discard-machine: %+v %v", s, err)
 	}
 	after := mustRun(t, f.guestRepo(), "git", "stash", "list", "--format=%gs")
-	if first, _, _ := strings.Cut(after, "\n"); !strings.Contains(first, "repose sync --discard-remote") || strings.TrimPrefix(after, first+"\n") != stashes {
-		t.Errorf("--discard-remote: stash list %q, before %q", after, stashes)
+	if first, _, _ := strings.Cut(after, "\n"); !strings.Contains(first, "repose sync --discard-machine") || strings.TrimPrefix(after, first+"\n") != stashes {
+		t.Errorf("--discard-machine: stash list %q, before %q", after, stashes)
 	}
 }
 
 // The last-sync stashes are capped at the newest ten; the user's own
-// stashes (and --stash-remote's "repose run") are never dropped.
+// stashes (and --stash-machine's "repose run") are never dropped.
 func TestSyncedStashesAreCapped(t *testing.T) {
 	f := newSyncFixture(t)
 	ctx := context.Background()

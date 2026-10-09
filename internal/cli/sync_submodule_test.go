@@ -126,15 +126,15 @@ func TestSyncCarriesSubmodules(t *testing.T) {
 	if got := readFile(t, filepath.Join(gsub, "staged.txt")); got != "the agent's\n" {
 		t.Fatalf("the agent's edit was lost: %q", got)
 	}
-	// --stash-remote puts it in the submodule's stash and syncs.
+	// --stash-machine puts it in the submodule's stash and syncs.
 	if _, err := syncGuest(ctx, f.target, f.local, testSlug, SyncOptions{StashRemote: true}); err != nil {
-		t.Fatalf("--stash-remote: %v", err)
+		t.Fatalf("--stash-machine: %v", err)
 	}
 	if got := mustRun(t, gsub, "git", "stash", "list"); got == "" {
-		t.Fatal("no stash in the guest's submodule after --stash-remote")
+		t.Fatal("no stash in the guest's submodule after --stash-machine")
 	}
 	if got := readFile(t, filepath.Join(gsub, "s")); got != "sub v6\n" {
-		t.Fatalf("lib/s after --stash-remote = %q", got)
+		t.Fatalf("lib/s after --stash-machine = %q", got)
 	}
 }
 

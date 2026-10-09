@@ -134,6 +134,21 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	}
 }
 
+// An empty answer under --since names the window, not "has no
+// operations" for a project that has some (I-633).
+func TestEmptyLogsLineNamesTheWindow(t *testing.T) {
+	for _, c := range []struct{ kind, since, want string }{
+		{"ops", "", "todo-app has no operations."},
+		{"ops", "1s", "No operations on todo-app in the last 1s."},
+		{"build", "2026-10-01", "No build log on todo-app since 2026-10-01."},
+		{"console", "1h", "No console output on todo-app in the last 1h: repose keeps a machine's console only from a boot that failed."},
+	} {
+		if got := emptyLogsLine("todo-app", c.kind, c.since); got != c.want {
+			t.Errorf("%s %q: %q, want %q", c.kind, c.since, got, c.want)
+		}
+	}
+}
+
 // I-589: a running project whose switch was refused because a nix GC
 // inside it hid the new system says so in ls and status until a start
 // repairs it; any other running project's last_error stays out.

@@ -87,9 +87,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 	} else {
 		if !opts.Sync && (opts.StashRemote || opts.DiscardRemote) {
-			flag := "--stash-remote"
+			flag := "--stash-machine"
 			if opts.DiscardRemote {
-				flag = "--discard-remote"
+				flag = "--discard-machine"
 			}
 			return exitf(ExitUsage, "`repose run` no longer syncs a machine that already has your checkout; `repose sync %s` does.", flag)
 		}
@@ -201,6 +201,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// has used it, so the directory does not keep it (the next plain run
 	// would land on it unasked) and one line says it exists (I-575).
 	var made *Project
+	created := false // this run made the machine, so its sync copies the checkout
 	defer func() {
 		if made != nil && retErr != nil && ctx.Err() != nil {
 			retErr = interruptedCreate(e, made)
@@ -216,6 +217,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return err
 		}
 		made = project
+		created = true
 	}
 
 	endEnsure := timeSpan("phase ensure-running")
@@ -358,7 +360,13 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if repoRoot == "" {
 			repoRoot = e.Cwd
 		}
-		pr.Phase("Syncing", "")
+		// After the first sync `run` only copies logins and the carry
+		// (I-367), and a phase called Syncing then was false (I-633).
+		if opts.Sync || created {
+			pr.Phase("Syncing", "")
+		} else {
+			pr.Phase("Copying logins", "")
+		}
 		endSync := timeSpan("phase sync")
 		skip, chosen := e.loginSkip(project.Slug)
 		// Tool logins, the git identity and the carry run first in the
@@ -482,6 +490,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// The machine has its checkout now: point this checkout's `repose`
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
+	if !skipSync && !opts.NoSync && !homeRun && target.Checkout == "" && checkout != nil {
+		e.addSecondMachineRemote(project, *checkout)
+	}
 	// The checkout's repose.nix is the machine's configuration (I-489).
 	if !skipSync && !opts.NoSync && !homeRun {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
@@ -519,7 +530,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			if wt.Dirty {
 				_, _ = fmt.Fprintf(e.ErrOut, "The worktree starts at the last commit; the uncommitted changes in %s are not in it.\n", tildePath(wt.Checkout))
 			}
-			pr.Phase("Starting "+agent, "")
+			pr.Resume("Starting "+agent, "")
 		} else {
 			n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
 			if err != nil {
@@ -529,7 +540,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			if othersOpen {
 				pr.Fail()
 				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent, mux.Unit())
-				pr.Phase("Starting "+agent, "")
+				pr.Resume("Starting "+agent, "")
 			}
 		}
 		window = name
@@ -994,7 +1005,7 @@ func attachColour(colorterm string) string {
 // "<checkout>/...") used last, else a new shell window "<checkout>"
 // there. A checkout the machine does not have is refused, exit 2.
 func attachCommand(slug, extra, window string) string {
-	co := checkoutVar(slug, extra)
+	co := checkoutVar(slug, extra) + attachTTYGuard
 	if window == "" && extra != "" {
 		missing := noCheckoutMsg(slug, extra)
 		return co + fmt.Sprintf(`[ -d "$repose_co" ] || { printf '%%s\n' %[3]s >&2; exit 2; }
@@ -1018,8 +1029,16 @@ func attachNamedCommand(slug, extra, window string) string {
 	target := shQuote(tmuxWindowTarget(slug, window))
 	missing := fmt.Sprintf("%s has no window %s. `repose ps %s` lists them.", slug, window, slug)
 	return checkoutVar(slug, extra) + fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || { printf '%%s\n' %[2]s >&2; exit 2; }
-exec tmux attach -t %[1]s -c "$repose_co"`, target, shQuote(missing))
+`+attachTTYGuard+`exec tmux attach -t %[1]s -c "$repose_co"`, target, shQuote(missing))
 }
+
+// attachTTYGuard ends an attach that has no terminal before tmux sees
+// it: `tmux attach -t session:window` makes the window the session's
+// current one before it finds there is no terminal, so `attach -w
+// claude-2 </dev/null` failed and still moved the next plain attach
+// onto claude-2 (I-633).
+const attachTTYGuard = `[ -t 0 ] || { echo 'Attaching needs a terminal, and this command has none.' >&2; exit 1; }
+`
 
 // waitForSSH is step 4: `ssh <target> true` until it answers, for up to
 // sshWaitTimeout. onRefused is offered each ssh failure and returns true

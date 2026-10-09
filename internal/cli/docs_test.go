@@ -63,8 +63,13 @@ var undocumentedFlags = map[string]string{
 	"repose config show --revisions":     "old name of repose config revisions",
 	// Moved to `repose sync` (I-367): hidden on run for a release, and
 	// they only print where they went.
-	"repose run --stash-remote":   "moved to repose sync --stash-remote",
-	"repose run --discard-remote": "moved to repose sync --discard-remote",
+	"repose run --stash-machine":   "moved to repose sync --stash-machine",
+	"repose run --discard-machine": "moved to repose sync --discard-machine",
+	"repose run --stash-remote":    "old name, moved to repose sync --stash-machine",
+	"repose run --discard-remote":  "old name, moved to repose sync --discard-machine",
+	// The names before I-633, hidden for a release.
+	"repose sync --stash-remote":   "old name of --stash-machine",
+	"repose sync --discard-remote": "old name of --discard-machine",
 	// PROJECT's old spelling (I-603): hidden for a release.
 	"repose run --name":  "old spelling of repose run PROJECT",
 	"repose sync --name": "old spelling of repose sync PROJECT",

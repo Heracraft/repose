@@ -98,7 +98,7 @@ You edited `README.md` on your laptop while the agent was editing it on the mach
 ```text
 Not synced: the machine changed 1 file that your laptop changed too:
   README.md
-`repose sync --stash-remote` moves the machine's changes to its git
+`repose sync --stash-machine` moves the machine's changes to its git
 stash first.
 ```
 

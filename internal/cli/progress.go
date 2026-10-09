@@ -70,7 +70,15 @@ func isatty(f *os.File) bool {
 // Phase ends the current phase (printing its done line) and starts label.
 // done is what the ✓ line says when this phase ends ("" for a phase whose
 // result the caller prints itself).
-func (p *progress) Phase(label, done string) {
+func (p *progress) Phase(label, done string) { p.phase(label, done, true) }
+
+// Resume starts label again after a line printed between its parts (run's
+// `Worktree:` line inside "Starting claude"): on a terminal the spinner
+// comes back; off one the start line printed once already, so a log does
+// not read as two starts (I-633).
+func (p *progress) Resume(label, done string) { p.phase(label, done, false) }
+
+func (p *progress) phase(label, done string, announce bool) {
 	if p == nil {
 		return
 	}
@@ -86,7 +94,9 @@ func (p *progress) Phase(label, done string) {
 	p.mu.Lock()
 	p.label, p.done, p.phaseStart = label, done, p.now()
 	if !p.tty {
-		_, _ = fmt.Fprintf(p.w, "%s...\n", label)
+		if announce {
+			_, _ = fmt.Fprintf(p.w, "%s...\n", label)
+		}
 		if p.heartbeat <= 0 {
 			p.mu.Unlock()
 			return

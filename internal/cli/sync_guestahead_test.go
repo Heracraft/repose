@@ -67,14 +67,14 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 		t.Fatalf("stashed: %q", list)
 	}
 
-	// --stash-remote still syncs over them, keeping them in the stash.
+	// --stash-machine still syncs over them, keeping them in the stash.
 	if s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{StashRemote: true}); err != nil || s.GuestAhead {
-		t.Fatalf("--stash-remote: %+v %v", s, err)
+		t.Fatalf("--stash-machine: %+v %v", s, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "laptop\n" {
-		t.Fatalf("README.md after --stash-remote = %q", b)
+		t.Fatalf("README.md after --stash-machine = %q", b)
 	}
-	if list := mustRun(t, f.guestRepo(), "git", "stash", "list"); !strings.Contains(list, "repose sync --stash-remote") {
+	if list := mustRun(t, f.guestRepo(), "git", "stash", "list"); !strings.Contains(list, "repose sync --stash-machine") {
 		t.Fatalf("stash list = %q", list)
 	}
 }
@@ -134,7 +134,7 @@ func TestSyncRefusalNamesOnlyTheOverlap(t *testing.T) {
 	want := "Not synced: the machine changed 10 files that your laptop changed too:\n" +
 		"  agent00.txt\n  agent01.txt\n  agent02.txt\n  agent03.txt\n  agent04.txt\n  agent05.txt\n  agent06.txt\n  agent07.txt\n" +
 		"  and 2 more\n" +
-		"`repose sync --stash-remote` moves the machine's changes to its git stash first."
+		"`repose sync --stash-machine` moves the machine's changes to its git stash first."
 	if msg != want {
 		t.Fatalf("message:\n%s\nwant:\n%s", msg, want)
 	}

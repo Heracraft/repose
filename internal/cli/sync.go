@@ -94,7 +94,7 @@ type SyncSummary struct {
 	// and nothing else, and they were stashed ("repose run: last sync")
 	// before this sync's were laid down (I-210).
 	StashedLastSync bool
-	// StashedFiles and StashRef: --stash-remote or --discard-remote moved
+	// StashedFiles and StashRef: --stash-machine or --discard-machine moved
 	// the machine's changes to that many files to its git stash, as the
 	// stash commit StashRef (DECISIONS I-618).
 	StashedFiles int
@@ -265,7 +265,7 @@ func (e *dirtyTreeError) Error() string {
 		}
 		_, _ = fmt.Fprintf(&b, "  %s\n", f)
 	}
-	b.WriteString("`repose sync --stash-remote` moves the machine's changes to its git stash first.")
+	b.WriteString("`repose sync --stash-machine` moves the machine's changes to its git stash first.")
 	return b.String()
 }
 
@@ -1139,7 +1139,7 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 	// A merge, rebase, cherry-pick, revert, am or bisect of the guest's
 	// own in progress: nothing the sync does can keep it (a stash cannot
 	// hold one), so the apply refuses before anything is touched, unless
-	// --discard-remote asked for the guest's state to go (I-573).
+	// --discard-machine asked for the guest's state to go (I-573).
 	if opts.DiscardRemote {
 		b.WriteString("repose_wasbusy=; if repose_busy >/dev/null; then repose_wasbusy=yes; fi\n")
 	} else {
@@ -1262,11 +1262,11 @@ fi
 	return b.String()
 }
 
-// stashRemoteMsg and stashDiscardMsg name the stash --stash-remote and
-// --discard-remote make of the machine's changes (DECISIONS I-618).
+// stashRemoteMsg and stashDiscardMsg name the stash --stash-machine and
+// --discard-machine make of the machine's changes (DECISIONS I-618).
 const (
-	stashRemoteMsg  = "repose sync --stash-remote"
-	stashDiscardMsg = "repose sync --discard-remote"
+	stashRemoteMsg  = "repose sync --stash-machine"
+	stashDiscardMsg = "repose sync --discard-machine"
 )
 
 // stashAllScript stashes every change in the checkout, untracked files
@@ -1314,9 +1314,9 @@ func busyError(stderr string, opts SyncOptions) error {
 	}
 	stash := ""
 	if opts.StashRemote {
-		stash = ", which `--stash-remote` can't keep"
+		stash = ", which `--stash-machine` can't keep"
 	}
-	return exitf(ExitDirtyRemoteTree, "Not synced: the machine's checkout is in the middle of a %s%s. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash.", state, stash)
+	return exitf(ExitDirtyRemoteTree, "Not synced: the machine's checkout is in the middle of a %s%s. Finish or abort it there, or run `repose sync --discard-machine` to end it and move the machine's changes to its git stash.", state, stash)
 }
 
 // syncOverlap is the apply's stderr when the guest changed paths this
@@ -1341,7 +1341,7 @@ func overlapFiles(stderr string) []string {
 // repose_busy prints the git operation in progress in the checkout
 // (merge, rebase, am, cherry-pick, revert, bisect) and fails when there
 // is none; repose_unbusy ends any of them where HEAD is, for
-// --discard-remote. repose_with_ident runs a command with the identity
+// --discard-machine. repose_with_ident runs a command with the identity
 // in $t/ident (the laptop's user.name and user.email) as its author and
 // committer. repose_guestcount prints how many of the checkout's changed
 // files (every untracked file on its own) are not the last sync's own,
@@ -1504,7 +1504,7 @@ const syncStashKeep = 10
 // newest syncStashKeep, oldest first so the indices of the ones still to
 // drop do not move. It matches the whole subject git records for
 // `stash push -m` ("On <branch>: <message>", a branch name has no colon),
-// so the user's stashes and --stash-remote's and --discard-remote's are never
+// so the user's stashes and --stash-machine's and --discard-machine's are never
 // touched. Each is dropped only while its index still names the commit
 // listed: a stash an agent pushes meanwhile shifts every index, and then
 // nothing more is dropped this time.

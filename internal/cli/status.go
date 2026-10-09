@@ -95,13 +95,22 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	if len(projects) == 0 {
+		// Whose list was empty: an empty list on the wrong account or
+		// server read as a lost project (review 8.5, I-633).
+		whose := ""
+		if me, err := e.Client.GetMe(ctx); err == nil && me.Handle != "" {
+			whose = " for " + me.Handle
+		}
+		if e.Cfg.APIURL != "" && e.Cfg.APIURL != defaultAPIURL {
+			whose += " on " + hostOf(e.Cfg.APIURL)
+		}
 		// A destroyed project can still come back; "yet" said otherwise
 		// (DECISIONS I-615).
 		if gone, err := e.Client.ListDestroyed(ctx); err == nil && len(gone) > 0 {
-			_, _ = fmt.Fprintf(e.Out, "No projects. %s destroyed in the last 30 days can be restored.\n", countDestroyed(gone))
+			_, _ = fmt.Fprintf(e.Out, "No projects%s. %s destroyed in the last 30 days can be restored.\n", whose, countDestroyed(gone))
 			return nil
 		}
-		_, _ = fmt.Fprintln(e.Out, "No projects yet.")
+		_, _ = fmt.Fprintf(e.Out, "No projects yet%s.\n", whose)
 		return nil
 	}
 	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects))
@@ -235,7 +244,7 @@ func planWarningsAfter(b *Billing, figures bool) []string {
 		}
 	}
 	if b.Subscription.Status == "past_due" {
-		out = append(out, "payment failed: starting a machine is refused, and running machines stop on the third day; update your card at https://repose.herakraft.co/billing")
+		out = append(out, "payment failed: starting a machine is refused, and running machines stop on the third day; update your card at "+billingURL)
 	}
 	return out
 }
@@ -488,9 +497,18 @@ func snapshotCell(p *Project, snaps []Snapshot) string {
 // with neither, the volume's size alone. The api's disk_used_bytes is not
 // shown: it counts the volume's allocated blocks, which a deleted file
 // keeps until the guest's daily fstrim (I-567, I-585).
+//
+// With the volume's size known it follows in parentheses, as `resize`
+// prints it: "1.0 GB of 78.0 GB (80G disk)". The filesystem keeps part
+// of the volume for itself, so `resize 80G` then a status of 78.0 GB
+// read as two answers (review 5.7, I-633).
 func statusDisk(p *Project, gd guestDisk) string {
 	if gd.Size > 0 {
-		return fmt.Sprintf("%s of %s", humanBytes(gd.Used), humanBytes(gd.Size))
+		s := fmt.Sprintf("%s of %s", humanBytes(gd.Used), humanBytes(gd.Size))
+		if p.VolumeBytes > 0 {
+			s += fmt.Sprintf(" (%s disk)", diskSize(p.VolumeBytes))
+		}
+		return s
 	}
 	if p.VolumeBytes > 0 {
 		return humanBytes(p.VolumeBytes)

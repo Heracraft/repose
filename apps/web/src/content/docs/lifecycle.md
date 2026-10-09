@@ -146,13 +146,13 @@ It gets your checkout, with its whole history and uncommitted work, like any fir
 
 `repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine: the CLI compares the remotes, or, when either side has none, whether the two share a commit.
 
-The second machine has no git remote of its own, and your checkout's `repose` remote stays pointed at the original. To bring its work back, add a remote for it:
+Your checkout's `repose` remote stays pointed at the original, and the run adds a remote named after the second machine, so its work comes back with:
 
 ```
-git remote add experiment \
-  todo-app-experiment.repose:~/todo-app
-git fetch experiment
+git fetch todo-app-experiment
 ```
+
+`repose rm todo-app-experiment` removes that remote; branches you fetched from it stay.
 
 In a folder with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the folder, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later plain `repose run` in that folder uses the machine last made there, and says which: `Using boxd, the machine last made in this folder.` A folder that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every folder that used the machine.
 

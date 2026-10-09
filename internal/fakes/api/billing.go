@@ -73,6 +73,32 @@ const ProjectCap = 100
 // (docs/interfaces/README.md).
 var classGB = map[string]int{"small": 4, "large": 8, "xl": 16}
 
+// planLimitMessage is billing.PlanLimitMessage's sentence, word for word
+// (TestPlanLimitMessageIsTheGates holds them equal): the CLI rewrites the
+// one-machine form to name `repose stop`, so a fake that said it another
+// way hid that from every test against it.
+func planLimitMessage(plan PlanDef, class string, slugs []string) string {
+	const url = "https://repose.herakraft.co/billing"
+	if need := classGB[class]; need > plan.MemoryGB {
+		smallest := Plans[len(Plans)-1]
+		for _, p := range Plans {
+			if p.MemoryGB >= need {
+				smallest = p
+				break
+			}
+		}
+		return fmt.Sprintf("Your %s plan runs %d GB at once and an %s machine needs %d GB. Upgrade to %s at %s.", plan.Name, plan.MemoryGB, class, need, smallest.Name, url)
+	}
+	switch len(slugs) {
+	case 0:
+		return fmt.Sprintf("Your %s plan runs %d GB at once. Upgrade at %s.", plan.Name, plan.MemoryGB, url)
+	case 1:
+		return fmt.Sprintf("Your %s plan runs %d GB at once and %s is using it. Stop it, or upgrade at %s.", plan.Name, plan.MemoryGB, slugs[0], url)
+	}
+	and := strings.Join(slugs[:len(slugs)-1], ", ") + " and " + slugs[len(slugs)-1]
+	return fmt.Sprintf("Your %s plan runs %d GB at once and %s are using it. Stop one, or upgrade at %s.", plan.Name, plan.MemoryGB, and, url)
+}
+
 // overageCentsPerGB is the egress price past the allowance.
 const overageCentsPerGB = 5
 
@@ -584,12 +610,7 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 		used := f.runningGB(u, exclude)
 		if used+classGB[class] > plan.MemoryGB {
 			slugs := f.runningSlugs(u, exclude)
-			using := "nothing else is running"
-			if len(slugs) > 0 {
-				using = strings.Join(slugs, ", ") + " " + pluralIs(len(slugs)) + " using it"
-			}
-			return errf("payment_required", "A %s (%d GB) would pass the %d GB of memory %s gives running machines; %s. Stop one or upgrade.",
-				class, classGB[class], plan.MemoryGB, plan.Name, using).
+			return errf("payment_required", "%s", planLimitMessage(*plan, class, slugs)).
 				withDetail(map[string]any{"reason": "plan_limit", "plan": plan.ID, "limit_gb": plan.MemoryGB, "used_gb": used, "projects": slugs})
 		}
 	}
@@ -613,13 +634,6 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 		}
 	}
 	return nil
-}
-
-func pluralIs(n int) string {
-	if n == 1 {
-		return "is"
-	}
-	return "are"
 }
 
 // Views.

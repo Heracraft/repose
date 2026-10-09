@@ -245,6 +245,22 @@ func TestProgressOffTerminal(t *testing.T) {
 	}
 }
 
+// A phase resumed after a line printed inside it (run's Worktree: line)
+// prints its start once off a terminal (I-633).
+func TestProgressResumeOffTerminal(t *testing.T) {
+	var buf safeBuffer
+	p := newProgress(&buf, false)
+	p.heartbeat = 0
+	p.Phase("Starting claude", "")
+	p.End()
+	_, _ = buf.Write([]byte("Worktree: ~/todo-app-worktree-1 on branch worktree-1\n"))
+	p.Resume("Starting claude", "")
+	p.End()
+	if got := buf.String(); got != "Starting claude...\nWorktree: ~/todo-app-worktree-1 on branch worktree-1\n" {
+		t.Fatalf("%q", got)
+	}
+}
+
 // questions -q prints the ids; --json carries the terminal waits as kind
 // "terminal" beside the questions (kind "question").
 func TestQuestionsQuietAndTerminalJSON(t *testing.T) {

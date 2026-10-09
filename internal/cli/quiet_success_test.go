@@ -49,6 +49,7 @@ var quietAllowed = map[string]string{
 	"fork.go:ForkCmd:`repose fork %s --no-start` creates the ":                    "a refusal: exit 7, the plan's memory, before the snapshot (I-610)",
 	"fork.go:ForkCmd:`repose fork %s -n %d --no-start` create":                    "a refusal: exit 7, the plan's memory, before the snapshot (I-610)",
 	"payment.go:namePlanFix: is using it. `repose stop ":                          "a refusal: exit 7, the gate's plan_limit (I-610)",
+	"payment.go:namePlanFix: are using it. `repose stop ":                         "a refusal: exit 7, the gate's plan_limit for several machines (I-633)",
 	"resize_class.go:fixOr:`repose stop %s` frees it":                             "a refusal: exit 7, the plan's memory (I-610)",
 	"run.go:runArgs:The prompt goes after -p: `repose run -p":                     "prevents a loss: the old prompt form stops working next release (I-603)",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",

@@ -431,3 +431,13 @@ func TestSyncCredentialsGhHelpers(t *testing.T) {
 		}
 	}
 }
+
+// A row's note is its one parenthetical: the mcp row read "MCP servers
+// (tokens stay on the laptop) (none on this laptop)" (I-633).
+func TestLoginRowsHaveOneParenthetical(t *testing.T) {
+	for _, it := range loginItems() {
+		if strings.ContainsAny(it.What, "()") {
+			t.Errorf("%s: %q has its own parentheses, and the found note adds one", it.Name, it.What)
+		}
+	}
+}

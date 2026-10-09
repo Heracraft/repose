@@ -62,7 +62,7 @@ func LogsCmd(ctx context.Context, e *Env, projectArg, kind, since string, tail i
 			if printed == 0 && !e.JSON {
 				// Nothing printed and exit 0 read as a command that did
 				// nothing (2026-10-07): say whose logs were empty.
-				_, _ = fmt.Fprintln(e.ErrOut, emptyLogsLine(project.Slug, kind))
+				_, _ = fmt.Fprintln(e.ErrOut, emptyLogsLine(project.Slug, kind, since))
 			}
 			return nil
 		}
@@ -93,9 +93,22 @@ func writeLogJSON(w io.Writer, l LogLine) error {
 	return err
 }
 
-// emptyLogsLine says which project's logs of that kind were empty. The
+// emptyLogsLine says which project's logs of that kind were empty, and
+// in what window when --since gave one: "todo-app has no operations" was
+// false of a project with four, none in the last second (I-633). The
 // console holds only boots that failed (DECISIONS I-592).
-func emptyLogsLine(slug, kind string) string {
+func emptyLogsLine(slug, kind, since string) string {
+	if since = strings.TrimSpace(since); since != "" {
+		window := sinceWindow(since)
+		switch kind {
+		case "build":
+			return fmt.Sprintf("No build log on %s %s.", slug, window)
+		case "ops":
+			return fmt.Sprintf("No operations on %s %s.", slug, window)
+		default:
+			return fmt.Sprintf("No console output on %s %s: repose keeps a machine's console only from a boot that failed.", slug, window)
+		}
+	}
 	switch kind {
 	case "build":
 		return fmt.Sprintf("%s has no build log.", slug)
@@ -104,6 +117,15 @@ func emptyLogsLine(slug, kind string) string {
 	default:
 		return fmt.Sprintf("%s has no console output: repose keeps a machine's console only from a boot that failed.", slug)
 	}
+}
+
+// sinceWindow is --since as the end of a sentence: "in the last 1h" for
+// a duration, "since 2026-10-09T10:00:00Z" for a time.
+func sinceWindow(since string) string {
+	if _, ok := sinceDuration(since); ok {
+		return "in the last " + since
+	}
+	return "since " + since
 }
 
 // logLineText is one line of `repose logs`: time, kind, text. An api
@@ -349,10 +371,7 @@ func eventsProjects(ctx context.Context, e *Env, projectArg string) ([]Project, 
 // emptyEventsLine says which projects had no events, and since when, so
 // an empty answer does not read as a command that did nothing.
 func emptyEventsLine(projects []Project, all bool, since string) string {
-	window := "since " + strings.TrimSpace(since)
-	if _, ok := sinceDuration(strings.TrimSpace(since)); ok {
-		window = "in the last " + strings.TrimSpace(since)
-	}
+	window := sinceWindow(strings.TrimSpace(since))
 	if strings.TrimSpace(since) == "" {
 		window = "kept"
 	}

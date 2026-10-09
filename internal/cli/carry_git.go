@@ -30,8 +30,13 @@ type gitEntry struct {
 // readGitConfig is `git config --global --list --includes -z` run in the
 // checkout, so an `includeIf "gitdir:..."` that matches it is flattened
 // in (a work email picked by the directory is the email in the guest).
-// No global config at all is an empty list, not an error.
+// No global config at all is an empty list, not an error: git 2.55 says
+// so with exit 128 and "unable to read config file", where older ones
+// exited 1, so the files are looked for first (I-633).
 func readGitConfig(repoDir string) ([]gitEntry, error) {
+	if !globalGitConfigExists() {
+		return nil, nil
+	}
 	cmd := exec.Command("git", "config", "--global", "--list", "--includes", "-z")
 	cmd.Dir = repoDir
 	var out, stderr bytes.Buffer
@@ -40,9 +45,28 @@ func readGitConfig(repoDir string) ([]gitEntry, error) {
 		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 && out.Len() == 0 {
 			return nil, nil // no global file
 		}
+		if out.Len() == 0 && strings.Contains(stderr.String(), "No such file or directory") {
+			return nil, nil // the file went between the look and the read
+		}
 		return nil, fmt.Errorf("git config: %s", strings.TrimSpace(stderr.String()))
 	}
 	return parseGitConfigZ(out.Bytes()), nil
+}
+
+// globalGitConfigExists is whether `git config --global` has a file to
+// read: $GIT_CONFIG_GLOBAL when set, else ~/.gitconfig or
+// $XDG_CONFIG_HOME/git/config (~/.config/git/config without it).
+func globalGitConfigExists() bool {
+	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
+	if p := os.Getenv("GIT_CONFIG_GLOBAL"); p != "" {
+		return exists(p)
+	}
+	home, _ := os.UserHomeDir()
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" && home != "" {
+		xdg = filepath.Join(home, ".config")
+	}
+	return (home != "" && exists(filepath.Join(home, ".gitconfig"))) || (xdg != "" && exists(filepath.Join(xdg, "git", "config")))
 }
 
 // parseGitConfigZ splits -z output: NUL-terminated records of the key,

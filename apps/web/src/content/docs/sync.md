@@ -103,11 +103,11 @@ Not synced: the machine changed 2 files that your laptop changed
 too:
   src/session.ts
   notes.md
-`repose sync --stash-remote` moves the machine's changes to its git
+`repose sync --stash-machine` moves the machine's changes to its git
 stash first.
 ```
 
-`--stash-remote` moves all of the machine's uncommitted changes, untracked files included, to `git stash` there, named `repose sync --stash-remote`, and the summary says how many files went and the stash commit:
+`--stash-machine` moves all of the machine's uncommitted changes, untracked files included, to `git stash` there, named `repose sync --stash-machine`, and the summary says how many files went and the stash commit:
 
 ```text
 Synced: 1 modified, 0 untracked; stashed the machine's changes to 3
@@ -122,11 +122,11 @@ If the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect 
 
 ```text
 Not synced: the machine's checkout is in the middle of a git rebase.
-Finish or abort it there, or run `repose sync --discard-remote` to end
+Finish or abort it there, or run `repose sync --discard-machine` to end
 it and move the machine's changes to its git stash.
 ```
 
-`--stash-remote` stops there too: a stash can't hold a merge or rebase in progress. `--discard-remote` ends the operation where it stands, then stashes as `--stash-remote` does, under the name `repose sync --discard-remote`. Commits a rebase had made stay in the machine's `git reflog`.
+`--stash-machine` stops there too: a stash can't hold a merge or rebase in progress. `--discard-machine` ends the operation where it stands, then stashes as `--stash-machine` does, under the name `repose sync --discard-machine`. Commits a rebase had made stay in the machine's `git reflog`.
 
 Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
 

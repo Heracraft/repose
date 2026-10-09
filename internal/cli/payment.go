@@ -24,7 +24,7 @@ func paymentRequiredMessage(e *APIError) string {
 			return e.Message
 		}
 	}
-	return "Choose a plan at https://repose.herakraft.co/billing first."
+	return "Choose a plan at " + billingURL + " first."
 }
 
 // projectLimitMessage is what every command prints when a create,
@@ -61,18 +61,27 @@ func projectLimitOf(e *APIError) (have, limit, requested int, ok bool) {
 	return int(p), int(l), requested, true
 }
 
-// namePlanFix puts the command into the gate's plan_limit sentence when
-// one machine is using the memory: "todo-app is using it. `repose stop
-// todo-app` frees it, or upgrade at ..." in place of "Stop it, or
-// upgrade" (I-610). Any other wording is printed as the api sent it.
+// namePlanFix puts the command into the gate's plan_limit sentence:
+// "todo-app is using it. `repose stop todo-app` frees it, or upgrade at
+// ..." in place of "Stop it, or upgrade", and for several machines "api
+// and web are using it. `repose stop api web` frees it, or upgrade at
+// ..." in place of "Stop one, or upgrade" (I-610, I-633). Any other
+// wording is printed as the api sent it.
 func namePlanFix(e *APIError) string {
 	ps, _ := e.Detail["projects"].([]any)
-	if len(ps) != 1 {
-		return e.Message
+	slugs := make([]string, 0, len(ps))
+	for _, p := range ps {
+		s, _ := p.(string)
+		if s == "" {
+			return e.Message
+		}
+		slugs = append(slugs, s)
 	}
-	slug, _ := ps[0].(string)
-	if slug == "" {
+	switch len(slugs) {
+	case 0:
 		return e.Message
+	case 1:
+		return strings.Replace(e.Message, slugs[0]+" is using it. Stop it, or upgrade", slugs[0]+" is using it. `repose stop "+slugs[0]+"` frees it, or upgrade", 1)
 	}
-	return strings.Replace(e.Message, slug+" is using it. Stop it, or upgrade", slug+" is using it. `repose stop "+slug+"` frees it, or upgrade", 1)
+	return strings.Replace(e.Message, " are using it. Stop one, or upgrade", " are using it. `repose stop "+strings.Join(slugs, " ")+"` frees it, or upgrade", 1)
 }

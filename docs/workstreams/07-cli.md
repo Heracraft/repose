@@ -89,7 +89,7 @@ repose run [PROJECT] [-p PROMPT] [--agent claude|opencode|codex|gemini|pi] [--si
             [--temp [DURATION]] [--no-sync] [--no-attach] [--worktree]
             # --name NAME: hidden, PROJECT's old spelling (I-603); words that are not
             # one project name are the prompt for one release, with a line on stderr
-            # --stash-remote, --discard-remote: hidden, exit 2 naming `repose sync` (I-367)
+            # --stash-machine, --discard-machine: hidden, exit 2 naming `repose sync` (I-367)
 repose attach [PROJECT]
 repose start [PROJECT]
 repose stop [PROJECT] [--no-snapshot]
@@ -348,8 +348,8 @@ $ repose run
       only when the guest changed a path the sync writes (DECISIONS
       I-573).
 
-      `--stash-remote` runs `git stash push -u -m "repose sync
-      --stash-remote"`, `--discard-remote` ends a git operation in progress
+      `--stash-machine` runs `git stash push -u -m "repose sync
+      --stash-machine"`, `--discard-machine` ends a git operation in progress
       and stashes the same way under its own name before `git reset --hard
       && git clean -fd` (DECISIONS I-618); both run at the start of step
       d's script. A non-empty status whose
@@ -384,9 +384,9 @@ $ repose run
       (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
       commits since the merge base leave `paths` alone, a committer
       identity, the laptop's from the tar's `ident`); before that,
-      without `--discard-remote`, a merge, rebase, am, cherry-pick,
+      without `--discard-machine`, a merge, rebase, am, cherry-pick,
       revert or bisect in progress in the guest exits 3 (I-573; the CLI
-      exits 6 naming it); without `--stash-remote` or `--discard-remote`, the
+      exits 6 naming it); without `--stash-machine` or `--discard-machine`, the
       overlap check of `features/sync-at-launch.md` (I-573: the guest's
       dirty and untracked files against `paths` plus what the checkout to
       `H` or the merge tree changes; any overlap exits 3 naming them,
@@ -776,8 +776,8 @@ removes all of them including the `Include` line.
       2026-09-20 "m2 e2e from the dev box" progress and done lines (`ssh
       <slug>.repose` from a plain terminal after one run, I-108); predates
       I-149's own key, whose laptop re-run is the I-149 row below
-- [ ] Sync: dirty remote refused with exit 6; `--stash-remote` stashes and
-      the stash is listed; `--discard-remote` discards; a commit not on
+- [ ] Sync: dirty remote refused with exit 6; `--stash-machine` stashes and
+      the stash is listed; `--discard-machine` discards; a commit not on
       origin arrives in the guest without a push or a prompt (I-150); an
       empty guest checkout gets the whole history; a diverged guest branch
       is left alone; untracked files respecting gitignore arrive; binary

@@ -70,12 +70,32 @@ func TestBareGroupsRunTheirListing(t *testing.T) {
 			t.Errorf("repose %s: runs %q, want %q", group, c.Annotations[bareRunsKey], sub)
 		}
 	}
-	msg := unknownCommand(newRootCmd("dev"), []string{"secrets", "lsit"})
+	msg := unknownCommand(newRootCmd("dev"), []string{"secrets", "lsit"}, nil)
 	if !strings.Contains(msg, `unknown command "lsit"`) || !strings.Contains(msg, "repose secrets list") {
 		t.Errorf("repose secrets lsit: %q", msg)
 	}
+	// A word that is one of the user's projects gets the subcommand that
+	// takes it (I-633); a typo of a subcommand is still a typo, project
+	// or not, and the lookup is not asked for it.
+	isProject := func(w string) bool { return w == "todo-app" }
+	for _, c := range []struct{ args, want string }{
+		{"snapshots todo-app", "todo-app is a project: `repose snapshots list todo-app`."},
+		{"config todo-app", "todo-app is a project: `repose config show todo-app`."},
+		{"mcp todo-app", "todo-app is a project: `repose mcp list todo-app`."},
+		{"secrets todo-app", "todo-app is a project: `repose secrets list todo-app`."},
+	} {
+		if got := unknownCommand(newRootCmd("dev"), strings.Fields(c.args), isProject); got != c.want {
+			t.Errorf("repose %s: %q, want %q", c.args, got, c.want)
+		}
+	}
+	if got := unknownCommand(newRootCmd("dev"), []string{"snapshots", "lsit"}, func(string) bool { t.Error("asked about a typo"); return true }); !strings.Contains(got, `unknown command "lsit"`) {
+		t.Errorf("repose snapshots lsit: %q", got)
+	}
+	if got := unknownCommand(newRootCmd("dev"), []string{"snapshots", "other"}, isProject); !strings.Contains(got, `unknown command "other"`) {
+		t.Errorf("repose snapshots other: %q", got)
+	}
 	// browser takes [PROJECT], so a word after it is a project.
-	if msg := unknownCommand(newRootCmd("dev"), []string{"browser", "todo-app"}); msg != "" {
+	if msg := unknownCommand(newRootCmd("dev"), []string{"browser", "todo-app"}, nil); msg != "" {
 		t.Errorf("repose browser todo-app: %q", msg)
 	}
 	// Each rm answers to remove.
@@ -281,6 +301,11 @@ func TestSecretsLinesNameTheProject(t *testing.T) {
 	want := "Set STRIPE_KEY on todo-app; the machine gets it at its next start.\nRemoved STRIPE_KEY from todo-app.\n"
 	if got := out.buf.String(); got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+	// One it does not have reads as mcp rm's line, exit 1 (I-633).
+	err := SecretsRmCmd(ctx, e, "", "STRIPE_KEY")
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != "todo-app has no secret STRIPE_KEY." {
+		t.Fatalf("second rm: %v", err)
 	}
 }
 

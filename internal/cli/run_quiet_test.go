@@ -55,3 +55,35 @@ func TestLaptopAheadLineNamesTheProject(t *testing.T) {
 		t.Errorf("named: %q", got)
 	}
 }
+
+// A run into a machine that has the checkout syncs nothing (I-367), so
+// its phase is named for what it does: Syncing only on the run that
+// creates the machine, and on `repose sync` (I-633).
+func TestRunNamesItsPhaseForWhatItDoes(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	var errOut strings.Builder
+	f.env.ErrOut = &errOut
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatalf("first runRun: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "Syncing...") {
+		t.Fatalf("creating run: %q", errOut.String())
+	}
+	errOut.Reset()
+	if err := runRun(ctx, f.env, RunOptions{NoAttach: true}, false); err != nil {
+		t.Fatalf("second runRun: %v", err)
+	}
+	if strings.Contains(errOut.String(), "Syncing...") || !strings.Contains(errOut.String(), "Copying logins...") {
+		t.Fatalf("second run: %q", errOut.String())
+	}
+	errOut.Reset()
+	if err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "Syncing...") {
+		t.Fatalf("sync: %q", errOut.String())
+	}
+}

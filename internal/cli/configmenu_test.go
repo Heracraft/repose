@@ -178,3 +178,20 @@ func TestMenuNameAndJoin(t *testing.T) {
 		t.Error(got)
 	}
 }
+
+// `repose config add` with no names lists the menu by group, the names
+// it takes beside any nixpkgs attribute (review 8.5, I-633).
+func TestConfigAddWithNoNamesListsTheMenu(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	out := &discardWriter{}
+	e.Out = out
+	if err := ConfigAddCmd(context.Background(), e, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	got := out.buf.String()
+	if !strings.HasPrefix(got, "runtimes\n  bun ") || !strings.Contains(got, "\n\ndatabases\n") || !strings.Contains(got, "  postgresql ") {
+		t.Fatalf("menu:\n%s", got)
+	}
+}

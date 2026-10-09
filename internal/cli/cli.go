@@ -46,7 +46,7 @@ func Execute(version string) int {
 	// A mistyped command or subcommand is answered before cobra runs, on a
 	// throwaway tree (its flag parsing leaves state behind), with the
 	// command the user probably meant (DECISIONS I-276).
-	if msg := unknownCommand(newRootCmd(version), os.Args[1:]); msg != "" {
+	if msg := unknownCommand(newRootCmd(version), os.Args[1:], projectWord); msg != "" {
 		_, _ = fmt.Fprintln(os.Stderr, msg)
 		return ExitUsage
 	}
@@ -510,10 +510,15 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	addTempFlag(cmd, &tempRaw)
 	// Moved to `repose sync` (I-367); kept hidden for a release so a
 	// script that passes them hears where they went.
-	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "moved to repose sync")
-	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "moved to repose sync")
-	_ = cmd.Flags().MarkHidden("stash-remote")
-	_ = cmd.Flags().MarkHidden("discard-remote")
+	// --stash-remote and --discard-remote are their names before I-633.
+	for _, name := range []string{"stash-machine", "stash-remote"} {
+		cmd.Flags().BoolVar(&opts.StashRemote, name, false, "moved to repose sync")
+		_ = cmd.Flags().MarkHidden(name)
+	}
+	for _, name := range []string{"discard-machine", "discard-remote"} {
+		cmd.Flags().BoolVar(&opts.DiscardRemote, name, false, "moved to repose sync")
+		_ = cmd.Flags().MarkHidden(name)
+	}
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVarP(&opts.NoAttach, "no-attach", "d", false, "do not attach; with -p, print the window the agent is in")
 	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix off this machine from now on")
@@ -584,10 +589,10 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Send this checkout's changes to its machine",
 		Long: "Copy your uncommitted changes and unpushed commits over the machine's checkout,\n" +
 			"creating or starting the machine if needed, without attaching. When the machine\n" +
-			"changed the same files, stop with exit 6 and name them; --stash-remote clears\n" +
+			"changed the same files, stop with exit 6 and name them; --stash-machine clears\n" +
 			"the way. Nothing comes back: git fetch repose does that.\n\n" +
 			"sync.exclude in config.toml leaves out files that .gitignore does not.",
-		Example:           "  repose sync\n  repose sync --stash-remote",
+		Example:           "  repose sync\n  repose sync --stash-machine",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -633,8 +638,14 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
 	_ = cmd.Flags().MarkHidden("name")
 	addTempFlag(cmd, &tempRaw)
-	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the machine's uncommitted changes there before syncing")
-	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "as --stash-remote, and also end a merge or rebase in progress there")
+	cmd.Flags().BoolVar(&opts.StashRemote, "stash-machine", false, "stash the machine's uncommitted changes there before syncing")
+	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-machine", false, "as --stash-machine, and also end a merge or rebase in progress there")
+	// Their names before I-633: "remote" read as a git remote. Hidden
+	// for a release.
+	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "old name of --stash-machine")
+	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "old name of --discard-machine")
+	_ = cmd.Flags().MarkHidden("stash-remote")
+	_ = cmd.Flags().MarkHidden("discard-remote")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -643,7 +654,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "start [PROJECT]",
-		Short:             "Start a project's machine, or restart one in error",
+		Short:             "Start a project, or restart one in error",
 		Long:              "Start a stopped machine, or restart one in error. Nothing is synced.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
@@ -1228,7 +1239,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 		return revisionIDsForCompletion(env, g.project), cobra.ShellCompDirectiveNoFileComp
 	})
 	add := &cobra.Command{
-		Use:   "add PACKAGE...",
+		Use:   "add [PACKAGE...]",
 		Short: "Add menu entries or nixpkgs packages to the machine",
 		Long: `Add packages to the project's repose.nix and rebuild the machine.
 
@@ -1237,6 +1248,8 @@ menu entry, services included. Any other name is a nixpkgs attribute: gcc,
 air, nodejs_22, python312Packages.black, nodePackages.typescript. Find names
 at https://search.nixos.org/packages.
 
+With no names, it lists the menu's entries by group.
+
 A project whose repose.nix was edited by hand has no menu; add packages there
 with repose config edit.
 
@@ -1244,11 +1257,15 @@ With --global, the names go into the home.packages list of your
 machine.nix, every machine of your account gets them, and the menu's
 services are not available.`,
 		Example: "  repose config add gcc air\n  repose config add postgresql python312Packages.black\n  repose config --global add ripgrep",
-		Args:    argsN(1, -1, "one or more package names"),
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := globalEnv()
 			if err != nil {
 				return err
+			}
+			if len(args) == 0 && !global {
+				// The names the menu has, for the user who asked (I-633).
+				return ConfigMenuListCmd(cmd.Context(), e)
 			}
 			if global {
 				return GlobalPackagesCmd(cmd.Context(), e, args, true)
@@ -1853,7 +1870,7 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 	var quiet bool
 	cmd := &cobra.Command{
 		Use:   "questions [PROJECT]",
-		Short: "List the questions agents are waiting on you to answer",
+		Short: "List the questions agents on any project are waiting on you to answer",
 		Long: "List the questions agents on any of your projects, or on PROJECT, are waiting on\n" +
 			"you to answer with repose reply, then the agents waiting at a prompt in their\n" +
 			"terminal, which only attaching answers.",

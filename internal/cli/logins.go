@@ -50,7 +50,7 @@ func loginItems() []loginItem {
 	}
 	return append(items,
 		loginItem{Name: envLogin, What: "gitignored .env files"},
-		loginItem{Name: mcpLogin, What: "Claude Code MCP servers (tokens stay on the laptop)"})
+		loginItem{Name: mcpLogin, What: "Claude Code MCP servers, without their tokens"})
 }
 
 func loginNames() []string {

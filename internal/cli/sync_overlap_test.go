@@ -251,8 +251,8 @@ func agentMidMerge(t *testing.T, f *syncFixture) {
 }
 
 // A merge, rebase, cherry-pick, revert, am or bisect in progress on the
-// machine refuses the sync, naming it, and nothing moves; --stash-remote
-// refuses too and says why; --discard-remote throws the state away and
+// machine refuses the sync, naming it, and nothing moves; --stash-machine
+// refuses too and says why; --discard-machine throws the state away and
 // syncs (I-573).
 func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
 	for _, tc := range []struct {
@@ -260,8 +260,8 @@ func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
 		opts SyncOptions
 		want string
 	}{
-		{"plain", SyncOptions{}, "Not synced: the machine's checkout is in the middle of a git merge. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash."},
-		{"stash", SyncOptions{StashRemote: true}, "Not synced: the machine's checkout is in the middle of a git merge, which `--stash-remote` can't keep. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash."},
+		{"plain", SyncOptions{}, "Not synced: the machine's checkout is in the middle of a git merge. Finish or abort it there, or run `repose sync --discard-machine` to end it and move the machine's changes to its git stash."},
+		{"stash", SyncOptions{StashRemote: true}, "Not synced: the machine's checkout is in the middle of a git merge, which `--stash-machine` can't keep. Finish or abort it there, or run `repose sync --discard-machine` to end it and move the machine's changes to its git stash."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSyncFixture(t)
@@ -295,7 +295,7 @@ func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
 	g := f.guestRepo()
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{DiscardRemote: true})
 	if err != nil {
-		t.Fatalf("sync --discard-remote: %v", err)
+		t.Fatalf("sync --discard-machine: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(g, ".git", "MERGE_HEAD")); err == nil {
 		t.Fatal("the agent's merge is still in progress")
@@ -308,7 +308,7 @@ func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
 		t.Fatal("side.txt, the discarded merge's, is still there")
 	}
 	// The merge's files went to the stash, not away (I-618).
-	if list := mustRun(t, g, "git", "stash", "list"); !strings.Contains(list, "repose sync --discard-remote") {
+	if list := mustRun(t, g, "git", "stash", "list"); !strings.Contains(list, "repose sync --discard-machine") {
 		t.Fatalf("stash list = %q", list)
 	}
 	if files := mustRun(t, g, "git", "stash", "show", "--include-untracked", "--name-only", "stash@{0}"); !strings.Contains(files, "side.txt") {
