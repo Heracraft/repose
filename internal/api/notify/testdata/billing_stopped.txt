@@ -1,4 +1,4 @@
-Your guests were stopped for non-payment
+Your machines were stopped: a payment failed
 
 Your payment has been failing for three days, so todo-app was snapshotted and stopped.
 

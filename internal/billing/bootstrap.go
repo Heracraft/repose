@@ -169,6 +169,12 @@ func Bootstrap(ctx context.Context, p *Paddle, o BootstrapOptions) (*BootstrapRe
 				res.WebhookID, res.WebhookSecret = s.ID, s.EndpointSecretKey
 				res.Found = append(res.Found, "webhook "+s.ID)
 				say("found    webhook          %s -> %s", s.ID, o.WebhookURL)
+				if want := p.TrafficSource(); s.TrafficSource != want {
+					if err := p.SetNotificationTrafficSource(ctx, s.ID, want); err != nil {
+						return nil, fmt.Errorf("set the webhook destination's traffic source: %w", err)
+					}
+					say("updated  webhook          %s traffic_source %s", s.ID, want)
+				}
 				if missing := missingEvents(s.SubscribedEvents); len(missing) > 0 {
 					say("warning: the destination lacks %s; add them in Paddle's dashboard", strings.Join(missing, ", "))
 				}

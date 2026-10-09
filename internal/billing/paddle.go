@@ -692,6 +692,7 @@ type NotificationSetting struct {
 	Destination       string   `json:"destination"`
 	Active            bool     `json:"active"`
 	EndpointSecretKey string   `json:"endpoint_secret_key"`
+	TrafficSource     string   `json:"traffic_source"`
 	SubscribedEvents  []string `json:"-"`
 	RawEvents         []struct {
 		Name string `json:"name"`
@@ -712,6 +713,17 @@ func (p *Paddle) ListNotificationSettings(ctx context.Context) ([]NotificationSe
 	return out, nil
 }
 
+// TrafficSource is the traffic_source a destination gets: in the sandbox
+// it also receives simulated events, which docs/ops/M4-GATE.md sends to
+// prove the payment states (Paddle refuses a simulation for a "platform"
+// destination); live gets real events only.
+func (p *Paddle) TrafficSource() string {
+	if p.Environment() == EnvSandbox {
+		return "all"
+	}
+	return "platform"
+}
+
 // CreateNotificationSetting creates a webhook destination for the events.
 func (p *Paddle) CreateNotificationSetting(ctx context.Context, destination string, events []string) (NotificationSetting, error) {
 	var out NotificationSetting
@@ -722,10 +734,15 @@ func (p *Paddle) CreateNotificationSetting(ctx context.Context, destination stri
 		"subscribed_events":        events,
 		"api_version":              1,
 		"include_sensitive_fields": false,
-		"traffic_source":           "platform",
+		"traffic_source":           p.TrafficSource(),
 	}, &out)
 	for _, e := range out.RawEvents {
 		out.SubscribedEvents = append(out.SubscribedEvents, e.Name)
 	}
 	return out, err
+}
+
+// SetNotificationTrafficSource changes a destination's traffic_source.
+func (p *Paddle) SetNotificationTrafficSource(ctx context.Context, id, source string) error {
+	return p.do(ctx, http.MethodPatch, "/notification-settings/"+url.PathEscape(id), map[string]any{"traffic_source": source}, nil)
 }

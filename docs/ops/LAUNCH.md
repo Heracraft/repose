@@ -19,6 +19,10 @@ apps at the same time; the api ignores it and logs a warning (I-290).
 
 ## 1. Paddle (about an hour, plus Paddle's review)
 
+Steps 2 to 6 are done in the sandbox (2026-10-08, DECISIONS I-600): prod's
+api runs the sandbox keys, so checkout takes Paddle's test card until step
+7 replaces them.
+
 1. Create a Paddle Billing account at https://vendors.paddle.com (a
    sandbox account comes with it at https://sandbox-vendors.paddle.com).
    Paddle reviews the website before live payments are switched on: it

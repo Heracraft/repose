@@ -282,7 +282,7 @@ func TestEmailTemplateWithoutUnsubscribe(t *testing.T) {
 // exact subject; the rest fall back to Title.
 func TestSubjectUsesPlatformWording(t *testing.T) {
 	got := notify.Subject(notify.Message{Kind: "billing_stopped", Project: "todo-app"})
-	if got != "Your guests were stopped for non-payment" {
+	if got != "Your machines were stopped: a payment failed" {
 		t.Fatalf("subject %q", got)
 	}
 	got = notify.Subject(notify.Message{Kind: "snapshot_failed", Project: "todo-app"})

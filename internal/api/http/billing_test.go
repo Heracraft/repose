@@ -113,9 +113,9 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 		}
 		r := e.do(t, tok, "POST", "/projects/"+pid+"/start", nil)
 		if c.reason == "suspended" {
-			// A suspended account is forbidden everywhere but /me, /billing
-			// and the portal (api.md).
-			if r.status != http.StatusForbidden {
+			// A suspended account gets 402 suspended everywhere but /me,
+			// /billing and the portal (api.md, I-600).
+			if r.status != http.StatusPaymentRequired || errDetail(r, "reason") != c.reason || errMessage(r) != c.message {
 				t.Errorf("%s on start: %d %s", c.name, r.status, r.raw)
 			}
 			if r := e.do(t, tok, "GET", "/me", nil); r.status != 200 {
@@ -127,7 +127,7 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 			if r := e.do(t, tok, "POST", "/billing/portal", nil); r.status != 503 {
 				t.Errorf("suspended POST /billing/portal reaches the route: %d %s", r.status, r.raw)
 			}
-			if r := e.do(t, tok, "GET", "/projects", nil); r.status != 403 {
+			if r := e.do(t, tok, "GET", "/projects", nil); r.status != http.StatusPaymentRequired || errDetail(r, "reason") != "suspended" {
 				t.Errorf("suspended GET /projects: %d", r.status)
 			}
 			continue

@@ -314,7 +314,7 @@ func Title(m Message) string {
 // an agent, is what changed state, so "<project>: <verb>" reads wrong. The
 // account kinds (I-291) name no project at all.
 var platformSubjects = map[string]string{
-	"billing_stopped":        "Your guests were stopped for non-payment",
+	"billing_stopped":        "Your machines were stopped: a payment failed",
 	"abuse_stopped":          "Your machine was stopped: a cryptocurrency miner was running",
 	"welcome":                "Welcome to repose",
 	"waitlist_joined":        "You're on the waitlist",

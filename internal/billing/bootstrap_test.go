@@ -55,7 +55,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 		t.Fatalf("discount body: %v", d)
 	}
 	ns := f.Bodies["POST /notification-settings"][0]
-	if ns["destination"] != "https://api.repose.test/v1/billing/webhook" || len(ns["subscribed_events"].([]any)) != len(billing.WebhookEvents) {
+	if ns["destination"] != "https://api.repose.test/v1/billing/webhook" || len(ns["subscribed_events"].([]any)) != len(billing.WebhookEvents) || ns["traffic_source"] != "all" {
 		t.Fatalf("notification setting: %v", ns)
 	}
 	block := res.EnvBlock()
@@ -77,7 +77,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 		t.Fatalf("rerun: created %v found %v", again.Created, again.Found)
 	}
 	for _, r := range f.Requests[before:] {
-		if strings.HasPrefix(r, "POST ") {
+		if strings.HasPrefix(r, "POST ") || strings.HasPrefix(r, "PATCH ") {
 			t.Fatalf("rerun made %s", r)
 		}
 	}
@@ -89,5 +89,34 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	}
 	if _, err := billing.Bootstrap(ctx, live, billing.BootstrapOptions{Live: true}); err != nil {
 		t.Fatalf("live with --live: %v", err)
+	}
+}
+
+// A sandbox destination an earlier bootstrap made with traffic_source
+// platform cannot receive simulations; a rerun switches it to all. A live
+// destination stays platform.
+func TestBootstrapTrafficSource(t *testing.T) {
+	f := newFakePaddle()
+	defer f.Close()
+	ctx := context.Background()
+	const hook = "https://api.repose.test/v1/billing/webhook"
+	f.settings["ntfset_old"] = map[string]any{"id": "ntfset_old", "type": "url", "destination": hook, "active": true,
+		"endpoint_secret_key": f.Secret(), "traffic_source": "platform"}
+	p := billing.NewPaddle(testConfig(f), quiet())
+	var progress bytes.Buffer
+	res, err := billing.Bootstrap(ctx, p, billing.BootstrapOptions{WebhookURL: hook, Progress: &progress})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.WebhookID != "ntfset_old" || f.settings["ntfset_old"]["traffic_source"] != "all" || !strings.Contains(progress.String(), "traffic_source all") {
+		t.Fatalf("sandbox destination: %v; progress:\n%s", f.settings["ntfset_old"], progress.String())
+	}
+	live := billing.NewPaddle(billing.Config{APIKey: "pdl_live_apikey_test", BaseURL: f.URL()}, quiet())
+	if _, err := billing.Bootstrap(ctx, live, billing.BootstrapOptions{WebhookURL: "https://api.repose.test/live", Live: true}); err != nil {
+		t.Fatal(err)
+	}
+	bodies := f.Bodies["POST /notification-settings"]
+	if last := bodies[len(bodies)-1]; last["traffic_source"] != "platform" {
+		t.Fatalf("live destination: %v", last)
 	}
 }
