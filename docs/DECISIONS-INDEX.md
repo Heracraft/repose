@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-635 entries.
+641 entries.
 
 ## Scope
 
@@ -186,7 +186,7 @@ pointer, not a summary.
 - **I-100** A first sign-in without a GitHub identity gets a `user-<sub>` handle; `repose-admin users rename` and `projects destroy` exist for the operator to put that right — 2026-09-20; amended by I-299; L2251
 - **I-98** CLI releases are GitHub releases of the `Heracraft/factory` repository, cut from `v*` tags; the dashboard serves `install.sh` — 2026-09-20; L2275
 - **I-99** The CLI's OAuth client id is Logto's App ID for `repose-cli`, a config value with that default, recorded in the credentials file — 2026-09-20; L2291
-- **I-101** `repose login` uses the device-code flow by default; the loopback PKCE flow is `--browser` — 2026-09-20; L2306
+- **I-101** `repose login` uses the device-code flow by default; the loopback PKCE flow is `--browser` — 2026-09-20; amended by I-627; L2306
 - **I-102** Every Logto token request from the CLI carries `resource=https://api.repose.herakraft.co` — 2026-09-20; L2323
 - **I-103** Coolify owns the backups, the destination is the owner's own S3 storage, and no credential for it comes through this repository or an agent session — 2026-09-20; superseded by I-112; L2337
 - **I-106** `repose run` waits on the op a create leaves in flight instead of starting the project — 2026-09-20; L2389
@@ -667,3 +667,9 @@ pointer, not a summary.
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17161
 - **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17203
 - **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; L17221
+- **I-623** One sentence and one exit code per kind of failure: the network is 1, a plan limit is 7, capacity is 8 wherever it happens — 2026-10-09; L17287
+- **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17331
+- **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; L17343
+- **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; L17358
+- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; L17380
+- **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; L17414

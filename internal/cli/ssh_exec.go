@@ -110,6 +110,7 @@ const sshWaitDelay = 3 * time.Second
 // I-149), returning stdout. A non-zero exit is an *sshError.
 func runSSH(ctx context.Context, t sshTarget, remoteCmd string, stdin io.Reader) ([]byte, error) {
 	args := append(append([]string{}, t.Args...), remoteCmd)
+	verboseSSH(t.Args, remoteCmd)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = stdin
 	cmd.WaitDelay = sshWaitDelay
@@ -175,6 +176,8 @@ func execReplaceSSH(t sshTarget, extraArgs []string, remoteCmd string) error {
 	// The exec ends every goroutine, and with them any laptop herdr
 	// `machine add` still running (herdrSyncFor): give those a moment.
 	waitHerdrAdds(execAddsWait)
+	verboseSSH(append(append([]string{}, extraArgs...), t.Args...), remoteCmd)
+	noteNewerCLI()
 	timingf("exec ssh (attach)")
 	return execSSH("ssh", args)
 }

@@ -33,9 +33,9 @@ func paymentRequiredMessage(e *APIError) string {
 // api's 400 for run, restore and the rest say it in these words.
 func projectLimitMessage(have, limit, requested int) string {
 	if requested <= 1 {
-		return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped. Destroy one first.", have, limit)
+		return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.", have, limit)
 	}
-	return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped, and %d more would make %d. Destroy some first.", have, limit, requested, have+requested)
+	return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped, and %d more would make %d. Destroy some first with `repose rm PROJECT`.", have, limit, requested, have+requested)
 }
 
 // projectLimitOf reads the api's project cap refusal: 400 invalid with

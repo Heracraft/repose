@@ -109,7 +109,7 @@ func ConfigApplyCmd(ctx context.Context, e *Env, projectArg, path string) error 
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return exitf(ExitUsage, "reading %s: %v", path, err)
+		return fileReadError(path, err)
 	}
 	return applyFragmentAndRender(ctx, e, project, string(b), path)
 }

@@ -192,11 +192,12 @@ func TestErrNoProjectFoundMessages(t *testing.T) {
 func TestNoProjectHintForm(t *testing.T) {
 	root := newRootCmd("test")
 	for args, want := range map[string]string{
-		"mcp forward notes":    "Name one: `repose mcp forward --project PROJECT`",
+		"mcp forward notes":    "Name one: `repose mcp forward NAME... --project PROJECT`",
 		"secrets import --mcp": "Name one: `repose secrets import --project PROJECT`",
-		"secrets set NAME":     "Name one: `repose secrets set --project PROJECT`",
+		"secrets set NAME":     "Name one: `repose secrets set NAME --project PROJECT`",
 		"mcp list":             "Name one: `repose mcp list PROJECT`",
 		"attach":               "Name one: `repose attach PROJECT`",
+		"exec ls":              "Name one: `repose exec PROJECT COMMAND`",
 	} {
 		cmd, _, err := root.Find(strings.Fields(args))
 		if err != nil {

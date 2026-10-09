@@ -49,13 +49,15 @@ This confirms that the repose release workflow built the archive. It works for v
 repose login
 ```
 
-The CLI prints a link and a short code. Open the link in any browser, on any device: check the code on the page matches the one in your terminal, then sign in with your email or with GitHub. This works over SSH too.
+The CLI prints a link and a short code, and opens the link in this computer's browser when it has one. Or open it in any browser, on any device: check the code on the page matches the one in your terminal, then sign in with your email or with GitHub. This works over SSH too. `repose login --status` shows the account you're logged in as.
+
+The first `repose run` on a computer that has never logged in logs in this way first.
 
 You stay logged in until you run `repose logout`.
 
 ## Update
 
-Run the install command again. It replaces the binary and leaves your login and settings alone.
+Run the install command again. It replaces the binary and leaves your login and settings alone. When a newer release is out, the CLI says so once.
 
 ## Uninstall
 

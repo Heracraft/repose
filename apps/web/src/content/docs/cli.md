@@ -18,7 +18,9 @@ Run `repose --help` for the commands.
 
 Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count; see [From your home folder](/docs/lifecycle#from-your-home-folder). `PROJECT:CHECKOUT` names a checkout that `run --on` added to the machine; `run`, `attach`, `sync`, `exec`, `ssh`, `code` and `rm` take it, and the other commands exit 2.
 
-Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
+Global flags: `--project NAME`, `-v`/`--verbose` (one line on stderr for each API request, with its status, time and request ID and the body of a refusal, and one for each `ssh` the command runs; never a token), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
+
+When a newer release of the CLI is out, the next command says so once on stderr, with the install command that updates it. It says it again only for a later release.
 
 ## Working on a project
 
@@ -360,8 +362,8 @@ With `--global`, the same commands act on your machine.nix instead of the projec
 
 | Command                             | What it does                                                                                                                             |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose login`                      | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers).                         |
-| `repose logout`                     | Log out and revoke SSH certificates; connections they opened, on any device, close within 30 seconds. `--purge` removes the CLI's files. |
+| `repose login`                      | Log in with a code. The CLI prints a link with the code in it and opens it in this computer's browser when it has one; `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't. `--browser`, see [Other servers](#other-servers). There is no login without a browser for CI. |
+| `repose logout`                     | Log out and revoke your SSH certificates; connections they opened, on any device, close within 30 seconds. When the revoke fails, it logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` removes the CLI's files. |
 | `repose notify set`                 | `--email on\|off`, `--ntfy URL\|none`.                                                                                                   |
 | `repose notify test`                | Send a test on every channel that's on.                                                                                                  |
 | `repose version`                    | Print the version.                                                                                                                       |
@@ -452,14 +454,14 @@ Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` 
 | Code | Meaning                                                                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed, or you answered no to a question; the message says why.                                                                                                                                                            |
+| 1    | Failed, or you answered no to a question; the message says why. The network, the login server's included, is 1. |
 | 2    | Wrong usage.                                                                                                                                                                                |
-| 3    | Not logged in.                                                                                                                                                                              |
+| 3    | Not logged in, or the login expired.                                                                                                                                                        |
 | 4    | No such project.                                                                                                                                                                            |
 | 5    | The machine isn't running.                                                                                                                                                                  |
 | 6    | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped.                                                                                 |
-| 7    | Account or payment problem.                                                                                                                                                                 |
-| 8    | No capacity right now; try again in a few minutes. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
+| 7    | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it.                                                                   |
+| 8    | No capacity right now, before or during a start; try again in a few minutes. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10   | The configuration build failed.                                                                                                                                                             |
 | 130  | Interrupted with `Ctrl-C`, at a question too.                                                                                                                                                                  |
 

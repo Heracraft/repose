@@ -25,7 +25,9 @@ requested?}` (`requested` on a fork); the cap is 100 live projects,
 running or stopped, on every plan (DECISIONS I-569; `reason` added
 then, `limit` and `projects` were there before).
 Every response
-carries `X-Request-Id`.
+carries `X-Request-Id`, and `X-Repose-CLI-Latest` (the newest CLI release,
+`vX.Y.Z`) once the api has read it from the releases/latest redirect; a
+client must accept an answer without it (DECISIONS I-626).
 
 ## Users
 

@@ -201,10 +201,23 @@ func opFailed(verb, slug string, e OpError, next string) error {
 		code = " (" + e.Code + ")"
 	}
 	msg := fmt.Sprintf("Could not %s %s: %s%s.", verb, slug, reason, code)
-	if next != "" && !strings.Contains(reason, "`repose ") {
+	if next != "" && !strings.Contains(reason, "`repose ") && !strings.Contains(strings.ToLower(reason), "try again") {
 		msg += " " + next
 	}
-	return exitf(ExitGeneric, "%s", msg)
+	return exitf(opExitCode(e.Code), "%s", msg)
+}
+
+// opExitCode is a failed op's exit code: the one the same refusal from
+// the api has, so a script that retries on 8 retries a host that ran out
+// of room during the boot too (DECISIONS I-623).
+func opExitCode(code string) int {
+	switch code {
+	case "insufficient_capacity", "capacity":
+		return ExitCapacity
+	case "payment_required":
+		return ExitPaymentRequired
+	}
+	return ExitGeneric
 }
 
 // nextAfterFailedStart is the advice after a start (or the start inside
@@ -212,7 +225,7 @@ func opFailed(verb, slug string, e OpError, next string) error {
 func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
-		return "Try again in a few minutes; we have been alerted."
+		return "Try again in a few minutes."
 	case "guest_unresponsive", "boot_failed":
 		// hostd kept the console of this boot (DECISIONS I-592).
 		return fmt.Sprintf("`repose logs %s --kind console` shows what the guest printed; `repose start %s` tries again.", slug, slug)

@@ -83,7 +83,7 @@ paths, `REPOSE=1`).
 ### 5.1 Command tree
 
 ```
-repose login [--no-browser]
+repose login [--no-browser] [--status]   # I-627
 repose logout
 repose run [PROJECT] [-p PROMPT] [--agent claude|opencode|codex|gemini|pi] [--size small|large|xl]
             [--temp [DURATION]] [--no-sync] [--no-attach] [--worktree]
@@ -132,8 +132,10 @@ repose browser bridge [PROJECT] [--cdp URL] [--user-data-dir DIR] [--no-browser]
 ```
 
 Global flags: `--project ID|SLUG` (or `REPOSE_PROJECT`), `--api-url` (or
-`REPOSE_API_URL`), `--json` on read commands, `-v` for debug logging to
-stderr.
+`REPOSE_API_URL`), `--json` on read commands, `-v` for one stderr line
+per api request (method, path, status, time, request id, a refusal's
+body) and per ssh (options, target, the remote command's first word),
+never a header or token (I-624).
 
 PROJECT (DECISIONS I-155): the commands whose object is a project take it
 as their one argument, docker-style; `--project` and `REPOSE_PROJECT` keep
@@ -173,7 +175,9 @@ account's slugs for PROJECT and `--project`.
    Waiting...
    ```
 
-   and poll at the returned interval.
+   and poll at the returned interval. With a browser available (as in
+   step 2, `WAYLAND_DISPLAY` counts too) and no `--no-browser`, also open
+   the link with the code in it (I-627).
 4. Store per `interfaces/cli-config.md`: macOS keychain for the refresh
    token (service `repose`, account `<issuer>`), else
    `credentials.json` 0600.
@@ -190,11 +194,23 @@ account's slugs for PROJECT and `--project`.
 Access token refresh happens transparently in the API client: on 401 with
 `unauthenticated`, refresh once, retry once. If the refresh fails, exit 3
 with `Not logged in. Run \`repose login\`.`
+A refresh or discovery that never got an OAuth answer (offline, the login
+server down, a proxy's page) is a network failure, exit 1 with `Could
+not reach the login server (<host>): <reason>. Check your connection.`
+(I-623).
+
+`repose login --status` prints `<handle> (<email>) on <api host>, <Plan>
+plan` from `GET /me`, exit 3 when there is no login. `repose run` on a
+terminal with no stored login runs the device flow first, then goes on
+(I-627).
 
 `repose logout` revokes the refresh token at Logto, deletes the stored
 tokens, calls `POST /certs/revoke {all:true}`, removes
 `~/.ssh/repose/id_ed25519-cert.pub`. It leaves `projects.json` and the ssh
-config in place.
+config in place. It prints `Logged out. Your SSH certificates are revoked;
+connections they opened, on any device, close within 30 seconds.`; when
+the revoke fails it still deletes the tokens, says the certificates were
+not revoked and stop working within 24 hours, and exits 1 (I-627).
 
 ### 5.3 Project resolution
 

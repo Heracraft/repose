@@ -73,10 +73,11 @@ func streamBuildLines(ctx context.Context, c *Client, projectID, opID string, si
 	if err != nil {
 		return "", sinceSeq, err
 	}
+	req.Header.Set("User-Agent", userAgent())
 	if c.Tokens != nil {
 		tok, err := c.Tokens.AccessToken(ctx, false)
 		if err != nil {
-			return "", sinceSeq, &notLoggedInError{cause: err}
+			return "", sinceSeq, tokenError(err)
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
@@ -90,7 +91,7 @@ func streamBuildLines(ctx context.Context, c *Client, projectID, opID string, si
 	hc.Timeout = 0
 	resp, err := hc.Do(req)
 	if err != nil {
-		return "", sinceSeq, &unreachableError{cause: err}
+		return "", sinceSeq, &unreachableError{host: req.URL.Host, cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {

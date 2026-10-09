@@ -47,7 +47,8 @@ func Execute(version string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	go func() { <-ctx.Done(); stop() }()
-	err := root.ExecuteContext(ctx)
+	defer noteNewerCLI()
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return ExitOK
 	}
@@ -61,8 +62,13 @@ func Execute(version string) int {
 	}
 	// cobra's own refusals (an unknown command, a wrong argument count)
 	// are usage mistakes too, not command failures.
+	// Its help is the command's own, not the root's (DECISIONS I-628).
 	if isCobraRefusal(err) {
-		_, _ = fmt.Fprintf(os.Stderr, "%s\nRun `repose --help` for the commands.\n", err)
+		help := "repose --help"
+		if cmd != nil && cmd != root {
+			help = cmd.CommandPath() + " --help"
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "%s\n`%s` shows its usage.\n", err, help)
 		return ExitUsage
 	}
 	return exitCodeFor(err, os.Stderr)
@@ -88,14 +94,29 @@ type globalFlags struct {
 	verbose bool
 }
 
-// hintCommand is the command as the not-found hint shows it: its path,
-// with " --project" when it takes PROJECT as that flag only (`secrets
-// set`, `mcp forward`), since a PROJECT argument there is refused.
+// hintCommand is the command as the not-found hint shows it, PROJECT
+// included: its usage with [PROJECT] given and the other optional words
+// left out (`repose exec PROJECT COMMAND`), or, when it takes PROJECT
+// as --project only, its required words and then --project PROJECT
+// (`repose secrets set NAME --project PROJECT`), since a PROJECT
+// argument there is refused (DECISIONS I-628).
 func hintCommand(cmd *cobra.Command) string {
-	if strings.Contains(cmd.Use, "PROJECT") {
-		return cmd.CommandPath()
+	words := []string{cmd.CommandPath()}
+	positional := strings.Contains(cmd.Use, "PROJECT")
+	depth := 0 // inside an optional [...] group
+	for _, w := range strings.Fields(cmd.Use)[1:] {
+		switch {
+		case depth == 0 && (w == "[PROJECT]" || w == "PROJECT"):
+			words = append(words, "PROJECT")
+		case depth == 0 && !strings.HasPrefix(w, "["):
+			words = append(words, w)
+		}
+		depth += strings.Count(w, "[") - strings.Count(w, "]")
 	}
-	return cmd.CommandPath() + " --project"
+	if !positional {
+		words = append(words, "--project", "PROJECT")
+	}
+	return strings.Join(words, " ")
 }
 
 func newRootCmd(version string) *cobra.Command {
@@ -116,7 +137,7 @@ func newRootCmd(version string) *cobra.Command {
 	})
 	root.PersistentFlags().StringVar(&g.project, "project", "", "project name or id (or $REPOSE_PROJECT); most commands also take it as their argument")
 	root.PersistentFlags().StringVar(&g.apiURL, "api-url", "", "api base url (or $REPOSE_API_URL)")
-	root.PersistentFlags().BoolVarP(&g.verbose, "verbose", "v", false, "debug logging to stderr")
+	root.PersistentFlags().BoolVarP(&g.verbose, "verbose", "v", false, "log each api request (status, time, request id) and each ssh to stderr")
 
 	env := func() (*Env, error) {
 		e, err := newEnv(g.apiURL, g.json, g.verbose)
@@ -124,10 +145,16 @@ func newRootCmd(version string) *cobra.Command {
 			return nil, err
 		}
 		e.Client.HTTP = e.httpClient
+		e.Client.Warn = func(s string) { e.warn("%s", s) }
 		e.Command = g.command
 		return e, nil
 	}
-	root.PersistentPreRun = func(cmd *cobra.Command, args []string) { g.command = hintCommand(cmd) }
+	root.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		g.command = hintCommand(cmd)
+		if g.verbose {
+			setVerbose(os.Stderr)
+		}
+	}
 	envJSON := func(cmd *cobra.Command) (*Env, error) {
 		json, _ := cmd.Flags().GetBool("json")
 		g.json = json
@@ -138,7 +165,7 @@ func newRootCmd(version string) *cobra.Command {
 	})
 
 	root.AddCommand(
-		newLoginCmd(),
+		newLoginCmd(env),
 		newLogoutCmd(env),
 		newRunCmd(env, g),
 		newAttachCmd(env, g),
@@ -203,6 +230,35 @@ func gotArgs(args []string) string {
 	return fmt.Sprintf("%d arguments: %s", len(args), strings.Join(args, " "))
 }
 
+// checkSizeFlag refuses a --size that is no size class before anything
+// is sent, as a usage error (DECISIONS I-623): the api's refusal came
+// back as exit 1 in its own words.
+func checkSizeFlag(size string) error {
+	if _, ok := classSpecs[size]; size != "" && !ok {
+		return cobraUsageError{fmt.Errorf("--size must be small, large or xl, got %q", size)}
+	}
+	return nil
+}
+
+// argsN is an Args validator for between min and max words (max -1: no
+// limit). Its refusal says what the command takes and what it got, and,
+// on a command that takes PROJECT only as --project, shows the words
+// again with the first as the project, the likeliest mistake (DECISIONS
+// I-628): `repose secrets set todo-app FOO` is answered with `repose
+// secrets set FOO --project todo-app`.
+func argsN(min, max int, takes string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) >= min && (max < 0 || len(args) <= max) {
+			return nil
+		}
+		msg := fmt.Sprintf("%s takes %s, got %s", cmd.CommandPath(), takes, gotArgs(args))
+		if max >= 0 && len(args) == max+1 && !strings.Contains(cmd.Use, "PROJECT") && cmd.Flag("project") != nil {
+			msg += fmt.Sprintf(". A project goes in --project: %s", strings.Join(append(append([]string{cmd.CommandPath()}, args[1:]...), "--project", args[0]), " "))
+		}
+		return cobraUsageError{errors.New(msg)}
+	}
+}
+
 // noArgs is cobra.NoArgs as a usage error: v0.1.4 silently ignored a
 // stray word (`repose attach projects` attached to the cwd's project).
 func noArgs(cmd *cobra.Command, args []string) error {
@@ -264,44 +320,76 @@ func projectSlugsForCompletion(env func() (*Env, error)) []string {
 	return out
 }
 
-func newLoginCmd() *cobra.Command {
-	var noBrowser, browser bool
+func newLoginCmd(env func() (*Env, error)) *cobra.Command {
+	var noBrowser, browser, status bool
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in to repose in your browser",
-		Args:  noArgs,
+		Short: "Log in to repose, or show the account you are logged in as",
+		Long: "Log in with a code: the CLI prints a link with the code in it and opens it in this computer's\n" +
+			"browser when it has one. --status prints the account this laptop is logged in as, its server\n" +
+			"and its plan, and exits 3 when there is none.",
+		SuggestFor: []string{"whoami", "auth", "signin"},
+		Args:       noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := newEnv("", false, false)
+			e, err := env()
 			if err != nil {
 				return err
 			}
-			opts := loginOptions{
-				Browser:   browser,
-				NoBrowser: noBrowser || os.Getenv(envNoBrowser) == "1",
-				Display:   os.Getenv("DISPLAY"),
-				GOOS:      goos(),
-				GuestEnv:  os.Getenv(envInGuest) == "1",
+			if status {
+				return loginStatus(cmd.Context(), e)
 			}
-			return runLogin(cmd.Context(), e.Dir, e.Cfg, e.httpClient, opts)
+			return runLogin(cmd.Context(), e.Dir, e.Cfg, e.httpClient, loginOptsFromEnv(browser, noBrowser))
 		},
 	}
+	cmd.Flags().BoolVar(&status, "status", false, "print the account you are logged in as; exit 3 when logged out")
 	cmd.Flags().BoolVar(&browser, "browser", false, "use the loopback browser flow (PKCE) instead of the device code; needs a Logto application with loopback redirect URIs")
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "device-code flow (the default since v0.1.2; kept for scripts)")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the link and open no browser")
 	return cmd
+}
+
+// loginOptsFromEnv is the login options the environment and flags give.
+func loginOptsFromEnv(browser, noBrowser bool) loginOptions {
+	display := os.Getenv(envDisplay)
+	if display == "" {
+		display = os.Getenv(envWaylandDisplay)
+	}
+	return loginOptions{
+		Browser:   browser,
+		NoBrowser: noBrowser || os.Getenv(envNoBrowser) == "1",
+		Display:   display,
+		GOOS:      goos(),
+		GuestEnv:  os.Getenv(envInGuest) == "1",
+	}
+}
+
+// loginFirst logs in before a `repose run` on a laptop that has never
+// logged in, when a person is at the terminal (DECISIONS I-627): the run
+// would only refuse with exit 3 and send them to `repose login`. It
+// returns true when it logged in, so the caller builds its Env again.
+func loginFirst(ctx context.Context, e *Env) (bool, error) {
+	if _, ok := e.Client.Tokens.(notLoggedInSource); !ok || e.JSON || !canPrompt(os.Stdin) || !isatty(os.Stderr) {
+		return false, nil
+	}
+	opts := loginOptsFromEnv(false, false)
+	opts.Stdout = os.Stderr
+	if err := runLogin(ctx, e.Dir, e.Cfg, e.httpClient, opts); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func newLogoutCmd(env func() (*Env, error)) *cobra.Command {
 	var purge bool
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Log out",
+		Short: "Log out and revoke your SSH certificates on every device",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
 				return err
 			}
-			return runLogout(cmd.Context(), e.Dir, e.Cfg, e.httpClient, purge)
+			return runLogout(cmd.Context(), e.Dir, e.Cfg, e.httpClient, purge, e.Out)
 		},
 	}
 	cmd.Flags().BoolVar(&purge, "purge", false, "also remove ~/.ssh/repose, ~/.config/repose and the Include line")
@@ -337,6 +425,9 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if opts.Agent != "" && !isAgent(opts.Agent) {
 				return cobraUsageError{fmt.Errorf("--agent must be one of %s, got %q", strings.Join(agentNames, ", "), opts.Agent)}
 			}
+			if err := checkSizeFlag(opts.Size); err != nil {
+				return err
+			}
 			if opts.Worktree && opts.Prompt == "" {
 				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs -p PROMPT")}
 			}
@@ -352,6 +443,13 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			e, err := env()
 			if err != nil {
 				return err
+			}
+			if again, err := loginFirst(cmd.Context(), e); err != nil {
+				return err
+			} else if again {
+				if e, err = env(); err != nil {
+					return err
+				}
 			}
 			return runRun(cmd.Context(), e, opts, false)
 		},
@@ -449,6 +547,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			// Checked after --temp took its duration (`sync --temp 2h
 			// spike`).
 			if err := projectArgs(cmd, args); err != nil {
+				return err
+			}
+			if err := checkSizeFlag(opts.Size); err != nil {
 				return err
 			}
 			if len(args) == 1 {
@@ -637,7 +738,7 @@ func newOpenCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "open PORT",
 		Short: "Forward a port on the machine to the laptop",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  argsN(0, 1, "at most one PORT"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if stop && !desktop {
 				return cobraUsageError{fmt.Errorf("--stop goes with --desktop: repose open --desktop --stop (or repose browser --stop)")}
@@ -747,7 +848,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	set := &cobra.Command{
 		Use:   "set NAME",
 		Short: "Set a secret",
-		Args:  cobra.ExactArgs(1),
+		Args:  argsN(1, 1, "one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
@@ -785,7 +886,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	rm := &cobra.Command{
 		Use:   "rm NAME",
 		Short: "Remove a secret",
-		Args:  cobra.ExactArgs(1),
+		Args:  argsN(1, 1, "one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
@@ -916,7 +1017,7 @@ that file when it changed; ` + "`repose run --no-personal`" + ` keeps it off one
 	apply := &cobra.Command{
 		Use:   "apply [PATH]",
 		Short: "Apply a fragment file (default ./repose.nix; with --global, push ~/.config/repose/machine.nix)",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  argsN(0, 1, "at most one PATH"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := globalEnv()
 			if err != nil {
@@ -949,7 +1050,7 @@ With --global, the names go into the home.packages list of your
 machine.nix, every machine of your account gets them, and catalog
 services are not available.`,
 		Example: "  repose config add gcc air\n  repose config add postgresql python312Packages.black\n  repose config --global add ripgrep",
-		Args:    cobra.MinimumNArgs(1),
+		Args:    argsN(1, -1, "one or more package names"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := globalEnv()
 			if err != nil {
@@ -966,7 +1067,7 @@ services are not available.`,
 		Aliases: []string{"rm"},
 		Short:   "Remove packages added with config add",
 		Example: "  repose config remove air\n  repose config --global remove ripgrep",
-		Args:    cobra.MinimumNArgs(1),
+		Args:    argsN(1, -1, "one or more package names"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := globalEnv()
 			if err != nil {
@@ -1239,7 +1340,7 @@ func newRestoreCmd(env func() (*Env, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "", "name for the restored project (default: its old name)")
-	cmd.Flags().StringVar(&snapshot, "snapshot", "", "restore this snapshot instead of the newest (`repose snapshots list ID` lists them)")
+	cmd.Flags().StringVar(&snapshot, "snapshot", "", "`ID` of the snapshot to restore (default: the newest)")
 	return cmd
 }
 
@@ -1268,6 +1369,9 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 			}
 			if opts.Agent != "" && opts.Prompt == "" {
 				return cobraUsageError{fmt.Errorf("--agent goes with --prompt")}
+			}
+			if err := checkSizeFlag(opts.Size); err != nil {
+				return err
 			}
 			e, err := envJSON(cmd)
 			if err != nil {
@@ -1412,6 +1516,11 @@ func newLogsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 			if err != nil {
 				return err
 			}
+			switch kind {
+			case "", "console", "build", "ops":
+			default:
+				return cobraUsageError{fmt.Errorf("--kind must be console, build or ops, got %q", kind)}
+			}
 			e, err := envJSON(cmd)
 			if err != nil {
 				return err
@@ -1515,7 +1624,7 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
-	cmd.Flags().StringVar(&question, "question", "", "the question's id (or its last characters, as `repose questions` shows)")
+	cmd.Flags().StringVar(&question, "question", "", "`ID` of the question, or its last characters as repose questions shows them")
 	return cmd
 }
 

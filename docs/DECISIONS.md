@@ -17284,3 +17284,149 @@ F4, F5, 3.4, 3.5, 3.7, and theme 7's time shapes and list contract)
 `TestProgressOffTerminal`, `TestQuestionsQuietAndTerminalJSON`,
 `TestStateChangesPrintJSON`, `TestStreamFlags`, `TestOpsLogLineDecodes`,
 `TestEventsSinceInvalid`, the fake's `TestInternal`.
+**I-623. One sentence and one exit code per kind of failure: the
+network is 1, a plan limit is 7, capacity is 8 wherever it happens.**
+(2026-10-09, cli-devx review E1, E2, E3, E6, E8, E9) Before this, an
+offline laptop or a Logto outage read as "Not logged in" with exit 3
+(the discovery read ran before the refresh's own wrap), a host that ran
+out of room during a boot exited 1 while the api's own `capacity` exited
+8, the project cap exited 1 beside the other limits' 7, and a deploy's
+502 printed `internal: <html>`. Now:
+- Every transport failure in the token source (discovery, refresh,
+  device request, a non-JSON answer from the token endpoint) is
+  `loginUnreachableError`: `Could not reach the login server (<host>):
+  <reason>. Check your connection.`, exit 1. Exit 3 is a missing login,
+  an expired one (`invalid_grant`), or another OAuth refusal of the
+  refresh. A failed `repose login` follows the same split.
+- The api out of reach is `Could not reach <host>: <reason>.` with
+  `connection refused`, `timed out`, `the name X does not resolve` and
+  the like in place of Go's text.
+- A refusal is the api's message as a sentence with its code after it
+  (`Kind must be console, build or ops (invalid).`); a 5xx is `The
+  repose api failed (<code>, request <id>). Try again in a minute.`, or
+  `The repose api answered 502, request <id>.` when a proxy answered;
+  a GET answered 502/503/504 by a proxy is sent once more after 2 s
+  (never a POST: the api may have taken it). A 200 that is not JSON is
+  `<url> is not a repose api. Check --api-url or $REPOSE_API_URL.`
+- A failed op maps its code once (`opExitCode`): `insufficient_capacity`
+  exits 8 and `payment_required` 7; no second "try again" after a reason
+  that has one; "(We have been alerted.)" is gone everywhere. The
+  project cap (I-569) exits 7 and ends `Destroy one first with
+  `repose rm PROJECT`.` A 429 after the wait (I-187) says `Too many
+  requests from this account in the last minute. Try again in a
+  minute.` and the wait prints `Waiting for the api's rate limit...`
+  once.
+- `--size` on run, sync and fork and `--kind` on logs are checked in
+  the CLI (exit 2, the `--size must be small, large or xl, got "x"`
+  shape) before anything is sent; `--since` is B5's.
+- One helper words an unknown project name (`errNoSuchProject`); ssh's
+  ProxyCommand keeps its `repose:` prefix. A config file that cannot be
+  read is `<path> does not exist.` (exit 2).
+Docs: cli.md exit codes, limits, troubleshooting, cli-config.md. Tests:
+`TestExitCodeForLoginFailures`, `TestOfflineRefreshIsANetworkError`,
+`TestAPIErrorSentences`, `TestGatewayErrorRetriesAGetOnce`,
+`TestSuccessThatIsNotJSONIsNotAnAPI`, `TestOpFailedExitCodes`,
+`TestRateLimitWaitSaysSo`.
+
+**I-624. `-v` logs every api request and every ssh.** (2026-10-09,
+cli-devx review E4) `-v` was documented as debug output and printed
+only an op's detail. Now each api or login-server round trip is one
+stderr line, `repose: GET /v1/projects/<id> -> 404 31ms request <id>`,
+plus the first 400 bytes of a refusal's body; the host is shown for
+anything but the api; the path drops its query (the log stream's carries
+`access_token`). Each ssh the CLI runs or execs is `repose: ssh <options>
+<target> <first word of the remote command>`, the remote command named
+the way REPOSE_TIMING names it (I-223), never in full. Headers, tokens and
+request bodies are never written. The transport checks `-v` per request,
+so it costs nothing without it. Test: `TestVerboseLogsRequests`.
+
+**I-625. ssh failures of the laptop's own end the 60 s wait at once.**
+(2026-10-09, cli-devx review E5) `waitForSSH` retried every failure for
+a minute and then advised `repose stop` and `repose start`, which takes a
+snapshot, ends every agent and fixes nothing on the laptop. Now ssh's
+stderr is matched against laptop faults: a ControlPath too long for a
+socket, a bad config line, a config file others can write, `Could not
+resolve hostname NAME.repose` (the Include line is missing), any other
+name that does not resolve, and `Host key verification failed`; each
+ends the wait with `ssh on this laptop failed before it reached
+todo-app: <ssh's line>. <the fix>`, exit 1. Timeouts, refused
+connections and the gateway's refusals keep the wait (and I-175's one
+re-issue). A wait that runs out says `todo-app is running but did not
+answer ssh in 60 s.` and ssh's last line, with no restart advice. Test:
+`TestLaptopSSHFaults`.
+
+**I-626. The api names the newest CLI release; an older CLI says so
+once per release.** (2026-10-09, cli-devx review G1) An old CLI lacks
+flags the docs describe and its `unknown flag` does not say why. The api
+reads the GitHub `releases/latest` redirect install.sh follows, once an
+hour (`internal/api/clirelease`; `CLI_RELEASES_URL` overrides, `off`
+disables, off by default with `REPOSE_DEV=1`), and sends
+`X-Repose-CLI-Latest: vX.Y.Z` on every answer once it has read one. The
+CLI sends `User-Agent: repose-cli/<version>` (the api still logs only
+`client: cli`). A release build older than the header prints, at the end
+of the command or just before an attach replaces it with ssh (the line
+is then on the screen tmux restores on detach), `repose v0.1.20 is
+older than v0.1.24, the latest release. `curl -fsSL
+https://repose.herakraft.co/install.sh | sh` updates it.`, once per newer
+release (`~/.config/repose/cli-latest-noticed`). A dev build, a
+pre-release, and the CLI on a machine (`REPOSE=1`) never print it. Not
+done: a minimum version with its own exit code (the api has no version
+it refuses; nothing to enforce yet), and folding `version` with
+`--version` (the grammar package's). The api's header is additive; a
+client must accept answers without it. Tests:
+`TestNewerCLINoticeOncePerRelease`, `TestVersionOlder`,
+`TestFetchReadsTheTagFromTheRedirect`, `TestAnswersNameTheLatestCLI`.
+
+**I-627. `repose login` opens its link, `login --status` names the
+account, `logout` says what it revoked, and a first `run` logs in.**
+(2026-10-09, cli-devx review G8, 5.5, 8.5; amends I-101) The device
+flow stays the default; when this computer has a browser (macOS,
+Windows, `DISPLAY` or `WAYLAND_DISPLAY`, not on a machine, no
+`--no-browser`, no `REPOSE_NO_BROWSER=1`) the CLI also opens the link
+with the code in it, and still prints it. `--browser` stays visible: it
+is the documented flow for another server (cli.md "Other servers"), and
+its help says the hosted login cannot use it. `--no-browser` now means
+what it says. `login` honours `--api-url` (it read only config.toml).
+- `repose login --status` prints `heracraft (email) on <api host>, Solo
+  plan` from `GET /me`, with the subscription state in parentheses when
+  it is not active, and exits 3 with `Not logged in.` when there is no
+  login; an expired or revoked one fails as any command does. `whoami`,
+  `auth` and `signin` suggest `login` (SuggestFor). A separate `whoami`
+  or `auth status` command was not added (no near-duplicate names).
+- `repose logout` prints `Logged out. Your SSH certificates are revoked;
+  connections they opened, on any device, close within 30 seconds.`
+  After a lost laptop this is the line that matters. When the revoke
+  fails it still deletes the login here and exits 1 with the reason and
+  that the certificates stop working within 24 hours (I-267). With no
+  login it prints `Not logged in.` and exits 0.
+- `repose run` on a terminal (stdin and stderr), on a laptop with no
+  stored login, runs the device flow (instructions on stderr) and then
+  the run. An expired login still exits 3: its user knows the command.
+- CI token login is not built. A token would be a fourth home for a
+  credential (CLAUDE.md "Secrets have three homes"), and Logto rotates
+  refresh tokens, so a copied `credentials.json` breaks the laptop's.
+  The person this product is for drives agents from a laptop; cli.md
+  says in one line that there is no login without a browser for CI.
+Docs: cli.md Account, install.md, 07-cli §5.2. Tests:
+`TestLoginStatus`, `TestLogoutSaysWhatItRevoked`,
+`TestLoginDeviceCodeOpensTheLink`.
+
+**I-628. Usage errors name what the command takes and the line that
+works.** (2026-10-09, cli-devx review D2, C2, E7, 8.5) cobra's own
+validators printed `accepts 1 arg(s), received 2` and sent the user to
+the root help. Now every typed command's argument check says what it
+takes and what it got (I-346), and on a command that takes PROJECT only
+as `--project` the likeliest mistake gets its fix: `repose secrets set
+takes one NAME, got 2 arguments: todo-app FOO. A project goes in
+--project: repose secrets set FOO --project todo-app`. `repose ssh
+todo-app uname` answers `... To run a command: repose exec todo-app
+uname` (I-275 keeps ssh a shell). A cobra refusal points at the
+command's own `--help`. The not-found hint shows the whole command
+(`repose exec PROJECT COMMAND`, `repose secrets set NAME --project
+PROJECT`), so `Env.Command` holds that form. Flag usage holds no
+backticked command (pflag read `repose snapshots list ID` as the value
+name of `restore --snapshot`; `TestFlagValueNamesAreOneWord`). `repose
+sync`'s refusals no longer offer `--no-sync`, which only `run` has, and
+`sync` ends on its sync line without `Ready in`. Tests:
+`TestArgRefusalsNameTheFix`, `TestNoProjectHintForm`,
+`TestSyncPrecheckNamesNoSyncOnlyForRun`.

@@ -58,7 +58,7 @@ func TestRateLimitedNeverShowsTheRawCode(t *testing.T) {
 	defer srv.Close()
 	_, err := newClient(srv.URL, staticToken("tok")).GetProject(context.Background(), "p1")
 	var out bytes.Buffer
-	if code := exitCodeFor(err, &out); code != ExitGeneric || strings.Contains(out.String(), "rate_limited") || !strings.Contains(out.String(), "too many in the last minute") {
+	if code := exitCodeFor(err, &out); code != ExitGeneric || strings.Contains(out.String(), "rate_limited") || !strings.Contains(out.String(), "Too many requests from this account in the last minute.") {
 		t.Fatalf("exit %d, %q", code, out.String())
 	}
 	t.Logf("%s", out.String())

@@ -15,7 +15,7 @@ Your plan's memory limits what runs at once, and its disk limits what you keep: 
 
 While your projects hold more than the plan's disk, creating, restoring or forking a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Nothing stops: your machines keep running, stopped ones start, and you get one email a month about it. `repose ls`, `repose status` and the Billing page say so too.
 
-An account can have 100 projects, running or stopped, on every plan. Past that, creating, restoring or forking a project is refused: `You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.`
+An account can have 100 projects, running or stopped, on every plan. Past that, creating, restoring or forking a project is refused with exit code 7: ``You have 100 of the 100 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.``
 
 Destroyed projects don't count, and neither does one still being destroyed, for projects or for disk. A project whose destroy failed still counts until `repose rm` succeeds. Each copy [`repose fork`](/docs/lifecycle#fork-a-project) makes is a project, and so is a [temporary machine](/docs/lifecycle#temporary-machines) until it's destroyed. A temporary machine lives from 10 minutes to 24 hours, and waits at most a day past that while someone is attached.
 

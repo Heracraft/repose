@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	httpapi "github.com/heracraft/repose/internal/api/http"
 )
 
 // The request log line names the matched route, the user and which client
@@ -45,6 +47,29 @@ func TestRequestLogCarriesRouteUserAndClient(t *testing.T) {
 	for c, seen := range want {
 		if !seen {
 			t.Errorf("no GET /v1/me request line with client %q; log:\n%s", c, e.logs.String())
+		}
+	}
+}
+
+// Every answer, a refusal included, names the newest CLI release when the
+// api knows it, so an old CLI can say it is old (DECISIONS I-626).
+func TestAnswersNameTheLatestCLI(t *testing.T) {
+	e := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
+		d.CLILatest = func() string { return "v0.1.40" }
+	})
+	tok := e.signIn(t, "sub-cliver", "cliver")
+	for _, auth := range []string{"Bearer " + tok, ""} {
+		req, _ := http.NewRequest("GET", e.api.URL+"/v1/me", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if got := res.Header.Get("X-Repose-CLI-Latest"); got != "v0.1.40" {
+			t.Errorf("status %d: X-Repose-CLI-Latest = %q", res.StatusCode, got)
 		}
 	}
 }

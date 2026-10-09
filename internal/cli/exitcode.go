@@ -1,6 +1,11 @@
 package cli
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"strings"
+)
 
 // Exit codes, docs/interfaces/cli-config.md "Exit codes".
 const (
@@ -42,3 +47,30 @@ func exitf(code int, format string, args ...any) *exitError {
 // silent exits with code and no further message (the command already
 // printed one, e.g. streamed build log output).
 func silent(code int) *exitError { return &exitError{code: code} }
+
+// errNoSuchProject is the one wording for a name that is none of the
+// account's projects (DECISIONS I-623).
+func errNoSuchProject(name string) *exitError {
+	return exitf(ExitProjectNotFound, "%s", noSuchProjectMessage(name))
+}
+
+func noSuchProjectMessage(name string) string {
+	return fmt.Sprintf("No repose project is called %s. `repose ls` lists yours.", name)
+}
+
+// fileReadError is a laptop file the command was given that it could not
+// read, as one sentence with no Go wrapping (exit 2: the path is the
+// mistake).
+func fileReadError(path string, err error) *exitError {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return exitf(ExitUsage, "%s does not exist.", path)
+	case errors.Is(err, fs.ErrPermission):
+		return exitf(ExitUsage, "%s is not readable by you.", path)
+	}
+	msg := err.Error()
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		msg = msg[i+2:]
+	}
+	return exitf(ExitUsage, "Could not read %s: %s.", path, msg)
+}
