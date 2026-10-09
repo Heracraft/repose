@@ -101,7 +101,7 @@ func TestPolarSandbox(t *testing.T) {
 		w.WriteHeader(200)
 	})}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 	if f := os.Getenv("REPOSE_POLAR_E2E_URLFILE"); f != "" {
 		if err := os.WriteFile(f, []byte(url+"\n"), 0o600); err != nil {
 			t.Fatal(err)
