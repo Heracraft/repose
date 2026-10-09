@@ -47,7 +47,9 @@ type RunOptions struct {
 	// switch from the next start for an existing one (DECISIONS I-502).
 	Multiplexer string
 	// Window is `attach --window`: the window (or herdr agent) the
-	// attach opens on, which must exist (DECISIONS I-606).
+	// attach opens on, which must exist (DECISIONS I-606). With a
+	// prompt it is `run -w`: the prompt is typed there instead of into
+	// a new agent, and the attach opens on it (I-639).
 	Window string
 }
 
@@ -521,7 +523,22 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}
 
 	window := ""
-	if opts.Prompt != "" {
+	if opts.Window != "" && opts.Prompt != "" {
+		// Typed into an agent already there: an answer to its question,
+		// or a follow-up (I-639).
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
+		if _, err := runSSH(ctx, target, mux.TypeScript(project.Slug, opts.Window, opts.Prompt), nil); err != nil {
+			var se *sshError
+			if errors.As(err, &se) && se.ExitCode == typeExitNoWindow {
+				return noWindow(project.Slug, opts.Window, mux.Unit())
+			}
+			return stepFailed("type into "+opts.Window, err, "")
+		}
+		window = opts.Window
+	} else if opts.Prompt != "" {
 		mux, err := muxNow()
 		if err != nil {
 			return err
@@ -1326,6 +1343,17 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 				})
 			}
 		}
+		// The plan's memory is in use: stop what is in the way, on a
+		// yes (I-637).
+		if ok, serr := stopToFit(ctx, e, err, project.Slug, project.Class, pr); serr != nil {
+			return serr
+		} else if ok {
+			err = retryOnOpConflict(ctx, func() error {
+				var err error
+				sr, err = e.Client.StartProject(ctx, project.ID)
+				return err
+			})
+		}
 	}
 	if err != nil {
 		var apiErr *APIError
@@ -1697,7 +1725,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	}
 
 	waited := map[string]bool{}
-	waitedPlan := false
+	waitedPlan, stoppedForPlan := false, false
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
 		if err != nil && ctx.Err() != nil {
@@ -1743,6 +1771,16 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			waitedPlan = true
 			if ok, werr := waitForPlan(ctx, e, pr); werr != nil {
 				return nil, werr
+			} else if ok {
+				attempt--
+				continue
+			}
+		}
+		if !stoppedForPlan && len(planLimitSlugs(err)) > 0 {
+			// The plan's memory is in use (I-637).
+			stoppedForPlan = true
+			if ok, serr := stopToFit(ctx, e, err, req.Name, class, pr); serr != nil {
+				return nil, serr
 			} else if ok {
 				attempt--
 				continue
@@ -1878,6 +1916,11 @@ func forgetProject(cache *ProjectsCache, id string) {
 	for k, c := range cache.Checkouts {
 		if c.ProjectID == id {
 			delete(cache.Checkouts, k)
+		}
+	}
+	for k, v := range cache.Folders {
+		if v == id {
+			delete(cache.Folders, k)
 		}
 	}
 }

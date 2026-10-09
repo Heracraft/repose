@@ -127,3 +127,113 @@ func TestRunWaitsForAPlan(t *testing.T) {
 		t.Fatalf("opened %v", opened)
 	}
 }
+
+// On Solo a second large machine is refused for memory; on a terminal
+// the run asks stop's question, stops the machine in the way on a yes,
+// and creates or starts in the same command. A no and no terminal exit
+// 7 with the refusal (I-637).
+func TestRunStopsWhatIsInTheWayOfThePlan(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	fake.SetBilling(fakeapi.BillingActive)
+	fake.SetPlan("solo")
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	api, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "api", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := StartCmd(ctx, e, api.ID); err != nil {
+		t.Fatal(err)
+	}
+	fake.SetAgents(api.ID, []fakeapi.AgentSignal{{Agent: "claude", Window: "claude", State: "working"}})
+
+	oldW, oldA := planWaitable, planStopAsk
+	defer func() { planWaitable, planStopAsk = oldW, oldA }()
+	var prompts []string
+	answer := false
+	planWaitable = func(*Env) bool { return true }
+	planStopAsk = func(_ context.Context, _ *Env, prompt string) (bool, bool, error) {
+		prompts = append(prompts, prompt)
+		return true, answer, nil
+	}
+
+	// No: the refusal, exit 7, nothing stopped.
+	_, err = createProjectForRun(ctx, e, "", RunOptions{Name: "todo-app", Size: "large"}, nil)
+	var msg strings.Builder
+	if code := exitCodeFor(err, &msg); code != ExitPaymentRequired || !strings.Contains(msg.String(), "`repose stop api` frees it") {
+		t.Fatalf("no: exit %d %q", code, msg.String())
+	}
+	if want := "api has claude (working). Stopping ends it. Stop api to start todo-app? [y/N] "; len(prompts) != 1 || prompts[0] != want {
+		t.Fatalf("prompts %q, want %q", prompts, want)
+	}
+	if s := stateOf(t, e, api.ID); s != "running" {
+		t.Fatalf("api %s after a no", s)
+	}
+
+	// Off a terminal: exit 7 and no question.
+	planWaitable = func(*Env) bool { return false }
+	_, err = createProjectForRun(ctx, e, "", RunOptions{Name: "todo-app", Size: "large"}, nil)
+	if code := exitCodeFor(err, &msg); code != ExitPaymentRequired || len(prompts) != 1 {
+		t.Fatalf("off a terminal: exit %d, %d questions", code, len(prompts))
+	}
+
+	// Yes: api stops, todo-app is created, one command.
+	planWaitable = func(*Env) bool { return true }
+	answer = true
+	var out strings.Builder
+	e.Out = &out
+	p, err := createProjectForRun(ctx, e, "", RunOptions{Name: "todo-app", Size: "large"}, nil)
+	if err != nil {
+		t.Fatalf("yes: %v", err)
+	}
+	if p.Slug != "todo-app" || stateOf(t, e, api.ID) != "stopped" {
+		t.Fatalf("created %q, api %s", p.Slug, stateOf(t, e, api.ID))
+	}
+	if !strings.HasPrefix(out.String(), "Stopped api in ") || strings.Contains(out.String(), "Ended") {
+		t.Fatalf("out %q", out.String())
+	}
+
+	// A start of a stopped machine asks the same, naming the machine.
+	if err := StopCmd(ctx, e, p.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartCmd(ctx, e, api.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartCmd(ctx, e, p.ID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if last := prompts[len(prompts)-1]; last != "Stop api to start todo-app? [y/N] " {
+		t.Fatalf("start's question %q", last)
+	}
+	if stateOf(t, e, api.ID) != "stopped" || stateOf(t, e, p.ID) != "running" {
+		t.Fatal("start did not swap the machines")
+	}
+}
+
+// The fewest machines that make room, idle ones before busy ones.
+func TestMachinesToStop(t *testing.T) {
+	plan := "plus"
+	me := &Me{}
+	me.Billing.Plan = &plan
+	me.Limits.MemoryGB = 16
+	busy := &Signals{Agents: []AgentSignal{{Agent: "claude", State: "working"}}}
+	ps := []Project{
+		{ID: "1", Slug: "a", State: "running", Class: "large", Signals: busy},
+		{ID: "2", Slug: "b", State: "running", Class: "small"},
+		{ID: "3", Slug: "c", State: "running", Class: "small"},
+		{ID: "4", Slug: "d", State: "stopped", Class: "xl"},
+	}
+	got := slugsOf(machinesToStop(me, ps, "new", "large"))
+	if strings.Join(got, " ") != "b c" {
+		t.Fatalf("large on plus: %v, want b c", got)
+	}
+	if got := machinesToStop(me, ps, "new", "small"); len(got) != 1 || got[0].Slug != "b" {
+		t.Fatalf("small: %v", slugsOf(got))
+	}
+	me.Limits.MemoryGB = 8
+	if got := machinesToStop(me, ps, "new", "xl"); got != nil {
+		t.Fatalf("an xl never fits 8 GB: %v", slugsOf(got))
+	}
+}

@@ -46,12 +46,24 @@ type muxer interface {
 	// the path into the focused terminal (or window) and prints where;
 	// it exits pasteExitNoPane when there is none.
 	PasteScript(slug, window string) string
+	// TypeScript is shell that types text and Enter into the named
+	// window's (or herdr agent's) terminal, or exits typeExitNoWindow
+	// when there is none (`run -w`, I-639).
+	TypeScript(slug, window, text string) string
+	// CloseScript is shell that closes the named window (or herdr
+	// agent's pane), or exits typeExitNoWindow when there is none
+	// (`stop -w`, I-639).
+	CloseScript(slug, window string) string
 	// MessageScript is shell that shows text to whoever is attached.
 	MessageScript(slug, text string) string
 	// SessionEnded reports whether a temporary machine's session is
 	// over (I-352). An error means it cannot say.
 	SessionEnded(ctx context.Context, t sshTarget, slug string) (bool, error)
 }
+
+// typeExitNoWindow is TypeScript's and CloseScript's exit when the
+// window is not there.
+const typeExitNoWindow = 3
 
 // agentStart is one `repose run -p PROMPT` agent.
 type agentStart struct {

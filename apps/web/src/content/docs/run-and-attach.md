@@ -52,7 +52,7 @@ Two agents in one working tree edit the same files. Give each its own tree on th
 | Starts from           | the checkout's last commit               | a snapshot of the disk: uncommitted work and dependencies included |
 | Memory                | the machine's own                        | each copy's size, toward your plan                                 |
 | Work comes back with  | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`           |
-| Clean up              | `git worktree remove` on the machine     | `repose rm todo-app-fork-1`                                        |
+| Clean up              | `repose stop -w claude-2`                | `repose rm todo-app-fork-1`                                        |
 
 `repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back. [Fork a project](/docs/lifecycle#fork-a-project) has the rest of `fork`.
 
@@ -68,7 +68,7 @@ The worktree is a folder next to your checkout on the machine, numbered from 1: 
 
 In the worktree the agent has the whole repository at that commit, plus the checkout's gitignored `.env` and `.env.*` files as they are on the machine. `repose run` never syncs a worktree, and what the agent does there doesn't count as changes on the machine. Commit on the branch and merge or push it like any other. On your laptop, `git fetch repose` brings it as `repose/worktree-1` ([Getting work back](/docs/sync#getting-work-back)).
 
-Each `--worktree` run makes a new one with the lowest free number. They stay until you remove them, from the checkout on the machine:
+Each `--worktree` run makes a new one with the lowest free number. `repose stop -w claude-2` closes the agent's window and removes its worktree once your laptop has the branch, fetching it first; a worktree with uncommitted files, or another window in it, stays, and the line says so. The branch stays on the machine. By hand, from the checkout on the machine:
 
 ```
 git worktree remove ~/todo-app-worktree-1
@@ -207,7 +207,7 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 
 STATE is `working`, `idle` or `needs input`, the words `repose ls` uses (`--json` says `needs_input`); `-` is a window with no agent, or one that hasn't settled yet. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. COMMAND is the program's name only, never its arguments.
 
-To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach todo-app claude-2` (or `-w claude-2`) opens that window.
+To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach todo-app claude-2` (or `-w claude-2`) opens that window. `repose run todo-app -w claude-2 -p 1` types `1` and Enter into it, which answers a permission prompt; any other text is a follow-up for the agent. Add `-d` to stay detached. `repose stop -w claude-2` closes the window and leaves the machine running.
 
 `repose exec` runs one command in the checkout on the machine and gives you its output and exit code, the way `docker exec` does. The command gets what an agent there gets: your [secrets](/docs/secrets) as environment variables and the project's dev shell (its `.envrc`, or its `flake.nix` dev shell). Loading it prints nothing unless it takes more than 2 seconds or fails.
 
@@ -298,7 +298,7 @@ mosh doesn't work: it needs a UDP connection straight to the machine, and the on
 
 ## When the machine stops
 
-A stop ends every process, agents included. After the next start, the tmux session has a fresh `shell` window and the agents' windows are gone. To continue a Claude Code conversation, run `claude --resume` in the checkout and pick it.
+A stop ends every process, agents included. At the next start each agent's window opens again under its name and in its folder, with the agent continuing the conversation it was in: Claude Code and Codex by the conversation's id, opencode, pi and Gemini CLI with their newest one in that folder. `repose ps` and `repose attach -w claude-2` find them as before. Other windows and processes don't come back; the session starts with its `shell` window beside the agents.
 
 On a herdr project, herdr puts its workspaces and tabs back at the start and resumes each agent that has herdr's integration (Claude Code, Codex, opencode and pi) in the conversation it was in.
 

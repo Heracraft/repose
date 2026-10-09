@@ -474,6 +474,73 @@ func TestStopFetchesFirst(t *testing.T) {
 	}
 }
 
+// From another folder, a stop fetches in the machine's laptop folders
+// projects.json records, and the line names the folder; a folder whose
+// `repose` remote no longer names the machine is left alone (I-638).
+func TestStopFetchesInTheRecordedFolder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		c.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_CONFIG_GLOBAL=/dev/null")
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	machine := t.TempDir()
+	git(machine, "init", "-q", "-b", "main")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "one")
+	laptop := t.TempDir()
+	git(laptop, "clone", "-q", machine, ".")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
+	git(laptop, "remote", "add", "repose", "demo.repose:~/demo")
+	git(laptop, "config", "url."+machine+".insteadOf", "demo.repose:~/demo")
+	stale := t.TempDir() // once linked, its remote since removed
+	git(stale, "init", "-q")
+
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	var out, errOut bytes.Buffer
+	e.Out, e.ErrOut = &out, &errOut
+	p := runningProject(t, fake, e, "demo")
+	e.Cwd = t.TempDir() // not a checkout
+	root := gitRepoRoot(laptop)
+	e.rememberFolder(root, p.ID)
+	e.rememberFolder(gitRepoRoot(stale), p.ID)
+	disk, err := loadProjectsCache(e.Dir)
+	if err != nil || disk.Folders[root] != p.ID {
+		t.Fatalf("folders on disk: %v %v", err, disk.Folders)
+	}
+	if got := e.laptopFolders(p); len(got) != 1 || got[0] != root {
+		t.Fatalf("laptopFolders = %v, want [%s]", got, root)
+	}
+	if ids := laptopCommits(e, p); len(ids) == 0 {
+		t.Fatal("status from another folder counts nothing")
+	}
+	out.Reset()
+	if err := StopCmd(ctx, e, p.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out.String(), "\n")
+	if lines[0] != "Fetched 2 commits on repose/main in "+tildePath(root)+"." || !strings.HasPrefix(lines[1], "Stopped demo in ") {
+		t.Fatalf("out %q err %q", out.String(), errOut.String())
+	}
+	if git(laptop, "rev-parse", "repose/main") != git(machine, "rev-parse", "main") {
+		t.Fatal("not fetched")
+	}
+	// rm forgets the folder with the rest of the project's entries.
+	forgetProject(&e.Cache, p.ID)
+	if len(e.Cache.Folders) != 0 {
+		t.Fatalf("folders after forget: %v", e.Cache.Folders)
+	}
+}
+
 // Ctrl-C while the CLI waits on a stop the api took says the stop goes
 // on, not just "Interrupted." (I-615; review A6).
 func TestInterruptedStopSaysItGoesOn(t *testing.T) {

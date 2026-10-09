@@ -318,33 +318,42 @@ func parseStatusGit(out string, counted bool) []gitRow {
 // of branches still answers in one round trip.
 const laptopCommitsMax = 4000
 
-// laptopCommits is the commit at every branch tip of the laptop checkout
-// at cwd, its fetched `repose/*` branches included, when that checkout
-// is p's: its `repose` remote names p's machine, or its origin is p's
-// remote. Nil otherwise, and status then shows each branch's last commit
-// instead of what the laptop lacks (I-616).
-func laptopCommits(cwd string, p *Project) []string {
-	root := gitRepoRoot(cwd)
-	if root == "" {
-		return nil
+// laptopCommits is the commit at every branch tip of p's checkouts on
+// this laptop, their fetched `repose/*` branches included: the checkout
+// at the working directory when it is p's (its `repose` remote names p's
+// machine, or its origin is p's remote), and every other folder whose
+// `repose` remote names it (laptopFolders, I-638), so `status todo-app`
+// from ~ counts too. Nil when there is none, and status then shows each
+// branch's last commit instead of what the laptop lacks (I-616).
+func laptopCommits(e *Env, p *Project) []string {
+	var roots []string
+	if root := gitRepoRoot(e.Cwd); root != "" {
+		if reposeRemoteHost(remoteURLOf(root, reposeRemoteName)) == p.Slug || (p.RemoteURL != "" && gitRemoteOrigin(root) == p.RemoteURL) {
+			roots = append(roots, root)
+		}
 	}
-	if reposeRemoteHost(remoteURLOf(root, reposeRemoteName)) != p.Slug && (p.RemoteURL == "" || gitRemoteOrigin(root) != p.RemoteURL) {
-		return nil
-	}
-	out, err := gitCmd(root, "for-each-ref", "--format=%(objectname)", "refs/heads", "refs/remotes")
-	if err != nil {
-		return nil
+	for _, r := range e.laptopFolders(p) {
+		if len(roots) == 0 || r != roots[0] {
+			roots = append(roots, r)
+		}
 	}
 	seen := map[string]bool{}
 	var ids []string
-	for _, id := range nonEmptyLines(out) {
-		if !seen[id] && len(ids) < laptopCommitsMax {
-			seen[id] = true
-			ids = append(ids, id)
+	for _, root := range roots {
+		out, err := gitCmd(root, "for-each-ref", "--format=%(objectname)", "refs/heads", "refs/remotes")
+		if err != nil {
+			continue
 		}
-	}
-	if head, err := gitHeadCommit(root); err == nil && !seen[head] {
-		ids = append(ids, head)
+		for _, id := range nonEmptyLines(out) {
+			if !seen[id] && len(ids) < laptopCommitsMax {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		if head, err := gitHeadCommit(root); err == nil && !seen[head] {
+			seen[head] = true
+			ids = append(ids, head)
+		}
 	}
 	return ids
 }

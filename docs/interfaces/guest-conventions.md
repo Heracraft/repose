@@ -148,6 +148,24 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   takes the api's sample when it is under two minutes old. A window whose
   `pane_current_command` is a shell has no state, whatever the option
   says.
+- A stop records the agent windows and the next start opens them again
+  (DECISIONS I-636). When hostd asks for the shutdown, guestd runs
+  `repose-tmux-save` as dev (5 s at most) before `systemctl poweroff`. It
+  writes `~/.repose/agent-windows`, one line per window whose name is an
+  agent's (`claude`, `claude-2`, `<checkout>/codex`) and whose pane runs
+  something other than a shell: name, agent, the pane's folder and the
+  pane option `@repose-session`, separated by `\037`. No such window
+  removes the file. `repose-hook` sets `@repose-session` on its
+  `$TMUX_PANE` to the agent's conversation id from every hook payload:
+  Claude Code's `session_id`, Codex's `thread-id`. When
+  `repose-tmux-session` creates the session it renames the file, opens
+  each window under its name in its folder with the agent's resume form
+  (`claude --resume ID` or `claude --continue`, `codex resume ID` or
+  `codex resume --last`, `opencode --continue`, `pi --continue`, `gemini
+  --resume latest`), and removes it. A folder that is gone is skipped,
+  and of two windows with no id in one folder for one agent only the
+  first opens. A tmux server that exits later in the boot starts with
+  `shell` alone.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names

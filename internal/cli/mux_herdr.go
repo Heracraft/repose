@@ -589,6 +589,28 @@ printf '%%s\n' "${n:-$p}"
 `, pasteExitNoPane)
 }
 
+// herdrAgentPane is shell that sets $p to the pane of the herdr agent
+// named name, or exits typeExitNoWindow.
+func herdrAgentPane(name string) string {
+	return fmt.Sprintf(`p=$(herdr agent list | jq -r --arg n %s 'first(.result.agents[] | select(.name == $n) | .pane_id) // empty')
+[ -n "$p" ] || exit %d
+`, shQuote(name), typeExitNoWindow)
+}
+
+// TypeScript sends the text to the agent's pane, then Enter. Not
+// `herdr agent prompt`: it refuses an agent that is blocked, and
+// answering one that is is what `run -w` is for.
+func (herdrMux) TypeScript(slug, window, text string) string {
+	return herdrAgentPane(window) + fmt.Sprintf(`herdr pane send-text "$p" %s >/dev/null && herdr pane send-keys "$p" enter >/dev/null
+`, shQuote(text))
+}
+
+// CloseScript closes the agent's pane.
+func (herdrMux) CloseScript(slug, window string) string {
+	return herdrAgentPane(window) + `herdr pane close "$p" >/dev/null
+`
+}
+
 // MessageScript is a herdr notification titled repose (herdr shows it
 // only when its config turns notifications on; with no client attached
 // nobody sees it, as with tmux).

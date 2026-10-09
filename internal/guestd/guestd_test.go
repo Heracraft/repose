@@ -330,6 +330,23 @@ func TestEveryRequestHasAHandler(t *testing.T) {
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			if _, ok := h.runner.Ran("systemctl poweroff"); ok {
+				// The agent windows are recorded first, as dev (I-636).
+				calls := h.runner.Calls()
+				save, power := -1, -1
+				for i, c := range calls {
+					switch strings.Join(c.Argv, " ") {
+					case "repose-tmux-save":
+						if c.User != "dev" {
+							t.Errorf("repose-tmux-save ran as %q, want dev", c.User)
+						}
+						save = i
+					case "systemctl poweroff":
+						power = i
+					}
+				}
+				if save < 0 || save > power {
+					t.Fatalf("repose-tmux-save at %d, poweroff at %d; calls: %v", save, power, calls)
+				}
 				return
 			}
 			time.Sleep(10 * time.Millisecond)

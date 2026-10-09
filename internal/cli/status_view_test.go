@@ -401,13 +401,21 @@ func TestStatusShowsTheCheckoutsGit(t *testing.T) {
 		t.Fatalf("json:\n%s", out.buf.String())
 	}
 
-	// From a folder that is not the project's checkout the laptop cannot
-	// count: the last commit instead.
+	// From another folder the laptop counts in the checkout the run
+	// recorded (I-638).
 	f.env.JSON = false
 	f.env.Cwd = t.TempDir()
 	got = status()
-	if !strings.Contains(got, "\n  checkout   "+branch+": last commit just now, 1 file not committed\n") {
+	if !strings.Contains(got, "\n  checkout   "+branch+": 1 file not committed\n             worktree-1: nothing new\n") {
 		t.Fatalf("outside the checkout:\n%s", got)
+	}
+	// With no folder of the project on this laptop it cannot count: the
+	// last commit instead.
+	f.env.Cache.Folders = map[string]string{}
+	f.env.Cache.ByDir = map[string]string{}
+	got = status()
+	if !strings.Contains(got, "\n  checkout   "+branch+": last commit just now, 1 file not committed\n") {
+		t.Fatalf("with no laptop folder:\n%s", got)
 	}
 }
 

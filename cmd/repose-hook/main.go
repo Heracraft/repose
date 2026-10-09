@@ -79,6 +79,9 @@ func run() string {
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return "empty payload"
 	}
+	// Before the mapping: every payload carries the id, also those that
+	// are no event (I-636).
+	recordSession(*agent, payload)
 
 	p, err := hooks.Map(*agent, payload)
 	if err != nil {

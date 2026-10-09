@@ -40,7 +40,7 @@ var quietAllowed = map[string]string{
 	"logins.go:saveLoginSkip:Saved: %s %s on your laptop, for %s. The":            "names when, not what to type",
 	"secrets.go:SecretsListCmd:Copied from this laptop at each repose r":          "names when, not what to type",
 	"scan.go:printScan:\n%d to check on the machine; each one it":                 "names when, not what to type",
-	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal, w":          "says what reply can't do",
+	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal; `":          "the header of rows only run -w answers; it replaced the line that said reply can't (I-639)",
 	"cert.go:refreshSSHAccess:Could not renew your SSH certificate for":           "a failure",
 	"fork.go:ForkCmd:Could not start the agent in %s: %s. `re":                    "a failure",
 	"login.go:setUpPlainSSH:warning: could not write ~/.ssh/repose/c":             "a failure",

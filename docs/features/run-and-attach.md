@@ -562,6 +562,30 @@ it (I-542). The api cannot tell an old CLI apart.
   WINDOW (or `-w`), or `-n N`, it prints the window's last lines from
   `tmux capture-pane -p -J -S -N` (herdr: `herdr agent read --lines N`),
   trailing blank rows dropped. Nothing is logged.
+- `repose run [PROJECT] -w WINDOW -p TEXT` (I-639) runs as `run` does up
+  to the agent step, then types TEXT and Enter into the window (`tmux
+  send-keys -l`, then `Enter`; herdr: `herdr pane send-text` and
+  `send-keys enter` on the agent's pane, since `herdr agent prompt`
+  refuses a blocked agent) instead of starting an agent, and attaches to
+  it unless `-d`. A window the session does not have exits 2 with
+  the line `attach -w` prints for it.
+  `-w` needs `-p` and refuses `--worktree` and `--agent` (exit 2).
+- `repose stop [PROJECT] -w WINDOW` (I-639) closes one window (`tmux
+  kill-window`; herdr: `herdr pane close`) and leaves the machine
+  running. It asks first, or needs `--yes` off a terminal, when the
+  sample shows that window's agent working or waiting. On tmux, the same
+  ssh first reads the window's folder: when it is a linked worktree named
+  `<checkout>-worktree-N`, its branch, tip, `git status --porcelain`
+  count and the other windows working in it. After the close, with no
+  file listed and no other window there, the CLI runs stop's fetch in the
+  project's laptop folders, and when a ref in one of them contains the
+  tip it runs `git worktree remove` from the checkout. The branch is
+  kept. The line says what happened: `Closed claude-2 on todo-app and
+  removed its worktree ~/todo-app-worktree-2.`, or `...; its worktree
+  ~/todo-app-worktree-2 stays: REASON.` with REASON `claude-3 is working
+  in it`, `2 files not committed` or `worktree-2 is not fetched to this
+  laptop`. `-w` takes one PROJECT and refuses `--unused` and
+  `--no-snapshot` (exit 2).
 - `repose exec [PROJECT] [--] CMD...` runs, over ssh, `cd` into the
   checkout (the home directory when the machine has none, I-368), `/etc/profile.d/repose.sh`, then
   `/etc/repose/devshell.sh` (the agent wrappers' loader, I-259) or, on an

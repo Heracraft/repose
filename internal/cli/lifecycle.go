@@ -92,6 +92,9 @@ type StopOptions struct {
 	Confirm func(prompt string) (bool, error)
 	// Acted, when set, gets the projects the command resolved.
 	Acted *[]*Project
+	// asked: the caller's question named the busy agents already
+	// (run's plan question, I-637), so no Ended line repeats them.
+	asked bool
 }
 
 // stopResult is how one project's stop ended.
@@ -150,7 +153,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 			clauses = append(clauses, p.Slug+" has "+busy[i])
 		}
 	}
-	asked := false
+	asked := o.asked
 	if agents > 0 && !o.Yes {
 		clause := strings.Join(clauses, "; ") + "."
 		if o.Confirm == nil {

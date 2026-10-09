@@ -42,9 +42,11 @@ let
         exit 1
       fi
       dir=$(repose-checkout)
+      created=""
       if ! tmux has-session -t "=$slug" 2>/dev/null; then
         # -d: detached. A server this starts runs in the unit's cgroup.
         tmux new-session -d -s "$slug" -n shell -c "$dir"
+        created=1
       fi
       # Run by the unit, the session must belong to a server in the
       # unit's cgroup. A server someone started outside it (`tmux` in an
@@ -75,6 +77,72 @@ let
       tz=$(sed -n 's/^TZ=//p' /etc/repose/env 2>/dev/null | tail -n 1 || true)
       if [ -n "$tz" ]; then
         tmux set-environment -g TZ "$tz"
+      fi
+      # The agents' windows the last stop recorded come back under the
+      # same names, each agent on its conversation (DECISIONS I-636).
+      # Only a session this run created: the file is renamed first, so a
+      # server that exits later in the boot starts with `shell` alone.
+      saved="$HOME/.repose/agent-windows"
+      if [ -n "$created" ] && [ -s "$saved" ] && mv -f "$saved" "$saved.restoring"; then
+        seen=" "
+        while IFS="$(printf '\037')" read -r name agent cwd sid; do
+          [ -n "$name" ] && [ -d "$cwd" ] || continue
+          case "$sid" in *[!A-Za-z0-9_-]*) sid="" ;; esac
+          if [ -z "$sid" ]; then
+            # Without its own id an agent continues the folder's newest
+            # conversation; a second such window there would continue
+            # the same one, so it is not reopened.
+            key="$agent:$cwd"
+            case "$seen" in *" $key "*) continue ;; esac
+            seen="$seen$key "
+          fi
+          case "$agent" in
+            claude) if [ -n "$sid" ]; then cmd="claude --resume $sid"; else cmd="claude --continue"; fi ;;
+            codex) if [ -n "$sid" ]; then cmd="codex resume $sid"; else cmd="codex resume --last"; fi ;;
+            opencode) cmd="opencode --continue" ;;
+            pi) cmd="pi --continue" ;;
+            gemini) cmd="gemini --resume latest" ;;
+            *) continue ;;
+          esac
+          tmux new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$cmd" || true
+        done < "$saved.restoring"
+        rm -f "$saved.restoring"
+      fi
+    '';
+  };
+  # repose-tmux-save records the session's agent windows before a stop:
+  # guestd runs it as dev when hostd asks for the shutdown, while every
+  # agent still runs (DECISIONS I-636). One line per window that runs an
+  # agent: name, agent, folder, and the conversation id the agent's hook
+  # put in the pane's @repose-session. No agent window removes the file.
+  tmuxSave = pkgs.writeShellApplication {
+    name = "repose-tmux-save";
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnugrep ];
+    text = ''
+      out="$HOME/.repose/agent-windows"
+      slug=$(jq -r '.slug // empty' "$HOME/.repose/project.json" 2>/dev/null || true)
+      [ -n "$slug" ] || exit 0
+      # \037, not a tab: read collapses empty fields between tabs.
+      us=$(printf '\037')
+      if ! rows=$(tmux list-windows -t "=$slug" -F "#{window_name}$us#{pane_current_command}$us#{@repose-state}$us#{pane_current_path}$us#{@repose-session}" 2>/dev/null); then
+        rm -f "$out"
+        exit 0
+      fi
+      tmp=$(mktemp "$out.XXXXXX")
+      while IFS="$us" read -r name command state cwd sid; do
+        base=''${name##*/}
+        printf '%s\n' "$base" | grep -qE '^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$' || continue
+        agent=''${base%-[0-9]*}
+        # A window whose agent exited holds a shell: nothing to resume.
+        if [ -z "$state" ]; then
+          case "$command" in bash|sh|zsh|fish|"") continue ;; esac
+        fi
+        printf '%s\037%s\037%s\037%s\n' "$name" "$agent" "$cwd" "$sid" >> "$tmp"
+      done <<< "$rows"
+      if [ -s "$tmp" ]; then
+        mv -f "$tmp" "$out"
+      else
+        rm -f "$tmp" "$out"
       fi
     '';
   };
@@ -148,7 +216,7 @@ in
     '';
   };
 
-  environment.systemPackages = [ tmuxSession ];
+  environment.systemPackages = [ tmuxSession tmuxSave ];
 
   systemd.user.services.repose-tmux-session = {
     description = "repose: project tmux session";

@@ -13,6 +13,9 @@ import (
 	"github.com/heracraft/repose/internal/vsockrpc"
 )
 
+// WindowSaveTimeout bounds repose-tmux-save before the poweroff.
+const WindowSaveTimeout = 5 * time.Second
+
 // ShutdownFlush is how long the poweroff waits after the response is written,
 // so hostd sees the answer before the guest goes away.
 const ShutdownFlush = 500 * time.Millisecond
@@ -164,6 +167,19 @@ func (s *Server) shutdown(ctx context.Context, timeoutS uint32) error {
 	}
 	go func() {
 		time.Sleep(ShutdownFlush)
+		// The tmux session's agent windows, recorded while every agent
+		// still runs, come back at the next start (DECISIONS I-636). A
+		// base without the script, or a herdr project, records nothing.
+		saveCtx, cancelSave := context.WithTimeout(context.Background(), WindowSaveTimeout)
+		if res, err := runner.Run(saveCtx, sysdep.RunSpec{
+			Argv:      []string{"repose-tmux-save"},
+			User:      "dev",
+			Env:       sysdep.DevEnv(s.paths, "dev"),
+			MaxOutput: 4 << 10,
+		}); err != nil || res.ExitCode != 0 {
+			s.log.Warn("agent windows not recorded", "event", "shutdown")
+		}
+		cancelSave()
 		poweroffCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		if _, err := runner.Run(poweroffCtx, sysdep.RunSpec{

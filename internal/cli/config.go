@@ -228,6 +228,11 @@ type ProjectsCache struct {
 	// read this key, finds nothing for the folder, and makes it a machine
 	// of its own instead of syncing it over the machine's checkout.
 	Checkouts map[string]CachedCheckout `json:"checkouts,omitempty"`
+	// Folders maps each laptop folder whose `repose` remote the CLI
+	// pointed at a machine to that machine's project id (DECISIONS
+	// I-638), so `stop` and `status` run elsewhere fetch and count
+	// there. Never read to pick a project: resolve does not see it.
+	Folders map[string]string `json:"folders,omitempty"`
 
 	// base is the file as this process loaded it. A save applies only what
 	// this process changed since (added, updated, removed) to the file as it
@@ -251,7 +256,7 @@ type CachedProject struct {
 }
 
 func newProjectsCache() ProjectsCache {
-	return ProjectsCache{ByRemote: map[string]CachedProject{}, ByDir: map[string]string{}, Checkouts: map[string]CachedCheckout{}}
+	return ProjectsCache{ByRemote: map[string]CachedProject{}, ByDir: map[string]string{}, Checkouts: map[string]CachedCheckout{}, Folders: map[string]string{}}
 }
 
 func projectsPath(dir string) string { return filepath.Join(dir, "projects.json") }
@@ -260,6 +265,9 @@ func (c ProjectsCache) MarshalJSON() ([]byte, error) {
 	m := map[string]any{"by_dir": c.ByDir}
 	if len(c.Checkouts) > 0 {
 		m["checkouts"] = c.Checkouts
+	}
+	if len(c.Folders) > 0 {
+		m["folders"] = c.Folders
 	}
 	for k, v := range c.ByRemote {
 		m[k] = v
@@ -287,6 +295,14 @@ func (c *ProjectsCache) UnmarshalJSON(b []byte) error {
 			// cache.
 			if err := json.Unmarshal(v, &c.Checkouts); err != nil || c.Checkouts == nil {
 				c.Checkouts = map[string]CachedCheckout{}
+			}
+			continue
+		}
+		if k == "folders" {
+			// Like checkouts: an older CLI writes it back as a remote,
+			// which reads as no folders.
+			if err := json.Unmarshal(v, &c.Folders); err != nil || c.Folders == nil {
+				c.Folders = map[string]string{}
 			}
 			continue
 		}
@@ -327,6 +343,9 @@ func (c ProjectsCache) clone() ProjectsCache {
 	for k, v := range c.Checkouts {
 		out.Checkouts[k] = v
 	}
+	for k, v := range c.Folders {
+		out.Folders[k] = v
+	}
 	return out
 }
 
@@ -364,6 +383,16 @@ func (c ProjectsCache) mergeInto(disk ProjectsCache) ProjectsCache {
 	for k := range base.Checkouts {
 		if _, ok := c.Checkouts[k]; !ok {
 			delete(disk.Checkouts, k)
+		}
+	}
+	for k, v := range c.Folders {
+		if old, ok := base.Folders[k]; !ok || old != v {
+			disk.Folders[k] = v
+		}
+	}
+	for k := range base.Folders {
+		if _, ok := c.Folders[k]; !ok {
+			delete(disk.Folders, k)
 		}
 	}
 	return disk

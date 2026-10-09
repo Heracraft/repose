@@ -162,6 +162,7 @@ func (e *Env) addReposeRemote(ctx context.Context, p *Project, t sshTarget, chec
 	}
 	if checkout == nil {
 		if reposeRemoteHost(remoteURLOf(root, reposeRemoteName)) == p.Slug {
+			e.rememberFolder(root, p.ID)
 			return
 		}
 		name, err := guestCheckoutName(ctx, t, p.Slug)
@@ -181,6 +182,10 @@ func (e *Env) addReposeRemote(ctx context.Context, p *Project, t sshTarget, chec
 	}
 	if note != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, strings.TrimSpace(note))
+	}
+	// stop and status from another folder find this one (I-638).
+	if reposeRemoteHost(remoteURLOf(root, reposeRemoteName)) == p.Slug {
+		e.rememberFolder(root, p.ID)
 	}
 }
 

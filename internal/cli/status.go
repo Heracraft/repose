@@ -47,7 +47,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	// asked beside the api's reads.
 	guest := make(chan guestStatus, 1)
 	if project.State == "running" {
-		have := laptopCommits(e.Cwd, project)
+		have := laptopCommits(e, project)
 		go func() { guest <- guestStatusRead(ctx, e.target(project.Slug), project.Slug, have) }()
 	} else {
 		guest <- guestStatus{}

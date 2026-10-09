@@ -54,6 +54,23 @@ tmux display-message -p -t "$p" '#{window_name}'
 `, shQuote(t), pasteExitNoPane)
 }
 
+// TypeScript types text into the window's active pane as keys, then
+// Enter, as startAgentWindow types a prompt.
+func (tmuxMux) TypeScript(slug, window, text string) string {
+	t := shQuote(tmuxWindowTarget(slug, window))
+	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[3]d
+tmux send-keys -t %[1]s -l %[2]s && tmux send-keys -t %[1]s Enter
+`, t, shQuote(text), typeExitNoWindow)
+}
+
+// CloseScript kills the window and every process in it.
+func (tmuxMux) CloseScript(slug, window string) string {
+	t := shQuote(tmuxWindowTarget(slug, window))
+	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[2]d
+tmux kill-window -t %[1]s
+`, t, typeExitNoWindow)
+}
+
 // MessageScript shows text on the session's clients for four seconds
 // when it has any, and does nothing otherwise.
 func (tmuxMux) MessageScript(slug, text string) string {

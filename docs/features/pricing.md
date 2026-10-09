@@ -64,6 +64,16 @@ much runs, and nothing is metered by the hour. The other reasons
 `plan_limit`, `projects` (the slugs using the memory), so a dashboard can
 draw the sentence itself.
 
+On a terminal, without `--json`, `repose run`, `start` and `attach` turn a
+`plan_limit` refusal into stop's question: `api has claude (working).
+Stopping ends it. Stop api to start todo-app? [y/N]`. The CLI picks the
+fewest running machines that make room (those with no agent working or
+waiting first, then unused ones, then the biggest), or the gate's
+`projects` when its own count disagrees. A yes runs `repose stop` on them
+(the fetch first, the stop lines) and asks for the start or create
+again; a no prints the refusal and exits 7. Off a terminal the refusal
+exits 7 as before (DECISIONS I-637).
+
 Egress past the allowance is not a refusal: $0.05 a GB is added to the
 next invoice as one line, `Egress overage: 50 GB over the Solo plan's 250
 GB (1 Oct to 1 Nov 2026) at $0.05/GB`. The billing page shows the period's

@@ -18107,3 +18107,118 @@ the CLI (cli-devx, 2026-10-09).** Amends I-276, I-603, I-622, I-628.
   `default_agent`, not from `claude`, so an older project that starts
   Claude under `default_agent = "codex"` says so. `--agent`'s help
   names `default_agent`. `TestRunAgentWithoutPromptSticks`.
+
+**I-636. A stop records the tmux agent windows and the next start opens
+them on their conversations (cli-devx, 2026-10-09).** Amends I-500,
+I-606. *Made during implementation* (the fourth cli-devx pass over the
+2026-10-08 reviews, "A stop ends every tmux agent").
+- tmux is the default multiplexer, and a Solo user stops machines at
+  night to free plan memory; each morning the agents' windows were gone
+  and `claude --resume` was picked by hand in each folder, which also
+  lost the names `ps`, `attach -w` and the questions use. herdr already
+  resumed its agents (I-501).
+- When hostd asks for the shutdown, guestd runs `repose-tmux-save` as
+  dev (5 s at most) before `systemctl poweroff`, while every agent still
+  runs. Not an `ExecStop` on the session unit: at poweroff the user
+  manager stops each pane's `tmux-spawn` scope beside the unit, so the
+  windows would be closing while they were listed. A guest that dies
+  without a shutdown (a host crash) records nothing, as before.
+- The file is `~/.repose/agent-windows`: per window named after an agent
+  whose pane runs something other than a shell, its name, agent, folder
+  and conversation id, separated by `\037` (a tab collapses empty
+  fields in `read`). `repose-hook` puts the id in the pane option
+  `@repose-session` from every hook payload (Claude Code's `session_id`,
+  Codex's `thread-id`); the other agents have none.
+- `repose-tmux-session`, when it creates the session, renames the file
+  and opens each window under its name in its folder: `claude --resume
+  ID` or `claude --continue`, `codex resume ID` or `codex resume
+  --last`, `opencode --continue`, `pi --continue`, `gemini --resume
+  latest` (flags checked against the installed binaries: Claude Code
+  2.1, Codex 0.157 `resume [SESSION_ID] --last` filtered to the folder,
+  opencode `-c`, pi `-c`, Gemini CLI `-r latest`). Without an id an
+  agent continues the folder's newest conversation, so of two such
+  windows for one agent in one folder only the first opens. A tmux
+  server that exits later in the boot starts with `shell` alone.
+- No `--no-resume` on start: it would need a field from the CLI through
+  the api and hostd to guestd for a rare opt-out, and `repose stop -w
+  WINDOW` (I-639) closes a reopened window. No output line was added.
+- Evidence: the two scripts run against a private tmux server with
+  stand-in agents (`claude --resume abc-123`, `--continue`, `codex
+  resume --last` started under the old names and folders; a second run
+  of the session script opened nothing); shellcheck clean;
+  `TestSessionIDOf`, `TestRecordSessionOnlyInTmux`, guestd's Shutdown
+  subtest checks the save runs as dev before the poweroff. Not run here:
+  the guest VM test, and a real stop and start.
+
+**I-637. A start the plan's memory refuses asks to stop what is in the
+way (cli-devx, 2026-10-09).** Amends I-610, I-614, I-634. *Made during
+implementation*.
+- On Solo every second `large` was exit 7 naming `repose stop api`, then
+  the run typed again. On a terminal, without `--json`, `run`, `start`
+  and `attach` now turn the gate's `plan_limit` into stop's question:
+  `api has claude (working). Stopping ends it. Stop api to start
+  todo-app? [y/N]`. A yes runs `repose stop` on those machines (fetch
+  first, the stop lines; no `Ended` line, the question named them) and
+  asks for the start or create once more. A no prints the refusal and
+  exits 7; off a terminal the refusal exits 7 as before. No flag, no
+  new line on success.
+- Which machines: the fewest running ones that make room by the CLI's
+  count from `/me` and the project list, those with no agent working or
+  waiting first, then unused ones, then the biggest. When the CLI's count
+  finds no such set (an exempt account, an api that counts otherwise) it
+  offers the gate's `projects`. A class bigger than the plan (`an xl
+  machine needs 16 GB`) carries no machines and is not asked about.
+- `fork` and `resize --size` keep their own refusal before they
+  snapshot (I-610): stopping other machines in the middle of those is a
+  second decision the user did not start.
+  `TestRunStopsWhatIsInTheWayOfThePlan`, `TestMachinesToStop`.
+
+**I-638. stop fetches and status counts in every laptop folder of the
+machine (cli-devx, 2026-10-09).** Amends I-615, I-616, I-634. *Made
+during implementation*.
+- `stop api web`, `stop --unused` and `status todo-app` from ~ fetched
+  nothing and counted nothing: only the working directory's checkout was
+  looked at, so a machine stopped from elsewhere kept its commits until
+  the next start. projects.json gains `folders` (repository root to
+  project id), written when `run`, `sync` or `attach` finds or makes the
+  folder's `repose` remote for the machine. It is never read to resolve
+  a project (I-152 holds). The folders are those, `by_dir` and
+  `checkouts`, each used only while its `repose` remote still names the
+  machine.
+- `stop` fetches in each, four at a time, before the stop, and prints
+  `Fetched 3 commits on repose/main.` for the working directory's
+  checkout and `... in ~/code/api.` for another; nothing when nothing
+  came. `status` (and the stop line's clause) counts commits not on
+  this laptop over the tips of all of them. `rm` drops the entries with
+  the project's others. An older CLI writes the key back as a remote,
+  which reads as no folders; the next run in a folder records it again.
+  `TestStopFetchesInTheRecordedFolder`, `TestStatusShowsTheCheckoutsGit`.
+
+**I-639. `run -w WINDOW -p TEXT` types into an agent's window, `stop -w
+WINDOW` closes one (cli-devx, 2026-10-09).** Amends I-606 (its G2, the
+window and worktree removal left open), I-607. *Made during
+implementation*.
+- Answering a Claude Code permission prompt, or a follow-up, took
+  attach, find, type, detach; `questions` listed those waits with
+  nothing to answer them. `-w` on `run` names an existing window (a name
+  or number from `ps`, a herdr agent's name) and `-p` is what is typed,
+  then Enter. `run` does what it does otherwise up to the agent step
+  (logins copied, no sync after the first, I-367), and attaches to that
+  window unless `-d`. A missing window exits 2 with attach's line. `-w`
+  needs `-p` and refuses `--worktree` and `--agent`. On herdr the text
+  goes through `herdr pane send-text` and `send-keys enter`: `herdr
+  agent prompt` refuses a blocked agent, the case this is for. The
+  questions header now names the command instead of saying `reply`
+  can't answer (same one line).
+- `stop -w WINDOW` closes one window and the machine keeps running,
+  under stop's question when that agent is working or waiting. Folded
+  under stop rather than a new verb (CLI surface taste). On tmux the
+  window's worktree (a `<checkout>-worktree-N` linked worktree no other
+  window works in, with nothing in `git status`) goes too, after stop's
+  fetch, only when a laptop folder of the project has its tip on a ref;
+  `git worktree remove` without `--force`, the branch kept. Otherwise
+  the line says why it stays. On herdr only the pane closes: herdr's
+  agent list gives no folder to check.
+- Evidence: `TestStopWindowScripts` runs the probe, close, remove and
+  type scripts against a private tmux server and real git;
+  `TestKeptBecause`. Not run against a herdr guest.

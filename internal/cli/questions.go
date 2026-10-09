@@ -173,7 +173,7 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 		if len(qs) > 0 {
 			_, _ = fmt.Fprintln(e.Out)
 		}
-		_, _ = fmt.Fprintln(e.Out, "Waiting at a prompt in their terminal, which `repose reply` can't answer:")
+		_, _ = fmt.Fprintln(e.Out, "Waiting at a prompt in their terminal; `repose run PROJECT -w WINDOW -p TEXT` types the answer:")
 		for _, l := range waiting {
 			_, _ = fmt.Fprintln(e.Out, l)
 		}

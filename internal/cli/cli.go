@@ -502,6 +502,12 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err := checkSizeFlag(opts.Size); err != nil {
 				return err
 			}
+			if opts.Window != "" && opts.Prompt == "" {
+				return cobraUsageError{fmt.Errorf("-w types -p PROMPT into that window and needs -p")}
+			}
+			if opts.Window != "" && (opts.Worktree || opts.Agent != "") {
+				return cobraUsageError{fmt.Errorf("-w types into an agent that is already running; --worktree and --agent start a new one")}
+			}
 			if opts.Worktree && opts.Prompt == "" {
 				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs -p PROMPT")}
 			}
@@ -554,6 +560,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix off this machine from now on")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, on branch worktree-N")
+	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "type -p's text and Enter into this agent `WINDOW` (a name or number from repose ps) instead of starting an agent")
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
@@ -706,21 +713,46 @@ func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 
 func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var noSnapshot, idle, yes bool
+	var window string
 	cmd := &cobra.Command{
 		Use:   "stop [PROJECT...]",
 		Short: "Snapshot and stop projects",
 		Long: "Snapshot and stop each PROJECT's machine (this checkout's, by default),\n" +
 			"several at once. Every process on it ends. It asks first when an agent is\n" +
 			"mid-turn or waiting for an answer; -y skips the question and is required\n" +
-			"without a terminal. Run in the machine's checkout, it runs git fetch repose\n" +
-			"first.",
-		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused",
+			"without a terminal. It runs git fetch repose first in each checkout of the\n" +
+			"machine on this laptop.\n\n" +
+			"With -w it closes that one agent window and the machine keeps running. The\n" +
+			"window's worktree is removed too when it has no uncommitted file, no other\n" +
+			"window works in it, and this laptop has its branch after the fetch.",
+		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused\n  repose stop -w claude-2",
 		SuggestFor:        []string{"down", "halt"},
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idle && (len(args) > 0 || g.project != "") {
 				return cobraUsageError{fmt.Errorf("--unused stops every unused machine; it takes no PROJECT")}
+			}
+			if window != "" {
+				if idle || len(args) > 1 {
+					return cobraUsageError{fmt.Errorf("-w closes a window on one machine; pass one PROJECT")}
+				}
+				if noSnapshot {
+					return cobraUsageError{fmt.Errorf("-w closes a window and the machine keeps running; --no-snapshot is for a stop")}
+				}
+				project, err := projectFrom(args, g)
+				if err != nil {
+					return err
+				}
+				e, err := env()
+				if err != nil {
+					return err
+				}
+				o := StopWindowOptions{Project: project, Window: window, Yes: yes}
+				if !yes && canPrompt(os.Stdin) {
+					o.Confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "closing it") }
+				}
+				return StopWindowCmd(cmd.Context(), e, o)
 			}
 			var projects []string
 			if !idle {
@@ -743,6 +775,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
 	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
+	cmd.Flags().StringVarP(&window, "window", "w", "", "close this agent `WINDOW` (a name or number from repose ps), and its worktree when nothing in it is lost; the machine keeps running")
 	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON when done (an array for several)")
 	return cmd
 }

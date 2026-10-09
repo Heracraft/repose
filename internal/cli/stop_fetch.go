@@ -16,43 +16,39 @@ import (
 // in the stop's snapshot either way.
 var stopFetchTimeout = 60 * time.Second
 
-// fetchBeforeStop runs `git fetch repose` in this checkout when its
+// fetchBeforeStop runs `git fetch repose` in every laptop folder whose
 // `repose` remote is one of the running machines about to stop
-// (DECISIONS I-615): a stopped machine cannot be fetched from, so
+// (DECISIONS I-615, I-638): a stopped machine cannot be fetched from, so
 // without it getting the agent's last commits costs a start, a fetch and
-// a stop. It prints what came, as "Fetched 3 commits on repose/main.",
+// a stop. The folders are the working directory's checkout and those
+// projects.json links to the machine, so `stop api web` from ~ fetches
+// too. It prints what came, as "Fetched 3 commits on repose/main." (with
+// " in ~/code/api" for a folder other than the working directory's),
 // and nothing when nothing did. A fetch that fails is one line on stderr
 // and the stop goes ahead. Ctrl-C during it stops nothing.
 func fetchBeforeStop(ctx context.Context, e *Env, running []*Project) error {
 	if e.TargetFor != nil { // tests that stand in for ssh
 		return nil
 	}
-	root := gitRepoRoot(e.Cwd)
-	if root == "" {
-		return nil
-	}
-	slug := reposeRemoteHost(remoteURLOf(root, reposeRemoteName))
-	found := false
-	for _, p := range running {
-		found = found || slug != "" && p.Slug == slug && p.State == "running"
-	}
-	if !found {
+	jobs := e.fetchJobsFor(running)
+	if len(jobs) == 0 {
 		return nil
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
-	pr.Phase("Fetching from "+slug, "")
-	fetched, err := fetchRepose(ctx, root)
+	pr.Phase("Fetching from "+joinNames(slugsOfJobs(jobs)), "")
+	runFetches(ctx, jobs)
 	pr.Fail()
 	if ctx.Err() != nil {
 		return exitf(ExitInterrupted, "Interrupted. Nothing stopped.")
 	}
-	if err != nil {
-		e.warn("Could not fetch from %s before stopping it: %s", slug, oneLine(err.Error()))
-		return nil
-	}
-	if fetched != "" {
-		_, _ = fmt.Fprintf(e.Out, "Fetched %s.\n", fetched)
+	for _, j := range jobs {
+		if w := j.fetchFailure("stopping it"); w != "" {
+			e.warn("%s", w)
+		}
+		if l := j.fetchedLine(); l != "" {
+			_, _ = fmt.Fprintln(e.Out, l)
+		}
 	}
 	return nil
 }

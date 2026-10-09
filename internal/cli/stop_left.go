@@ -34,7 +34,7 @@ func probeBeforeStop(ctx context.Context, e *Env, p *Project) []gitRow {
 	if e.TargetFor != nil || p.State != "running" {
 		return nil
 	}
-	return guestStatusRead(ctx, e.target(p.Slug), p.Slug, laptopCommits(e.Cwd, p)).git
+	return guestStatusRead(ctx, e.target(p.Slug), p.Slug, laptopCommits(e, p)).git
 }
 
 // leftClause is the stop line's clause for rows: the commits the laptop

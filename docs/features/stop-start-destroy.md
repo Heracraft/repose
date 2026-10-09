@@ -99,10 +99,12 @@ Stop:
 
 - `stop` sends `StopGuest{snapshot_first: true, timeout_s: 60}`. guestd gets
   `Shutdown`; systemd in the guest stops services, which includes tmux or
-  herdr and any agent in it. The agent is interrupted; a Claude session can
-  be resumed in the guest after `start` with `claude --resume`, and on a
-  herdr project herdr resumes agents with an integration by itself
-  (I-501). When the project's newest sample shows agents working or
+  herdr and any agent in it. The agent is interrupted. On a tmux project
+  guestd first records each agent window (name, agent, folder,
+  conversation id), and the next start opens those windows again under
+  the same names, each agent on its conversation (`claude --resume ID`,
+  I-636), so `repose ps` and `attach -w` find them; on a herdr project
+  herdr resumes agents with an integration by itself (I-501). When the project's newest sample shows agents working or
   waiting for an answer, the CLI asks before stopping (`api has claude
   (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
   nothing, and without a terminal it refuses with exit 2 unless
@@ -112,10 +114,13 @@ Stop:
 - `stop` takes several projects, or `--unused` for every running project
   the api reports idle (I-262); they are resolved first, asked about once
   and stopped in parallel, one line each, exit 1 when one failed (I-615).
-- In a checkout whose `repose` remote is a machine being stopped, the CLI
-  runs `git fetch repose` first and prints `Fetched 3 commits on
-  repose/main.` when commits came; a fetch that fails is one line on
-  stderr and the stop goes on (I-615). After 60 seconds without a
+- In every laptop folder whose `repose` remote is a machine being
+  stopped (the working directory's checkout, and the folders
+  `projects.json` links to the machine, I-638), the CLI runs `git fetch
+  repose` first and prints `Fetched 3 commits on repose/main.` when
+  commits came, with ` in ~/code/api` for a folder other than the
+  working directory's; a fetch that fails is one line on stderr and the
+  stop goes on (I-615). After 60 seconds without a
   clean shutdown, hostd shuts the VM down through Cloud Hypervisor. The
   guest's user manager, which holds every tmux pane and agent, gets 10
   seconds to stop before what is left of it is killed (I-572).

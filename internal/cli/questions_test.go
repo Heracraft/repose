@@ -138,7 +138,7 @@ func TestQuestionsSaysWhereItLooked(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "No questions are waiting in any of your projects.\n" +
-		"Waiting at a prompt in their terminal, which `repose reply` can't answer:\n" +
+		"Waiting at a prompt in their terminal; `repose run PROJECT -w WINDOW -p TEXT` types the answer:\n" +
 		"  claude on todo-app\n"
 	if s := out.buf.String(); s != want {
 		t.Fatalf("terminal wait:\n%s\nwant\n%s", s, want)
