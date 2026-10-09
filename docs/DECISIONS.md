@@ -17875,9 +17875,10 @@ added or touched).
   stop, sync, resize and status, and "the snapshot" on snapshots
   create. `--size` shows as `--size SIZE` and `--multiplexer` as
   `--multiplexer NAME`.
-- The billing-stopped email says "Your machines were stopped for
-  non-payment" (it said guests), and notifications.md quotes the abuse
-  email as it is sent ("Your machine was stopped").
+- The billing-stopped email says "Your machines were stopped: a
+  payment failed", the subject I-600 gave it on main (it said guests),
+  and notifications.md quotes the abuse email as it is sent ("Your
+  machine was stopped").
 - troubleshooting.md drops "Your login is still there"; agents.md says
   the machine's guide covers repose-ask and a rule in CLAUDE.md or
   AGENTS.md overrides it.
