@@ -87,15 +87,15 @@ test('/terms, /privacy and /refunds render', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'Acceptable use' })).toBeVisible();
 	await expect(page.getByText('mine cryptocurrency, or run anything that does')).toBeVisible();
 	await expect(page.getByText(/cannot connect out to\s+port 25/)).toBeVisible();
-	// Billing: plans through Paddle (DECISIONS I-289).
+	// Billing: plans through Polar (DECISIONS I-604).
 	await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
-	await expect(page.getByText(/Paddle, which is\s+the merchant of record/)).toBeVisible();
+	await expect(page.getByText(/Polar, which is\s+the merchant of record/)).toBeVisible();
 	await expect(page.getByText(/seven days free/)).toBeVisible();
 	await page.goto('/privacy');
 	await expect(page.locator('article')).toBeVisible();
 	await expect(page.getByText('Draft:')).toBeVisible();
-	await expect(page.getByText(/Payments are handled by Paddle/)).toBeVisible();
-	await expect(page.getByRole('link', { name: "Paddle's privacy policy" })).toBeVisible();
+	await expect(page.getByText(/Payments are handled by Polar/)).toBeVisible();
+	await expect(page.getByRole('link', { name: "Polar's privacy policy" })).toBeVisible();
 	await page.goto('/refunds');
 	await expect(page.getByRole('heading', { name: 'Refund policy' })).toBeVisible();
 	// Public: the layout must not bounce a signed-out reader to the landing

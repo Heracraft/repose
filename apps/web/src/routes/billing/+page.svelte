@@ -16,7 +16,6 @@
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { reachability } from '$lib/api/reachability.svelte';
-	import { openCheckout, pageTheme } from '$lib/paddle';
 	import { money, price, gbs, dateOnly, dateTime, timeUntil } from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import Meter from '$lib/components/Meter.svelte';
@@ -30,9 +29,9 @@
 	let loadError = $state<string | undefined>(undefined);
 	let invoices = $state<Invoice[]>([]);
 
-	// After Paddle's overlay reports the checkout done (or the user comes
-	// back on ?checkout=done), the subscription is still on its way by
-	// webhook: "Setting up your plan" polls until it is there (I-289).
+	// When Polar's checkout sends the browser back on ?checkout=done, the
+	// subscription is still on its way by webhook: "Setting up your plan"
+	// polls until it is there (I-604).
 	let settingUp = $state(false);
 	let setupTimedOut = $state(false);
 
@@ -151,16 +150,12 @@
 		if (!billing) return;
 		busy = `choose-${planId}`;
 		try {
-			const checkout = await billingCheckout(planId);
-			await openCheckout({
-				transactionId: checkout.transaction_id,
-				clientToken: checkout.client_token,
-				environment: checkout.environment,
-				theme: pageTheme(),
-				successUrl: `${location.origin}${resolve('/billing')}?checkout=done`,
-				onCompleted: () => void waitForSubscription()
-			});
+			// Polar's hosted checkout (I-604); it sends the browser back to
+			// /billing?checkout=done. Busy stays set while the page leaves.
+			const { url } = await billingCheckout(planId);
+			window.location.assign(url);
 		} catch (err) {
+			busy = undefined;
 			if (err instanceof ApiError && err.code === 'waitlisted') {
 				// The seat went while the page was open: the api put the
 				// user on the list, and the page shows that place.
@@ -170,8 +165,6 @@
 			} else {
 				toast.error(err instanceof Error ? err.message : 'Could not open the checkout.');
 			}
-		} finally {
-			busy = undefined;
 		}
 	}
 
@@ -339,6 +332,14 @@
 	</ul>
 {/snippet}
 
+<!-- Back from Polar's checkout, the browser may restore this page as it
+     left it, still opening the checkout. -->
+<svelte:window
+	onpageshow={(e) => {
+		if (e.persisted) busy = undefined;
+	}}
+/>
+
 <PageShell title="Billing" width={showCards ? 'list' : 'form'}>
 	{#if billingDisabled}
 		<p class="text-sm text-ink-muted" data-testid="billing-disabled">
@@ -405,7 +406,7 @@
 			</div>
 		{/if}
 		<p class="mt-8 text-xs text-ink-muted">
-			Prices in USD before tax; Paddle adds the tax for your country at checkout.
+			Prices in USD before tax; Polar adds the tax for your country at checkout.
 			<a href={resolve('/refunds')} class="link">Refunds</a>.
 		</p>
 	{:else if plan}
@@ -560,7 +561,8 @@
 								{other.memory_gb} GB of memory for running machines, {other.disk_gb} GB disk,
 								{allowance(other.egress_gb)} egress).
 								{#if up}
-									Takes effect at once; Paddle prorates the rest of this period.
+									Takes effect at once; Polar charges the difference for the rest of this period
+									now.
 								{:else}
 									Takes effect at the renewal on {dateOnly(sub.period_end)}; what runs and what your
 									projects hold have to fit it first.
@@ -626,7 +628,7 @@
 							<span>
 								{dateOnly(inv.created_at)}
 								{#if inv.number}· {inv.number}{/if}
-								· <span class="badge">{inv.status}</span>
+								· <span class="badge">{inv.status.replaceAll('_', ' ')}</span>
 							</span>
 							<span>
 								{money(inv.amount_cents)}
@@ -634,10 +636,10 @@
 									<span class="text-ink-muted">(tax {money(inv.tax_cents)})</span>
 								{/if}
 								{#if inv.pdf_url}
-									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Paddle's invoice PDF, not an app route -->
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's invoice PDF, not an app route -->
 									<a href={inv.pdf_url} class="link ml-2">PDF</a>
 								{:else if inv.hosted_url}
-									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Paddle's hosted invoice, not an app route -->
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's hosted invoice, not an app route -->
 									<a href={inv.hosted_url} class="link ml-2">View</a>
 								{/if}
 							</span>
@@ -646,7 +648,7 @@
 				</ul>
 			{/if}
 			<p class="mt-4 text-xs text-ink-muted">
-				Paddle is the merchant of record: receipts and tax come from Paddle.
+				Polar is the merchant of record: receipts and tax come from Polar.
 				<a href={resolve('/refunds')} class="link">Refunds</a>.
 			</p>
 		</div>

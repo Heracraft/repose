@@ -145,7 +145,7 @@ test('Send test reaches POST /me/notify-test', async ({ page }) => {
 test('/billing renders against the real api', async ({ page }) => {
 	await gotoSignedIn(page, '/billing');
 	await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
-	// DECISIONS I-289: without PADDLE_API_KEY the api answers
+	// DECISIONS I-289, I-604: without POLAR_ACCESS_TOKEN the api answers
 	// billing_disabled and the page must say so; with it, the plan cards,
 	// the full state or the subscription (08-dashboard.md §5.8).
 	await expect(
