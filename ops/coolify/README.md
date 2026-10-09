@@ -80,9 +80,9 @@ Required before anything serves: `LOGTO_M2M_CLIENT_ID/SECRET` (the
 `PUBLIC_LOGTO_APP_ID` (the `repose-web` SPA), `AZURE_TENANT_ID`,
 `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (the api's Entra app registration,
 `docs/ops/AZURE-SETUP.md`). Empty until turned on: `RESEND_API_KEY`,
-`PADDLE_*` (the block `ops/paddle/bootstrap.sh` prints, DECISIONS I-289),
-`OTEL_EXPORTER_OTLP_ENDPOINT`. The web application needs no Paddle secret
-(I-182).
+`POLAR_*` (the block `ops/polar/bootstrap.sh` prints, DECISIONS I-604),
+`OTEL_EXPORTER_OTLP_ENDPOINT`. The web application needs no Polar value:
+the api answers the checkout's URL (I-182, I-604).
 
 ## The api's metrics
 

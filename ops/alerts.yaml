@@ -238,31 +238,31 @@ groups:
           description: "{{ $value }} failed runs in six hours. meter_samples and proc_samples keep their old partitions; check the disk before it matters."
           runbook: "docs/ops/RUNBOOK.md#partitiondropfail"
 
-      - alert: PaddleWebhookRejected
-        # 09-billing.md §5.11: five deliveries in ten minutes failed the
-        # Paddle-Signature check. Either someone is posting at the endpoint,
-        # or PADDLE_WEBHOOK_SECRET and the notification destination have
+      - alert: BillingWebhookRejected
+        # 09-billing.md §5.11 (I-604): five deliveries in ten minutes failed
+        # the Standard Webhooks signature check. Either someone is posting at
+        # the endpoint, or POLAR_WEBHOOK_SECRET and the webhook endpoint have
         # drifted apart, in which case no subscription event is applied.
         expr: sum(round(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m]))) >= 5
         for: 0m
         labels:
           severity: warn
         annotations:
-          summary: "{{ $value }} Paddle webhook deliveries rejected in ten minutes"
-          description: "Check PADDLE_WEBHOOK_SECRET against the notification destination's endpoint secret in Paddle's dashboard. While this fires, subscription and payment events are not being applied."
-          runbook: "docs/ops/RUNBOOK.md#paddlewebhookrejected"
+          summary: "{{ $value }} Polar webhook deliveries rejected in ten minutes"
+          description: "Check POLAR_WEBHOOK_SECRET against the webhook endpoint's secret in Polar's dashboard. While this fires, subscription and payment events are not being applied."
+          runbook: "docs/ops/RUNBOOK.md#billingwebhookrejected"
 
       - alert: OverageChargeFailed
-        # An egress overage line was recorded but Paddle refused the one-time
-        # charge. The row stays without a transaction id and is not sent
-        # again by itself; an operator sends it before the period locks.
+        # An egress overage line was recorded but Polar refused the event
+        # ingest. The row stays without a sent_ref and the next tick sends it
+        # again under the same external id (I-604).
         expr: increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0
         for: 0m
         labels:
           severity: warn
         annotations:
           summary: "{{ $value }} egress overage charge(s) failed in the last hour"
-          description: "`repose-admin billing show <handle>` names the line; `billing overage-now <handle>` retries it once the cause is fixed. Paddle locks the invoice about 30 minutes before charging."
+          description: "`repose-admin billing show <handle>` names the line. The next hourly tick sends it again under the same external id; an event Polar receives after the period's end lands on the next renewal order."
           runbook: "docs/ops/RUNBOOK.md#overagechargefailed"
 
       - alert: BillingStopped
