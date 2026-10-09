@@ -104,14 +104,14 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 		return nil, fmt.Errorf("read the organization: %w", err)
 	}
 	res.Organization = org.Slug
-	wantSub, wantPortal := OrganizationSettings()
-	if settingsMatch(org.SubscriptionSettings, wantSub) && settingsMatch(org.PortalSettings, wantPortal) && org.DefaultTaxBehavior == TaxBehavior {
+	wantSub, wantPortal, wantEmails := OrganizationSettings()
+	if settingsMatch(org.SubscriptionSettings, wantSub) && settingsMatch(org.PortalSettings, wantPortal) && settingsMatch(org.EmailSettings, wantEmails) && org.DefaultTaxBehavior == TaxBehavior {
 		found("organization", org.Slug)
 	} else {
-		if _, err := p.UpdateOrganization(ctx, org.ID, wantSub, wantPortal); err != nil {
-			return nil, fmt.Errorf("set the organization's subscription and portal settings: %w", err)
+		if _, err := p.UpdateOrganization(ctx, org, wantSub, wantPortal, wantEmails); err != nil {
+			return nil, fmt.Errorf("set the organization's settings: %w", err)
 		}
-		say("updated  %-16s %s (one subscription per customer, trial abuse prevention, no plan changes in the portal, prices exclude tax)", "organization", org.Slug)
+		say("updated  %-16s %s (one subscription per customer, trial abuse prevention, no plan changes in the portal, prices exclude tax, no emails repose sends itself)", "organization", org.Slug)
 	}
 
 	meters, err := p.ListMeters(ctx)

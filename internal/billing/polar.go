@@ -678,6 +678,7 @@ type Organization struct {
 	Slug                 string         `json:"slug"`
 	SubscriptionSettings map[string]any `json:"subscription_settings"`
 	PortalSettings       map[string]any `json:"customer_portal_settings"`
+	EmailSettings        map[string]any `json:"customer_email_settings"`
 	DefaultTaxBehavior   string         `json:"default_tax_behavior"`
 }
 
@@ -702,7 +703,10 @@ func (p *Polar) GetOrganization(ctx context.Context) (Organization, error) {
 // prevention on, plan and seat changes off in the customer portal (the
 // api checks seats and fit before a plan change), metered usage shown.
 // Prices exclude tax (TaxBehavior), set apart in UpdateOrganization.
-func OrganizationSettings() (subscription, portal map[string]any) {
+// Polar's own emails that repose already sends are off (trial ending,
+// payment failed, cancelled, ended, plan changed; I-291); its receipts,
+// confirmations and reminders stay, being the merchant of record's.
+func OrganizationSettings() (subscription, portal, emails map[string]any) {
 	subscription = map[string]any{
 		"allow_multiple_subscriptions":    false,
 		"proration_behavior":              "prorate",
@@ -715,15 +719,31 @@ func OrganizationSettings() (subscription, portal map[string]any) {
 		"subscription": map[string]any{"update_seats": false, "update_plan": false},
 		"customer":     map[string]any{"allow_email_change": false},
 	}
-	return subscription, portal
+	emails = map[string]any{
+		"subscription_trial_conversion_reminder": false,
+		"subscription_past_due":                  false,
+		"subscription_cancellation":              false,
+		"subscription_revoked":                   false,
+		"subscription_updated":                   false,
+	}
+	return subscription, portal, emails
 }
 
-// UpdateOrganization sets the organization's subscription and portal
-// settings.
-func (p *Polar) UpdateOrganization(ctx context.Context, id string, subscription, portal map[string]any) (Organization, error) {
+// UpdateOrganization sets the organization's subscription, portal and
+// customer email settings, and the tax behaviour. Polar replaces the
+// email settings whole, so the ones repose leaves alone are sent as they
+// were.
+func (p *Polar) UpdateOrganization(ctx context.Context, org Organization, subscription, portal, emails map[string]any) (Organization, error) {
+	merged := map[string]any{}
+	for k, v := range org.EmailSettings {
+		merged[k] = v
+	}
+	for k, v := range emails {
+		merged[k] = v
+	}
 	var out Organization
-	err := p.do(ctx, http.MethodPatch, "/organizations/"+url.PathEscape(id), map[string]any{
-		"subscription_settings": subscription, "customer_portal_settings": portal, "default_tax_behavior": TaxBehavior,
+	err := p.do(ctx, http.MethodPatch, "/organizations/"+url.PathEscape(org.ID), map[string]any{
+		"subscription_settings": subscription, "customer_portal_settings": portal, "customer_email_settings": merged, "default_tax_behavior": TaxBehavior,
 	}, &out)
 	return out, err
 }

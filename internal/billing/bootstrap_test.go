@@ -42,6 +42,17 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	if ss["allow_multiple_subscriptions"] != false || ss["prevent_trial_abuse"] != true || ps["update_plan"] != false || ps["update_seats"] != false {
 		t.Fatalf("organization settings: %v", org[0])
 	}
+	// The emails repose sends itself are off at Polar; receipts and the
+	// renewal reminder stay on, sent back as they were.
+	es := org[0]["customer_email_settings"].(map[string]any)
+	for _, k := range []string{"subscription_trial_conversion_reminder", "subscription_past_due", "subscription_cancellation", "subscription_revoked", "subscription_updated"} {
+		if es[k] != false {
+			t.Errorf("email %s is %v", k, es[k])
+		}
+	}
+	if es["order_confirmation"] != true || es["subscription_renewal_reminder"] != true {
+		t.Fatalf("emails repose does not send were changed: %v", es)
+	}
 	m := f.Bodies["POST /meters/"][0]
 	clause := m["filter"].(map[string]any)["clauses"].([]any)[0].(map[string]any)
 	if clause["property"] != "name" || clause["operator"] != "eq" || clause["value"] != billing.OverageEvent || m["aggregation"].(map[string]any)["property"] != "gb" {

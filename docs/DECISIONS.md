@@ -16655,7 +16655,11 @@ endpoint (raw format, the events below, `api_version` 2026-10). It
 also sets the organization: one subscription per customer, trial abuse
 prevention on, plan and seat changes off in Polar's customer portal
 (plan changes go through `POST /billing/plan`, which checks seats and
-fit first), metered usage shown. Polar counts a repeating discount in
+fit first), metered usage shown, prices exclusive of tax (Polar's
+default was inclusive, which would have made $29 include VAT), and
+Polar's own trial-reminder, past-due, cancellation, revoked and updated
+emails off, because repose sends each of those itself (I-291); Polar's
+receipts and confirmations stay on. Polar counts a repeating discount in
 calendar months from the first charged period (`discount_applied_at`,
 the trial's end), so the first three charges get it, as I-497 says; the
 subscription carries no end date for it, and the api derives

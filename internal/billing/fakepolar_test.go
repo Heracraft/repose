@@ -58,7 +58,8 @@ func newFakePolar() *fakePolar {
 		Fail: map[string]int{}, FailCode: 500}
 	f.org = map[string]any{"id": "org_fake", "slug": "repose-fake",
 		"subscription_settings":    map[string]any{"allow_multiple_subscriptions": true, "proration_behavior": "prorate", "benefit_revocation_grace_period": 0, "prevent_trial_abuse": false, "allow_customer_updates": true},
-		"customer_portal_settings": map[string]any{"usage": map[string]any{"show": true}, "subscription": map[string]any{"update_seats": true, "update_plan": true}, "customer": map[string]any{"allow_email_change": false}}}
+		"customer_portal_settings": map[string]any{"usage": map[string]any{"show": true}, "subscription": map[string]any{"update_seats": true, "update_plan": true}, "customer": map[string]any{"allow_email_change": false}},
+		"customer_email_settings":  map[string]any{"order_confirmation": true, "subscription_past_due": true, "subscription_trial_conversion_reminder": true, "subscription_cancellation": true, "subscription_revoked": true, "subscription_updated": true, "subscription_renewal_reminder": true}}
 	// The discount testConfig names, as an operator's earlier bootstrap
 	// left it; no metadata, so a bootstrap here makes its own.
 	f.discounts["dsc_intro_test"] = map[string]any{"id": "dsc_intro_test", "type": "fixed", "products": []any{}}
@@ -303,7 +304,7 @@ func (f *fakePolar) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && r.URL.Path == "/organizations/":
 		f.write(w, 200, listOf([]any{f.org}))
 	case r.Method == "PATCH" && len(parts) == 2 && parts[0] == "organizations":
-		for _, k := range []string{"subscription_settings", "customer_portal_settings", "default_tax_behavior"} {
+		for _, k := range []string{"subscription_settings", "customer_portal_settings", "customer_email_settings", "default_tax_behavior"} {
 			if v, ok := body[k]; ok {
 				f.org[k] = v
 			}
