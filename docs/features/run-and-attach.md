@@ -66,8 +66,8 @@ age-calculator is in an error state: the environment's agent (guestd) stopped an
 project (I-155, I-603): `repose run izma` works on `izma`, and creates it
 when there is none. The prompt is `-p`/`--prompt`. For one release the
 old form still runs: several words, or one with a space in it, are the
-prompt, and stderr says `The prompt goes after -p now: repose run -p
-'fix the tests'. This form stops working in the next release.`
+prompt, and stderr says ``The prompt goes after -p: `repose run -p 'fix the
+tests'`. This form stops working in the next release.``
 
 Run a prompt while an agent is already running:
 

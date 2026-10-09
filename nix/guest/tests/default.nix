@@ -1412,7 +1412,7 @@ in
           check("tmux interactive pane", wait_out("pane"))
           check("systemd-run --user", via_user_unit())
 
-      # I-241: an agent `repose run "prompt"` starts is tmux new-window's
+      # I-241: an agent `repose run -p PROMPT` starts is tmux new-window's
       # command over SSH, a bash that is neither login nor interactive, in
       # a tmux server started by a user unit before the project's env and
       # any secret existed. The agent wrapper sources

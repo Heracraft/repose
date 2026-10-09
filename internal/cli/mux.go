@@ -53,7 +53,7 @@ type muxer interface {
 	SessionEnded(ctx context.Context, t sshTarget, slug string) (bool, error)
 }
 
-// agentStart is one `repose run PROMPT` agent.
+// agentStart is one `repose run -p PROMPT` agent.
 type agentStart struct {
 	Slug  string
 	Agent string // one of agentNames; also the binary
@@ -79,7 +79,7 @@ type attachReq struct {
 	Ctx     context.Context
 	Target  sshTarget
 	Project *Project // Slug always; ExpiresAt when known
-	Window  string   // the agent `run PROMPT` just started, "" for the session
+	Window  string   // the agent `run -p PROMPT` just started, "" for the session
 	TZ      string
 	RepoDir string
 	After   func() // runs when an attach the CLI waited on returns

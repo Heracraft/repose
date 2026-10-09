@@ -395,7 +395,7 @@ $ repose run
       commits travelled, `, merged with the machine's <branch>` after a
       merge, and `; kept the machine's changes to N files` when the guest
       had changes elsewhere.
-   f. A project created with `--name` in a directory that has no git
+   f. A project created by name (`repose run NAME`) in a directory that has no git
       remote takes the same path without `origin` or remote-tracking refs
       (this replaced I-138's whole-tree commit): its commits travel, and a
       deletion committed on the laptop is a deletion in the guest.

@@ -310,10 +310,10 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var tempRaw string
 	cmd := &cobra.Command{
 		Use:   "run [PROJECT]",
-		Short: "Create or start a machine, sync this checkout into it and attach",
-		Long: "Create or start this checkout's machine, sync the checkout into it and attach.\n\n" +
+		Short: "Create or start this checkout's machine and attach",
+		Long: "Create or start this checkout's machine and attach. A new machine gets a copy of the checkout first.\n\n" +
 			"PROJECT is the machine of that name, created if there is none: a second machine for this\n" +
-			"checkout, or one for a folder with no git remote. -p starts an agent with a prompt.",
+			"checkout, or one for a folder with no git remote.",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -322,7 +322,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
-			if err := runArgs(&opts, args, cmd.ErrOrStderr()); err != nil {
+			if err := runArgs(&opts, args, g.project != "", cmd.ErrOrStderr()); err != nil {
 				return err
 			}
 			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {
@@ -336,6 +336,9 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			}
 			if opts.Worktree && opts.Prompt == "" {
 				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs -p PROMPT")}
+			}
+			if opts.Agent != "" && opts.Prompt == "" {
+				return cobraUsageError{fmt.Errorf("--agent picks the agent for -p PROMPT, and there is none")}
 			}
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
@@ -357,7 +360,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	// hidden for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose run NAME)")
 	_ = cmd.Flags().MarkHidden("name")
-	cmd.Flags().StringVar(&opts.On, "on", "", "add this folder to PROJECT's machine as another checkout, beside its own")
+	cmd.Flags().StringVar(&opts.On, "on", "", "add this folder to the machine MACHINE as another checkout, beside its own")
 	_ = cmd.RegisterFlagCompletionFunc("on", completeProject(env))
 	addTempFlag(cmd, &tempRaw)
 	// Moved to `repose sync` (I-367); kept hidden for a release so a
@@ -415,7 +418,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "sync [PROJECT]",
 		Short:             "Sync this checkout to its machine, creating or starting it if needed, without attaching",
-		Args:              projectArgs,
+		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			temp, args, err := resolveTempFlag(tempRaw, args)
@@ -423,6 +426,11 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
+			// Checked after --temp took its duration (`sync --temp 2h
+			// spike`).
+			if err := projectArgs(cmd, args); err != nil {
+				return err
+			}
 			if len(args) == 1 {
 				if err := positionalProject(&opts, args[0]); err != nil {
 					return err

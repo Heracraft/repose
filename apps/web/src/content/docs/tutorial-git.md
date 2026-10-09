@@ -17,7 +17,7 @@ echo '# hello' > README.md && git add -A && git commit -qm init
 repose run
 ```
 
-The machine is named `hello`, after the folder, since the repository has no remote yet. You land in a tmux session in `~/hello` on the machine. Detach with `Ctrl-b` `d`.
+You land in a tmux session in `~/hello` on the machine. Detach with `Ctrl-b` `d`.
 
 ## What went up
 

@@ -20,6 +20,7 @@ func TestRunArgs(t *testing.T) {
 		name               string
 		args               []string
 		prompt, nameFlag   string
+		named              bool
 		wantName, wantArg  string
 		wantPrompt, wantLn string
 		wantErr            string
@@ -27,19 +28,19 @@ func TestRunArgs(t *testing.T) {
 		{name: "nothing"},
 		{name: "a project", args: []string{"izma"}, wantName: "izma"},
 		{name: "a project and its prompt", args: []string{"izma"}, prompt: "fix it", wantName: "izma", wantPrompt: "fix it"},
-		{name: "the same as --name", args: []string{"izma"}, nameFlag: "izma", wantName: "izma"},
-		{name: "not --name", args: []string{"izma"}, nameFlag: "other", wantErr: "izma and --name other name two projects"},
+		{name: "a word beside --name is the old prompt", args: []string{"fix"}, nameFlag: "izma", wantName: "izma", wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
+		{name: "a word beside --project is the old prompt", args: []string{"fix"}, named: true, wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
 		{name: "an id", args: []string{id}, wantArg: id},
 		{name: "a checkout", args: []string{"todo-app:api"}, wantArg: "todo-app:api"},
-		{name: "old prompt, quoted", args: []string{"fix the tests"}, wantPrompt: "fix the tests", wantLn: "The prompt goes after -p now: repose run -p 'fix the tests'. This form stops working in the next release.\n"},
+		{name: "old prompt, quoted", args: []string{"fix the tests"}, wantPrompt: "fix the tests", wantLn: "The prompt goes after -p: `repose run -p 'fix the tests'`. This form stops working in the next release.\n"},
 		{name: "old prompt, words", args: []string{"fix", "the", "tests"}, wantPrompt: "fix the tests", wantLn: "repose run -p 'fix the tests'"},
-		{name: "old prompt beside -p", args: []string{"fix", "it"}, prompt: "x", wantErr: `-p is the prompt; "fix it" is not a project name`},
+		{name: "old prompt beside -p", args: []string{"fix", "it"}, prompt: "x", wantErr: "run takes one PROJECT; put the prompt after -p, quoted"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			opts := RunOptions{Prompt: c.prompt, Name: c.nameFlag}
 			var errOut strings.Builder
-			err := runArgs(&opts, c.args, &errOut)
+			err := runArgs(&opts, c.args, c.named, &errOut)
 			if c.wantErr != "" {
 				var ue cobraUsageError
 				if !errors.As(err, &ue) || !strings.Contains(err.Error(), c.wantErr) {
@@ -86,10 +87,11 @@ func TestRunCommandArgs(t *testing.T) {
 		want string
 	}{
 		{[]string{"run", "--worktree"}, "--worktree starts an agent in its own worktree and needs -p PROMPT"},
-		{[]string{"run", "izma", "--project", "other"}, "izma and --project other name two projects"},
 		{[]string{"sync", "izma", "--project", "other"}, "izma and --project other name two projects"},
 		{[]string{"sync", "izma", "--name", "other"}, "izma and --name other name two projects"},
-		{[]string{"run", "-p", "x", "fix", "it"}, "-p is the prompt"},
+		{[]string{"run", "-p", "x", "fix", "it"}, "run takes one PROJECT"},
+		{[]string{"run", "izma", "--agent", "codex"}, "--agent picks the agent for -p PROMPT"},
+		{[]string{"sync", "a", "b"}, "takes at most one PROJECT"},
 	} {
 		_, err := run(c.args...)
 		var ue cobraUsageError
@@ -99,13 +101,41 @@ func TestRunCommandArgs(t *testing.T) {
 			t.Errorf("repose %s: err = %v, want %q", strings.Join(c.args, " "), err, c.want)
 		}
 	}
+	// `sync --temp 2h spike`: the duration is --temp's, spike is PROJECT;
+	// not logged in, so it stops at the api, past the argument check.
+	if _, err := run("sync", "--temp", "2h", "spike"); err == nil || strings.Contains(err.Error(), "at most one PROJECT") {
+		t.Fatalf("sync --temp 2h spike: %v", err)
+	}
 	// Not logged in, so the run stops at the api; the line came first.
 	errOut, err := run("run", "fix the tests")
 	if err == nil {
 		t.Fatal("run with no credentials went through")
 	}
-	if !strings.Contains(errOut, "The prompt goes after -p now: repose run -p 'fix the tests'.") {
+	if !strings.Contains(errOut, "The prompt goes after -p: `repose run -p 'fix the tests'`.") {
 		t.Fatalf("stderr %q", errOut)
+	}
+}
+
+// `repose run --temp spike` in a checkout with no remote never links the
+// checkout to the temporary machine (I-351, I-603).
+func TestTempByNameLinksNothing(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "notes")
+	mustRun(t, filepath.Dir(repo), "git", "clone", "-q", "file://"+f.bare, "notes")
+	mustRun(t, repo, "git", "remote", "remove", "origin")
+	e, _, _ := freshEnv(f.env, repo)
+	if err := runRun(ctx, e, RunOptions{Name: "spike", Temp: tempDefault, NoAttach: true}, false); err != nil {
+		t.Fatalf("run --temp spike: %v", err)
+	}
+	disk, err := loadProjectsCache(f.env.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disk.ByDir) != 0 {
+		t.Fatalf("by_dir %v, want nothing for a temporary machine", disk.ByDir)
 	}
 }
 

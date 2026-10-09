@@ -150,11 +150,11 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
+In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later plain `repose run` in that directory uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
 
 ### From your home folder
 
-Your home folder, and every folder above it, belongs to no machine. There, `repose run NAME` creates NAME or uses it, and syncs nothing, so you can start as many machines as you like from a fresh terminal:
+Your home folder, and every folder above it, belongs to no machine. There, `repose run NAME` creates NAME or uses it, and syncs nothing:
 
 ```
 $ cd ~
@@ -163,7 +163,7 @@ $ repose run notes
 $ repose run --temp
 ```
 
-A plain `repose run` there stops with ``Your home folder is not a project. cd into one, or run `repose run NAME` or `repose run --temp`.`` Commands that act on a machine, such as `repose rm` or `repose stop`, need its name there. `repose sync` and `run --on` stop with an error. A home folder that is a git repository, such as a dotfiles repository, is never synced and gets no `repose` git remote.
+A plain `repose run` there stops with ``Your home folder is not a project. cd into one, or run `repose run NAME` or `repose run --temp`.`` Other commands need the machine's name there. `repose sync` and `run --on` stop with an error. A home folder that is a git repository, such as a dotfiles repository, is never synced and gets no `repose` git remote.
 
 ## Temporary machines
 
@@ -190,7 +190,7 @@ Not a git repository, so nothing was synced.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
-- On herdr, closing tabs never destroys it: herdr opens a new shell when its last tab closes, so the session never ends. It goes when its time runs out, or at `repose rm`. A temporary machine picks its multiplexer as any new machine does, and appears in herdr's sidebar on your laptop.
+- On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
 

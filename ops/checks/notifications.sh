@@ -83,7 +83,7 @@ run_agent() {
 	ts0=$(date +%s)
 	if [ -n "$cred" ] && guest_sh "$PROJECT" "test -s $cred"; then
 		mech="real agent run"
-		"$REPOSE" run "$real_prompt" --agent "$agent" --no-attach --no-sync --project "$PROJECT" 2>&1 | tail -3 | evidence "$agent: repose run with a prompt"
+		"$REPOSE" run "$PROJECT" -p "$real_prompt" --agent "$agent" --no-attach --no-sync 2>&1 | tail -3 | evidence "$agent: repose run with a prompt"
 	else
 		mech="hook payload replayed through repose-hook in a tmux window named $agent"
 		in_window "$agent" "$replay_cmd; sleep 120"

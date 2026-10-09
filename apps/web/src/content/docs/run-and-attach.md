@@ -11,7 +11,7 @@ order: 10
 repose run -p "move the date handling to Temporal, fix the tests"
 ```
 
-Quotes are optional; everything after the flags is the prompt. A one-word prompt that is the name of one of your projects is refused as a likely slip (exit code 2); to send it anyway, name the agent: `repose run --agent claude todo-app`. `run` creates or starts the machine, copies your checkout into it if the machine is new ([Sync](/docs/sync)), opens a new tmux window, starts the agent there, types your prompt and attaches you to it.
+Quote a prompt of more than one word. `run` creates or starts the machine, copies your checkout into it if the machine is new ([Sync](/docs/sync)), opens a new tmux window, starts the agent there, types your prompt and attaches you to it.
 
 Without a prompt, `repose run` drops you in the last active window.
 
@@ -130,7 +130,7 @@ A machine can run its terminals in [herdr](https://herdr.dev), a multiplexer mad
 repose run --multiplexer herdr
 ```
 
-The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise. A [temporary machine](/docs/lifecycle#temporary-machines) on herdr goes when its time runs out; closing its tabs doesn't end it.
+The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise.
 
 A switch takes effect at the next start. A running machine keeps its current multiplexer and its agents until it stops:
 
@@ -246,7 +246,7 @@ repose run --multiplexer herdr  # herdr, from the next start
 
 `repose run NAME` is also how you get [a second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository), and `--temp` is described under [Temporary machines](/docs/lifecycle#temporary-machines).
 
-The full list is in the [CLI reference](/docs/cli#repose-run-prompt).
+The full list is in the [CLI reference](/docs/cli#repose-run-project).
 
 ## SSH and editors
 

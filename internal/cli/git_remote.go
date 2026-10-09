@@ -116,7 +116,7 @@ func forgetReposeRemote(root, slug string) bool {
 
 // checkoutOwnsProject reports whether the checkout at root is project's
 // own: the project's remote is the checkout's origin, or, for a project
-// with no remote, the checkout is the directory `repose run --name`
+// with no remote, the checkout is the directory `repose run NAME`
 // created it from (the by_dir cache). Only then is the `repose` remote
 // added: another project run or attached from this checkout (a fork copy,
 // a project named with --project) would point the checkout's remote at a

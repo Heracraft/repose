@@ -830,7 +830,7 @@
 .doc :not(pre) > code:not(.nobreak) {
 	overflow-wrap: anywhere;
 }
-/* A command as a heading (### `repose run [PROMPT]` in cli.md) is the
+/* A command as a heading (### `repose run [PROJECT]` in cli.md) is the
    heading's own text in mono, not a code chip inside it. */
 /* Element selectors, not :where: this must outrank the chip rule above. */
 .doc h2 > code,

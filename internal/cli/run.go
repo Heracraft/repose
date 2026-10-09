@@ -94,7 +94,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return errHomeSync()
 		}
 		if opts.Temp > 0 && opts.ProjectArg != "" {
-			return exitf(ExitUsage, "--temp always creates a new machine; it cannot be used with --project (%s).", opts.ProjectArg)
+			return exitf(ExitUsage, "--temp always creates a new machine; %s names one you have.", opts.ProjectArg)
 		}
 		if opts.On != "" && (opts.Temp > 0 || opts.Name != "" || opts.ProjectArg != "" || opts.Size != "") {
 			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with PROJECT, --temp, --project or --size.")
@@ -102,10 +102,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if opts.Name != "" && opts.ProjectArg != "" && opts.Name != opts.ProjectArg {
 			return exitf(ExitUsage, "%s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
 		}
-		if opts.Temp == 0 && opts.Name == "" && opts.On == "" {
-			// A guess from the cache: the checkout's project. --name and
-			// --temp name another, and the probe (which creates the
-			// checkout's directory) must not touch this one.
+		if opts.Temp == 0 && opts.On == "" {
+			// A guess from the cache: the checkout's project, or the one
+			// PROJECT names (I-603). --temp makes another, and the probe
+			// (which creates the checkout's directory) must not touch
+			// this one.
 			early = startEarlyProbe(ctx, e, opts)
 		}
 		e.early = early
@@ -573,6 +574,9 @@ func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
 	if explicit == "" {
 		explicit = opts.Name // `repose sync NAME` (I-603)
 	}
+	if opts.Temp > 0 || project.ExpiresAt != nil {
+		return // a temporary machine is reached by name only (I-351)
+	}
 	if explicit == "" || strings.Contains(explicit, ":") || project.RemoteURL != "" || e.extraCheckout() != nil {
 		return
 	}
@@ -920,7 +924,7 @@ func attachColour(colorterm string) string {
 }
 
 // attachCommand is the guest-side command of the attach. With a window
-// (the agent `repose run PROMPT` just started), an agent that exited in
+// (the agent `repose run -p PROMPT` just started), an agent that exited in
 // the moment between its prompt and the attach has taken its window with
 // it, and `tmux attach -t <slug>:<window>` failed with "can't find window"
 // (I-304). The window is checked on the guest, in the same ssh, and when
@@ -1445,7 +1449,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		if remote == "" {
 			name = dirProjectName(name)
 			if name == "" {
-				return nil, exitf(ExitUsage, "This directory's name cannot be a project name. Name one: `repose run NAME`.")
+				return nil, exitf(ExitUsage, "This folder's name cannot be a project name. Name one: `repose run NAME`.")
 			}
 		}
 	}
@@ -1460,7 +1464,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		req.RemoteURL, req.ExpiresIn = "", int64(opts.Temp/time.Second)
 	}
 	// config.toml's default_agent becomes the new project's own default,
-	// which is what `run PROMPT` without --agent reads; an existing
+	// which is what `run -p PROMPT` without --agent reads; an existing
 	// project keeps the one it was created with (I-241).
 	if isAgent(e.Cfg.DefaultAgent) {
 		req.AgentDefault = e.Cfg.DefaultAgent
@@ -1501,7 +1505,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			deps := defaultResolveDeps()
 			dir := ""
 			if remote == "" && deps.RemoteFor(e.Cwd) == "" && !e.inHome() {
-				// A --name project with no remote has nothing else to be
+				// A project named on run with no remote has nothing else to be
 				// found by; one with a remote is found by it (I-152). A
 				// second project for a checkout that has a remote (I-348)
 				// is reached by name: by_dir would not be believed there.
@@ -1785,21 +1789,23 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 
 // runArgs reads `repose run`'s words (DECISIONS I-603): one word is the
 // project, as for attach and sync. Before I-603 the words were the
-// prompt; for one release several words, or one with a space in it, still
-// are, with a line saying where the prompt went.
-func runArgs(opts *RunOptions, args []string, errOut io.Writer) error {
+// prompt; for one release several words, one with a space in it, or any
+// word beside --project or --name (named is set), still are, with a line
+// saying where the prompt went.
+func runArgs(opts *RunOptions, args []string, named bool, errOut io.Writer) error {
+	named = named || opts.Name != ""
 	switch {
 	case len(args) == 0:
 		return nil
-	case len(args) == 1 && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
+	case len(args) == 1 && !named && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
 		return positionalProject(opts, args[0])
 	}
 	prompt := strings.TrimSpace(strings.Join(args, " "))
 	if opts.Prompt != "" {
-		return cobraUsageError{fmt.Errorf("-p is the prompt; %q is not a project name", prompt)}
+		return cobraUsageError{fmt.Errorf("run takes one PROJECT; put the prompt after -p, quoted")}
 	}
 	opts.Prompt = prompt
-	_, _ = fmt.Fprintf(errOut, "The prompt goes after -p now: repose run -p %s. This form stops working in the next release.\n", shQuote(prompt))
+	_, _ = fmt.Fprintf(errOut, "The prompt goes after -p: `repose run -p %s`. This form stops working in the next release.\n", shQuote(prompt))
 	return nil
 }
 

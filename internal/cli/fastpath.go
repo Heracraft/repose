@@ -321,10 +321,14 @@ func startEarlyProbe(ctx context.Context, e *Env, opts RunOptions) *earlyProbe {
 	// Outside a repository nothing syncs, and the probe would make a
 	// checkout the machine should not have (I-358, I-368).
 	root := gitRepoRoot(e.Cwd)
-	if opts.NoSync || root == "" || e.inHome() {
+	if opts.NoSync || root == "" || e.inHome() || e.extraCheckout() != nil {
 		return nil
 	}
-	guess := cachedGuess(e, e.resolveArg(opts.ProjectArg), defaultResolveDeps())
+	named := e.resolveArg(opts.ProjectArg)
+	if named == "" {
+		named = opts.Name // `repose run NAME` (I-603); a name the cache lacks guesses nothing
+	}
+	guess := cachedGuess(e, named, defaultResolveDeps())
 	target, covered, master := warmTarget(ctx, e, guess)
 	if !covered {
 		return nil
