@@ -291,6 +291,9 @@ printf '#pane %%s\n' "$repose_p"
 `, shQuote(s.Name), focus)
 	if s.AttachOnly {
 		fmt.Fprintf(&b, "herdr pane run \"$repose_p\" %s >/dev/null\n", shQuote(s.Agent))
+		if s.Prompt != "" {
+			b.WriteString(pendingPromptHerdr(s.Prompt)) // typed after the login (I-607)
+		}
 		return b.String()
 	}
 	fmt.Fprintf(&b, `repose_r=$(herdr agent start %s --kind %s --pane "$repose_p" --timeout %d 2>&1)
@@ -417,6 +420,13 @@ repose_ws=$(herdr workspace list | jq -r --arg l %[1]s 'first(.result.workspaces
 	return b.String()
 }
 
+// herdrFocusNamedScript is herdrFocusScript for `attach --window NAME`
+// (I-606): an agent herdr does not have exits 2 with noWindow's line.
+func herdrFocusNamedScript(slug, extra, agentName string) string {
+	missing := fmt.Sprintf("%s has no agent %s. `repose ps %s` lists them.", slug, agentName, slug)
+	return herdrFocusScript(slug, extra, "") + fmt.Sprintf("herdr agent focus %s >/dev/null 2>&1 || { printf '%%s\\n' %s >&2; exit 2; }\n", shQuote(agentName), shQuote(missing))
+}
+
 // Attach is the attach rule (features/run-and-attach.md "herdr
 // projects"), first match wins: in a laptop herdr pane with the machine
 // in its sidebar, the CLI stays as the session helper and opens no
@@ -434,7 +444,11 @@ func (herdrMux) Attach(e *Env, a attachReq) error {
 		ctx = context.Background()
 	}
 	slug := a.Project.Slug
-	if script := herdrFocusScript(slug, a.Target.Checkout, a.Window); script != "" {
+	script := herdrFocusScript(slug, a.Target.Checkout, a.Window)
+	if a.Named {
+		script = herdrFocusNamedScript(slug, a.Target.Checkout, a.Window)
+	}
+	if script != "" {
 		fctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		_, err := runSSH(fctx, a.Target, script, nil)
 		cancel()

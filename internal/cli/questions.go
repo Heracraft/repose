@@ -72,8 +72,17 @@ func matchesProject(q Question, arg string) bool {
 	return arg != "" && (strings.ToLower(q.Project) == arg || q.ProjectID == arg)
 }
 
+// questionAsker is who asked: the window (claude-2), the handle `attach
+// --window` takes (I-606), else the agent.
+func questionAsker(q Question) string {
+	if q.Window != "" {
+		return q.Window
+	}
+	return q.Agent
+}
+
 func printQuestion(w io.Writer, q Question, now time.Time) {
-	_, _ = fmt.Fprintf(w, "%s  %s asked %s, expires in %s  (id %s)\n", q.Project, q.Agent, ageOf(now.Sub(q.CreatedAt)), humanDuration(q.ExpiresAt.Sub(now)), shortID(q.ID))
+	_, _ = fmt.Fprintf(w, "%s  %s asked %s, expires in %s  (id %s)\n", q.Project, questionAsker(q), ageOf(now.Sub(q.CreatedAt)), humanDuration(q.ExpiresAt.Sub(now)), shortID(q.ID))
 	for _, line := range strings.Split(q.Text, "\n") {
 		_, _ = fmt.Fprintf(w, "  %s\n", line)
 	}
@@ -142,7 +151,11 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 		}
 		for _, a := range p.Signals.Agents {
 			if a.State == "needs_input" {
-				waiting = append(waiting, fmt.Sprintf("  %s on %s", a.Agent, p.Slug))
+				name := a.Window
+				if name == "" {
+					name = a.Agent
+				}
+				waiting = append(waiting, fmt.Sprintf("  %s on %s", name, p.Slug))
 			}
 		}
 	}
@@ -166,21 +179,41 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 }
 
 // ReplyCmd implements `repose reply [PROJECT] [ANSWER...]`. The first word
-// is the project when it names one with a waiting question; otherwise every
+// is the project when it names one of the account's projects (B2, I-608:
+// before, only one with a waiting question, so a project with none sent
+// its own name as the answer to another project's agent); otherwise every
 // word is the answer. With one waiting question (after the project and
 // --question narrow the list) it is answered; with several they are listed
 // and nothing is sent. With no answer on a terminal it asks for one.
 func ReplyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionFlag string, in io.Reader, interactive bool) error {
+	return replyCmd(ctx, e, args, projectFlag, questionFlag, in, interactive, true)
+}
+
+// replyCmd is ReplyCmd; mayNameProject is false after `--` (`repose
+// reply -- todo-app is fine`), where every word is the answer.
+func replyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionFlag string, in io.Reader, interactive, mayNameProject bool) error {
 	qs, err := e.Client.ListQuestions(ctx)
 	if err != nil {
 		return err
 	}
 	project := projectFlag
-	if project == "" && len(args) > 0 {
+	if project == "" && mayNameProject && len(args) > 0 {
 		for _, q := range qs {
 			if matchesProject(q, args[0]) {
 				project, args = args[0], args[1:]
 				break
+			}
+		}
+		if project == "" {
+			// A project with no waiting question is still the project.
+			// A failed list leaves the word to the answer, as before.
+			if ps, err := e.Client.ListProjects(ctx); err == nil {
+				for _, p := range ps {
+					if matchesProject(Question{Project: p.Slug, ProjectID: p.ID}, args[0]) {
+						project, args = p.Slug, args[1:]
+						break
+					}
+				}
 			}
 		}
 	}
@@ -253,6 +286,6 @@ func ReplyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionF
 	if got.Answer != nil {
 		ans = *got.Answer
 	}
-	_, _ = fmt.Fprintf(e.Out, "Answered %s in %s: %s\n", q.Agent, q.Project, ans)
+	_, _ = fmt.Fprintf(e.Out, "Answered %s in %s: %s\n", questionAsker(q), q.Project, ans)
 	return nil
 }

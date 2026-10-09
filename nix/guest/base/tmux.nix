@@ -138,6 +138,12 @@ in
       # The laptop's tab or window title names the machine and session.
       set -g set-titles on
       set -g set-titles-string "#h: #S"
+      # A window whose agent waits for input (guestd's @repose-state,
+      # DECISIONS I-606) shows `?` after its name, so an attached user
+      # sees which other agent needs them. tmux's default formats
+      # otherwise.
+      set -g window-status-format '#I:#W#{?#{==:#{@repose-state},needs_input},?,}#{?window_flags,#{window_flags}, }'
+      set -g window-status-current-format '#I:#W#{?#{==:#{@repose-state},needs_input},?,}#{?window_flags,#{window_flags}, }'
       set -g status-right '#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}"#{=21:pane_title}" #(date "+%%H:%%M %%d-%%b-%%y")'
     '';
   };

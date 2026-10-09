@@ -30,9 +30,9 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 
 | Flag                      | What it does                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it.                                                                                                                                                                                                                                                                                                                                                                 |
+| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it. On a machine where Claude Code has no login yet, the window opens on the login and PROMPT is typed after it.                                                                                                                                                                                                                                                  |
 | `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`. Needs `-p`.                                                                                                                                                                                                                                                                                                                                            |
-| `--no-attach`             | Don't attach afterwards.                                                                                                                                                                                                                                                                                                                                                                                |
+| `-d`, `--no-attach`       | Don't attach afterwards. With `-p`, print the window the agent is in (`Window: claude-2`). If Claude Code has no login on the machine yet, exit 1 without typing the prompt.                                                                                                                                                                                                                            |
 | `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                                                                                                                                                                    |
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                                                                                                                   |
 | `--size small\|large\|xl` | Size of a new project.                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -43,9 +43,9 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                                                                                                                  |
 | `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
-### `repose attach [PROJECT]`
+### `repose attach [PROJECT] [WINDOW]`
 
-Attach to the project's tmux session without syncing; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
+Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A window the session doesn't have exits 2; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
 
 `run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
 
@@ -65,17 +65,21 @@ Copy this checkout's current work to its machine, over the checkout already ther
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
 
-### `repose ps [PROJECT]`
+### `repose ps [PROJECT] [WINDOW]`
 
-The project's tmux windows: number and name, the program running in each (its name, not its arguments), and when it last printed something. `*` marks the current window, the one `attach` opens on. `-q`/`--quiet` prints only the names; `--json` for JSON. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one; `--json` gives `workspace`, `agent`, `name`, `state` and `focused`.
+The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle` or `needs_input`, as in `repose ls`, and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
 
 ```
 $ repose ps
-WINDOW     COMMAND  ACTIVE
-0:shell    bash     3h ago
-1:claude*  claude   now
-2:codex    codex    12m ago
+WINDOW      COMMAND  STATE        TREE        ACTIVE
+0:shell     bash     -            checkout    3h ago
+1:claude*   claude   working      checkout    now
+2:claude-2  claude   needs_input  worktree-1  12m ago
 ```
+
+With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name.
+
+`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `state` for a window with no agent). For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
 
 ### `repose exec [PROJECT] [--] COMMAND [ARG...]`
 
@@ -89,6 +93,12 @@ $ repose exec sh -c "npm run build && npm test"
 ```
 
 `-i`/`--interactive` passes your input to the command; without it the command reads nothing. `-t`/`--tty` gives it a terminal. Pass both, as with `docker exec`, for anything interactive.
+
+`--workdir DIR` runs the command in DIR instead of the checkout: `worktree-N` for a `--worktree` agent's worktree, `checkout`, `~/PATH`, `/PATH`, or a path inside the checkout, each of the first two with an optional `/SUBDIR`. A folder that isn't there exits 2 before the command runs.
+
+```
+$ repose exec --workdir worktree-1 npm test
+```
 
 ### `repose ssh [PROJECT]`
 
@@ -275,11 +285,11 @@ Every event in the window, oldest first, one per line: time, agent, kind, summar
 
 ### `repose questions [PROJECT]`
 
-The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent, how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer; `repose attach` takes you there. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: `claude-2 on todo-app` is `repose attach todo-app -w claude-2`. `--json` prints only the questions. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
 
-### `repose reply [PROJECT] [ANSWER...]`
+### `repose reply [PROJECT] [--] [ANSWER...]`
 
-Answer a waiting question: `repose reply todo-app yes`. The first word is the project when it names one with a waiting question; otherwise every word is the answer, which works when only one question is waiting. With several waiting, it lists them and sends nothing; name the project or pass `--question ID` (the id `repose questions` shows). With no answer, it asks for one in the terminal. When the question has options, the answer must be one of them. `--json` prints the answered question.
+Answer a waiting question: `repose reply todo-app yes`. The first word is the project when it names one of your projects; otherwise every word is the answer, which works when only one question is waiting. A project with no waiting question exits 1 and sends nothing. For an answer that starts with a project's name, put `--` before it: `repose reply -- todo-app is fine`. With several waiting, it lists them and sends nothing; name the project or pass `--question ID` (the id `repose questions` shows). With no answer, it asks for one in the terminal. When the question has options, the answer must be one of them. `--json` prints the answered question.
 
 ## Snapshots
 

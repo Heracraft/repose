@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -99,5 +100,36 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 			t.Fatalf("window %s: the attach did not end on detach", tc.window)
 		}
 		_ = ptmx.Close()
+	}
+}
+
+// I-606: `attach -w NAME` opens that window, by exact name or number; a
+// name the session lacks (here a prefix of one it has) exits 2 with the
+// line naming `repose ps`, before any attach.
+func TestAttachNamedWindow(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if _, err := runSSH(ctx, f.target, "tmux new-window -d -t "+testSlug+" -n editor-2 'exec cat'", nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runSSH(ctx, f.target, attachNamedCommand(testSlug, "", "editor"), nil)
+	var se *sshError
+	if !errors.As(err, &se) || se.ExitCode != 2 || !strings.Contains(se.Stderr, testSlug+" has no window editor. `repose ps "+testSlug+"` lists them.") {
+		t.Fatalf("a missing window: %v", err)
+	}
+	// Without a terminal tmux refuses the attach itself: the check passed.
+	for _, w := range []string{"editor-2", "1"} {
+		_, err = runSSH(ctx, f.target, attachNamedCommand(testSlug, "", w), nil)
+		if !errors.As(err, &se) || se.ExitCode == 2 || strings.Contains(se.Stderr, "has no window") {
+			t.Fatalf("window %s: %v", w, err)
+		}
+	}
+	if got := tmuxWindowTarget("todo", "12"); got != "=todo:12" {
+		t.Fatal(got)
+	}
+	if got := tmuxWindowTarget("todo", "api/claude"); got != "=todo:=api/claude" {
+		t.Fatal(got)
 	}
 }

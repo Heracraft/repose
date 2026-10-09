@@ -6,18 +6,21 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
 func TestParsePs(t *testing.T) {
 	out := "1000000\n0\tbash\tbash\t999990\t0\n1\tclaude\tclaude\t998800\t1\n2\tcodex-2\tnode\t700000\t0\n"
-	ws, err := parsePs(out)
+	l, err := parsePs(out)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ws := l.Windows
 	if len(ws) != 3 || ws[1].Name != "claude" || !ws[1].Current || ws[0].Current || ws[2].Command != "node" {
 		t.Fatalf("parsePs = %+v", ws)
 	}
@@ -52,7 +55,7 @@ func TestPsListsWindows(t *testing.T) {
 	}
 	got := out.buf.String()
 	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if len(lines) < 3 || !strings.HasPrefix(lines[0], "WINDOW") || !strings.Contains(lines[0], "COMMAND") || !strings.Contains(lines[0], "ACTIVE") {
+	if len(lines) < 3 || !strings.HasPrefix(lines[0], "WINDOW") || !strings.Contains(lines[0], "COMMAND") || !strings.Contains(lines[0], "STATE") || !strings.Contains(lines[0], "TREE") || !strings.Contains(lines[0], "ACTIVE") {
 		t.Fatalf("ps output:\n%s", got)
 	}
 	var agent string
@@ -61,7 +64,7 @@ func TestPsListsWindows(t *testing.T) {
 			agent = l
 		}
 	}
-	if !strings.Contains(agent, ":agent*") || !strings.Contains(agent, "sleep") || !strings.Contains(agent, "now") {
+	if !strings.Contains(agent, ":agent*") || !strings.Contains(agent, "sleep") || !strings.Contains(agent, "now") || !strings.Contains(agent, " ~ ") {
 		t.Fatalf("agent window line %q in:\n%s", agent, got)
 	}
 	if strings.Contains(got, "301") {
@@ -86,10 +89,155 @@ func TestPsListsWindows(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.buf.String()), &ws); err != nil || len(ws) != len(lines)-1 {
 		t.Fatalf("ps --json: %v\n%s", err, out.buf.String())
 	}
-	for _, k := range []string{"index", "name", "command", "current", "activity", "idle_seconds"} {
+	for _, k := range []string{"name", "agent", "command", "state", "tree", "focused", "idle_seconds", "index", "current", "activity"} {
 		if _, ok := ws[0][k]; !ok {
 			t.Fatalf("ps --json lacks %q: %v", k, ws[0])
 		}
+	}
+}
+
+// I-606: a window's last lines, by name or number, without attaching;
+// a window the session lacks is exit 2 naming ps; -n alone heads each
+// window as tail(1) does.
+func TestPsTailsAWindow(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	t.Cleanup(fake.Close)
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	t.Cleanup(func() { _, _ = runSSH(context.Background(), f.target, "tmux kill-server", nil) })
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runSSH(ctx, f.target, "tmux new-window -d -t "+testSlug+" -n agent-x 'for i in 1 2 3 4 5; do echo out$i; done; exec sleep 300'", nil); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	out := &discardWriter{}
+	f.env.Out = out
+	if err := PsCmdWith(ctx, f.env, PsOptions{ProjectArg: testSlug, Window: "agent-x", Lines: 2}); err != nil {
+		t.Fatalf("ps WINDOW: %v", err)
+	}
+	if got := out.buf.String(); got != "out4\nout5\n" {
+		t.Fatalf("ps agent-x -n 2 = %q", got)
+	}
+	err := PsCmdWith(ctx, f.env, PsOptions{ProjectArg: testSlug, Window: "agent"})
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != ExitUsage || !strings.Contains(ee.msg, "has no window agent.") {
+		t.Fatalf("a prefix of a window's name: %v", err)
+	}
+	out.buf.Reset()
+	if err := PsCmdWith(ctx, f.env, PsOptions{ProjectArg: testSlug, Lines: 1}); err != nil {
+		t.Fatalf("ps -n 1: %v", err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, ":agent-x <==\nout5\n") || !strings.HasPrefix(got, "==> 0:") {
+		t.Fatalf("ps -n 1:\n%s", got)
+	}
+}
+
+func TestPsLastLines(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		n    int
+		want []string
+	}{
+		{"a\nb  \nc\n\n\n   \n", 2, []string{"b", "c"}},
+		{"a\n", 5, []string{"a"}},
+		{"\n\n", 3, nil},
+	} {
+		got := psLastLines(tc.in, tc.n)
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("psLastLines(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestTreeOf(t *testing.T) {
+	const home, co = "/home/dev", "/home/dev/todo-app"
+	for path, want := range map[string]string{
+		"/home/dev/todo-app":              "checkout",
+		"/home/dev/todo-app/src":          "checkout/src",
+		"/home/dev/todo-app-worktree-2":   "worktree-2",
+		"/home/dev/todo-app-worktree-2/x": "worktree-2/x",
+		"/home/dev/todo-app-worktree-x":   "~/todo-app-worktree-x",
+		"/home/dev/api":                   "~/api",
+		"/home/dev":                       "~",
+		"/tmp":                            "/tmp",
+		"":                                "",
+	} {
+		if got := treeOf(path, home, co); got != want {
+			t.Errorf("treeOf(%q) = %q, want %q", path, got, want)
+		}
+	}
+	if got := treeOf("/home/dev", "/home/dev", "/home/dev"); got != "~" {
+		t.Errorf("no checkout: %q", got)
+	}
+}
+
+// I-606: STATE comes from the window's @repose-state, else a fresh api
+// sample for that window; a window with no agent has none; the JSON is
+// one shape with null where tmux or herdr cannot say.
+func TestPsRows(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	fresh, stale := now.Add(-30*time.Second), now.Add(-5*time.Minute)
+	l, err := parsePs("1000000\n#home /home/dev\n#co /home/dev/todo-app\n" +
+		"0\tshell\tbash\t999990\t0\t\t/home/dev/todo-app\n" +
+		"1\tclaude\tclaude\t999990\t1\tworking\t/home/dev/todo-app\n" +
+		"2\tclaude-2\tclaude\t999000\t0\t\t/home/dev/todo-app-worktree-1\n" +
+		"3\tapi/codex\tcodex\t999000\t0\t\t/home/dev/api\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := &Signals{SampledAt: &fresh, Agents: []AgentSignal{{Agent: "claude", Window: "claude-2", State: "needs_input"}}}
+	rows := psRowsTmux(l, sig, now)
+	type row struct{ agent, state, tree string }
+	get := func(r PsRow) row {
+		var x row
+		if r.Agent != nil {
+			x.agent = *r.Agent
+		}
+		if r.State != nil {
+			x.state = *r.State
+		}
+		x.tree = r.Tree
+		return x
+	}
+	want := []row{{"", "", "checkout"}, {"claude", "working", "checkout"}, {"claude", "needs_input", "worktree-1"}, {"codex", "unknown", "~/api"}}
+	for i, w := range want {
+		if got := get(rows[i]); got != w {
+			t.Errorf("row %d = %+v, want %+v", i, got, w)
+		}
+	}
+	sig.SampledAt = &stale
+	if got := get(psRowsTmux(l, sig, now)[2]); got.state != "unknown" {
+		t.Errorf("a stale sample gave %q", got.state)
+	}
+	if stateCell("unknown") != "-" || stateCell("") != "-" || stateCell("idle") != "idle" {
+		t.Error("stateCell")
+	}
+}
+
+func TestPsJSONOneShape(t *testing.T) {
+	keys := func(v any) []string {
+		b, _ := json.Marshal(v)
+		var m []map[string]any
+		_ = json.Unmarshal(b, &m)
+		var ks []string
+		for k := range m[0] {
+			ks = append(ks, k)
+		}
+		return ks
+	}
+	l, _ := parsePs("1\n0\tshell\tbash\t1\t1\t\t/x\n")
+	tm := keys(psRowsTmux(l, nil, time.Unix(1, 0)))
+	hd := keys(psRowsHerdr([]PsAgent{{Workspace: "checkout", Agent: "claude", Name: "claude", State: "blocked"}}))
+	for _, k := range []string{"name", "agent", "command", "state", "tree", "focused", "idle_seconds"} {
+		if !slices.Contains(tm, k) || !slices.Contains(hd, k) {
+			t.Errorf("%q: tmux %v herdr %v", k, tm, hd)
+		}
+	}
+	b, _ := json.Marshal(psRowsHerdr([]PsAgent{{Workspace: "checkout", Agent: "claude", Name: "claude", State: "blocked"}}))
+	if !strings.Contains(string(b), `"state":"needs_input"`) || !strings.Contains(string(b), `"command":null`) || !strings.Contains(string(b), `"workspace":"checkout"`) {
+		t.Fatalf("herdr row %s", b)
 	}
 }
 
@@ -225,5 +373,56 @@ func TestExecCommandFlagsPassThrough(t *testing.T) {
 		if err := cmd.Execute(); err == nil || errors.Is(err, stop) {
 			t.Errorf("%q ran: %v", args, err)
 		}
+	}
+}
+
+func TestWorkdirShell(t *testing.T) {
+	for dir, want := range map[string]string{
+		"worktree-2":     `"$repose_co"'-worktree-2'`,
+		"worktree-2/src": `"$repose_co"'-worktree-2'/'src'`,
+		"worktree-x":     `"$repose_co"/'worktree-x'`,
+		"checkout":       `"$repose_co"`,
+		"checkout/web":   `"$repose_co"/'web'`,
+		"~":              `"$HOME"`,
+		"~/api":          `"$HOME"/'api'`,
+		"/tmp/x y":       `'/tmp/x y'`,
+		"src/lib":        `"$repose_co"/'src/lib'`,
+	} {
+		if got := workdirShell(dir); got != want {
+			t.Errorf("workdirShell(%q) = %s, want %s", dir, got, want)
+		}
+	}
+	var o ExecOptions
+	if p, c, ok := execSeparated([]string{"todo-app", "--workdir", "worktree-1", "-i", "--", "npm", "test"}, &o); !ok || p != "todo-app" || strings.Join(c, " ") != "npm test" || o.Workdir != "worktree-1" || !o.Interactive {
+		t.Fatalf("PROJECT --workdir DIR -- COMMAND: %q %q %v %+v", p, c, ok, o)
+	}
+}
+
+// I-608: exec --workdir runs in a worktree beside the checkout; one that
+// is not there exits 2 with one line and runs nothing.
+func TestExecWorkdir(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	t.Cleanup(fake.Close)
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	t.Cleanup(func() { _, _ = runSSH(context.Background(), f.target, "tmux kill-server", nil) })
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(f.guestRepo()+"-worktree-1/src", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut := &discardWriter{}, &discardWriter{}
+	f.env.Out, f.env.ErrOut = out, errOut
+	if err := ExecCmd(ctx, f.env, ExecOptions{ProjectArg: testSlug, Workdir: "worktree-1/src", Command: []string{"pwd"}}, nil); err != nil {
+		t.Fatalf("exec --workdir: %v (%s)", err, errOut.buf.String())
+	}
+	if got := strings.TrimSpace(out.buf.String()); !strings.HasSuffix(got, "-worktree-1/src") {
+		t.Fatalf("ran in %q", got)
+	}
+	out.buf.Reset()
+	err := ExecCmd(ctx, f.env, ExecOptions{ProjectArg: testSlug, Workdir: "worktree-9", Command: []string{"echo", "ran"}}, nil)
+	if exitCodeOf(err) != ExitUsage || !strings.Contains(errOut.buf.String(), testSlug+" has no folder worktree-9.") || strings.Contains(out.buf.String(), "ran") {
+		t.Fatalf("a missing worktree: %v %q %q", err, errOut.buf.String(), out.buf.String())
 	}
 }

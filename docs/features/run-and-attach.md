@@ -421,7 +421,8 @@ that same command switched a running machine (I-542).
 | `repose run -p "prompt"` | a tab in the checkout's workspace, the agent, the prompt, then the attach rule |
 | `repose run --worktree -p "prompt"` | the git worktree as on tmux, `herdr worktree open --path DIR` so herdr groups it under the repository, then the agent in it |
 | `repose attach P:CHECKOUT` (I-480) | focuses that checkout's workspace, creating it in `/home/dev/<name>` when missing, then the attach rule |
-| `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`; `--json` gives `{workspace, agent, name, state, focused}`; `-q` the names. No cwd, no title |
+| `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`, STATE in `ls`'s words (blocked is `needs_input`, done is `idle`); `--json` gives the tmux shape with `command` and `idle_seconds` null, `tree` the workspace, and `workspace` for one release (I-606); `-q` the names. No cwd, no title. `ps NAME -n N` is `herdr agent read NAME --lines N` |
+| `repose attach -w NAME` | `herdr agent focus NAME` first; an agent herdr does not have exits 2 (I-606) |
 | `repose paste` | `herdr pane send-text <pane> <path>` into the focused pane (from `herdr pane list`), or into agent NAME's pane with `--window NAME`; no Enter |
 | `repose status` | `herdr` after the size in the header; the sessions line drops `tmux clients` |
 | `repose ls` AGENTS, dashboard | herdr's agents and states, gone when the pane closes |
@@ -537,11 +538,18 @@ it (I-542). The api cannot tell an old CLI apart.
 ## ps, exec and ssh (I-274, I-275)
 
 - `repose ps [PROJECT]` is one ssh over the project's connection:
-  `date +%s` and `tmux list-windows` with index, name,
-  `pane_current_command` (the process name, never its arguments),
-  `window_activity` and `window_active`. Idle time is the guest's clock
-  minus the activity time, so a skewed laptop clock does not matter.
-  `-q` prints names, `--json` the records. Nothing is logged.
+  `date +%s`, the home folder and the checkout, and `tmux list-windows`
+  with index, name, `pane_current_command` (the process name, never its
+  arguments), `window_activity`, `window_active`, `@repose-state` and
+  `pane_current_path`. Idle time is the guest's clock minus the activity
+  time, so a skewed laptop clock does not matter. STATE is
+  `@repose-state`, else the api's sample for the window when under two
+  minutes old (I-606). TREE is the pane's folder as `checkout`,
+  `worktree-N` or `~/PATH`, worked out on the laptop. `-q` prints names,
+  `--json` the records, one shape on tmux and herdr (I-606). With a
+  WINDOW (or `-w`), or `-n N`, it prints the window's last lines from
+  `tmux capture-pane -p -J -S -N` (herdr: `herdr agent read --lines N`),
+  trailing blank rows dropped. Nothing is logged.
 - `repose exec [PROJECT] [--] CMD...` runs, over ssh, `cd` into the
   checkout (the home directory when the machine has none, I-368), `/etc/profile.d/repose.sh`, then
   `/etc/repose/devshell.sh` (the agent wrappers' loader, I-259) or, on an
@@ -552,8 +560,10 @@ it (I-542). The api cannot tell an old CLI apart.
   (I-411): flags stop at the first word, so the command's own flags pass
   through; with no `--` and no `--project`, a first word that is one of
   the account's slugs is PROJECT, and that word alone is refused (exit 2).
-  A `--` after one word and `-i`/`-t` only is the old PROJECT separator;
-  any other `--` is the command's.
+  A `--` after one word and `-i`/`-t`/`--workdir DIR` only is the old
+  PROJECT separator; any other `--` is the command's. `--workdir DIR`
+  (I-608) runs it in `checkout`, `worktree-N`, `~/PATH`, `/PATH` or a
+  path inside the checkout; a missing folder exits 2 before the command.
 - `repose ssh [PROJECT]` replaces the CLI with `ssh -t <slug>.repose` running
   a login shell in the checkout, outside tmux.
 - All three need a running project (exit 5 otherwise) and ensure the

@@ -558,3 +558,45 @@ func TestOOMPriorityCoversSplitPanes(t *testing.T) {
 		t.Error("list-panes -s was not run for the project session")
 	}
 }
+
+// I-606: a tmux agent window carries its announced state in
+// @repose-state, set once per change, so `repose ps` and the status line
+// read it without the api; a herdr agent (no tmux window) gets none.
+func TestWatcherMarksTheTmuxWindowState(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "claude", ticks: 50},
+	}
+	w, run, _, clk, p := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude-2", "101", "claude", "0"})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "claude", ticks: 200}})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	clk.advance(StateDebounce)
+	w.Refresh(ctx)
+	var sets []string
+	for _, c := range run.Calls() {
+		if len(c.Argv) > 1 && c.Argv[1] == "set-option" {
+			sets = append(sets, strings.Join(c.Argv, " "))
+		}
+	}
+	want := "tmux set-option -w -t =todo-app:=claude-2 " + StateOption + " " + StateWorking
+	if len(sets) != 1 || sets[0] != want {
+		t.Fatalf("set-option calls %q, want [%q]", sets, want)
+	}
+	// Still working: no change, no second call.
+	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "claude", ticks: 400}})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	n := 0
+	for _, c := range run.Calls() {
+		if len(c.Argv) > 1 && c.Argv[1] == "set-option" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d set-option calls after a refresh with no change", n)
+	}
+}

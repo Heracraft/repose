@@ -15,6 +15,13 @@ Quote a prompt of more than one word. `run` creates or starts the machine, copie
 
 Without a prompt, `repose run` drops you in the last active window.
 
+`-d` (`--no-attach`) starts the agent and keeps your shell. It prints the window the agent is in, the name `ps`, `attach -w` and `paste --window` take:
+
+```
+$ repose run -d -p "add rate limiting to the public API"
+Window: claude-2
+```
+
 Pick a different agent for one prompt with `--agent`:
 
 ```
@@ -27,7 +34,7 @@ Claude Code and Codex don't ask whether you trust the folder: `run` marks the fo
 
 Claude Code also asks before it uses a server from the checkout's `.mcp.json`. `run` gives Claude Code on the machine the answers you gave on your laptop for this project. For a server you never answered, `run` stops the same way: it doesn't type your prompt, says that Claude Code is asking about an MCP server, and attaches you to answer; with `--no-attach` it exits with code 1.
 
-If that agent already has a window, the new one is named `claude-2`, then `claude-3`, and so on, and the CLI warns that the agents share one working tree.
+If that agent already has a window, the new one is named `claude-2`, then `claude-3`, and so on, and the CLI warns that the agents share one working tree. It warns too when the agent runs in a window of another name, such as Claude Code typed in the shell window.
 
 Only the first run on a new machine copies your checkout; later ones attach to the machine as it is, and say so when your laptop has work to send with `repose sync`.
 
@@ -114,6 +121,8 @@ Each machine has one tmux session. Its first window, `shell`, opens in your chec
 | `c`     | New window with a shell.                        |
 | `[`     | Scroll back. Arrow keys or Page Up; `q` leaves. |
 
+In the status line, a window whose agent waits for your input has `?` after its name, as in `2:claude-2?`.
+
 Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later. A temporary machine is destroyed instead when you leave its last window from `repose attach` or `repose run`; left any other way, it waits for its expiry.
 
 tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. If you want tmux's mouse mode instead (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
@@ -170,17 +179,19 @@ A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI
 
 ## See what's running, run one command
 
-`repose ps` lists the tmux windows without attaching: what runs in each and when it last printed something. `*` is the window `attach` opens on.
+`repose ps` lists the tmux windows without attaching: what runs in each, the agent's state, the folder it works in and when it last printed something. `*` is the window `attach` opens on.
 
 ```
 $ repose ps
-WINDOW     COMMAND  ACTIVE
-0:shell    bash     3h ago
-1:claude*  claude   now
-2:codex    codex    12m ago
+WINDOW      COMMAND  STATE        TREE        ACTIVE
+0:shell     bash     -            checkout    3h ago
+1:claude*   claude   working      checkout    now
+2:claude-2  claude   needs_input  worktree-1  12m ago
 ```
 
-An agent that's working usually shows `now`; one that has been waiting for you shows roughly how long. COMMAND is the program's name only, never its arguments.
+STATE is `working`, `idle` or `needs_input`, the words `repose ls` uses; `-` is a window with no agent, or one that hasn't settled yet. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. COMMAND is the program's name only, never its arguments.
+
+To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach todo-app claude-2` (or `-w claude-2`) opens that window.
 
 `repose exec` runs one command in the checkout on the machine and gives you its output and exit code, the way `docker exec` does. The command gets what an agent there gets: your [secrets](/docs/secrets) as environment variables and the project's dev shell (its `.envrc`, or its `flake.nix` dev shell). Loading it prints nothing unless it takes more than 2 seconds or fails.
 
@@ -190,7 +201,7 @@ $ repose exec todo-app git status --short
 $ repose exec -it psql
 ```
 
-A first word that names one of your projects picks that project; otherwise it is this checkout's. `repose exec -- COMMAND` runs a command that happens to share a project's name. Without `-i` it reads no input, and without `-t` it has no terminal; `-it` is for something interactive, like a REPL.
+A first word that names one of your projects picks that project; otherwise it is this checkout's. `repose exec -- COMMAND` runs a command that happens to share a project's name. `--workdir worktree-1` runs it in that worktree instead of the checkout, and takes any TREE that `ps` shows, or a path. Without `-i` it reads no input, and without `-t` it has no terminal; `-it` is for something interactive, like a REPL.
 
 `repose ssh` opens a plain shell in the checkout instead of the tmux session, and `exit` closes it. Start long jobs in tmux (`repose attach`), where they outlive the connection.
 
@@ -235,7 +246,7 @@ repose paste
 ## Useful flags
 
 ```
-repose run --no-attach -p "..." # start it, keep your shell
+repose run -d -p "..."          # start it, keep your shell
 repose sync                     # send your laptop's work
 repose run --no-sync            # a new machine, no checkout
 repose run --size xl            # size of a new project

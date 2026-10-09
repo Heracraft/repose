@@ -43,6 +43,9 @@ type RunOptions struct {
 	// Multiplexer is --multiplexer: tmux or herdr for a new project, or a
 	// switch from the next start for an existing one (DECISIONS I-502).
 	Multiplexer string
+	// Window is `attach --window`: the window (or herdr agent) the
+	// attach opens on, which must exist (DECISIONS I-606).
+	Window string
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -79,7 +82,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// answer instead of after it (DECISIONS I-223).
 	var early *earlyProbe
 	if attachOnly {
-		if done, err := attachFast(ctx, e, e.resolveArg(opts.ProjectArg), opts.Bridge); done {
+		if done, err := attachFast(ctx, e, e.resolveArg(opts.ProjectArg), opts.Bridge, opts.Window); done {
 			return err
 		}
 	} else {
@@ -295,7 +298,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		return muxOnce, nil
 	}
-	attach := func(window string) error {
+	attach := func(window string, named bool) error {
 		mux, err := muxNow()
 		if err != nil {
 			return err
@@ -307,7 +310,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// session has ended goes at once (I-352).
 		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
 		defer e.keepTokenFresh()()
-		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
+		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, Named: named, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
 	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).
@@ -317,7 +320,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
-		return attach("")
+		return attach(opts.Window, opts.Window != "")
 	}
 
 	// The machine's checkout, as its sync or carry found it (I-368).
@@ -518,14 +521,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
+		prompt := opts.Prompt
+		if attachInstead && opts.NoAttach {
+			// Nobody logs in now: the prompt is refused below, not
+			// left to type itself later (I-607).
+			prompt = ""
+		}
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
 			// on the dialog, and the prompt was not typed.
 			pr.Fail()
 			if opts.NoAttach {
-				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug)
+				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s -w %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug, name)
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
 		} else if err != nil {
@@ -533,7 +542,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		pr.End()
 		if attachInstead {
-			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on this guest yet. Finish the login in the %s that opens, then re-run with your prompt.\n", mux.Unit())
+			if opts.NoAttach {
+				// herdr's login tab has no agent name (`herdr pane run`),
+				// but it is the focused one.
+				at := "repose attach " + project.Slug
+				if mux.Name() != multiplexer.Herdr {
+					at += " -w " + name
+				}
+				return exitf(ExitGeneric, "Claude Code is not logged in on %s, so your prompt was not typed. Log in with `%s`, then run your prompt again.", project.Slug, at)
+			}
+			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on %s. Log in in the %s that opens; your prompt is typed after the login.\n", project.Slug, mux.Unit())
+		} else if opts.NoAttach {
+			// Where the prompt went: the name `attach -w` and `ps`
+			// take (I-607).
+			_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(mux.Unit()), name)
 		}
 	}
 
@@ -559,7 +581,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		waitHerdrAdds(30 * time.Second)
 		return nil
 	}
-	return attach(window)
+	return attach(window, false)
 }
 
 // linkExplicitSync remembers this directory for project after `repose
@@ -951,10 +973,20 @@ exec tmux attach -t %[1]s:"$repose_w" -c "$repose_co"`, shQuote(slug), shQuote(w
 	if window == "" {
 		return co + fmt.Sprintf(`exec tmux attach -t %s -c "$repose_co"`, shQuote(slug))
 	}
-	target := shQuote(slug + ":" + window)
+	target := shQuote(tmuxWindowTarget(slug, window))
 	msg := fmt.Sprintf("The %s window closed before the attach: the agent in it exited. Attached to the session instead; start the agent again there.", window)
 	return co + fmt.Sprintf("if tmux has-session -t %[1]s 2>/dev/null; then exec tmux attach -t %[1]s -c \"$repose_co\"; fi; printf '%%s\\n' %[3]s >&2; exec tmux attach -t %[2]s -c \"$repose_co\" \\; display-message -d 10000 %[3]s",
 		target, shQuote(slug), shQuote(msg))
+}
+
+// attachNamedCommand is the guest-side command of `attach --window`
+// (I-606): the window the user named, by exact name or number, or exit
+// 2 with noWindow's line when the session has no such window.
+func attachNamedCommand(slug, extra, window string) string {
+	target := shQuote(tmuxWindowTarget(slug, window))
+	missing := fmt.Sprintf("%s has no window %s. `repose ps %s` lists them.", slug, window, slug)
+	return checkoutVar(slug, extra) + fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || { printf '%%s\n' %[2]s >&2; exit 2; }
+exec tmux attach -t %[1]s -c "$repose_co"`, target, shQuote(missing))
 }
 
 // waitForSSH is step 4: `ssh <target> true` until it answers, for up to
@@ -1826,4 +1858,12 @@ func positionalProject(opts *RunOptions, arg string) error {
 	}
 	opts.Name = arg
 	return nil
+}
+
+// capitalize is s with its first letter upper case (ASCII).
+func capitalize(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return string(s[0]-'a'+'A') + s[1:]
 }

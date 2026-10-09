@@ -20,29 +20,34 @@ Your `main` goes up. From here on the machine's `main` is a base for branches.
 ## 2. One agent per task, each in a worktree
 
 ```
-repose run --worktree -p "add rate limiting to the public API"
-repose run --worktree -p "parse dates with date-fns, keep tests green"
-repose run --worktree --agent codex -p "write the audit_log migration"
+repose run -d --worktree -p "add rate limiting to the public API"
+repose run -d --worktree -p "parse dates with date-fns, keep tests green"
+repose run -d --worktree --agent codex -p "write the audit_log migration"
 ```
 
-Each command prints where the agent works:
+`-d` keeps your shell. Each command prints where the agent works and its window:
 
 ```text
 Worktree: ~/todo-app-worktree-1 on branch worktree-1
+Window: claude
 Worktree: ~/todo-app-worktree-2 on branch worktree-2
+Window: claude-2
 Worktree: ~/todo-app-worktree-3 on branch worktree-3
+Window: codex
 ```
 
-Worktrees are numbered from 1, skipping any number whose folder or branch is still there. The tmux windows keep the agents' names (`claude`, `claude-2`, `codex`), in the same order as the worktrees here. Detach and let them run. `repose ps` shows who's still busy:
+Worktrees are numbered from 1, skipping any number whose folder or branch is still there. `repose ps` shows who's still busy, and in which worktree:
 
 ```
 $ repose ps
-WINDOW      COMMAND  ACTIVE
-0:shell     bash     2h ago
-1:claude    claude   now
-2:claude-2  claude   4m ago
-3:codex     codex    now
+WINDOW      COMMAND  STATE        TREE        ACTIVE
+0:shell     bash     -            checkout    2h ago
+1:claude    claude   working      worktree-1  now
+2:claude-2  claude   needs_input  worktree-2  4m ago
+3:codex     codex    working      worktree-3  now
 ```
+
+`repose ps todo-app claude-2` prints that agent's last lines without attaching.
 
 You get a [notification](/docs/notifications) as each one finishes or asks a question. `repose questions` lists what's waiting on you; `repose reply` answers without attaching.
 
@@ -66,7 +71,7 @@ git diff main...repose/worktree-1 -- test/
 Run the tests on the machine without attaching, with the dev shell and secrets the agent had:
 
 ```
-repose exec -- sh -c 'cd ~/todo-app-worktree-1 && npm test'
+repose exec --workdir worktree-1 npm test
 ```
 
 Or open the worktree in your editor over SSH with `repose code` and read it there.
@@ -78,7 +83,7 @@ git merge repose/worktree-1
 git merge repose/worktree-3
 ```
 
-A branch that isn't good enough gets a second round: `repose attach`, switch to that agent's window, and tell it what to change. It commits on the same branch; you fetch again. Or ask for a pull request instead and review on GitHub: the machine has your `gh` login, so "push the branch and open a PR" works in a prompt.
+A branch that isn't good enough gets a second round: `repose attach -w claude`, the agent of that worktree, and tell it what to change. It commits on the same branch; you fetch again. Or ask for a pull request instead and review on GitHub: the machine has your `gh` login, so "push the branch and open a PR" works in a prompt.
 
 ## 5. Send the merged result back up
 
