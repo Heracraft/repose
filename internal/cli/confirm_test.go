@@ -44,7 +44,7 @@ func TestAskYesNoFrom(t *testing.T) {
 	}
 
 	r, pw := io.Pipe() // a terminal nobody types into
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	var w bytes.Buffer
 	done := make(chan error, 1)
@@ -73,7 +73,7 @@ func TestCanPromptIsATerminalCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if canPrompt(f) {
 		t.Fatal("canPrompt(/dev/null)")
 	}

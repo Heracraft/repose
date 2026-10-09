@@ -18,7 +18,9 @@ test('the machine card says what the size gives', async ({ page }) => {
 	await expect(card.getByText('small', { exact: true })).toBeVisible();
 	await expect(card.locator('dt', { hasText: 'vCPUs' }).locator('+ dd')).toHaveText('2');
 	await expect(card.locator('dt', { hasText: /^Memory$/ }).locator('+ dd')).toHaveText('4 GB');
-	await expect(card.locator('dt', { hasText: 'Plan memory' }).locator('+ dd')).toContainText('4 GB');
+	await expect(card.locator('dt', { hasText: 'Plan memory' }).locator('+ dd')).toContainText(
+		'4 GB'
+	);
 });
 
 test('usage draws the samples and switches window', async ({ page }) => {
@@ -60,7 +62,9 @@ test('a stopped machine has no samples to draw', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	await page.getByRole('button', { name: 'Stop' }).click();
-	await expect(page.getByText('stopped', { exact: true })).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByTestId('project-state')).toHaveText('stopped', { timeout: 10_000 });
 	await page.getByTestId('usage-card').getByRole('button', { name: 'Week' }).click();
-	await expect(page.getByText('No samples in this window: the machine was not running.')).toBeVisible();
+	await expect(
+		page.getByText('No samples in this window: the machine was not running.')
+	).toBeVisible();
 });

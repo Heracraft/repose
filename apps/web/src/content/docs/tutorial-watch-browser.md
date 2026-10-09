@@ -44,7 +44,7 @@ The agents' guide to the machine tells them to ask you to run `repose browser` w
 
 ## Close it
 
-Close the tab and the view stays up for 30 minutes without a viewer, then sleeps; opening the link again wakes it. `repose browser stop` closes the view and the forward now. The agent's browser is separate: it keeps running while an agent uses it and stops after 30 minutes with neither an agent nor you on it. Stopping the view never interrupts an agent.
+Close the tab and the view stays up for 30 minutes without a viewer, then sleeps; opening the link again wakes it. `repose browser stop` closes the view and the forward now. The agent's browser is separate: it keeps running while an agent uses it and stops after 30 minutes with neither an agent nor you on it.
 
 ## Things worth knowing
 

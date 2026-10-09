@@ -37,7 +37,7 @@ var envTopic = []topicRow{
 // exitTopic is cli.md's "Exit codes" table.
 var exitTopic = []topicRow{
 	{[]string{"0"}, "Worked."},
-	{[]string{"1"}, "Failed, or you answered no to a question; the message says why. The network, the login server's included, is 1."},
+	{[]string{"1"}, "Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too."},
 	{[]string{"2"}, "Wrong usage."},
 	{[]string{"3"}, "Not logged in, or the login expired."},
 	{[]string{"4"}, "No such project."},
@@ -52,7 +52,6 @@ var exitTopic = []topicRow{
 // configTopic is cli.md's "config.toml" table.
 var configTopic = []topicRow{
 	{[]string{"`default_size`", "`large`"}, "Size of new projects. `default_class` is its old name and still works; `default_size` wins when a file has both."},
-	{[]string{"`default_class`", "`large`"}, "The old name of `default_size`."},
 	{[]string{"`default_agent`", "`claude`"}, "Agent for new projects."},
 	{[]string{"`editor`", "none"}, "What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it."},
 	{[]string{"`default_multiplexer`", "none"}, "`tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key."},

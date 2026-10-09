@@ -63,7 +63,7 @@ func TestStopWindowScripts(t *testing.T) {
 	if why := keptBecause(parseStopWindowProbe(out), true); why != "claude-3 is working in it" {
 		t.Fatalf("kept because %q", why)
 	}
-	os.Remove(filepath.Join(wt, "new.txt"))
+	_ = os.Remove(filepath.Join(wt, "new.txt"))
 
 	if _, code := sh(tmuxMux{}.CloseScript("app", "claude-2")); code != 0 {
 		t.Fatal("close failed")

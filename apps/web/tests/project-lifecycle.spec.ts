@@ -13,13 +13,13 @@ test('stop and start round trip', async ({ page }) => {
 		remote_url: 'github.com/heracraft/lifecycle-app'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText('running', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('project-state')).toHaveText('running');
 
 	await page.getByRole('button', { name: 'Stop' }).click();
-	await expect(page.getByText('stopped', { exact: true })).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByTestId('project-state')).toHaveText('stopped', { timeout: 10_000 });
 
 	await page.getByRole('button', { name: 'Start', exact: true }).click();
-	await expect(page.getByText('running', { exact: true })).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByTestId('project-state')).toHaveText('running', { timeout: 10_000 });
 });
 
 test('resize grows the volume', async ({ page }) => {
@@ -151,7 +151,7 @@ test('restoring a snapshot over the disk asks for the slug, like Destroy', async
 		if (r.url().endsWith('/restore')) restores++;
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText('running', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('project-state')).toHaveText('running');
 
 	const row = page.getByTestId('snapshot-row');
 	await row.getByRole('button', { name: 'Restore…' }).click();

@@ -54,6 +54,7 @@ func pendingPromptScript(prompt string, sh pendingShell) string {
 	}
 	waiter := fmt.Sprintf(`repose_pp=%[1]s
 repose_end=$(( $(date +%%s) + %[2]d ))
+# exists-check only: the login file is never read or copied (R2-8)
 until [ -s "$HOME/.claude/.credentials.json" ]; do
   [ "$(date +%%s)" -lt "$repose_end" ] || exit 0
   %[4]s || exit 0

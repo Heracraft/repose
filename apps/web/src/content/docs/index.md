@@ -45,7 +45,7 @@ Ready in 16s.
 
 The first run creates the machine and copies your checkout to `/home/dev/your-project` on it (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. Then the CLI starts Claude Code in a tmux window there, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
 
-Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done, and your other machines are logged in too. Codex, opencode and GitHub CLI logins were copied from your laptop; [Agents](/docs/agents) covers the rest.
+Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done, and your other machines are logged in too. The Codex, opencode and GitHub CLI logins your laptop has are copied; [Agents](/docs/agents) covers the rest.
 
 `repose run` with no prompt attaches to a shell on the machine instead. If you use [herdr](https://herdr.dev), add `--multiplexer herdr` to the first run and the machine runs herdr ([herdr on your machine](/docs/tutorial-herdr)).
 
