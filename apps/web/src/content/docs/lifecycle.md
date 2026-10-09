@@ -7,23 +7,24 @@ order: 17
 
 A project is one machine plus its disk, snapshots, secrets and configuration. The first `repose run` in a checkout creates it. After that, any checkout of the same repository, on any laptop you're logged in on, finds it by its git remote.
 
-To act on a project from elsewhere, name it: `repose attach todo-app`, `repose stop todo-app`. For `repose run`, whose argument is the prompt, use `--project todo-app`.
+To act on a project from elsewhere, name it: `repose run todo-app`, `repose stop todo-app`.
 
 ## See what's running
 
 ```
 $ repose ls
-PROJECT   CLASS  STATE    UP     AGENTS               TODAY  MONTH
-todo-app  large  running  2h14m  claude: working      2h14m  41h
-api       xl     running  6h40m  2 agents: 2 working  6h40m  12h
-web       small  stopped  -      -                    0h     3h
+PROJECT     CLASS  STATE    UP     AGENTS
+todo-app *  large  running  2h14m  claude: working
+api         xl     running  6h40m  2 agents: 1 needs input, 1 working
+web         small  stopped  -      -
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month
 ```
 
-AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` or `needs_input` (waiting on a permission prompt). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. TODAY and MONTH are the hours the machine has run.
+`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
 
 `repose ls -q` prints only the names, for scripts: `repose ls -q | xargs -n1 repose stop` stops everything.
 
-For one project in detail, including which processes are listening on ports:
+For one project in detail, including each agent by its window, the commits on the machine your laptop doesn't have, and which processes are listening on ports:
 
 ```
 repose status todo-app
@@ -47,22 +48,22 @@ The `Interrupted` line names the agents that were in the middle of a turn or wai
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
-## Idle machines
+## Unused machines
 
-A machine is idle when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is not idle while that herdr runs. An agent sitting at its prompt, finished or waiting for you, doesn't count as working. repose doesn't stop an idle machine; it tells you instead:
+A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count as working. repose doesn't stop an unused machine; it tells you instead:
 
 ```
 $ repose ls
 PROJECT    CLASS  STATE    UP      AGENTS
-todo-app   large  running  31h02m  claude: idle
-todo-app: running for 26h with nobody attached
+todo-app   large  running  31h02m  claude: needs input
+todo-app: unused for 26h; claude needs input
 ```
 
-- `repose status` shows the same line, and the dashboard's project list shows the idle time under the state.
-- `repose run` and `repose attach` in another project print one line naming it, once per idle stretch.
-- You get one notification, by email and ntfy if you have them on ([Notifications](/docs/notifications)), naming the project as idle. You get another only after the machine has been used and gone idle again.
+- `repose status` shows the same line, and the dashboard's project list shows `unused 26h` under the state.
+- `repose run` and `repose attach` in another project print one line naming it, once per unused stretch.
+- You get one notification, by email and ntfy if you have them on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
 
-An idle machine costs nothing extra on a plan, but its memory counts against what your plan runs at once, so another machine can be refused until it stops ([Billing](/docs/billing)). When the server hasn't reported on the machine for 10 minutes, for example while it's unreachable, repose can't tell and says nothing.
+An unused machine costs nothing extra on a plan, but its memory counts against what your plan runs at once, so another machine can be refused until it stops ([Billing](/docs/billing)). When the server hasn't reported on the machine for 10 minutes, for example while it's unreachable, repose can't tell and says nothing.
 
 ## Snapshots
 

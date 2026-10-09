@@ -1,5 +1,5 @@
-// Package idle tells a user that a running machine nobody is using is
-// still billing (DECISIONS I-262). It never stops one: R1-5 stands, and
+// Package idle tells a user that a running machine nobody is using
+// still holds its share of the plan's memory (DECISIONS I-262, I-617). It never stops one: R1-5 stands, and
 // this is the warning R1-5's recorded signals make possible.
 //
 // A running project is idle when, for After, no meter sample showed an SSH
@@ -106,7 +106,7 @@ func Project(ctx context.Context, q store.Querier, p *store.Project, now time.Ti
 // that may run at once, so an idle machine costs its share of the plan,
 // not a rate.
 func Summary(slug, class string, idleFor time.Duration) string {
-	return fmt.Sprintf("%s has had no SSH session and no agent working for %dh, and is still running, holding %d GB of your plan's memory (%s) until you stop it: `repose stop %s`. repose never stops a machine for being idle.",
+	return fmt.Sprintf("%s has had no SSH session and no agent working for %dh, and is holding %d GB of your plan's memory (%s) until you stop it: `repose stop %s`. repose never stops a machine for being unused.",
 		slug, int(idleFor/time.Hour), billing.ClassMemoryGB(class), class, slug)
 }
 

@@ -37,25 +37,6 @@ func TestPaymentRequiredMessage(t *testing.T) {
 	}
 }
 
-// `repose status` and `repose ls` show hours, not cents (I-289).
-func TestStatusShowsHours(t *testing.T) {
-	for secs, want := range map[int64]string{0: "0h", 59: "0h", 60: "0h01m", 8040: "2h14m", 3600: "1h", 41 * 3600: "41h", 41*3600 + 1800: "41h", 90000: "25h"} {
-		if got := runHours(secs); got != want {
-			t.Errorf("runHours(%d) = %q, want %q", secs, got, want)
-		}
-	}
-	p := &Project{Slug: "todo-app", Class: "large", State: "running", RunningSecondsToday: 8040, RunningSecondsMonth: 41 * 3600}
-	line := statusFirstLine(p)
-	if !strings.Contains(line, "today 2h14m  month 41h") || strings.Contains(line, "$") {
-		t.Fatalf("status line %q", line)
-	}
-	var b strings.Builder
-	writeProjectsTable(&b, []Project{*p})
-	if !strings.Contains(b.String(), "TODAY") || !strings.Contains(b.String(), "2h14m") || !strings.Contains(b.String(), "41h") || strings.Contains(b.String(), "$") {
-		t.Fatalf("table:\n%s", b.String())
-	}
-}
-
 // The project cap refusal reads the same from every command (I-569):
 // run, restore and the rest print the CLI's sentence for the api's 400,
 // not "invalid: ..."; an api from before I-569 (no detail.reason) is

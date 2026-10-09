@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-622 entries.
+624 entries.
 
 ## Scope
 
@@ -267,7 +267,7 @@ pointer, not a summary.
 - **I-189** One refusal banner per connection, on its own line, and words that fit the state — 2026-09-23; L4050
 - **I-190** Restoring a project whose destroy is still running waits for its final snapshot — 2026-09-23; L4066
 - **I-191** A phase is printed once, and it names the slug — 2026-09-23; L4085
-- **I-192** `repose projects --destroyed` is one row per name; `status` names the host and the newest event — 2026-09-23; L4095
+- **I-192** `repose projects --destroyed` is one row per name; `status` names the host and the newest event — 2026-09-23; amended by I-616; L4095
 - **I-193** The key in b1a5915 stays in history; it was rotated — 2026-09-23; L4111
 - **I-194** Dependency directories never travel; symlinks travel as links — 2026-09-23; L4118
 - **I-171** A running guest's snapshot takes the extent path; the premise that it could not was wrong — 2026-09-23; L4132
@@ -342,7 +342,7 @@ pointer, not a summary.
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6530
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6561
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6582
-- **I-262** An idle running machine is announced, never stopped — 2026-09-26; L6599
+- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; L6599
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; L6643
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6704
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6749
@@ -367,7 +367,7 @@ pointer, not a summary.
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7545
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7558
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7583
-- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; L7605
+- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; L7605
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; L7683
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; L7722
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7748
@@ -654,3 +654,5 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16583
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16628
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; L16655
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; L16713
+- **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; L16794

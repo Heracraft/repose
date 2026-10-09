@@ -75,7 +75,7 @@ func TestConfigOpShowsSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "4f1c2a9e-0000", pr)
+	printApplied(e, p, op, "01900000-4f1c2a9e", pr)
 	got := errOut.buf.String()
 	last := -1
 	for _, want := range []string{"✓ Got a build slot", "✓ Evaluated your config", "✓ Fetched 3 paths (1.5 MiB)", "✓ Built 2 derivations", "✓ Switched the machine"} {
@@ -115,7 +115,7 @@ func TestConfigOpRebootRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "4f1c2a9e-0000", pr)
+	printApplied(e, p, op, "01900000-4f1c2a9e", pr)
 	if got := out.buf.String(); !strings.HasPrefix(got, "Built revision 4f1c2a9e. It changes the kernel") || strings.Contains(got, "Applied") {
 		t.Fatalf("reboot output %q", got)
 	}
@@ -148,9 +148,19 @@ func TestConfigApplyWithoutFileReapplies(t *testing.T) {
 	if err := ConfigAddCmd(ctx, e, "", []string{"gcc"}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := e.Client.GetConfig(ctx, p.ID)
+	revs, err := e.Client.ListRevisions(ctx, p.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The active revision. Its id differs from the newest one only in
+	// the tail, which shortRev shows since I-616; the first 8 characters
+	// it cut before were the same for every revision.
+	var cfg struct{ RevisionID string }
+	for _, r := range revs {
+		if r.Status == "applied" {
+			cfg.RevisionID = r.ID
+			break
+		}
 	}
 	out := &discardWriter{}
 	e.Out = out

@@ -403,13 +403,22 @@ func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]Log
 // plan, and the disk its projects hold against it (DECISIONS I-585).
 type Billing struct {
 	Subscription *struct {
-		Plan string `json:"plan"`
+		Plan   string `json:"plan"`
+		Status string `json:"status"`
 	} `json:"subscription"`
 	Usage struct {
 		// DiskHeldGB is absent from an api older than I-585.
-		DiskHeldGB *float64 `json:"disk_held_gb"`
-		DiskGB     int      `json:"disk_gb"`
+		DiskHeldGB       *float64 `json:"disk_held_gb"`
+		DiskGB           int      `json:"disk_gb"`
+		RunningGB        int      `json:"running_gb"`
+		MemoryGB         int      `json:"memory_gb"`
+		EgressGB         float64  `json:"egress_gb"`
+		EgressIncludedGB int      `json:"egress_included_gb"`
 	} `json:"usage"`
+	Plans []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"plans"`
 }
 
 func (c *Client) GetBilling(ctx context.Context) (*Billing, error) {

@@ -103,9 +103,12 @@
 	function agentSummary(p: Project): string {
 		const agents = p.signals?.agents ?? [];
 		if (agents.length === 0) return '—';
-		// guestd's `unknown` (quiet for less than the idle time) is not named.
+		// guestd's `unknown` (quiet for less than the idle time) is not named;
+		// `needs_input` reads `needs input`, as the CLI prints it (I-617).
 		return agents
-			.map((a) => (a.state && a.state !== 'unknown' ? `${a.agent} · ${a.state}` : a.agent))
+			.map((a) =>
+				a.state && a.state !== 'unknown' ? `${a.agent} · ${a.state.replace(/_/g, ' ')}` : a.agent
+			)
 			.join(', ');
 	}
 
@@ -202,10 +205,10 @@
 										</div>
 									{/if}
 									{#if p.state === 'running' && p.idle}
-										<!-- Nobody on it for a day, still running and holding its
-										     memory against the plan (I-262, I-289). -->
+										<!-- Nobody on it for a day, holding its memory against
+										     the plan (I-262, I-289, I-617). -->
 										<div class="mt-0.5 text-xs text-amber-700 tabular-nums dark:text-amber-400">
-											idle {uptime(p.idle.since)} · still running
+											unused {uptime(p.idle.since)}
 										</div>
 									{/if}
 									{#if p.expires_at}
