@@ -16,7 +16,7 @@ Run `repose --help` for the commands.
 
 ## Which project
 
-Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote.
+Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count; see [From your home folder](/docs/lifecycle#from-your-home-folder).
 
 Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
 
@@ -41,7 +41,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                                                                                                                                                                                                                   |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                                                                                                                                                                                                          |
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                                                                                                                  |
-| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. A `--temp` machine always runs tmux, and `--temp --multiplexer herdr` stops with an error. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
+| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. A `--temp` machine picks it the same way. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
 ### `repose attach [PROJECT]`
 
@@ -55,7 +55,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them, or when the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect there; the machine's changes to other files stay. When the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one.
+Copy this checkout's current work to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them, or when the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect there; the machine's changes to other files stay. When the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. See [Sync](/docs/sync). `repose run --stash-remote` and `--discard-remote` moved here, and `run` exits 2 naming this command when given one. In a folder that isn't a git checkout, and in your home folder, it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |

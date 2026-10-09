@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-619 entries.
+622 entries.
 
 ## Scope
 
@@ -244,7 +244,7 @@ pointer, not a summary.
 - **I-149** The CLI has its own passphrase-less key, and one SSH connection per command — 2026-09-23; L3421
 - **I-150** The laptop sends its commits to the guest; the guest never fetches origin during a sync — 2026-09-23; amended by I-422; amended by I-574; L3453
 - **I-151** The CLI proves the `<slug>.repose` alias works and says exactly how to fix it when not — 2026-09-23; L3499
-- **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; amended by I-575; L3517
+- **I-152** A directory's cached project must share its remote, and naming a project never writes the directory cache — 2026-09-23; amended by I-575; amended by I-601; L3517
 - **I-153** The CLI says what actually happened: the true state, why, and the next command — 2026-09-23; L3532
 - **I-154** Long commands show live phases — 2026-09-23; L3567
 - **I-155** A project is the argument of the commands whose object it is — 2026-09-23; amended by I-557; amended by I-566; L3584
@@ -417,13 +417,13 @@ pointer, not a summary.
 - **I-349** Temporary machines in the api: `expires_at` (0010), the plan without a snapshot, and `keep` — 2026-09-29; L8975
 - **I-350** The reaper: once a minute under `LockSweeper`, a row per transaction, with a backoff after a failed destroy — 2026-09-29; L8996
 - **I-351** `--temp` in the CLI: flag, name, cache, lines — 2026-09-29; L9019
-- **I-352** The session end destroys a temporary machine only when tmux says the session is gone — 2026-09-29; amended by I-509; L9043
+- **I-352** The session end destroys a temporary machine only when tmux says the session is gone — 2026-09-29; amended by I-509; amended by I-602; L9043
 - **I-353** Every sync refusal of the checkout comes before the create — 2026-09-29; L9056
 - **I-354** What agents on a temporary machine are told: nothing yet — 2026-09-29; L9070
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9079
 - **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; L9094
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9110
-- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; L9129
+- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9129
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9152
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9179
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9200
@@ -593,7 +593,7 @@ pointer, not a summary.
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14344
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L14355
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; amended by I-596; amended by I-597; amended by I-598; L14374
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; amended by I-598; L14409
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; amended by I-598; amended by I-602; L14409
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14431
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14442
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14458
@@ -630,7 +630,7 @@ pointer, not a summary.
 - **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15426
 - **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; L15443
 - **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15540
-- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; L15598
+- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15598
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15643
 - **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15753
 - **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L15784
@@ -652,3 +652,5 @@ pointer, not a summary.
 - **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16505
 - **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16541
 - **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; L16583
+- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16620
+- **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16665

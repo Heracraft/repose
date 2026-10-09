@@ -90,6 +90,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 			return exitf(ExitUsage, "`repose run` no longer syncs a machine that already has your checkout; `repose sync %s` does.", flag)
 		}
+		if opts.Sync && e.inHome() {
+			return errHomeSync()
+		}
 		if opts.Temp > 0 && opts.ProjectArg != "" {
 			return exitf(ExitUsage, "--temp always creates a new machine; it cannot be used with --project (%s).", opts.ProjectArg)
 		}
@@ -110,7 +113,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// one (I-480).
 		ownCheckout := opts.On == "" && e.extraCheckout() == nil
 		e.guestUp = func(p *Project) {
-			startBootProbe(ctx, e, p, ownCheckout && !opts.NoSync && gitRepoRoot(e.Cwd) != "")
+			startBootProbe(ctx, e, p, ownCheckout && !opts.NoSync && !e.inHome() && gitRepoRoot(e.Cwd) != "")
 		}
 	}
 
@@ -134,7 +137,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// before a machine is created or started for it (I-353); the git
 	// reads run beside the api's.
 	precheck := make(chan error, 1)
-	if !attachOnly && !opts.NoSync {
+	if !attachOnly && !opts.NoSync && !e.inHome() {
 		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd)) }()
 	} else {
 		precheck <- nil
@@ -154,8 +157,15 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if gitRepoRoot(e.Cwd) != "" {
 			return err
 		}
+		if opts.Sync {
+			// `repose sync` exists to send a checkout (I-358).
+			return exitf(ExitUsage, "This folder is not a git checkout, so there is nothing to sync.")
+		}
 		skipSync = true // outside a repository: an empty machine (I-358)
 	}
+	// The home folder is never synced, a dotfiles repository included
+	// (I-601); the run carries what --no-sync carries, and says nothing.
+	homeRun := !attachOnly && e.inHome()
 
 	endResolve()
 	if !attachOnly && res.Project != nil && res.Project.State == "destroying" {
@@ -191,7 +201,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}()
 	if project == nil {
 		if attachOnly {
-			return errNoProjectFoundFor(res.Remote, e.Command)
+			return errNoProject(res, e.Command)
 		}
 		personal.finish(ctx, e, opts.NoPersonal, nil)
 		project, err = createProjectForRun(ctx, e, res.CreateRemote(), opts, pr)
@@ -322,7 +332,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if skipSync {
 		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
-	} else if !opts.NoSync {
+	} else if !opts.NoSync && !homeRun {
 		repoRoot := gitRepoRoot(e.Cwd)
 		if repoRoot == "" {
 			repoRoot = e.Cwd
@@ -449,7 +459,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
 	// The checkout's repose.nix is the machine's configuration (I-489).
-	if !skipSync && !opts.NoSync {
+	if !skipSync && !opts.NoSync && !homeRun {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
 	}
 
@@ -591,18 +601,24 @@ func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
 // the line names it. The api has no cancel for a create in flight, so the
 // project stays until the user removes it.
 func interruptedCreate(e *Env, p *Project) error {
-	forgetProject(&e.Cache, p.ID)
-	// From the file as it is: the create's own save added the entries,
-	// and a save of e.Cache only removes what its load had (mergeInto).
+	e.forgetProjectOnDisk(p.ID)
+	return interruptedCreated(p.Slug)
+}
+
+// forgetProjectOnDisk removes every cache entry for id, in e.Cache and
+// in projects.json as it is on disk: a save of e.Cache only removes what
+// its load had (mergeInto), and this command's own saves may have added
+// entries since.
+func (e *Env) forgetProjectOnDisk(id string) {
+	forgetProject(&e.Cache, id)
 	disk, err := loadProjectsCache(e.Dir)
 	if err == nil {
-		forgetProject(&disk, p.ID)
+		forgetProject(&disk, id)
 		err = saveProjectsCache(e.Dir, disk)
 	}
 	if err != nil {
 		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
 	}
-	return interruptedCreated(p.Slug)
 }
 
 func interruptedCreated(slug string) error {
@@ -1470,7 +1486,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	}
 	// The multiplexer (I-502): the flag, config.toml, a laptop herdr
 	// pane, else tmux, which is the api's default and is not sent.
-	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer, opts.Temp > 0)
+	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer)
 	if mux != multiplexer.Tmux {
 		req.Multiplexer = mux
 	}
@@ -1503,7 +1519,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			}
 			deps := defaultResolveDeps()
 			dir := ""
-			if remote == "" && deps.RemoteFor(e.Cwd) == "" {
+			if remote == "" && deps.RemoteFor(e.Cwd) == "" && !e.inHome() {
 				// A --name project with no remote has nothing else to be
 				// found by; one with a remote is found by it (I-152). A
 				// second project for a checkout that has a remote (I-348)
@@ -1621,6 +1637,11 @@ func forgetProject(cache *ProjectsCache, id string) {
 	for k, v := range cache.ByDir {
 		if v == id {
 			delete(cache.ByDir, k)
+		}
+	}
+	for k, c := range cache.Checkouts {
+		if c.ProjectID == id {
+			delete(cache.Checkouts, k)
 		}
 	}
 }

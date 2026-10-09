@@ -50,6 +50,8 @@ type Env struct {
 	// listed is the account's projects as connect's slow path read
 	// them, for the laptop herdr's reconcile (I-510); nil until then.
 	listed []Project
+	// home caches inHome: the working directory is the home folder.
+	home *bool
 
 	Dir     string // ~/.config/repose
 	Cfg     Config

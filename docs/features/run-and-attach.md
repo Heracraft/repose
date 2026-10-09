@@ -370,8 +370,8 @@ todo-app uses herdr from its next start; tmux runs until then.
   `herdr`; anything else exits 2 naming both.
 - A new project gets, in order: `--multiplexer`; `default_multiplexer`
   in `config.toml`; `herdr` when `HERDR_ENV=1` is in the CLI's
-  environment; `tmux`. A temporary project takes tmux from every source
-  but the flag, and `--temp --multiplexer herdr` exits 2 (I-542). The create line
+  environment; `tmux`. A temporary project picks the same way (I-602;
+  before, it took tmux from every source but the flag, I-542). The create line
   names herdr (`Created todo-app (large, herdr)`) and says nothing for
   tmux.
 - On an existing project `--multiplexer` with another value than the
@@ -425,7 +425,7 @@ that same command switched a running machine (I-542).
 | `repose ls` AGENTS, dashboard | herdr's agents and states, gone when the pane closes |
 | `repose stop` | as on tmux, the `Interrupted ...` line included (I-500); herdr resumes agents with an integration at the next start |
 | `repose rm` | also removes the laptop herdr's entry for the machine |
-| temporary machine | always tmux (I-542): `--temp --multiplexer herdr` exits 2, and `--multiplexer herdr` on a temporary project exits 2 naming `repose keep` |
+| temporary machine | herdr allowed (I-602): in the sidebar like any machine; closing panes never ends it, it goes at its expiry, and only a working agent holds it past that |
 
 **The attach rule**, first match wins:
 
@@ -499,7 +499,7 @@ I-542); an entry whose target is
 the dashboard, another laptop or an expiry); anything else, including an
 entry you disabled, stays. A stopped machine keeps its entry, and herdr
 shows the gateway's "stopped" line until you start it. Temporary
-machines are never added. Each add reads herdr's list again under
+machines are added too (I-602). Each add reads herdr's list again under
 `~/.config/repose/herdr-sidebar.lock`, so two commands at once make one
 entry, and the reconcile removes all but one entry for a live slug (the
 enabled one kept). An attach that execs ssh in place of the CLI (no

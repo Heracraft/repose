@@ -236,13 +236,6 @@ herdr pane list | jq -r --arg w "$w" 'first(.result.panes[] | select(.focused an
 
 	_, err = run(herdrMux{}.MessageScript("todo-app", "Time zone set"))
 	must(err)
-
-	// The session check's command: panes left, so not over.
-	out, err = run(`herdr pane list | jq -r '.result.panes | length'`)
-	must(err)
-	if strings.TrimSpace(out) == "0" {
-		t.Fatal("no panes")
-	}
 }
 
 func filterEnvKeys(env []string, drop ...string) []string {

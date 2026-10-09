@@ -145,6 +145,9 @@ func (e *Env) checkoutOwnsProject(root string, p *Project) bool {
 // with no checkout (the name "") gets no remote: there is nothing to
 // fetch (I-368).
 func (e *Env) addReposeRemote(ctx context.Context, p *Project, t sshTarget, checkout *string) {
+	if e.inHome() {
+		return // a dotfiles repository in ~ is no machine's checkout (I-601)
+	}
 	root := gitRepoRoot(e.Cwd)
 	if t.Checkout != "" {
 		// Another checkout of the machine (I-480): the folder's remote

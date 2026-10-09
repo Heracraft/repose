@@ -233,6 +233,9 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 		return err
 	}
 	closeMaster(ctx, e, project.Slug)
+	// Folders linked to the machine forget it, so a plain run there makes
+	// a new one instead of landing on this while it is destroyed.
+	e.forgetProjectOnDisk(project.ID)
 	// The laptop herdr's entry for the machine goes with it (I-510).
 	forgetHerdrMachine(ctx, project.Slug)
 	if forgetReposeRemote(gitRepoRoot(e.Cwd), project.Slug) {
@@ -411,7 +414,7 @@ func requireProjectRes(ctx context.Context, e *Env, projectArg string) (*Resolve
 		return nil, err
 	}
 	if res.Project == nil {
-		return nil, errNoProjectFoundFor(res.Remote, e.Command)
+		return nil, errNoProject(res, e.Command)
 	}
 	return res, nil
 }

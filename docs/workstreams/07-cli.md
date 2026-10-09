@@ -200,6 +200,10 @@ Order:
 
 1. PROJECT / `--project` / `REPOSE_PROJECT`: id or slug, resolved via `GET
    /projects`. Writes nothing to the cache (DECISIONS I-152).
+   Without one, in the home folder (the home directory, a folder above
+   it, or a repository rooted at one of those) resolution stops here
+   with nothing, and an old `by_dir` entry for the folder is deleted
+   (DECISIONS I-601); see `features/projects.md`.
 2. `projects.json` `by_dir[<repo root, else cwd>]` (set when `run`
    created a project with no remote there, or when a sync into a named
    project with no remote came from a directory with no remote and no

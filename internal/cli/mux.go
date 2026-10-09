@@ -195,26 +195,13 @@ func muxByName(name string) muxer {
 }
 
 // checkMultiplexerFlag is --multiplexer's check: tmux, herdr or unset;
-// anything else exits 2 naming both, and so does herdr with --temp
-// (errTempHerdr).
-func checkMultiplexerFlag(v string, temp bool) error {
+// anything else exits 2 naming both.
+func checkMultiplexerFlag(v string) error {
 	if v == "" || multiplexer.Valid(v) {
-		if temp && multiplexer.Normalize(v) == multiplexer.Herdr && v != "" {
-			return cobraUsageError{errTempHerdr}
-		}
 		return nil
 	}
 	return cobraUsageError{fmt.Errorf("--multiplexer takes %s, got %q", strings.Join(multiplexer.Names, " or "), v)}
 }
-
-// errTempHerdr refuses herdr for a temporary machine (I-542): the
-// session end that destroys one (I-352) needs the last terminal to close,
-// and a herdr server with a client attached opens a fresh shell as soon
-// as its last pane closes, so on herdr the end would never come.
-var errTempHerdr = errors.New("--temp machines run tmux: " + tempHerdrWhy)
-
-// tempHerdrWhy is the reason both refusals give.
-const tempHerdrWhy = "herdr opens a new shell when its last tab closes, and the machine would never see your session end"
 
 // multiplexerFlagHelp is --multiplexer's help line (features/run-and-attach.md).
 const multiplexerFlagHelp = "tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
@@ -231,20 +218,16 @@ func inHerdrPane() bool { return os.Getenv("HERDR_ENV") == "1" }
 
 // pickMultiplexer is the multiplexer a new project gets (I-502): the
 // flag, else config.toml's default_multiplexer, else herdr from a
-// laptop herdr pane, else tmux. A temporary project takes tmux from
-// every source but the flag, which checkMultiplexerFlag has refused for
-// herdr already (I-542).
+// laptop herdr pane, else tmux; a temporary project too (I-602).
 // auto says the HERDR_ENV rule chose, whose refusal by the base gate
 // falls back to tmux without a word.
-func pickMultiplexer(flag, config string, temp bool) (name string, auto bool) {
+func pickMultiplexer(flag, config string) (name string, auto bool) {
 	switch {
 	case flag != "":
 		return flag, false
-	case temp:
-		return multiplexer.Tmux, false
 	case config != "":
 		return config, false
-	case inHerdrPane() && !temp:
+	case inHerdrPane():
 		return multiplexer.Herdr, true
 	}
 	return multiplexer.Tmux, false
@@ -268,9 +251,6 @@ func switchMultiplexer(ctx context.Context, e *Env, p *Project, want string) err
 	have := multiplexer.Normalize(p.Multiplexer)
 	if want == "" || want == have {
 		return nil
-	}
-	if want == multiplexer.Herdr && p.ExpiresAt != nil {
-		return exitf(ExitUsage, "%s is temporary and runs tmux: %s. `repose keep %s` makes it a normal machine.", p.Slug, tempHerdrWhy, p.Slug)
 	}
 	got, err := e.Client.PatchProject(ctx, p.ID, PatchProjectRequest{Multiplexer: &want})
 	if ae, ok := baseGateRefusal(err); ok {

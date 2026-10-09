@@ -372,12 +372,12 @@ Ending the session:
   an agent working never loses its machine this way.
 - On Windows, without a TTY or with `REPOSE_INPUT_PROXY=0` the CLI has
   exec'd ssh and cannot look; the machine waits for its expiry.
-- On a herdr machine (I-509) the CLI looks after any attach it ran as a
-  child (`herdr --remote` or `ssh -t ... herdr`): when `herdr pane list`
-  over the ControlMaster reports no panes, the machine is
-  destroyed with the same line. A temporary machine is never in the
-  laptop herdr's sidebar (I-510), so `run` in a laptop herdr pane uses
-  the child client for it.
+- On a herdr machine nothing ends the session: herdr opens a fresh shell
+  when its last pane closes, so the CLI does not look after an attach,
+  and the machine goes at its expiry (I-602). It is in the laptop herdr's
+  sidebar like any herdr machine. Past the expiry, the destroy waits
+  only for a working agent: the sidebar's SSH bridge (I-511) does not
+  count as someone attached.
 
 Built (I-348..I-355): `TestRunTempCreatesWithoutRemote`,
 `TestTempExpiryWaitsWhileAttached`, `TestTempExpiryDestroysWithoutSnapshot`,

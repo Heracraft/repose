@@ -130,7 +130,7 @@ A machine can run its terminals in [herdr](https://herdr.dev), a multiplexer mad
 repose run --multiplexer herdr
 ```
 
-The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise. A [temporary machine](/docs/lifecycle#temporary-machines) always runs tmux.
+The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise. A [temporary machine](/docs/lifecycle#temporary-machines) on herdr goes when its time runs out; closing its tabs doesn't end it.
 
 A switch takes effect at the next start. A running machine keeps its current multiplexer and its agents until it stops:
 
@@ -156,7 +156,15 @@ repose's messages inside the session (the time zone, new port forwards, copied f
 delivery = "herdr"
 ```
 
-`run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
+`run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications). To take a machine out of the sidebar for a while, disable its entry; its agents keep running:
+
+```
+id=$(herdr machine list --json |
+  jq -r '.[] | select(.label=="todo-app") | .id')
+herdr machine disable "$id"
+```
+
+`herdr machine enable` with the same id brings it back. `herdr machine remove` doesn't last: the next `run` or `attach` adds the machine again while it runs herdr.
 
 A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it.
 

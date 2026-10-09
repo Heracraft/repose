@@ -119,6 +119,30 @@ func TestTempExpiryWaitsWhileAttached(t *testing.T) {
 	}
 }
 
+// On herdr an SSH session does not hold an expired temporary project: a
+// laptop herdr's sidebar keeps one open to every machine in it (I-511).
+// A working agent still does (I-602).
+func TestTempHerdrExpiryIgnoresSessions(t *testing.T) {
+	e, _, id := tempEnv(t, "tmp-herd")
+	ctx := e.h.Ctx
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := e.h.Pool.Exec(ctx, "update projects set expires_at = $2, multiplexer = 'herdr' where id = $1", id, now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	reaper := &temp.Reaper{Pool: e.h.Pool, Engine: e.h.Engine, Events: e.h.Events}
+	e.sample(t, id, now.Add(-30*time.Second), 1, 0, `[{"agent":"claude","window":"herdr:p1","state":"working"}]`)
+	if res, err := reaper.Run(ctx, now); err != nil || res.Destroyed != 0 || res.Waiting != 1 {
+		t.Fatalf("agent working: %+v %v", res, err)
+	}
+	e.sample(t, id, now.Add(-20*time.Second), 1, 0, `[{"agent":"claude","window":"herdr:p1","state":"idle"}]`)
+	if res, err := reaper.Run(ctx, now); err != nil || res.Destroyed != 1 {
+		t.Fatalf("sidebar session only: %+v %v", res, err)
+	}
+	if op := e.destroyOp(t, id); op.State != "done" {
+		t.Fatalf("destroy: %+v", op.Error)
+	}
+}
+
 // At expiry with nobody on it: [destroy_guest], no snapshot, the nightly
 // one expired at once, a temp_destroyed event, nothing to restore
 // (I-347).
