@@ -176,11 +176,42 @@ a user; a Pro user running four seats all month costs about $400 and loses
 about $300. That is accepted for the launch (owner, 2026-09-27: "use Azure as a
 cash sink for now"): the Azure credit pays for it while the product is
 learned, the seat count caps the loss at the size of one host, and the
-prices are set for the host the business ends up on. On a Hetzner AX162-R
-(about €242 a month for 256 GB, `proposals/2026-09-26-subscription-paddle-hetzner.md`
-§3) a seat costs about €8 and every plan clears its floor several times
-over (Pro's four seats cost about €32 against $99). Nothing in the plan prices is tied to Azure; if hosts move, prices
-stay and margin changes.
+prices are set for the host the business ends up on.
+
+That host is no longer cheap. Hetzner's 15 June 2026 repricing (DECISIONS
+I-642) took the 256 GB AX162 from about €242 to €842.30 a month ($992.10,
+plus a €419 setup fee), so a seat on it costs about $33 a month, not the
+€8 this section first said. A plan earns per seat, after Polar's fee:
+
+| Plan | Per seat a month |
+|---|---|
+| Solo | $27.05 ($18.50 during the $20 months) |
+| Plus | $27.78 |
+| Pro | $23.39 |
+
+Hetzner's dedicated servers, per seat, in USD for new orders, excluding
+IPv4 (seats are RAM minus the 16 GB reserve, in 8 GB blocks):
+
+| Server | CPU | RAM | $ a month | Seats | $ a seat |
+|---|---|---|---|---|---|
+| AX162-2 | EPYC 9454P, 48 cores | 256 GB | 992.10 | 30 | 33.07 |
+| AX162-3 | EPYC 9454P, 48 cores | 512 GB | 1,897.10 | 62 | 30.60 |
+| EX131-2 | Xeon Gold 6731P | 256 GB | 1,297.10 | 30 | 43.24 |
+| AX102-2 | Ryzen 9 7950X3D, 16 cores | 192 GB | 642.10 | 22 | 29.19 |
+| EX63-2 | Core Ultra 7 265 | 192 GB | 632.10 | 22 | 28.73 |
+| AX162-1-LTD | EPYC 9454P, 48 cores | 128 GB | 372.10 | 14 | 26.58 |
+| EX131-2-LTD | Xeon Gold 6731P | 256 GB | 602.10 | 30 | 20.07 |
+
+A seat runs on a regular Hetzner server at a loss of about $5 to $10 a
+month on every plan, before disk, egress, snapshots, the edge and the
+control plane. Only EX131-2-LTD clears all three plans, by about $3 a seat
+on Pro, and Hetzner sells LTD servers only while it has the hardware. The
+server auction was not priced: its data no longer loads without
+JavaScript. The loss holds because a subscription holds its seats whether
+its machines run or not ("Seats and the waitlist"), so the fleet pays for
+every seat sold around the clock. Moving hosts no longer fixes the margin
+by itself; the prices, or the one seat held per 8 GB sold, have to change
+too, and that is the owner's decision.
 
 Polar takes 5% plus 50¢ a transaction on its Starter rate, the same as
 Paddle did (I-604; Stripe alone would take about 2.9% plus

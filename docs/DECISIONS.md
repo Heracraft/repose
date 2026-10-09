@@ -18413,3 +18413,28 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+
+**I-642. The pricing research carries Hetzner's 15 June 2026 dedicated
+prices, and the plans lose money on Hetzner too (hetzner-repricing,
+2026-10-09).** Amends the cost floor in `PRICING.md`, `DESIGN.md` §16 and
+`RESEARCH.md` §4. *Made during implementation* (the owner asked whether
+repose undercuts a Hetzner VPS; the check found the research's host price
+out of date).
+- Hetzner raised dedicated server prices for new orders on 15 June 2026
+  (https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/).
+  The AX162-R is now named AX162-2 (EPYC 9454P, 256 GB, 2x1.92 TB NVMe)
+  and costs €842.30 a month, $992.10, plus a €419 setup fee; the docs
+  said about €242. The AX102 (128 GB) went from €122 to €257.30.
+- A seat (8 GB, 30 to a 256 GB host) on an AX162-2 costs about $33 a
+  month. After Polar's fee a plan earns $27.05 a seat on Solo ($18.50 in
+  the $20 months), $27.78 on Plus and $23.39 on Pro, so every plan loses
+  about $5 to $10 a seat before storage, egress and the control plane.
+  `PRICING.md`, "The cost floor", has the per-server table. Only the
+  supply-limited EX131-2-LTD ($602.10, 30 seats) clears every plan.
+- Nothing in the prices or the seat rule changes here. The statement
+  that moving to Hetzner fixes the margin is withdrawn; changing the
+  prices, or selling more seats than a host holds, is the owner's call.
+- For comparison, Hetzner's retail cloud prices rose too: an 8 GB CPX32
+  (4 shared AMD vCPU) is $41.99 in Germany and the US CPX31 $73.49, so
+  Solo still undercuts a Hetzner VPS of the same memory. The CX line
+  ($9.99 for 8 GB) is listed but was not orderable on 2026-10-07.

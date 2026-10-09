@@ -517,9 +517,9 @@ on day 3, and destroys nothing for 30 days.
 
 Only these things are Azure-specific: the OpenTofu host module, the managed
 disk, Blob as snapshot target, Key Vault as the key wrapper, and the Coolify
-VM's cloud-init. Hosts dial out for everything, so a Hetzner AX162-R (about a
-tenth of the cost per guest) becomes a second OpenTofu module plus a
-snapshot-target abstraction (Blob or S3-compatible). The control plane moves
+VM's cloud-init. Hosts dial out for everything, so a Hetzner AX162-2 (about
+a third of the cost per guest since Hetzner's 15 June 2026 repricing,
+I-642) becomes a second OpenTofu module plus a snapshot-target abstraction (Blob or S3-compatible). The control plane moves
 by restoring one Postgres dump into a Coolify elsewhere and re-pointing DNS.
 
 ## 17. Repository layout
