@@ -116,6 +116,19 @@ func stillDestroying(ctx context.Context, e *Env, slug string) bool {
 	return false
 }
 
+// nothingRestored ends a restore whose question got no name: exit 1 for
+// an empty answer or EOF, 130 for Ctrl-C, with the line on stderr
+// (DECISIONS I-614). Any other error passes through.
+func nothingRestored(err error) error {
+	switch {
+	case errors.Is(err, errPromptInterrupted):
+		return exitf(ExitInterrupted, "Nothing restored.")
+	case err != nil:
+		return err
+	}
+	return exitf(ExitGeneric, "Nothing restored.")
+}
+
 // restoreHint is the line a destroy ends with.
 func restoreHint(slug string) string { return "repose restore " + slug }
 
@@ -183,11 +196,10 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 			}
 			newName, err := askName(fmt.Sprintf("A project called %s already exists. Name for the restored one (empty to cancel): ", taken))
 			if err != nil {
-				return err
+				return nothingRestored(err)
 			}
 			if strings.TrimSpace(newName) == "" {
-				_, _ = fmt.Fprintln(e.Out, "Nothing restored.")
-				return nil
+				return nothingRestored(nil)
 			}
 			req.Name = strings.TrimSpace(newName)
 			continue
@@ -203,6 +215,9 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 	pr.Phase("Restoring "+res.Slug, "Restored "+res.Slug)
 	project := &Project{ID: res.ProjectID, Slug: res.Slug, Name: res.Name}
 	op, err := waitOpPhased(ctx, e, project, res.OpID, pr, true)
+	if interrupted(ctx, err) {
+		return exitf(ExitInterrupted, "Interrupted. The restore of %s goes on.", res.Slug)
+	}
 	if err != nil {
 		return err
 	}
@@ -230,8 +245,8 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 // no NAME means: the one whose remote is this checkout's (DECISIONS
 // I-172). Several projects destroyed under one name are one choice (the
 // newest destroy is restored, from its newest snapshot, as by name);
-// several names are asked about on a terminal and listed otherwise. A nil
-// project with a nil error means the user cancelled.
+// several names are asked about on a terminal and listed otherwise. A
+// cancelled question is an error (nothingRestored).
 func destroyedForCheckout(ctx context.Context, e *Env, ask func(prompt string) (string, error)) (*DestroyedProject, error) {
 	remote := gitRemoteOrigin(e.Cwd)
 	if remote == "" {
@@ -266,12 +281,11 @@ func destroyedForCheckout(ctx context.Context, e *Env, ask func(prompt string) (
 	for {
 		answer, err := ask(fmt.Sprintf("Several destroyed projects were checkouts of %s: %s. Which one (empty to cancel)? ", remote, names))
 		if err != nil {
-			return nil, err
+			return nil, nothingRestored(err)
 		}
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
-			_, _ = fmt.Fprintln(e.Out, "Nothing restored.")
-			return nil, nil
+			return nil, nothingRestored(nil)
 		}
 		if d := newest[answer]; d != nil {
 			return d, nil
@@ -415,4 +429,10 @@ func destroyedSlugsForCompletion(env func() (*Env, error)) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// countDestroyed is "1" or "3": the names `repose restore NAME` can bring
+// back, each counted once however often it was destroyed.
+func countDestroyed(list []DestroyedProject) string {
+	return fmt.Sprint(len(destroyedByName(list)))
 }

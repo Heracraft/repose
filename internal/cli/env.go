@@ -145,7 +145,7 @@ func newEnv(apiURLFlag string, jsonOut, verbose bool) (*Env, error) {
 		Dir: dir, Cfg: cfg, Cache: cache, Cwd: cwd, HomeDir: home,
 		Client: newClient(cfg.APIURL, tokens), Out: os.Stdout, ErrOut: os.Stderr,
 		JSON: jsonOut, Verbose: verbose, httpClient: httpClient,
-		TTY: isTerminal(os.Stderr),
+		TTY: canDrawSpinner(os.Stderr),
 	}, nil
 }
 

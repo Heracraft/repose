@@ -26,7 +26,7 @@ var quietAllowed = map[string]string{
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
 	"status.go:writeStatusLinesMux:  the environment's agent (guestd) is no":      "a failure that status reports",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
-	"lifecycle.go:DestroyCmd:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
+	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
 	"login.go:runLogin:No plan yet. Choose one at https://repos":                  "blocked: nothing runs without a plan",

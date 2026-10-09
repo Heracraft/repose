@@ -34,9 +34,22 @@ Booting kanali...
 kanali: its new system did not boot, so it runs its previous one: the system it boots is missing from the machine's store (stage 1 found no stage 2 init); `repose logs --kind console` shows what the new one printed.
 kanali is running (xl), ready in 1m31s.
 
+$ repose stop api                       # an agent mid-turn (I-614)
+api has claude (working). Stopping ends it. Stop api? [y/N] y
+Snapshotting and stopping api...
+Stopped api in 12s with a 1.4 GB snapshot.
+
+$ repose stop --idle                    # several stop at once (I-615)
+Stopping web and docs...
+Stopped web in 9.8s with a 0.9 GB snapshot.
+Stopped docs in 11s with a 1.2 GB snapshot.
+
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app. Its final snapshot is kept for 30 days.
+Destroying todo-app.
+
+$ repose rm -y todo-app
+Destroying todo-app. Its final snapshot is kept until 2026-10-23.
 
 $ repose ls --destroyed
 PROJECT   CLASS  DESTROYED         SNAPSHOT          SIZE    RESTORABLE UNTIL
@@ -89,11 +102,20 @@ Stop:
   herdr and any agent in it. The agent is interrupted; a Claude session can
   be resumed in the guest after `start` with `claude --resume`, and on a
   herdr project herdr resumes agents with an integration by itself
-  (I-501). The CLI's stop line is
-  followed by `Interrupted claude (working) and claude-2 (needs input).`
-  when the project's newest sample showed agents working or waiting; idle
-  agents are not named, and the line names no command (DECISIONS I-500,
-  I-484). After 60 seconds without a
+  (I-501). When the project's newest sample shows agents working or
+  waiting for an answer, the CLI asks before stopping (`api has claude
+  (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
+  nothing, and without a terminal it refuses with exit 2 unless
+  `-y`/`--yes`, after which the stop line is followed by `Ended claude
+  (working) and claude-2 (needs input).` Idle agents are not named, and no
+  line names a command (DECISIONS I-614, revising I-500; I-484).
+- `stop` takes several projects, or `--idle` for every running project
+  the api reports idle (I-262); they are resolved first, asked about once
+  and stopped in parallel, one line each, exit 1 when one failed (I-615).
+- In a checkout whose `repose` remote is a machine being stopped, the CLI
+  runs `git fetch repose` first and prints `Fetched 3 commits on
+  repose/main.` when commits came; a fetch that fails is one line on
+  stderr and the stop goes on (I-615). After 60 seconds without a
   clean shutdown, hostd shuts the VM down through Cloud Hypervisor. The
   guest's user manager, which holds every tmux pane and agent, gets 10
   seconds to stop before what is left of it is killed (I-572).

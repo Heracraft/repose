@@ -16709,3 +16709,121 @@ DESIGN. Not changed: the guest's wrapper comment in
 rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
 `TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
 `TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.
+
+**I-614. A confirmation is asked only on a terminal, a no exits 1,
+Ctrl-C at it ends the command, and `stop` asks before it ends a busy
+agent.** (devx-confirm, 2026-10-08; amends I-500; review
+`reviews/2026-10-08-cli-ergonomics-critique.md` A1, A3, A4, A5, A8 and
+`reviews/2026-10-08-cli-devx.md` 5.6) One check decided both whether to
+draw a spinner and whether to ask: stdin a character device, and neither
+`TERM=dumb` nor `REPOSE_NO_SPINNER=1`. /dev/null is a character device,
+so `repose rm x </dev/null` (cron, systemd, `ssh -n`, CI) printed the
+question, read EOF, said "Nothing destroyed." and exited 0, and the
+script went on as if it had destroyed. An Emacs shell, or anyone who
+turned the spinner off, could not confirm at all and was told to pass
+`--yes`, the less safe path. Now:
+- `canDrawSpinner` reads `TERM` and `REPOSE_NO_SPINNER` and checks that
+  stderr is a terminal; `canPrompt` is a real isatty on stdin
+  (golang.org/x/term), and nothing else. The secrets prompt, `reply` and
+  `restore`'s name question use `canPrompt` too.
+- A no, an empty answer to `[y/N]` or EOF ends the command with exit 1
+  and its line (`Nothing destroyed.`, `Nothing stopped.`, `Not
+  restored.`, `Not changed. x is still large.`, `Nothing restored.`) on
+  stderr, so `repose rm x && next` stops at a no. Exit 1 ("failed; the
+  message says why") rather than a new code: a script that checks for
+  nonzero is what this is for, and one more code is one more thing to
+  learn. `secrets import --mcp`'s question is not a confirmation of the
+  whole command (a no imports the rest), so it still exits 0.
+- The answer is read in a goroutine that selects on the command's
+  context: the first Ctrl-C prints a newline and the same line and exits
+  130. It used to need a second Ctrl-C (I-598's handler) and printed
+  nothing.
+- `repose stop` reads the agents the newest sample shows working or
+  waiting for an answer, as I-500 did, and now asks before the stop:
+  `api has claude (working) and codex-2 (needs input). Stopping ends
+  them. Stop api? [y/N]`. I-500 named them after the stop because the
+  sample can be a minute old; a stale "working" costs one keystroke, and
+  a stop typed in the wrong checkout ends a turn nobody can resume as it
+  was, while `resize --size` already asked. With no busy agent there is
+  no question. `-y`/`--yes` is new on `stop`; without a terminal and
+  without it, a stop with a busy agent exits 2 naming the agents. After
+  `--yes` the line is `Ended claude (working).`: "Interrupted" read as
+  the CLI's own Ctrl-C line. After a yes nothing repeats what the
+  question said. `rm`'s question names busy agents the same way.
+- `snapshots restore` in place names both ends: `Replace demo's disk with
+  its snapshot of 2026-10-08 17:47? The stop snapshot of 2026-10-08 17:49
+  keeps the disk as it is now. [y/N]`. When the newest snapshot is not a
+  stop's taken after the last start (a `--no-snapshot` stop, `resize
+  --size`), it says `No snapshot keeps the disk as it is now; what
+  changed after <newest> is lost for good.` A project with no
+  `started_at` gets neither sentence. "Volume" is gone (the word is
+  disk). The progress line is `Restoring demo from demo's snapshot of
+  ...`. Still y/N, not the dashboard's typed name: owner's 2026-09-23
+  choice for recoverable actions, and the question now says when it is
+  not recoverable.
+- `rm`: after an interactive yes the line is `Destroying demo.`; with
+  `--yes` it is `Destroying demo. Its final snapshot is kept until
+  2026-11-07.` (today plus 30 days: the snapshot is taken in the next
+  minute, so near midnight the date can be a day early, never late). The
+  `--wait` line says "final" too, where it said "last". A temporary
+  project's question puts the loss first: `tmp-k3f9 is temporary:
+  destroying it keeps no snapshot and it cannot be restored. Destroy
+  tmp-k3f9? [y/N]` (5.6's cheaper option; the typed name was not taken,
+  for the reason above).
+Not done here: Ctrl-C lines for `resize --size` and `fork` (their files
+belong to other work this round). `TestAskYesNoFrom`,
+`TestCanPromptIsATerminalCheck`, `TestConfirmOr`,
+`TestStopAsksBeforeEndingABusyAgent`, `TestDestroyPrompt`,
+`TestRestoreInPlacePrompt`, `TestSnapshotsRestoreDeclined`,
+`TestDestroyConfirmationIsYesNo`, `TestStopNamesInterruptedAgents`.
+
+**I-615. `stop` and `rm` take several projects, `stop --idle` stops the
+idle ones, a stop in the checkout fetches first, and the commands that
+make a way back name it.** (devx-confirm, 2026-10-08; review A6, A7,
+1.1, 5.4 and theme 7 "stop takes one project") `fork -n 10` makes ten
+projects; cleaning up took ten `rm`s and ten answers, or an xargs loop
+with `-y` that skips every check. Freeing plan memory took `ls -q |
+xargs -n1 repose stop`, one at a time. Now:
+- `repose stop [PROJECT...]` and `repose rm [PROJECT...]` resolve every
+  name first (a typo in the third acts on none, exit 4), ask one
+  question, and act on all; a project named twice counts once. Stops run
+  in parallel, as do `rm --wait`'s waits; the laptop files a destroy
+  edits (projects.json, the herdr config, the `repose` remote) are
+  edited one at a time. One line per project in the order named; one
+  failure gives its own exit code, several give 1. `--project` beside
+  several arguments must be one of them.
+- `repose stop --idle` stops every running project the api marks idle
+  (I-262: a day with no SSH session and no agent working), the ones `ls`
+  prints the idle line for. None idle: `No machine is idle.`, exit 0. It
+  takes no PROJECT. The plan_limit question the review proposed for
+  `run` is not part of this.
+- In a checkout whose `repose` remote is one of the running machines
+  being stopped, the stop runs `git fetch repose` first (the CLI's own
+  ssh config, BatchMode, 10 s to connect, 60 s in all) and prints
+  `Fetched 3 commits on repose/main and 5 on repose/worktree-1.`,
+  counting commits no ref of the checkout had; nothing when nothing came.
+  A stopped machine cannot be fetched from, so the next morning's fetch
+  cost a start and a stop. A failed fetch is one line on stderr and the
+  stop goes on: the commits are in the snapshot. Ctrl-C during it stops
+  nothing. Outside such a checkout nothing is fetched or counted (that
+  needs the machine to run git for the CLI; 1.1's status row is other
+  work).
+- Ctrl-C while the CLI waits on an op the api accepted says the op goes
+  on, instead of the bare `Interrupted.`: `Interrupted. The stop of demo
+  goes on.` (and for several, `The stops of api and web go on.`), the
+  destroy of `rm --wait`, `snapshots create`, `snapshots restore`
+  (`The restore into demo goes on.`) and `restore`. No command is
+  named: these are statements of what is happening, and `repose ls`
+  shows it.
+- `snapshots create` prints `Snapshot <id> of demo taken in 0.4s (1.0
+  GB).`: the id is what `snapshots restore` takes. `stop` keeps its line
+  (its snapshot is the newest, and the restore question names it by
+  time). `rm` does not print `repose restore NAME` (I-484); its date is
+  I-614's.
+- `repose ls` with no projects but restorable destroyed ones says `No
+  projects. 2 destroyed in the last 30 days can be restored.` instead of
+  `No projects yet.`, which read as if the work was gone.
+Docs: cli.md, lifecycle, features/stop-start-destroy, features/snapshots,
+interfaces/cli-config (exit 1). `TestStopSeveral`, `TestStopIdle`,
+`TestDestroySeveral`, `TestStopFetchesFirst`,
+`TestSnapshotsCreateNamesIt`, `TestLsEmptyCountsDestroyed`.

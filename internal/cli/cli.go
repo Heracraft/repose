@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -487,25 +489,41 @@ func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 }
 
 func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	var noSnapshot bool
+	var noSnapshot, idle, yes bool
 	cmd := &cobra.Command{
-		Use:               "stop [PROJECT]",
-		Short:             "Snapshot and stop a project's machine",
-		Args:              projectArgs,
-		ValidArgsFunction: completeProject(env),
+		Use:   "stop [PROJECT...]",
+		Short: "Snapshot and stop machines",
+		Long: "Snapshots and stops each PROJECT's machine (this checkout's, by default), several at once.\n" +
+			"When an agent is in the middle of a turn or waiting for an answer, it asks first; -y/--yes\n" +
+			"skips the question, and without a terminal it is required. In a checkout whose machine is\n" +
+			"stopping, it fetches the agent's commits first, as `git fetch repose` does.",
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			project, err := projectFrom(args, g)
-			if err != nil {
-				return err
+			if idle && (len(args) > 0 || g.project != "") {
+				return cobraUsageError{fmt.Errorf("--idle stops every idle machine; it takes no PROJECT")}
+			}
+			var projects []string
+			if !idle {
+				var err error
+				if projects, err = projectsFrom(args, g); err != nil {
+					return err
+				}
 			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
-			return StopCmd(cmd.Context(), e, project, !noSnapshot)
+			o := StopOptions{Projects: projects, Idle: idle, Snapshot: !noSnapshot, Yes: yes}
+			if !yes && canPrompt(os.Stdin) {
+				o.Confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "stopping") }
+			}
+			return StopProjectsCmd(cmd.Context(), e, o)
 		},
 	}
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
+	cmd.Flags().BoolVar(&idle, "idle", false, "stop every machine running a day with nobody on it and no agent working")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
 	return cmd
 }
 
@@ -781,7 +799,7 @@ func readSecretValue(name, fromFile string, fromEnv bool) ([]byte, error) {
 		}
 		return []byte(v), nil
 	default:
-		if !isTerminal(os.Stdin) {
+		if !canPrompt(os.Stdin) {
 			return nil, exitf(ExitUsage, "No terminal to type %s's value into; use --from-file PATH or --from-env.", name)
 		}
 		_, _ = fmt.Fprintf(os.Stderr, "Value for %s: ", name)
@@ -1005,10 +1023,10 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var confirm func() (bool, error)
+			var confirm func(string) (bool, error)
 			if !yes {
-				confirm = func() (bool, error) {
-					return askYesNo("Restore over the current volume? Anything since the snapshot is lost. [y/N] ", false, "restoring in place")
+				confirm = func(prompt string) (bool, error) {
+					return askYesNo(cmd.Context(), prompt, false, "restoring in place")
 				}
 			}
 			return SnapshotsRestoreCmd(cmd.Context(), e, project, args[len(args)-1], asNew, confirm)
@@ -1060,19 +1078,19 @@ func newKeepCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 }
 
-// newRmCmd is `repose rm`, which destroys a project. It was `repose
+// newRmCmd is `repose rm`, which destroys projects. It was `repose
 // destroy` until DECISIONS I-273; that name stays an alias.
 func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var yes, wait bool
 	cmd := &cobra.Command{
-		Use:               "rm [PROJECT]",
+		Use:               "rm [PROJECT...]",
 		Aliases:           []string{"destroy"},
 		SuggestFor:        []string{"delete", "remove"},
-		Short:             "Destroy a project (a final snapshot is kept for 30 days)",
-		Args:              projectArgs,
-		ValidArgsFunction: completeProject(env),
+		Short:             "Destroy projects (a final snapshot of each is kept for 30 days)",
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			project, err := projectFrom(args, g)
+			projects, err := projectsFrom(args, g)
 			if err != nil {
 				return err
 			}
@@ -1082,14 +1100,41 @@ func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			}
 			var confirm func(string) (bool, error)
 			if !yes {
-				confirm = func(prompt string) (bool, error) { return askYesNo(prompt, false, "destroying") }
+				confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "destroying") }
 			}
-			return DestroyCmd(cmd.Context(), e, project, yes, wait, confirm)
+			return DestroyProjectsCmd(cmd.Context(), e, projects, yes, wait, confirm)
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip the confirmation")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait until the destroy is done and report how it ended (for scripts)")
 	return cmd
+}
+
+// projectsFrom is projectFrom for commands that take several PROJECTs:
+// --project is one more, unless it repeats one of them.
+func projectsFrom(args []string, g *globalFlags) ([]string, error) {
+	if len(args) <= 1 {
+		p, err := projectFrom(args, g)
+		return []string{p}, err
+	}
+	if g.project != "" && !slices.Contains(args, g.project) {
+		return nil, cobraUsageError{fmt.Errorf("--project %q and %s name different projects; pass them all as arguments", g.project, strings.Join(args, " "))}
+	}
+	return args, nil
+}
+
+// completeProjects completes any number of PROJECTs, leaving out the ones
+// already given.
+func completeProjects(env func() (*Env, error)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		var out []string
+		for _, s := range projectSlugsForCompletion(env) {
+			if !slices.Contains(args, s) {
+				out = append(out, s)
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
 }
 
 func newRestoreCmd(env func() (*Env, error)) *cobra.Command {
@@ -1124,16 +1169,8 @@ func newRestoreCmd(env func() (*Env, error)) *cobra.Command {
 				name = args[0]
 			}
 			var ask func(string) (string, error)
-			if isTerminal(os.Stdin) {
-				ask = func(prompt string) (string, error) {
-					_, _ = fmt.Fprint(os.Stderr, prompt)
-					line, err := readLine()
-					if err != nil && line == "" {
-						_, _ = fmt.Fprintln(os.Stderr)
-						return "", nil
-					}
-					return line, nil
-				}
+			if canPrompt(os.Stdin) {
+				ask = func(prompt string) (string, error) { return askLine(cmd.Context(), prompt) }
 			}
 			return RestoreCmd(cmd.Context(), e, name, as, snapshot, ask)
 		},
@@ -1228,7 +1265,9 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			}
 			var confirm func(string) (bool, error)
 			if !yes {
-				confirm = func(prompt string) (bool, error) { return askYesNo(prompt, false, "restarting the machine") }
+				confirm = func(prompt string) (bool, error) {
+					return askYesNo(cmd.Context(), prompt, false, "restarting the machine")
+				}
 			}
 			return ResizeClassCmd(cmd.Context(), e, project, size, confirm)
 		},
@@ -1378,7 +1417,7 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 			if err != nil {
 				return err
 			}
-			return ReplyCmd(cmd.Context(), e, args, g.project, question, os.Stdin, isTerminal(os.Stdin))
+			return ReplyCmd(cmd.Context(), e, args, g.project, question, os.Stdin, canPrompt(os.Stdin))
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
@@ -1547,16 +1586,21 @@ func goos() string {
 // empty answer is defaultYes, as the [Y/n] or [y/N] in the prompt says.
 // v0.1.4's helper treated an empty answer as yes even for [y/N]. Without
 // a terminal on stdin there is nobody to ask, which is a usage error
-// naming --yes rather than a silent default.
-func askYesNo(prompt string, defaultYes bool, what string) (bool, error) {
-	if !isTerminal(os.Stdin) {
+// naming --yes rather than a silent default. EOF is no; Ctrl-C (ctx
+// done) ends the question at once with errPromptInterrupted, where it
+// used to wait for a second Ctrl-C (DECISIONS I-614).
+func askYesNo(ctx context.Context, prompt string, defaultYes bool, what string) (bool, error) {
+	if !canPrompt(os.Stdin) {
 		return false, exitf(ExitUsage, "No terminal to confirm %s on; pass --yes.", what)
 	}
-	_, _ = fmt.Fprint(os.Stderr, prompt)
-	line, err := readLine()
-	if err != nil && line == "" {
-		_, _ = fmt.Fprintln(os.Stderr)
-		return false, nil
+	return askYesNoFrom(ctx, os.Stdin, os.Stderr, prompt, defaultYes)
+}
+
+func askYesNoFrom(ctx context.Context, in io.Reader, w io.Writer, prompt string, defaultYes bool) (bool, error) {
+	line, eof, err := readAnswer(ctx, in, w, prompt)
+	if err != nil || eof {
+		// EOF is nobody answering, never the default yes.
+		return false, err
 	}
 	switch strings.TrimSpace(strings.ToLower(line)) {
 	case "":
@@ -1566,6 +1610,67 @@ func askYesNo(prompt string, defaultYes bool, what string) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// askLine asks prompt on stderr and reads one line from stdin. EOF is an
+// empty answer; Ctrl-C is errPromptInterrupted.
+func askLine(ctx context.Context, prompt string) (string, error) {
+	return askLineFrom(ctx, os.Stdin, os.Stderr, prompt)
+}
+
+func askLineFrom(ctx context.Context, in io.Reader, w io.Writer, prompt string) (string, error) {
+	line, _, err := readAnswer(ctx, in, w, prompt)
+	return line, err
+}
+
+// readAnswer prints prompt and reads one line; eof is true when the input
+// ended before any answer.
+func readAnswer(ctx context.Context, in io.Reader, w io.Writer, prompt string) (line string, eof bool, err error) {
+	_, _ = fmt.Fprint(w, prompt)
+	type answer struct {
+		line string
+		err  error
+	}
+	got := make(chan answer, 1)
+	go func() {
+		// Left blocked on stdin after a Ctrl-C; the process ends next.
+		line, err := bufio.NewReader(in).ReadString('\n')
+		got <- answer{strings.TrimRight(line, "\r\n"), err}
+	}()
+	select {
+	case <-ctx.Done():
+		_, _ = fmt.Fprintln(w)
+		return "", false, errPromptInterrupted
+	case a := <-got:
+		if a.err != nil && a.line == "" {
+			_, _ = fmt.Fprintln(w)
+			return "", true, nil
+		}
+		return a.line, false, nil
+	}
+}
+
+// errPromptInterrupted is Ctrl-C at a question: exit 130. A command
+// that has a line for "nothing happened" says it instead of
+// "Interrupted." (confirmOr).
+var errPromptInterrupted = &exitError{code: ExitInterrupted, msg: "Interrupted."}
+
+// confirmOr asks confirm(prompt) and returns nil on a yes. Anything else
+// ends the command with no on stderr: exit 1 for a no, an empty answer
+// or EOF, so `repose rm x && next` stops at a no; 130 for Ctrl-C
+// (DECISIONS I-614). An error from confirm (no terminal) is returned as
+// it is.
+func confirmOr(confirm func(string) (bool, error), prompt, no string) error {
+	ok, err := confirm(prompt)
+	switch {
+	case errors.Is(err, errPromptInterrupted):
+		return exitf(ExitInterrupted, "%s", no)
+	case err != nil:
+		return err
+	case !ok:
+		return exitf(ExitGeneric, "%s", no)
+	}
+	return nil
 }
 
 func readLine() (string, error) {

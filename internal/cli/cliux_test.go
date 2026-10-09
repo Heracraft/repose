@@ -107,13 +107,16 @@ func TestDestroyConfirmationIsYesNo(t *testing.T) {
 
 	var asked string
 	no := func(prompt string) (bool, error) { asked = prompt; return false, nil }
-	if err := DestroyCmd(ctx, e, p.ID, false, false, no); err != nil {
+	// A no exits 1 with its line on stderr, so `repose rm x && next`
+	// stops there (DECISIONS I-614).
+	err = DestroyCmd(ctx, e, p.ID, false, false, no)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != "Nothing destroyed." {
 		t.Fatalf("declined destroy: %v", err)
 	}
 	if asked != "Destroy age-calculator? A final snapshot is kept for 30 days. [y/N] " {
 		t.Fatalf("prompt = %q", asked)
 	}
-	if !strings.Contains(out.String(), "Nothing destroyed") {
+	if out.Len() != 0 {
 		t.Fatalf("out = %q", out.String())
 	}
 	if _, err := e.Client.GetProject(ctx, p.ID); err != nil {
@@ -124,9 +127,9 @@ func TestDestroyConfirmationIsYesNo(t *testing.T) {
 	if err := DestroyCmd(ctx, e, p.ID, false, false, yes); err != nil {
 		t.Fatalf("confirmed destroy: %v", err)
 	}
-	// I-166: the destroy returns once accepted, and says how long it can
-	// come back (I-484: without the command).
-	if !strings.Contains(out.String(), "Destroying age-calculator. Its final snapshot is kept for 30 days.\n") {
+	// I-166: the destroy returns once accepted; the question just said
+	// what is kept, so the line does not repeat it (I-614).
+	if out.String() != "Destroying age-calculator.\n" {
 		t.Fatalf("out = %q", out.String())
 	}
 	if _, err := e.Client.GetProject(ctx, p.ID); !isNotFound(err) {

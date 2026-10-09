@@ -15,14 +15,14 @@ ID                                    TAKEN             SIZE    REASON
 01999c9b-1a07-7d55-8e66-0f1a2b3c4d5e  2026-09-16 03:00  1.9 GB  scheduled
 
 $ repose snapshots create
-Snapshot of todo-app taken in 41s.
+Snapshot 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 of todo-app taken in 41s (1.9 GB).
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as-new NAME.
 
 $ repose stop && repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 ...
-Restore over the current volume? Anything since the snapshot is lost. [y/N] y
+Replace todo-app's disk with its snapshot of 2026-09-16 03:00? The stop snapshot of 2026-09-16 17:49 keeps the disk as it is now. [y/N] y
 Restored todo-app; it is stopped.
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as-new todo-app-yesterday
@@ -30,7 +30,10 @@ Restored into a new project, todo-app-yesterday.
 ```
 
 Snapshot ids are UUIDv7 like every id (interfaces/README.md). TAKEN is
-the laptop's local time. `--yes` skips the question.
+the laptop's local time. `--yes` skips the question. The question names
+the snapshot by its time and says whether a snapshot keeps the disk as it
+is now (the newest, when a stop took it after the last start) or what is
+lost for good; a no exits 1 (DECISIONS I-614).
 `list`, `create` and `restore` act on the checkout's project, or the one
 named first: `repose snapshots list izma`, `repose snapshots restore izma
 SNAPSHOT_ID` (DECISIONS I-566).

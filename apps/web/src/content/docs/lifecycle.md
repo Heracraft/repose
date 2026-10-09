@@ -21,7 +21,7 @@ web       small  stopped  -      -                    0h     3h
 
 AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` or `needs_input` (waiting on a permission prompt). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. TODAY and MONTH are the hours the machine has run.
 
-`repose ls -q` prints only the names, for scripts: `repose ls -q | xargs -n1 repose stop` stops everything.
+`repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
 For one project in detail, including which processes are listening on ports:
 
@@ -36,14 +36,15 @@ The dashboard's project page shows the state, agents, SSH sessions and usage, pl
 
 ```
 $ repose stop todo-app
+todo-app has claude (working). Stopping ends it. Stop todo-app? [y/N] y
+Fetched 2 commits on repose/main.
 Stopped todo-app in 11s with a 2.1 GB snapshot.
-Interrupted claude (working).
 
 $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-The `Interrupted` line names the agents that were in the middle of a turn or waiting for an answer, as the machine's last sample showed them. Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
+`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` Run in the project's checkout, it fetches the agent's commits before the machine stops, as `git fetch repose` would; with nothing new it prints no `Fetched` line. Several projects stop at once (`repose stop api web`), and `repose stop --idle` stops every [idle machine](#idle-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
 
@@ -75,7 +76,7 @@ repose snapshots list
 
 Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which live only in memory, or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
 
-To put a project back to a snapshot, stop it first. Stopping takes its own snapshot, so this can be undone:
+To put a project back to a snapshot, stop it first. Stopping takes its own snapshot, so this can be undone; the question names both snapshots, and says so when no snapshot holds the disk as it is now (after `repose stop --no-snapshot` or `repose resize --size`):
 
 ```
 repose stop todo-app
@@ -99,10 +100,10 @@ If a restore over a project fails, the old disk is already gone, so the project 
 ```
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app. Its final snapshot is kept for 30 days.
+Destroying todo-app.
 ```
 
-This deletes the machine and its disk and stops all charges for the project. It reads `destroying` while its final snapshot is taken, which takes longer the more the disk holds (about a minute for 40 GB), and stops counting toward your [project cap](/docs/limits#projects) at once. `--yes` skips the question; `--wait` waits until it's done. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
+This deletes the machine and its disk and stops all charges for the project. It reads `destroying` while its final snapshot is taken, which takes longer the more the disk holds (about a minute for 40 GB), and stops counting toward your [project cap](/docs/limits#projects) at once. `--yes` skips the question; `--wait` waits until it's done. `repose rm todo-app-fork-1 todo-app-fork-2` destroys both after one question. Answering no exits with code 1. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
 
 Within 30 days, bring it back, running, with its size, configuration and git remote:
 
@@ -121,7 +122,7 @@ To throw a machine away and start again from your checkout, destroy it and run a
 
 ```
 $ repose rm -y
-Destroying todo-app. Its final snapshot is kept for 30 days.
+Destroying todo-app. Its final snapshot is kept until 2026-11-07.
 $ repose run
 ✓ Destroyed the old todo-app  14s
 ✓ Created todo-app (large)  0.4s
@@ -191,7 +192,7 @@ Not a git repository, so nothing was synced.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
 - On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
-- `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
+- `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
 
 To keep one after all:

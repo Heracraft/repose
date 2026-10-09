@@ -134,7 +134,7 @@ func TestSnapshotsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	confirmed := false
-	confirm := func() (bool, error) { confirmed = true; return true, nil }
+	confirm := func(string) (bool, error) { confirmed = true; return true, nil }
 	if err := SnapshotsRestoreCmd(ctx, e, "", snaps[0].ID, "", confirm); err != nil {
 		t.Fatalf("SnapshotsRestoreCmd: %v", err)
 	}

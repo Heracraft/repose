@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // progress shows what a long command is doing (DECISIONS I-154): on a
@@ -40,18 +41,25 @@ func newProgress(w io.Writer, tty bool) *progress {
 	return p
 }
 
-// isTerminal reports whether f is a character device, which is what a
-// terminal is; good enough to decide whether to draw a spinner, and it
-// needs no terminal library.
-func isTerminal(f *os.File) bool {
-	if f == nil {
-		return false
-	}
+// canDrawSpinner reports whether f is a terminal a spinner may redraw:
+// not with TERM=dumb (Emacs shells, some IDE consoles) or
+// REPOSE_NO_SPINNER=1. Asking a question is canPrompt's business, so
+// turning the spinner off never stops a confirmation (DECISIONS I-614).
+func canDrawSpinner(f *os.File) bool {
 	if os.Getenv("TERM") == "dumb" || os.Getenv(envNoSpinner) == "1" {
 		return false
 	}
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return isatty(f)
+}
+
+// canPrompt reports whether stdin f is a terminal someone can answer a
+// question on. /dev/null is a character device too, which is what cron,
+// systemd, `ssh -n` and many CI runners give a command; a question read
+// from it gets EOF, so it is not one (DECISIONS I-614).
+func canPrompt(f *os.File) bool { return isatty(f) }
+
+func isatty(f *os.File) bool {
+	return f != nil && term.IsTerminal(int(f.Fd()))
 }
 
 // Phase ends the current phase (printing its done line) and starts label.
