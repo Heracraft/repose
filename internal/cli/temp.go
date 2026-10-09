@@ -215,7 +215,7 @@ func KeepCmd(ctx context.Context, e *Env, projectArg string, d time.Duration) er
 		if !extensionTaken(project.ExpiresAt, p, time.Now().Add(d)) {
 			// An api from before I-612 ignores expires_in_s and answers
 			// with the project as it was (I-631).
-			return exitf(ExitGeneric, "The api did not take the new time for %s; it goes as before. `repose keep %s` keeps it for good.", project.Slug, project.Slug)
+			return exitf(ExitGeneric, "The api did not take the new time for %s; it is still destroyed at %s. `repose keep %s` keeps it for good.", project.Slug, project.ExpiresAt.Local().Format("Jan 2 15:04"), project.Slug)
 		}
 		_, _ = fmt.Fprintf(e.Out, "%s is temporary until %s.\n", project.Slug, p.ExpiresAt.Local().Format("Jan 2 15:04"))
 		return nil
@@ -272,7 +272,7 @@ func tempSessionEndedWith(ctx context.Context, e *Env, t sshTarget, p *Project, 
 // "it stays until 14:02", or, past its expiry, once nobody is on it.
 func tempStays(p *Project, now time.Time) string {
 	if !p.ExpiresAt.After(now) {
-		return "it goes once nobody is attached"
+		return "it is destroyed once nobody is attached"
 	}
 	at := p.ExpiresAt.Local()
 	if at.Format("2006-01-02") == now.Local().Format("2006-01-02") {

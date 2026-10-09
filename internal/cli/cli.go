@@ -1939,7 +1939,7 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 		Short: "List the questions agents on any project are waiting on you to answer",
 		Long: "List the questions agents on any of your projects, or on PROJECT, are waiting on\n" +
 			"you to answer with repose reply, then the agents waiting at a prompt in their\n" +
-			"terminal, which only attaching answers.",
+			"terminal, which `repose run -w WINDOW -p TEXT` answers.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

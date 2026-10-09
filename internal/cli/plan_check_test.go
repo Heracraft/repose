@@ -300,7 +300,7 @@ func TestTempStays(t *testing.T) {
 	}{
 		{at(2 * time.Hour), "it stays until 12:00"},
 		{at(20 * time.Hour), "it stays until Oct 9 06:00"},
-		{at(-time.Minute), "it goes once nobody is attached"},
+		{at(-time.Minute), "it is destroyed once nobody is attached"},
 	} {
 		if got := tempStays(c.p, now); got != c.want {
 			t.Errorf("%v: %q, want %q", c.p.ExpiresAt, got, c.want)

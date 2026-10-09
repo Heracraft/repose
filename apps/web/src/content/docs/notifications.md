@@ -147,4 +147,4 @@ repose events todo-app
 repose events todo-app --since 72h -f
 ```
 
-If an event is listed but nothing arrived, run `repose notify test`. `failed` there means the channel's settings are wrong, and says why when ntfy answered.
+If an event is listed but nothing arrived, run `repose notify test`.

@@ -87,7 +87,7 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 
 With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
 
-`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `state` for a window with no agent). For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
+`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `state` equals `agent_state` on tmux and keeps herdr's own word on herdr. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
@@ -191,7 +191,7 @@ claude called apple-notes.search_notes
 $ repose mcp forward notes -- node ~/mcp/notes.js
 ```
 
-The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
+The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. Within about 20 seconds of your laptop sleeping, the tools answer that it isn't connected. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
 
 `repose mcp rm NAME` takes it off again; `--remove` is the old form of that.
 
@@ -294,7 +294,7 @@ On a temporary machine the question starts by saying that no snapshot is kept, a
 
 ### `repose keep [PROJECT] [DURATION]`
 
-Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary until Sep 29 17:02.` One argument that is a number and a unit (`s`, `m`, `h`, `d` or `w`) is DURATION, so a project called `2fa` is a project. It keeps no git remote; reach it by name as before. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
+Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary until Sep 29 17:02.` One argument that is a number and a unit (`s`, `m`, `h`, `d` or `w`) is DURATION, so a project called `2fa` is a project. It adds no git remote; reach it by name. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
 
 ### `repose restore [NAME]`
 
@@ -421,7 +421,6 @@ forward = ["figma"]
 | Key                   | Default  | What it does                                                                                                                                                                                                |
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `default_size`        | `large`  | Size of new projects. `default_class` is its old name and still works; `default_size` wins when a file has both.                                                                                            |
-| `default_class`       | `large`  | The old name of `default_size`.                                                                                                                                                                             |
 | `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
 | `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
@@ -479,7 +478,7 @@ Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` 
 | Code | Meaning                                                                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed, or you answered no to a question; the message says why. The network, the login server's included, is 1. |
+| 1    | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
 | 2    | Wrong usage.                                                                                                                                                                                |
 | 3    | Not logged in, or the login expired.                                                                                                                                                        |
 | 4    | No such project.                                                                                                                                                                            |

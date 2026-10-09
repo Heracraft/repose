@@ -41,7 +41,7 @@ Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
 this month
 ```
 
-Running memory is what a start is checked against. `repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
+`repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
 
 ## Changing and cancelling
 
