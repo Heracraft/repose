@@ -652,3 +652,4 @@ pointer, not a summary.
 - **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16505
 - **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16541
 - **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; L16583
+- **I-604** Billing moves from Paddle to Polar: hosted checkout, Standard Webhooks, a metered egress price, `POLAR_*` environment, `billing_events` — 2026-10-08; L16621
