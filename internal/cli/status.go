@@ -73,6 +73,12 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	if len(projects) == 0 {
+		// A destroyed project can still come back; "yet" said otherwise
+		// (DECISIONS I-615).
+		if gone, err := e.Client.ListDestroyed(ctx); err == nil && len(gone) > 0 {
+			_, _ = fmt.Fprintf(e.Out, "No projects. %s destroyed in the last 30 days can be restored.\n", countDestroyed(gone))
+			return nil
+		}
 		_, _ = fmt.Fprintln(e.Out, "No projects yet.")
 		return nil
 	}

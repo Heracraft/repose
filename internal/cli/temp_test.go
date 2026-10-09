@@ -434,7 +434,7 @@ func TestRmAndLsOfATemporaryProject(t *testing.T) {
 	if err := DestroyCmd(ctx, e, "tmp-q7wd", false, true, confirm); err != nil {
 		t.Fatal(err)
 	}
-	if asked != "Destroy tmp-q7wd? It is temporary: no snapshot is kept and it cannot be restored. [y/N] " {
+	if asked != "tmp-q7wd is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-q7wd? [y/N] " {
 		t.Fatalf("asked %q", asked)
 	}
 	if out := e.Out.(*discardWriter).buf.String(); !strings.Contains(out, "It was temporary, so no snapshot was kept.") || strings.Contains(out, "restore") {

@@ -95,8 +95,9 @@ func TestResizeClass(t *testing.T) {
 	t.Run("running project declined stays as it was", func(t *testing.T) {
 		_, e, out, p := setup(t)
 		var asked string
-		if err := ResizeClassCmd(ctx, e, p.ID, "small", func(prompt string) (bool, error) { asked = prompt; return false, nil }); err != nil {
-			t.Fatal(err)
+		err := ResizeClassCmd(ctx, e, p.ID, "small", func(prompt string) (bool, error) { asked = prompt; return false, nil })
+		if exitCode(err) != ExitGeneric || !strings.Contains(err.Error(), "Not changed") {
+			t.Fatalf("declined: %v (I-614: a no exits 1)", err)
 		}
 		if !strings.Contains(asked, "agents included") || !strings.HasSuffix(asked, "[y/N] ") || strings.Contains(asked, "snapshot") {
 			t.Fatalf("prompt %q", asked)
@@ -104,7 +105,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "large" || got.State != "running" {
 			t.Fatalf("after declining: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "Not changed") {
+		if out.Len() != 0 {
 			t.Fatalf("output %q", out.String())
 		}
 	})

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-622 entries.
+624 entries.
 
 ## Scope
 
@@ -583,7 +583,7 @@ pointer, not a summary.
 - **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L14114
 - **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L14132
 - **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L14150
-- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; L14175
+- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; amended by I-614; L14175
 - **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; partly amended by I-597; L14192
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L14230
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14264
@@ -654,3 +654,5 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16583
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16628
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; L16655
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; L16713
+- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; L16780

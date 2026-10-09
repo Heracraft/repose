@@ -220,7 +220,7 @@ List the tools the next `repose run` would install on the machine, and why, and 
 Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. A `DISK` column appears while a listed project's disk is 90 percent full or more, as `93% full`. While your projects hold more than your plan's disk, a line under the table says so: [creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
-repose ls -q | xargs -n1 repose stop
+repose stop $(repose ls -q)
 ```
 
 ### `repose status [PROJECT]`
@@ -233,17 +233,17 @@ One project in detail, including processes listening on ports, the idle line whe
 
 Start a stopped machine, or restart one in `error`. Doesn't sync.
 
-### `repose stop [PROJECT]`
+### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot.
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--idle` stops every machine `repose ls` shows as [idle](/docs/lifecycle#idle-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.`
 
-### `repose rm [PROJECT]`
+### `repose rm [PROJECT...]`
 
-Delete the machine and disk; a final snapshot is kept 30 days. `-y`/`--yes` skips the question (required without a terminal). `--wait` waits until it's done. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
+Delete the machine and disk; a final snapshot is kept 30 days. Several projects get one question. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits until it's done. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
 
 `repose projects` and `repose destroy`, the old names, still work.
 
-On a temporary machine the question says that no snapshot is kept, and it can't be restored.
+On a temporary machine the question starts by saying that no snapshot is kept, and it can't be restored. A busy agent is named in the question, as on `stop`.
 
 ### `repose keep [PROJECT]`
 
@@ -286,8 +286,8 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | Command                                          | What it does                                                                                                       |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `repose snapshots list [PROJECT]`                | Alias `ls`. `--json` for JSON, `-q`/`--quiet` for the ids only.                                                    |
-| `repose snapshots create [PROJECT]`              | Take one now.                                                                                                      |
-| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk. `--as-new NAME` restores into a new project instead; `--yes` skips the question. |
+| `repose snapshots create [PROJECT]`              | Take one now; prints its id.                                                                                       |
+| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk, after a question that says whether a snapshot keeps the disk as it is now. `--as-new NAME` restores into a new project instead; `--yes` skips the question. |
 
 ## Secrets
 
@@ -370,7 +370,7 @@ forward = ["figma"]
 | `REPOSE_PROJECT`          | The project to act on, like `--project`.                                                                                                         |
 | `REPOSE_NO_FORWARD=1`     | Don't forward ports automatically while attached.                                                                                                |
 | `REPOSE_TIMING=1`         | Print how long each step of `run` and `attach` took.                                                                                             |
-| `REPOSE_NO_SPINNER=1`     | One line per step instead of a progress line. `TERM=dumb` does the same.                                                                         |
+| `REPOSE_NO_SPINNER=1`     | One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked.                                                                         |
 | `REPOSE_NO_FASTPATH=1`    | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                      |
 | `REPOSE_NO_BROWSER=1`     | Never open a browser, even with `repose login --browser`.                                                                                        |
 | `REPOSE_INPUT_PROXY=0`    | Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`.                                |
@@ -405,7 +405,7 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 | Code | Meaning                                                                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed; the message says why.                                                                                                                                                               |
+| 1    | Failed, or you answered no to a question; the message says why.                                                                                                                                                            |
 | 2    | Wrong usage.                                                                                                                                                                                |
 | 3    | Not logged in.                                                                                                                                                                              |
 | 4    | No such project.                                                                                                                                                                            |
@@ -414,6 +414,6 @@ For a test or self-hosted repose server rather than the hosted one: `--api-url U
 | 7    | Account or payment problem.                                                                                                                                                                 |
 | 8    | No capacity right now; try again in a few minutes. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10   | The configuration build failed.                                                                                                                                                             |
-| 130  | Interrupted with `Ctrl-C`.                                                                                                                                                                  |
+| 130  | Interrupted with `Ctrl-C`, at a question too.                                                                                                                                                                  |
 
 Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection and `run`, `attach` or `open` could not reconnect within 2 minutes. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.

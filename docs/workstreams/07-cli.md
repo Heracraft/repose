@@ -497,7 +497,7 @@ measures them):
   the retry, in `repose status`, and as a `destroy_failed` notification
   (I-165). `--wait` keeps the old behaviour for scripts: wait on the op,
   then on `GET` answering 404, and only then print `Destroyed <slug> in
-  <time>. Its last snapshot is kept until <date>.`; an op in `error` prints `Could not destroy
+  <time>. Its final snapshot is kept until <date>.`; an op in `error` prints `Could not destroy
   <slug>: <reason> (<code>). <slug> is still there, <state>. \`repose
   destroy <slug>\` tries again.` and exits 1. An api that answers without
   an op id is waited on by polling the project (DECISIONS I-153).

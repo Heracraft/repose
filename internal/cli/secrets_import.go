@@ -358,7 +358,7 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 	if len(replace) > 0 && !opts.Yes {
 		confirm := opts.Confirm
 		if confirm == nil {
-			confirm = func(prompt string) (bool, error) { return askYesNo(prompt, false, "replacing secrets") }
+			confirm = func(prompt string) (bool, error) { return askYesNo(ctx, prompt, false, "replacing secrets") }
 		}
 		ok, err := confirm(fmt.Sprintf("%s already has %s. Replace with your laptop's values? [y/N] ", project.Slug, strings.Join(replace, ", ")))
 		if err != nil {

@@ -79,13 +79,8 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		return exitf(ExitGuestNotRunning, "%s is %s; its size can be changed once it is running or stopped. `repose status %s` shows its state.", s, project.State, s)
 	}
 	if confirm != nil {
-		ok, err := confirm(classChangePrompt(s, from, class))
-		if err != nil {
+		if err := confirmOr(confirm, classChangePrompt(s, from, class), fmt.Sprintf("Not changed. %s is still %s.", s, from)); err != nil {
 			return err
-		}
-		if !ok {
-			_, _ = fmt.Fprintf(e.Out, "Not changed. %s is still %s.\n", s, from)
-			return nil
 		}
 	}
 	pr := e.newProgress()
