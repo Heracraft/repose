@@ -619,3 +619,54 @@ func TestInterruptedResizeAndForkSayWhatIsLeft(t *testing.T) {
 		t.Errorf("one, --no-start: %q", got)
 	}
 }
+
+// rm fetches the machine's commits before it destroys the machine, as
+// stop does, and the fetched refs stay after its remote goes (I-641).
+func TestRmFetchesFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		c.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_CONFIG_GLOBAL=/dev/null")
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	machine := t.TempDir()
+	git(machine, "init", "-q", "-b", "main")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "one")
+	laptop := t.TempDir()
+	git(laptop, "clone", "-q", machine, ".")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
+	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
+	git(laptop, "remote", "add", "repose", "demo.repose:~/demo")
+	git(laptop, "config", "url."+machine+".insteadOf", "demo.repose:~/demo")
+
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	var out, errOut bytes.Buffer
+	e.Out, e.ErrOut = &out, &errOut
+	p := runningProject(t, fake, e, "demo")
+	e.Cwd = laptop
+	e.rememberFolder(gitRepoRoot(laptop), p.ID)
+	out.Reset()
+	errOut.Reset()
+	if err := DestroyProjectsCmd(ctx, e, []string{p.ID}, true, false, nil); err != nil {
+		t.Fatalf("%v: out %q err %q", err, out.String(), errOut.String())
+	}
+	lines := strings.Split(out.String(), "\n")
+	if lines[0] != "Fetched 2 commits on repose/main." || !strings.HasPrefix(lines[1], "Destroying demo.") {
+		t.Fatalf("out %q err %q", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "Removed the git remote repose.") {
+		t.Fatalf("err %q", errOut.String())
+	}
+	if git(laptop, "rev-parse", "refs/remotes/repose/main") != git(machine, "rev-parse", "main") {
+		t.Fatal("the fetched commits did not stay after the remote went")
+	}
+}

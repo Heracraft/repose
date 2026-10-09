@@ -372,6 +372,26 @@ in
           guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
           guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
 
+      with subtest("I-636, I-640: agent windows are recorded with guestd's environment and reopen on the login PATH"):
+          # The stand-in agent is only on the login PATH (~/.local/bin),
+          # as a user-installed agent is: the unit's own PATH lacks it,
+          # which is what made the first restore exit 127.
+          guest.succeed("sudo -u dev mkdir -p /home/dev/.local/bin /home/dev/w1")
+          guest.succeed("printf '#!/bin/sh\\necho \"$*\" > /home/dev/w1/args\\nexec sleep 1000\\n' | sudo -u dev tee /home/dev/.local/bin/opencode > /dev/null")
+          guest.succeed("chmod +x /home/dev/.local/bin/opencode")
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n opencode -c /home/dev/w1 /home/dev/.local/bin/opencode")
+          guest.wait_until_succeeds("test -e /home/dev/w1/args", timeout=30)
+          # guestd's environment (sysdep.DevEnv): no locale, so tmux would
+          # print the \\037 separator as `_` without the script's LC_ALL.
+          guest.succeed("env -i HOME=/home/dev USER=dev PATH=/run/current-system/sw/bin setpriv --reuid=dev --regid=users --init-groups repose-tmux-save")
+          guest.succeed("grep -qF \"$(printf 'opencode\\037opencode\\037/home/dev/w1\\037')\" /home/dev/.repose/agent-windows")
+          guest.succeed("rm /home/dev/w1/args")
+          guest.succeed("sudo -u dev tmux kill-server")
+          guest.wait_until_succeeds("sudo -u dev tmux list-windows -t =todo-app -F '#{window_name}' | grep -qx opencode", timeout=30)
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w1/args", timeout=30)
+          guest.succeed("test ! -e /home/dev/.repose/agent-windows")
+          guest.succeed("sudo -u dev tmux kill-window -t =todo-app:opencode")
+
       with subtest("I-560: a session on a tmux server outside the unit is not restarted"):
           def user_q(cmd):
               return guest.succeed(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}").strip()

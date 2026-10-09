@@ -84,6 +84,8 @@ let
       # server that exits later in the boot starts with `shell` alone.
       saved="$HOME/.repose/agent-windows"
       if [ -n "$created" ] && [ -s "$saved" ] && mv -f "$saved" "$saved.restoring"; then
+        tmux_bin=$(command -v tmux)
+        window_path=''${login_path:-/run/current-system/sw/bin:$PATH}
         seen=" "
         while IFS="$(printf '\037')" read -r name agent cwd sid; do
           [ -n "$name" ] && [ -d "$cwd" ] || continue
@@ -104,7 +106,10 @@ let
             gemini) cmd="gemini --resume latest" ;;
             *) continue ;;
           esac
-          tmux new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$cmd" || true
+          # A client that is not attached gives the new window its own
+          # PATH, not the server's: this unit's PATH has no agent on it
+          # (the restored window exited 127, I-640). The login PATH it is.
+          PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$cmd" || true
         done < "$saved.restoring"
         rm -f "$saved.restoring"
       fi
@@ -119,6 +124,10 @@ let
     name = "repose-tmux-save";
     runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnugrep ];
     text = ''
+      # guestd runs this with no locale (POSIX), where tmux prints the
+      # \037 below as `_` and no line splits (I-640). Any UTF-8 locale
+      # passes it through; C.UTF-8 is built into glibc.
+      export LC_ALL=C.UTF-8
       out="$HOME/.repose/agent-windows"
       slug=$(jq -r '.slug // empty' "$HOME/.repose/project.json" 2>/dev/null || true)
       [ -n "$slug" ] || exit 0

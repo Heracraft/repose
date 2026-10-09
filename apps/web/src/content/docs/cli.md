@@ -110,11 +110,11 @@ $ repose exec --workdir worktree-1 npm test
 
 ### `repose ssh [PROJECT[:CHECKOUT]]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A command after PROJECT exits 2 and names `repose exec`, which runs one.
+Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A stopped machine starts first, without a sync, as with `attach`. A command after PROJECT exits 2 and names `repose exec`, which runs one.
 
 ### `repose code [PROJECT[:CHECKOUT]]`
 
-Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over SSH to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. The machine must be running. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
+Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over SSH to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. A stopped machine starts first, as with `attach`. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
 
 ```
 $ repose code todo-app
@@ -284,7 +284,7 @@ Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Seve
 
 ### `repose rm [PROJECT...]`
 
-Delete the machine and disk; a final snapshot is kept 30 days. Several projects get one question. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits until it's done. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
+Delete the machine and disk; a final snapshot is kept 30 days. Several projects get one question. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits until it's done. A running machine's commits are fetched first, as `stop` fetches them, in each of the project's checkouts on your laptop. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
 
 `repose rm PROJECT:CHECKOUT` removes only a checkout that `run --on` added: its folder and its worktrees on the running machine, after the same question, and the link from your laptop folder. It exits 6 while a process works in one of those folders, and 2 for a name the machine doesn't have.
 

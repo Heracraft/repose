@@ -18370,3 +18370,46 @@ allowance (the allowance changes with the introductory offer and the
 hard stop needs repose's own count anyway); hourly overage events
 (PRICING.md promises one line a period); keeping both providers behind
 a switch (nothing on either side would exercise the Paddle path again).
+
+**I-640. The tmux agent windows are recorded under any locale and
+reopen on the login PATH (tmux-windows-fix, 2026-10-09).** Amends I-636.
+*Made during implementation* (the live check of base 2026.10.09 on a
+throwaway project found both halves of I-636 doing nothing).
+- Save recorded nothing. guestd runs `repose-tmux-save` with no locale
+  (sysdep.DevEnv), and tmux then prints the `\037` separator of
+  `list-windows -F` as `_`: no line split, no window matched the agent
+  names, and the script removed the file and exited 0. The script now
+  exports `LC_ALL=C.UTF-8` (built into glibc), in which tmux passes the
+  byte through.
+- Restore opened windows that exited 127 at once. A tmux client that is
+  not attached gives the window it opens the client's own PATH, not the
+  server's global one, and the unit's PATH has no agent on it. The
+  restore now runs `new-window` with the login PATH that
+  `repose-login-path` gave the server (the system profile and the
+  current PATH when it gave none).
+- The VM test `guest-base` gains the case the first tests missed: the
+  save runs with guestd's empty environment, and the stand-in agent is
+  only on the login PATH (`~/.local/bin`). Checked by hand on a real
+  machine (tw-fix, base 2026.10.09) with patched copies of both scripts:
+  the shipped save wrote nothing, the fixed one wrote both windows;
+  after `tmux kill-server` the unit reopened `opencode --continue` and
+  `codex resume --last`, both running.
+
+**I-641. `ssh` and `code` start a stopped machine; `rm` fetches first
+(tmux-windows-fix, 2026-10-09).** Amends I-631, I-638. *Made during
+implementation* (owner's choice of two items I-631 and the cli-devx
+STATUS left open).
+- `repose ssh` and `repose code` start a stopped machine without a sync,
+  as `attach` does, and wait for a start in flight. Opening a shell or
+  an editor on a machine is asking to work there; the exit 5 cost a
+  second command every time. `exec`, `ps`, `cp`, `open`, `mcp` and
+  `browser bridge` still exit 5: a one-off command or a read should not
+  take the plan's memory unasked (I-631). A plain `ssh PROJECT.repose`
+  starts nothing; the ssh config cannot ask the api.
+- `repose rm` fetches a running machine's commits before the destroy,
+  after the question, in each of the project's laptop folders, as
+  `stop` does (I-638), and prints the same `Fetched` line. The `repose`
+  remote's settings are still removed; the fetched refs stay (I-272).
+  A stopped machine is not fetched: its final snapshot holds the
+  commits for 30 days.
+- `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.

@@ -108,6 +108,42 @@ func TestAttachStartsAStoppedMachine(t *testing.T) {
 	}
 }
 
+// ssh and code start a stopped machine as attach does; exec does not
+// (I-641).
+func TestSSHStartsAStoppedMachineAndExecDoesNot(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.StopProject(ctx, p.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	e.Cache.ByDir[e.Cwd] = p.ID
+
+	err = ExecCmd(ctx, e, ExecOptions{Command: []string{"true"}}, nil)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
+		t.Fatalf("exec on a stopped machine: %v, want exit 5", err)
+	}
+	if got, _ := e.Client.GetProject(ctx, p.ID); got.State != "stopped" {
+		t.Fatalf("exec started it: %s", got.State)
+	}
+	// The connection itself needs ssh, which this env has not; the start
+	// is what this test is about.
+	_ = SSHCmd(ctx, e, "")
+	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
+		t.Fatalf("after ssh: %+v %v", got, err)
+	}
+	fake.SetState(p.ID, "restoring")
+	err = SSHCmd(ctx, e, "")
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
+		t.Fatalf("ssh while restoring: %v, want exit 5", err)
+	}
+}
+
 // TestRetryOnOpConflict is DECISIONS I-70: a stop/start/resize/destroy
 // racing a queued update_secrets op sees 409 conflict "an operation is in
 // progress" and must retry, not surface it, for up to 10s.

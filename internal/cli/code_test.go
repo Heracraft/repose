@@ -88,12 +88,12 @@ func TestCodeOpensTheCheckoutOverSSH(t *testing.T) {
 		t.Errorf("no editor: %v", err)
 	}
 
-	// A stopped machine is not started: the same exit 5 as attach.
+	// A stopped machine starts first, as attach does (I-641).
 	fakeEditors(t, "code")
 	if err := StopCmd(ctx, f.env, testSlug, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := CodeCmd(ctx, f.env, testSlug, ""); !errors.As(err, &ee) || ee.code != ExitGuestNotRunning {
+	if err := CodeCmd(ctx, f.env, testSlug, ""); err != nil {
 		t.Errorf("stopped: %v", err)
 	}
 }
