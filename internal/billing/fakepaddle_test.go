@@ -323,9 +323,19 @@ func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s := map[string]any{"id": f.id("ntfset"), "description": body["description"], "type": body["type"], "destination": body["destination"], "active": true,
-			"endpoint_secret_key": f.secret, "subscribed_events": evs}
+			"endpoint_secret_key": f.secret, "subscribed_events": evs, "traffic_source": body["traffic_source"]}
 		f.settings[s["id"].(string)] = s
 		f.write(w, 201, s)
+	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/notification-settings/"):
+		s, ok := f.settings[strings.TrimPrefix(r.URL.Path, "/notification-settings/")]
+		if !ok {
+			f.writeErr(w, 404, "entity_not_found", "notification setting not found")
+			return
+		}
+		if ts, ok := body["traffic_source"]; ok {
+			s["traffic_source"] = ts
+		}
+		f.write(w, 200, s)
 	default:
 		f.writeErr(w, 404, "not_found", "no such route: "+key)
 	}

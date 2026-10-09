@@ -443,9 +443,12 @@ func (s *Server) authed(h handler, queryToken bool) handler {
 			return err
 		}
 		// A suspended account may only read itself and its billing, and
-		// reach the portal to pay (api.md "Usage and billing").
+		// reach the portal to pay (api.md "Usage and billing"); every other
+		// route answers the gate's 402 suspended, whose message says how to
+		// lift it.
 		if u.SuspendedAt != nil && r.Pattern != "GET /v1/me" && r.Pattern != "GET /v1/billing" && r.Pattern != "POST /v1/billing/portal" {
-			return errf("forbidden", "account suspended")
+			ref := s.d.Gate.Suspended()
+			return withDetail(errf("payment_required", "%s", ref.Message), ref.Detail)
 		}
 		// Reads have their own, larger bucket: two CLI polls a second
 		// through a long build (I-154) used the whole 60/min general budget

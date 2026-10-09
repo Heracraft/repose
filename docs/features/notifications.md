@@ -180,7 +180,7 @@ produces Paddle's email about the card and ours about the machines.
 | `egress_stopped` | Your machines were stopped: egress limit | billing, at four times the egress allowance: the period's egress, the limit, until when, the upgrade link | `{plan, egress_gb, limit_gb, until}` |
 | `disk_over_plan` | Your projects hold more than your plan's disk | billing's hourly tick, once a period, when the projects hold more than the plan's disk (I-585): what they hold, the plan's disk, that machines keep running and starting, what is refused until they hold less, and that a deleted file stops counting within a day or at the machine's stop | `{plan, held_gb, limit_gb}` |
 
-`billing_stopped` (`Your machines were stopped for non-payment`) and
+`billing_stopped` (`Your machines were stopped: a payment failed`) and
 `abuse_stopped` (`Your machine was stopped: a cryptocurrency miner was
 running`) stay project events with their own subjects, rendered through
 the same layout. Dates in payloads are RFC 3339 and render as `4 October
