@@ -112,17 +112,37 @@ func installHint(ed editorSpec) string {
 	return ""
 }
 
-// connectRunning is what `code`, `exec` and `ssh` do before their own
-// process: the project, which must be running (exit 5 otherwise; none of
-// them starts a machine), and a proved connection to it.
+// connectRunning is what `exec`, `mcp` and `browser bridge` do before
+// their own process: the project, which must be running (exit 5
+// otherwise: a one-off command does not take the plan's memory unasked,
+// I-631), and a proved connection to it.
 func connectRunning(ctx context.Context, e *Env, projectArg string) (*Project, sshTarget, error) {
+	return connectProject(ctx, e, projectArg, false)
+}
+
+// connectToWork is connectRunning for `ssh` and `code`, which start a
+// stopped machine as attach does: opening a shell or an editor on it is
+// asking to work there (I-641).
+func connectToWork(ctx context.Context, e *Env, projectArg string) (*Project, sshTarget, error) {
+	return connectProject(ctx, e, projectArg, true)
+}
+
+func connectProject(ctx context.Context, e *Env, projectArg string, start bool) (*Project, sshTarget, error) {
 	res, err := requireProjectRes(ctx, e, projectArg)
 	if err != nil {
 		return nil, sshTarget{}, err
 	}
 	project := res.Project
 	if project.State != "running" {
-		return nil, sshTarget{}, notRunningError(project)
+		if !start {
+			return nil, sshTarget{}, notRunningError(project)
+		}
+		pr := e.newProgress()
+		err := startToWork(ctx, e, project, pr)
+		pr.Fail()
+		if err != nil {
+			return nil, sshTarget{}, err
+		}
 	}
 	target, err := connect(ctx, e, project)
 	if err != nil {
@@ -153,7 +173,7 @@ func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 	// The certificate and the Host block, proved with an ssh, before the
 	// editor tries its own connection: the editor's errors are far less
 	// clear than the CLI's.
-	project, target, err := connectRunning(ctx, e, projectArg)
+	project, target, err := connectToWork(ctx, e, projectArg)
 	if err != nil {
 		return err
 	}
@@ -181,7 +201,7 @@ func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "code [PROJECT[:CHECKOUT]]",
 		Short: "Open the checkout in VS Code, Cursor or Zed over SSH",
 		Long: "Open the project's checkout in VS Code, Cursor or Zed on this laptop, over SSH\n" +
-			"to PROJECT.repose. The machine must be running.",
+			"to PROJECT.repose. A stopped machine starts first.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

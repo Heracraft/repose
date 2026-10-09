@@ -258,21 +258,8 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 			*project = *p
 		}
-		if project.State != "running" {
-			// A stopped machine starts, as with run, and is not synced; a
-			// start in progress is waited for (I-631, review G7). The
-			// other states, and a machine stopped for abuse, cannot.
-			switch project.State {
-			case "stopped", "creating", "building", "starting", "stopping":
-				if abuseStopReason(project) != "" {
-					return notRunningError(project)
-				}
-				if err := ensureRunningFrom(ctx, e, project, pr, true); err != nil {
-					return err
-				}
-			default:
-				return notRunningError(project)
-			}
+		if err := startToWork(ctx, e, project, pr); err != nil {
+			return err
 		}
 	} else if err := ensureRunningFrom(ctx, e, project, pr, fresh); err != nil {
 		return err
@@ -1243,6 +1230,24 @@ func renewFor(e *Env, project *Project) func(context.Context) error {
 		_, err := connect(ctx, e, project)
 		return err
 	}
+}
+
+// startToWork is what attach, ssh and code do with a project that is not
+// running: a stopped machine starts, as with run, and is not synced; a
+// start in progress is waited for (I-631, review G7; ssh and code since
+// I-641). The other states, and a machine stopped for abuse, cannot.
+func startToWork(ctx context.Context, e *Env, project *Project, pr *progress) error {
+	if project.State == "running" {
+		return nil
+	}
+	switch project.State {
+	case "stopped", "creating", "building", "starting", "stopping":
+		if abuseStopReason(project) != "" {
+			return notRunningError(project)
+		}
+		return ensureRunningFrom(ctx, e, project, pr, true)
+	}
+	return notRunningError(project)
 }
 
 // ensureRunningFrom is step 2: wait out a create or start in flight,

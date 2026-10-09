@@ -71,7 +71,7 @@ A connection ends when the certificate it logged in with expires, so an `ssh` yo
 
 It never asks you anything, so an editor can't hang on it. The entries themselves are in `~/.ssh/repose/hosts`, one per project.
 
-Connecting never starts a stopped machine. `repose start todo-app` starts it, and so does `repose run` in its checkout.
+A plain `ssh todo-app.repose` never starts a stopped machine. `repose ssh`, `repose code`, `repose attach` and `repose run` start it, and so does `repose start todo-app`.
 
 ## When it doesn't connect
 

@@ -25,8 +25,16 @@ var stopFetchTimeout = 60 * time.Second
 // too. It prints what came, as "Fetched 3 commits on repose/main." (with
 // " in ~/code/api" for a folder other than the working directory's),
 // and nothing when nothing did. A fetch that fails is one line on stderr
-// and the stop goes ahead. Ctrl-C during it stops nothing.
+// and the stop goes ahead. Ctrl-C during it stops nothing. rm fetches
+// the same way before it destroys (I-641).
 func fetchBeforeStop(ctx context.Context, e *Env, running []*Project) error {
+	return fetchBefore(ctx, e, running, "stopping it", "Interrupted. Nothing stopped.")
+}
+
+// fetchBefore is fetchBeforeStop for any command that ends the machines:
+// what names the act in a failed fetch's warning, and interrupted is the
+// line for Ctrl-C during the fetch.
+func fetchBefore(ctx context.Context, e *Env, running []*Project, what, interrupted string) error {
 	if e.TargetFor != nil { // tests that stand in for ssh
 		return nil
 	}
@@ -40,10 +48,10 @@ func fetchBeforeStop(ctx context.Context, e *Env, running []*Project) error {
 	runFetches(ctx, jobs)
 	pr.Fail()
 	if ctx.Err() != nil {
-		return exitf(ExitInterrupted, "Interrupted. Nothing stopped.")
+		return exitf(ExitInterrupted, "%s", interrupted)
 	}
 	for _, j := range jobs {
-		if w := j.fetchFailure("stopping it"); w != "" {
+		if w := j.fetchFailure(what); w != "" {
 			e.warn("%s", w)
 		}
 		if l := j.fetchedLine(); l != "" {

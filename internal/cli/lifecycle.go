@@ -527,6 +527,11 @@ func DestroyProjectsCmd(ctx context.Context, e *Env, args []string, yes, wait bo
 			return err
 		}
 	}
+	// A destroyed machine cannot be fetched from: its commits come to
+	// the laptop first, and the refs stay after its remote goes (I-641).
+	if err := fetchBefore(ctx, e, projects, "destroying it", "Interrupted. Nothing destroyed."); err != nil {
+		return err
+	}
 	// After a yes the question has said what is kept; with --yes the
 	// line says it, with the date (A8).
 	asked := !yes

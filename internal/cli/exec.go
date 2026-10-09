@@ -284,7 +284,7 @@ func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Open a shell in the checkout on the machine",
 		Long: "Open a login shell in the checkout on PROJECT's machine (this checkout's\n" +
 			"project, by default), outside the session that attach opens: exit ends it.\n" +
-			"repose exec runs one command instead.",
+			"A stopped machine starts first. repose exec runs one command instead.",
 		SuggestFor:        []string{"shell", "connect", "console", "sh"},
 		Args:              sshArgs,
 		ValidArgsFunction: completeProject(env),
@@ -315,7 +315,7 @@ func sshArgs(cmd *cobra.Command, args []string) error {
 // SSHCmd implements `repose ssh`: the certificate and config as for
 // attach, then ssh replaces this process, so its exit code is ssh's.
 func SSHCmd(ctx context.Context, e *Env, projectArg string) error {
-	project, target, err := connectRunning(ctx, e, projectArg)
+	project, target, err := connectToWork(ctx, e, projectArg)
 	if err != nil {
 		return err
 	}

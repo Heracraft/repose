@@ -43,7 +43,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 ## Machine state
 
-**``todo-app is stopped. `repose start todo-app` starts it.``** `ssh`, `exec`, `ps`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach` and `repose run` do.
+**``todo-app is stopped. `repose start todo-app` starts it.``** `exec`, `ps`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach`, `repose ssh`, `repose code` and `repose run` do.
 
 **`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 
