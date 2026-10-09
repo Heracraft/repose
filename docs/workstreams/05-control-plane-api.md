@@ -445,7 +445,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       (the row read back: `trial_credit_cents`, `project_limit`,
       `xl_limit`, `billing_status`). Real first sign-in: the M2 owner-run
       gate (2026-09-20, in progress on host-01) is the first real token;
-      the row is pasted by that session. — open: no production user row from a
+      the row is pasted by that session. Open: no production user row from a
       first GitHub sign-in is pasted (the owner's first sign-in was email,
       I-100; `heracraft` came by rename; the second human is M5 step 3); the
       trial figure is now 336 cents (I-205), so the pasted row should read
@@ -498,7 +498,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       `TestDEKCacheLimitsKeyVaultCalls`, `TestKeyVaultDownFailsClosed`.
       Real Key Vault: the CA init at first start in production wrapped and
       unwrapped a real DEK (DECISIONS I-91, 2026-09-20); `repose-admin
-      secrets rewrap` against the real key is not yet run. — open: `az
+      secrets rewrap` against the real key is not yet run. Open: `az
       keyvault key rotate` then `repose-admin secrets rewrap` (RUNBOOK)
       against the production Key Vault, with the before/after key version and
       a secret read back, is not recorded.
@@ -523,7 +523,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       `internal/api/http/http_test.go` `TestConfigRoutes` (the `invalid`
       with `fragment_line`); `internal/menu` `TestEveryEntryRendersAndRoundTrips`
       and `TestRealNixAllEntriesEvaluate`. The real build on host-01 is
-      `ops/checks/menu.sh`. — closed: parse error rejected with its line on
+      `ops/checks/menu.sh`. Closed: parse error rejected with its line on
       the deployed api (12 §9 canonical-cases row, M5 session 2026-09-21
       02:29Z, `syntax.nix:1:34`, exit 10); menu build on host-01 in RESEARCH
       §13 (`PUT /config {menu: bun}`, op done in 5 s, `bun` 1.4.2 on PATH).
@@ -537,10 +537,10 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       create 43 s, snapshot 17 s, stop 5 s, start 15 s, destroy 21 s). Real
       sweeps 2026-09-21: 02:29:22Z (2026.09.21-m3-0220, security) built
       the four unheld projects and skipped the held one, 4 min to 9 min
-      after the publish; 02:59:18Z (2026.09.21.3) built six. What those
-      sweeps exposed and what fixed it: bumps built against the old base
-      (I-134), a sweep lost to an api-grpc redeploy (I-141), the
-      activation stranding guestd (I-143), the clone race (I-144), the
+      after the publish; 02:59:18Z (2026.09.21.3) built six. Those sweeps
+      exposed these, each fixed by the decision named: bumps built against
+      the old base (I-134), a sweep lost to an api-grpc redeploy (I-141),
+      the activation stranding guestd (I-143), the clone race (I-144), the
       failure wording (I-145) and the skip rule (I-146). Proof sweeps
       after those deployed: 2026.09.21.4 (04:34Z) rebuilt every project,
       retried nuru-playground's failed clone through one serialized
@@ -584,7 +584,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       edge reaches `/internal` at `10.255.255.1:8444` only with the
       gateway certificate signed by `repose-admin ca sign-client`
       (DECISIONS I-92, M2 session); the `curl` outputs without a
-      certificate are pasted by the M2 session. — closed: STATUS 2026-09-20
+      certificate are pasted by the M2 session. Closed: STATUS 2026-09-20
       m2-integration progress line (steps 1-2: `/internal/hosts` answers with
       the gateway certificate, refused without) and
       security/review-2026-09-21.md M5-4 (8444 from the edge: a bare TLS
@@ -599,7 +599,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       through a token from `hosts add` and is `ready` (`repose-admin hosts
       list`, M2 session, STATUS); the second-use refusal on the real host
       is `nix/hosts/tests` host-services against `hostdev` (a second token
-      after `host.json` exists is not consumed). — closed: host-01's real
+      after `host.json` exists is not consumed). Closed: host-01's real
       registration (STATUS 2026-09-20 m2-integration step 3 line, 18:15Z); the
       once-only half is `TestRegisterSessionSendSweep` in internal/api/hostmgr
       ("token accepted twice") and nix/hosts/tests host-services (second token
@@ -607,19 +607,19 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
 - [~] `/healthz` fails when Postgres is down or migrations are pending;
       Coolify stops routing. Evidence: `internal/api/http/http_test.go`
       `TestHealthz` (DB ping and migration state). The staging DB pause is
-      not done (no staging control plane exists). — waits on: owner (a staging
+      not done (no staging control plane exists). Waits on: owner (a staging
       control plane, or permission to pause production Postgres and watch Coolify
       stop routing).
 - [ ] Rolling deploy on Coolify serves requests throughout a deploy.
       Evidence: a `while curl` loop with no failures during a deploy.
-      Owner: the m3-web session (`ops/deploy-probe.sh`). — waits on: owner
+      Owner: the m3-web session (`ops/deploy-probe.sh`). Waits on: owner
       (the Traefik drain on the Coolify proxy): the probe measured 14 failures
       in 29,841 responses over seven switchovers (STATUS 2026-09-20 m3-web
       second progress line, ops/coolify.md fact 13), so "no failures" does not
       hold yet; rerun `ops/deploy-probe.sh` after.
 - [x] `api-grpc` restarts are absorbed by hostd reconnect with no lost
       commands. Evidence: deploy during a build, the build completes.
-      `ops/checks/resilience.sh grpc` on host-01. — closed: RESEARCH §13
+      `ops/checks/resilience.sh grpc` on host-01. Closed: RESEARCH §13
       (api-grpc SIGKILLed 8 s into a build: back in 6 s, hostd
       `stream_connect` 33 s after, the build op done with no lost command) and
       STATUS 2026-09-21 m3-integration "Step 5 on the real api" line.
@@ -653,7 +653,7 @@ waits on host-01 (`ops/checks/README.md` names the script that closes it).
       (I-165, I-167). Evidence: `repose projects` right after `repose
       destroy`, the destroy op's phases, and `repose restore NAME`
       reaching `running`; locally `TestRestoreByName` and
-      `TestDestroyStopsFirstAndReportsItsFailure` pass. — open: STATUS
+      `TestDestroyStopsFirstAndReportsItsFailure` pass. Open: STATUS
       2026-09-23 conductor 03:40Z records the live run (destroy accepted in
       0.28 s, done on the host in about 4 s, restore 12 s, marker sha256
       identical) but not the `repose projects` line reading `destroying`, the

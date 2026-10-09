@@ -53,12 +53,12 @@ picks another for one prompt.
 entries each time the agent starts. It adds its entry only when none running
 `repose-hook` is there and never removes the user's. Claude Code also starts
 in `bypassPermissions` mode (below, DECISIONS I-250). The
-payload each agent actually sends is recorded as a fixture under
+payload each agent sends is recorded as a fixture under
 `internal/guestd/hooks/testdata/<agent>/`, one file per shape, so a change in
 an agent's payload shows up as a failing test rather than as a notification
 that stops arriving. The two agents with no hook have a README there instead,
-naming the heuristic test that covers them. Where an
-agent has no completion hook, guestd watches the pane: an agent window whose
+naming the heuristic test that covers them. For an
+agent with no completion hook, guestd watches the pane: an agent window whose
 pane has produced no output for 90 seconds and whose foreground process is
 the agent itself is reported `idle`, which becomes a `completed` event once,
 until the pane produces output again. That heuristic is named as such in the
@@ -84,7 +84,7 @@ Each binary is wrapped by `nix/overlay/agents/wrap.nix` to:
 3. Exec the real binary with all arguments.
 
 `repose-hook` always exits 0. A hook that fails must never block an agent,
-because a blocked agent is a silently wasted night.
+since a blocked agent sits idle all night and nobody is told.
 
 ## Claude Code starts without permission prompts (DECISIONS I-250)
 
@@ -259,9 +259,9 @@ folder trust is off in the system defaults, since in a folder it was not
 told to trust it disables every MCP server, headless runs included. `pi mcp
 list` does not load extensions and does not show the two.
 
-What works on the machine: HTTP and SSE MCP servers (Notion, Linear,
+The machine runs HTTP and SSE MCP servers (Notion, Linear,
 Sentry, GitHub, Stripe and the like), and stdio servers that are thin
-wrappers over an API and only need `npx` and a token. Tokens go in as named
+wrappers over an API and need only `npx` and a token. Tokens go in as named
 secrets. A user who wants an MCP server only in the guest adds it there with
 the agent's own command, or in the repo's `.mcp.json`, which syncs with the
 repo. Servers bound to the laptop (Apple Notes, Xcode, iMessage, desktop
@@ -464,7 +464,7 @@ the ready frame, and the CLI names the machine for them. `repose-mcp hold
 --remove NAME...` deletes the registration and syncs; the CLI's
 `--remove` runs it.
 
-The shim, `repose-mcp NAME`, is what every agent's config starts. It
+Every agent's config starts the shim, `repose-mcp NAME`. It
 answers `initialize` (protocol version the older of the agent's and the
 cached one, `capabilities.tools.listChanged` set, since opencode listens
 for list_changed only then) and `tools/list` from the registration, so an

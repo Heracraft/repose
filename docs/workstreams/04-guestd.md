@@ -40,7 +40,7 @@ It listens on vsock only and has no network presence.
 - The NixOS unit that runs it, the tmpfs mounts, the user (02).
 - The hostd side: connection management, CID assignment, retries (03).
 - Deciding what to do with events (13) or samples (05, 09, 10). guestd
-  reports; it never decides.
+  reports them and decides nothing.
 - Agent wrappers (02) and the per-agent state heuristics' tuning
   (`features/agents.md` records accuracy; 04 implements the mechanism).
 
@@ -70,14 +70,14 @@ if hostd is absent for long; samples are pull-based so nothing accumulates.
 `Freeze` calls `fsfreeze -f /` via the `FIFREEZE` ioctl on the root mount
 (not the binary, to avoid a fork while frozen). It starts a 10 s timer; if
 `Thaw` does not arrive, guestd thaws and sends `Warning{kind:
-"freeze_timeout"}`. The reason: a hostd crash mid-snapshot would otherwise
-leave every write in the guest blocked forever, which looks to the user like
-a hung agent. During a freeze guestd itself must not write to the root
+"freeze_timeout"}`. Without the timer, a hostd crash mid-snapshot would leave
+every write in the guest blocked forever, and the user would see a hung
+agent. During a freeze guestd itself must not write to the root
 filesystem, so its logging goes to the serial console (stderr) only, never a
 file.
 
 Docker's overlay mounts are on the same filesystem; `FIFREEZE` on `/`
-freezes them too, which is what we want for a consistent snapshot.
+freezes them too, as a consistent snapshot needs.
 
 ### Switch
 
@@ -126,8 +126,8 @@ anyway (idempotent).
 `/home/dev/.repose/project.json` and `/etc/repose/env` (`TZ`,
 `REPOSE_PROJECT`), create `/home/dev/<slug>` if missing (owned dev), `git
 init` if it has no `.git`, and start `repose-tmux-session.service` for the
-dev user if not running (`systemctl --user -M dev@ start`). The tmux session
-is created by that unit, not by guestd directly, so it survives guestd
+dev user if not running (`systemctl --user -M dev@ start`). That unit,
+rather than guestd, creates the tmux session, so the session survives guestd
 restarts and belongs to `dev`'s tmux server.
 
 ### Sample
@@ -155,7 +155,7 @@ restarts and belongs to `dev`'s tmux server.
   never opened by guestd; this is enforced by a test that runs guestd under
   `strace -e openat` and asserts no `cmdline` open.
 
-Sampling cost is under 20 ms; measured in the VM test.
+Sampling costs under 20 ms; the VM test measures it.
 
 ### Hooks
 
@@ -229,30 +229,30 @@ most once per 10 minutes.
 guestd is part of the base closure; rolling back the base (02 §8) rolls it
 back. The protocol is versioned by `Ping.version`; hostd refuses to send a
 request the guest's version does not know and reports `guest_unresponsive`
-with the version in the message, so a new hostd with old guests degrades
-per-request rather than failing outright.
+with the version in the message, so a new hostd with old guests fails only
+the requests those guests do not know.
 
 ## 9. Checklist
 
 - [x] `go test ./internal/guestd/... ./internal/vsockrpc/...` passes with
-      race detector. Evidence: CI. — closed: CI run 35875626476 (commit
+      race detector. Evidence: CI. Closed: CI run 35875626476 (commit
       264e6c2, 2026-09-23), step `go test -race ./...`: `ok` for every
       `internal/guestd/...` package and `internal/vsockrpc`.
 - [ ] The strace test passes and is in CI (Linux runner). Evidence: CI log
-      showing the test name. — open: `TestStraceNeverOpensCmdlineOrEnviron`
+      showing the test name. Open: `TestStraceNeverOpensCmdlineOrEnviron`
       passes locally (commit 3c960c8 message) but CI runs `go test -race
       ./...` without `-v` and does not install strace, so the test may skip
       there and no CI log shows its name; add strace to the runner and a
       `-run TestStrace -v` step.
 - [ ] Every request in `interfaces/vsock-guestd.md` has a handler and a
       unit test; every Notify has a producer. Evidence: a table in the PR
-      mapping each name to its handler file. — open: no request-to-handler
+      mapping each name to its handler file. Open: no request-to-handler
       table was ever written (commit de67cf0 only says every request is
       covered); write it from `internal/guestd/dispatch.go` against
       `interfaces/vsock-guestd.md`.
 - [ ] VM test: freeze blocks a `dd` write, thaw releases it, `Warning{
       freeze_timeout}` arrives when Thaw is withheld 11 s. Evidence: test
-      output. — open: the subtest exists in `nix/guest/tests/guestd.nix`
+      output. Open: the subtest exists in `nix/guest/tests/guestd.nix`
       ("Freeze blocks a write and Thaw releases it", "the freeze watchdog
       thaws and warns") and a passing build of the check is in the dev box
       store (2026-09-23), but no run output is recorded anywhere; close by
@@ -260,7 +260,7 @@ per-request rather than failing outright.
       ./nix#checks.x86_64-linux.guestd -L`.
 - [ ] VM test: `Switch` to a generation that adds a package makes the package
       appear without reboot; `Switch` to a generation with a different kernel
-      returns `needs_reboot=true`. Evidence: test output. — open: the subtest
+      returns `needs_reboot=true`. Evidence: test output. Open: the subtest
       exists in `nix/guest/tests/guestd.nix` ("Switch applies a new generation
       without a reboot", "Switch refuses a generation whose boot files
       changed") and a passing build of the check is in the dev box store
@@ -268,21 +268,21 @@ per-request rather than failing outright.
       the subtest's lines from `nix build ./nix#checks.x86_64-linux.guestd -L`
       (DECISIONS I-209 records that it ran; the output is not kept).
 - [ ] VM test: `GrowFs` after a block device resize reports the new size and
-      `df` agrees. Evidence: test output. — open: the subtest exists in
+      `df` agrees. Evidence: test output. Open: the subtest exists in
       `nix/guest/tests/guestd.nix` ("GrowFs after a block device resize") and
       a passing build of the check is in the dev box store (2026-09-23), but
       no run output is recorded anywhere; close by pasting the subtest's lines
       from `nix build ./nix#checks.x86_64-linux.guestd -L`.
 - [ ] VM test: `WriteSecrets` yields files with mode 0400 owner dev and a
       correctly quoted `secrets.env` for a value containing `'` and newlines.
-      Evidence: test output. — open: the subtest exists in
+      Evidence: test output. Open: the subtest exists in
       `nix/guest/tests/guestd.nix` ("WriteSecrets: modes, ownership and shell
       quoting") and a passing build of the check is in the dev box store
       (2026-09-23), but no run output is recorded anywhere; close by pasting
       the subtest's lines from `nix build ./nix#checks.x86_64-linux.guestd
       -L`.
 - [ ] VM test: `SetPrincipals` followed by an ssh with a matching certificate
-      succeeds. Evidence: test output. — open: the subtest exists in
+      succeeds. Evidence: test output. Open: the subtest exists in
       `nix/guest/tests/guestd.nix` ("SetPrincipals, then ssh with a matching
       certificate") and a passing build of the check is in the dev box store
       (2026-09-23), but no run output is recorded anywhere; close by pasting
@@ -290,7 +290,7 @@ per-request rather than failing outright.
       -L`.
 - [ ] VM test: `Sample` reports the tmux windows and agent states for a
       fixture session with a running `sleep` renamed to `claude`. Evidence:
-      test output. — open: the subtest exists in `nix/guest/tests/guestd.nix`
+      test output. Open: the subtest exists in `nix/guest/tests/guestd.nix`
       ("Sample reports the tmux windows and agent states") and a passing build
       of the check is in the dev box store (2026-09-23), but no run output is
       recorded anywhere; close by pasting the subtest's lines from `nix build
@@ -298,7 +298,7 @@ per-request rather than failing outright.
 - [x] Hook mapper fixtures exist for Claude Code `Stop`, `Notification`
       (three types), `StopFailure`, and for each other agent's mechanism
       named in `features/agents.md`. Evidence: the testdata directory
-      listing. — closed: `internal/guestd/hooks/testdata/` has claude
+      listing. Closed: `internal/guestd/hooks/testdata/` has claude
       (stop, stop-no-transcript, stopfailure, subagent-stop, notification
       idle-prompt / permission-prompt / agent-needs-input plus untyped and
       unrelated), codex (agent-turn-complete), opencode (session-idle,
@@ -306,33 +306,33 @@ per-request rather than failing outright.
       pi (README plus heuristic fixture, the pane-idle agents).
 - [ ] On a real guest: `journalctl -u guestd` shows `listening on vsock
       port 5000` and hostd's log shows `Ready` within 5 s of boot.
-      Evidence: both pasted. — open: neither journal line is pasted anywhere
+      Evidence: both pasted. Open: neither journal line is pasted anywhere
       (the message was renamed for this grep in commit f426661), and Ready
       is not within 5 s: RESEARCH §11 measured 11.7 s on host-01 and
       RESEARCH §14 6.2-6.4 s on the dev box with I-161; paste both lines
       from a real guest booted on a base carrying I-161.
 - [ ] Sampling takes under 20 ms (VM test asserts, and real guest `Sample`
-      timing logged). Evidence: log line. — open: the VM subtest "a sample
+      timing logged). Evidence: log line. Open: the VM subtest "a sample
       costs under 20 ms" asserts it, but no `"event":"sample"` line with
       `duration_ms` from the VM test or from a real guest is recorded; paste
       one from `journalctl -u guestd -o cat` on a host-01 guest.
 - [ ] `guestd` binary is under 15 MB and uses under 20 MB RSS idle.
-      Evidence: `ls -l` and `ps` output. — open: the VM subtest "guestd is
+      Evidence: `ls -l` and `ps` output. Open: the VM subtest "guestd is
       small and light" asserts both and prints them, but neither number is
       recorded; paste `ls -l $(readlink -f $(which guestd))` and `ps -o rss=`
       from a real guest.
 - [x] No log line anywhere in guestd can contain a secret value, a hook
       body, or a cmdline. Evidence: reviewer grep of `log.` calls listed in
-      the PR. — closed: security/review-2026-09-20.md boundary row
+      the PR. Closed: security/review-2026-09-20.md boundary row
       "Never-log list in hostd and guestd" (every `log.*` call in
       `internal/guestd` read: ids, states, kinds, counts, durations, error
       codes) and row "Hook socket cannot spoof another project" (kind and
       byte count, never the summary); STATUS 2026-09-20 14-security review
       04-guestd line.
 - [x] `ops/RUNBOOK.md` entries: guestd not ready, freeze timeout, switch
-      failed. Evidence: the entries. — closed: `docs/ops/RUNBOOK.md`
+      failed. Evidence: the entries. Closed: `docs/ops/RUNBOOK.md`
       headings "Guestd not ready", "Freeze timeout", "Switch failed" (commit
       1283e82).
 - [x] `rg 'TODO|FIXME|not implemented' cmd/guestd internal/guestd
-      cmd/repose-hook` empty. Evidence: output. — closed: run by the upkeep
+      cmd/repose-hook` empty. Evidence: output. Closed: run by the upkeep
       worker 2026-09-23 on d3b72d3, no matches (rg exit 1).

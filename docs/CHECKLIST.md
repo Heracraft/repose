@@ -1,8 +1,8 @@
 # Definition of done
 
 This is the global checklist. Every workstream doc ends with its own list; this
-one applies to all of them and to the release. An item is closed by the
-evidence named in it, not by a passing build. "It compiles" closes nothing. "I
+one applies to all of them and to the release. Only the evidence named in
+an item closes it. "It compiles" closes nothing. "I
 ran it once on my machine" closes nothing that says "on a host" or "in a
 guest".
 
@@ -10,7 +10,7 @@ The failure this prevents: a workstream that is 99 percent done with the last
 percent being the thing that makes it usable (the migration that was never
 written, the systemd unit that is not enabled, the error path that panics, the
 README that says "TODO"). Each of these has happened to someone; the list is
-written so they cannot happen quietly.
+written so none of them goes unnoticed again.
 
 ## For every change
 
@@ -249,7 +249,7 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       build 38.6 s, snapshot 24.6 s, stop 4.5 s, start 14.5 s) and §13 (M3:
       create to running 47 s, menu apply 5 s, eval and build timings). No
       axis came close to the 20 percent question, so the Hetzner fallback
-      (R3-20) stays a fallback; I-39 records the v7 sizes actually used.
+      (R3-20) stays a fallback; I-39 records the v7 sizes used.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
 - [x] Tenant isolation verified on a shared host: guest A cannot ping,
@@ -308,7 +308,7 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       failure spike, egress over 1 TB per project per day. Evidence: 17
       rules (those six plus I-56's two and billing's three and the rest),
       each with a `promtool test rules` case and a RUNBOOK heading of its
-      own — all three checks run by `ops/check.sh`. Loaded against real
+      own; `ops/check.sh` runs all three checks. Loaded against real
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       routing them to the owner's Alertmanager is part of the WireGuard

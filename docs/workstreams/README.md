@@ -42,11 +42,11 @@ it must handle, and a checklist that is its definition of done. Read
 14-security ─────────────────── (review of all; policy text before M5)
 ```
 
-What can start on day one with nothing else built: 00, 01, 02, 04, 12 (against
+With nothing else built, these can start on day one: 00, 01, 02, 04, 12 (against
 the vsock and gRPC contracts as written), 05 (against the gRPC contract, with a
 fake hostd), 06 (against a fake api route endpoint), 07 (against a fake api),
 11, 10 (naming and dashboards), 14 (threat model), 13 (event shapes and
-delivery). That is every workstream. The contracts in `../interfaces/` are what
+delivery). That is every workstream. The contracts in `../interfaces/`
 make that possible; treat them as law until a `DECISIONS.md` entry changes
 them.
 

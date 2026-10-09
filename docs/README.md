@@ -53,7 +53,7 @@ An agent working a workstream:
 
 1. Reads `DESIGN.md` once, then its workstream doc, then every `interfaces/` doc
    it owns or consumes.
-2. Builds the whole workstream, not the parts that are easy. The checklist at the
+2. Builds the whole workstream, including the hard parts. The checklist at the
    end of each workstream doc is the definition of done for that workstream, and
    `CHECKLIST.md` is the definition of done for everything.
 3. Records any decision it had to make that the docs did not cover in

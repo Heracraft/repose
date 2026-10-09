@@ -48,12 +48,12 @@ who is the product's best source of feedback; it is not capped beyond the
 seat count (DECISIONS I-362).
 
 Prices are in USD and exclude tax; Polar adds and remits the tax for the
-buyer's country as merchant of record, which is the whole reason for a
+buyer's country as merchant of record, which is why billing goes through a
 merchant of record (DECISIONS I-289, I-604). Size classes keep their shapes (`small` 2 vCPU 4 GB,
 `large` 4 vCPU 8 GB, `xl` 8 vCPU 16 GB, `docs/interfaces/README.md`); a
 plan says how much of them may run at the same time.
 
-What a plan means, in rules:
+A plan's rules:
 
 - **Memory.** The sum of the classes of a user's `running` (and starting,
   restoring) machines never exceeds the plan's memory. Starting one more is
@@ -61,7 +61,7 @@ What a plan means, in rules:
   message names the machines using the memory: stop one or upgrade. An
   `xl` needs Plus or Pro, and the refusal names Plus.
 - **Disk.** The bytes a user's live projects' volumes hold, running or
-  stopped, against the plan's disk (DECISIONS I-585). What a volume holds
+  stopped, against the plan's disk (DECISIONS I-585). A volume's figure
   is its thin volume's allocated blocks, which is what the host's disk
   pays for; the guest trims its free blocks daily and at every stop, so a
   deleted file stops counting within a day. A volume's size (20, 40, 80 GB
@@ -127,8 +127,8 @@ has not expired. Checkout for a plan needs that many free seats; without
 them the user joins the waitlist, and the waitlist invites the oldest
 waiting user whenever a seat is free, holding it 72 hours for them
 (DECISIONS I-290, amending I-269). The landing page and the dashboard show
-the seats left and the number waiting, because the launch is a gauge of
-interest and the count is the reading.
+the seats left and the number waiting, because those two numbers measure
+interest at launch.
 
 ## Failed payments
 

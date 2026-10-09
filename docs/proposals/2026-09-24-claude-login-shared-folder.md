@@ -3,7 +3,7 @@
 **Status: decided and built, DECISIONS I-278 (2026-09-26).** Experiment A
 passed (file bind mount), B passed its forced tests and 7 hours of its
 long run before the owner ended it to ship, and C (Anthropic's answer) was
-not waited for. Below is the record of how it got there. This continues item 9 of
+not waited for. This continues item 9 of
 `2026-09-23-dev-ergonomics.md` ("users logging in N times is not
 acceptable"). If it goes ahead, it needs a `DECISIONS.md` entry and a
 `SECURITY.md` note, because it adds a place a secret lives. CLAUDE.md
@@ -22,7 +22,7 @@ says secrets have three homes.
   documented.
 - **Copies of a disk:** `repose fork` (I-254) and `snapshots restore
   --as-new` copy the whole volume, so a login made in the source guest
-  comes along in every copy. Undecided whether that counts as copying.
+  comes along in every copy. Whether that counts as copying is undecided.
 - **The settings carry:** it strips `env`, `apiKeyHelper` and cloud-auth
   helpers from `settings.json` (I-196, `internal/cli/carry_claude.go:207-214`).
 
@@ -53,7 +53,7 @@ The setup-token also loses Remote Control, claude.ai connectors and
 `/schedule`: "it can only make model requests"
 (https://code.claude.com/docs/en/authentication). Remote Control from the
 phone app is the only voice path, since voice dictation doesn't work over
-SSH. So a full `/login` is the login worth keeping in any case.
+SSH. A full `/login` is the login worth keeping in any case.
 
 ## The idea: one shared folder per user, holding only the credential file
 
@@ -157,8 +157,8 @@ setting `expiresAt` to 1000 in place, then `claude -p` was run under
   read. B measures whether that ever shows.
 - Because of `O_NOFOLLOW`, the fallback refuses a symlink at the path.
 - The fallback is undocumented Claude Code behaviour. A release that drops
-  it breaks sharing: every refresh would fail with `EBUSY`. So the release
-  base needs a check that repeats this trace for each Claude Code version
+  it breaks sharing: every refresh would fail with `EBUSY`. The release
+  base therefore needs a check that repeats this trace for each Claude Code version
   bump.
 
 ### B. Do two guests on one file stay logged in?
@@ -218,7 +218,7 @@ This is the rotation question.
 - With `hasCompletedOnboarding: true` set in the guest's own
   `~/.claude.json`, Claude goes straight to the folder-trust dialog, then
   the prompt, signed in ("Claude Pro") from the shared file.
-- So the build must also seed that flag in a new guest's `~/.claude.json`.
+- The build must therefore also seed that flag in a new guest's `~/.claude.json`.
   It is an onboarding flag, not a credential, and no auth method is
   removed: `/login` still works.
 - Otherwise the user would log in again in every new project, which is

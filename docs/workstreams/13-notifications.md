@@ -2,8 +2,8 @@
 
 ## 1. Goal
 
-When an agent the user left running finishes or gets stuck, the user finds
-out on their phone within a minute, whichever agent it was. One event
+The user finds out on their phone within a minute when an agent they left
+running finishes or gets stuck, whichever agent it was. One event
 pipeline from the guest to the user's channels, with the same shape for
 every agent, so `repose status` and the dashboard show one timeline.
 
@@ -75,7 +75,7 @@ contains a transcript path, it is not opened.
 `POST http://unix/run/repose/hooks.sock/v1/event` with JSON
 `{"agent": "claude", "window": "claude", "kind": "completed", "summary":
 "..."}`. Response 202 always, even on validation failure (logged), so a
-hook never blocks an agent. `repose-hook` is what agents run; it reads the
+hook never blocks an agent. Agents run `repose-hook`; it reads the
 agent's native payload from stdin, maps it, resolves `window` from
 `$TMUX_PANE` via `tmux display -p -t $TMUX_PANE '#{window_name}'`, and
 POSTs. It exits 0 in every case, including when the socket is missing.
@@ -87,7 +87,7 @@ POSTs. It exits 0 in every case, including when the socket is missing.
 | Claude Code | `~/.claude/settings.json` hooks written by the wrapper if absent: `Notification` with matchers `agent_completed`, `agent_needs_input`, `permission_prompt`, `idle_prompt`; `Stop`; `StopFailure`. Command `repose-hook claude`. | `Stop` and `Notification:agent_completed` (deduped, 5.5) | `Notification:agent_needs_input`, `permission_prompt`, `idle_prompt` | `StopFailure` |
 | Codex CLI | `~/.codex/config.toml` `notify = ["repose-hook", "codex"]` (Codex calls it with a JSON arg on `agent-turn-complete`) | `agent-turn-complete` | none (no heuristic fallback either, DECISIONS I-49) | not built (5.4, "Not built: the exit case") |
 | opencode | plugin file `~/.config/opencode/plugin/repose.js` written by the wrapper, subscribing to `session.idle`, `session.error` and `permission.asked`/`permission.updated` events and calling `repose-hook opencode` | `session.idle` | `permission.asked`, `permission.updated` | `session.error` |
-| Gemini CLI | tmux-idle heuristic only, as shipped. **Resolved, DECISIONS I-50:** the current Gemini CLI ships a real `Notification`/post-loop hook, and independently stopped serving free/Pro/Ultra-tier requests on 2026-06-18 (replaced by Antigravity CLI) — both need the owner's attention before this row is "at time of writing" again. | 90 s pane-idle heuristic (5.4): `"gemini went idle"` | none (5.4: the heuristic never produces `needs_input`) | not built |
+| Gemini CLI | tmux-idle heuristic only, as shipped. **Resolved, DECISIONS I-50:** the current Gemini CLI ships a real `Notification`/post-loop hook, and independently stopped serving free/Pro/Ultra-tier requests on 2026-06-18 (replaced by Antigravity CLI); both need the owner's attention before this row is "at time of writing" again. | 90 s pane-idle heuristic (5.4): `"gemini went idle"` | none (5.4: the heuristic never produces `needs_input`) | not built |
 | pi | tmux-idle heuristic only, as shipped, despite `~/.pi/agent/hooks/` existing in the current binary (DECISIONS I-50: unmapped, not verified against the real wire shape) | 90 s pane-idle heuristic (5.4): `"pi went idle"` | none | not built |
 
 The wrapper for each agent writes its hook config only if the key is absent
@@ -97,7 +97,7 @@ under agent wrappers; the mapping from native payload to `kind` lives in
 `internal/guestd/hooks/mapper.go`, one function per agent, with a fixture
 of each native payload in `internal/guestd/hooks/testdata/<agent>/`.
 
-Where a mechanism above says "at time of writing" or is marked resolved
+If a mechanism above says "at time of writing" or is marked resolved
 by a decision, the implementer checks the agent's current docs and records
 the finding in `DECISIONS.md` as an
 implementation entry; a heuristic is never left in place if a hook exists.
@@ -107,8 +107,8 @@ implementation entry; a heuristic is never left in place if a hook exists.
 As built (DECISIONS I-49 corrects this section: the original design below
 read pane text; the shipped one never does). For each window whose name is
 an agent name, every 5 seconds guestd's watcher (`internal/guestd/sample`)
-reads `#{pane_current_command}` and `#{window_activity}` — never pane
-*content* — and walks the pane's process tree for CPU deltas. State machine
+reads `#{pane_current_command}` and `#{window_activity}` (never pane
+*content*) and walks the pane's process tree for CPU deltas. State machine
 per window:
 
 - `working`: the process tree has consumed CPU since the last refresh.
@@ -117,7 +117,7 @@ per window:
   window has nothing to do with this; it is the `AgentEvent` a hook already
   sent, mirrored into `AgentState` so `repose status` shows it). There is no
   pane-content pattern match; an agent with no hook cannot report
-  `needs_input` at all, and says so honestly rather than guessing from text
+  `needs_input` at all, and says so rather than guessing from text
   that would have to be read to guess from.
 - `unknown`: alive, neither of the above (a window observed for the first
   time, or with a state the debounce below has not yet confirmed).
@@ -136,7 +136,7 @@ closes a window the instant its pane's process exits, so by the time the
 next refresh notices the window is gone there is nothing left to read an
 exit status from. Reading one needs `remain-on-exit` on the tmux session,
 which keeps *every* window (including `shell`) open after its process
-dies — a `guest-conventions.md`/`run-and-attach.md` behaviour change 02
+dies: a `guest-conventions.md`/`run-and-attach.md` behaviour change 02
 would have to make and sign off on, not something to slip in from this
 workstream. Today a window disappearing only ever produces
 `AgentState unknown`; the checklist item below is marked accordingly.
@@ -221,14 +221,14 @@ prefix 05 gave the whole process, not a standalone `repose_notify_*`
 family. `repose_api_events_total{kind}` (`kind="deduped"` is the dedupe
 counter this section originally asked as a separate
 `repose_notify_dedupe_total`; there is no separate `agent` or
-`source=hook|heuristic` label — the heuristic's synthetic `completed` and a
+`source=hook|heuristic` label; the heuristic's synthetic `completed` and a
 real hook's land in the same counter under the same kind, because nothing
 downstream has needed to tell them apart), `repose_api_notify_total
 {channel,result}` (the delivery counter this section called
 `repose_notify_delivered_total`), `repose_api_outbox_depth`,
 `repose_api_outbox_lag_seconds`, and
 `repose_api_notify_delivery_latency_seconds` (event ts → delivered ts,
-successful deliveries only — the one metric here with no prior equivalent,
+successful deliveries only; the one metric here with no prior equivalent,
 added by this workstream).
 
 ## 6. Failure modes
@@ -276,7 +276,7 @@ a channel off deletes that channel's pending `events_outbox` rows per
 `repose status`/`GET /events`. There is no `NOTIFY_CHANNELS=` env var and
 no `repose-hook uninstall`; wrapper hook config is idempotent (`internal/
 guestd/hooks` never rewrites an existing `repose-hook` entry) but removing
-it means editing the agent's own config file by hand — a documented,
+it means editing the agent's own config file by hand, a documented,
 not-yet-built convenience for later.
 
 ## 9. Checklist
@@ -287,15 +287,15 @@ not-yet-built convenience for later.
       calls `os.Exit`, `main()` only prints to stderr.
 - [~] Every agent row in 5.3 has a fixture of the native payload and a
       mapping test: yes, for the 5 real payload shapes (claude, codex,
-      opencode, plus the pass-through and unparsed cases) — Evidence:
+      opencode, plus the pass-through and unparsed cases). Evidence:
       `internal/guestd/hooks/testdata/{claude,codex,opencode}/`. "At time
       of writing" rows checked and recorded (DECISIONS I-50) rather than
       resolved: Gemini CLI and pi both turn out to have hook mechanisms
       now, but mapping them needs the real binaries to verify wire shapes
-      against, which this session did not have — implementing from search
+      against, which this session did not have; implementing from search
       results alone risks silently dropping every Gemini/pi notification.
       Left as a follow-up; the heuristic (honest about being one,
-      `"<agent> went idle"`) is what ships. — open: native payload fixtures
+      `"<agent> went idle"`) is what ships. Open: native payload fixtures
       and mapping tests for Gemini CLI and pi (testdata/gemini and testdata/pi
       hold only the heuristic); needs the real binaries' hook payloads
       captured in a guest (DECISIONS I-50).
@@ -306,7 +306,7 @@ not-yet-built convenience for later.
       runs `repose-agent-setup claude`, asserts both commands present, runs
       it again and asserts the file is byte-for-byte unchanged (idempotent);
       also exercises codex and opencode. Needs a NixOS VM build to run
-      (`nix flake check ./nix`), not repeated by this session — 02's
+      (`nix flake check ./nix`), not repeated by this session; 02's
       "done" status already covers it.
 - [x] tmux-idle state machine covers working, idle, unknown, and heuristic
       completion; suppressed for hooked agents. Evidence:
@@ -314,7 +314,7 @@ not-yet-built convenience for later.
       content). NOT covered: the exit case (5.4, "Not built"); `needs_input`
       is never heuristic (DECISIONS I-49) so it is out of this item's scope.
 - [x] Pane contents are never logged, stored or sent. Evidence: `grep -rn
-      capture-pane internal/guestd` finds nothing — the shipped heuristic
+      capture-pane internal/guestd` finds nothing: the shipped heuristic
       never reads pane text at all (DECISIONS I-49), stronger than the
       original "read it but don't persist it" design.
 - [x] Dedupe collapses Claude's `Stop` + `agent_completed`. Evidence:
@@ -387,7 +387,7 @@ not-yet-built convenience for later.
       "<summary>"` and one `<agent>: <state>` line per window (07,
       STATUS 2026-09-20); its output on host-01 is in
       `ops/checks/notifications.sh`'s report. The dashboard events card
-      is 08's row, closed by the m3-web session against the real api. — open:
+      is 08's row, closed by the m3-web session against the real api. Open:
       `repose status` output from a real guest showing the `last event` line
       and the per-window agent state is not pasted (the notifications.sh
       report is under the gitignored ops/checks/out/); run it after a hook

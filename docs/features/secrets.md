@@ -164,7 +164,7 @@ config the CLI carries" has the exact paths):
 - **`.env` files** (I-197): gitignored `.env` and `.env.*` files in the
   checkout, laptop to guest over the sync's SSH, mode 0600, newer side
   wins by mtime (`sync-at-launch.md`). This generalises the "copied over
-  SSH" home to files the laptop holds; it is still three homes, not four.
+  SSH" home to files the laptop holds; the count of homes stays at three.
 
 A part that has not changed on the laptop since the guest last applied it
 is not sent: the guest keeps one marker per carried item under
@@ -173,7 +173,7 @@ The tool logins are one such item (`creds`, I-224): they go again when a
 laptop file's content or mtime changes, or when a file they wrote in the
 guest is gone (`~/.repose/creds-paths`, checked by the same SSH). A login
 done inside the guest is still never overwritten; with nothing sent, it
-is simply kept.
+is kept.
 
 ## Kind 2: Claude Code
 
@@ -182,8 +182,8 @@ their guests, with Claude Code's own `/login`; the file Claude Code writes
 is on the user's login share, one directory per user on the host that
 every guest of that user mounts (DECISIONS I-278), so every other project
 of that user is signed in too. It is the same kind of secret in the same
-treatment, the user's own login in the user's own machines; the share is
-where those machines keep it, not a place repose puts it:
+treatment, the user's own login in the user's own machines; those machines
+keep it on the share, and repose never puts it there:
 
 - Where: `/var/lib/repose/users/<user_id>/claude-auth/.credentials.json`
   on the host, bind-mounted over `~/.claude/.credentials.json` in each

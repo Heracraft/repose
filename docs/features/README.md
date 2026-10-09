@@ -2,7 +2,7 @@
 
 User-facing behaviour, one feature per file. Each doc says what the user sees,
 the behaviour and edge cases that must hold (written so they can be turned
-into tests), which workstreams it depends on, and what is deferred. When a
+into tests), which workstreams it depends on, and what is deferred. If a
 feature doc and a workstream doc disagree on user-visible behaviour, the
 feature doc wins; on internals, the workstream doc wins.
 

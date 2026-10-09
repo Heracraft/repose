@@ -124,7 +124,7 @@ Status:
   privacy policy lists. That read is the one SSH `status` makes: it uses
   an open multiplexed connection when there is one, never leaves one
   open, and is given 4 seconds; when the guest does not answer, the list
-  is simply missing and every other line is the api's. Nothing is
+  is missing and every other line is the api's. Nothing is
   stopped for the user; under memory pressure the kernel kills a dev
   server before an agent, the tmux server or the SSH connection
   (guest-conventions.md "Memory pressure"), and
@@ -160,7 +160,7 @@ Dashboard (as built; `workstreams/08-dashboard.md` §5.2 is the page list
 this describes, and it is narrower than an earlier draft of this section
 promised, DECISIONS I-96):
 
-- `/projects`: one row per project — name, class, state, uptime, agent
+- `/projects`: one row per project: name, class, state, uptime, agent
   state, running hours today and this month. The same figures as `status`, from
   the same `usage_hours` rows. Not sortable, and no sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),

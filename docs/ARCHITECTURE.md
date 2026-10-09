@@ -7,7 +7,7 @@ A slice of [DESIGN.md](DESIGN.md) by component; where the two disagree, DESIGN.m
 A guest is a NixOS closure that already exists in the host's store before the
 guest boots. Everything else follows: guests start in seconds, a config change
 is a build on the host and a switch in the guest, and "exactly your config" is
-a content hash, not a promise.
+a content hash.
 
 ## Components
 

@@ -76,7 +76,7 @@ repose completion fish > ~/.config/fish/completions/repose.fish
 
 ## Update
 
-Run the install command again. It replaces the binary and leaves your login and settings alone. When a newer release is out, the CLI says so once.
+Run the install command again. It replaces the binary and leaves your login and settings alone. The CLI says once when a newer release is out.
 
 ## Uninstall
 

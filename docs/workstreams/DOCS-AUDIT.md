@@ -6,7 +6,7 @@ Every user-visible behaviour on main at a2aad99, checked against the 14
 pages of `apps/web/src/content/docs/` (served at `/docs/<page>`). Status:
 **ok** was already documented and right, **added** was missing, **fixed**
 was wrong, **code** changed code instead. Anchors are the page's heading
-slugs. Items that were ok and are plainly in `cli.md` (each command's own
+slugs. Items that were ok and are in `cli.md` (each command's own
 heading or row) are listed once as a group; `internal/cli/docs_test.go`
 keeps that group honest from now on.
 

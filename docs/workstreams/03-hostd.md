@@ -5,8 +5,8 @@
 `hostd` is the only program on a host that touches tenants. It turns commands
 from the api into guests: it builds their closures, carves their volumes,
 wires their network, runs Cloud Hypervisor, snapshots them, and reports what
-they are doing. If hostd is correct, a host is a fleet of appliances; if it is
-sloppy, one tenant's mistake becomes another's outage.
+they are doing. A bug in hostd lets one tenant's mistake cause another
+tenant's outage.
 
 ## 2. Scope: builds
 
@@ -343,7 +343,7 @@ Snapshot:
    `volume_bytes`, `reason`. Authentication is the host's managed identity
    scoped to the `repose-snapshots` container (infra grants it); IMDS is
    reachable from the host, only guests are blocked.
-5. `lvremove -f vg-guests/snap-...`. Even on upload failure.
+5. `lvremove -f vg-guests/snap-...`, even on upload failure.
 6. `Event{snapshot_done}` and the Result with `snapshot_id` (the api
    assigns it; hostd returns `blob_path` and `bytes`).
 
@@ -355,7 +355,7 @@ nothing), but time does not. Before I-164
 every snapshot took that path: 15-16 s for every 20 GB volume and 32-34 s
 for every 40 GB one on host-01, whether it carried 1.5 MB or 227 MB. The
 `snapshot done` line carries `format`, `raw_reason`, `journal_replayed`,
-`used_bytes` and `volume_bytes`, so a slow snapshot says which path it took. Uploaded
+`used_bytes` and `volume_bytes`, so the line of a slow snapshot shows which path it took. Uploaded
 bytes are reported in the Result so the cost stays visible.
 
 Restore:
@@ -476,7 +476,7 @@ because they are separate transient units.
 
 - [x] Registration with a fresh join token produces `cert.pem`, `key.pem`,
       `host.json`, deletes the token, and the host appears `ready` in the
-      api. Evidence: api `hosts` row and the journal lines pasted. — closed:
+      api. Evidence: api `hosts` row and the journal lines pasted. Closed:
       STATUS 2026-09-20 01/03-host-followup done line (host-services VM test:
       real `hostd register` against hostdev, cert.pem/key.pem written, token
       consumed once, hostdev `token_used`) and STATUS 2026-09-20
@@ -484,13 +484,13 @@ because they are separate transient units.
       `repose-admin hosts list` shows host-01 ready); host.json and token
       deletion also in TestRegisterThenRotate (internal/hostd/register)
 - [ ] A reused join token exits with status 3 and the unit stops.
-      Evidence: `systemctl status hostd` output pasted. — open: only the Go
+      Evidence: `systemctl status hostd` output pasted. Open: only the Go
       error is tested (TestRegisterThenRotate "join token already used"); no
       `systemctl status hostd` showing status=3 and no retry on a real or VM
       host is recorded
 - [x] Certificate rotation at T-5 days swaps files atomically and the
       stream reconnects without dropping a command. Evidence: test with a
-      6-day certificate and a clock override. — closed: TestRegisterThenRotate
+      6-day certificate and a clock override. Closed: TestRegisterThenRotate
       (internal/hostd/register: 6-day certificate, ShouldRotate false at day 0
       and true at day 2 via the clock argument, Rotate writes through
       atomicWrite and the new cert authenticates), the stream reconnect on
@@ -498,26 +498,26 @@ because they are separate transient units.
       commands re-sent on Hello in TestOpSurvivesStreamDrop (internal/api/ops)
 - [ ] Stream reconnects with backoff and replays unfinished commands after
       `kill -9` mid-command, for each of Create, Build, Snapshot. Evidence:
-      chaos test output. — open: Snapshot is covered on host-01 (RESEARCH §11
+      chaos test output. Open: Snapshot is covered on host-01 (RESEARCH §11
       "hostd restart and kill -9" row, replay done 57 s after restart) and
       backoff by TestBackoffSchedule; no kill -9 mid-Create or mid-Build chaos
       output is recorded
 - [x] Every command in `grpc-hostd.md` is implemented and returns the
       documented error codes. Evidence: a table test enumerating the enum
-      of commands against the handler map, failing on a missing one. — closed:
+      of commands against the handler map, failing on a missing one. Closed:
       TestEveryCommandKindIsHandled (internal/hostd/guest/manager_test.go,
       walks the Command oneof, fails on an unhandled kind, expects 13)
 - [ ] CreateGuest on a real host reaches `running` with a guest that has
       the store mounted read-only (`mount | grep store` shows `ro`), the
       right IP, a working tap, a 200 Mbit/s tc class, and an nft counter.
-      Evidence: host test output. — open: STATUS 2026-09-20 m1-integration
+      Evidence: host test output. Open: STATUS 2026-09-20 m1-integration
       done line records create from the shared store and the nft tables, and
       14 §9 TestGuestCannotWriteStore covers the read-only store; no host
       output of the guest's `tc class` (200 Mbit/s) and its nft counter is
       recorded
 - [x] A guest cannot reach 169.254.169.254, another guest, or the host's
       bridge address; it can reach the internet. Evidence: `curl` and `ping`
-      from inside the guest, pasted. — closed: 14-security §9 boundary row
+      from inside the guest, pasted. Closed: 14-security §9 boundary row
       (host-01 2026-09-21 00:37Z, `isolation-go-20260921T003759Z.txt`:
       TestGuestCannotReachIMDS curl to IMDS and the wire server refused,
       TestGuestACannotReachGuestB ping and 22 refused,
@@ -527,109 +527,109 @@ because they are separate transient units.
 - [ ] Rollback on Create failure leaves no tap, tc, nft element, or unit,
       and leaves the volume. Evidence: induced failure at each step (fault
       injection flag `--fail-at-step N` in test builds), then `lvs`, `ip
-      link`, `nft list`, `systemctl` pasted. — open:
+      link`, `nft list`, `systemctl` pasted. Open:
       TestCreateRollbackAtEveryStep proves it against the fakes (FailAtStep at
       every step, no leftovers, volume kept); the host run with
       `--fail-at-step N` and pasted `lvs`, `ip link`, `nft list`, `systemctl`
       is not recorded
 - [ ] StopGuest with snapshot uploads a blob whose restore produces an
-      identical filesystem. Evidence: `diff -r` after restore, host test. —
-      open: restore round-trips on host-01 are recorded (STATUS m1-integration
+      identical filesystem. Evidence: `diff -r` after restore, host test.
+      Open: restore round-trips on host-01 are recorded (STATUS m1-integration
       done line; conductor 2026-09-23 03:40Z line, sha256 of one marker file
       identical) and TestExtentSnapshotRoundTrip compares files on real ext4,
       but no `diff -r` of a restored filesystem on a host
 - [x] A stop or destroy snapshot of a 40 GB volume holding under 2 GB
       takes under 5 s, not 33 s (I-164). Evidence: the `snapshot done`
       journal line on host-01 with `format: extents` and its
-      `duration_ms`, and a restore of that blob reaching `running`. — closed:
+      `duration_ms`, and a restore of that blob reaching `running`. Closed:
       STATUS conductor 2026-09-23 03:40Z line (host-01 after the I-164 switch:
       40 GB volume with 50 MB, snapshot 1.3 s, restore 12 s to running) and
       hardening 2026-09-23 line (running-guest snapshots 763 ms and 1314 ms on
       host-01); the journal line itself is not pasted
 - [x] Freeze window under 2 s at p99 on a guest running a `dd` write loop.
-      Evidence: histogram screenshot. — closed: RESEARCH §11 freeze row
+      Evidence: histogram screenshot. Closed: RESEARCH §11 freeze row
       (host-01, `dd conv=fsync` loop, 4 samples all under 0.5 s, histogram sum
       0.75 s); the numbers, not a screenshot
 - [x] Build maps syntax error, missing attribute, timeout, and closure cap
       to `eval_failed`, `eval_failed`, `build_timeout`, `closure_too_large`
       with the documented messages and `fragment_line` populated for the
-      first two. Evidence: fixtures in the repo and test output. — closed:
+      first two. Evidence: fixtures in the repo and test output. Closed:
       fixtures in internal/hostd/nixbuild/testdata, TestMapEvalErrorFixtures
       (eval_failed with fragment_line), TestMapBuildErrorAndTimeouts,
       TestRealNixCanonicalCases, TestRealNixBuildTimeout,
       TestRealNixClosureCap; on host-01 RESEARCH §13 closure-cap row and
       commit bf31776 (build_timeout after 1805 s)
 - [ ] Build streams `BuildLog` lines within 1 s of Nix printing them.
-      Evidence: timestamps in the api's SSE test. — open: no test or record
+      Evidence: timestamps in the api's SSE test. Open: no test or record
       measures the delay from Nix printing a line to the SSE event; RESEARCH
       §13 has 40 BuildLog lines over SSE for a 5 s build without per-line
       timestamps
 - [x] ApplyConfig with no kernel change switches without reboot and the
-      guest's tmux session survives. Evidence: `tmux ls` before and after. —
-      closed: RESEARCH §11 ApplyConfig-in-place row (host-01, tmux session
+      guest's tmux session survives. Evidence: `tmux ls` before and after.
+      Closed: RESEARCH §11 ApplyConfig-in-place row (host-01, tmux session
       kept, 2.2 s) and RESEARCH §13 menu row (same boot_id and tmux session
       after the apply)
 - [x] ApplyConfig with a kernel change reports `reboot_required` and does
-      nothing without `force_reboot`. Evidence: test. — closed:
+      nothing without `force_reboot`. Evidence: test. Closed:
       TestBuildAndApply (internal/hostd/guest: reboot_required, nothing
       applied without force_reboot); host-01 RESEARCH §11 (refused in 0.3 s)
       and §13 kernel sweep row
 - [x] GC roots exist for every running and stopped guest and for the last
       3 revisions; `nix-collect-garbage` on the host removes nothing a
-      guest uses. Evidence: run it on the test host, start every guest. —
-      closed: RESEARCH §11 nix-collect-garbage row (host-01, two guests
+      guest uses. Evidence: run it on the test host, start every guest.
+      Closed: RESEARCH §11 nix-collect-garbage row (host-01, two guests
       running, 1.1 GiB freed, rooted closures kept, guests unaffected), STATUS
       2026-09-20 m1-integration done line; last 3 revisions in
       TestSetGetRemovePrune (internal/hostd/gcroot)
 - [ ] Samples every 60 s contain non-zero CPU and network deltas for a
       busy guest and `guestd_ok=false` when guestd is stopped. Evidence:
-      api-side log. — open: TestSamplesMergeHostAndGuestd proves the deltas
+      api-side log. Open: TestSamplesMergeHostAndGuestd proves the deltas
       and guestd_ok=false against fakes; no api-side log of a busy real
       guest's non-zero CPU and network deltas and of guestd_ok=false with
       guestd stopped is recorded
 - [x] Buffered samples during a 10-minute stream outage arrive after
-      reconnect. Evidence: test with the fake api. — closed:
+      reconnect. Evidence: test with the fake api. Closed:
       TestSessionCommandsResultsEventsAndReconnect (internal/hostd/stream:
       samples buffered while the fake api's stream is down arrive after
       reconnect; the default buffer is 60 samples, an hour at 60 s)
 - [ ] Nightly timer snapshots every running guest with the api down.
-      Evidence: stop the fake api, fire the timer, blobs appear. — open: the
+      Evidence: stop the fake api, fire the timer, blobs appear. Open: the
       host-services VM test only runs the timer's unit with no guest ("queued
       0 snapshot"); no run with the api stopped and a guest present showing
       the blobs
 - [x] Drain rejects Create and Restore and keeps serving Stop, Start,
-      Snapshot. Evidence: test. — closed: TestDrainRejectsPlacementsOnly
+      Snapshot. Evidence: test. Closed: TestDrainRejectsPlacementsOnly
       (internal/hostd/guest); drain also exercised on host-01 (STATUS
       2026-09-20 m1-integration done line)
 - [x] `/metrics` exposes every metric named in 5.14. Evidence: `curl` output
-      pasted and checked against the list. — closed:
+      pasted and checked against the list. Closed:
       TestDocumentedMetricsExposed (internal/hostd/metrics, checks every §5.14
       name) and host-01's hostd /metrics answering 200 with 195 repose_host_*
       series through the edge (commit 1362554)
 - [ ] Console logs rotate at 64 MB and Fluent Bit picks up the new file.
-      Evidence: fill with `yes` in a guest, observe in Loki. — open: STATUS
+      Evidence: fill with `yes` in a guest, observe in Loki. Open: STATUS
       2026-09-20 m1-integration done line says the fill did not reach 64 MB;
       TestRotation covers rotation at a small size; needs a `yes` fill past 64
       MB in a guest and the new file's lines seen in Loki
 - [x] Two hostd processes cannot run at once. Evidence: second start's
-      output. — closed: STATUS 2026-09-20 m1-integration done line ("second
+      output. Closed: STATUS 2026-09-20 m1-integration done line ("second
       hostd refused", host-01) and TestSecondOpenIsLocked
       (internal/hostd/state); the second start's output is not pasted
 - [x] `hostd reconcile --from-api` rebuilds a deleted bbolt to match disk
       and api. Evidence: delete state.db on the test host, run it, `hostd
-      guests` matches `lvs` and units. — closed: STATUS 2026-09-20
+      guests` matches `lvs` and units. Closed: STATUS 2026-09-20
       m1-integration done line ("reconcile after a deleted state.db", host-01;
       `--from-api` is the same code path as `--rebuild`, cmd/hostd/main.go)
       and TestRebuildFromDisk (internal/hostd/guest)
 - [x] No `TODO`, `FIXME`, `panic(` outside main, or `_ = err` under
-      `cmd/hostd` and `internal/hostd`. Evidence: `rg` output empty. — closed:
+      `cmd/hostd` and `internal/hostd`. Evidence: `rg` output empty. Closed:
       upkeep 2026-09-23 at d3b72d3, `rg -n 'TODO|FIXME|_ = err\b' cmd/hostd
       internal/hostd` and `rg -n 'panic\('` outside tests both empty
 - [x] `ops/RUNBOOK.md` has an entry for each row in section 6. Evidence:
-      links. — closed: ops/RUNBOOK.md "hostd: join token already used" through
+      links. Closed: ops/RUNBOOK.md "hostd: join token already used" through
       "hostd: two hostd processes" (one section per §6 row; bbolt corrupt is
       "hostd: state.db corrupt or lost")
 - [x] `interfaces/grpc-hostd.md` updated for the `draining` heartbeat field
-      and the `reboot_required` payload flag. Evidence: the diff. — closed:
+      and the `reboot_required` payload flag. Evidence: the diff. Closed:
       interfaces/grpc-hostd.md heartbeat `draining` and the ApplyConfig
       `reboot_required` result field (present since e30fba4)

@@ -89,7 +89,7 @@ Integrate whenever branches are queued; it needs no owner approval.
 3. **Freeze when you verify.** Commits that arrive after the cut wait for
    the next batch unless they fix this one; each one taken in means
    verifying again.
-4. **Verify the merge, not the branches.** In the batch worktree, for
+4. **Verify the merge.** In the batch worktree, for
    everything the batch ships as:
    - always: `python3 ops/dev/decisions-index.py --check`; `go build ./...`,
      `go vet ./...`, `golangci-lint run ./...`; `go test -race -timeout 30m ./...`

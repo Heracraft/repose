@@ -1,8 +1,8 @@
 # Nix build contract: hostd ⇄ the platform flake
 
-What hostd runs when it receives `Build` (docs/interfaces/grpc-hostd.md),
-what the platform flake in `nix/` exposes for it, and what the user reads
-when it fails. Workstream 03 invokes; workstream 12 authors the Nix, the
+The commands hostd runs when it receives `Build`
+(docs/interfaces/grpc-hostd.md), the outputs the platform flake in `nix/`
+exposes for it, and the messages the user reads when it fails. Workstream 03 invokes; workstream 12 authors the Nix, the
 flags, the limits and the messages (`internal/hostd/nixbuild` is the one
 implementation of both). DECISIONS I-28, I-43.
 
@@ -84,7 +84,7 @@ L, in order:
    The flake is named through `git+file://` with `dir=nix`, not `path:`,
    because `nix/packages.nix` builds the Go binaries from the repository
    root, which a `path:` flake rooted at `nix/` cannot see. `--show-trace`
-   is what carries the fragment's line and column for errors raised inside
+   carries the fragment's line and column for errors raised inside
    the module system (a truncated trace loses them).
 
    `timeout` exiting 124, or the scope's `RuntimeMaxSec` killing the
@@ -174,9 +174,9 @@ then the verbatim block; the dashboard shows the same.
 
 Line and column are Nix's; the columns in the workstream doc's examples
 are illustrative. The code `eval_timeout` in the workstream doc's table is
-the interface's `eval_failed` with the message above: the error code enum
-in `grpc-hostd.md` is what the api, the CLI and the dashboard switch on,
-and the message tells the two apart.
+the interface's `eval_failed` with the message above: the api, the CLI and
+the dashboard switch on the error code enum in `grpc-hostd.md`, and the
+message tells the two apart.
 
 ## What the built closure must contain
 

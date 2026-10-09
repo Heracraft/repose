@@ -65,7 +65,7 @@ Every email comes as HTML with a plain-text version. There are no images and no 
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. When herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
+Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 
@@ -98,7 +98,7 @@ repose-ask --options yes,no "Drop the legacy sessions table?"
 
 You can answer a question in four places:
 
-- **ntfy:** when the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
+- **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
 - **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box.
 - **Your laptop:** `repose questions` lists the waiting ones and `repose reply` answers:

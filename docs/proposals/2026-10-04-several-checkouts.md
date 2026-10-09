@@ -53,8 +53,8 @@ names; the agent guide tells an agent the other folders are not its own.
 - `repose ls` and the dashboard show nothing of added checkouts. Listing
   them needs either an ssh per machine or a guestd report in `Hello`.
 - Notifications and `repose questions` name the project and the window.
-  The window name already carries the checkout (`api/claude`); whether
-  the message should name it on its own line is open.
+  The window name already carries the checkout (`api/claude`); it is open
+  whether the message should name it on its own line.
 - The git identity carry writes one `includeIf` set for the laptop
   folder it ran from; two repositories with different identities on one
   machine need both sets kept.

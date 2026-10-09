@@ -9,7 +9,7 @@ instead.
 
 ## What the user sees
 
-Agents just use it:
+Agents use it:
 
 ```
 $ repose run -p "log into the staging site and screenshot the dashboard"
@@ -111,7 +111,7 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   the browser to it. A 2560x1440 tab gets a 2560x1440 desktop; a narrow
   tab gets a narrow one (Chromium's own minimum window width, about 500
   px, is the floor: below it the window is wider than the screen and the
-  page scales it). Whatever fraction is left over is scaled
+  page scales it). Any fraction left over is scaled
   (`scaleViewport`); nothing is clipped. A Retina tab is shown at 1x
   pixels: the desktop is the tab's CSS size, the page reports "at 1x" in
   the bar. Sharper than the old 1440x900 stretched to fit, and Chromium
@@ -150,8 +150,7 @@ its password field; a new CLI against an older base opens stock noVNC's
 ## Behaviour that must hold
 
 - A fresh guest can run a Playwright script that opens a page and takes a
-  screenshot with no install step. A test in the guest base does exactly
-  that.
+  screenshot with no install step. A test in the guest base does that.
 - Claude Code in a fresh guest lists `playwright` and `chrome-devtools` in
   `claude mcp list`.
 - `repose browser [PROJECT] [--no-browser]` (`stop` as its own subcommand since I-619): runs
@@ -279,8 +278,8 @@ laptop's Chrome is stored on the guest or the api, and the tunnel is
 loopback to loopback at both ends. What the user lends: while the bridge
 is up, any process on the guest can drive that Chrome; Chrome's own
 per-connection dialog is the check on that, `--allow` narrows it to the
-sites named, and the docs say both. What never passes, and the gaps
-`--allow` leaves, are in I-311, I-467 and the user page.
+sites named, and the docs say both. I-311, I-467 and the user page list
+what never passes and the gaps `--allow` leaves.
 
 Behaviour that must hold (guest-desktop VM test, `TestBridgeEndToEnd`):
 

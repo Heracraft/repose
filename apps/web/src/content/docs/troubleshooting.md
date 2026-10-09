@@ -139,4 +139,4 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 ## Something else
 
-Post a bug or an idea on the [feedback board](https://repose.fider.io), or vote on one that's already there. Sign in with **repose account**, the same email or GitHub login you use for `repose login`. What you post is public, so leave out secrets, tokens and private code.
+Post a bug or an idea on the [feedback board](https://repose.fider.io), or vote on one that's already there. Sign in with **repose account**, the same email or GitHub login you use for `repose login`. Posts are public, so leave out secrets, tokens and private code.

@@ -1,6 +1,6 @@
 # Host conventions
 
-What every host guarantees, so hostd, infra and operators agree. Every path,
+Every host keeps the conventions below, so hostd, infra and operators agree. Every path,
 device, table and unit here is created by `nix/hosts/` (workstream 01); a
 change to either happens in the same commit.
 

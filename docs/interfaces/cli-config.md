@@ -42,7 +42,7 @@ changed; `repose.remoteNoted = true` records that the CLI has said so
 once. `destroy` removes the section (not the fetched `refs/remotes/repose/*`)
 when it points at the destroyed project (DECISIONS I-272).
 
-**The laptop's herdr** (DECISIONS I-510). When `herdr` 0.9.0 or newer
+**The laptop's herdr** (DECISIONS I-510). If `herdr` 0.9.0 or newer
 is on the laptop's PATH and `~/.ssh/config` includes repose's file, the
 CLI keeps herdr's machine list in step with the account: it runs
 `herdr machine list --json`, `herdr machine add <slug>.repose --label
@@ -69,7 +69,7 @@ choose the attach path; it is not a user setting and is not in
 
 Remote URL normalisation: strip scheme and `git@`, replace `:` after host
 with `/`, strip trailing `.git`, lowercase the whole result (DECISIONS
-I-73: not just the host, so the worked example below actually holds).
+I-73: not just the host, so the worked example below holds).
 `git@github.com:A/B.git` and `https://github.com/a/b` both become
 `github.com/a/b`.
 

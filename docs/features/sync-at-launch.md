@@ -3,7 +3,7 @@
 Git is the exchange channel between the laptop and the guest. The first
 `repose run` for a machine adds one thing on top: the laptop's tree,
 uncommitted work included, is carried over into the new machine, so the
-agent starts from what the user actually sees. Every later run attaches to
+agent starts from what the user sees. Every later run attaches to
 the machine as it is; the laptop's later work goes over only with `repose
 sync` (DECISIONS I-367). Work comes back only through git (`git fetch
 repose`, I-272). Nothing syncs continuously.
@@ -201,7 +201,7 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   create`s `HEAD` and its own `origin/<branch>` minus what the guest has
   (the whole history the first time, nothing when the guest is current),
   and the second ssh fetches from that bundle. Nothing is pushed, and the
-  old "Push now?" prompt is gone: an unpushed commit simply travels.
+  old "Push now?" prompt is gone: an unpushed commit travels.
 - The guest's `origin/<branch>` is moved to where the laptop last saw
   origin (forward only), and `origin` is added if missing, so the agent's
   `git status` and `git push` behave as they would on the laptop.
@@ -225,7 +225,7 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   branch, and the agent guide tells the agent what a detached checkout
   after a sync means. A detached `HEAD` on the laptop is checked out
   detached.
-- Two diffs, not a tar, carry tracked changes: `git diff --cached
+- Two diffs carry tracked changes: `git diff --cached
   --binary` (what is staged) applied with `git apply --index`, then
   `git diff --binary` (what is not) applied with `git apply`, so the
   guest's `git status` shows the same staged and unstaged files as the
@@ -351,8 +351,8 @@ Tools (DECISIONS I-221, I-222):
   package's `bin` or a pyproject script defines it, or when it is the
   name of another script. `npx`, `pnpm dlx` and `uv run` fetch what they
   run and name nothing.
-- What travels is names, managers, versions and Go package paths, nothing
-  else: no laptop path, no config value. It rides the carry (marker
+- Only names, managers, versions and Go package paths travel: no laptop
+  path, no config value. It rides the carry (marker
   `tools`), so an unchanged list costs nothing, and the laptop's reading
   runs while the probe's ssh is in flight (about 0.5 ms measured on the dev box
   against nuru-playground; the budget is 20 ms).

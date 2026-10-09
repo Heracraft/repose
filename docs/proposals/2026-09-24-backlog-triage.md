@@ -45,8 +45,8 @@ Sources:
 | 6 | Log into Claude once for N projects | Open | See the separate file. Not a blocker for the invite beta |
 | 7 | Home page additions | Partly on the page | Add only what is live |
 | 8 | Test the browser features | VM tests only | Deploy I-241, then run the real-guest rows |
-| 9 | Try exe.dev | — | Owner, priority 1. Test plan below |
-| 10 | Something special because it's a microVM | — | Not alone. `repose fork` is the idea |
+| 9 | Try exe.dev | n/a | Owner, priority 1. Test plan below |
+| 10 | Something special because it's a microVM | n/a | Not alone. `repose fork` is the idea |
 | 11 | `bypassPermissions` as the default | Docs tell users to set it | Set it in the guest baseline |
 | 12 | Several runs of one project | `--name` plus one `-2` window | Allow any number of windows. Consider `repose fork` |
 | 13 | Platform CLAUDE.md / AGENTS.md | Nothing | Managed CLAUDE.md, generated from nix |
@@ -78,14 +78,14 @@ Sources:
 
 **Analysis** (reasoning, not from docs)
 - Random ports don't suit per-port `ssh -L`.
-- Forwarding the proxy port does work, because the browser sends
+- Forwarding the proxy port works, because the browser sends
   `Host: myapp.localhost`. But the guest's CA isn't trusted on the laptop,
   and binding local 443 needs privileges.
 - portless fits hostname-routed preview URLs (item 4) better than SSH
   forwarding.
 
-**Recommendation:** close it. If portless users complain, the fix is
-item 4, not a base change.
+**Recommendation:** close it. If portless users complain, item 4 is the
+fix; the base stays as it is.
 
 ## 2. Voice mode
 
@@ -164,8 +164,8 @@ with an explicit public toggle.
 | Codespaces | `NAME-PORT.app.github.dev` | private | org or public per port ([docs](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)) |
 | Coder | `PORT--agent--ws--user--apps.host` | owner | authenticated or public ([docs](https://coder.com/docs/admin/networking/port-forwarding)) |
 
-**Recommendation:** make this the first thing after M5. It's also what lets
-you check an app from a phone, and it gives portless (item 1) a home. The
+**Recommendation:** make this the first thing after M5. It also lets you
+check an app from a phone, and it gives portless (item 1) a home. The
 existing design already matches the market pattern.
 
 ## 5. Quick path to production
@@ -294,10 +294,10 @@ Conductor Cloud (https://www.conductor.build/docs/cloud/getting-started):
 
 ## 10. Something special because it's a real microVM
 
-exe.dev and Sprites are microVMs too, so the VM alone isn't a
-differentiator.
+exe.dev and Sprites are microVMs too, so repose needs more than the VM to
+stand apart.
 
-**What is:** real Docker, systemd and a kernel per project, combined with
+**The difference:** real Docker, systemd and a kernel per project, combined with
 snapshot and restore and a Nix switch without a reboot. The concrete
 feature that uses all of it is **`repose fork`**: snapshot a project and
 start N guests from it, so N agents try N approaches from the same state,
@@ -360,9 +360,9 @@ and it answers item 12.
 - Allow `<agent>-N` for any N; this is small.
 - Optionally offer `--worktree`, which puts each extra window on its own
   git worktree.
-- For truly separate attempts, use `repose fork` (item 10).
-- Would users want it? Yes: it's the "three agents, three clean machines"
-  line in the positioning. Measure through the beta before building fork.
+- For separate attempts, use `repose fork` (item 10).
+- Users want it: it's the "three agents, three clean machines" line in
+  the positioning. Measure through the beta before building fork.
 
 ## 13. Platform CLAUDE.md / AGENTS.md
 

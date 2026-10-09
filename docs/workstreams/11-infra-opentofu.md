@@ -30,9 +30,9 @@ provider module for hosts is an addition, not a rewrite.
   - `network`: VNet `10.200.0.0/16` in the existing resource group (the
     group is created by `infra/bootstrap`, not here, DECISIONS I-19), subnet
     `hosts` (`10.200.1.0/24`) with a NAT gateway and an NSG carrying **no
-    security rules at all** — Azure's built-in `AllowVnetInBound` is what
-    lets the edge's jump connection through, so an explicit rule here is
-    always a mistake — subnet `edge` (`10.200.2.0/24`) allowing inbound 22,
+    security rules at all** (Azure's built-in `AllowVnetInBound` lets the
+    edge's jump connection through, so an explicit rule here is always a
+    mistake), subnet `edge` (`10.200.2.0/24`) allowing inbound 22,
     443, 51820/udp and the operator SSH port, subnet `control`
     (`10.200.3.0/24`) allowing inbound 80, 443 and 22 from configured
     address lists.
@@ -68,7 +68,7 @@ provider module for hosts is an addition, not a rewrite.
     Coolify install of its own (DECISIONS I-83): cloud-init installs Docker
     from Docker's apt repository and Tailscale (not joined; the instance
     reaches the VM over the tailnet, I-86), puts the instance's public key
-    (`coolify_public_key`) on root next to the operator keys, installs
+    (`coolify_public_key`) on root next to the operator keys, and
     installs a WireGuard peer config so Prometheus and the api can reach
     the edge network. Its NSG allows 80 and 443 from `control_web_cidrs`,
     and 22 from `operator_cidrs` plus `coolify_manager_cidrs` (the
@@ -86,8 +86,8 @@ provider module for hosts is an addition, not a rewrite.
     user-assigned managed identity for hosts with `Storage Blob Data
     Contributor` scoped to that container, and the same role on the same
     container for the api's service principal once
-    `api_identity_object_id` is supplied, since the api's expiry job is
-    what deletes blobs (DECISIONS I-131).
+    `api_identity_object_id` is supplied, since the api's expiry job
+    deletes blobs (DECISIONS I-131).
   - `keyvault`: Key Vault with purge protection, one RSA-3072 key
     `repose-dek-wrap` with rotation policy 12 months, and an access policy
     for the api's identity (get, wrap and unwrap; get on a key is the
@@ -154,7 +154,7 @@ make -C infra plan ENV=prod && make -C infra apply ENV=prod
 The token can also be passed inline as `-var 'join_tokens={"host-03":"..."}'`,
 but then the next apply proposes to remove the delivery step. Leaving the
 spent token in the local tfvars file is inert (single use, 24-hour expiry)
-and keeps later plans quiet; replacing its value is how a token is rotated.
+and keeps later plans quiet; you rotate a token by replacing its value.
 
 The apply creates the VM, attaches the disk, runs nixos-anywhere with the
 disko layout from `nix/hosts/disko.nix` (root on the OS disk, `vg-guests`
@@ -278,24 +278,24 @@ row says otherwise. Commands were run from the dev box, which is in
       the live backend: *"No changes. Your infrastructure matches the
       configuration."* after refreshing all 38 resources. With
       `coolify_count = 1` the same plan, re-run at this branch's head against
-      the live backend, is **4 to add, 0 to change, 0 to destroy** — the
+      the live backend, is **4 to add, 0 to change, 0 to destroy** (the
       control-plane public IP, NIC, VM and its readiness resource, and
-      nothing else — with no errors and one warning, the
+      nothing else) with no errors and one warning, the
       `dns_is_managed_or_manual` check firing as designed because
       `manage_dns` is false.
 - [x] A host created by `tofu apply` registers without manual steps.
       Evidence: the registrar for M1 is `hostdev` on the edge (DECISIONS
       I-17), which runs from its store path as the transient unit
-      `hostdev.service` on 443 — so it is not on root's `PATH` and
+      `hostdev.service` on 443, so it is not on root's `PATH` and
       `hostdev status` says `command not found`, which is not the same as
       absent. `systemctl is-active hostdev` on the edge returns `active`, and
       its journal carries
       `{"msg":"host registered","component":"hostdev","event":"register","host_id":"host-01a0bcd4"}`
-      at 2026-09-20T03:20:55Z — minutes after the host's install, with no
+      at 2026-09-20T03:20:55Z, minutes after the host's install, with no
       manual step between. On `host-01`, `/var/lib/repose/hostd` holds
       `cert.pem`, `host.json` and `key.pem` (the registration output), and
       hostd's journal shows repeated `stream_connect`. The token delivered by
-      the apply's provisioner is what bought those credentials. The
+      the apply's provisioner bought those credentials. The
       `repose-admin hosts list` form of this evidence waits on the control
       plane being deployed.
 - [x] `/dev/kvm` present and nested enabled on a fresh host. Evidence, on
@@ -325,7 +325,7 @@ row says otherwise. Commands were run from the dev box, which is in
       commands refuses shell pipelines that fetch instance metadata, so the
       `curl` from the host was not run. Nothing about the NSG changed since
       the host installed successfully, and the guest-side half is workstream
-      01's nftables rule. One command on the host closes it. — open: the
+      01's nftables rule. One command on the host closes it. Open: the
       host half, a `curl -H Metadata:true http://169.254.169.254/...` on
       host-01 answering, is not pasted; the guest half is closed by
       `TestGuestCannotReachIMDS` (14 §9, `isolation-go-20260921T003759Z.txt`)
@@ -335,7 +335,7 @@ row says otherwise. Commands were run from the dev box, which is in
       `prevent_destroy` and `ignore_changes` blocks are in
       `azure/modules/host/main.tf` and the equivalent attempt was made
       against the plan on 2026-09-19. One `host_data_disk_gb` change, planned
-      and read, closes it. — open: a plan against prod state with a changed
+      and read, closes it. Open: a plan against prod state with a changed
       `host_data_disk_gb`, failing on `prevent_destroy`, is not pasted
 - [x] Blob lifecycle rule exists. Evidence: `az storage account
       management-policy show --account-name reposesnapshots3912` returns one
@@ -355,7 +355,7 @@ row says otherwise. Commands were run from the dev box, which is in
       environment output reports `api_policy_configured: false`, and the app
       registration is a human step (DECISIONS I-21). Supply the object id and
       the wrap/unwrap-only policy appears; the denied `get` is then one
-      `az keyvault key show` as that identity. — closed: the policy was
+      `az keyvault key show` as that identity. Closed: the policy was
       applied 2026-09-20 and the production CA init then wrapped through
       the key (DECISIONS I-91); secrets' DEKs are wrapped by it in
       production (STATUS 2026-09-20 14-security review 05 line). The
@@ -371,12 +371,12 @@ row says otherwise. Commands were run from the dev box, which is in
 - [ ] Edge and Coolify DNS names resolve to their static IPs. **Not closed,
       and worse than absent.** On 2026-09-20 `dig +short
       ssh.repose.herakraft.co` returns `172.67.175.123` and `104.21.31.82`,
-      Cloudflare's proxy, not the edge's `20.102.98.254` — `herakraft.co`
+      Cloudflare's proxy, not the edge's `20.102.98.254`: `herakraft.co`
       answers every name under it from a proxied wildcard, and the proxy
       carries neither SSH nor WireGuard (DECISIONS I-72). The plan now warns,
       `infra/README.md` has the four records to create by hand, and
       `ops/RUNBOOK.md` has the symptom entry. Closes with a Cloudflare token
-      and `manage_dns = true`, or with the records made by hand. — open:
+      and `manage_dns = true`, or with the records made by hand. Open:
       no `dig +short` for the edge and control-plane names answering their
       static IPs is pasted since this note (the M2 gate reached the gateway
       as `ssh.repose.herakraft.co`, "Real-edge evidence" in 06 §9, so the
@@ -387,7 +387,7 @@ row says otherwise. Commands were run from the dev box, which is in
       following them on 2026-09-20 and the gaps found are now in them (the
       dashboard is not in the NSG; the wildcard; the `.env` that is half the
       backup). The end-to-end pass by somebody who did not write it is still
-      owed. — waits on: owner (someone who did not write `infra/README.md`
+      owed. Waits on: owner (someone who did not write `infra/README.md`
       follows it end to end)
 - [x] Cost table re-checked against the Azure price API on the date of
       the first apply. Evidence: queried 2026-09-20,
@@ -403,17 +403,17 @@ row says otherwise. Commands were run from the dev box, which is in
 The apply has happened: the network, NAT gateway, snapshot account, Key Vault,
 edge and `host-01` are live in `repose-prod`, and `make plan ENV=prod` at this
 branch's base was clean against them. What this branch adds is the
-control plane, and it is **not applied** — the owner applies from `main`.
+control plane, and it is **not applied**; the owner applies from `main`.
 
 One thing to expect, because it happened twice on 2026-09-20: a plan from this
 dev box can lose its connection to Azure Resource Manager mid-refresh
 (`context deadline exceeded` on a single resource read) and then fail to
 release the state lease, leaving the next plan or apply to refuse with
 `Error acquiring the state lock`. The recovery is `infra/README.md`,
-"Recovering from a stuck state lease" — confirm no apply is running anywhere,
+"Recovering from a stuck state lease": confirm no apply is running anywhere,
 then `make -C infra force-unlock ENV=prod LOCK_ID=<the id from the message>`.
-The lock blob's own metadata says which operation left it and when, which is
-how "no apply was running" gets confirmed rather than assumed:
+The lock blob's own metadata says which operation left it and when, so you
+can confirm "no apply was running" instead of assuming it:
 
 ```bash
 az storage blob metadata show --account-name reposetfstate3912 \
@@ -422,8 +422,8 @@ az storage blob metadata show --account-name reposetfstate3912 \
 # {"ID":"...","Operation":"OperationTypePlan","Who":"azureuser@woker-1",...}
 ```
 
-`make plan ENV=prod` shows 4 to add — the control-plane public IP, NIC,
-VM and readiness check — and `make apply ENV=prod` creates them. The apply
+`make plan ENV=prod` shows 4 to add (the control-plane public IP, NIC,
+VM and readiness check), and `make apply ENV=prod` creates them. The apply
 does not return until the VM is what Coolify's server validation expects
 (DECISIONS I-83). `docs/ops/coolify.md` is everything after that, in order,
 and its first two steps matter most: put the owner's Coolify address in

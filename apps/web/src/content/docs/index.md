@@ -76,7 +76,7 @@ From any computer you're logged in on (`repose ls` lists your projects):
 repose attach your-project
 ```
 
-When the agent has committed, `git fetch repose` in your checkout brings its commits to your laptop, and `git merge repose/main` takes them ([Getting work back](/docs/sync#getting-work-back)). Stop the machine when you're done:
+Once the agent has committed, `git fetch repose` in your checkout brings its commits to your laptop, and `git merge repose/main` takes them ([Getting work back](/docs/sync#getting-work-back)). Stop the machine when you're done:
 
 ```
 repose stop

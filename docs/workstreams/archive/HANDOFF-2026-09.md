@@ -170,10 +170,10 @@ python3 ops/dashboards/validate.py --query http://127.0.0.1:9090 --host-id host-
 Grafana answers on this box's Tailscale address, port 3000, folder
 "repose" (the dev box is remote; localhost is no use to the owner). The
 forwards are children of whatever shell started them and die with it;
-the docker stack survives and will simply show a dead target until they
-are restarted. One forward targets the api's *container* address, so it
-breaks on every api redeploy and the script re-resolves it on restart —
-which stops mattering once item 5's Traefik route exists.
+the docker stack survives and shows a dead target until they are
+restarted. One forward targets the api's *container* address, so it
+breaks on every api redeploy and the script re-resolves it on restart.
+That stops mattering once item 5's Traefik route exists.
 
 ## Findings filed, not fixed
 

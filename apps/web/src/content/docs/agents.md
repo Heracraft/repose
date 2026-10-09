@@ -45,7 +45,7 @@ Claude Code also starts with its fullscreen renderer, which fills the tmux windo
 
 Codex CLI also starts without asking: no approval prompts, and full access to the machine. To start it otherwise, set both `approval_policy` and `sandbox_mode` in `~/.codex/config.toml` on the machine; setting only one keeps the machine's value for the other.
 
-opencode, Gemini CLI and pi ask as they normally do unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
+opencode, Gemini CLI and pi keep their own permission prompts unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
 
 ## Web search
 
@@ -149,7 +149,7 @@ Each time an agent starts, repose writes the machine's servers into that agent's
 | Gemini CLI  | `{"mcp": {"excluded": ["playwright"]}}` in `~/.gemini/settings.json`                                        |
 | pi          | `{"mcpServers": {"playwright": {"command": "playwright-mcp", "enabled": false}}}` in `~/.pi/agent/mcp.json` |
 
-When `~/.codex/config.toml` is a symlink, as home-manager makes it, repose adds only `notify = ["repose-hook"]` to it, through the link, and writes no MCP servers there. Codex then gets none of the machine's servers, the browser tools included, until you add their tables yourself. `~/.repose/mcp/agents/codex.json` on the machine lists what repose would have written, in JSON; Codex wants each as a `[mcp_servers.NAME]` table in TOML.
+If `~/.codex/config.toml` is a symlink, as home-manager makes it, repose adds only `notify = ["repose-hook"]` to it, through the link, and writes no MCP servers there. Codex then gets none of the machine's servers, the browser tools included, until you add their tables yourself. `~/.repose/mcp/agents/codex.json` on the machine lists what repose would have written, in JSON; Codex wants each as a `[mcp_servers.NAME]` table in TOML.
 
 Gemini CLI on the machine doesn't ask whether you trust a folder. Turning `security.folderTrust` on in `~/.gemini/settings.json` turns off MCP servers in every folder you haven't trusted.
 
@@ -157,7 +157,7 @@ Gemini CLI on the machine doesn't ask whether you trust a folder. Turning `secur
 
 ## What agents are told about the machine
 
-Every agent on the machine is given a short guide to it: that it's a separate machine and can't reach your laptop, that the ports its servers listen on reach your laptop's `localhost`, how to install a missing tool and how you keep it (`repose config add`), Docker and databases, where your secrets are and never to print them, the browser tools, that its commits reach you with `git fetch repose`, where files you drop arrive, how to reach you, the `repose cp` command that copies a file from the machine to your laptop, and the [limits](/docs/limits). It also points the agent at [/llms.txt](https://repose.herakraft.co/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent can tell when your CLI is older than the docs. To read the guide, on the machine:
+repose gives every agent on the machine a short guide to it: that it's a separate machine and can't reach your laptop, that the ports its servers listen on reach your laptop's `localhost`, how to install a missing tool and how you keep it (`repose config add`), Docker and databases, where your secrets are and never to print them, the browser tools, that its commits reach you with `git fetch repose`, where files you drop arrive, how to reach you, the `repose cp` command that copies a file from the machine to your laptop, and the [limits](/docs/limits). It also points the agent at [/llms.txt](https://repose.herakraft.co/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent can tell when your CLI is older than the docs. To read the guide, on the machine:
 
 ```
 cat /etc/claude-code/CLAUDE.md

@@ -72,7 +72,7 @@ tenant's data to whoever holds the Grafana password, and logs outlive the
 incident that justified them. Bounded enums, ids, counts and durations
 carry the same diagnostic value.
 
-Events are intentional, not `fmt.Sprintf` residue. A list of the events each
+Event names are fixed strings, never built with `fmt.Sprintf`. Each
 component must emit:
 
 - hostd: `guest_create`, `guest_start`, `guest_stop`, `guest_destroy`,
@@ -228,7 +228,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 
 `obs.Tracer` wraps the api's HTTP handlers, the gRPC stream handling, and
 the Postgres calls with OpenTelemetry spans. With no OTLP endpoint set the
-exporter is a no-op and the cost is one context value per request. When a
+exporter is a no-op and the cost is one context value per request. Once a
 backend exists, setting one environment variable turns it on.
 
 ## 6. Failure modes
@@ -238,7 +238,7 @@ backend exists, setting one environment variable turns it on.
 | Loki unreachable from a host | Fluent Bit buffers to disk (`/var/lib/fluent-bit`, 1 GB cap), retries; a host-side `fluent_bit_output_retries_failed_total` alert fires after 30m. Guests are unaffected. |
 | Prometheus cannot scrape a host | `up{job="hosts"} == 0` alert; hostd keeps sampling into Postgres via the gRPC stream, so billing data is not lost. |
 | A component emits a metric outside `repose_` | the `obs` package test fails at build time. |
-| A log line carries a forbidden field | a reviewer catches it (checklist item); `obs.Logger` additionally redacts any field named `token`, `secret`, `password`, `authorization`, `cert` at runtime as a floor. |
+| A log line carries a forbidden field | a reviewer catches it (checklist item); `obs.Logger` also redacts any field named `token`, `secret`, `password`, `authorization`, `cert` at runtime as a floor. |
 | `proc_samples` partition drop fails | the api logs `partition_drop_fail` and alerts; disk grows but nothing else breaks. |
 
 ## 7. Testing
@@ -282,18 +282,18 @@ two open rows are the two that need a machine of the owner's.
       `repose_` or with a label off the low-cardinality list *at
       registration*, so a bad name stops the binary at start. Against a
       real host: hostd on host-01 serves **195 `repose_host_*` series**
-      on `10.255.0.2:9101`. One family is registered and emits nothing —
+      on `10.255.0.2:9101`. One family is registered and emits nothing;
       see the last row.
 - [ ] Fluent Bit on a real host ships journald and guest console logs with
       the documented labels. Evidence: Loki query screenshot or output for
       one guest. **Open: needs the Loki URL.** Everything below it is
-      ready — the api carries `loki_url` in `RegisterResponse` and fills
+      ready: the api carries `loki_url` in `RegisterResponse` and fills
       it from a setting (I-95), `repose-admin edge loki <url>` is live on
       the deployed image and answers "no Loki recorded; hosts ship
       nothing", and `fluent-bit.service` refuses to start without one
       rather than retrying an empty host name for ever. Fluent Bit
       itself answers on host-01 (`10.255.0.2:2021`,
-      `/api/v1/metrics/prometheus`, 200). — open: the Loki URL now exists
+      `/api/v1/metrics/prometheus`, 200). Open: the Loki URL now exists
       (DECISIONS I-170, `http://10.255.0.3:3100`; archive/HANDOFF-2026-09.md "Owner's
       monitoring server joined": the edge and host-01 ship, streams carry
       `service_name`), but no Loki query output for one guest's console
@@ -304,7 +304,7 @@ two open rows are the two that need a machine of the owner's.
       WireGuard public key.** Two of the three halves are done: the
       exporters answer (edge `9100`/`9102`, host-01 `9100`/`9101`/`2021`,
       `api-grpc` `9104`), and I-94 gave the edge the forward rules a
-      scrape needs — but they are *inert* until a peer is declared, and
+      scrape needs; they are *inert* until a peer is declared, and
       the live edge's forward chain is still `established,related` and a
       drop, because `edge-01.nix` sets no `monitoring.peerCIDRs`. When
       the key arrives it is a `staticPeers` entry plus that option and
@@ -312,7 +312,7 @@ two open rows are the two that need a machine of the owner's.
       parts and the `/etc/hosts` line the api's router needs (I-133).
       Closing this row also means checking that
       `curl https://api.repose.herakraft.co/metrics` from outside
-      answers 403. — waits on: owner (CHECKLIST-AUDIT.md "Waits on the owner", the api's
+      answers 403. Waits on: owner (CHECKLIST-AUDIT.md "Waits on the owner", the api's
       `/metrics` Traefik router labels in Coolify, I-133). The WireGuard
       peer is live (I-170) and archive/HANDOFF-2026-09.md records hosts, hostd, fluent-bit,
       gateway and api-grpc `up` in the owner's Prometheus, but the `up`
@@ -325,8 +325,8 @@ two open rows are the two that need a machine of the owner's.
       abuse 6), and against production series **41 of 43 Prometheus panel
       queries return data** (`ops/dashboards/validate.py --query`,
       host-01, 2026-09-21 04:15Z). The two that did not were Stripe's,
-      off by I-16, and are gone with I-289 — there is no panel left that
-      is empty for a reason of its own.
+      off by I-16, and are gone with I-289; no panel left is empty for a
+      reason of its own.
 - [x] All eleven alerts exist, have a `promtool` test, and have a RUNBOOK
       entry. Evidence: 18 rules now (the eleven plus I-56's two,
       billing's three, and `FluentBitLogShipperDown`, below); `ops/check.sh` runs `promtool check rules`,
@@ -363,4 +363,4 @@ should have read 0. `refreshGuestGauge` now pre-initialises every state
 and class at zero before counting. Verified on host-01 after that
 shipped: 30 series, `running=5` across two classes, and the panel
 returns data. My startup-order hypothesis was never confirmed and is
-moot — the pre-initialisation makes the symptom impossible either way.
+moot: the pre-initialisation makes the symptom impossible either way.

@@ -87,14 +87,14 @@ the api answers the checkout's URL (I-182, I-604).
 ## The api's metrics
 
 `API_METRICS_LISTEN=:9103` serves 57 `repose_*` series inside the `api`
-container. The application publishes no host port and cannot — a
+container. The application publishes no host port and cannot: a
 published port stops the old and the new container coexisting, so
 Coolify could not roll the app, which is the constraint that made
 `api-grpc` a separate application in the first place (DECISIONS I-2).
-`api-grpc` carries `9104:9103` precisely because it is the app that
-accepts stop-then-start.
+`api-grpc` carries `9104:9103` because it is the app that accepts
+stop-then-start.
 
-So the proxy already in front of the api serves `/metrics` from the same
+The proxy already in front of the api serves `/metrics` from the same
 container port. **Paste this into the `api` app's Configuration ->
 Advanced -> Custom labels** (DECISIONS I-133):
 
@@ -113,7 +113,7 @@ traefik.http.middlewares.api-metrics-allow.ipallowlist.sourcerange=10.255.0.0/16
 Three things about it that are easy to get wrong:
 
 1. **The router matches on the `Host` header**, so a scrape aimed at
-   `10.255.255.1:443` does not match it — the header would be the
+   `10.255.255.1:443` does not match it; the header would be the
    address. The monitoring server resolves `api.repose.herakraft.co` to
    the control VM's WireGuard address with one `/etc/hosts` line and
    scrapes the name, which keeps the header, the SNI and the
@@ -122,14 +122,13 @@ Three things about it that are easy to get wrong:
 2. **The allow-list is the only thing keeping `/metrics` off the
    internet**, since the router is on the public entry point, and it
    matches the source address *Traefik sees*. Over WireGuard that should
-   be the monitoring peer's `10.255.0.x`, but it is worth one check with
-   a real request rather than an assumption: the failure is silent and
-   open, not loud and closed. `curl https://api.repose.herakraft.co/metrics`
+   be the monitoring peer's `10.255.0.x`; check it once with a real
+   request, because a wrong allow-list fails silent and open. `curl https://api.repose.herakraft.co/metrics`
    from anywhere else must answer 403.
 3. **It is a label edited in a UI**, which is the class of thing I-87
    otherwise keeps in files. It lives here so the file is still the
    source of truth even though the paste is manual; a label that drifts
-   from this block is a bug in the deployment, not a local improvement.
+   from this block is a bug in the deployment.
 
 ## Two owner steps on the control VM (I-174)
 
@@ -169,5 +168,5 @@ involved: no bucket, no token, no check, no rehearsal script and no alert
 (`docs/DECISIONS.md` I-112). A backup or restore question is answered in
 Coolify.
 
-One thing worth knowing before a restore rather than during one:
+Read this before a restore rather than during one:
 `docs/ops/coolify.md`, "The instance's .env is half any backup".

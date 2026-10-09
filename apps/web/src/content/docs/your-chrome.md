@@ -108,7 +108,7 @@ Without an allowlist the browser tools usually watch every tab, so pages you loa
 
 With the bridge open, the agents can do in your Chrome what the browser tools can do anywhere: open pages, click, type, read what's on a page, take screenshots, run JavaScript in a page. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so while a bridge is open, any program on the machine can drive your Chrome.
 
-Whatever you pass, the bridge never lets them:
+The bridge never lets them, whatever you pass:
 
 - read your cookies out of Chrome, or clear them. Pages use your cookies as usual; the tools can't copy them somewhere to use after the bridge closes.
 - see your sign-in headers or what goes over the network. The tools see which requests a page makes, their addresses and their status. They don't see `Authorization` or API-key headers, request or response bodies, WebSocket messages or server-sent events. A tool that asks for a response body is told to read the page instead.
@@ -119,7 +119,7 @@ Whatever you pass, the bridge never lets them:
 
 A page's own JavaScript can still read what that page can: cookies not marked HttpOnly, local storage, what it fetches from its own site, and the messages on its own WebSockets. The agents can run JavaScript in a page, so keep a bridge to sites you'd let the agent act on.
 
-What `--allow` doesn't stop: a page on an allowed site can still load images, scripts and other requests from other sites, as any page does, and those requests carry whatever cookies those sites allow from other sites. The agent can't open or read those sites' pages.
+`--allow` doesn't stop a page on an allowed site from loading images, scripts and other requests from other sites, as any page does, and those requests carry whatever cookies those sites allow from other sites. The agent can't open or read those sites' pages.
 
 ## Stop it
 

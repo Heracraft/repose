@@ -29,7 +29,7 @@ The read runs at 650 to 700 MB/s, which is the disk's provisioned rate.
 zstd and the upload keep up with it. Production is slower than the scratch
 runs because the guests share the disk.
 
-So a snapshot costs about one second per 600 MB the filesystem uses. That
+A snapshot therefore costs about one second per 600 MB the filesystem uses. That
 is what a user waits for in `repose stop` (since I-404 the guest shuts
 down during the upload, so a stop is the snapshot's length) and in
 `repose rm --wait` (stop, then snapshot of the stopped volume, I-165).
@@ -70,7 +70,7 @@ could answer as soon as the guest is down and finish the upload in the
 background: `repose stop` would take the shutdown time (6 to 7 s)
 whatever the disk holds.
 
-What it needs:
+It needs:
 
 - an op that outlives its command: the stop op ends, a snapshot op (or a
   hostd-side job reported by event) carries the upload, and the snapshot row
@@ -99,7 +99,7 @@ that differ. With the last snapshot's LVM volume kept per guest, the next
 snapshot could read only the changed ranges, usually a small fraction of
 the used bytes for a machine that was stopped and started.
 
-The hard part is the blob, not the read. Today each blob is one zstd
+The blob is the hard part. Today each blob is one zstd
 stream of the whole extent format, so a blob cannot reuse ranges of
 another. Two ways:
 

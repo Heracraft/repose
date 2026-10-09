@@ -4,7 +4,7 @@
 (2026-09-23), and the build is workstream 15
 (`../workstreams/15-dev-ergonomics.md`).** This file is the reasoning
 record: the owner's words, the options that lost, and the items still open
-or deferred. Where this file and a decision entry disagree, the entry wins.
+or deferred. If this file and a decision entry disagree, the entry wins.
 
 The source is the owner's list after using repose on real projects
 (nuru-wasm, izma, age-calculator) and a `script` recording of a session.
@@ -40,7 +40,7 @@ the direction in conversation; it is still not a decision until recorded.
 **Agreed:** carry on `run` and `attach`, **but only if it adds no visible
 delay and no per-OS special cases.** macOS and Linux laptops; Windows is not
 supported and not planned. git carries *everything except a denylist*.
-Claude's `settings.json` is merged, never blindly overwritten, and the result
+Claude's `settings.json` is merged, never overwritten wholesale, and the result
 is never invalid JSON.
 
 ### Staying off the critical path
@@ -85,7 +85,7 @@ Denied, with the reason for each:
 | `credential.*` | laptop keychains (`osxkeychain`, `libsecret`); the guest has gh as its helper (I-150) |
 | `core.sshCommand`, `ssh.*` | laptop ssh binaries and keys |
 | `url.*.insteadOf`, `url.*.pushInsteadOf` | an https-to-ssh rewrite for github.com breaks the guest's HTTPS push |
-| `user.signingkey`, `gpg.*`, `commit.gpgsign`, `tag.gpgsign` | signing needs the forwarded agent, which is gone when the laptop closes, which is exactly when agents commit |
+| `user.signingkey`, `gpg.*`, `commit.gpgsign`, `tag.gpgsign` | signing needs the forwarded agent, which is gone when the laptop closes, and that is when agents commit |
 | `http.proxy`, `https.proxy`, `http.*.proxy`, `http.sslCAInfo`, `http.sslCert*` | laptop network |
 | `core.hooksPath`, `init.templateDir` | laptop paths |
 | `safe.directory` | laptop paths |
@@ -143,8 +143,7 @@ lose the platform's hooks, never lose what the user set inside the guest.
   `settings.json`, the file being carried. With a union, permissions
   granted in the guest survive. `model` and other scalars chosen in the
   guest are overwritten by the laptop's value on the next run if the
-  laptop sets them. That's accepted: the laptop is where the user
-  configures.
+  laptop sets them. Accepted: the user configures on the laptop.
 - `$HOME` rewriting: string values starting with the laptop's home
   (`/Users/x/`, `/home/x/`) are rewritten to `/home/dev/`. A hook or
   `statusLine` whose command does not exist in the guest after rewriting is
@@ -203,7 +202,7 @@ never-carried list (no SSH keys, no Claude or Gemini credentials).
 > azure worker-1, we dont want that for the real thing.
 
 Already built: I-104 has the CLI send the laptop's IANA zone at create.
-worker-1 is the dev box, not a guest. What's left:
+worker-1 is the dev box, not a guest. Left to do:
 
 - The zone is set only at create. Send `tz` on every `run` and `attach`,
   and update `/etc/repose/env` when it has changed (someone who travels).
@@ -230,7 +229,7 @@ tool-login list the way gh's did (a kind 1 secret in `features/secrets.md`).
 > of the packages. so all users can just insta copy, but then ig that would
 > mean each microvm needs to be able to symlink into a shared thing.
 
-How pnpm's store works: files are content-addressed in a store and
+pnpm's store: files are content-addressed in a store and
 *hard-linked* (or reflinked or copied) into `node_modules`. Hard links
 need the same filesystem. A store shared across guests can only reach them
 over virtiofs, which is a different filesystem from the guest's ext4
@@ -258,9 +257,9 @@ build nothing.
 
 **Agreed: option A.** Preview URLs later. Output is printed inside tmux.
 
-Why localhost matters: `http://localhost:<port>` is a secure context
+Localhost matters because `http://localhost:<port>` is a secure context
 (service workers, `crypto.subtle`, clipboard APIs), OAuth providers
-accept `localhost` redirect URIs (izma's tekid migration is exactly that
+accept `localhost` redirect URIs (izma's tekid migration is that
 case), and cookies behave as they do in local dev. A preview hostname
 breaks the redirect URIs and the cookie domains.
 
@@ -315,12 +314,12 @@ the memory an agent needs.
 
 - **Never kill automatically.** Any idle rule eventually kills the
   server someone needed.
-- **Protect the agents, not the dev servers.** When a Linux machine runs
+- **Protect the agents, not the dev servers.** If a Linux machine runs
   out of memory, the kernel picks one process to kill by a score (mostly
   "who uses the most memory"). `OOMScoreAdjust` is a per-process nudge to
   that score, from -1000 (never pick me) to +1000 (pick me first). Start
   agent windows and the tmux server with a strongly negative value, and
-  when memory runs out the three-day-old vite is killed instead of claude.
+  if memory runs out the three-day-old vite is killed instead of claude.
   The user never sees this unless it fires.
 - **Visibility.** guestd already samples processes every 60 s, and process
   names are allowed in logs. `repose status` gains a list: `vite :5173
@@ -368,7 +367,7 @@ Proposed, cheap:
 
 > Voice mode and image pasting gotta work somehow
 
-Why they fail: Claude Code reads a pasted image from the clipboard of the
+They fail because Claude Code reads a pasted image from the clipboard of the
 machine it runs on, and dragging a file into a terminal types a laptop
 path that doesn't exist in the guest. Voice mode records from the local
 microphone of the machine running claude.
@@ -377,8 +376,8 @@ Image options:
 
 | Approach | For | Against |
 |---|---|---|
-| Forward a clipboard socket into the guest and shim `xclip -o` / `wl-paste` | Ctrl+V just works | **Anything in the guest can read the laptop clipboard while attached.** A malicious postinstall script gets the user's passwords. Rejected |
-| **The CLI watches the input stream.** On Ctrl+V with an image on the laptop clipboard, or a bracketed paste that is an existing local file path (a drag-and-drop), upload the file to `/tmp/repose-paste/<ts>.png` over the mux and type the guest path instead | Explicit, one direction, works for every agent, drag and drop just works | The CLI has to become a pty proxy instead of exec'ing ssh. Contained, but real work |
+| Forward a clipboard socket into the guest and shim `xclip -o` / `wl-paste` | Ctrl+V works unchanged | **Anything in the guest can read the laptop clipboard while attached.** A malicious postinstall script gets the user's passwords. Rejected |
+| **The CLI watches the input stream.** On Ctrl+V with an image on the laptop clipboard, or a bracketed paste that is an existing local file path (a drag-and-drop), upload the file to `/tmp/repose-paste/<ts>.png` over the mux and type the guest path instead | Explicit, one direction, works for every agent, drag and drop works | The CLI has to become a pty proxy instead of exec'ing ssh. Contained, but real work |
 
 To test before building the second row: whether Claude Code attaches an
 image when its path is typed or pasted. The docs check said a pasted path
@@ -402,8 +401,8 @@ over a setup token (item 9).
 
 **Owner, 2026-09-23:** users logging in N times is not acceptable, and
 Remote Control is how voice gets through (item 8), so losing it is probably
-a deal breaker. This needs a dedicated, in-depth session. What follows is
-the frame for that session, not a conclusion.
+a deal breaker. This needs a dedicated, in-depth session. The points below
+frame that session and settle nothing.
 
 ### What is fixed
 
@@ -473,13 +472,13 @@ files never sync (`features/sync-at-launch.md`: "deliberate and
 documented, named secrets are the supported path"). So someone with a
 20-line `.env` has to run `secrets set` 20 times, and anything that reads
 the *file* rather than the environment (`docker compose env_file`, a
-script that runs `source .env`) finds nothing. That's the gap.
+script that runs `source .env`) finds nothing.
 
 Options:
 
 | Option | For | Against |
 |---|---|---|
-| A. **Copy `.env*` over SSH on `run`**, as tool logins are (laptop to guest, never through the API; the newer side wins by mtime) | Exactly the laptop's behaviour, nothing to learn, survives laptop-closed and reboots | Lives on the guest disk, so it's in snapshots. That's already true of gh's token and the code itself. Changing a value needs a laptop `run` |
+| A. **Copy `.env*` over SSH on `run`**, as tool logins are (laptop to guest, never through the API; the newer side wins by mtime) | The laptop's behaviour, nothing to learn, survives laptop-closed and reboots | Lives on the guest disk, so it's in snapshots. That's already true of gh's token and the code itself. Changing a value needs a laptop `run` |
 | B. Copy to tmpfs with a symlink in the checkout | Not in snapshots | Gone after a guest reboot (the 03:00 base bump) until the next `run`; the agent breaks overnight |
 | C. **Import into named secrets** on first run (`Found .env with 14 values. Store as izma secrets? [Y/n]`) and have guestd write the `.env` file back from them at start | Rotation from the dashboard or a phone, not in snapshots, survives reboot | Two sources of truth (the laptop's file and the stored copy); a guest-side edit to `.env` is lost at the next start |
 
@@ -552,9 +551,9 @@ That rules out an **installation token**, since its actions come from
 `repose[bot]`. It probably rules out a GitHub App **user token** too:
 actions are done as the user, but GitHub attributes some of them to the
 App, and "Repose" appears in the user's authorised-apps list. *Verify*
-exactly where GitHub shows the attribution before closing this.
+where GitHub shows the attribution before closing this.
 
-What meets the rule:
+Two options meet the rule:
 
 - **Today's copy of gh's own login** (`hosts.yml`, from the laptop).
   Actions are the user's, through the "GitHub CLI" OAuth app the user
@@ -564,9 +563,9 @@ What meets the rule:
   for people without gh on the laptop. It's gh's own OAuth app again, one
   click.
 
-So the connector is dropped for now. What it would have bought (per-repo
-scope, starting a project with no laptop) comes back only if a way is found
-that keeps actions branded as the user's.
+The connector is dropped for now. Its gains (per-repo scope, starting a
+project with no laptop) come back only if a way is found that keeps actions
+branded as the user's.
 
 ---
 

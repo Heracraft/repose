@@ -56,7 +56,7 @@ Taking (DECISIONS R3-6):
   used reads and uploads about 2 GB, and the time follows the data, not
   the volume's size. A volume whose journal still needs replaying (a
   guest that was killed rather than stopped) is read whole, which is
-  slower and just as restorable.
+  slower and equally restorable.
 - A snapshot writes a `snapshots` row with size, reason and SHA-256 only
   after the upload has finished and Blob holds as many bytes as hostd sent
   (DECISIONS I-462). hostd hashes the bytes it uploads; the digest lives in
@@ -86,7 +86,7 @@ Restoring:
 - `restore` into the same project requires the guest to be stopped. On a
   project that is not stopped the CLI refuses and exits 5, naming `repose
   stop` and `--as`; it does not stop it. `repose stop` takes a final
-  snapshot, which is what makes an in-place restore reversible.
+  snapshot, and that snapshot makes an in-place restore reversible.
 - `restore --as NAME` creates a new project with the same class and
   volume size, on the host with the most free memory, and starts it. It
   counts toward the account's project cap (100, running or stopped,

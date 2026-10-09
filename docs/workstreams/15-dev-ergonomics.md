@@ -77,8 +77,8 @@ status bar), `status-and-logs.md` (process list), `pricing.md` and
 
 ## 5. Design detail
 
-The proposal doc has the full sketches; the points that are easy to get
-wrong are these.
+The proposal doc has the full sketches. The points below are easy to get
+wrong.
 
 ### 5.1 Staying off the critical path
 
@@ -115,8 +115,8 @@ merged.permissions.{allow,deny,ask} = (guest + laptop) | unique
 merged    = add_platform_hooks(merged)
 ```
 
-`*` is jq's recursive merge; arrays are replaced by the right side, which is
-why permissions and hook events are unioned explicitly. `prev_laptop` is
+`*` is jq's recursive merge; arrays are replaced by the right side, so
+permissions and hook events are unioned explicitly. `prev_laptop` is
 `~/.repose/claude-laptop-hooks.json`, the hooks the previous laptop file
 added, so a hook deleted on the laptop leaves the guest (DECISIONS I-499). Hooks and `statusLine` commands
 that don't resolve in the guest are dropped *after* the home-path rewrite.
@@ -135,8 +135,8 @@ Candidates: `git ls-files --others --ignored --exclude-standard` filtered to
 basenames matching `.env` or `.env.*`, outside the dependency directories
 I-194 skips, at most 1 MB each. `.env.example` and friends are usually
 tracked and already travel with the diff. They're written in the guest
-with mode 0600. When the guest copy is newer, it's kept and the CLI prints
-one line naming the file. The summary line gains `, 2 env files` when
+with mode 0600. A guest copy newer than the laptop's is kept, and the CLI
+prints one line naming the file. The summary line gains `, 2 env files` when
 any travelled. File contents never go in a log line (CLAUDE.md "never log
 what a tenant typed"): log counts only.
 
@@ -163,7 +163,7 @@ what a tenant typed"): log counts only.
 
 `oom_score_adj` is **inherited on fork**, so setting it once on an agent
 also protects every dev server the agent starts. The unprivileged `dev`
-user can raise it but never lower it. So guestd (root) owns it and
+user can raise it but never lower it, so guestd (root) owns it and
 re-applies it on every process sample: `-800` for the tmux server and for
 processes whose name matches an agent binary, `0` for everything else
 under `dev` that isn't one of those. A dev server an agent started is
@@ -172,7 +172,7 @@ only; arguments are never read, per the never-log list.
 
 ### 5.7 Hybrid first sync (I-203)
 
-Only when the guest has no commits. Size comes from `git count-objects -v`
+It runs only when the guest has no commits. Size comes from `git count-objects -v`
 (`size-pack`, in KiB) on the laptop. The guest attempts `git clone` of the
 https GitHub URL: no credentials for a public repo, the gh credential
 helper otherwise. If the clone fails for any reason, fall back to today's
@@ -188,7 +188,7 @@ guest-bridge address, with a size cap and LRU eviction on the host disk.
 The guest base points `npm_config_registry` (pnpm, npm and yarn all read
 it) and the Docker daemon's `registry-mirrors` at them. If the cache is
 down, the fallback must be automatic (Docker mirrors fall back natively;
-for npm, check the tool actually falls back, and if it doesn't, cache at
+for npm, check that the tool falls back, and if it does not, cache at
 the HTTP layer with the upstream as a failover). Scoped or authenticated
 registries in a user's `.npmrc` go direct.
 
@@ -240,53 +240,53 @@ final report. `just done-check` and `just lint` pass.
 
 - [ ] **Timing:** `repose run` (warm, no changes) and `repose attach` p50
       over 10 runs each, from a macOS laptop, with and without carry and
-      forward. Added time under 100 ms at p50, pasted as a table. — waits on:
+      forward. Added time under 100 ms at p50, pasted as a table. Waits on:
       owner (a macOS laptop): STATUS 2026-09-23 conductor 10:00Z records
       +19 ms run and +12 ms attach at p50 (client not named, not macOS),
       but no table is pasted.
 - [ ] **TZ:** `date` in a guest after `TZ=Asia/Tokyo repose attach` shows
-      JST in a new tmux window; transcript pasted. — open: STATUS 2026-09-23
+      JST in a new tmux window; transcript pasted. Open: STATUS 2026-09-23
       conductor 10:00Z says the live check ran; the transcript is not pasted
       (commit 75e740b has the guest-parity VM test reporting JST only).
 - [ ] **git:** a laptop config with `includeIf`, `credential.helper
       osxkeychain`, `url.*.insteadOf`, `gpg.format ssh`, `core.pager
       delta` and an alias; the guest's `git config --list --show-origin`
       pasted, showing the alias and the includeIf email and none of the
-      denied keys. — open: the live guest's `git config --list --show-origin`
+      denied keys. Open: the live guest's `git config --list --show-origin`
       is not pasted (STATUS 2026-09-23 conductor 10:00Z says the carry was
       checked live with fake secrets absent).
 - [ ] **Claude merge:** golden test names and output; plus a live guest
       where a permission granted in the guest survives the next `run`, and
-      a laptop skill appears in `/skills` in the guest. — open: goldens exist;
+      a laptop skill appears in `/skills` in the guest. Open: goldens exist;
       the live guest proof (a guest-granted permission surviving the next
       `run`, a laptop skill in `/skills`) is not pasted.
 - [x] **Never carried:** the extended secrets test name and output.
 - [ ] **`.env`:** a nested `apps/web/.env` travels with mode 0600; a guest
-      copy newer than the laptop one is kept; `ls -l` pasted. — open: the `ls
+      copy newer than the laptop one is kept; `ls -l` pasted. Open: the `ls
       -l` from a live guest is not pasted (STATUS 2026-09-23 conductor 10:00Z
       lists .env as checked live).
 - [ ] **Forward:** `vite` started in the guest is reachable at
       `localhost:5173` on the laptop within 2 s without any command; a
       screenshot of the tmux status bar; port-taken and portless-collision
-      messages pasted. — open: the tmux status bar screenshot and the
+      messages pasted. Open: the tmux status bar screenshot and the
       port-taken and portless-collision messages from a live guest are not
       pasted.
 - [ ] **OOM:** a guest under a memory hog started from a shell that an
-      agent spawned; the journal shows the hog killed and the agent alive. —
-      open: the live run found I-213 (protection never reached
+      agent spawned; the journal shows the hog killed and the agent alive.
+      Open: the live run found I-213 (protection never reached
       `.claude-wrapped`); the journal showing the hog killed and the agent
       alive on a guest with the I-213 base is not pasted.
-- [ ] **cp:** `repose cp :logs/x.log .` and the reverse, transcript pasted. —
-      open: the live `repose cp` transcript both ways is not pasted.
+- [ ] **cp:** `repose cp :logs/x.log .` and the reverse, transcript pasted.
+      Open: the live `repose cp` transcript both ways is not pasted.
 - [ ] **Hybrid:** first-run times for this repo and for a repo over
       500 MB, bundle vs clone, pasted, and the threshold set from them in
-      the decision. — open: bundle-vs-clone first-run times for this repo and
+      the decision. Open: bundle-vs-clone first-run times for this repo and
       a repo over 500 MB are not pasted, and I-203 still says the 20 MB
       `size-pack` threshold is "to be set from measurement".
 - [ ] **Caches:** a cold `pnpm install` on a large repo in two guests on one
       host, the second measurably faster, with the times pasted; `docker
-      pull` twice likewise; the fallback when the cache is stopped, shown. —
-      open: two-guest cold `pnpm install` and `docker pull` times and the
+      pull` twice likewise; the fallback when the cache is stopped, shown.
+      Open: two-guest cold `pnpm install` and `docker pull` times and the
       cache-stopped fallback are not pasted (I-214 records only the live
       495-miss, 0-hit finding before the fix).
 - [x] **Trial:** a new account's billing view shows 336 cents, and every

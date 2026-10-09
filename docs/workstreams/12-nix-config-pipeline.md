@@ -266,7 +266,7 @@ compare API places on `main` of the platform repository (`--repo`,
 is refused before the row is written (DECISIONS I-173). `internal/basebump` then, for each project with
 `hold_base_updates = false` and `state in (running, stopped)`, enqueues
 `Build` with the new `baseRef` and the project's current fragment, then
-`ApplyConfig` on success (for stopped projects, the closure is just rooted
+`ApplyConfig` on success (for stopped projects, the closure is only rooted
 and used at the next start). Concurrency: 2 builds per host (the host's
 `max-jobs`), spread over 24 h (`--security` sets 2 h). A project whose
 bump build fails keeps its old closure, gets an event `base_update_failed`
@@ -383,7 +383,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       03:04Z, so the CLI's rendering of `build_timeout` (no prefix, the
       summary line, then the block) rests on its unit tests
       (`TestRenderBuildErrorPrintsTheVerbatimBlock`, I-114, I-128) rather
-      than a transcript. — closed: all five first lines recorded on host-01 in
+      than a transcript. Closed: all five first lines recorded on host-01 in
       this row ((a) M5 02:29Z on api 74d45e3, (b)/(e) m3-check 00:47Z, (c) M5
       03:33Z `build_timeout`, (d) the closure-cap row; commits 954c21f,
       2f90b2d). Only the CLI's rendering of (c) rests on
@@ -394,13 +394,13 @@ and whose host half is one of the `ops/checks/menu.sh` or
       host-01 (00:47Z): `config error: access to absolute path
       '/etc/passwd' is forbidden in pure evaluation mode (use '--impure'
       to override) at abspath.nix:1:31; a fragment may only read files it
-      carries`, exit 10. — closed: the host-01 run quoted in this row
+      carries`, exit 10. Closed: the host-01 run quoted in this row
       (m3-check, 2026-09-21 00:47Z, commit 954c21f).
 - [x] A fragment containing `import <nixpkgs>` fails (no `NIX_PATH`,
       pure eval). Evidence: `testdata/nixpath.stderr` pinned by
       `TestMapEvalErrorFixtures`; on host-01 (00:47Z): `config error:
       <nixpkgs> is not available at nixpath.nix:1:38; use the pkgs
-      argument, which is the platform's pinned nixpkgs`, exit 10. — closed:
+      argument, which is the platform's pinned nixpkgs`, exit 10. Closed:
       the host-01 run quoted in this row (m3-check, 2026-09-21 00:47Z, commit
       954c21f).
 - [x] A fragment with `pkgs.fetchurl { url; hash }` for a file not in any
@@ -409,7 +409,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       (`REPOSE_NIX_NETWORK=1`); on host-01 (00:47Z) `fragments/fetchurl-ok.nix`
       (nixpkgs' COPYING by url and sha256) built and applied, and
       `~/.m3-copying` in the guest begins "Copyright (c) 2003-2026 Eelco
-      Dolstra and the Nixpkgs/NixOS". — closed: the host-01 run quoted in this
+      Dolstra and the Nixpkgs/NixOS". Closed: the host-01 run quoted in this
       row (`fetchurl-ok.nix` built and applied, 2026-09-21 00:47Z, commit
       954c21f).
 - [x] The build runs as `nixbuild`, not root, inside a scope with the
@@ -443,7 +443,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       destroy: the guest's root went, the project's `rev-*` roots stayed
       (m3-check, 23:46Z), fixed as DECISIONS I-115 and on host-01 since the
       00:16Z switch; the three synthetic projects destroyed after it left
-      no roots. — closed: RESEARCH §11 (collect-garbage with two guests
+      no roots. Closed: RESEARCH §11 (collect-garbage with two guests
       running) and the host-01 roots after build and destroy quoted in this
       row (DECISIONS I-115).
 - [x] `kernel_changed` is true when the base kernel is bumped and false for
@@ -491,7 +491,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       `internal/basebump/basebump_test.go` `TestThreeProjects`,
       `TestApplyFailureAndContextCancel`; `internal/api/basebump`
       `TestSweepBuildsUnheldSkipsHeld`. `repose status` for real projects:
-      `ops/checks/resilience.sh bump`. — closed: real sweeps on host-01
+      `ops/checks/resilience.sh bump`. Closed: real sweeps on host-01
       (STATUS 2026-09-21 m3-integration lines: the 02:12Z sweep built the four
       unheld projects and skipped m3-held; commit 777cabd); the failed bumps
       of the 02:59Z sweep sent `base_update_failed` and the guests kept
@@ -500,7 +500,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       agents print their versions. Evidence: a merged PR link and CI log.
       The workflow exists (`.github/workflows/bump-agents.yml`) and every
       overlay package prints its version locally (STATUS 12); no run has
-      happened on GitHub yet (owner). — open, half closed (2026-09-26): the
+      happened on GitHub yet (owner). Open, half closed (2026-09-26): the
       workflow's flake update was fixed in 01b6243; scheduled runs pass
       (35984425847, 36122532223) and open PRs; #1 and #3 are merged
       (https://github.com/Heracraft/factory/pull/3). Still missing: a CI log
@@ -512,7 +512,7 @@ and whose host half is one of the `ops/checks/menu.sh` or
       instead of fetching upstream (`nix build --print-build-logs` shows
       `copying path ... from <cache>`). Evidence: pasted. Waits on the
       owner's Cachix cache and `CACHIX_AUTH_TOKEN` (`ops/AZURE-SETUP.md`
-      step 16, DECISIONS I-46). — waits on: owner (the Cachix cache `repose`
+      step 16, DECISIONS I-46). Waits on: owner (the Cachix cache `repose`
       and `CACHIX_AUTH_TOKEN` in the repository secrets, AZURE-SETUP step 16).
 - [x] `RESEARCH.md` records eval and build timings for the base plus a
       typical fragment on a host (so 05 can set user expectations).

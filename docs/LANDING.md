@@ -25,9 +25,9 @@ first one leading, and every visual serves one of them:
 The reader is one person shipping alone, with agents doing the work. The
 page says so once, in the label above the headline.
 
-Not notifications, not answering from your phone, not "check in from
-anywhere", not remote control, not always-on, not collaboration, not a
-software factory. Don't show or mention them.
+Don't show or mention notifications, answering from your phone, "check in
+from anywhere", remote control, always-on, collaboration or a software
+factory.
 
 ## The reference: "Your working state, in one command"
 
@@ -75,7 +75,7 @@ Frames of it for reference: record them from the live page before starting.
 - A partial imitation of a real tool is worse than none. Either show the
   real thing in full (a real capture of Claude Code, a real LazyVim screen)
   or use a different representation (a mark, a diagram).
-- Show tools the way people actually use them: Neovim means a real,
+- Show tools the way people use them: Neovim means a real,
   popular config (LazyVim), not bare stock Neovim.
 - No fake window chrome (traffic-light dots, close/minimise/maximise) unless
   it adds meaning. A full-screen app needs no frame.
@@ -106,7 +106,7 @@ Frames of it for reference: record them from the live page before starting.
   machine coming back from it.
 - The poisoned thing is "malicious skill", not "npx malicious-skill".
 - No `passwords.csv`: nobody has one, it reads as silly. Private items are
-  things people really have (`.ssh`, a cat photo, tax documents).
+  things people have (`.ssh`, a cat photo, tax documents).
 - Order of the story: the agent first does real, good work (file rows with
   green `+` and red `-` line counts, the way a diff stat looks), running in
   `--dangerously-skip-permissions` mode; snapshots are taken along the way
@@ -122,7 +122,7 @@ Frames of it for reference: record them from the live page before starting.
 - Anything that moves exists once: the malicious skill travels from the
   internet (globe) into the machine; no second, faded copy left behind.
 - Snapshots are small. The newest shows its time; older ones stack behind
-  it as just an icon and a timestamp, contents hidden.
+  it as an icon and a timestamp, contents hidden.
 - No chapter labels ("repose run", "The agent wrecks it", "A snapshot puts
   it back"). The three beats must be understood from the motion alone.
 - The laptop is full, not empty: several things live on it (your repo, and
@@ -181,8 +181,8 @@ fires; `node_modules/` stays behind, struck. Keep it animated.
   your laptop is forwarded from the cloud machine. The job listings
   (Boeing, RTX) don't fit the page's vibe.
 - Editor: the explorer sidebar must be narrow relative to the code.
-- Snapshots are about the machine, not the source. Git already brings back
-  deleted source files; a snapshot is the whole disk (the root overlay's
+- Snapshots are about the machine. Git already brings back deleted source
+  files; a snapshot is the whole disk (the root overlay's
   writable layer and /home, DESIGN.md §6): databases and Docker volumes,
   installed tools and PATH, logins made on the machine, uncommitted work.
   Show damage git can't undo, and the machine back in minutes (a restore
@@ -194,7 +194,7 @@ fires; `node_modules/` stays behind, struck. Keep it animated.
   animated with anime.js. At least two snapshots: one is taken, some edits
   happen, a second is taken and stacks on top, shown only as an icon and a
   timestamp with its contents hidden.
-- "Five agents and a full toolchain on first boot" is super clean; leave it.
+- "Five agents and a full toolchain on first boot" is clean; leave it.
   2026-09-27: the agents' row shows the marks alone, no name or command
   under them.
 
@@ -529,7 +529,7 @@ paragraphs.
   hero got through that way, 2026-09-27). Capture the viewport, or crop
   the region, at 1x and judge that; use a full-page capture only for the
   page's rhythm, never for a section's layout.
-- When motion could help, it's fine to offer an animated and a static
+- Where motion could help, you may offer an animated and a static
   version for the owner to choose (anime.js is allowed).
 
 ## The page's grammar (design system, 2026-09-27)

@@ -64,8 +64,8 @@ From `internal/cli` at c6c04167.
 `os.UserHomeDir()` with symlinks resolved, and every folder above it
 (`/Users`, `/`, `C:\Users`). Subfolders are ordinary folders:
 `~/Downloads/job search` keeps I-358's behaviour, which the owner asked
-for. Whether `~` is a git repository does not matter; a dotfiles repo in
-`~` is still the home folder.
+for. It does not matter whether `~` is a git repository; a dotfiles repo
+in `~` is still the home folder.
 
 Rejected: a list of "not a project" folders (`~/Desktop`, `~/Downloads`).
 A list guesses, and I-358 shows a real project living in `~/Downloads`.

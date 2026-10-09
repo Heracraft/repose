@@ -266,7 +266,7 @@ I-395).
 - `.btn-danger`: bordered red, for an action that cannot be undone.
 - `.btn-ghost`: a muted word with a hairline underline in
   `--control-edge`, which turns ink under the pointer, for a secondary
-  action. The resting underline is what says it can be pressed; grey and
+  action. The resting underline says it can be pressed; grey and
   underlined, it cannot be taken for a link, which is blue (I-392).
 - `.btn-ghost-danger`: the same in red, for a destructive action that can
   be reversed or that opens a confirmation.
@@ -325,8 +325,8 @@ content edge, as on secrets, config revisions and snapshots.
   value in `text-2xs` faint, "N hours ago" and "now" under it. One series
   per chart, so no legend; the label and an "now X, peak Y" reading in
   mono carry the numbers. Hover or the arrow keys show one point. A gap
-  is a time with no data. No explanation under a chart: what a measure
-  means is in the public docs.
+  is a time with no data. No explanation under a chart: the public docs
+  say what each measure means.
 - A reading of a share is "X of Y" ("4 GB of 20 GB"), on a meter or in a
   card, never "X / Y".
 - `.codeblock`: a command block on a dashboard page, 13px mono on
@@ -353,14 +353,14 @@ Every view that loads or acts has each of these:
   succeeds, so the banner and its button stay through a retry and keep
   the keyboard's focus; a breadcrumb waiting on the failed load's name
   reads "Project", not "…".
-- **Empty**: an h2 that says so ("No projects yet"). When the screen has
+- **Empty**: an h2 that says so ("No projects yet"). If the screen has
   no way to add one, one sentence on how, with the command when the CLI
-  is the way; when it has one (a form below), at most one sentence of
+  is the way; if it has one (a form below), at most one sentence of
   fact the user needs, never instructions for the form (I-485).
 - **Disabled**: the one disabled look (see Buttons; a ghost button fades
   to `opacity-50`) and `cursor-not-allowed`, and a sentence
   that says why when the reason is not obvious ("Stop todo-app first",
-  "320 GB is the largest size."). When no choice is valid, the control is
+  "320 GB is the largest size."). If no choice is valid, the control is
   replaced by that sentence.
 - **Pending**: while an action runs, its button is disabled and its label
   becomes the verb with an ellipsis ("Destroying…", "Re-applying…").
@@ -403,7 +403,7 @@ A switch that swaps a panel in place without changing the URL is ARIA
 tabs: `tablist`, `tab` with `aria-selected` and a roving tabindex,
 `tabpanel` with `aria-labelledby`; arrows, Home and End move between
 tabs. The keys are handled on the tabs, so the tablist needs no
-tabindex. When only the current panel is rendered, only the current tab
+tabindex. If only the current panel is rendered, only the current tab
 carries `aria-controls`; an id that names nothing is a broken reference. The current tab looks like the header's current page: ink with a
 1px underline, no weight change, no accent (I-388). A switch that changes
 the URL is links with `aria-current`.

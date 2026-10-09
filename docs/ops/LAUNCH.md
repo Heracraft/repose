@@ -1,9 +1,9 @@
 # Launch runbook (owner)
 
-What the owner does between this round's merge and the first tweet. The
+The owner's steps between this round's merge and the first tweet. The
 code is on `main` and deploys itself when pushed (Coolify redeploys `api`,
 `api-grpc` and `web`, `coolify.md` fact 16); the steps below are the ones
-that need an account, a key or money, and so cannot be done by an agent.
+that need an account, a key or money, so an agent cannot do them.
 Each step names the check that proves it. Dated 2026-09-27; the round is
 DECISIONS I-289 to I-292.
 
@@ -91,7 +91,7 @@ months, limited to 20 redemptions) can go in the tweet.
    the nth host registered gets 10.255.0.(n+1) (`hostmgr.allocate`), so
    host-01 has .2 and the next host gets .3. Your monitoring server
    already has .3 (`wg-repose`, I-170); it was picked by hand because it
-   was free then. When the new host registers, the edge hands .3 to it:
+   was free then. Once the new host registers, the edge hands .3 to it:
    Grafana loses every scrape, and the hosts' logs to Loki on
    `10.255.0.3:3100` reach the new host instead. The next edge rebuild
    takes .3 back, and the new host loses its metrics and operator SSH

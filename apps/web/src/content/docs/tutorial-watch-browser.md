@@ -49,8 +49,8 @@ Close the tab and the view stays up for 30 minutes without a viewer, then sleeps
 ## Things worth knowing
 
 - **One browser, one profile.** Both browser tools see the same tabs, and anything you log in to is there for every agent on that machine. Treat it like a browser on a shared computer: don't log in to more than the job needs.
-- **Test suites are unaffected.** `playwright test`, Cypress and Puppeteer scripts run headless as always, unless their config asks for a headed browser. When it does, they appear on the desktop too.
-- **Memory.** The browser is capped (1.5 GB on a small machine, more on larger ones), so a runaway page kills a tab, not the agent.
+- **Test suites are unaffected.** `playwright test`, Cypress and Puppeteer scripts run headless as always, unless their config asks for a headed browser. If it does, they appear on the desktop too.
+- **Memory.** The browser is capped (1.5 GB on a small machine, more on larger ones), so a runaway page kills a tab and the agent keeps running.
 - **Your own Chrome instead.** When the job needs your laptop's logins or extensions, [lend the agent your Chrome](/docs/your-chrome) rather than logging in on the machine.
 
 [The machine](/docs/machine#browser) has the reference for all of this.

@@ -289,9 +289,9 @@ Rules that hold regardless of convenience. Each names its failure.
 `internal/guestd/sample/watch.go` holds process names that are always reported
 in a guest sample even when they fall below the top fifty by CPU, so a miner
 that throttles itself to stay off the top of the list still appears in the
-Grafana "Abuse" panel. It is a list of names worth seeing, not an accusation,
-and it changes nothing about what is collected: only which of the names already
-collected survive the trim.
+Grafana "Abuse" panel. It is a list of names worth seeing and accuses no one.
+It leaves what is collected unchanged and decides only which of the names
+already collected survive the trim.
 
 ```
 xmrig  minerd  cpuminer  ccminer  cgminer  bfgminer  ethminer  nbminer
@@ -351,8 +351,6 @@ Applied at each workstream's PR, recorded as a comment line in
   covers them, or which one is added.
 
 ## Not mitigated in the first release
-
-Written down so nobody believes otherwise.
 
 - **Every guest's hypervisor is the same `hostd` user** (review L-11,
   after H-2 was fixed by I-51). A KVM escape lands as `hostd`, whose unit
