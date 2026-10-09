@@ -61,7 +61,7 @@ func newEnvLimits(t *testing.T, limits *httpapi.RateLimits) *env {
 }
 
 // newEnvWith lets a test change the dependencies before the server is
-// built (workstream 09 turns billing enforcement off and plugs the Paddle
+// built (workstream 09 turns billing enforcement off and plugs the Polar
 // webhook handler in this way).
 func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.Deps)) *env {
 	t.Helper()
@@ -99,11 +99,11 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		tweak(&deps)
 	}
 	if deps.Gate == nil {
-		// The gate as a configured deploy has it (Paddle on), so the row
+		// The gate as a configured deploy has it (Polar on), so the row
 		// logic is what the tests exercise; without a key every start is
 		// subscription_required (TestBillingDisabledRoutes covers the
 		// routes' 503). BillingEnforce=false still lets everything through.
-		deps.Gate = billing.NewGate(h.Pool, billing.Config{APIKey: "pdl_sdbx_apikey_test", DashboardURL: "https://repose.herakraft.co", Enforce: deps.BillingEnforce}, h.Metrics, log)
+		deps.Gate = billing.NewGate(h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.herakraft.co", Enforce: deps.BillingEnforce}, h.Metrics, log)
 	}
 	e.srv = httpapi.New(deps)
 	e.srv.SetReady(true)
@@ -163,7 +163,7 @@ func (e *env) do(t *testing.T, token, method, path string, body any) resp {
 }
 
 // doRaw posts a body verbatim with the given headers and no bearer token:
-// the Paddle webhook route authenticates with its own header, so it cannot
+// the Polar webhook route authenticates with its own headers, so it cannot
 // be exercised through do().
 func (e *env) doRaw(t *testing.T, method, path string, body []byte, headers map[string]string) resp {
 	t.Helper()
@@ -240,7 +240,7 @@ func (e *env) signIn(t *testing.T, sub, login string) string {
 }
 
 // subscribe gives the signed-in user a live subscription on plan, the
-// way the Paddle webhook would (I-289), so the compute gate lets the
+// way the Polar webhook would (I-289), so the compute gate lets the
 // test's projects through; "" removes it.
 func (e *env) subscribe(t *testing.T, sub, plan string) {
 	t.Helper()
@@ -259,12 +259,12 @@ func (e *env) subscribe(t *testing.T, sub, plan string) {
 		return
 	}
 	seats := map[string]int{"solo": 1, "plus": 2, "pro": 4}[plan]
-	if _, err := e.h.Pool.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at)
+	if _, err := e.h.Pool.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at)
 		values ('sub_' || $1, $2, 'ctm_' || $1, $3, 'active', $4, date_trunc('month', now()), date_trunc('month', now()) + interval '1 month', date_trunc('month', now()) + interval '1 month')`,
 		sub, uid, plan, seats); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'active', has_card = true, paddle_customer_id = 'ctm_' || $2 where id = $1", uid, sub); err != nil {
+	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'active', has_card = true, billing_customer_id = 'cus_' || $2 where id = $1", uid, sub); err != nil {
 		t.Fatal(err)
 	}
 }

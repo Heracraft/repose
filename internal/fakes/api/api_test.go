@@ -737,12 +737,13 @@ func TestUsageAndBilling(t *testing.T) {
 	defer g.Close()
 	r = call(t, g, "POST", "/v1/billing/portal", tok, nil)
 	want(t, r, 200)
-	if !strings.Contains(string(r.body), `"url":"https://customer-portal.paddle.com/`) {
+	if !strings.Contains(string(r.body), `"url":"https://sandbox.polar.sh/repose/portal`) {
 		t.Fatalf("portal: %s", r.body)
 	}
 	r = call(t, g, "POST", "/v1/billing/portal", tok, map[string]string{"for": "payment_method"})
 	want(t, r, 200)
-	if !strings.Contains(string(r.body), `update-payment-method`) {
+	// Polar has no payment-method deep link: the same portal.
+	if !strings.Contains(string(r.body), `"url":"https://sandbox.polar.sh/repose/portal`) {
 		t.Fatalf("portal payment_method: %s", r.body)
 	}
 	r = call(t, g, "GET", "/v1/billing/invoices", tok, nil)

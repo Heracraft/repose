@@ -36,7 +36,7 @@ func mkPlanProject(t *testing.T, f *Fake, name, class string) map[string]any {
 }
 
 // GET /billing without a subscription: the plans with their availability,
-// the seats, no waitlist, the fake paddle environment.
+// the seats, no waitlist.
 func TestBillingNoSubscription(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
@@ -51,10 +51,6 @@ func TestBillingNoSubscription(t *testing.T) {
 			MemoryGB  int    `json:"memory_gb"`
 		} `json:"plans"`
 		Seats  Seats `json:"seats"`
-		Paddle struct {
-			Environment string `json:"environment"`
-			ClientToken string `json:"client_token"`
-		} `json:"paddle"`
 		Usage struct {
 			MemoryGB int `json:"memory_gb"`
 		} `json:"usage"`
@@ -68,7 +64,7 @@ func TestBillingNoSubscription(t *testing.T) {
 		b.Plans[0].MemoryGB != 8 || b.Plans[1].MemoryGB != 16 || b.Plans[2].MemoryGB != 32 {
 		t.Fatalf("plans: %s", r.body)
 	}
-	if b.Seats.Free != 18 || b.Paddle.Environment != FakeEnvironment || b.Paddle.ClientToken == "" || b.Usage.MemoryGB != 0 {
+	if b.Seats.Free != 18 || b.Usage.MemoryGB != 0 {
 		t.Fatalf("billing: %s", r.body)
 	}
 	// Three seats free: Solo and Plus yes, Pro (four seats) no.
@@ -92,8 +88,9 @@ func TestBillingNoSubscription(t *testing.T) {
 	}
 }
 
-// Checkout opens a transaction; completing it (the webhook) makes the
-// account trialing on that plan, a week out from the first charge.
+// Checkout answers the hosted checkout's URL; completing it (the webhook)
+// makes the account trialing on that plan, a week out from the first
+// charge.
 func TestBillingCheckoutToTrial(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
@@ -102,15 +99,15 @@ func TestBillingCheckoutToTrial(t *testing.T) {
 	r := call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "plus"})
 	want(t, r, 200)
 	m := decodeMap(t, r)
-	txn, _ := m["transaction_id"].(string)
-	if !strings.HasPrefix(txn, "txn_fake_") || m["environment"] != FakeEnvironment || m["client_token"] != FakeClientToken {
+	url, _ := m["url"].(string)
+	if !strings.HasPrefix(url, CheckoutBase+"chk_fake_") || len(m) != 1 {
 		t.Fatalf("checkout: %s", r.body)
 	}
-	if err := f.CompleteCheckout("txn_nope"); err == nil {
-		t.Fatal("completed an unknown transaction")
+	if _, err := f.CompleteCheckout("chk_nope"); err == nil {
+		t.Fatal("completed an unknown checkout")
 	}
-	if err := f.CompleteCheckout(txn); err != nil {
-		t.Fatal(err)
+	if back, err := f.CompleteCheckout(strings.TrimPrefix(url, CheckoutBase)); err != nil || back != "" {
+		t.Fatalf("complete: %q %v", back, err)
 	}
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
 	var b struct {
@@ -182,8 +179,8 @@ func TestBillingWaitlist(t *testing.T) {
 	}
 	r = call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "solo"})
 	want(t, r, 200)
-	txn, _ := decodeMap(t, r)["transaction_id"].(string)
-	if err := f.CompleteCheckout(txn); err != nil {
+	url, _ := decodeMap(t, r)["url"].(string)
+	if _, err := f.CompleteCheckout(strings.TrimPrefix(url, CheckoutBase)); err != nil {
 		t.Fatal(err)
 	}
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
@@ -266,8 +263,8 @@ func TestBillingCheckoutPro(t *testing.T) {
 	f.SetSeats(30, 26, 0)
 	r := call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "pro"})
 	want(t, r, 200)
-	txn, _ := decodeMap(t, r)["transaction_id"].(string)
-	if err := f.CompleteCheckout(txn); err != nil {
+	url, _ := decodeMap(t, r)["url"].(string)
+	if _, err := f.CompleteCheckout(strings.TrimPrefix(url, CheckoutBase)); err != nil {
 		t.Fatal(err)
 	}
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
