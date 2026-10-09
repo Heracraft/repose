@@ -109,7 +109,7 @@ The exit code is 6, so a script notices. Files the agent changed that your lapto
 `--worktree` gives an agent its own git worktree and branch, next to the checkout on the machine:
 
 ```
-$ repose run --worktree -p "try the other approach to the parser"
+$ repose run --worktree -p "try another parser approach"
 Worktree: ~/hello-worktree-1 on branch worktree-1
 ```
 

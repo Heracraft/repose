@@ -8,7 +8,7 @@ order: 10
 ## Start an agent with a prompt
 
 ```
-repose run -p "move the date handling to Temporal, fix the tests"
+repose run -p "move dates to Temporal, fix the tests"
 ```
 
 Quote a prompt of more than one word. `run` creates or starts the machine, copies your checkout into it if the machine is new ([Sync](/docs/sync)), opens a new tmux window, starts the agent there, types your prompt and attaches you to it.
