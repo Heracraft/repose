@@ -7,7 +7,7 @@ order: 13
 
 There are two ways to install software on a project's machine:
 
-- **On the machine**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk. See [The machine](/docs/machine#installing-more).
+- **[On the machine](/docs/machine#installing-more)**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk.
 - **In the project's configuration**, with `repose config`. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
 
 ## Add a package
@@ -171,7 +171,7 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 
 **Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
-**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the tools you installed globally on your laptop; your machine.nix says which tools you want. See [Your laptop's tools come along](/docs/machine#your-laptops-tools-come-along).
+**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the [tools you installed globally on your laptop](/docs/machine#your-laptops-tools-come-along); your machine.nix says which tools you want.
 
 ## Revisions and base updates
 

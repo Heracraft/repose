@@ -79,7 +79,7 @@ Connecting never starts a stopped machine. `repose start todo-app` starts it, an
 
 **``repose: you have no project called todo-ap (`repose ls` lists them).``** The name is wrong, or the project was destroyed.
 
-**``todo-app is stopped; run `repose start todo-app` ``**: the machine is stopped. Start it and connect again.
+**``todo-app is stopped; run `repose start todo-app` ``**: start it, then connect again.
 
 **`Could not resolve hostname todo-app.repose` with no other message.** ssh isn't reading `~/.ssh/repose/config`. The `Include ~/.ssh/repose/config` line must come before the first `Host` or `Match` line of `~/.ssh/config`. If your `~/.ssh/config` is read-only (managed by Nix or a dotfiles tool), add the line where it's generated; `repose login` prints what to add when it can't.
 
@@ -89,7 +89,7 @@ Connecting never starts a stopped machine. `repose start todo-app` starts it, an
 
 Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refused. Nothing running there, an agent or a package's install script, can use your keys, even while you're attached.
 
-With your `gh` login copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. For other git hosts, see [Other git hosts](/docs/secrets#other-git-hosts).
+With your `gh` login copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. [Other git hosts](/docs/secrets#other-git-hosts) have no login that repose copies.
 
 ## Windows
 

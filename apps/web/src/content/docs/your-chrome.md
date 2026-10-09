@@ -131,7 +131,7 @@ Only one bridge to a machine at a time. A new one takes over from one left by a 
 
 ## Troubleshooting
 
-**"todo-app is stopped".** The bridge needs a running machine. `repose start todo-app`, then bridge again.
+**"todo-app is stopped".** `repose start todo-app`, then bridge again.
 
 **The bridge waits and Chrome shows no dialog.** Check that remote debugging is on at `chrome://inspect/#remote-debugging`; the bridge opens that page when it can't reach Chrome. Chrome's dialog appears in a Chrome window, which may be behind your terminal or on another desktop. A Chrome older than 144 has no switch: update it, or use the `--cdp` way below. For a Chrome profile other than the default one (Chromium, Brave, Edge, or a second Chrome profile), pass its profile directory with `--user-data-dir DIR`.
 

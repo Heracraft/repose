@@ -23,7 +23,7 @@ repose run --agent codex -p "port the build scripts to bun"
 
 All five get new versions with platform updates.
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project; `repose status` shows a project's agent when it isn't your `default_agent`. You can also start any agent by hand in a tmux window, or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux). However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project; `repose status` shows a project's agent when it isn't your `default_agent`. Started by `repose run` or by hand in a tmux window (or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux)), an agent runs in the project's dev environment: its `.envrc`, or [its flake's dev shell](/docs/machine#projects-with-a-flake-nix).
 
 ## Let it run without asking
 
@@ -96,7 +96,7 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
 ## Log in
 
@@ -113,7 +113,7 @@ repose secrets set CLAUDE_CODE_OAUTH_TOKEN
 
 An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
-**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one. For opencode that's `~/.local/share/opencode/auth.json`, which OpenCode 2 reads once and then stops updating, so a login you make in OpenCode 2 on your laptop doesn't reach the machine ([OpenCode 2](#opencode-2)).
+**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one. For opencode that's `~/.local/share/opencode/auth.json`, which OpenCode 2 reads once and then stops updating, so a login you make in OpenCode 2 on your laptop doesn't reach the machine.
 
 **Gemini CLI.** Store `GEMINI_API_KEY` as a secret, or run `gemini` on the machine and log in there.
 
@@ -129,7 +129,7 @@ Never copied: your login, conversation history, anything in `~/.claude.json` bes
 
 ## MCP servers
 
-Every agent on the machine has the browser tools `playwright` and `chrome-devtools` ([Browser](/docs/machine#browser)). In place of Claude in Chrome, `repose browser bridge` lends those tools your laptop's Chrome, logins included; see [Lend the agents your Chrome](/docs/your-chrome).
+Every agent on the machine has the [browser tools](/docs/machine#browser) `playwright` and `chrome-devtools`. In place of Claude in Chrome, `repose browser bridge` lends those tools [your laptop's Chrome](/docs/your-chrome), logins included.
 
 `run` and `attach` copy the MCP servers you added with `claude mcp add` on your laptop, at user scope and for this project, to every agent on the machine. Tokens stay on your laptop: each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or set each with `repose secrets set NAME`. Until a secret is set, a server that starts with a command stops at its start with a line naming the secret, and an HTTP server is left out of every agent; [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for both. An HTTP server arrives the next time an agent starts after you set its secret. Secrets belong to one project, so a server you use in three projects needs its secret set in each. A server that signs in with OAuth needs a sign-in with `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it. Servers that need your laptop stay there, and `run` names them once: Apple apps, a program or files on your laptop, a server on `localhost` or your own network. `repose secrets choose --off mcp` stops the copy.
 

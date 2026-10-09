@@ -16,15 +16,15 @@ curl -fsSL https://repose.herakraft.co/install.sh | sh
 repose login
 ```
 
-`repose login` prints a link and a code. Open the link on any device, check the code matches and sign in with your email or with GitHub. [Install](/docs/install) has the other ways to install.
+`repose login` prints a link and a code. Open the link on any device, check the code matches and sign in with your email or with GitHub.
 
 ## 2. Choose a plan
 
-Choose a plan at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Run from a terminal on an account with no plan, `repose run` opens that page and waits, then goes on once you have one. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), and the first week is free. Without one, `repose run` opens that page and waits until you choose. [Solo](/docs/billing) keeps 8 GB of machines running at the same time, around the clock: one `large`, or two `small`. Keep up to 100 projects on any plan; a stopped one uses no memory.
 
 ## 3. Let it run without asking
 
-Claude Code on the machine starts in `bypassPermissions` mode, so it doesn't stop to ask before running a command. If your laptop's `~/.claude/settings.json` sets another `defaultMode`, the machine uses yours. [Agents](/docs/agents#let-it-run-without-asking) has the details.
+Claude Code on the machine starts in `bypassPermissions` mode, so it doesn't stop to ask before running a command. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#let-it-run-without-asking), the machine uses yours.
 
 ## 4. Hand it a task
 
@@ -45,19 +45,17 @@ Ready in 16s.
 
 The first run creates the machine and copies your checkout to `/home/dev/your-project` on it (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. Then the CLI starts Claude Code in a tmux window there, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
 
-Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done, and your other machines are logged in too. The Codex, opencode and GitHub CLI logins your laptop has are copied; [Agents](/docs/agents) covers the rest.
+Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done, and your other machines are logged in too. The Codex, opencode and GitHub CLI [logins](/docs/agents) your laptop has are copied.
 
-`repose run` with no prompt attaches to a shell on the machine instead. If you use [herdr](https://herdr.dev), add `--multiplexer herdr` to the first run and the machine runs herdr ([herdr on your machine](/docs/tutorial-herdr)).
+`repose run` with no prompt attaches to a shell on the machine instead. If you use [herdr](https://herdr.dev), add `--multiplexer herdr` to the first run and the machine runs [herdr in place of tmux](/docs/tutorial-herdr).
 
 ## 5. Show it a screenshot
 
-With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the agent's window. Or drag a file onto the terminal. The file is copied to the machine and its path lands in the prompt, where Claude Code shows it as an image:
+With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the agent's window. Or drag a file onto the terminal. The file is [copied to the machine](/docs/run-and-attach#drop-a-file-or-paste-an-image) and its path lands in the prompt, where Claude Code shows it as an image:
 
 ```text
 ❯ [Image #1] the button overlaps the footer on this screen
 ```
-
-[Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image) has the limits.
 
 ## 6. Get a notification when it's done
 

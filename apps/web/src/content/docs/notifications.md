@@ -58,7 +58,7 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `tmp-k3f9: destroyed in an hour`                | A temporary machine has an hour left; `repose keep tmp-k3f9` keeps it. Only for one made with more than an hour ([Temporary machines](/docs/lifecycle#temporary-machines)).                   |
 | `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
 | `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
-| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                                          |
+| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                     |
 | `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                               |
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
@@ -94,9 +94,9 @@ repose-notify "Deploy to staging is green"
 repose-ask --options yes,no "Drop the legacy sessions table?"
 ```
 
-`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it. You can run them yourself too, for example at the end of a long script.
+`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
 
-You can answer a question in four places:
+A question can be answered in four places:
 
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.

@@ -57,7 +57,7 @@ You stay logged in until you run `repose logout`.
 
 ## Choose a plan
 
-A machine starts only on an account with a plan. Choose one at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Run from a terminal, `repose run`, `start` and `attach` on an account with no plan open that page and wait for it, then go on; off a terminal, or with `--json`, they exit 7. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+A machine starts only on an account with a plan. Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), and the first week is free. Without one, `repose run`, `start` and `attach` in a terminal open that page and wait until you choose; off a terminal, or with `--json`, they exit 7. [Solo](/docs/billing) keeps 8 GB of machines running at the same time, around the clock: one `large`, or two `small`. Keep up to 100 projects on any plan; a stopped one uses no memory.
 
 ## Shell completion
 
@@ -85,6 +85,6 @@ repose logout --purge
 rm ~/.local/bin/repose
 ```
 
-`--purge` also deletes `~/.config/repose/`, `~/.ssh/repose/` and the `Include` line the CLI added to `~/.ssh/config`. Your projects keep running on the server, so stop them, or remove them with `repose rm`, first. [Files on your laptop](/docs/cli#files-on-your-laptop) lists everything the CLI writes.
+`--purge` also deletes [the CLI's files](/docs/cli#files-on-your-laptop): `~/.config/repose/`, `~/.ssh/repose/` and the `Include` line the CLI added to `~/.ssh/config`. Your projects keep running on the server, so stop them, or remove them with `repose rm`, first.
 
 The CLI never reads or changes your own keys in `~/.ssh`, and it writes nothing into your repositories.

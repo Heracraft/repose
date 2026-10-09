@@ -10,8 +10,6 @@ status: experimental
 
 ## Install the server
 
-Install T3 Code as a background service on the machine:
-
 ```
 ssh todo-app.repose 'npx -y t3@latest service install'
 ```

@@ -5,7 +5,7 @@ section: Tutorials
 order: 23
 ---
 
-This page assumes you've read [Git with repose](/docs/tutorial-git).
+This page builds on [Git with repose](/docs/tutorial-git).
 
 **Each task is a branch.** Every agent gets its own worktree and branch on the machine, you never edit the machine's `main`, and your laptop is where branches get reviewed and merged.
 
@@ -74,7 +74,7 @@ Run the tests on the machine without attaching, with the dev shell and secrets t
 repose exec --workdir worktree-1 npm test
 ```
 
-Or open the worktree in your editor over SSH with `repose code` and read it there.
+Or open the worktree in your editor over SSH with `repose code`.
 
 ## 4. Merge what's good
 
@@ -86,8 +86,6 @@ git merge repose/worktree-3
 A branch that isn't good enough gets a second round: `repose attach -w claude`, the agent of that worktree, and tell it what to change. It commits on the same branch; you fetch again. Or ask for a pull request instead and review on GitHub: the machine has your `gh` login, so "push the branch and open a PR" works in a prompt.
 
 ## 5. Send the merged result back up
-
-Send your laptop's `main` to the machine:
 
 ```
 repose sync
@@ -111,4 +109,4 @@ On your laptop, `git branch -rd repose/worktree-1` drops the fetched copy. Workt
 - **Agents commit.** Put it in the prompt: "commit as you go" or "commit when the tests pass". An uncommitted change on the machine is the one thing that can get in the way of a sync.
 - **Nobody works on the machine's `main`.** Then `repose sync` is always safe, and a branch is always a clean diff against something you know.
 - **Review on the laptop.** There `git diff main...branch` reads a copy the agent can't touch.
-- **Risky experiments get a fork.** `repose fork` copies the whole machine, worktrees, database and all, so an agent can try something destructive on the copy. [Projects and lifecycle](/docs/lifecycle#fork-a-project).
+- **Risky experiments get a fork.** `repose fork` [copies the whole machine](/docs/lifecycle#fork-a-project), worktrees, database and all, so an agent can try something destructive on the copy.

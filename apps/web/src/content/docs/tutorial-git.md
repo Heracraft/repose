@@ -28,7 +28,7 @@ The first `repose run` copied the state of your checkout:
 - untracked files that aren't gitignored;
 - gitignored `.env` files.
 
-It doesn't copy build output, `node_modules` or anything else gitignored, and it never watches your files afterwards. Later runs attach to the machine as it is. Change something on your laptop and it stays there until you run `repose sync`. [Sync](/docs/sync) has the full list and the size limits.
+It doesn't copy build output, `node_modules` or anything else gitignored ([full list and size limits](/docs/sync)), and it never watches your files afterwards. Later runs attach to the machine as it is. Change something on your laptop and it stays there until you run `repose sync`.
 
 On your laptop:
 

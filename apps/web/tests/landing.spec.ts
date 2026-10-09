@@ -13,7 +13,7 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	await expect(
 		pricing.getByText(
-			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by the machines you have running; a stopped machine uses none. A plan's disk counts the data your projects hold."
+			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs at the same time, around the clock, across up to 100 projects; a stopped project uses none. A plan's disk counts the data your projects hold."
 		)
 	).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
@@ -23,9 +23,12 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	).toBeVisible();
 	await expect(pricing.getByText('$59')).toBeVisible();
 	await expect(pricing.getByText('$99')).toBeVisible();
-	await expect(pricing.getByText('8 GB of memory · 100 GB disk · 100 GB egress')).toBeVisible();
-	await expect(pricing.getByText('16 GB of memory · 250 GB disk · 500 GB egress')).toBeVisible();
-	await expect(pricing.getByText('32 GB of memory · 500 GB disk · 1 TB egress')).toBeVisible();
+	await expect(pricing.getByText('8 GB running at once')).toBeVisible();
+	await expect(pricing.getByText('100 GB disk · 100 GB egress')).toBeVisible();
+	await expect(pricing.getByText('16 GB running at once')).toBeVisible();
+	await expect(pricing.getByText('250 GB disk · 500 GB egress')).toBeVisible();
+	await expect(pricing.getByText('32 GB running at once')).toBeVisible();
+	await expect(pricing.getByText('500 GB disk · 1 TB egress')).toBeVisible();
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
 	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();

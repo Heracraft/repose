@@ -38,13 +38,13 @@ Claude Code also asks before it uses a server from the checkout's `.mcp.json`. `
 
 If that agent already has a window, the new one is named `claude-2`, then `claude-3`, and so on, and the CLI warns that the agents share one working tree. It warns too when the agent runs in a window of another name, such as Claude Code typed in the shell window.
 
-Only the first run on a new machine copies your checkout; later ones attach to the machine as it is, and say so when your laptop has work to send with `repose sync`.
+Later runs attach to the machine as it is, and say so when your laptop has work to send with `repose sync`.
 
 If the agent exits before you're attached, its window closes with it. `run` then attaches you to the session and says `The claude window closed before the attach`; start the agent again there.
 
 ## Several agents, separate trees
 
-Two agents in one working tree edit the same files. Give each its own tree on the same machine, or a machine of its own:
+Two agents in one working tree edit the same files. Give each its own tree on the same machine, or a [machine of its own](/docs/lifecycle#fork-a-project):
 
 |                       | `repose run -d --worktree -p "..."`      | `repose fork -n 3 --prompt "..."`                                  |
 | --------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
@@ -54,9 +54,9 @@ Two agents in one working tree edit the same files. Give each its own tree on th
 | Work comes back with  | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`           |
 | Clean up              | `repose stop -w claude-2`                | `repose rm todo-app-fork-1`                                        |
 
-`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back. [Fork a project](/docs/lifecycle#fork-a-project) has the rest of `fork`.
+`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
 
-`--worktree` starts the agent in its own git worktree, so it doesn't edit the files another agent is working on:
+`--worktree` starts the agent in its own git worktree:
 
 ```
 $ repose run --worktree -p "try the other approach"
@@ -141,7 +141,7 @@ Inside a tmux on your laptop, `Ctrl-b` goes to that tmux. Press it twice to reac
 
 Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later. A temporary machine is destroyed instead when you leave its last window from `repose attach` or `repose run`, unless its checkout holds work your laptop doesn't ([Temporary machines](/docs/lifecycle#temporary-machines)); left any other way, it waits for its expiry.
 
-tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. If you want tmux's mouse mode instead (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
+tmux leaves the mouse to your terminal, so selecting text and copying work as they do outside tmux. For tmux's mouse mode (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`. The file stays in your home directory across stops.
 
 Shift+Enter starts a new line in Claude Code instead of sending the prompt, when your terminal reports modified keys to tmux (xterm's modifyOtherKeys; Ghostty, WezTerm, iTerm2 and xterm do, Apple's Terminal doesn't). If Shift+Enter still sends the prompt, type `\` and then Enter, or press Ctrl+J. Links an agent prints are clickable in terminals that support links (OSC 8), and a program in the current window can send escape sequences through tmux to your terminal.
 
@@ -274,8 +274,6 @@ repose run scratch              # by name, made if missing
 repose run --temp               # gone after 24 hours
 repose run --multiplexer herdr  # herdr, from the next start
 ```
-
-`repose run NAME` is also how you get [a second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository), and `--temp` is described under [Temporary machines](/docs/lifecycle#temporary-machines).
 
 The full list is in the [CLI reference](/docs/cli#repose-run-project).
 

@@ -17,7 +17,7 @@ You need herdr 0.9.0 or newer on your laptop ([herdr.dev](https://herdr.dev)) fo
 default_multiplexer = "herdr"
 ```
 
-Every project `run` creates from now on gets herdr. You can skip this when you run repose from a herdr pane: a new project made there gets herdr anyway. For one project, pass the flag instead:
+Every project `run` creates from now on gets herdr. A new project made from a herdr pane gets herdr without it. For one project, pass the flag instead:
 
 ```
 repose run --multiplexer herdr
@@ -59,9 +59,9 @@ todo-app-worktree-1   claude  claude-2  idle
 
 ## The sidebar
 
-`run` and `attach` add each running herdr project to your laptop herdr's machine list, and `repose rm` takes it out again, so the list matches your account. Entries for your other hosts stay as they are. If you disable a repose machine in herdr, it stays disabled. A stopped machine keeps its entry; herdr shows it as stopped until `repose start`.
+`run` and `attach` add each running herdr project to your laptop herdr's machine list, and `repose rm` takes it out again. Entries for your other hosts stay as they are. If you disable a repose machine in herdr, it stays disabled. A stopped machine keeps its entry; herdr shows it as stopped until `repose start`.
 
-A machine in the sidebar holds an SSH connection open while your laptop's herdr runs, and that counts as someone using it: it doesn't get the idle notice. Disable its entry when you're done with it for the day; its agents keep running. The commands are under [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux).
+A machine in the sidebar holds an SSH connection open while your laptop's herdr runs, and that counts as someone using it: it doesn't get the idle notice. [Disable its entry](/docs/run-and-attach#herdr-instead-of-tmux) when you're done with it for the day; its agents keep running.
 
 ## After a stop and start
 
