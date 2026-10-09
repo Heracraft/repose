@@ -169,3 +169,55 @@ func TestQuestionsForOneProjectPastTheCap(t *testing.T) {
 		t.Fatalf("todo-app's question was lost:\n%s", out.buf.String())
 	}
 }
+
+// B2, I-608: a first word that names a project with no waiting question
+// is still the project, so `reply izma main` never sends "izma main" to
+// another project's agent; `--` keeps every word in the answer.
+func TestReplyNeverSendsAProjectName(t *testing.T) {
+	e, p, fake, out, errOut := questionEnv(t)
+	ctx := context.Background()
+	other, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fake.AddQuestion(p.ID, "claude", "Which branch?", nil, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	err = ReplyCmd(ctx, e, []string{"izma", "main"}, "", "", strings.NewReader(""), false)
+	if exitCodeOf(err) != ExitGeneric || !strings.Contains(err.Error(), "No question is waiting in izma.") {
+		t.Fatalf("reply izma main: %v", err)
+	}
+	if q := fake.Questions()[0]; q.State != "pending" {
+		t.Fatalf("an answer went out: %+v", q)
+	}
+	if err := ReplyCmd(ctx, e, []string{other.ID, "main"}, "", "", strings.NewReader(""), false); exitCodeOf(err) != ExitGeneric {
+		t.Fatalf("reply by id: %v", err)
+	}
+	if err := replyCmd(ctx, e, []string{"izma", "main"}, "", "", strings.NewReader(""), false, false); err != nil {
+		t.Fatalf("reply -- izma main: %v (stderr %s)", err, errOut.buf.String())
+	}
+	if s := out.buf.String(); s != "Answered claude in todo-app: izma main\n" {
+		t.Fatalf("reply said %q", s)
+	}
+}
+
+// I-606: questions and the terminal waits name the window, the handle
+// `attach -w` takes.
+func TestQuestionsNameTheWindow(t *testing.T) {
+	e, p, fake, out, _ := questionEnv(t)
+	ctx := context.Background()
+	fake.SetState(p.ID, "running")
+	fake.SetAgents(p.ID, []fakeapi.AgentSignal{{Agent: "claude", Window: "claude-2", State: "needs_input"}, {Agent: "codex", Window: "codex", State: "working"}})
+	if err := QuestionsCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s := out.buf.String(); !strings.Contains(s, "\n  claude-2 on todo-app\n") || strings.Contains(s, "codex") {
+		t.Fatalf("questions:\n%s", s)
+	}
+	if got := questionAsker(Question{Agent: "claude", Window: "claude-3"}); got != "claude-3" {
+		t.Fatal(got)
+	}
+	if got := questionAsker(Question{Agent: "claude"}); got != "claude" {
+		t.Fatal(got)
+	}
+}

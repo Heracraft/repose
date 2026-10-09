@@ -348,6 +348,9 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	now := w.now()
 	type emission struct {
 		agent, window, state, kind, summary string
+		// tmux: the window is a live tmux window, whose StateOption
+		// follows the state.
+		tmux bool
 	}
 	var states []emission
 	var events []emission
@@ -445,7 +448,7 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		}
 		if ws.state != ws.announced && now.Sub(ws.stateSince) >= StateDebounce {
 			ws.announced = ws.state
-			states = append(states, emission{agent: p.Agent, window: p.Key, state: ws.state})
+			states = append(states, emission{agent: p.Agent, window: p.Key, state: ws.state, tmux: source == multiplexer.Tmux})
 		}
 
 		if p.RootPID > 0 {
@@ -497,9 +500,16 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	w.herdrDropped = herdrDropped
 	w.mu.Unlock()
 
+	slug := w.slugs.Slug()
 	for _, e := range states {
 		w.log.Info("agent state changed", "event", "agent_state", "agent", e.agent, "state", e.state)
 		w.emit.AgentState(e.agent, e.window, e.state)
+		if e.tmux {
+			if err := w.tmux.client.setWindowState(ctx, slug, e.window, e.state); err != nil {
+				w.log.Debug("could not mark the tmux window's state",
+					"event", "agent_state", "error_code", sysdep.CodeOf(err))
+			}
+		}
 	}
 	for _, e := range events {
 		w.log.Info("agent event", "event", "agent_event", "agent", e.agent, "kind", e.kind)

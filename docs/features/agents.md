@@ -17,7 +17,7 @@ First use of Claude in a guest with no credentials:
 
 ```
 $ repose run -p "write tests for the payment module"
-Claude Code is not logged in on this guest yet. Finish the login in the window that opens, then re-run with your prompt.
+Claude Code is not logged in on todo-app. Log in in the window that opens; your prompt is typed after the login.
 ```
 
 Setting the headless fallback:

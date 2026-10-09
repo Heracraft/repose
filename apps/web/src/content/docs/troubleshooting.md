@@ -93,7 +93,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Agents
 
-**`Claude Code is not logged in on this guest yet.`** Finish the login in the window the CLI opened, then run your prompt again. See [Agents](/docs/agents#log-in).
+**`Claude Code is not logged in on todo-app.`** Log in in the window the CLI opened; your prompt is typed after the login. With `--no-attach` nothing is typed: log in with `repose attach todo-app -w claude`, then run your prompt again. See [Agents](/docs/agents#log-in).
 
 **An image you dropped or pasted didn't attach.** See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 

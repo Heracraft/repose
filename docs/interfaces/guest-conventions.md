@@ -138,6 +138,13 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   unit's cgroup (one started over ssh during the 5 s), so the unit does
   not start again every 5 s with nothing to supervise; run by hand it
   skips that check.
+- guestd sets the window option `@repose-state` on an agent window to
+  the state it last announced (`working`, `idle`, `needs_input`,
+  `unknown`) each time that changes (DECISIONS I-606). `repose ps` reads
+  it as STATE, and `/etc/tmux.conf`'s window formats put `?` after the
+  name of a window at `needs_input`. A window with no value is a base
+  before I-606 or a window with no agent; the CLI then takes the api's
+  sample when it is under two minutes old.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names

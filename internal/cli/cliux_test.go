@@ -327,8 +327,9 @@ func TestPositionalProject(t *testing.T) {
 	if err := run("status", "izma", "--project", "other"); !isUsage(err) {
 		t.Fatalf("conflicting positional and --project: %v", err)
 	}
-	if err := run("attach", "izma", "other"); !isUsage(err) {
-		t.Fatalf("two positionals: %v", err)
+	// A second word is the window (I-606); a third is a usage error.
+	if err := run("attach", "izma", "claude", "other"); !isUsage(err) {
+		t.Fatalf("three positionals: %v", err)
 	}
 	if err := run("projects", "extra"); !isUsage(err) {
 		t.Fatalf("projects with a stray word: %v", err)

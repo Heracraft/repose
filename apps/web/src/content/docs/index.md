@@ -37,17 +37,11 @@ Ready in 14s.
 
 You're now in a shell on the machine, in `/home/dev/your-project` (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. The shell runs inside tmux. If you use [herdr](https://herdr.dev), run `repose run --multiplexer herdr` instead and the machine runs herdr ([herdr on your machine](/docs/tutorial-herdr)).
 
-## 3. Log in to Claude Code on the machine
-
-Claude Code's login is never copied from your laptop, so you log in once, on the first machine. Type `claude`, open the URL it prints, approve, and paste the code back. Your other machines are then logged in too.
-
-Codex, opencode and GitHub CLI logins were copied from your laptop in step 2. [Agents](/docs/agents) covers the rest.
-
-## 4. Let it run without asking
+## 3. Let it run without asking
 
 Claude Code on the machine starts in `bypassPermissions` mode, so it doesn't stop to ask before running a command. If your laptop's `~/.claude/settings.json` sets another `defaultMode`, the machine uses yours. [Agents](/docs/agents#let-it-run-without-asking) has the details.
 
-## 5. Hand it a task
+## 4. Hand it a task
 
 Detach from tmux with `Ctrl-b` then `d`. Back on your laptop:
 
@@ -57,7 +51,9 @@ repose run -p "write tests for src/billing.ts and commit them"
 
 The CLI starts Claude Code in a new tmux window on the machine, types your prompt and attaches you. Detach and close the laptop; the agent keeps working.
 
-## 6. Show it a screenshot
+Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done. Your other machines are then logged in too. Codex, opencode and GitHub CLI logins were copied from your laptop in step 2; [Agents](/docs/agents) covers the rest.
+
+## 5. Show it a screenshot
 
 With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the agent's window. Or drag a file onto the terminal. The file is copied to the machine and its path lands in the prompt, where Claude Code shows it as an image:
 
@@ -67,7 +63,7 @@ With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the a
 
 [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image) has the limits.
 
-## 7. Get a notification when it's done
+## 6. Get a notification when it's done
 
 Email is on by default. For your phone, pick a long random [ntfy](https://ntfy.sh) topic, subscribe to it in the ntfy app, then:
 
@@ -76,7 +72,7 @@ repose notify set --ntfy https://ntfy.sh/repose-4f9c2a7e1b
 repose notify test
 ```
 
-## 8. Come back and stop
+## 7. Come back and stop
 
 From any computer you're logged in on (`repose ls` lists your projects):
 

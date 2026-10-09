@@ -17104,3 +17104,117 @@ event says `done` for `completed`, the word the other text output uses.
 The docs section is "Unused machines". `TestIdleLineOnStatusAndProjects`,
 `TestIdleOthersNoteOncePerStretch`, `TestAgentStateCountsEveryAgent`,
 `TestSubjectUsesPlatformWording`.
+**I-606. Agents are addressed by window: `ps` shows each one's state and
+tree and prints its last lines, and `attach` opens a named window.**
+(cli-devx review 2026-10-08, items 1.2, 2.1-2.5, F7, G2; amends I-274,
+I-509) You hand work to agents and agents live in windows, but `attach`
+could not open one, `ps` on tmux knew less than `ls`, and reading what
+an agent printed meant attach, `Ctrl-b w`, read, detach. Now:
+- guestd sets the tmux window option `@repose-state` to the state it
+  announces for an agent window (working, idle, needs_input, unknown),
+  once per change; a restarted guestd announces again, so the option
+  comes back within the debounce. One `tmux set-option` per change, as
+  dev; a failure logs its error code only. `/etc/tmux.conf`'s window
+  formats print `?` after the name of a window at needs_input, so an
+  attached user sees which other agent waits. The option carries a
+  state word, never pane content, so I-49 holds.
+- `repose ps` on tmux reads it in the same `list-windows`, with
+  `pane_current_path`: `WINDOW COMMAND STATE TREE ACTIVE`. STATE falls
+  back to the api's sample for that window when the sample is under two
+  minutes old (a base before this), else `-`; `unknown` prints `-` as
+  `ls` hides it (I-567). TREE is worked out on the laptop: `checkout`,
+  `worktree-N`, `~/PATH`, or the path; the path goes to the user's
+  terminal only. herdr's STATE now uses the same words (blocked is
+  needs_input, done is idle).
+- `ps --json` has one shape on both: name, agent, command, state, tree,
+  focused, idle_seconds, null where a side cannot know. The old keys
+  (tmux index, current, activity; herdr workspace) stay one release.
+- `repose ps [PROJECT] [WINDOW]`, or `-w NAME`, prints that window's
+  last 20 lines, `-n`/`--tail N` for N (1 to 10000); `-n` alone prints
+  every window's under `==> 1:claude <==` heads, as tail(1) does. tmux:
+  `capture-pane -p -J -S -N` over the existing connection, trailing
+  blank rows dropped; herdr: `herdr agent read NAME --lines N --source
+  recent-unwrapped --format text`. Nothing goes through guestd or the
+  api. Folded under `ps` (what runs and what it shows), not `logs`,
+  which is the machine's console and builds.
+- `repose attach [PROJECT] [WINDOW]`, or `-w NAME`: a number is the
+  window's index, anything else its exact name (tmux `=slug:=name`, so a
+  prefix never lands on another window). A window that is not there
+  exits 2 with ``todo-app has no window claude-9. `repose ps todo-app`
+  lists them.`` On herdr NAME is an agent, focused with `herdr agent
+  focus`. The fast attach (I-223) takes it too. `PROJECT:WINDOW` was
+  not used: `PROJECT:CHECKOUT` has that meaning (I-480). The window
+  `run -p` attaches to is now targeted exactly as well.
+- `questions` and `reply` name the window (`claude-2`) where the agent
+  sent one, and the terminal waits read `claude-2 on todo-app`.
+*Not done:* a wait age on the terminal waits (needs a `since` on the
+signal); completion of `--window` (an ssh per Tab); window names
+`worktree-2/claude` and a `repose` command that removes a worktree (G2):
+TREE and `exec --workdir` (I-608) answer which window is which tree,
+renaming would change the names guestd and the api key states by, and a
+removal needs to know what the laptop has fetched, which the machine
+cannot. `TestParsePs`, `TestPsRows`, `TestTreeOf`, `TestPsLastLines`,
+`TestPsListsWindows`, `TestPsTailsAWindow`, `TestAttachNamedWindow`,
+`TestPsJSONOneShape`, `TestWatcherMarksTheTmuxWindowState`,
+`TestQuestionsNameTheWindow`.
+
+**I-607. The first `run -p` without a Claude Code login types the prompt
+after the login; `-d` is `--no-attach`, and it names the window.**
+(cli-devx review 2026-10-08, B4, 6.1, 2.4, theme 7; amends 07-cli.md
+§5.5 step 7) A first prompt on an account was dropped: the window
+opened on Claude Code's login and the CLI said to run the prompt again,
+and `--no-attach` exited 0 with no agent at work. Now:
+- Attached: the window opens on the login as before, and a waiter
+  started beside it on the machine (`setsid -f sh -c`, stdin and output
+  closed, so the ssh returns) types the prompt once
+  `~/.claude/.credentials.json` is non-empty, the pane runs `claude`,
+  its screen has not changed for 3 s, and it shows none of the agent
+  dialogs `run` never types into (I-486, I-556) nor "Press Enter to
+  continue" / "Enter to confirm", the screens after a login that an
+  Enter would answer. It ends when the window closes, after a day with
+  no login, or 30 minutes after the login. On herdr the same waiter
+  watches the pane (`herdr pane read`), checks that a program and not
+  the shell is in front (`process-info`), and types with `herdr pane
+  run`. The line reads `Claude Code is not logged in on todo-app. Log in
+  in the window that opens; your prompt is typed after the login.` The
+  prompt lives in the waiter's shell on the machine and is never logged.
+- `--no-attach`: exit 1, nothing typed, no waiter: ``Claude Code is not
+  logged in on todo-app, so your prompt was not typed. Log in with
+  `repose attach todo-app -w claude`, then run your prompt again.`` A
+  queued prompt would make a retried script start the task twice. On
+  herdr the hint has no `-w` (the login tab has no agent name, I-509,
+  and is focused).
+- `-d` is the short form of `--no-attach`, as `docker run -d`; no
+  second long name. With `-p` it prints `Window: claude-2` (`Tab:` on
+  herdr) on stdout, the handle `attach -w`, `ps` and `paste --window`
+  take; an attached run lands in it and prints nothing more. The
+  tutorials fire several prompts with `run -d --worktree -p`.
+- The shared-tree warning also fires when the agent runs in a window
+  of another name (`claude` typed in `shell`), in the machine's own
+  checkout: one more field in the same `list-windows`.
+- The quickstart drops its manual-login step: `run -p` does the login
+  inline.
+*Rejected:* typing the prompt into the login screens, or pressing
+their Enter; a prompt file on the laptop (the CLI may be gone, or
+replaced by ssh on Windows). `TestPendingPromptTypesAfterLogin`,
+`TestPendingPromptWaitsOnBlockers`, `TestPendingPromptHerdrScript`, `TestRunClaudeNotLoggedInAttachesInstead`, `TestRunWorktreeThenPlainRun`,
+`TestRunArgs`, `TestWindowsAndAgent`, `TestDocsNameEveryCommandAndFlag`.
+
+**I-608. `exec --workdir DIR`, and `reply` takes any project's name as
+PROJECT.** (cli-devx review 2026-10-08, 2.2, B2) Testing a worktree's
+branch took `repose exec -- sh -c 'cd ~/todo-app-worktree-1 && npm
+test'`. `exec --workdir DIR` runs in DIR: `worktree-N` and `checkout`
+(each with an optional `/SUBDIR`) as `ps` shows them in TREE, `~` and
+`~/PATH`, `/PATH`, else a path inside the checkout; resolved on the
+machine against the checkout `exec` uses. A folder that is not there
+exits 2 with one line before the command runs. No short form: `-w` is
+`--window` on `ps` and `attach`. It also works in the old `PROJECT
+--workdir DIR -- COMMAND` form. `reply`'s first word was PROJECT only
+when that project had a waiting question, so `repose reply izma main`
+with none waiting in izma sent "izma main" to another project's agent,
+which cannot be undone. The first word is now PROJECT when it names any
+project on the account (slug or id), and one with no waiting question
+exits 1 sending nothing; `--` before the answer keeps every word in it
+(`repose reply -- izma is fine`), and `reply PROJECT -- ANSWER` names
+the project. `TestWorkdirShell`, `TestExecWorkdir`,
+`TestReplyNeverSendsAProjectName`.

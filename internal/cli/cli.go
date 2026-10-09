@@ -373,7 +373,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("stash-remote")
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
-	cmd.Flags().BoolVar(&opts.NoAttach, "no-attach", false, "do not attach after starting/sending the prompt")
+	cmd.Flags().BoolVarP(&opts.NoAttach, "no-attach", "d", false, "do not attach; with -p, print the window the agent is in")
 	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix (repose config --global) off this machine, from now on")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, ~/<slug>-worktree-<N> on branch worktree-<N>")
@@ -387,12 +387,28 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var bridge bool
 	var bridgeAllow []string
+	var window string
 	cmd := &cobra.Command{
-		Use:               "attach [PROJECT[:CHECKOUT]]",
-		Short:             "Attach to a project's tmux session (this checkout's, or PROJECT)",
-		Args:              projectArgs,
+		Use:   "attach [PROJECT[:CHECKOUT]] [WINDOW]",
+		Short: "Attach to a project's tmux session (this checkout's, or PROJECT), or one of its windows",
+		Long: "Attaches to PROJECT's tmux session (this checkout's, by default), on its current window.\n" +
+			"With WINDOW (or -w), on that window: a tmux window's name or number as `repose ps` shows\n" +
+			"it, or on herdr an agent's name.",
+		Example: "  repose attach\n  repose attach todo-app claude-2\n  repose attach -w 2",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 2 {
+				return cobraUsageError{fmt.Errorf("%s takes PROJECT and WINDOW, got %s", cmd.CommandPath(), gotArgs(args))}
+			}
+			return nil
+		},
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 2 {
+				if window != "" && window != args[1] {
+					return cobraUsageError{fmt.Errorf("%s and --window %s name two windows; pass one", args[1], window)}
+				}
+				window, args = args[1], args[:1]
+			}
 			project, err := projectFrom(args, g)
 			if err != nil {
 				return err
@@ -404,9 +420,10 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
+			return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
 		},
 	}
+	cmd.Flags().StringVarP(&window, "window", "w", "", "open on window `NAME` (a tmux name or number, or a herdr agent's name)")
 	cmd.Flags().BoolVar(&bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
 	cmd.Flags().StringArrayVar(&bridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
 	return cmd
@@ -1449,14 +1466,30 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *cobra.Command {
 	var question string
 	cmd := &cobra.Command{
-		Use:   "reply [PROJECT] [ANSWER...]",
+		Use:   "reply [PROJECT] [--] [ANSWER...]",
 		Short: "Answer a question an agent asked with repose-ask",
+		Long: "Answers a waiting question. A first word that names one of your projects is PROJECT; put --\n" +
+			"before an answer that starts with a project's name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := envJSON(cmd)
 			if err != nil {
 				return err
 			}
-			return ReplyCmd(cmd.Context(), e, args, g.project, question, os.Stdin, canPrompt(os.Stdin))
+			// `--` ends the project: before it at most one word, the
+			// project; after it every word is the answer (I-608).
+			project, mayName := g.project, true
+			switch dash := cmd.ArgsLenAtDash(); {
+			case dash == 0:
+				mayName = false
+			case dash == 1:
+				if project != "" && project != args[0] {
+					return cobraUsageError{fmt.Errorf("%q and --project %q name two projects; pass one", args[0], project)}
+				}
+				project, args, mayName = args[0], args[1:], false
+			case dash > 1:
+				return cobraUsageError{fmt.Errorf("only PROJECT goes before --: repose reply [PROJECT] -- ANSWER")}
+			}
+			return replyCmd(cmd.Context(), e, args, project, question, os.Stdin, canPrompt(os.Stdin), mayName)
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
