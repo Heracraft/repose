@@ -235,7 +235,7 @@ func TestProjectsTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "STATE") || !strings.Contains(lines[0], "MONTH") {
+	if !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "STATE") || strings.Contains(lines[0], "MONTH") {
 		t.Fatalf("no header row:\n%s", out.String())
 	}
 	if strings.Contains(lines[0], "LEFT") {

@@ -237,9 +237,8 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 // genLocRe is the " at fragment.nix:L:C" hostd appends to a summary.
 var genLocRe = regexp.MustCompile(` at fragment\.nix:\d+(:\d+)?`)
 
-func shortRev(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
+// shortRev is a revision id's last 8 characters, as shortID cuts a
+// question's (I-616): ids are UUIDv7, whose first 8 hex digits are a
+// timestamp that changes once a minute or so, so two applies in a row
+// printed the same `Applied revision 01900000`.
+func shortRev(id string) string { return shortID(id) }

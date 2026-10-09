@@ -217,7 +217,7 @@ List the tools the next `repose run` would install on the machine, and why, and 
 
 ### `repose ls`
 
-Every project in a table, with a line under it for each running project nobody has used for a day ([Idle machines](/docs/lifecycle#idle-machines)) and for each temporary one, saying when it is destroyed. A `DISK` column appears while a listed project's disk is 90 percent full or more, as `93% full`. While your projects hold more than your plan's disk, a line under the table says so: [creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS reads `working`, `idle` (at its prompt) or `needs input`. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
 repose stop $(repose ls -q)
@@ -225,9 +225,28 @@ repose stop $(repose ls -q)
 
 ### `repose status [PROJECT]`
 
-One project in detail, including processes listening on ports, the idle line when it has had nobody on it for a day, and when a temporary one is destroyed. `--json`, `--watch` (every 5 seconds).
+One project in detail:
 
-`disk` is the machine's filesystem, used over size, as the machine reports it; a stopped machine, or one that has not reported, shows the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB. While your projects hold more than your plan's disk, a line says that too.
+```
+$ repose status
+todo-app  running 2h14m  large
+  agents     claude-2 needs input, claude working
+  checkout   main: 3 commits not on this laptop, 2 files not committed
+             worktree-1: nothing new
+  attached   nobody
+  listening  node :5173 up 3d 410.0 MB
+  disk       6.2 GB of 39.0 GB, snapshot 11h08m ago
+  last event 14m ago, claude done "Added auth flow"
+```
+
+`checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Run outside the project's checkout, your laptop can't tell which commits it has, so the line gives the last commit's age instead. `disk` is the machine's filesystem, used over size; a stopped machine, or one that hasn't reported, shows the disk's size. Lines above the rows say when the machine has been unused for a day, when a temporary one is destroyed, when the disk is 90 percent full or more (with the `repose resize` that doubles it, up to 320 GB), and the plan lines `repose ls` prints. `-v` adds the server's name and the machine's address.
+
+| Flag                 | What it does                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`.      |
+| `--watch`            | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed. A failed read doesn't end it.                              |
+| `--wait STATE`       | Wait until the machine is in STATE (`running`, `stopped`, `error`, ...), then print the status. Exits 1 if it lands in `error` or is destroyed instead. |
+| `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`).                                                                                               |
 
 ### `repose start [PROJECT]`
 

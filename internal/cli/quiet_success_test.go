@@ -24,7 +24,7 @@ var quietAllowed = map[string]string{
 	"run.go:attachCommand:%s has no checkout %s. `repose run --on ":               "a refusal: exit 2, the machine has no such checkout",
 	"buildprogress.go:printApplied:Built revision %s. It changes the kernel":      "the change does nothing until a restart the user times",
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
-	"status.go:writeStatusLinesMux:  the environment's agent (guestd) is no":      "a failure that status reports",
+	"status.go:writeStatus:  repose's service on the machine is not":              "a failure that status reports",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
 	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",

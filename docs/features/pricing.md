@@ -74,17 +74,25 @@ An account an operator has marked billing-exempt (`repose-admin users
 exempt`) passes all of these; it still records hours and egress, so the
 numbers below are still real for it (DECISIONS I-16).
 
-## Seeing the hours
+## Seeing the plan
 
 ```
-$ repose status
-todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
+$ repose ls
+...
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month
 ```
 
-`running_seconds_today` and `running_seconds_month` on a project come from
-the same `usage_hours` rows the overage line is computed from. Usage is
-rolled up once an hour, at five past, so the figure lags by up to an hour
-and a bit. Hours are information, not a bill: the plan is what is charged.
+The line under `repose ls` is GET /billing's `usage` (DECISIONS I-616):
+the memory the gate checks a start against, the disk the projects hold,
+and egress against the allowance. `repose ls` and `repose status` print
+a warning line past the plan's disk, past the egress allowance (with the
+$0.05 a GB and the stop at four times it) and while the subscription is
+`past_due`. The running hours they showed until I-616 are gone from the
+CLI: they cost nothing on a plan and read as a meter.
+`running_seconds_today` and `running_seconds_month` stay on the Project
+for the dashboard and scripts; they come from the same `usage_hours` rows
+the overage line is computed from. Usage is rolled up once an hour, at
+five past, so the figures lag by up to an hour and a bit.
 
 A gap in the host's samples under-counts that hour: the minutes it did not
 hear about are not counted and are never estimated. That makes a host

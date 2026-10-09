@@ -213,7 +213,13 @@ func TestStatusShowsHostNameAndNewestEvent(t *testing.T) {
 	var b strings.Builder
 	writeStatusLines(&b, p, route, nil, events)
 	got := b.String()
-	if !strings.Contains(got, "host host-01 ") || strings.Contains(got, route.HostID) || !strings.Contains(got, `"running"`) || strings.Contains(got, `"creating"`) {
+	if !strings.Contains(got, "\n  host       host-01, ip 10.64.0.2\n") || strings.Contains(got, route.HostID) || !strings.Contains(got, `"running"`) || strings.Contains(got, `"creating"`) {
 		t.Fatalf("%s", got)
+	}
+	// Without -v status reads no route, and prints no host (I-616).
+	b.Reset()
+	writeStatusLines(&b, p, nil, nil, events)
+	if strings.Contains(b.String(), "host") || strings.Contains(b.String(), "10.64") {
+		t.Fatalf("host without -v:\n%s", b.String())
 	}
 }

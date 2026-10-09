@@ -523,20 +523,26 @@ measures them):
 
 ```
 $ repose status
-todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
-  host eastus/h-01   ip 10.64.0.7   disk 8.1/40 GB   snapshot 6h ago
-  sessions 1   tmux clients 1   docker 2
-  last event 12m ago: claude completed "ran tests, 3 failures fixed"
+todo-app  running 2h14m  large
+  agents     claude working
+  checkout   main: 3 commits not on this laptop, 2 files not committed
+  attached   1 SSH session, 1 tmux client
+  docker     2 containers
+  disk       8.1 GB of 40.0 GB, snapshot 6h00m ago
+  last event 12m ago, claude done "ran tests, 3 failures fixed"
 ```
 
-`--watch` refreshes every 5 seconds. `--json` prints the `Project` object.
+Labelled rows since DECISIONS I-616; `-v` adds `host` (name and the
+guest's address). `--watch` redraws every 5 seconds; `--wait STATE`
+waits for a state. `--json` prints the `Project` object plus `git`.
 A project in `error` gets an `error: <reason>` line under the first.
 `repose ls` prints a table with a header row (`PROJECT CLASS STATE
-UP AGENTS TODAY MONTH`, `-` where a column does not apply, uptime only
+UP AGENTS` since I-616, `*` after the name of the project a command
+there acts on, `-` where a column does not apply, uptime only
 while running, and `LEFT`, a temporary machine's time left, only while
 one is listed), then one line per project in `error` with its reason and
 the command that fixes it; with no projects it says `No projects yet.`
-(I-484).
+(I-484). The plan's line follows the table (I-616).
 `--json` is the api's list, unchanged (DECISIONS I-153).
 `repose ls --destroyed` lists `GET /projects/destroyed` one row per
 name, the one `repose restore NAME` restores (that name's newest

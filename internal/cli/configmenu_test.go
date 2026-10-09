@@ -162,8 +162,17 @@ func TestMenuNameAndJoin(t *testing.T) {
 			t.Errorf("joinNames(%v) = %q", c.in, got)
 		}
 	}
-	if shortRev("0123456789abcdef") != "01234567" {
-		t.Error(shortRev("0123456789abcdef"))
+	// The random tail, as questions cut theirs (I-616): two UUIDv7
+	// revisions made a minute apart share their first 8 digits.
+	for id, want := range map[string]string{
+		"0123456789abcdef":                     "89abcdef",
+		"01900000-1a2b-7c3d-8e4f-0123456789ab": "456789ab",
+		"01900000-ffff-7c3d-8e4f-ba9876543210": "76543210",
+		"short":                                "short",
+	} {
+		if got := shortRev(id); got != want {
+			t.Errorf("shortRev(%q) = %q, want %q", id, got, want)
+		}
 	}
 	if got := genLocRe.ReplaceAllString(`nixpkgs has no package "foo"; search https://search.nixos.org/packages at fragment.nix:11:23`, ""); got != `nixpkgs has no package "foo"; search https://search.nixos.org/packages` {
 		t.Error(got)

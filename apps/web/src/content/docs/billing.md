@@ -1,6 +1,6 @@
 ---
 title: Pricing
-description: The three plans, what each one buys, the free week, and where to see your hours.
+description: The three plans, what each one buys, the free week, and where to see how much of yours is in use.
 section: Account
 order: 30
 ---
@@ -32,15 +32,15 @@ Seven days on any plan. Your card is taken at checkout and first charged on day 
 
 Example: after the first 3 months, a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
 
-## Seeing your hours
+## Seeing your plan
 
-`repose ls` and `repose status` end each project's line with its running time today and this month (the agent column is cut here):
+`repose ls` ends with your plan and how much of it is in use:
 
 ```text
-todo-app   large  running   2h14m   …   today 2h14m  month 41h
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month
 ```
 
-The dashboard's **Billing** page shows the same against your plan: memory running, the disk your projects hold, egress this month and the overage so far, plus your invoices. Hours are totalled a few minutes past each hour, so figures can trail by up to an hour.
+Running memory is what a start is checked against. `repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
 
 ## Changing and cancelling
 

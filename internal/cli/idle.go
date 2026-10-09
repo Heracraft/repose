@@ -13,11 +13,11 @@ import (
 
 // The idle warning (DECISIONS I-262). The api marks a running project
 // `idle` once it has gone a day with no SSH session and no agent working;
-// repose never stops it (R1-5), so the CLI says it is running with nobody
-// attached and how to stop it: on every `projects` and `status`, and once
-// per idle stretch on `run` and `attach` of some other project. Since
-// I-289 a plan buys memory that may run at once, so there is no rate to
-// print; the idle machine holds part of the plan.
+// repose never stops it (R1-5). The CLI calls that machine unused (I-617),
+// since "idle" is also an agent's state at its prompt: on every `ls` and
+// `status`, and once per unused stretch on `run` and `attach` of some
+// other project. Since I-289 a plan buys memory that may run at once, so
+// there is no rate to print; the unused machine holds part of the plan.
 
 // idleFor renders how long a project has been idle: hours up to two days,
 // then days.
@@ -29,12 +29,33 @@ func idleFor(d time.Duration) string {
 	return fmt.Sprintf("%dd", h/24)
 }
 
-// idleLine is "running for 26h with nobody attached", or "" for a project that is not idle.
+// idleLine is "unused for 26h", or "" for a project that is not idle.
+// An agent waiting for an answer is named: the machine is unused because
+// nobody answered it, which is a different thing to act on (I-617).
 func idleLine(p *Project, now time.Time) string {
 	if p.Idle == nil || p.State != "running" {
 		return ""
 	}
-	return fmt.Sprintf("running for %s with nobody attached", idleFor(now.Sub(p.Idle.Since)))
+	line := "unused for " + idleFor(now.Sub(p.Idle.Since))
+	if p.Signals != nil {
+		var waiting []string
+		for _, a := range p.Signals.Agents {
+			if a.State == "needs_input" {
+				name := a.Window
+				if name == "" {
+					name = a.Agent
+				}
+				waiting = append(waiting, name)
+			}
+		}
+		switch {
+		case len(waiting) == 1:
+			line += "; " + waiting[0] + " needs input"
+		case len(waiting) > 1:
+			line += "; " + strings.Join(waiting, ", ") + " need input"
+		}
+	}
+	return line
 }
 
 // idleNotedName is the laptop file that remembers which idle stretches
@@ -68,7 +89,7 @@ func idleOthersNote(dir string, projects []Project, current string, now time.Tim
 		if t, ok := noted[p.ID]; ok && t.Equal(p.Idle.Since) {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s (idle %s)", p.Slug, idleFor(now.Sub(p.Idle.Since))))
+		parts = append(parts, fmt.Sprintf("%s (%s)", p.Slug, idleFor(now.Sub(p.Idle.Since))))
 	}
 	if dir != "" && !sameNoted(noted, keep) {
 		if b, err := json.Marshal(keep); err == nil {
@@ -79,7 +100,7 @@ func idleOthersNote(dir string, projects []Project, current string, now time.Tim
 		return ""
 	}
 	sort.Strings(parts)
-	return fmt.Sprintf("Still running with nobody on it: %s.", strings.Join(parts, ", "))
+	return fmt.Sprintf("Running and unused: %s.", strings.Join(parts, ", "))
 }
 
 func sameNoted(a, b map[string]time.Time) bool {

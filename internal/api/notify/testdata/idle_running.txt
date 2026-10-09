@@ -1,4 +1,4 @@
-todo-app: claude idle, still billing
+todo-app: claude unused for 24h, holding plan memory
 
 todo-app (large) has run 24h with no session, no tmux client and no agent working. Stop it with `repose stop todo-app` if you are done.
 

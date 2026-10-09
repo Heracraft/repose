@@ -48,7 +48,7 @@ The T3 Code desktop app can also add the machine as an SSH computer, `todo-app.r
 
 - **Claude Code doesn't ask.** T3 Code starts the machine's `claude`, which runs in `bypassPermissions` mode ([Agents](/docs/agents)). T3 Code's approval settings don't make it ask. For Codex, T3 Code's settings apply.
 - **You still get notified.** A Claude Code or Codex turn in T3 Code sends the same "finished" notification as one in tmux.
-- **`repose status` doesn't list T3 Code's threads.** It shows agents in the project's tmux windows only. A machine whose agents all run under T3 Code, with no SSH session open, gets the "idle, still billing" notice after 24 hours even while threads are working. That notice never stops the machine.
+- **`repose status` doesn't list T3 Code's threads.** It shows agents in the project's tmux windows only. A machine whose agents all run under T3 Code, with no SSH session open, gets the "unused for 24h" notice even while threads are working. That notice never stops the machine.
 - **Ignore T3 Code's "Updates available" notice for Claude and Codex.** The agents come with the machine and update with the platform ([Installing software](/docs/config)); T3 Code leaves them alone.
 - **A restore takes T3 Code with it.** Its threads and pairing live in `~/.t3` on the machine, so restoring a snapshot puts them back as they were then.
 

@@ -792,15 +792,16 @@ func TestStatusNamesHerdr(t *testing.T) {
 	var b strings.Builder
 	writeStatusLinesMux(&b, p, nil, nil, nil, multiplexer.Herdr, guestDisk{})
 	first, rest, _ := strings.Cut(b.String(), "\n")
-	if !strings.HasPrefix(first, "todo-app   large  herdr  running") {
+	if first != "todo-app  running  large  herdr" {
 		t.Fatalf("first line %q", first)
 	}
-	if !strings.Contains(rest, "  sessions 1   docker 0\n") || strings.Contains(rest, "tmux clients") {
-		t.Fatalf("sessions line %q", rest)
+	if !strings.Contains(rest, "  attached   1 SSH session\n") || strings.Contains(rest, "tmux client") || strings.Contains(rest, "docker") {
+		t.Fatalf("attached row %q", rest)
 	}
 	b.Reset()
+	p.Signals.TmuxClients = 1
 	writeStatusLines(&b, p, nil, nil, nil)
-	if strings.Contains(b.String(), "herdr") || !strings.Contains(b.String(), "tmux clients 0") {
+	if strings.Contains(b.String(), "herdr") || !strings.Contains(b.String(), "  attached   1 SSH session, 1 tmux client\n") {
 		t.Fatalf("tmux status %q", b.String())
 	}
 }

@@ -17000,3 +17000,107 @@ home folder, the case that bit, already refuses. `TestSyncRemoteFlagsStashAndSay
 `TestCarryNoterPrintsOnlyChanges`, `TestSessionShowsTheRunsMessages`,
 `TestWholeMachineCommandsRefuseACheckout`, `TestCheckoutsAreNamedNotMade`,
 `TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncedTreeIsStashed`.
+**I-616. `repose status` is labelled rows with the checkout's git state;
+`ls` and `status` drop the running hours, show the plan, and mark the
+project this folder acts on.** (cli-devx, 2026-10-08; reviews
+`docs/reviews/2026-10-08-cli-devx.md` 1.1, 3.1, 3.2, 3.8, 4.1, 4.3 and
+`2026-10-08-cli-ergonomics-critique.md` F2; amends I-192, I-289's
+display, I-567's status layout) The person `status` is for comes back
+to a "claude finished" email and wants to know whether the agent
+committed and what is waiting for them. `status` answered with a host
+name, a private address and three counters that feed idle detection,
+and ended its first line with hours a plan does not bill. Now:
+- The header is `todo-app  running 2h14m  large` (`herdr` after the
+  size when it runs the terminals). Under it, the lines that need the
+  reader (a platform stop, an unused machine, a temporary end, an error,
+  a disk near full, a plan limit), then labelled rows: `agents` (each by
+  its window's name, the one that needs input first), `checkout`,
+  `attached` (`nobody`, or SSH sessions and tmux clients), `docker`
+  (only when containers run), `listening`, `disk` (`6.2 GB of 39.0 GB,
+  snapshot 11h08m ago`; `no snapshot yet` where it said `none`, which
+  read on a fork as if it came from nowhere), `last event`. The host and
+  the machine's address print only under `-v` (I-192 named them; they
+  are internals nobody acts on), and status reads the route only then;
+  `--json` keeps `host_id` and `guest_ip`. The guestd line reads
+  `repose's service on the machine is not answering, so the agents and
+  sessions below are old`.
+- `checkout`: the one ssh status already makes (I-200) also runs git in
+  the machine's checkout and each `git worktree` of it: the branch, the
+  commits the laptop lacks, the files `git status --porcelain` lists
+  (given 2 s) and the last commit's time. The laptop sends the commit at
+  each of its branch tips, `repose/*` included, on that ssh's stdin, only
+  when the folder is the project's checkout (its `repose` remote names
+  the project, or its origin is the project's remote); the guest keeps
+  the ones it has (`cat-file --batch-check`) and counts `rev-list HEAD
+  --not` them, so a laptop commit the machine lacks never fails the
+  count. Elsewhere the row shows `last commit 2h ago`. Counting against
+  every laptop ref, not `repose/<branch>`, makes "not on this laptop"
+  mean what `git fetch repose` would bring. No guestd, hostd or api
+  change: a `Sample` field would need all three and a migration, and
+  status is the only reader. `status --json` is the Project plus `git:
+  [{worktree, branch, commits_not_on_laptop, uncommitted_files,
+  last_commit_at}]`, absent for a stopped machine or one that did not
+  answer (an addition; every old key stays).
+- TODAY and MONTH are gone from `ls`, and `today … month …` from status:
+  since I-289 they cost nothing, and read as a meter people stopped
+  machines to save. `running_seconds_*` stay on the Project. Under the
+  `ls` table one line gives the plan from GET /billing:
+  `Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
+  this month`, the figures that refuse a start or a create or add a
+  charge. Warning lines follow it, and print in status, only near such a
+  limit: I-585's disk line, egress past the allowance (`each GB past it
+  adds $0.05, and your machines stop at 1000 GB`), and a `past_due`
+  subscription (`starting a machine is refused, and running machines
+  stop on the third day`, with the billing URL). No `plan` noun.
+- `ls` marks with `*` after its name the project a command run here
+  with no PROJECT acts on: `REPOSE_PROJECT`, then the folder's
+  `checkouts` and `by_dir` entries, then its remote, by resolveProject's
+  order, from the list it already has (no api call). A stale
+  `REPOSE_PROJECT` shows as a marked row elsewhere.
+- `status --watch` redraws in place on a terminal and, piped, prints a
+  status again only when it changed; an unreachable api, a 5xx or a 429
+  prints `Could not read the status at HH:MM:SS: ...` and the watch goes
+  on, any other error ends it. `status --wait STATE [--timeout 10m]`
+  polls every 2 s and prints the status once the project is in STATE;
+  `error` or destroyed while waiting for another state, or the timeout,
+  exits 1.
+- Short ids are the random tail everywhere: `shortRev` cut a revision's
+  first 8 characters, a UUIDv7's timestamp, so two applies a minute
+  apart printed the same id; it now cuts the last 8, as questions do.
+- Help: `start` and `stop` say "a project" where they said "a project's
+  machine" (4.3).
+*Not done:* naming in `status` how the project was picked (`this
+checkout, by git remote origin`): a line on every run that the `*` in
+`ls` already answers; a FROM column in `ls`, which needs the api to
+store a fork's parent, which it does not; the commit counts in the
+"finished" notification body (the hook would have to run git); `stop`
+fetching before it snapshots (another command's change).
+`TestStatusRowsAreLabelled`, `TestGitRowText`, `TestParseStatusGit`,
+`TestStatusShowsTheCheckoutsGit`, `TestLsMarksHereAndDropsHours`,
+`TestHereProjectID`, `TestPlanLineAndWarnings`, `TestLsPrintsThePlan`,
+`TestStatusWait`, `TestStatusWatchPrintsChangesAndRidesOutErrors`,
+`TestStatusShowsHostNameAndNewestEvent`, `TestMenuNameAndJoin`.
+
+**I-617. One vocabulary for agents and machines: agents are `working`,
+`idle` or `needs input`; a machine nobody used for a day is unused.**
+(cli-devx, 2026-10-08; review `docs/reviews/2026-10-08-cli-devx.md` 3.3,
+4.4; amends I-262's wording) "Idle" meant an agent at its prompt in
+`ls` and a machine with nobody on it for a day in the idle line, the
+notification and the dashboard, so an email called todo-app idle while
+`ls` showed `claude: working` on it, and `needs_input` printed in snake
+case beside notifications that said `needs input`. Now text output
+(`ls`, `status`, the dashboard's agent list) prints `needs input`;
+`--json`, the api and the event kinds keep `needs_input`. The machine
+state is "unused": `todo-app: unused for 26h` under `ls` and in
+`status`, with `; claude-2 needs input` when an agent waits for an
+answer (the machine is unused because nobody answered it, which is a
+different thing to act on); `Running and unused: todo-app (26h).` on
+`run` and `attach`; `unused 26h` on the dashboard. The `idle_running`
+notification's title was `todo-app: idle, still billing`, which no plan
+does since I-289; it is `todo-app: unused for 24h, holding plan memory`,
+the cost a plan has (another start refused). The kind `idle_running`,
+the api's `idle` field and the warner are unchanged. `status`'s last
+event says `done` for `completed`, the word the other text output uses.
+The docs section is "Unused machines". `TestIdleLineOnStatusAndProjects`,
+`TestIdleOthersNoteOncePerStretch`, `TestAgentStateCountsEveryAgent`,
+`TestSubjectUsesPlatformWording`.

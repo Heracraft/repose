@@ -472,7 +472,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:               "start [PROJECT]",
-		Short:             "Start a project's machine without syncing (restarts one in error)",
+		Short:             "Start a project without syncing (restarts one in error)",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -493,7 +493,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var noSnapshot, idle, yes bool
 	cmd := &cobra.Command{
 		Use:   "stop [PROJECT...]",
-		Short: "Snapshot and stop machines",
+		Short: "Snapshot and stop projects",
 		Long: "Snapshots and stops each PROJECT's machine (this checkout's, by default), several at once.\n" +
 			"When an agent is in the middle of a turn or waiting for an answer, it asks first; -y/--yes\n" +
 			"skips the question, and without a terminal it is required. In a checkout whose machine is\n" +
@@ -530,6 +530,8 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 
 func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var watch bool
+	var wait string
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:               "status [PROJECT]",
 		Short:             "Show a project's status",
@@ -540,25 +542,30 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 			if err != nil {
 				return err
 			}
+			if watch && wait != "" {
+				return cobraUsageError{fmt.Errorf("--watch and --wait are two different waits; pass one")}
+			}
+			if cmd.Flags().Changed("timeout") && wait == "" {
+				return cobraUsageError{fmt.Errorf("--timeout goes with --wait")}
+			}
 			e, err := envJSON(cmd)
 			if err != nil {
 				return err
 			}
-			if !watch {
-				return StatusCmd(cmd.Context(), e, project)
+			switch {
+			case watch:
+				return StatusWatch(cmd.Context(), e, project, e.Out == os.Stdout && canDrawSpinner(os.Stdout))
+			case wait != "":
+				return StatusWait(cmd.Context(), e, project, wait, timeout)
 			}
-			for {
-				if err := StatusCmd(cmd.Context(), e, project); err != nil {
-					return err
-				}
-				if err := sleepOrDone(cmd.Context(), 5*time.Second); err != nil {
-					return nil
-				}
-			}
+			return StatusCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the Project object as JSON")
-	cmd.Flags().BoolVar(&watch, "watch", false, "refresh every 5 seconds")
+	cmd.Flags().Bool("json", false, "print the Project object, with its checkout's git state, as JSON")
+	cmd.Flags().BoolVar(&watch, "watch", false, "redraw every 5 seconds until Ctrl-C")
+	cmd.Flags().StringVar(&wait, "wait", "", "wait until the machine is in `STATE` (running, stopped, ...), then print the status")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long --wait waits, as a `DURATION` (30s, 5m), before exiting 1")
+	_ = cmd.RegisterFlagCompletionFunc("wait", cobra.FixedCompletions(projectStates, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 

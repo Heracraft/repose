@@ -34,9 +34,10 @@ codex needs input: "Should I drop the legacy sessions table?"
 In `repose status`:
 
 ```
-todo-app   large  running   3h12m   codex: needs_input   today 3h12m  month 26h
+todo-app  running 3h12m  large
+  agents     codex needs input
   ...
-  last event 2m ago: codex needs_input "Should I drop the legacy sessions table?"
+  last event 2m ago, codex needs input "Should I drop the legacy sessions table?"
 ```
 
 ## Behaviour that must hold
@@ -57,7 +58,8 @@ Events (see agents.md for how each agent produces them):
   `idle_running` (DECISIONS I-262: a running guest with no SSH session,
   no tmux client and no working agent for 24 hours (a laptop herdr's
   bridge is an SSH session, I-511); once per idle
-  stretch, title `<project>: idle, still billing`, never a stop),
+  stretch, title `<project>: unused for 24h, holding plan memory` since
+  I-617, never a stop),
   `temp_expiring` and `temp_destroyed` (DECISIONS I-347: a temporary
   machine an hour before its end, titled `<project>: destroyed in an
   hour`, and its end, `<project>: temporary machine destroyed`), and
