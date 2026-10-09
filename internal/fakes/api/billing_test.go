@@ -50,7 +50,7 @@ func TestBillingNoSubscription(t *testing.T) {
 			Available bool   `json:"available"`
 			MemoryGB  int    `json:"memory_gb"`
 		} `json:"plans"`
-		Seats  Seats `json:"seats"`
+		Seats Seats `json:"seats"`
 		Usage struct {
 			MemoryGB int `json:"memory_gb"`
 		} `json:"usage"`
