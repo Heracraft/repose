@@ -2,7 +2,6 @@ package billing_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -11,22 +10,22 @@ import (
 )
 
 // The overage line: egress over the allowance within three hours of the
-// next bill is one charge, to the cent; a retry sends none; a period under
-// the allowance sends none but is marked; a failure leaves the row for the
-// operator and sends nothing twice.
+// period's end is one egress_overage event, to the GB; a retry sends
+// none; a period under the allowance sends none but is marked; a failure
+// leaves the row unsent and the next run sends it under the same external
+// id, brought up to the period's egress so far.
 func TestOverageChargeOnce(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	cfg := testConfig(f)
-	p := billing.NewPaddle(cfg, quiet())
+	p := billing.NewPolar(cfg, quiet())
 	stop := &stopRecorder{}
 	o := billing.NewOverage(pool, p, cfg, stop, nop(), quiet())
 	ctx := context.Background()
 
-	// Solo, 300 GB this period (50 over), billed in two hours.
+	// Solo, 300 GB this period (50 over), the period ends in two hours.
 	a := seedAccount(t, pool, "solo", "active", "large", "stopped")
-	f.subs[a.SubID] = map[string]any{"id": a.SubID, "status": "active", "customer_id": "ctm_" + a.Handle, "current_billing_period": map[string]any{"starts_at": "2026-10-01T00:00:00Z", "ends_at": "2026-11-01T00:00:00Z"}}
 	for h := 0; h < 30; h++ {
 		usageHour(t, pool, a.ProjectID, a.Period.Start.Add(time.Duration(h)*time.Hour), "large", 3600, 10<<30, a.Period)
 	}
@@ -35,17 +34,17 @@ func TestOverageChargeOnce(t *testing.T) {
 	if err != nil || len(stopped) != 0 {
 		t.Fatalf("run: %v %v", err, stopped)
 	}
-	if len(charges) != 1 || !charges[0].Sent || charges[0].Cents != 250 || charges[0].EgressGB != 50 {
+	ref := billing.OverageExternalID(a.SubID, a.Period.Start)
+	if len(charges) != 1 || !charges[0].Sent || charges[0].Cents != 250 || charges[0].EgressGB != 50 || charges[0].Ref != ref {
 		t.Fatalf("charges: %+v", charges)
 	}
-	body := f.Bodies["POST /subscriptions/"+a.SubID+"/charge"][0]
-	item := body["items"].([]any)[0].(map[string]any)
-	price := item["price"].(map[string]any)
-	if body["effective_from"] != "next_billing_period" || price["unit_price"].(map[string]any)["amount"] != "250" || price["product_id"] != cfg.ProductOverage || !strings.Contains(price["description"].(string), "50 GB over the Solo plan's 250 GB") {
-		t.Fatalf("charge body: %v", body)
+	ev := f.Events()[ref]
+	md, _ := ev["metadata"].(map[string]any)
+	if ev["name"] != billing.OverageEvent || ev["external_customer_id"] != a.UserID.String() || md["gb"] != float64(50) {
+		t.Fatalf("event: %v", ev)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from overage_charges where subscription_id = $1 and cents = 250", a.SubID).Scan(&n); err != nil || n != 1 {
+	if err := pool.QueryRow(ctx, "select count(*) from overage_charges where subscription_id = $1 and cents = 250 and sent_ref = $2", a.SubID, ref).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("overage_charges rows: %d %v", n, err)
 	}
 	sub, _ := billing.GetSubscription(ctx, pool, a.SubID)
@@ -54,19 +53,18 @@ func TestOverageChargeOnce(t *testing.T) {
 	}
 	// A retry sends nothing.
 	charges, _, err = o.Run(ctx)
-	if err != nil || len(charges) != 0 || f.Count("POST /subscriptions/"+a.SubID+"/charge") != 1 {
-		t.Fatalf("retry: %+v %v (%d charges)", charges, err, f.Count("POST /subscriptions/"+a.SubID+"/charge"))
+	if err != nil || len(charges) != 0 || f.Count("POST /events/ingest") != 1 {
+		t.Fatalf("retry: %+v %v (%d sends)", charges, err, f.Count("POST /events/ingest"))
 	}
 	// Even the direct call (overage-now, account deletion) finds the line
 	// and does not send it again.
-	c, err := o.ChargePeriod(ctx, sub, billing.EffectiveImmediately)
-	if err != nil || c.Sent || f.Count("POST /subscriptions/"+a.SubID+"/charge") != 1 {
+	c, err := o.ChargePeriod(ctx, sub)
+	if err != nil || c.Sent || c.Ref != ref || f.Count("POST /events/ingest") != 1 {
 		t.Fatalf("ChargePeriod on a charged period: %+v %v", c, err)
 	}
 
 	// Under the allowance: marked, nothing sent, no row.
 	b := seedAccount(t, pool, "plus", "active", "large", "stopped")
-	f.subs[b.SubID] = map[string]any{"id": b.SubID, "status": "active"}
 	usageHour(t, pool, b.ProjectID, b.Period.Start, "large", 3600, 100<<30, b.Period)
 	charges, _, err = o.Run(ctx)
 	if err != nil || len(charges) != 1 || charges[0].Cents != 0 || charges[0].Sent {
@@ -88,48 +86,62 @@ func TestOverageChargeOnce(t *testing.T) {
 		t.Fatalf("outside the window: %+v %v", charges, err)
 	}
 
-	// Paddle refuses: the row stays without a transaction id, the period is
-	// not marked, and the next run does not send a second charge.
+	// Polar refuses: the row stays unsent, the period is not marked, and
+	// the next run sends it, with the egress that came since.
 	o.Now = at(c2.Period.End.Add(-2 * time.Hour))
-	f.subs[c2.SubID] = map[string]any{"id": c2.SubID, "status": "active"}
-	f.Fail["POST /subscriptions/"+c2.SubID+"/charge"] = 10
+	f.Fail["POST /events/ingest"] = 3
 	f.FailCode = 500
+	p.Sleep = func(time.Duration) {}
 	charges, _, err = o.Run(ctx)
 	if err != nil || len(charges) != 0 {
-		t.Fatalf("a failed charge is logged, not returned: %+v %v", charges, err)
+		t.Fatalf("a failed send is logged, not returned: %+v %v", charges, err)
 	}
-	var txn *string
-	if err := pool.QueryRow(ctx, "select paddle_transaction_id from overage_charges where subscription_id = $1", c2.SubID).Scan(&txn); err != nil || txn != nil {
-		t.Fatalf("row after failure: %v %v", txn, err)
+	var sent *string
+	if err := pool.QueryRow(ctx, "select sent_ref from overage_charges where subscription_id = $1", c2.SubID).Scan(&sent); err != nil || sent != nil {
+		t.Fatalf("row after failure: %v %v", sent, err)
 	}
 	sub, _ = billing.GetSubscription(ctx, pool, c2.SubID)
 	if sub.OverageChargedFor != nil {
 		t.Fatal("a failed period was marked charged")
 	}
-	f.Fail["POST /subscriptions/"+c2.SubID+"/charge"] = 0
-	before := f.Count("POST /subscriptions/" + c2.SubID + "/charge")
+	usageHour(t, pool, c2.ProjectID, c2.Period.Start.Add(time.Hour), "large", 3600, 10<<30, c2.Period)
 	charges, _, err = o.Run(ctx)
-	if err != nil || f.Count("POST /subscriptions/"+c2.SubID+"/charge") != before {
-		t.Fatalf("the recorded line was sent again: %+v %v", charges, err)
+	ref2 := billing.OverageExternalID(c2.SubID, c2.Period.Start)
+	if err != nil || len(charges) != 1 || !charges[0].Sent || charges[0].EgressGB != 160 || charges[0].Cents != 800 || charges[0].Ref != ref2 {
+		t.Fatalf("the resend: %+v %v", charges, err)
 	}
-	if len(charges) != 1 || charges[0].Sent {
-		t.Fatalf("the recorded line is returned as found: %+v", charges)
+	if md := f.Events()[ref2]["metadata"].(map[string]any); md["gb"] != float64(160) {
+		t.Fatalf("resent event: %v", md)
 	}
 	sub, _ = billing.GetSubscription(ctx, pool, c2.SubID)
 	if sub.OverageChargedFor == nil {
-		t.Fatal("the period is marked once the line is on record")
+		t.Fatal("the period is marked once Polar has the line")
 	}
-	// An immediate charge (account deletion) returns the transaction id.
-	d := seedAccount(t, pool, "solo", "active", "large", "stopped")
-	f.subs[d.SubID] = map[string]any{"id": d.SubID, "status": "active"}
-	usageHour(t, pool, d.ProjectID, d.Period.Start, "large", 3600, 260<<30, d.Period)
-	dsub, _ := billing.GetSubscription(ctx, pool, d.SubID)
-	c, err = o.ChargePeriod(ctx, dsub, billing.EffectiveImmediately)
-	if err != nil || !c.Sent || c.Cents != 50 || !strings.HasPrefix(c.TransactionID, "txn_") {
-		t.Fatalf("immediate: %+v %v", c, err)
+
+	// Every send failed until the renewal: the line of the old period is
+	// sent as recorded once Polar answers, under its own external id.
+	e := seedAccount(t, pool, "solo", "active", "large", "stopped")
+	usageHour(t, pool, e.ProjectID, e.Period.Start, "large", 3600, 270<<30, e.Period)
+	o.Now = at(e.Period.End.Add(-time.Hour))
+	f.Fail["POST /events/ingest"] = 3
+	if charges, _, err = o.Run(ctx); err != nil || len(charges) != 0 {
+		t.Fatalf("failed send: %+v %v", charges, err)
 	}
-	if err := pool.QueryRow(ctx, "select paddle_transaction_id from overage_charges where subscription_id = $1", d.SubID).Scan(&txn); err != nil || txn == nil || *txn != c.TransactionID {
-		t.Fatalf("transaction id stored: %v", txn)
+	next := e.Period.End.AddDate(0, 1, 0)
+	if _, err := pool.Exec(ctx, "update subscriptions set period_start = $2, period_end = $3 where id = $1", e.SubID, e.Period.End, next); err != nil {
+		t.Fatal(err)
+	}
+	o.Now = at(e.Period.End.Add(time.Hour))
+	charges, _, err = o.Run(ctx)
+	ref3 := billing.OverageExternalID(e.SubID, e.Period.Start)
+	if err != nil || len(charges) != 1 || !charges[0].Sent || charges[0].Ref != ref3 || charges[0].Cents != 100 {
+		t.Fatalf("late resend: %+v %v", charges, err)
+	}
+	if md := f.Events()[ref3]["metadata"].(map[string]any); md["gb"] != float64(20) {
+		t.Fatalf("late event: %v", md)
+	}
+	if charges, _, _ = o.Run(ctx); len(charges) != 0 {
+		t.Fatalf("resent twice: %+v", charges)
 	}
 }
 
@@ -137,7 +149,7 @@ func TestOverageChargeOnce(t *testing.T) {
 // per period with an egress_stopped email; the gate then refuses.
 func TestEgressHardStop(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	cfg := testConfig(f)
 	stop := &stopRecorder{}
@@ -198,7 +210,7 @@ func TestEgressHardStop(t *testing.T) {
 // disk_over_plan email a period, and nothing is stopped (DECISIONS I-585).
 func TestDiskOverPlanEmail(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	stop := &stopRecorder{}
 	o := billing.NewOverage(pool, nil, testConfig(f), stop, nop(), quiet())

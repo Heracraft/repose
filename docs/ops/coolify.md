@@ -84,9 +84,16 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    Domains
    `https://api.repose.herakraft.co:8080` and
    `https://repose.herakraft.co:3000`; port mappings and health-check
-   settings are in `ops/coolify/README.md`. Secrets — Logto M2M, the Entra
-   client, later Paddle and Resend — go in each app's Environment tab,
-   nowhere else. No pre-deploy command on either: the api applies its own
+   settings are in `ops/coolify/README.md`. Secrets (Logto M2M, the Entra
+   client, later Polar and Resend) go in each app's Environment tab,
+   nowhere else. Billing (I-604) is `POLAR_ACCESS_TOKEN` (an organization
+   access token), `POLAR_ENVIRONMENT` (`sandbox` or `production`, required
+   with the token), `POLAR_WEBHOOK_SECRET`, `POLAR_PRODUCT_SOLO`,
+   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` and
+   optionally `POLAR_PORTAL_RETURN_URL` (default `DASHBOARD_URL/billing`),
+   the same block on api and api-grpc, printed by `repose-admin billing
+   polar-bootstrap`; web needs none. Without `POLAR_ACCESS_TOKEN` billing
+   answers `503 billing_disabled`. No pre-deploy command on either: the api applies its own
    migrations at start and generates the platform CA the first time it
    finds none, both idempotent (fact 12, I-90). `api-grpc` deploys after
    `api`.

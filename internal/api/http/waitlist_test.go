@@ -49,7 +49,7 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 	exec("update hosts set mem_bytes = $2 where id = $1", e.h.HostID, int64(8)<<30)
 	exec("insert into hosts (id, name, state, mem_bytes) values ($1, 'host-wl', 'ready', $2)", store.NewID(), int64(24)<<30)
 	filler := e.h.NewUser("filler")
-	exec("insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats) values ('sub_filler', $1, 'ctm_filler', 'plus', 'active', 2)", filler.ID)
+	exec("insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_filler', $1, 'ctm_filler', 'plus', 'active', 2)", filler.ID)
 
 	c, err := svc.Count(ctx)
 	if err != nil || c != (waitlist.Count{Total: 2, Held: 2, Free: 0, Waiting: 0}) {
@@ -184,7 +184,7 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 	}
 	// B's subscription arrives: converted, the row stays, the seat is the
 	// subscription's now.
-	exec("insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats) values ('sub_b', $1, 'ctm_b', 'solo', 'trialing', 1)", idB)
+	exec("insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_b', $1, 'ctm_b', 'solo', 'trialing', 1)", idB)
 	if err := svc.Converted(ctx, idB.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestWaitlistRejoinAfterConversion(t *testing.T) {
 	a := e.h.NewUser("rejoin-a")
 	b := e.h.NewUser("rejoin-b")
 	holder := e.h.NewUser("rejoin-holder")
-	if _, err := e.h.Pool.Exec(ctx, "insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats) values ('sub_hold', $1, 'ctm', 'solo', 'active', 1)", holder.ID); err != nil {
+	if _, err := e.h.Pool.Exec(ctx, "insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_hold', $1, 'ctm', 'solo', 'active', 1)", holder.ID); err != nil {
 		t.Fatal(err)
 	}
 	if ok, p, err := svc.Reserve(ctx, a.ID.String(), 1); err != nil || ok || p.Position != 1 {

@@ -62,7 +62,7 @@ type App struct {
 	abuse     *abuse.Guard
 	questions *questions.Service
 	outbox    *notify.Outbox
-	paddle    *billing.Paddle
+	polar     *billing.Polar
 	billing   *billing.Service
 	overage   *billing.Overage
 	hooks     *billing.Webhooks
@@ -184,12 +184,12 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	} else {
 		a.outbox.Unsub = unsub
 	}
-	// Billing (workstream 09, DECISIONS I-289). With no PADDLE_API_KEY the
-	// api starts normally, the billing routes answer 503 billing_disabled
-	// and the gate refuses every non-exempt start with
-	// subscription_required; with one, a half-configured Paddle is refused
+	// Billing (workstream 09, DECISIONS I-289, I-604). With no
+	// POLAR_ACCESS_TOKEN the api starts normally, the billing routes answer
+	// 503 billing_disabled and the gate refuses every non-exempt start with
+	// subscription_required; with one, a half-configured Polar is refused
 	// rather than silently selling nothing.
-	bcfg, paddleOn := billing.ConfigFromEnv()
+	bcfg, polarOn := billing.ConfigFromEnv()
 	bcfg.DashboardURL = cfg.DashboardURL
 	if err := bcfg.Validate(); err != nil {
 		return nil, fmt.Errorf("billing: %w", err)
@@ -201,17 +201,17 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	// webhook tells it, /public/seats reads it.
 	a.seats = &waitlist.Service{Pool: a.pool, Total: cfg.SeatsTotal, M: a.m, Log: log}
 	seats := a.seats
-	if paddleOn {
-		a.paddle = billing.NewPaddle(bcfg, log)
-		a.overage = billing.NewOverage(a.pool, a.paddle, bcfg, a.engine, a.m, log)
-		a.billing = billing.NewService(a.pool, a.paddle, bcfg, seats, a.overage, log)
+	if polarOn {
+		a.polar = billing.NewPolar(bcfg, log)
+		a.overage = billing.NewOverage(a.pool, a.polar, bcfg, a.engine, a.m, log)
+		a.billing = billing.NewService(a.pool, a.polar, bcfg, seats, a.overage, log)
 		a.hooks = billing.NewWebhooks(a.pool, bcfg, a.m, log)
 		a.hooks.Stop = a.engine
 		a.hooks.Seats = seats
 		log.Info("billing enabled", "event", "billing_enabled", "enforced", bcfg.Enforce, "environment", bcfg.Environment())
 	} else {
 		a.overage = billing.NewOverage(a.pool, nil, bcfg, a.engine, a.m, log)
-		log.Info("billing disabled until PADDLE_API_KEY is set (DECISIONS I-16, I-289)", "event", "billing_disabled")
+		log.Info("billing disabled until POLAR_ACCESS_TOKEN is set (DECISIONS I-16, I-289, I-604)", "event", "billing_disabled")
 	}
 	if _, err := billing.RecordEnforcement(ctx, a.pool, bcfg.Enforce, "api", log); err != nil {
 		return nil, err

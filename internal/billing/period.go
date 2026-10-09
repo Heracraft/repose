@@ -2,9 +2,9 @@ package billing
 
 import "time"
 
-// A billing period is the subscription's current billing period as Paddle
+// A billing period is the subscription's current billing period as Polar
 // reports it (subscriptions.period_start and period_end, I-289); PeriodFor
-// is the fallback that walks whole months from an anchor when Paddle has
+// is the fallback that walks whole months from an anchor when Polar has
 // not set one yet, or for an account without a plan (the calendar month).
 // Every usage_hours row records the period it belongs to, so the egress
 // allowance is summed over the same hours the invoice covers.

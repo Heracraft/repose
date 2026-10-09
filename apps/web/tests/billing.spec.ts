@@ -1,5 +1,5 @@
 // docs/workstreams/08-dashboard.md §5.8 and DECISIONS I-289/I-290: the
-// billing page sells three plans through Paddle, gates them on seats, and
+// billing page sells three plans through Polar, gates them on seats, and
 // shows a subscription's status, usage of the plan and its invoices.
 import { test, expect } from '@playwright/test';
 import {
@@ -7,7 +7,6 @@ import {
 	signIn,
 	setBilling,
 	resetBilling,
-	installPaddleStub,
 	createProject,
 	apiURLFromEnv
 } from './helpers';
@@ -142,15 +141,16 @@ test('choosing a plan opens the checkout and, once completed, the plan appears',
 	page
 }) => {
 	await setBilling({ mode: 'none' });
-	await installPaddleStub(page);
 	await page.goto('/billing');
+	// The fake's checkout page stands for Polar's: it completes the
+	// checkout and sends the browser back on ?checkout=done (I-604).
+	const checkout = page.waitForRequest(/\/polar\/checkout\/chk_fake_\d+$/);
 	await page.getByRole('button', { name: 'Choose Plus' }).click();
-	// The stub completed the transaction; the page polls GET /billing.
+	await checkout;
+	await page.waitForURL(/\/billing(\?checkout=done)?$/);
 	await expect(page.getByTestId('plan').getByRole('heading', { name: 'Plus' })).toBeVisible({
 		timeout: 10_000
 	});
-	const opened = await page.evaluate(() => window.__reposePaddleOpened);
-	expect(opened).toMatch(/^txn_fake_/);
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $59 on');
 	await expect(page.getByTestId('meter-running-now')).toContainText('0 GB of 16 GB');
 	await expect(page.getByText('No invoices yet.')).toBeVisible();
@@ -236,7 +236,7 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	);
 });
 
-test('an active plan shows its renewal, receipts through Paddle, and invoices with PDF links', async ({
+test('an active plan shows its renewal, receipts through Polar, and invoices with PDF links', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'plus' });
@@ -247,14 +247,16 @@ test('an active plan shows its renewal, receipts through Paddle, and invoices wi
 	await expect(list.getByText('REPOSE-0001', { exact: false })).toBeVisible();
 	await expect(list.getByRole('link', { name: 'PDF' })).toHaveAttribute(
 		'href',
-		'https://checkout.paddle.com/invoice/txn_fake_inv_000001.pdf'
+		'https://sandbox-api.polar.sh/v1/orders/ord_fake_000001/invoice.pdf'
 	);
-	await page.route('https://customer-portal.paddle.com/**', (route) =>
-		route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Paddle portal</h1>' })
+	await page.route('https://sandbox.polar.sh/**', (route) =>
+		route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Polar portal</h1>' })
 	);
 	await page.getByRole('button', { name: /Manage card and receipts/ }).click();
-	await page.waitForURL('https://customer-portal.paddle.com/cpl_fake');
-	await expect(page.getByRole('heading', { name: 'Paddle portal' })).toBeVisible();
+	await page.waitForURL(
+		'https://sandbox.polar.sh/repose/portal?customer_session_token=polar_cst_fake'
+	);
+	await expect(page.getByRole('heading', { name: 'Polar portal' })).toBeVisible();
 });
 
 test('past due shows the failed payment and the card link; suspended says what happened', async ({
@@ -263,11 +265,12 @@ test('past due shows the failed payment and the card link; suspended says what h
 	await setBilling({ mode: 'past_due', plan: 'solo' });
 	await page.goto('/billing');
 	await expect(page.getByTestId('status-past-due')).toContainText('Your last payment failed.');
-	await page.route('https://customer-portal.paddle.com/**', (route) =>
+	// Polar has no deep link to the card: the button opens the portal (I-604).
+	await page.route('https://sandbox.polar.sh/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Update card</h1>' })
 	);
 	await page.getByRole('button', { name: 'Update card' }).click();
-	await page.waitForURL(/update-payment-method$/);
+	await page.waitForURL(/^https:\/\/sandbox\.polar\.sh\/repose\/portal\?/);
 
 	await setBilling({ mode: 'suspended', plan: 'solo' });
 	await page.goto('/billing');

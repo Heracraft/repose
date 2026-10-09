@@ -440,9 +440,9 @@ tests:
         alertname: PartitionDropFail
         exp_alerts: []
 
-  # --- PaddleWebhookRejected ----------------------------------------------
+  # --- BillingWebhookRejected ---------------------------------------------
   - interval: 1m
-    name: PaddleWebhookRejected fires on six bad signatures in ten minutes
+    name: BillingWebhookRejected fires on six bad signatures in ten minutes
     input_series:
       - series: 'repose_api_billing_webhook_total{job="api",instance="10.255.0.9:9103",kind="subscription.updated",result="bad_signature"}'
         # Prometheus ranges are left-open, so the sample at 1m is outside
@@ -452,23 +452,23 @@ tests:
         values: "0+3x11"
     alert_rule_test:
       - eval_time: 11m
-        alertname: PaddleWebhookRejected
+        alertname: BillingWebhookRejected
         exp_alerts:
           - exp_labels:
               severity: warn
             exp_annotations:
-              summary: "6 Paddle webhook deliveries rejected in ten minutes"
-              description: "Check PADDLE_WEBHOOK_SECRET against the notification destination's endpoint secret in Paddle's dashboard. While this fires, subscription and payment events are not being applied."
-              runbook: "docs/ops/RUNBOOK.md#paddlewebhookrejected"
+              summary: "6 Polar webhook deliveries rejected in ten minutes"
+              description: "Check POLAR_WEBHOOK_SECRET against the webhook endpoint's secret in Polar's dashboard. While this fires, subscription and payment events are not being applied."
+              runbook: "docs/ops/RUNBOOK.md#billingwebhookrejected"
 
   - interval: 1m
-    name: PaddleWebhookRejected stays quiet under five
+    name: BillingWebhookRejected stays quiet under five
     input_series:
       - series: 'repose_api_billing_webhook_total{job="api",instance="10.255.0.9:9103",kind="subscription.updated",result="bad_signature"}'
         values: "0 0 1 1 2 2 2 2 2 2 2 2"
     alert_rule_test:
       - eval_time: 11m
-        alertname: PaddleWebhookRejected
+        alertname: BillingWebhookRejected
         exp_alerts: []
 
   # --- OverageChargeFailed -------------------------------------------------
@@ -490,7 +490,7 @@ tests:
               result: error
             exp_annotations:
               summary: "1 egress overage charge(s) failed in the last hour"
-              description: "`repose-admin billing show <handle>` names the line; `billing overage-now <handle>` retries it once the cause is fixed. Paddle locks the invoice about 30 minutes before charging."
+              description: "`repose-admin billing show <handle>` names the line. The next hourly tick sends it again under the same external id; an event Polar receives after the period's end lands on the next renewal order."
               runbook: "docs/ops/RUNBOOK.md#overagechargefailed"
 
   - interval: 1m

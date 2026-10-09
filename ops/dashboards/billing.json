@@ -1,7 +1,7 @@
 {
   "uid": "repose-billing",
   "title": "repose / Billing",
-  "description": "Plans through Paddle (DECISIONS I-289): the subscription mix, the webhook, the gate's refusals, the egress overage line, and the hours and egress usage_hours records. Paddle holds the money; usage_hours holds what was used.",
+  "description": "Plans through Polar (DECISIONS I-289, I-604): the subscription mix, the webhook, the gate's refusals, the egress overage line, and the hours and egress usage_hours records. Polar holds the money; usage_hours holds what was used.",
   "tags": [
     "repose"
   ],
@@ -87,7 +87,7 @@
     {
       "type": "stat",
       "title": "Webhooks rejected in 10 minutes",
-      "description": "Paddle-Signature failures. Five in ten minutes is PaddleWebhookRejected: the secret and the destination have drifted, and no subscription event is applied.",
+      "description": "Webhook signature failures. Five in ten minutes is BillingWebhookRejected: the secret and the endpoint have drifted, and no subscription event is applied.",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -148,7 +148,7 @@
     {
       "type": "stat",
       "title": "Overage charges failed in the last hour",
-      "description": "An egress line Paddle refused. The row waits for `repose-admin billing overage-now`; the invoice locks 30 minutes before charging (OverageChargeFailed).",
+      "description": "An egress line Polar refused. The next hourly tick sends it again under the same external id (OverageChargeFailed).",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -265,7 +265,7 @@
     {
       "type": "timeseries",
       "title": "Subscription webhooks by plan and status",
-      "description": "Every subscription.* event applied, by the plan it names and Paddle's status. A rising past_due series is the dunning job's next three days.",
+      "description": "Every subscription.* event applied, by the plan it names and its status. A rising past_due series is the dunning job's next three days.",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -407,7 +407,7 @@
     {
       "type": "table",
       "title": "Accounts by plan and status",
-      "description": "The subscriptions table as it stands: what Paddle told the webhook last.",
+      "description": "The subscriptions table as it stands: what Polar told the webhook last.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "repose-postgres"

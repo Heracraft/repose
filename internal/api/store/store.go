@@ -33,28 +33,28 @@ type User struct {
 	TZ          *string   `db:"tz"`
 	NotifyEmail bool      `db:"notify_email"`
 	NtfyURL     *string   `db:"ntfy_url"`
-	// PaddleCustomerID is the Paddle customer, created at checkout (0008,
-	// I-289). BillingAnchor is unused since I-289 (the period is the
+	// BillingCustomerID is the Polar customer, which Polar creates when
+	// the first checkout completes (0008, 0020, I-289, I-604). BillingAnchor is unused since I-289 (the period is the
 	// subscription's); PastDueSince is when the account first failed a
 	// payment, which the 3-day stop reads. BillingStatus is a projection
 	// of the subscription: none|trial|active|past_due|suspended|exempt.
-	PaddleCustomerID *string    `db:"paddle_customer_id"`
-	BillingAnchor    *time.Time `db:"billing_anchor"`
-	PastDueSince     *time.Time `db:"past_due_since"`
-	BillingStatus    string     `db:"billing_status"`
-	HasCard          bool       `db:"has_card"`
-	TrialCreditCents int64      `db:"trial_credit_cents"`
-	ProjectLimit     int        `db:"project_limit"`
-	XLLimit          int        `db:"xl_limit"`
-	SuspendedAt      *time.Time `db:"suspended_at"`
-	SuspendedReason  *string    `db:"suspended_reason"`
-	CancelledAt      *time.Time `db:"cancelled_at"`
-	DeletedAt        *time.Time `db:"deleted_at"`
-	CreatedAt        time.Time  `db:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at"`
+	BillingCustomerID *string    `db:"billing_customer_id"`
+	BillingAnchor     *time.Time `db:"billing_anchor"`
+	PastDueSince      *time.Time `db:"past_due_since"`
+	BillingStatus     string     `db:"billing_status"`
+	HasCard           bool       `db:"has_card"`
+	TrialCreditCents  int64      `db:"trial_credit_cents"`
+	ProjectLimit      int        `db:"project_limit"`
+	XLLimit           int        `db:"xl_limit"`
+	SuspendedAt       *time.Time `db:"suspended_at"`
+	SuspendedReason   *string    `db:"suspended_reason"`
+	CancelledAt       *time.Time `db:"cancelled_at"`
+	DeletedAt         *time.Time `db:"deleted_at"`
+	CreatedAt         time.Time  `db:"created_at"`
+	UpdatedAt         time.Time  `db:"updated_at"`
 }
 
-const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, paddle_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
+const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, billing_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
 
 // Project is a projects row.
 type Project struct {

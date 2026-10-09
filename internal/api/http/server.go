@@ -72,10 +72,10 @@ type Deps struct {
 	// Billing is the /billing routes' service (DECISIONS I-289); nil makes
 	// every one answer 503 billing_disabled.
 	Billing *billing.Service
-	// Webhooks applies Paddle events; nil makes POST /billing/webhook
+	// Webhooks applies Polar events; nil makes POST /billing/webhook
 	// answer 503 billing_disabled.
 	Webhooks *billing.Webhooks
-	// Gate is the compute gate; nil builds a disabled one (no Paddle, so
+	// Gate is the compute gate; nil builds a disabled one (no Polar, so
 	// every non-exempt user is subscription_required) that honours
 	// BillingEnforce.
 	Gate *billing.Gate
@@ -89,7 +89,7 @@ type Deps struct {
 	Limits *RateLimits
 	// Seats is the seats waitlist (DECISIONS I-290): POST /billing/waitlist
 	// joins it, GET /public/seats and GET /billing read its count, and
-	// checkout asks it before a Paddle transaction. nil answers those
+	// checkout asks it before a Polar checkout. nil answers those
 	// routes with 500 (tests that do not care).
 	Seats *waitlist.Service
 }

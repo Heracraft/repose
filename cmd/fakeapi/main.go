@@ -61,12 +61,12 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	POST /billing    api.BillingState as JSON -> f.SetBillingState: {"mode": off|none|trial|active|past_due|suspended|exempt,
 //	                 "plan", "scheduled_plan", "cancelled", "seats": {total, held, waiting},
 //	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices"}; every field optional
-//	POST /paddle/complete {"transaction_id"} -> f.CompleteCheckout (Paddle's webhook after a paid checkout)
+//	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
+//	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
 //	POST /question   {"project_id","agent","text","options","timeout_s"} -> f.AddQuestion
 //
-// Every answer carries permissive CORS headers: the dashboard's Paddle stub
-// (window.__reposePaddleStub, set by a Playwright test) calls
-// /paddle/complete from the page itself.
+// Every answer carries permissive CORS headers, so a Playwright test can
+// call the switch from the page itself.
 func newAdminServer(f *api.Fake) (*adminServer, error) {
 	type req struct{ Method, Path, Code string }
 	decode := func(w http.ResponseWriter, r *http.Request) (req, bool) {
@@ -93,17 +93,17 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 	})
-	mux.HandleFunc("POST /paddle/complete", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			TransactionID string `json:"transaction_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
+		back, err := f.CompleteCheckout(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		if err := f.CompleteCheckout(body.TransactionID); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+		if back == "" {
+			_, _ = fmt.Fprintln(w, "checkout complete")
+			return
 		}
+		http.Redirect(w, r, back, http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /question", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -158,7 +158,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	}
 	cors := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -168,5 +168,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	})
 	srv := &http.Server{Handler: cors, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	return &adminServer{Server: srv, URL: "http://" + ln.Addr().String()}, nil
+	url := "http://" + ln.Addr().String()
+	f.SetCheckoutBase(url + "/polar/checkout/")
+	return &adminServer{Server: srv, URL: url}, nil
 }

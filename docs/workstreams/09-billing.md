@@ -3,8 +3,12 @@
 > **Superseded in part (2026-09-27, DECISIONS I-289).** §1 to §4 and
 > §5.1 to §5.10 describe the hourly design on Stripe as it was built and
 > merged; they are kept as history. What runs is §5.11, "Plans on
-> Paddle", and the §9 checklist is that design's. `docs/PRICING.md` is
+> Polar", and the §9 checklist is that design's. `docs/PRICING.md` is
 > what is sold.
+>
+> **Amended by I-604 (2026-10-08).** Billing moved from Paddle to Polar:
+> §5.11 describes the Polar client, webhook, overage meter and bootstrap
+> that replaced the Paddle ones, and §9 is re-done for them.
 
 ## 1. Goal
 
@@ -265,9 +269,9 @@ are manual in the Stripe dashboard plus a `credit` row for the record.
 user's local day and the current billing period, so the CLI, dashboard and
 invoice never disagree.
 
-### 5.11 Plans on Paddle (I-289)
+### 5.11 Plans on Polar (I-289, I-604)
 
-What runs since 2026-09-27, with the exact names.
+What runs since 2026-09-27, on Polar since 2026-10-08, with the exact names.
 
 **The plan table.** `internal/billing/plans.go`: `Plan{ID, Name,
 PriceCents, Currency, TrialDays, Seats, MemoryGB, DiskGB, EgressGB, ...}`,
@@ -282,72 +286,97 @@ project count since I-569 (`ProjectCap = 100` for every account,
 of `usage_hours` is 0 from plan-v1. `TestPlansMatchPricingDoc` parses the
 table in `PRICING.md`.
 
-**Configuration.** `config.go`: `PADDLE_API_KEY` (the prefix `pdl_sdbx_`
-means the sandbox, anything else live: `Environment()`),
-`PADDLE_WEBHOOK_SECRET`, `PADDLE_CLIENT_TOKEN`, `PADDLE_PRICE_SOLO`,
-`PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`, `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`
-(I-497), `PADDLE_PORTAL_RETURN_URL`
-(default `DASHBOARD_URL/billing`), `BILLING_ENFORCE`, `SEATS_TOTAL`.
-`Validate` refuses a key without the secret, all three prices, the overage
-product and the introductory discount. No key: the routes answer `503 billing_disabled` and the gate
-refuses every non-exempt account with `subscription_required`.
+**Configuration.** `config.go`: `POLAR_ACCESS_TOKEN` (an organization
+access token), `POLAR_ENVIRONMENT` (`sandbox` or `production`, required
+with the token because Polar's tokens do not say which they belong to),
+`POLAR_WEBHOOK_SECRET`, `POLAR_PRODUCT_SOLO`, `POLAR_PRODUCT_PLUS`,
+`POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` (I-497),
+`POLAR_PORTAL_RETURN_URL` (default `DASHBOARD_URL/billing`),
+`BILLING_ENFORCE`, `SEATS_TOTAL`. `Validate` refuses a token without the
+environment, the secret, all three products (three different ones) and
+the introductory discount. No token: the routes answer `503
+billing_disabled` and the gate refuses every non-exempt account with
+`subscription_required`. No `PADDLE_*` variable is read.
 
-**The Paddle client.** `paddle.go`: `Paddle` over `net/http`, base URL from
-the environment (`Config.BaseURL` overrides it for tests), headers
-`Authorization: Bearer`, `Paddle-Version: 1`; three tries on 429 and 5xx
-honouring `Retry-After`; `PaddleError{Status, Type, Code, Detail}` never
-carries the key. Calls: `FindCustomerByEmail`, `CreateCustomer`,
-`EnsureCustomer` (stores `users.paddle_customer_id`; called at checkout,
-not at first sign-in), `CreateCheckoutTransaction` (items
-`[{price_id, quantity 1}]`, `customer_id`, `custom_data.user_id`,
-`collection_mode automatic`, and `discount_id` on a first Solo checkout,
-I-497), `GetSubscription`,
-`UpdateSubscriptionItems` (`prorated_immediately` up,
-`prorated_next_billing_period` down), `CancelSubscription`
-(`next_billing_period` | `immediately`), `ResumeScheduledChange`
-(`scheduled_change: null`), `CreateOneTimeCharge` (`POST
-/subscriptions/{id}/charge`, a non-catalog price under
-`PADDLE_PRODUCT_OVERAGE`, `unit_price.amount` in cents as a string),
-`PortalSession` (`urls.general.overview`,
-`urls.subscriptions[].update_subscription_payment_method`),
-`ListTransactions` (billed, completed, past_due; 24), `InvoicePDF`, and
-the bootstrap's `ListProducts`, `CreateProduct`, `ListPrices`,
-`CreatePlanPrice` (`billing_cycle {month, 1}`, `trial_period {day, 7}`,
-`custom_data.repose = <plan>`), `ListDiscounts`, `CreateIntroDiscount`
-(`flat`, `recur`, `maximum_recurring_intervals`, `restrict_to` the plan's
-price, `custom_data.repose = intro-<plan>-<cents>-<months>`; I-497),
-`ListNotificationSettings`, `CreateNotificationSetting`.
+**The Polar client.** `polar.go`: `Polar` over `net/http`, base URL
+`https://api.polar.sh/v1` or `https://sandbox-api.polar.sh/v1` from the
+environment (`Config.BaseURL` overrides it for tests), headers
+`Authorization: Bearer` and `Polar-Version: 2026-10` (`APIVersion`, to be
+moved before July 2027, RUNBOOK "Polar API version"); three tries on 429
+and 5xx honouring `Retry-After`; `PolarError` never carries the token.
+Calls: `CreateCheckout` (one product, `external_customer_id` = the user
+id, `customer_email`, `metadata.user_id`, `allow_discount_codes: false`,
+`discount_id` on a first Solo checkout, `customer_ip_address` for the tax
+country, `success_url` `<dashboard>/billing?checkout=done`, `return_url`
+`<dashboard>/billing`), `GetSubscription`, `ChangeProduct`
+(`proration_behavior` `invoice` up, `next_period` down; `discount_id:
+null` when leaving Solo's offer),
+`ClearPendingUpdate` (`pending_update: null`), `SetCancelAtPeriodEnd`,
+`RevokeSubscription`, `SendOverage` (`POST /events/ingest`, one
+`egress_overage` event with `external_id`), `CustomerPortal` (a customer
+session for the external id), `ListOrders`, `OrderInvoiceURL`,
+`GenerateOrderInvoice`, and the bootstrap's `ListMeters`,
+`CreateOverageMeter`, `ListProducts`, `CreatePlanProduct`,
+`ListDiscounts`, `CreateIntroDiscount`, `ListWebhookEndpoints`,
+`CreateWebhookEndpoint`, `UpdateWebhookEndpoint`, `GetOrganization`,
+`UpdateOrganization`.
+
+**The catalog.** One monthly product per plan, found by
+`metadata.repose = plan-<id>-<cents>`: the fixed price, a metered price of
+5 cents a unit on the meter "Egress overage" (events named
+`egress_overage`, the sum of `metadata.gb`), and a seven-day trial. The
+introductory discount is fixed, $9 off, `repeating` for 3 months,
+restricted to Solo's product, with no code; Polar counts the months from
+the first charged period, so the first three charges after the trial get
+it, and as a fixed discount it applies to the whole order, metered usage
+included, which leaves the overage at full price. The organization has
+one subscription per customer, trial abuse prevention, plan and seat
+changes off in the customer portal, metered usage shown, prices
+exclusive of tax, and the customer emails repose sends itself turned off
+(`subscription_trial_conversion_reminder`, `subscription_past_due`,
+`subscription_cancellation`, `subscription_revoked`,
+`subscription_updated`; repose's are I-291's `trial_ending`,
+`payment_failed`, `subscription_cancelled`, `subscription_ended`,
+`plan_changed`). Polar still sends the receipts, the subscription
+confirmation, the renewal receipts and the card-expiring reminder.
 
 **The record.** `subscriptions.go`: `Sub` mirrors the table; `IsLive` is
 `trialing|active|past_due`; `LiveSubscription(user)`,
 `GetSubscription(id)`, `LatestSubscription(user)`; `Sub.Period(at)` is the
-current billing period (a calendar month when Paddle has not set one).
+current billing period (a calendar month when Polar has not set one).
 `projectStatus` writes `users.billing_status`: trialing → `trial`, active
 → `active`, past_due → `past_due` with `past_due_since` kept from the
 first failure, canceled and paused → `none`; `exempt` and `suspended` are
-never touched by it.
+never touched by it. `intro_until` is the trial's end (or the start) plus
+`IntroMonths`, since Polar's subscription names no end for the discount.
 
-**The webhook.** `webhook.go`: `Webhooks.Handle(body, header)` verifies
-`Paddle-Signature` (`ts=…;h1=…`, HMAC-SHA256 of `ts:body` with every
-accepted secret, constant time, `SignatureSkew` five minutes, several
-`h1` during a rotation), inserts `paddle_events (id, type, occurred_at)`
-first (`ErrDuplicate` on conflict, answered 200), applies, then writes
-`processed_at` or `error`. `subscription.*` upserts the row from `data`
-(plan from `items[0].price.id` against the configured price ids,
-`current_billing_period`, `next_billed_at`, `items[0].trial_dates.ends_at`,
-`scheduled_change {action cancel}` → `cancel_at`; the user from
-`custom_data.user_id`, else `paddle_customer_id`), projects the status,
-sets `has_card`, calls `Seats.Converted` on the first live row, stops the
-machines on `canceled` (reason `ended`), and emits `subscription_cancelled`,
-`subscription_ended`, `plan_changed`. `transaction.completed` returns a
-past-due account to `active`, clears `past_due_since` and a
-`suspended_reason = billing` suspension (an operator's stays), leaves a
-trialing subscription's $0 checkout alone, and stamps an overage line's
-`paddle_transaction_id`. `transaction.payment_failed` on a live
-subscription makes the account `past_due` and emits `payment_failed`
-(day 0); a checkout that fails has no subscription and changes nothing.
-Unknown types are recorded and ignored. `Sign(secret, ts, body)` is the
-scheme the fake and the tests use.
+**The webhook.** `webhook.go`: `Webhooks.Handle(body, headers)` verifies
+the Standard Webhooks headers (`webhook-id`, `webhook-timestamp`,
+`webhook-signature` with one or more `v1,<base64>`), an HMAC-SHA256 of
+`id.timestamp.body` keyed by the base64 after `whsec_` or by the whole
+secret (Polar's older secrets and `polar listen`'s), with every accepted
+secret, constant time, `SignatureSkew` five minutes; inserts
+`billing_events (id, type, occurred_at)` keyed on `webhook-id` first
+(`ErrDuplicate` on conflict, answered 200), applies, then writes
+`processed_at` or `error`. `subscription.created|updated|active|canceled|
+uncanceled|revoked|past_due` upsert the row from the payload (plan from
+`product_id` against the configured products, `pending_update.product_id`
+the scheduled plan, `current_period_start|end`, `trial_end`, `ends_at`
+with `cancel_at_period_end` → `cancel_at`, `discount_id` → `intro`; the
+user from `metadata.user_id`, then the customer's external id, then
+`users.billing_customer_id`), store the customer id, project the status,
+set `has_card`, call `Seats.Converted` on the first live row, stop the
+machines on `canceled` (reason `ended`), and emit `subscription_cancelled`,
+`subscription_ended`, `plan_changed`. Polar's `unpaid` is stored as
+`canceled`; `incomplete` and `incomplete_expired` are recorded with no
+row. The first move to `past_due` makes the account `past_due` and emits
+`payment_failed` (day 0); Polar retries 2, 7, 14 and 21 days after the
+failure, and a retry that fails again changes nothing. `order.paid` for a
+subscription returns a past-due account to `active`, clears
+`past_due_since` and a `suspended_reason = billing` suspension (an
+operator's stays), and leaves a trialing subscription's $0 checkout
+alone. Unknown types are recorded and ignored. `Sign(secret, id, ts,
+body)` is the scheme the fake and the tests use.
 
 **The gate.** `gate.go`: `Gate.Check(user, Request{Class, Disk,
 AddHeldBytes, VolumeBytes, Project})` (I-585) returns a `*Refusal{Reason, Message, Detail}`: `suspended`,
@@ -377,21 +406,24 @@ account's cap; the xl count limit is gone (memory decides).
 gate's detail.
 
 **Overage and the hard stop.** `overage.go`: `Overage.Run` hourly. For
-each live subscription with `next_billed_at` within `ChargeWindow` (3 h)
-and `overage_charged_for <> period_start`: `OverageCents` of the period's
+each live subscription with `period_end` within `ChargeWindow` (3 h) and
+`overage_charged_for <> period_start`: `OverageCents` of the period's
 egress; when over, insert `overage_charges (subscription_id, period_start,
-egress_gb, cents)` (the primary key makes a retry safe: an existing row is
-not sent again), `CreateOneTimeCharge(..., next_billing_period)`, store
-`paddle_transaction_id` when Paddle bills at once; always set
-`overage_charged_for`. A refused charge leaves the row without an id and
-the period unmarked, logs `overage_charged result=error`, and counts
+egress_gb, cents)` (the primary key makes a retry safe), `SendOverage`
+with the external id `overage:<subscription>:<period start unix>`, store
+it in `sent_ref`; always set `overage_charged_for`. Polar bills the meter's
+units through the plan's metered price on the renewal order; an event it
+receives after the renewal lands on the next period's order. A refused
+event leaves the row without `sent_ref` and the period unmarked, logs
+`overage_charged result=error`, and counts
 `repose_api_billing_overage_charges_total{result="error"}`
-(`OverageChargeFailed`); nothing sends it twice. Then the hard stop: any
-live subscription whose period egress passed four times the allowance
-gets `stopUserMachines` (reason `egress`) and one `egress_stopped` event
-per period (guarded by the events table). `ChargePeriod(sub,
-effectiveFrom)` is the same for one account, used by `repose-admin
-billing overage-now` and by account deletion (`immediately`).
+(`OverageChargeFailed`); the next tick sends it again under the same
+external id, which Polar dedupes. Then the hard stop: any live
+subscription whose period egress passed four times the allowance gets
+`stopUserMachines` (reason `egress`) and one `egress_stopped` event per
+period (guarded by the events table). `ChargePeriod(sub)` is the same for
+one account, used by `repose-admin billing overage-now` and by account
+deletion.
 
 **Dunning.** `dunning.go`: `Dunning.Run` hourly: day 2 emits a second
 `payment_failed` once (no second event since `past_due_since`); day 3
@@ -416,20 +448,28 @@ The notifier's templates for the kinds are I-291's.
 
 **The routes.** `service.go` behind `internal/api/http/billing.go`:
 `Overview` (`GET /billing`: `subscription`, `usage`, `plans[].available`
-from `Seats.Reserve`, `seats` from `Seats.Count`, `waitlist`, `paddle
-{environment, client_token}`), `Checkout` (`Seats.Reserve` first:
+from `Seats.Reserve`, `seats` from `Seats.Count`, `waitlist`; the
+`paddle` object is gone since I-604), `Checkout` (`Seats.Reserve` first:
 `WaitlistedError` → `503 waitlisted` with `{position, joined_at, email}`
 and the sentence; a live subscription → `409 conflict subscribed`; then
-`EnsureCustomer` and the transaction), `ChangePlan` (upgrade at once with
-a free seat else `409 no_seat`; downgrade scheduled at `period_end`, kept
-in `scheduled_plan`, refused `409 over_plan {running_gb,
+`CreateCheckout`, answered `{url}`; Polar creates the customer when the
+checkout completes), `ChangePlan` (upgrade at once with a free seat else
+`409 no_seat`, proration `invoice`, and an upgrade from Solo sends
+`discount_id: null` so the introductory $9 does not follow onto Plus or
+Pro; downgrade scheduled at `period_end`
+with `next_period`, kept in `scheduled_plan` from Polar's
+`pending_update`, undone by choosing the current plan again; refused `409 over_plan {running_gb,
 disk_held_gb, disk_allocated_gb}` while the account does not fit), `Cancel`
-(`next_billing_period`, `cancel_at`, `subscription_cancelled`; `409
-already_cancelled`), `Resume` (`409 not_cancelled`), `Portal` (`{"for":
-"payment_method"}` for the deep link), `Invoices` (Paddle's transactions
-in the documented shape, `pdf_url` from `InvoicePDF`), `CloseAccount`
-(`DELETE /me`: `ChargePeriod(immediately)` then
-`CancelSubscription(immediately)`, in that order). `/me`'s `billing` and
+(`cancel_at_period_end`, `cancel_at`, `subscription_cancelled`; `409
+already_cancelled`), `Resume` (`409 not_cancelled`), `Portal` (a customer
+session; `{"for": "payment_method"}` gets the same portal, Polar has no
+deep link; `409 no_subscription` for a user who never subscribed),
+`Invoices` (Polar's orders, paid, pending, refunded and partially
+refunded, in the documented shape, `pdf_url` once Polar has generated the
+invoice, which the listing asks for), `CloseAccount` (`DELETE /me`:
+`ChargePeriod` first; with an overage owed, `cancel_at_period_end` so
+Polar bills it on the final order, else `RevokeSubscription` at once; no
+new period is charged either way). `/me`'s `billing` and
 `limits` come from the live subscription; new accounts are inserted
 `none` with no credit; a suspended account may call `GET /me`, `GET
 /billing`, `POST /billing/portal`. `Project` carries
@@ -445,10 +485,14 @@ workstream's implementation replaces it in `internal/api/app`.
 subscription, plan, period, running memory, disk, hours, egress, the
 overage arithmetic and lines), `rollup [--hour]`, `explain PROJECT HOUR`
 (the row's inputs and the period's overage arithmetic), `suspend`,
-`unsuspend`, `overage-now HANDLE`, `paddle-bootstrap [--webhook-url]
-[--no-webhook] [--live]` (`bootstrap.go`: products, prices and the
-introductory discount found by `custom_data.repose`, the destination by URL; prints the `PADDLE_*`
-block; refuses a live key without `--live`; `ops/paddle/bootstrap.sh`).
+`unsuspend`, `overage-now HANDLE`, `polar-bootstrap [--webhook-url URL]
+[--no-webhook] [--production]` (`bootstrap.go`: the token and environment
+from the environment, never a flag; the meter, products and introductory
+discount found by `metadata.repose`, the webhook endpoint by URL (raw,
+the eight events, `api_version` `APIVersion`, PATCHed when it differs),
+the organization's settings; prints the `POLAR_*` block; refuses
+production without `--production`; `ops/polar/bootstrap.sh`). `show`
+prints `polar customer` and each overage line's sent ref.
 `credit`, `reconcile`, `resync`, `cycle-now` and `stripe-bootstrap` are
 gone.
 
@@ -458,29 +502,32 @@ gone.
 `repose_api_billing_subscriptions_total{plan,status}`,
 `repose_api_billing_stops_total{reason}`; log events `webhook_received`,
 `overage_charged`, `gate_refused` (user_id, reason, plan); alerts
-`PaddleWebhookRejected`, `OverageChargeFailed`, `BillingStopped`; the
+`BillingWebhookRejected`, `OverageChargeFailed`, `BillingStopped`; the
 Billing dashboard from `ops/dashboards/gen.py`.
 
-**Tests.** `internal/billing`: `fakepaddle_test.go` (an `httptest` Paddle
-that signs webhooks), `TestPlansMatchPricingDoc`,
-`TestPaddleClientRetriesAndErrors`, `TestEnsureCustomer`,
-`TestWebhookSignatureSkewAndDedupe`, `TestWebhookSubscriptionLifecycle`,
-`TestWebhookRefusesForeignPrices`, `TestWebhookTransactions`,
-`TestWebhookResolvesByCustomer`, `TestGateEveryReason`, `TestLimitsFor`,
-`TestOverageChargeOnce`, `TestEgressHardStop`, `TestDunningDays`,
+**Tests.** `internal/billing`: `fakepolar_test.go` (an `httptest` Polar
+that signs webhooks), `TestPlansMatchPricingDoc`, `TestPolarConfig`,
+`TestPolarClientRetriesAndErrors`, `TestPolarSendOverage`,
+`TestWebhookSignatureSkewAndDedupe`, `TestWebhookLegacySecret`,
+`TestWebhookSubscriptionLifecycle`, `TestWebhookRefusesForeignProducts`,
+`TestWebhookOrderPaid`, `TestWebhookResolvesByCustomer`,
+`TestGateEveryReason`, `TestLimitsFor`, `TestOverageChargeOnce`,
+`TestEgressHardStop`, `TestDiskOverPlanEmail`, `TestDunningDays`,
 `TestDunningEnforceFalse`, `TestTrialEnding`,
 `TestRollupWritesUsageWithoutPrices`, `TestAccountAndExplain`,
-`TestBootstrapIsIdempotent`, `TestCheckout`,
-`TestPlanChangesCancelResume`, `TestPortalAndInvoices`,
-`TestCloseAccountChargesThenCancels`, `TestSubscriptionSeatsStub`;
-`TestPaddleSandbox` runs against the real sandbox with
-`REPOSE_PADDLE_SANDBOX_KEY` and skips without it. `internal/api/http`:
-`TestBillingGateBlocksCompute`, `TestProjectCap` (I-569),
-`TestBillingEnforceFalseLetsStartsThrough`, `TestBillingDisabledRoutes`,
-`TestBillingRoutes`, `TestProjectCarriesRunningSeconds`.
-`internal/admin`: `TestBillingSubcommands`. `internal/cli`:
-`TestPaymentRequiredMessage`, `TestStatusShowsHours`,
-`TestClassSpecsMatchBillingAndHost`.
+`TestBootstrapIsIdempotent`, `TestCheckout`, `TestIntroOffer`,
+`TestPlanChangesCancelResume`, `TestPlanChangePlusPro`,
+`TestPortalAndInvoices`, `TestCloseAccount`, `TestSubscriptionSeatsStub`;
+`TestPolarSandbox` (`polar_sandbox_test.go`) runs against the real
+sandbox with `POLAR_ACCESS_TOKEN` and `POLAR_ENVIRONMENT=sandbox`, skips
+without the token and refuses production; with `REPOSE_POLAR_E2E_LISTEN`
+it serves the webhook for `polar listen` and walks the whole flow.
+`internal/api/http`: `TestBillingGateBlocksCompute`, `TestProjectCap`
+(I-569), `TestBillingEnforceFalseLetsStartsThrough`,
+`TestBillingDisabledRoutes`, `TestBillingRoutes`,
+`TestProjectCarriesRunningSeconds`. `internal/admin`:
+`TestBillingSubcommands`. `internal/cli`: `TestPaymentRequiredMessage`,
+`TestStatusShowsHours`, `TestClassSpecsMatchBillingAndHost`.
 
 ## 6. Failure modes
 
@@ -529,56 +576,58 @@ logged as an audit event when flipped.
 
 ## 9. Checklist
 
-Re-done for I-289 (2026-09-27, ws/paddle). Test evidence is from
-`go test -race ./internal/billing/ ./internal/api/... ./internal/admin/
-./internal/cli/` against Postgres; rows whose evidence is Paddle's
-sandbox wait for the key and name the `docs/ops/M4-GATE.md` step.
+Re-done for I-289 (2026-09-27, ws/paddle) and again for I-604
+(2026-10-08, ws/polar). Test evidence is from `go test
+./internal/billing/ ./internal/api/http/ ./internal/admin/` against
+Postgres; rows whose evidence is Polar's sandbox name the
+`docs/ops/M4-GATE.md` step.
 
 - [x] `plans.go` equals the `PRICING.md` table; the parity test parses the
       doc. Evidence: `--- PASS: TestPlansMatchPricingDoc`,
       `TestOverageAndClassMemory`.
-- [x] The Paddle client retries 429 and 5xx three times honouring
-      Retry-After, never retries a 4xx, and its errors carry Paddle's code
-      and never the key. Evidence: `TestPaddleClientRetriesAndErrors`.
-- [x] The customer is created at checkout, found by email when Paddle
-      already has one, and stored once. Evidence: `TestEnsureCustomer`,
-      `TestCheckout` (the transaction's `custom_data.user_id`, `items`,
-      `collection_mode`).
-- [x] The webhook verifies `Paddle-Signature` (wrong secret, missing
-      header, tampered body, five-minute skew both ways refused; a second
-      `h1` and a rotation secret accepted), dedupes on `event_id` with a
-      200 duplicate, records unknown types and foreign customers.
-      Evidence: `TestWebhookSignatureSkewAndDedupe`,
-      `TestBillingRoutes` (the route: no bearer, 400 on a bad signature
-      logging the type only, 200 on a duplicate).
+- [x] The Polar client sends `Polar-Version: 2026-10`, retries 429 and
+      5xx three times honouring Retry-After, never retries a 4xx, and its
+      errors carry Polar's type and detail and never the token; the
+      configuration needs `POLAR_ENVIRONMENT` with the token. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestPolarClientRetriesAndErrors`, `TestPolarConfig`.
+- [x] The checkout is a Polar session for the plan's product with the
+      user as external customer, the introductory discount on a first
+      Solo checkout and discount codes off, answered `{url}`. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestCheckout`, `TestIntroOffer`.
+- [x] The webhook verifies the Standard Webhooks signature (wrong secret,
+      missing header, tampered body, five-minute skew both ways refused;
+      a rotation secret and Polar's older raw-string secrets accepted),
+      dedupes on `webhook-id` with a 200 duplicate, records unknown types
+      and foreign customers. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestWebhookSignatureSkewAndDedupe`, `TestWebhookLegacySecret`,
+      `TestBillingRoutes` (the route).
 - [x] Every subscription event projects the account and emits its email:
-      created → trial + `Seats.Converted` once, activated → active,
-      updated with the other price → `plan_changed`, a scheduled cancel →
-      `subscription_cancelled`, canceled → `subscription_ended` and the
-      machines stopped with a snapshot, past_due/paused/resumed as
-      documented. Evidence: `TestWebhookSubscriptionLifecycle`,
-      `TestWebhookResolvesByCustomer`, `TestWebhookRefusesForeignPrices`.
-- [x] `transaction.completed` reactivates a past-due account, lifts a
-      billing suspension and not an operator's, leaves a trial's $0
-      checkout alone and stamps the overage line's transaction id;
-      `transaction.payment_failed` moves a live subscription to past_due
-      with one `payment_failed` email and ignores a failed checkout.
-      Evidence: `TestWebhookTransactions`.
+      created (trialing) → trial + `Seats.Converted` once, active → active,
+      another product → `plan_changed`, a pending update → the scheduled
+      downgrade, `cancel_at_period_end` → `subscription_cancelled`,
+      past_due → the first payment failure with one `payment_failed`
+      email, canceled → `subscription_ended` and the machines stopped with
+      a snapshot. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar. `TestWebhookSubscriptionLifecycle`,
+      `TestWebhookResolvesByCustomer`, `TestWebhookRefusesForeignProducts`.
+- [x] `order.paid` reactivates a past-due account, lifts a billing
+      suspension and not an operator's, and leaves a trial's $0 checkout
+      alone. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar. `TestWebhookOrderPaid`.
 - [x] The gate refuses with every reason of api.md's table, the message
       is the whole sentence, exempt and `BILLING_ENFORCE=false` pass, and
-      a deploy without Paddle refuses `subscription_required`. Evidence:
+      a deploy without Polar refuses `subscription_required`. Evidence:
       `TestGateEveryReason` (unit) and `TestBillingGateBlocksCompute`
       (create, start, class change, resize, restore; suspended allow-list),
       `TestProjectCap` (I-569), `TestBillingEnforceFalseLetsStartsThrough`,
       `TestBillingDisabledRoutes`, `TestSignInAndProjectsLifecycle`
       (`/me` defaults `none`, Pro's `limits`, `plan_limit` naming the
       machines), `TestFork` (the account project cap, I-569).
-- [x] The overage line: 50 GB over on Solo is one charge of 250 cents
-      with `effective_from next_billing_period` under the overage
-      product; a retry sends none; under the allowance nothing is sent
-      and the period is marked; a refused charge leaves the row for the
-      operator and is not sent twice; an immediate charge stores the
-      transaction id. Evidence: `TestOverageChargeOnce`.
+- [x] The overage line: egress over the allowance within three hours of
+      the period's end is one `egress_overage` event to the GB under the
+      external id `overage:<subscription>:<period start unix>`, stored in
+      `sent_ref`; a retry sends none; under the allowance nothing is sent
+      and the period is marked; a refused event leaves the row unsent and
+      the next run sends it under the same external id. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestOverageChargeOnce`, `TestPolarSendOverage`.
 - [x] The hard stop at four times the allowance stops the running
       machines once per period with `egress_stopped`, the gate refuses
       `egress_limit` until `period_end`, and `BILLING_ENFORCE=false`
@@ -593,25 +642,28 @@ sandbox wait for the key and name the `docs/ops/M4-GATE.md` step.
       stamps the subscription's period, records a gap, and is idempotent.
       Evidence: `TestRollupWritesUsageWithoutPrices`,
       `internal/api/meter` `TestIngestAndSyntheticDayRollup`.
-- [x] Account deletion charges the pending overage immediately and then
-      cancels immediately. Evidence: `TestCloseAccountChargesThenCancels`
-      (the request order on the fake), `TestBillingRoutes` (`DELETE /me`
-      leaves the row canceled).
+- [x] Account deletion sends the pending overage first; with some owed
+      the subscription is cancelled at the period's end so Polar bills it,
+      with none it is revoked at once. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar. `TestCloseAccount`,
+      `TestBillingRoutes` (`DELETE /me`).
 - [x] Plan changes: upgrade at once prorated, refused without a seat;
       downgrade scheduled at period_end, refused `over_plan` while the
       account does not fit, kept through a webhook, undone by choosing the
-      plan again; cancel and resume with their 409s. Evidence:
-      `TestPlanChangesCancelResume`, `TestBillingRoutes`.
+      plan again; cancel and resume with their 409s. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestPlanChangesCancelResume`, `TestPlanChangePlusPro`,
+      `TestBillingRoutes`.
 - [x] `GET /billing`, `/me`, `Project` and `GET /billing/invoices` have
-      api.md's shapes. Evidence: `TestBillingRoutes`, `TestCheckout`
-      (plans, seats, paddle block), `TestPortalAndInvoices` (every
-      invoice key), `TestProjectCarriesRunningSeconds`.
-- [x] The bootstrap creates six objects once, finds them on a rerun,
-      prints the block without the key, refuses a live key without
-      `--live`. Evidence: `TestBootstrapIsIdempotent`,
-      `TestBillingSubcommands` (the command).
+      api.md's shapes (no `paddle` object since I-604). Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestBillingRoutes`, `TestCheckout` (plans, seats),
+      `TestPortalAndInvoices` (every invoice key, Polar's orders),
+      `TestProjectCarriesRunningSeconds`.
+- [x] `polar-bootstrap` creates the meter, the three products, the
+      introductory discount and the webhook endpoint once, finds them on a
+      rerun, sets the organization, prints the block without the token,
+      refuses production without `--production`. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
+      `TestBootstrapIsIdempotent`, `TestBillingSubcommands` (the command).
 - [x] `repose-admin billing show|rollup|explain|suspend|unsuspend|
-      overage-now|paddle-bootstrap` exist, print the arithmetic and write
+      overage-now|polar-bootstrap` exist, print the arithmetic and write
       audit_log; the removed commands are usage errors. Evidence:
       `TestBillingSubcommands`, `TestAccountAndExplain`.
 - [x] The CLI prints the api's `payment_required` sentence verbatim and
@@ -628,19 +680,20 @@ sandbox wait for the key and name the `docs/ops/M4-GATE.md` step.
       the dev box, so the file is written to its format and unrun),
       `python3 ops/dashboards/gen.py --check`.
 - [x] `PRICING.md`, `features/pricing.md`, `apps/web` `billing.md` and
-      `limits.md`, `ops/RUNBOOK.md` ("PaddleWebhookRejected",
+      `limits.md`, `ops/RUNBOOK.md` ("BillingWebhookRejected",
       "OverageChargeFailed", "BillingStopped", "Customer disputes a
-      charge", "Move a user between plans by hand"), `OBSERVABILITY.md`,
-      `M4-GATE.md` describe the plans. Evidence: re-read 2026-09-27.
-- [ ] Sandbox gate: a checkout with the test card makes a `trialing`
-      subscription and the account `trial`; a simulated
-      `transaction.completed` makes it `active`; a simulated
-      `transaction.payment_failed` makes it `past_due` and the tick stops
-      the machine on day 3; an overage for a known egress appears on the
-      next transaction to the cent. Evidence: `docs/ops/M4-GATE.md` §2 to
-      §4 with the ids pasted. Offline: `TestPaddleSandbox` (skipped
-      without `REPOSE_PADDLE_SANDBOX_KEY`). — waits on: owner (the sandbox
-      key).
+      charge", "Move a user between plans by hand", "Polar API version"),
+      `OBSERVABILITY.md`, `M4-GATE.md` describe the plans on Polar.
+      Evidence: re-read 2026-09-27, rewritten for Polar 2026-10-08 (I-604).
+- [ ] Sandbox gate: a checkout with Stripe's test card makes a
+      `trialing` subscription and the account `trial`; ending the trial
+      makes it `active`; a renewal on the failing card makes it
+      `past_due` and the tick stops the machine on day 3; a payment lifts
+      it; an overage for a known egress is billed to the cent on the
+      renewal order (or counted on the meter's quantities until that
+      order exists). Evidence: `docs/ops/M4-GATE.md` §2 to §5 with the ids
+      pasted. Offline: `TestPolarSandbox` (skipped without
+      `POLAR_ACCESS_TOKEN`; end to end with `REPOSE_POLAR_E2E_LISTEN`).
 - [ ] Live: one charge of the owner's own card, refunded or not at their
-      choice. Evidence: the transaction id and `billing show`. — waits on:
-      owner (live account, domain review).
+      choice. Evidence: the order id and `billing show`. Waits on the
+      owner (the production organization and token).

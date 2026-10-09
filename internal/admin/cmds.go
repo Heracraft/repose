@@ -1096,9 +1096,9 @@ func (e *Env) billing(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return ErrUsage
 	}
-	if args[0] == "paddle-bootstrap" {
-		// Talks to Paddle only; no database (DECISIONS I-289).
-		return e.billingPaddleBootstrap(ctx, args[1:])
+	if args[0] == "polar-bootstrap" {
+		// Talks to Polar only; no database (DECISIONS I-289, I-604).
+		return e.billingPolarBootstrap(ctx, args[1:])
 	}
 	if err := e.connect(ctx); err != nil {
 		return err

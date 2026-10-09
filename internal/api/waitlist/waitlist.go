@@ -3,7 +3,7 @@
 // many seats as its ready, undrained hosts have usable 8 GB blocks, or as
 // many as SEATS_TOTAL says. A seat is held by every live subscription
 // (its plan's seats) and by every invitation whose hold has not run out.
-// Checkout asks Reserve before it creates a Paddle transaction; without a
+// Checkout asks Reserve before it creates a Polar checkout; without a
 // free seat the user joins the list and gets `waitlisted`. Every minute
 // the Inviter hands free seats to the oldest waiting users, one seat each
 // and strictly in order, holding each for 72 hours; a hold that runs out

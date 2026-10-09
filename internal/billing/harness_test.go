@@ -30,9 +30,9 @@ func quiet() *slog.Logger {
 }
 
 // testConfig is a sandbox configuration pointed at the fake.
-func testConfig(f *fakePaddle) billing.Config {
-	return billing.Config{APIKey: "pdl_sdbx_apikey_test", WebhookSecret: f.Secret(), ClientToken: "test_client_token",
-		PriceSolo: "pri_solo_test", PricePlus: "pri_plus_test", PricePro: "pri_pro_test", ProductOverage: "pro_overage_test", DiscountIntro: "dsc_intro_test",
+func testConfig(f *fakePolar) billing.Config {
+	return billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, WebhookSecret: f.Secret(),
+		ProductSolo: "prod_solo_test", ProductPlus: "prod_plus_test", ProductPro: "prod_pro_test", DiscountIntro: "dsc_intro_test",
 		DashboardURL: "https://repose.herakraft.co", PortalReturnURL: "https://repose.herakraft.co/billing", BaseURL: f.URL(), Enforce: true}
 }
 
@@ -62,7 +62,7 @@ func seedAccount(t *testing.T, pool *db.Pool, plan, status, class, state string)
 	a.Handle = "u" + a.UserID.String()[24:]
 	a.Email = a.Handle + "@example.test"
 	a.Slug = "s" + a.ProjectID.String()[24:]
-	if _, err := pool.Exec(ctx, `insert into users (id, handle, email, billing_status, has_card, paddle_customer_id, created_at)
+	if _, err := pool.Exec(ctx, `insert into users (id, handle, email, billing_status, has_card, billing_customer_id, created_at)
 		values ($1, $2, $3, $4, $5, $6, $7)`, a.UserID, a.Handle, a.Email, status, plan != "", nullIf(plan == "", "ctm_"+a.Handle), a.Period.Start.Add(-24*time.Hour)); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -78,7 +78,7 @@ func seedAccount(t *testing.T, pool *db.Pool, plan, status, class, state string)
 			te := a.Period.Start.Add(7 * 24 * time.Hour)
 			trialEnd = &te
 		}
-		if _, err := pool.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, created_at)
+		if _, err := pool.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, created_at)
 			values ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $7)`, a.SubID, a.UserID, "ctm_"+a.Handle, plan, subStatus, p.Seats, a.Period.Start, a.Period.End, trialEnd); err != nil {
 			t.Fatalf("seed subscription: %v", err)
 		}
@@ -216,3 +216,8 @@ func nop() *metrics.M { return metrics.NewNop() }
 
 // at is a clock a job's Now can be pinned to.
 func at(t time.Time) func() time.Time { return func() time.Time { return t } }
+
+func mustUUID(t *testing.T) uuid.UUID {
+	t.Helper()
+	return store.NewID()
+}

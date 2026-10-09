@@ -15,7 +15,7 @@ import (
 // a payment returns the account to active with the machine left stopped.
 func TestDunningDays(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	cfg := testConfig(f)
 	ev := events.New(pool, nop(), quiet())
@@ -28,7 +28,7 @@ func TestDunningDays(t *testing.T) {
 	// Day 0 from the webhook.
 	w := newHooks(t, pool, f, nil, nil)
 	w.Now = at(t0)
-	if err := post(t, w, f, event("transaction.payment_failed", map[string]any{"id": "txn_f0", "status": "past_due", "customer_id": "ctm_" + a.Handle, "subscription_id": a.SubID, "custom_data": map[string]any{"user_id": a.UserID.String()}})); err != nil {
+	if err := post(t, w, f, event("subscription.past_due", subData(a.SubID, a, "prod_solo_test", "past_due", nil))); err != nil {
 		t.Fatal(err)
 	}
 	if userField(t, pool, a, "billing_status") != "past_due" || len(eventKinds(t, pool, a)) != 1 {
@@ -94,7 +94,7 @@ func TestDunningDays(t *testing.T) {
 	if _, err := pool.Exec(ctx, "update projects set state = 'stopped' where id = $1", a.ProjectID); err != nil {
 		t.Fatal(err)
 	}
-	if err := post(t, w, f, event("transaction.completed", map[string]any{"id": "txn_ok", "status": "completed", "customer_id": "ctm_" + a.Handle, "subscription_id": a.SubID, "custom_data": map[string]any{"user_id": a.UserID.String()}})); err != nil {
+	if err := post(t, w, f, event("order.paid", orderData(a, a.SubID, 2900, "subscription_cycle"))); err != nil {
 		t.Fatal(err)
 	}
 	if userField(t, pool, a, "billing_status") != "active" || userField(t, pool, a, "suspended_at") != "" || userField(t, pool, a, "past_due_since") != "" {
@@ -110,7 +110,7 @@ func TestDunningDays(t *testing.T) {
 // day-2 email still goes out.
 func TestDunningEnforceFalse(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	cfg := testConfig(f)
 	cfg.Enforce = false
@@ -133,7 +133,7 @@ func TestDunningEnforceFalse(t *testing.T) {
 // trial_ending goes out once when a trial has 48 hours left.
 func TestTrialEnding(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	d := billing.NewDunning(pool, &stopRecorder{}, nil, testConfig(f), nop(), quiet())
 	ctx := context.Background()

@@ -244,7 +244,7 @@ func componentOf(rel string) string {
 		return "hostd"
 	case strings.HasPrefix(rel, "cmd/guestd/"), strings.HasPrefix(rel, "internal/guestd/"):
 		return "guestd"
-	// internal/billing is the api's: the rollup, the Paddle webhook, the
+	// internal/billing is the api's: the rollup, the Polar webhook, the
 	// overage line and the dunning job all run in the api process and log as
 	// the api (workstream 09).
 	case strings.HasPrefix(rel, "cmd/api/"), strings.HasPrefix(rel, "internal/api/"), strings.HasPrefix(rel, "internal/billing/"):

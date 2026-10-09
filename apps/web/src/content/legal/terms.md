@@ -1,6 +1,6 @@
 ---
 title: Terms of service
-effective: 2026-09-27
+effective: 2026-10-08
 status: these terms are under review before launch.
 ---
 
@@ -91,9 +91,10 @@ waitlist and are offered in order as seats free.
 
 ## Billing
 
-repose is sold as a monthly plan, Solo, Plus or Pro, through Paddle, which is
-the merchant of record: Paddle takes the payment, adds and remits the tax
-for your country, and issues the receipt. Prices are published on the site
+repose is sold as a monthly plan, Solo, Plus or Pro, through Polar, which is
+the merchant of record: Polar takes the payment, adds and remits the tax
+for your country, and issues the receipt, under its
+[buyer terms](https://polar.sh/legal/checkout-buyer-terms). Prices are published on the site
 in US dollars before tax. A plan sets how much memory may run at once,
 how much disk may be allocated and how much traffic may leave your
 environments in a month; egress past the allowance is added to the next
@@ -109,7 +110,7 @@ kept for 30 days. Upgrading takes effect at once, prorated; downgrading
 takes effect at the next renewal.
 
 If a payment fails we tell you the same day and stop starting new
-environments; the ones running keep running. Paddle retries the card. If
+environments; the ones running keep running. Polar retries the card. If
 the payment has not gone through after three days, we snapshot and stop
 every environment and suspend the account; thirty days after that the
 snapshots are deleted. A successful payment at any point restores the

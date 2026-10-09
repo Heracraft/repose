@@ -49,10 +49,10 @@ Grafana "Host capacity", variable `host_id`. Then on the host itself:
 `systemctl list-units 'guest@*'`, `lvs vg-guests`, `nft list counters`,
 `journalctl -u hostd -f`.
 
-Billing (DECISIONS I-289): `repose_api_billing_webhook_total{kind,result}`
-counts Paddle webhook deliveries (`ok`, `duplicate`, `bad_signature`,
+Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
+counts Polar webhook deliveries (`ok`, `duplicate`, `bad_signature`,
 `error`), `repose_api_billing_overage_charges_total{result}` the egress
-overage lines sent, `repose_api_billing_gate_refused_total{reason}` the
+overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason}` the
 `payment_required` refusals, `repose_api_billing_subscriptions_total{plan,status}`
 the subscription events applied and `repose_api_billing_stops_total{reason}`
 the machines the api stopped for billing. The log lines are
@@ -134,7 +134,7 @@ line stored by us:**
 - git remote URLs (they can carry embedded tokens); log `project_id`
 - user IP addresses and user agents (the gateway may keep a per-IP
   counter in memory for rate limiting; it does not log the address)
-- card details of any kind, including last four (Paddle holds the card; the api never sees it)
+- card details of any kind, including last four (Polar holds the card; the api never sees it)
 
 `internal/obs` is where the rules live rather than where they are written
 down (in three packages, so that guestd links a logger and not an exporter:

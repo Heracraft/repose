@@ -3,7 +3,10 @@ package httpapi
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/billing"
@@ -12,7 +15,7 @@ import (
 
 // The /billing routes of docs/interfaces/api.md "Usage and billing"
 // (DECISIONS I-289, I-290). Every one answers 503 billing_disabled when
-// the api has no PADDLE_API_KEY (s.d.Billing is nil); the logic is
+// the api has no POLAR_ACCESS_TOKEN (s.d.Billing is nil); the logic is
 // internal/billing's, this file maps its answers and refusals to HTTP.
 
 // billingService returns the service or the disabled error.
@@ -71,7 +74,7 @@ func (s *Server) billingCheckout(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	txn, err := svc.Checkout(r.Context(), u, body.Plan)
+	url, err := svc.Checkout(r.Context(), u, body.Plan, customerIP(r))
 	var wl *billing.WaitlistedError
 	switch {
 	case errors.Is(err, billing.ErrUnknownPlan):
@@ -83,9 +86,27 @@ func (s *Server) billingCheckout(w http.ResponseWriter, r *http.Request) error {
 	case err != nil:
 		return err
 	}
-	cfg := svc.Paddle().Config()
-	writeJSON(w, http.StatusOK, map[string]any{"transaction_id": txn, "client_token": cfg.ClientToken, "environment": cfg.Environment()})
+	writeJSON(w, http.StatusOK, map[string]any{"url": url})
 	return nil
+}
+
+// customerIP is the browser's public address for Polar's tax country:
+// the rightmost X-Forwarded-For entry, which the edge proxy appended,
+// else the peer. A private or unparsable address gives "", and Polar
+// asks the customer for the country instead.
+func customerIP(r *http.Request) string {
+	cand := ""
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		cand = strings.TrimSpace(parts[len(parts)-1])
+	} else if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		cand = host
+	}
+	ip, err := netip.ParseAddr(cand)
+	if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return ""
+	}
+	return ip.String()
 }
 
 func (s *Server) billingPlan(w http.ResponseWriter, r *http.Request) error {
@@ -175,6 +196,9 @@ func (s *Server) billingPortal(w http.ResponseWriter, r *http.Request) error {
 		return errf("invalid", "for must be payment_method or absent")
 	}
 	url, err := svc.Portal(r.Context(), userFrom(r.Context()), body.For)
+	if errors.Is(err, billing.ErrNoSubscription) {
+		return withDetail(errf("conflict", "you have no plan yet; choose one with a checkout"), map[string]any{"reason": "no_subscription"})
+	}
 	if err != nil {
 		return err
 	}
@@ -198,8 +222,9 @@ func (s *Server) billingInvoices(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// POST /v1/billing/webhook. Paddle authenticates itself with the
-// Paddle-Signature header, so the route carries no bearer token and is
+// POST /v1/billing/webhook. Polar authenticates itself with the
+// Standard Webhooks headers (webhook-id, webhook-timestamp,
+// webhook-signature), so the route carries no bearer token and is
 // registered outside the authenticated set. The body is read with a cap
 // and never logged: it carries the customer's details, and a delivery
 // that fails verification is logged with the event type only.
@@ -213,26 +238,26 @@ func (s *Server) billingWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return errf("invalid", "could not read the webhook body")
 	}
-	kind, err := s.d.Webhooks.Handle(r.Context(), body, r.Header.Get("Paddle-Signature"))
+	kind, err := s.d.Webhooks.Handle(r.Context(), body, billing.HeadersFrom(r.Header))
 	label := kind
 	if label == "" {
 		label = "none"
 	}
 	switch {
 	case errors.Is(err, billing.ErrDuplicate):
-		// Already applied; answering 200 stops Paddle retrying.
+		// Already applied; answering 200 stops Polar retrying.
 		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "duplicate").Inc()
 		writeJSON(w, http.StatusOK, map[string]any{"received": true, "duplicate": true})
 		return nil
 	case errors.Is(err, billing.ErrBadSignature):
 		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "bad_signature").Inc()
-		obs.Logger(r.Context(), s.d.Log).Warn("paddle webhook signature rejected", "event", obs.EventBillingWebhook, "kind", label, "result", "bad_signature")
-		return errf("invalid", "paddle signature verification failed")
+		obs.Logger(r.Context(), s.d.Log).Warn("polar webhook signature rejected", "event", obs.EventBillingWebhook, "kind", label, "result", "bad_signature")
+		return errf("invalid", "polar signature verification failed")
 	case errors.Is(err, billing.ErrDisabled):
 		return err
 	case err != nil:
 		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "error").Inc()
-		obs.Logger(r.Context(), s.d.Log).Error("paddle webhook not applied", "event", obs.EventBillingWebhook, "kind", label, "result", "error", "err", err.Error())
+		obs.Logger(r.Context(), s.d.Log).Error("polar webhook not applied", "event", obs.EventBillingWebhook, "kind", label, "result", "error", "err", err.Error())
 		return err
 	}
 	s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "ok").Inc()

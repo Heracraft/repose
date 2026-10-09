@@ -2229,28 +2229,30 @@ the guest says `command not found`, or the run said `Could not install
 4. A Go or cargo fallback install lands in `~/.local/bin`, which is on
    the login PATH; a shell started before the install needs `hash -r`.
 
-## PaddleWebhookRejected
+## BillingWebhookRejected
 
-Five or more deliveries in ten minutes failed the `Paddle-Signature`
-check (`webhook_received` lines with `result=bad_signature`; the body is
-never logged). Two causes, in order of likelihood:
+Five or more deliveries in ten minutes failed the Standard Webhooks
+signature check (`webhook-id`, `webhook-timestamp`, `webhook-signature`;
+`webhook_received` lines with `result=bad_signature`; the body is never
+logged). Two causes, in order of likelihood:
 
-1. **`PADDLE_WEBHOOK_SECRET` is not this destination's endpoint secret.**
-   Paddle's dashboard > Developer tools > Notifications shows the
-   destination and its secret; a sandbox secret on a live deployment, or a
-   second destination, is the usual story. Paste the right one into the
-   Coolify environment of `api` and `api-grpc`. During a rotation the api
-   accepts the old and the new secret side by side (`billing.NewWebhooks`
-   takes extra secrets), so no delivery is lost.
-2. **The clock.** A `ts` more than five minutes from the api's clock is
-   refused. Check NTP on the control VM before anything else.
+1. **`POLAR_WEBHOOK_SECRET` is not this endpoint's secret.** Polar's
+   dashboard > Settings > Webhooks shows the endpoint and its secret; a
+   sandbox secret on a production deployment, or a second endpoint, is
+   the usual story. Paste the right one into the Coolify environment of
+   `api` and `api-grpc`. During a rotation the api accepts the old and the
+   new secret side by side (`billing.NewWebhooks` takes extra secrets), so
+   no delivery is lost.
+2. **The clock.** A `webhook-timestamp` more than five minutes from the
+   api's clock is refused. Check NTP on the control VM before anything
+   else.
 
-While it fires, no subscription or payment event is applied: accounts do
+While it fires, no subscription or order event is applied: accounts do
 not move to `past_due`, back to `active`, or to `trial` after a checkout.
-Paddle retries failed deliveries for three days, so fixing the secret
-inside that window replays everything; past it, the destination's page in
-the dashboard resends the missed events, and the `paddle_events` primary
-key drops the ones that did arrive.
+Polar retries a failed delivery with backoff; past its retries, the
+endpoint's delivery list in the dashboard redelivers the missed events,
+and the `billing_events` primary key (the `webhook-id`) drops the ones
+that did arrive.
 
 If neither is true, someone is posting at the endpoint. It is
 unauthenticated by design (the signature is the authentication) and a
@@ -2261,34 +2263,30 @@ rate limit in front of the api is the answer if it becomes constant.
 
 `repose_api_billing_overage_charges_total{result="error"}` moved: the
 hourly job computed a period's egress overage, recorded it in
-`overage_charges`, and Paddle refused the one-time charge
-(`overage_charged` lines with `result=error` carry Paddle's code). The row
-stays without `paddle_transaction_id`, the period is not marked charged,
-and nothing sends it again by itself, because a second attempt could
-double a line Paddle did accept after answering an error.
+`overage_charges`, and Polar refused the event ingest (`overage charge
+failed` lines with `result=error` carry Polar's status and message). The
+row stays without `sent_ref` and the period is not marked charged, so the
+next hourly tick sends it again under the same external id
+(`overage:<subscription>:<period start unix>`), which Polar dedupes; a
+resend never doubles a line (DECISIONS I-604). Waiting for the tick is
+enough; `overage-now` only sends sooner.
 
 ```
-repose-admin billing show <handle>              # "overage lines": the period, the GB, the cents, "transaction none yet"
-repose-admin billing overage-now <handle>       # sends this period's line if it is not on record; says so if it is
+repose-admin billing show <handle>              # "overage lines": the period, the GB, the cents, "sent -" until Polar accepts it
+repose-admin billing overage-now <handle>       # sends this period's line now instead of at the next tick
 ```
 
-Read Paddle's error first: `subscription_locked_processing` means Paddle
-is billing the subscription right now (wait ten minutes and retry);
-`entity_not_found` means the subscription id in our table is not
-Paddle's (compare with the dashboard). Then, if the period has not
-billed yet, delete the row and run `overage-now`, which records and sends
-it again:
-
-```
-delete from overage_charges where subscription_id = 'sub_...' and period_start = '2026-10-01';
-```
-
-If the invoice already went out without the line, add the charge in
-Paddle's dashboard (Subscriptions > the subscription > Charge one-time)
-for the recorded cents and put the transaction id on the row, so `show`
-and `explain` agree with what was charged. Paddle locks the invoice about
-thirty minutes before `next_billed_at`, which is why the job runs three
-hours ahead.
+Read Polar's error first: a 401 or 403 is the token (expired, revoked or
+missing a scope; fix `POLAR_ACCESS_TOKEN`), a 404 or 422 naming the
+customer means the account has no Polar customer under its user id
+(compare `show`'s "polar customer" with the dashboard), and a 5xx is
+Polar's and passes. The tick sends within three hours of `period_end`,
+which leaves three tries before Polar makes the renewal order. After the
+renewal the tick keeps sending every earlier period's unsent line as
+recorded, and Polar bills it on the following period's order, a month
+late. The meter's
+quantities (`GET /v1/meters/{id}/quantities` for the customer) show what
+Polar has counted.
 
 ## BillingStopped
 
@@ -2298,9 +2296,9 @@ machines by itself, with a snapshot, for one of three reasons (the label):
 - `past_due`: three days after a failed payment (PRICING.md "Failed
   payments"); the account is `suspended` with `suspended_reason =
   billing`, `billing_stopped` went to the user, and a payment lifts it by
-  itself (`transaction.completed`).
+  itself (`order.paid`).
 - `ended`: the subscription reached its end (cancelled at period end, or
-  Paddle cancelled it); `subscription_ended` went to the user; the account
+  Polar revoked it after its retries); `subscription_ended` went to the user; the account
   is `none` and a new checkout is the way back.
 - `egress`: the period's egress passed four times the plan's allowance;
   `egress_stopped` went to the user; starts are refused with
@@ -2317,17 +2315,18 @@ legitimate workload is a conversation about a bigger plan, not a bug.
 status, the period, what ran (hours per class), the disk allocated, the
 period's egress and the overage arithmetic
 (`ceil(egress GB - included) x 5 cents`), and the overage lines recorded
-with their Paddle transaction ids. Then Paddle's dashboard for the
-transaction itself: its lines are the plan's monthly price, tax for the
-buyer's country (Paddle's, as merchant of record), and at most one
-`Egress overage` line whose description names the GB and the period.
+with the sent ref of each. Then Polar's dashboard for the order itself
+(Sales > Orders): its lines are the plan's monthly price, less the
+introductory discount while it runs, tax for the buyer's country
+(Polar's, as merchant of record), and at most one metered `Egress
+overage` line for the period's GB over the allowance.
 
 The three that come up:
 
 - **"I was charged after I cancelled."** Cancelling ends the plan at
   `period_end`; the charge on the day of cancelling is that period's
-  renewal if it fell on the same day. `show` prints `cancels at`; Paddle's
-  transaction list shows the timing. A refund within 14 days of the first
+  renewal if it fell on the same day. `show` prints `cancels at`; Polar's
+  order list shows the timing. A refund within 14 days of the first
   charge is policy (PRICING.md "Refunds"); a renewal is not refunded for a
   part period.
 - **"What is this egress line?"** `repose-admin billing explain <project>
@@ -2339,37 +2338,60 @@ The three that come up:
   with the machine stopped. `show` prints the hours anyway; a user who
   wants to stop paying cancels, and the plan runs to the period's end.
 
-A refund is made in Paddle's dashboard (Transactions > the transaction >
-Refund), where it lands on the same card; record the reason in
-the refund's note in Paddle, which is the trail.
+A refund is made in Polar's dashboard (Sales > Orders > the order >
+Refund), where it lands on the same card; record the reason in the
+refund's reason and comment in Polar, which is the trail. A refund
+cancels the plan it was for. Polar may also refund an order within 60
+days on its own to head off a chargeback; that cancels the subscription
+too, and the webhook follows.
 Nothing in `usage_hours` or `overage_charges` is edited: they are the
 record of what was used and what was sent.
 
 ## Move a user between plans by hand
 
-The dashboard's plan page (`POST /billing/plan`) is the normal path: an
-upgrade takes effect at once, prorated by Paddle; a downgrade is scheduled
-for `period_end` and refused while the account would not fit. By hand,
-when the user cannot reach the dashboard or Paddle refused the change:
+The dashboard's plan page (`POST /billing/plan`) is the only path a user
+has: Polar's customer portal has plan changes turned off. An upgrade
+takes effect at once with the prorated difference charged now; a
+downgrade is scheduled for `period_end` and refused while the account
+would not fit. By hand, when the user cannot reach the dashboard or Polar
+refused the change:
 
-1. In Paddle's dashboard, Subscriptions > the subscription > Change
-   items: replace the price with the other plan's (`PADDLE_PRICE_SOLO`,
-   `PADDLE_PRICE_PLUS` and `PADDLE_PRICE_PRO` in the api's environment
-   name them), proration
-   "prorated immediately" for an upgrade and "prorated next billing
-   period" for a downgrade.
-2. Paddle sends `subscription.updated`; the webhook writes the new plan
-   and seats on the `subscriptions` row and emails `plan_changed`.
+1. In Polar's dashboard, Sales > Subscriptions > the subscription, change
+   the product to the other plan's (`POLAR_PRODUCT_SOLO`,
+   `POLAR_PRODUCT_PLUS` and `POLAR_PRODUCT_PRO` in the api's environment
+   name them), with proration "invoice" for an upgrade and "next period"
+   for a downgrade. The API call is `PATCH /v1/subscriptions/{id}` with
+   `product_id` and `proration_behavior`.
+2. Polar sends `subscription.updated`; the webhook writes the new plan
+   and seats on the `subscriptions` row (a downgrade as `scheduled_plan`
+   from Polar's `pending_update`) and emails `plan_changed`.
    `repose-admin billing show <handle>` confirms the plan within a minute.
-3. If the webhook is down (PaddleWebhookRejected), the row lags Paddle.
-   Do not edit `subscriptions.plan` by hand: fix the webhook and resend
-   the event from the destination's page; the row follows.
+3. If the webhook is down (BillingWebhookRejected), the row lags Polar.
+   Do not edit `subscriptions.plan` by hand: fix the webhook and redeliver
+   the event from the endpoint's delivery list; the row follows.
 
-A downgrade that Paddle accepts while the user runs more than the smaller
+A downgrade that Polar accepts while the user runs more than the smaller
 plan allows is not a problem for the api: the next start is refused with
 `plan_limit` naming the machines, and running ones keep running until
 stopped. `SEATS_TOTAL` bounds upgrades: with no free seat the api refuses
 `no_seat`, and by hand you would be overselling the host.
+
+## Polar API version
+
+Every request to Polar and the webhook endpoint pin `Polar-Version:
+2026-10` (`billing.APIVersion`, DECISIONS I-604). Polar removes a version
+about nine months after it becomes current, so the pin has to move before
+July 2027, and sooner if Polar announces an earlier removal:
+
+1. Read Polar's changelog for the versions between, and change
+   `billing.APIVersion` in `internal/billing/polar.go` (and the header in
+   `ops/polar/subscription.sh`) with whatever the payloads changed.
+2. Rerun `ops/polar/bootstrap.sh` against the sandbox and then production;
+   it finds the webhook endpoint and PATCHes its `api_version` to the new
+   pin, creating nothing else.
+3. Run `TestPolarSandbox` (`internal/billing/polar_sandbox_test.go`)
+   against the sandbox, end to end with `REPOSE_POLAR_E2E_LISTEN`, before
+   the change ships.
 
 ## Claude asks for a login in every project (login share, I-278)
 

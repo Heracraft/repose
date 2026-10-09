@@ -67,7 +67,7 @@ Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within ab
 
 ## Emails about your account
 
-Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, and they have no unsubscribe link. Paddle, which handles the payments, sends its own receipts and its own note when a card is declined; ours are about your machines.
+Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, and they have no unsubscribe link. Polar, which handles the payments, sends the receipt for each charge, the confirmation of a new plan, and a reminder when your card is about to expire. The emails about your free week ending, a failed payment, a cancellation, a plan ending and a plan change are ours.
 
 | Subject                                        | When                                                                                                                                                                 |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

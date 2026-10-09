@@ -68,7 +68,7 @@ type Gate struct {
 	cfg  Config
 	log  *slog.Logger
 	m    *metrics.M
-	// Enabled is whether Paddle is configured; without it every non-exempt
+	// Enabled is whether Polar is configured; without it every non-exempt
 	// user is refused with subscription_required (I-289).
 	Enabled bool
 	// Enforce is BILLING_ENFORCE (§8); false lets everything through.

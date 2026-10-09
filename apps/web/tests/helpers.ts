@@ -105,35 +105,6 @@ export async function resetBilling(): Promise<void> {
 	});
 }
 
-/**
- * Stands in for Paddle's overlay (src/lib/paddle.ts): with the fake's
- * environment "fake" the page calls window.__reposePaddleStub instead of
- * loading Paddle.js, and the stub plays the webhook by completing the
- * transaction through the fake's admin listener, then reports
- * checkout.completed the way the overlay would.
- */
-export async function installPaddleStub(page: Page): Promise<void> {
-	await page.addInitScript((admin: string) => {
-		window.__reposePaddleStub = {
-			async open({ transactionId, onCompleted }) {
-				window.__reposePaddleOpened = transactionId;
-				await fetch(`${admin}/paddle/complete`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ transaction_id: transactionId })
-				});
-				onCompleted();
-			}
-		};
-	}, adminURL());
-}
-
-declare global {
-	interface Window {
-		__reposePaddleOpened?: string;
-	}
-}
-
 export { BASE_URL };
 
 /** Has a project's guest ask a question, as repose-ask would (the fake's admin POST /question). */

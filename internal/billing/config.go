@@ -7,32 +7,31 @@ import (
 	"strings"
 )
 
-// Config is the PADDLE_* environment the api reads (09-billing.md §5.11,
-// DECISIONS I-289). With no PADDLE_API_KEY the api starts normally, the
-// billing routes answer 503 billing_disabled and the gate refuses every
-// non-exempt start with subscription_required: a deploy without keys is
-// safe and useless rather than free.
+// Config is the POLAR_* environment the api reads (09-billing.md §5.11,
+// DECISIONS I-289, I-604). With no POLAR_ACCESS_TOKEN the api starts
+// normally, the billing routes answer 503 billing_disabled and the gate
+// refuses every non-exempt start with subscription_required: a deploy
+// without a token is safe and useless rather than free.
 type Config struct {
-	APIKey        string
+	AccessToken string
+	// Env is POLAR_ENVIRONMENT, sandbox or production. Polar's tokens do
+	// not say which they belong to, so it is required with the token.
+	Env           string
 	WebhookSecret string
-	// ClientToken is the public Paddle.js token GET /billing hands the
-	// dashboard.
-	ClientToken string
-	// PriceSolo, PricePlus and PricePro are the pri_... ids of the three
-	// plans; ProductOverage the pro_... id the egress line is charged under.
-	PriceSolo      string
-	PricePlus      string
-	PricePro       string
-	ProductOverage string
-	// DiscountIntro is the dsc_... id of the introductory discount that a
-	// first checkout of the intro plan carries (DECISIONS I-497).
+	// ProductSolo, ProductPlus and ProductPro are the Polar product ids of
+	// the three plans; each carries the plan's monthly price, the metered
+	// egress overage price and the trial.
+	ProductSolo string
+	ProductPlus string
+	ProductPro  string
+	// DiscountIntro is the id of the introductory discount that a first
+	// checkout of the intro plan carries (DECISIONS I-497).
 	DiscountIntro string
-	// PortalReturnURL is where Paddle's customer portal sends the user back.
+	// PortalReturnURL is where Polar's customer portal sends the user back.
 	PortalReturnURL string
 	// DashboardURL is the dashboard's origin, which every refusal names.
 	DashboardURL string
-	// BaseURL overrides the API origin (tests); empty derives it from the
-	// key's environment.
+	// BaseURL overrides the API origin (tests); empty derives it from Env.
 	BaseURL string
 	// Enforce is BILLING_ENFORCE (§8). False keeps rolling up but stops
 	// blocking starts and stopping machines.
@@ -44,51 +43,42 @@ type Config struct {
 
 // Environments.
 const (
-	EnvSandbox = "sandbox"
-	EnvLive    = "live"
+	EnvSandbox    = "sandbox"
+	EnvProduction = "production"
 
-	sandboxKeyPrefix = "pdl_sdbx_"
-	sandboxBaseURL   = "https://sandbox-api.paddle.com"
-	liveBaseURL      = "https://api.paddle.com"
+	sandboxBaseURL    = "https://sandbox-api.polar.sh/v1"
+	productionBaseURL = "https://api.polar.sh/v1"
 )
 
-// Environment tells a sandbox key from a live one by its prefix.
-func Environment(key string) string {
-	if strings.HasPrefix(key, sandboxKeyPrefix) {
-		return EnvSandbox
-	}
-	return EnvLive
-}
+// Environment is sandbox or production.
+func (c Config) Environment() string { return c.Env }
 
-// Environment is the configured key's environment.
-func (c Config) Environment() string { return Environment(c.APIKey) }
+// Enabled reports whether Polar is configured at all.
+func (c Config) Enabled() bool { return c.AccessToken != "" }
 
-// Enabled reports whether Paddle is configured at all.
-func (c Config) Enabled() bool { return c.APIKey != "" }
-
-// PlanPrice is the Paddle price id for a plan.
-func (c Config) PlanPrice(plan string) string {
+// PlanProduct is the Polar product id for a plan.
+func (c Config) PlanProduct(plan string) string {
 	switch plan {
 	case Solo.ID:
-		return c.PriceSolo
+		return c.ProductSolo
 	case Plus.ID:
-		return c.PricePlus
+		return c.ProductPlus
 	case Pro.ID:
-		return c.PricePro
+		return c.ProductPro
 	}
 	return ""
 }
 
-// PlanForPrice is the plan a Paddle price id sells; "" for an unknown one.
-func (c Config) PlanForPrice(priceID string) string {
-	switch priceID {
+// PlanForProduct is the plan a Polar product sells; "" for an unknown one.
+func (c Config) PlanForProduct(productID string) string {
+	switch productID {
 	case "":
 		return ""
-	case c.PriceSolo:
+	case c.ProductSolo:
 		return Solo.ID
-	case c.PricePlus:
+	case c.ProductPlus:
 		return Plus.ID
-	case c.PricePro:
+	case c.ProductPro:
 		return Pro.ID
 	}
 	return ""
@@ -105,15 +95,14 @@ func env(name, def string) string {
 func ConfigFromEnv() (cfg Config, enabled bool) {
 	dash := env("DASHBOARD_URL", "https://repose.herakraft.co")
 	cfg = Config{
-		APIKey:          strings.TrimSpace(os.Getenv("PADDLE_API_KEY")),
-		WebhookSecret:   strings.TrimSpace(os.Getenv("PADDLE_WEBHOOK_SECRET")),
-		ClientToken:     strings.TrimSpace(os.Getenv("PADDLE_CLIENT_TOKEN")),
-		PriceSolo:       strings.TrimSpace(os.Getenv("PADDLE_PRICE_SOLO")),
-		PricePlus:       strings.TrimSpace(os.Getenv("PADDLE_PRICE_PLUS")),
-		PricePro:        strings.TrimSpace(os.Getenv("PADDLE_PRICE_PRO")),
-		ProductOverage:  strings.TrimSpace(os.Getenv("PADDLE_PRODUCT_OVERAGE")),
-		DiscountIntro:   strings.TrimSpace(os.Getenv("PADDLE_DISCOUNT_INTRO")),
-		PortalReturnURL: env("PADDLE_PORTAL_RETURN_URL", dash+"/billing"),
+		AccessToken:     strings.TrimSpace(os.Getenv("POLAR_ACCESS_TOKEN")),
+		Env:             strings.TrimSpace(os.Getenv("POLAR_ENVIRONMENT")),
+		WebhookSecret:   strings.TrimSpace(os.Getenv("POLAR_WEBHOOK_SECRET")),
+		ProductSolo:     strings.TrimSpace(os.Getenv("POLAR_PRODUCT_SOLO")),
+		ProductPlus:     strings.TrimSpace(os.Getenv("POLAR_PRODUCT_PLUS")),
+		ProductPro:      strings.TrimSpace(os.Getenv("POLAR_PRODUCT_PRO")),
+		DiscountIntro:   strings.TrimSpace(os.Getenv("POLAR_DISCOUNT_INTRO")),
+		PortalReturnURL: env("POLAR_PORTAL_RETURN_URL", dash+"/billing"),
 		DashboardURL:    dash,
 		Enforce:         os.Getenv("BILLING_ENFORCE") != "false",
 	}
@@ -131,25 +120,28 @@ func ConfigFromEnv() (cfg Config, enabled bool) {
 	return cfg, cfg.Enabled()
 }
 
-// Validate refuses a half-configured Paddle: a key with no price ids
-// would sell nothing, no webhook secret would leave every subscription
-// event unverified and dropped, and no overage product would silently
-// give egress away. No introductory discount would charge the full price
-// to a user the dashboard promised the introductory one.
+// Validate refuses a half-configured Polar: a token with no environment
+// could charge real cards from a sandbox deploy or the reverse, no
+// product ids would sell nothing, no webhook secret would leave every
+// subscription event unverified and dropped, and no introductory
+// discount would charge the full price to a user the dashboard promised
+// the introductory one.
 func (c Config) Validate() error {
 	if !c.Enabled() {
 		return nil
 	}
+	if c.Env != EnvSandbox && c.Env != EnvProduction {
+		return errors.New("POLAR_ACCESS_TOKEN is set but POLAR_ENVIRONMENT is not sandbox or production")
+	}
 	var missing []string
 	for name, v := range map[string]string{
-		"PADDLE_WEBHOOK_SECRET":  c.WebhookSecret,
-		"PADDLE_PRICE_SOLO":      c.PriceSolo,
-		"PADDLE_PRICE_PLUS":      c.PricePlus,
-		"PADDLE_PRICE_PRO":       c.PricePro,
-		"PADDLE_PRODUCT_OVERAGE": c.ProductOverage,
-		"PADDLE_DISCOUNT_INTRO":  c.DiscountIntro,
+		"POLAR_WEBHOOK_SECRET": c.WebhookSecret,
+		"POLAR_PRODUCT_SOLO":   c.ProductSolo,
+		"POLAR_PRODUCT_PLUS":   c.ProductPlus,
+		"POLAR_PRODUCT_PRO":    c.ProductPro,
+		"POLAR_DISCOUNT_INTRO": c.DiscountIntro,
 	} {
-		if name == "PADDLE_DISCOUNT_INTRO" {
+		if name == "POLAR_DISCOUNT_INTRO" {
 			if _, ok := IntroPlan(); !ok {
 				continue
 			}
@@ -160,10 +152,10 @@ func (c Config) Validate() error {
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return errors.New("PADDLE_API_KEY is set but " + strings.Join(missing, ", ") + " is not")
+		return errors.New("POLAR_ACCESS_TOKEN is set but " + strings.Join(missing, ", ") + " is not")
 	}
-	if c.PriceSolo == c.PricePlus || c.PriceSolo == c.PricePro || c.PricePlus == c.PricePro {
-		return errors.New("PADDLE_PRICE_SOLO, PADDLE_PRICE_PLUS and PADDLE_PRICE_PRO are not three different prices")
+	if c.ProductSolo == c.ProductPlus || c.ProductSolo == c.ProductPro || c.ProductPlus == c.ProductPro {
+		return errors.New("POLAR_PRODUCT_SOLO, POLAR_PRODUCT_PLUS and POLAR_PRODUCT_PRO are not three different products")
 	}
 	return nil
 }

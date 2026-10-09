@@ -18,7 +18,7 @@ import (
 // internal/billing so that a change to the real table is a deliberate
 // change to the contract the dashboard tests run against.
 
-// Billing modes for SetBilling. "off" is the api without PADDLE_API_KEY:
+// Billing modes for SetBilling. "off" is the api without POLAR_ACCESS_TOKEN:
 // every billing route answers 503 billing_disabled and the account is
 // exempt, so compute is allowed (the default, which is what every test
 // that is not about billing wants). The other modes have billing on.
@@ -79,16 +79,15 @@ const overageCentsPerGB = 5
 // egressStopFactor is the multiple of the allowance at which machines stop.
 const egressStopFactor = 4
 
-// FakeClientToken and FakeEnvironment are what GET /billing and the
-// checkout answer under paddle; "fake" tells the dashboard to use its
-// window.__reposePaddleStub instead of loading Paddle.js.
+// CheckoutBase is where a checkout's URL points unless SetCheckoutBase
+// moves it: cmd/fakeapi serves a page there that completes the checkout
+// and sends the browser back, as Polar's hosted checkout does.
 const (
-	FakeClientToken = "test_fake_client_token"
-	FakeEnvironment = "fake"
-	portalURL       = "https://customer-portal.paddle.com/cpl_fake"
+	CheckoutBase = "https://sandbox.polar.sh/checkout/"
+	portalURL    = "https://sandbox.polar.sh/repose/portal?customer_session_token=polar_cst_fake"
 )
 
-// Invoice is one row of GET /billing/invoices (a Paddle transaction).
+// Invoice is one row of GET /billing/invoices (a Polar order).
 type Invoice struct {
 	ID            string    `json:"id"`
 	Number        string    `json:"number"`
@@ -175,8 +174,9 @@ type billingState struct {
 	diskHeldGB    *float64
 	invoices      *[]Invoice
 	introUsed     bool
-	checkouts     map[string]string // transaction id -> plan
-	txnSeq        int
+	checkouts     map[string]checkout // checkout id -> plan and return origin
+	checkoutSeq   int
+	checkoutBase  string
 }
 
 func (f *Fake) initBilling() {
@@ -184,7 +184,7 @@ func (f *Fake) initBilling() {
 		mode:       BillingOff,
 		seatsTotal: 30,
 		seatsHeld:  12,
-		checkouts:  map[string]string{},
+		checkouts:  map[string]checkout{},
 	}
 	f.startPeriod()
 }
@@ -368,18 +368,36 @@ func (f *Fake) SetBillingState(s BillingState) error {
 	return nil
 }
 
-// CompleteCheckout stands for Paddle's subscription.created webhook after
-// the transaction a checkout opened was paid: the account is trialing on
-// the plan the checkout named. Unknown transaction ids are an error, so a
-// test that completes the wrong one finds out.
-func (f *Fake) CompleteCheckout(transactionID string) error {
+// checkout is an open checkout: the plan, and the origin of the page that
+// asked for it, where the hosted checkout sends the browser back.
+type checkout struct {
+	plan   string
+	origin string
+}
+
+// SetCheckoutBase moves the URL a checkout answers with; cmd/fakeapi
+// points it at its own page that completes the checkout.
+func (f *Fake) SetCheckoutBase(base string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	plan, ok := f.bill.checkouts[transactionID]
+	f.bill.checkoutBase = base
+}
+
+// CompleteCheckout stands for Polar's subscription.created webhook after
+// a checkout was paid: the account is trialing on the plan the checkout
+// named. It returns where the hosted checkout sends the browser:
+// <origin>/billing?checkout=done, or "" when the checkout was asked for
+// without an Origin. Unknown checkout ids are an error, so a test that
+// completes the wrong one finds out.
+func (f *Fake) CompleteCheckout(checkoutID string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	co, ok := f.bill.checkouts[checkoutID]
 	if !ok {
-		return fmt.Errorf("no open checkout %q", transactionID)
+		return "", fmt.Errorf("no open checkout %q", checkoutID)
 	}
-	delete(f.bill.checkouts, transactionID)
+	plan := co.plan
+	delete(f.bill.checkouts, checkoutID)
 	// The invitation's held seat becomes the subscription's; a waiting
 	// user converts and leaves the count.
 	held := planByID(plan).Seats
@@ -393,7 +411,10 @@ func (f *Fake) CompleteCheckout(transactionID string) error {
 	f.bill.plan = plan
 	f.bill.seatsHeld += held
 	f.bill.waitlist = nil
-	return nil
+	if co.origin == "" {
+		return "", nil
+	}
+	return strings.TrimRight(co.origin, "/") + "/billing?checkout=done", nil
 }
 
 func planByID(id string) *PlanDef {
@@ -664,10 +685,6 @@ type billingResp struct {
 	IntroEligible bool              `json:"intro_eligible"`
 	Seats         Seats             `json:"seats"`
 	Waitlist      *WaitlistPlace    `json:"waitlist"`
-	Paddle        struct {
-		Environment string `json:"environment"`
-		ClientToken string `json:"client_token"`
-	} `json:"paddle"`
 }
 
 func (f *Fake) subscriptionOf() *subscriptionView {
@@ -785,8 +802,6 @@ func (f *Fake) getBilling(w http.ResponseWriter, r *http.Request) *apiError {
 	out.Seats = f.seatsOf()
 	out.Waitlist = f.bill.waitlist
 	out.IntroEligible = !f.hasSubscription() && !f.bill.introUsed
-	out.Paddle.Environment = FakeEnvironment
-	out.Paddle.ClientToken = FakeClientToken
 	for _, p := range Plans {
 		available := f.seatsFor() >= p.Seats
 		if cur := f.currentPlan(); cur != nil {
@@ -833,10 +848,14 @@ func (f *Fake) billingCheckout(w http.ResponseWriter, r *http.Request) *apiError
 		return errf("waitlisted", "%s", waitlist.Message(place.Position, u.Email)).
 			withDetail(map[string]any{"position": place.Position, "joined_at": place.JoinedAt, "email": u.Email})
 	}
-	f.bill.txnSeq++
-	txn := fmt.Sprintf("txn_fake_%06d", f.bill.txnSeq)
-	f.bill.checkouts[txn] = plan.ID
-	writeJSON(w, http.StatusOK, map[string]string{"transaction_id": txn, "client_token": FakeClientToken, "environment": FakeEnvironment})
+	f.bill.checkoutSeq++
+	id := fmt.Sprintf("chk_fake_%06d", f.bill.checkoutSeq)
+	f.bill.checkouts[id] = checkout{plan: plan.ID, origin: r.Header.Get("Origin")}
+	base := f.bill.checkoutBase
+	if base == "" {
+		base = CheckoutBase
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": base + id})
 	return nil
 }
 
@@ -936,11 +955,14 @@ func (f *Fake) billingPortal(w http.ResponseWriter, r *http.Request) *apiError {
 	if e := decodeBody(r, &body, true); e != nil {
 		return e
 	}
-	url := portalURL
-	if body.For == "payment_method" {
-		url += "/subscriptions/sub_fake/update-payment-method"
+	if body.For != "" && body.For != "payment_method" {
+		return invalid("for must be payment_method or absent")
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+	// Polar knows a customer only after a first checkout.
+	if !f.hasSubscription() && !f.bill.introUsed {
+		return errf("conflict", "you have no plan yet; choose one with a checkout").withDetail(map[string]any{"reason": "no_subscription"})
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": portalURL})
 	return nil
 }
 
@@ -957,9 +979,9 @@ func (f *Fake) billingInvoices(w http.ResponseWriter, r *http.Request) *apiError
 		return nil
 	}
 	plan := f.currentPlan()
-	pdf := "https://checkout.paddle.com/invoice/txn_fake_inv_000001.pdf"
+	pdf := "https://sandbox-api.polar.sh/v1/orders/ord_fake_000001/invoice.pdf"
 	writeJSON(w, http.StatusOK, []Invoice{{
-		ID: "txn_fake_inv_000001", Number: "REPOSE-0001", Status: "completed", Currency: "USD",
+		ID: "ord_fake_000001", Number: "REPOSE-0001", Status: "paid", Currency: "USD",
 		AmountCents: plan.PriceCents, SubtotalCents: plan.PriceCents, TaxCents: 0,
 		CreatedAt: f.bill.periodStart, PeriodStart: f.bill.periodStart, PeriodEnd: f.bill.periodEnd,
 		HostedURL: &pdf, PDFURL: &pdf,
@@ -967,14 +989,14 @@ func (f *Fake) billingInvoices(w http.ResponseWriter, r *http.Request) *apiError
 	return nil
 }
 
-// billingWebhook stands in for Paddle's endpoint: it checks only that a
+// billingWebhook stands in for Polar's endpoint: it checks only that a
 // signature header is present and answers what the real route answers.
 func (f *Fake) billingWebhook(w http.ResponseWriter, r *http.Request) *apiError {
 	if e := f.billingDisabled(); e != nil {
 		return e
 	}
-	if r.Header.Get("Paddle-Signature") == "" {
-		return errf("invalid", "paddle signature verification failed")
+	if r.Header.Get("webhook-signature") == "" {
+		return errf("invalid", "polar signature verification failed")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"received": true})
 	return nil
