@@ -118,11 +118,17 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 	if err != nil {
 		return err
 	}
-	if e.JSON {
-		if qs == nil {
-			qs = []Question{}
+	if e.Quiet {
+		for _, q := range qs {
+			_, _ = fmt.Fprintln(e.Out, q.ID)
 		}
-		return writeJSONOut(e.Out, qs)
+		return nil
+	}
+	if e.JSON {
+		if projectArg == "" {
+			projects, _ = e.Client.ListProjects(ctx)
+		}
+		return writeJSONOut(e.Out, questionsJSON(qs, projects))
 	}
 	now := time.Now()
 	for i, q := range qs {
@@ -163,6 +169,41 @@ func QuestionsCmd(ctx context.Context, e *Env, projectArg string) error {
 		}
 	}
 	return nil
+}
+
+// questionJSON is one entry of `repose questions --json`: a question
+// (kind "question"), or an agent waiting at a prompt in its terminal
+// (kind "terminal"), which has no id and no text (DECISIONS I-609).
+type questionJSON struct {
+	Kind string `json:"kind"`
+	Question
+}
+
+type terminalWaitJSON struct {
+	Kind      string `json:"kind"`
+	ProjectID string `json:"project_id"`
+	Project   string `json:"project"`
+	Agent     string `json:"agent"`
+	Window    string `json:"window,omitempty"`
+	State     string `json:"state"`
+}
+
+func questionsJSON(qs []Question, projects []Project) []any {
+	out := []any{}
+	for _, q := range qs {
+		out = append(out, questionJSON{Kind: "question", Question: q})
+	}
+	for _, p := range projects {
+		if p.Signals == nil || p.State != "running" {
+			continue
+		}
+		for _, a := range p.Signals.Agents {
+			if a.State == "needs_input" {
+				out = append(out, terminalWaitJSON{Kind: "terminal", ProjectID: p.ID, Project: p.Slug, Agent: a.Agent, Window: a.Window, State: a.State})
+			}
+		}
+	}
+	return out
 }
 
 // ReplyCmd implements `repose reply [PROJECT] [ANSWER...]`. The first word

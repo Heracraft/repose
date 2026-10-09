@@ -187,10 +187,10 @@ func TestLogLinesAndSince(t *testing.T) {
 	if got := logLineText(LogLine{TS: ts, Kind: "build", Line: "x"}, "build"); got != ts.Local().Format(time.RFC3339)+" build x" {
 		t.Fatalf("%q", got)
 	}
-	if got := sinceArg("1h", ts); got != "2026-09-28T00:02:03Z" {
-		t.Fatalf("1h: %q", got)
+	if got, err := parseSince("1h", ts); err != nil || apiSince(got) != "2026-09-28T00:02:03Z" {
+		t.Fatalf("1h: %q %v", apiSince(got), err)
 	}
-	if got := sinceArg("2026-09-27T00:00:00Z", ts); got != "2026-09-27T00:00:00Z" {
-		t.Fatalf("time: %q", got)
+	if got, err := parseSince("2026-09-27T00:00:00Z", ts); err != nil || apiSince(got) != "2026-09-27T00:00:00Z" {
+		t.Fatalf("time: %q %v", apiSince(got), err)
 	}
 }

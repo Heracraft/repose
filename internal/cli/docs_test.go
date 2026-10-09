@@ -55,6 +55,9 @@ var undocumentedFlags = map[string]string{
 	// PROJECT's old spelling (I-603): hidden for a release.
 	"repose run --name":  "old spelling of repose run PROJECT",
 	"repose sync --name": "old spelling of repose sync PROJECT",
+	// The old name of status -f (I-609): kept working, hidden from help;
+	// cli.md names it once as the old name.
+	"repose status --watch": "old name of repose status -f",
 }
 
 // internalEnvVars are REPOSE_* names the package reads that no user sets.

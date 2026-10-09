@@ -233,6 +233,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	early.settle(ctx, e, project, wasRunning)
 
 	endEnsure()
+	e.acted = project
 	if !attachOnly {
 		personal.finish(ctx, e, opts.NoPersonal, project)
 		if opts.NoPersonal && !project.PersonalOptOut {

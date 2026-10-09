@@ -12,7 +12,9 @@ import (
 // progress shows what a long command is doing (DECISIONS I-154): on a
 // terminal, one live line with a spinner, the phase and its elapsed time,
 // replaced by a "✓ <done>  <time>" line when the phase ends; elsewhere, one
-// plain "<phase>..." line per phase and nothing that redraws. It writes to
+// plain "<phase>..." line per phase, the same ✓ line when it ends, and a
+// "<phase>... <time>" line every heartbeat while it runs, so a CI log
+// tells a hung step from a slow one (DECISIONS I-609). It writes to
 // stderr only, so stdout stays the command's result (07-cli.md §5.12).
 // Every method is safe on a nil *progress, which is what tests and the
 // commands that have no phases pass.
@@ -21,6 +23,9 @@ type progress struct {
 	tty   bool
 	now   func() time.Time
 	start time.Time
+	// heartbeat is how often a phase off a terminal prints that it is
+	// still running; 0 never.
+	heartbeat time.Duration
 
 	mu         sync.Mutex
 	label      string // the running phase, "" between phases
@@ -35,7 +40,7 @@ type progress struct {
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func newProgress(w io.Writer, tty bool) *progress {
-	p := &progress{w: w, tty: tty, now: time.Now}
+	p := &progress{w: w, tty: tty, now: time.Now, heartbeat: 30 * time.Second}
 	p.start = p.now()
 	return p
 }
@@ -74,7 +79,14 @@ func (p *progress) Phase(label, done string) {
 	p.label, p.done, p.phaseStart = label, done, p.now()
 	if !p.tty {
 		_, _ = fmt.Fprintf(p.w, "%s...\n", label)
+		if p.heartbeat <= 0 {
+			p.mu.Unlock()
+			return
+		}
+		p.stop, p.stopped = make(chan struct{}), make(chan struct{})
+		stop, stopped, every := p.stop, p.stopped, p.heartbeat
 		p.mu.Unlock()
+		go p.beat(stop, stopped, every)
 		return
 	}
 	p.stop, p.stopped = make(chan struct{}), make(chan struct{})
@@ -97,6 +109,26 @@ func (p *progress) Phase(label, done string) {
 			}
 		}
 	}()
+}
+
+// beat prints the running phase and its time every interval until stop:
+// the off-terminal stand-in for the spinner's clock.
+func (p *progress) beat(stop, stopped chan struct{}, every time.Duration) {
+	defer close(stopped)
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			p.mu.Lock()
+			if p.label != "" {
+				_, _ = fmt.Fprintf(p.w, "%s... %s\n", p.label, fmtElapsed(p.now().Sub(p.phaseStart)))
+			}
+			p.mu.Unlock()
+		}
+	}
 }
 
 // Relabel changes the running phase's label and done text without
@@ -130,7 +162,7 @@ func (p *progress) End() {
 		return
 	}
 	p.clearLocked()
-	if p.tty && p.done != "" {
+	if p.done != "" {
 		_, _ = fmt.Fprintf(p.w, "✓ %s  %s\n", p.done, fmtElapsed(p.now().Sub(p.phaseStart)))
 	}
 	p.label, p.done = "", ""

@@ -16709,3 +16709,70 @@ DESIGN. Not changed: the guest's wrapper comment in
 rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
 `TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
 `TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.
+
+**I-609. Streams and script output: `--since` is parsed and checked,
+`logs --kind ops` prints the api's fields, `events` reads as a table
+and covers every project outside a checkout, streams' `--json` is one
+object per line, and the commands that change a project take
+`--json`.** (2026-10-08, from the CLI reviews of that day: B5, F1, F3,
+F4, F5, 3.4, 3.5, 3.7, and theme 7's time shapes and list contract)
+- `--since` on `logs` and `events` takes a Go duration with `d` and `w`
+  in front (`90m`, `2d`, `1w`, `1d12h`), a date (local midnight) or RFC
+  3339; anything else exits 2 naming the forms. It used to reach the api
+  unchanged, and the api read a value it could not parse as no limit,
+  so `--since 7d` printed every log line with exit 0. The api's
+  `since=` on `/events` and `/logs` is now `400 invalid` unless it is
+  RFC 3339, the only value it ever honoured; the gateway's
+  `/internal/revoked` keeps the lenient read. The fake matches: its
+  events no longer take an event id as `since`.
+- `logs` gets no default `--since` (the review asked for 24h, as on
+  `events`): `console` and `build` hold only the last failed boots and
+  the last build, and a 24h window would hide the one that matters the
+  day after. `-n`/`--tail N` keeps the last N lines, as `docker logs -n`
+  does, and `-f` then prints new ones.
+- `logs --kind ops` decodes what the api sends (`op_id`, `state`,
+  `duration_ms`, `error {code, message}`) and prints `<time> <kind>
+  <done|failed|running> <duration> <code>: <message>`; it decoded `line`,
+  which only the fake sent, so every production row was `<time> start`.
+  The fake now sends the api's shape, and `TestOpsLogLineDecodes` holds
+  the CLI's `LogLine` to the handler's own `opsLogLine`.
+- `events` prints local RFC 3339, the agent with its tmux window, the
+  kind as the verb `notify.Title` uses (`finished`, `asks`, `machine`
+  for a state change), and the summary on one line, in padded columns.
+  `--json` keeps the raw `kind` and adds `project`. With no PROJECT
+  where no project resolves and the directory has no git remote (any
+  folder that is not a checkout, the home folder), it covers every
+  project with a project column, as `questions` does (I-419); a
+  checkout with a remote and no project still exits 4. An empty answer
+  prints `No events on todo-app in the last 1h.` on stderr, as `logs`
+  does (I-592). The fake's `guest.started` event "guest started on
+  host-01" is now the api's `guest_state_changed` "running".
+- Time shapes: tables print local `YYYY-MM-DD HH:MM` (`secrets list`
+  and `config show --revisions` printed UTC with no zone), streams
+  local RFC 3339, `--json` the api's UTC. cli.md "Output" says so and
+  that only `--json` and `-q` are for scripts; F4's other option, TSV
+  for every list off a terminal, was not taken: it changes what every
+  piped table prints for a guarantee cli.md can give in one line.
+- `--json` on `logs`, `events` and `status -f` is NDJSON: one compact
+  object per line (an indented object per event broke `while read`).
+  `status` takes `-f`/`--follow`, the flag `logs` and `events` use;
+  `--watch` stays, hidden, as its old name.
+- `start`, `stop`, `resize` and `sync` take `--json` and print the
+  Project once done, their sentence going to stderr; `snapshots create
+  --json` prints the Snapshot, so a script gets its id. `secrets list`
+  takes `--json` (it had the code and no flag). `questions -q` prints
+  the question ids, and `questions --json` adds the agents waiting at a
+  terminal prompt as `kind: "terminal"` beside `kind: "question"`.
+- Without a terminal, a progress phase prints its `✓` line with its
+  time when it ends and `<phase>... 30s` every 30 s while it runs: a
+  piped `run --no-attach` printed two start lines and a minute of
+  silence before an error.
+- *Not done (F3):* `--no-wait`/`--timeout` on every operation. `start`,
+  `stop`, `resize` and `snapshots create` already wait; `timeout 5m
+  repose stop` bounds one, and the op goes on at the api either way.
+  `rm`'s `--wait` is unchanged.
+`TestParseSince`, `TestStreamsRefuseBadSince`, `TestLogsTailAndNDJSON`,
+`TestLogsOpsLines`, `TestEventLine`, `TestEventsEveryProjectAndEmpty`,
+`TestProgressOffTerminal`, `TestQuestionsQuietAndTerminalJSON`,
+`TestStateChangesPrintJSON`, `TestStreamFlags`, `TestOpsLogLineDecodes`,
+`TestEventsSinceInvalid`, the fake's `TestInternal`.

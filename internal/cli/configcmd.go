@@ -23,7 +23,7 @@ func ConfigShowCmd(ctx context.Context, e *Env, projectArg string, revisions boo
 			return writeJSONOut(e.Out, revs)
 		}
 		for _, r := range revs {
-			line := fmt.Sprintf("%s\t%s\t%s", r.ID, r.Status, r.CreatedAt.Format("2006-01-02 15:04"))
+			line := fmt.Sprintf("%s\t%s\t%s", r.ID, r.Status, tableTime(r.CreatedAt))
 			if r.Error != "" {
 				line += "\t" + r.Error
 			}

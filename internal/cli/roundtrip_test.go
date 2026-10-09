@@ -159,7 +159,7 @@ func TestLogsAndEventsRoundTrip(t *testing.T) {
 	e, _ := newRoundtripEnv(t, fake)
 	ctx := context.Background()
 
-	if err := LogsCmd(ctx, e, "", "", "", false, nil); err != nil {
+	if err := LogsCmd(ctx, e, "", "", "", 0, false, nil); err != nil {
 		t.Fatalf("LogsCmd: %v", err)
 	}
 	if err := EventsCmd(ctx, e, "", "24h", false, nil); err != nil {
@@ -185,7 +185,7 @@ func TestEventsPagesAndFollows(t *testing.T) {
 	}
 	var got []string
 	for _, l := range strings.Split(strings.TrimSpace(out.String()), "\n") {
-		if f := strings.Split(l, "\t"); len(f) == 4 && strings.HasPrefix(f[3], "m") {
+		if f := strings.Fields(l); len(f) == 4 && strings.HasPrefix(f[3], "m") {
 			got = append(got, f[3])
 		}
 	}
@@ -207,10 +207,10 @@ func TestEventsPagesAndFollows(t *testing.T) {
 		}
 	}
 	_ = EventsCmd(pctx, e, "", "1h", true, poll)
-	if n := strings.Count(out.String(), "\tlate\n"); n != 1 {
+	if n := strings.Count(out.String(), "  late\n"); n != 1 {
 		t.Fatalf("follow printed the new event %d times:\n%s", n, out.String())
 	}
-	if n := strings.Count(out.String(), "\tm129\n"); n != 1 {
+	if n := strings.Count(out.String(), "  m129\n"); n != 1 {
 		t.Fatalf("follow printed m129 %d times:\n%s", n, out.String())
 	}
 }

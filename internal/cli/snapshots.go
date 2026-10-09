@@ -80,6 +80,26 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	if op.State == "error" {
 		return e.opFailed("snapshot", project.Slug, op.Error, "")
 	}
+	if e.JSON {
+		// The snapshot the op recorded (its result names it), else the
+		// newest, for an api that does not say (I-609).
+		snaps, err := e.Client.ListSnapshots(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		id, _ := op.Result["snapshot_id"].(string)
+		var got *Snapshot
+		for i := range snaps {
+			s := &snaps[i]
+			if (id != "" && s.ID == id) || (id == "" && (got == nil || s.CreatedAt.After(got.CreatedAt))) {
+				got = s
+			}
+		}
+		if got == nil {
+			return fmt.Errorf("the snapshot of %s was taken, and the api does not list it", project.Slug)
+		}
+		return writeJSONOut(e.Out, got)
+	}
 	_, _ = fmt.Fprintf(e.Out, "Snapshot of %s taken in %s.\n", project.Slug, fmtElapsed(pr.Total()))
 	return nil
 }

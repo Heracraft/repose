@@ -66,6 +66,11 @@ type Env struct {
 	// Quiet is -q on a listing: only the names or ids, one per line, for
 	// a pipe into xargs (DECISIONS I-276).
 	Quiet bool
+	// jsonLines makes printJSON write one compact line, for a command
+	// that prints a value per refresh (`status -f --json`, I-609).
+	jsonLines bool
+	// acted is the project run or sync acted on, for `sync --json`.
+	acted *Project
 	// TTY is whether stderr is a terminal: a spinner there, plain phase
 	// lines otherwise (I-154).
 	TTY bool

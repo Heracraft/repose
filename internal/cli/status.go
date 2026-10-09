@@ -19,7 +19,7 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	if e.JSON {
-		return writeJSONOut(e.Out, project)
+		return e.printJSON(project)
 	}
 	// The guest's answer (listeners, its disk, and what runs its
 	// terminals, I-509, I-567) is asked beside the api's reads.

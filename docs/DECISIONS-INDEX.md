@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-622 entries.
+623 entries.
 
 ## Scope
 
@@ -654,3 +654,4 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16583
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16628
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; L16655
+- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; L16713

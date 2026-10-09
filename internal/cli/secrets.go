@@ -76,7 +76,7 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		if tty {
 			indent = "  "
 		}
-		_, _ = fmt.Fprintf(e.Out, "%s%s\t%s\n", indent, s.Name, s.UpdatedAt.Format("2006-01-02 15:04"))
+		_, _ = fmt.Fprintf(e.Out, "%s%s\t%s\n", indent, s.Name, tableTime(s.UpdatedAt))
 	}
 	if tty {
 		skip, _, _ := e.Cfg.loginSkip(project.Slug)
