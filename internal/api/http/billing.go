@@ -196,6 +196,9 @@ func (s *Server) billingPortal(w http.ResponseWriter, r *http.Request) error {
 		return errf("invalid", "for must be payment_method or absent")
 	}
 	url, err := svc.Portal(r.Context(), userFrom(r.Context()), body.For)
+	if errors.Is(err, billing.ErrNoSubscription) {
+		return withDetail(errf("conflict", "you have no plan yet; choose one with a checkout"), map[string]any{"reason": "no_subscription"})
+	}
 	if err != nil {
 		return err
 	}

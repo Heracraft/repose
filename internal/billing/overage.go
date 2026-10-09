@@ -70,6 +70,11 @@ func (o *Overage) Run(ctx context.Context) (charges []Charge, stopped []uuid.UUI
 	if err != nil {
 		return charges, nil, err
 	}
+	late, err := o.resendUnsent(ctx)
+	charges = append(charges, late...)
+	if err != nil {
+		return charges, nil, err
+	}
 	stopped, err = o.hardStops(ctx)
 	if err != nil {
 		return charges, stopped, err
@@ -214,6 +219,57 @@ func (o *Overage) ChargePeriod(ctx context.Context, sub *Sub) (*Charge, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// resendUnsent sends every recorded line of an earlier period that Polar
+// never accepted, as recorded and under its own external id: a period
+// whose sends all failed until its renewal lands on the next renewal
+// order rather than being lost (Polar bills an event by when it arrives).
+func (o *Overage) resendUnsent(ctx context.Context) ([]Charge, error) {
+	if o.sender == nil {
+		return nil, nil
+	}
+	rows, err := o.pool.Query(ctx, `select c.subscription_id, s.user_id, c.period_start, c.egress_gb::bigint, c.cents
+		from overage_charges c join subscriptions s on s.id = c.subscription_id
+		where c.sent_ref is null and (s.period_start is null or c.period_start < s.period_start)
+		order by c.period_start`)
+	if err != nil {
+		return nil, fmt.Errorf("list unsent overage lines: %w", err)
+	}
+	var pending []Charge
+	for rows.Next() {
+		var c Charge
+		if err := rows.Scan(&c.SubscriptionID, &c.UserID, &c.PeriodStart, &c.EgressGB, &c.Cents); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		pending = append(pending, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []Charge
+	for _, c := range pending {
+		ref := OverageExternalID(c.SubscriptionID, c.PeriodStart)
+		if err := o.sender.SendOverage(ctx, c.UserID, ref, c.EgressGB, c.PeriodStart); err != nil {
+			if o.m != nil {
+				o.m.BillingOverageChargesTotal.WithLabelValues("error").Inc()
+			}
+			o.log.Error("overage resend failed", "event", obs.EventOverageCharged, "user_id", c.UserID.String(), "result", "error", "err", err.Error())
+			continue
+		}
+		if _, err := o.pool.Exec(ctx, "update overage_charges set sent_ref = $3 where subscription_id = $1 and period_start = $2", c.SubscriptionID, c.PeriodStart, ref); err != nil {
+			return out, err
+		}
+		if o.m != nil {
+			o.m.BillingOverageChargesTotal.WithLabelValues("ok").Inc()
+		}
+		o.log.Info("overage charged late", "event", obs.EventOverageCharged, "user_id", c.UserID.String(), "result", "ok", "cents", c.Cents, "gb", c.EgressGB)
+		c.Sent, c.Ref = true, ref
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 // hardStops stops the machines of every user whose period egress passed

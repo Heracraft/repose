@@ -117,6 +117,32 @@ func TestOverageChargeOnce(t *testing.T) {
 	if sub.OverageChargedFor == nil {
 		t.Fatal("the period is marked once Polar has the line")
 	}
+
+	// Every send failed until the renewal: the line of the old period is
+	// sent as recorded once Polar answers, under its own external id.
+	e := seedAccount(t, pool, "solo", "active", "large", "stopped")
+	usageHour(t, pool, e.ProjectID, e.Period.Start, "large", 3600, 270<<30, e.Period)
+	o.Now = at(e.Period.End.Add(-time.Hour))
+	f.Fail["POST /events/ingest"] = 3
+	if charges, _, err = o.Run(ctx); err != nil || len(charges) != 0 {
+		t.Fatalf("failed send: %+v %v", charges, err)
+	}
+	next := e.Period.End.AddDate(0, 1, 0)
+	if _, err := pool.Exec(ctx, "update subscriptions set period_start = $2, period_end = $3 where id = $1", e.SubID, e.Period.End, next); err != nil {
+		t.Fatal(err)
+	}
+	o.Now = at(e.Period.End.Add(time.Hour))
+	charges, _, err = o.Run(ctx)
+	ref3 := billing.OverageExternalID(e.SubID, e.Period.Start)
+	if err != nil || len(charges) != 1 || !charges[0].Sent || charges[0].Ref != ref3 || charges[0].Cents != 100 {
+		t.Fatalf("late resend: %+v %v", charges, err)
+	}
+	if md := f.Events()[ref3]["metadata"].(map[string]any); md["gb"] != float64(20) {
+		t.Fatalf("late event: %v", md)
+	}
+	if charges, _, _ = o.Run(ctx); len(charges) != 0 {
+		t.Fatalf("resent twice: %+v", charges)
+	}
 }
 
 // The hard stop: four times the allowance stops the running machines once

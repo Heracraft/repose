@@ -308,6 +308,9 @@ func TestBillingRoutes(t *testing.T) {
 	if r := e.do(t, tok, "POST", "/billing/cancel", nil); r.status != 409 {
 		t.Fatalf("cancel without subscription: %d %s", r.status, r.raw)
 	}
+	if r := e.do(t, tok, "POST", "/billing/portal", nil); r.status != 409 || errDetail(r, "reason") != "no_subscription" {
+		t.Fatalf("portal without subscription: %d %s", r.status, r.raw)
+	}
 	// The webhook brings the subscription: no bearer, signature is the auth.
 	var uid string
 	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-bill'").Scan(&uid); err != nil {
