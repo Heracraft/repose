@@ -232,6 +232,9 @@ func (f *fakePolar) handle(w http.ResponseWriter, r *http.Request) {
 					s["pending_update"] = nil
 				}
 			}
+			if d, present := body["discount_id"]; present && d == nil {
+				s["discount_id"] = nil
+			}
 			if pu, present := body["pending_update"]; present && pu == nil {
 				s["pending_update"] = nil
 			}

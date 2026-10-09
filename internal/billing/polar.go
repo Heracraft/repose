@@ -305,6 +305,7 @@ type Subscription struct {
 	ProductID          string         `json:"product_id"`
 	DiscountID         string         `json:"discount_id"`
 	Currency           string         `json:"currency"`
+	Amount             int64          `json:"amount"`
 	CurrentPeriodStart string         `json:"current_period_start"`
 	CurrentPeriodEnd   string         `json:"current_period_end"`
 	TrialStart         string         `json:"trial_start"`
@@ -386,8 +387,15 @@ func (p *Polar) patchSubscription(ctx context.Context, id string, body map[strin
 }
 
 // ChangeProduct moves the subscription to another plan's product.
-func (p *Polar) ChangeProduct(ctx context.Context, id, productID, proration string) (*Subscription, error) {
-	return p.patchSubscription(ctx, id, map[string]any{"product_id": productID, "proration_behavior": proration})
+// dropDiscount removes the subscription's discount with it: the
+// introductory offer is Solo's, and Polar would otherwise carry its $9
+// onto the plan the user moves to (DECISIONS I-604).
+func (p *Polar) ChangeProduct(ctx context.Context, id, productID, proration string, dropDiscount bool) (*Subscription, error) {
+	body := map[string]any{"product_id": productID, "proration_behavior": proration}
+	if dropDiscount {
+		body["discount_id"] = nil
+	}
+	return p.patchSubscription(ctx, id, body)
 }
 
 // ClearPendingUpdate drops a scheduled plan change (undoing a downgrade).

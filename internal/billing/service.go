@@ -269,13 +269,14 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 		} else if count.Total > 0 && count.Free < target.Seats-current.Seats {
 			return PlanChange{}, ErrNoSeat
 		}
-		if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateInvoice); err != nil {
+		// Leaving Solo ends its introductory offer.
+		if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateInvoice, sub.Intro); err != nil {
 			return PlanChange{}, fmt.Errorf("upgrade the subscription: %w", err)
 		}
 		// The webhook writes the same; writing it here too means the
 		// answer and the next /me agree without waiting for it.
 		err = db.InTx(ctx, s.pool, func(tx db.Tx) error {
-			if _, err := tx.Exec(ctx, "update subscriptions set plan = $2, seats = $3, scheduled_plan = null where id = $1", sub.ID, target.ID, target.Seats); err != nil {
+			if _, err := tx.Exec(ctx, "update subscriptions set plan = $2, seats = $3, scheduled_plan = null, intro = false, intro_until = null where id = $1", sub.ID, target.ID, target.Seats); err != nil {
 				return err
 			}
 			_, err := events.InsertAccount(ctx, tx, u.ID, now, KindPlanChanged, PlanChangedPayload{FromPlan: current.ID, ToPlan: target.ID, EffectiveAt: now})
@@ -304,7 +305,7 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 	if usage.RunningGB > target.MemoryGB || usage.DiskOver() {
 		return PlanChange{}, &OverPlanError{RunningGB: usage.RunningGB, DiskHeldBytes: usage.DiskHeldBytes, Plan: target}
 	}
-	if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateNextPeriod); err != nil {
+	if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateNextPeriod, false); err != nil {
 		return PlanChange{}, fmt.Errorf("schedule the downgrade: %w", err)
 	}
 	if _, err := s.pool.Exec(ctx, "update subscriptions set scheduled_plan = $2 where id = $1", sub.ID, target.ID); err != nil {

@@ -16626,7 +16626,8 @@ change: the plans, prices, seven-day trial with the card taken at
 checkout, Solo's introductory price, the egress allowance, overage and
 hard stop, the seats, the gate and dunning (`docs/PRICING.md`). Polar
 is the merchant of record as Paddle was, so the tax row stays closed;
-its fee is 4% + 40¢ against Paddle's 5% + 50¢. What changes:
+its Starter fee, 5% + 50¢, is Paddle's (an organization made before
+2026-05-27 keeps 4% + 40¢ plus 0.5% on subscriptions). What changes:
 
 (1) *Client.* `internal/billing/polar.go`: net/http against
 `https://api.polar.sh/v1` or `https://sandbox-api.polar.sh/v1`, an

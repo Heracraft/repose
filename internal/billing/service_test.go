@@ -181,6 +181,10 @@ func TestPlanChangesCancelResume(t *testing.T) {
 	ctx := context.Background()
 	a := seedAccount(t, pool, "solo", "active", "large", "running")
 	f.AddSubscription(a.SubID, "ctm_"+a.Handle, "prod_solo_test", "active")
+	f.Sub(a.SubID)["discount_id"] = "dsc_intro_test"
+	if _, err := pool.Exec(ctx, "update subscriptions set intro = true, intro_until = '2027-01-01' where id = $1", a.SubID); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := s.ChangePlan(ctx, user(t, pool, a), "solo"); !errors.Is(err, billing.ErrSamePlan) {
 		t.Fatalf("same plan: %v", err)
@@ -191,11 +195,12 @@ func TestPlanChangesCancelResume(t *testing.T) {
 		t.Fatalf("upgrade: %+v %v", ch, err)
 	}
 	patch := f.Bodies["PATCH /subscriptions/"+a.SubID][0]
-	if patch["proration_behavior"] != "invoice" || patch["product_id"] != "prod_plus_test" {
+	if d, present := patch["discount_id"]; patch["proration_behavior"] != "invoice" || patch["product_id"] != "prod_plus_test" || !present || d != nil {
 		t.Fatalf("upgrade body: %v", patch)
 	}
+	// Leaving Solo ends the introductory offer, at Polar and in the row.
 	sub, _ := billing.GetSubscription(ctx, pool, a.SubID)
-	if sub.Plan != "plus" || sub.Seats != 2 {
+	if sub.Plan != "plus" || sub.Seats != 2 || sub.Intro || f.Sub(a.SubID)["discount_id"] != nil {
 		t.Fatalf("row after upgrade: %+v", sub)
 	}
 	if k := eventKinds(t, pool, a); len(k) != 1 || k[0] != "plan_changed" {

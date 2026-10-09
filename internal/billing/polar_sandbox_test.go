@@ -135,6 +135,10 @@ func TestPolarSandbox(t *testing.T) {
 		t.Fatalf("upgrade: %+v %v", ch, err)
 	}
 	waitSub(ctx, t, pool, a.UserID, "plus from Polar", func(s *billing.Sub) bool { return s != nil && s.Plan == "plus" })
+	// Leaving Solo ends the introductory offer: Plus renews at $59.
+	if ps, err := p.GetSubscription(ctx, sub.ID); err != nil || ps.DiscountID != "" || ps.Amount != 5900 {
+		t.Fatalf("Polar after the upgrade: discount %q, amount %d, %v", ps.DiscountID, ps.Amount, err)
+	}
 	if ch, err := svc.ChangePlan(ctx, u, "solo"); err != nil || ch.ScheduledPlan == nil || *ch.ScheduledPlan != "solo" {
 		t.Fatalf("downgrade: %+v %v", ch, err)
 	}
