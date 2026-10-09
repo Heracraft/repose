@@ -82,4 +82,4 @@ When the agent has committed, `git fetch repose` in your checkout brings its com
 repose stop
 ```
 
-Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. A stopped machine costs nothing; what its disk holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 10 seconds with your files where you left them. Running processes, agents included, don't survive a stop.
+Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. A stopped machine costs nothing; what its disk holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 10 seconds with your files where you left them. Agent windows open again on the conversations they were in; other running processes don't survive a stop.
