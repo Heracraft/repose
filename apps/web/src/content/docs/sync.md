@@ -24,7 +24,7 @@ A machine with no checkout, one made with `repose run --no-sync` or from a direc
 
 Later runs, from any folder or laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
 
-A second repository can live on the same machine in a checkout of its own: run `repose run --on PROJECT` in its folder. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).
+A second repository can live on the same machine in [a checkout of its own](/docs/run-and-attach#several-repositories-on-one-machine): run `repose run --on PROJECT` in its folder.
 
 ## What travels
 
@@ -171,7 +171,7 @@ Details:
 
 ### Pushing from the machine
 
-The machine's checkout has the same `origin` as yours, so `git push` there works as it does locally. If you're logged in to the GitHub CLI (`gh`) on your laptop and the remote is on github.com, that login is copied and git on the machine pushes over HTTPS with it. For other git hosts, see [Secrets](/docs/secrets#other-git-hosts).
+The machine's checkout has the same `origin` as yours, so `git push` there works as it does locally. If you're logged in to the GitHub CLI (`gh`) on your laptop and the remote is on github.com, that login is copied and git on the machine pushes over HTTPS with it. [Other git hosts](/docs/secrets#other-git-hosts) have no login that repose copies.
 
 ### Single files
 

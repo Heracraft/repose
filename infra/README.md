@@ -29,9 +29,9 @@ infra/
   policy/tfsec/       the two rules a reviewer should not have to remember
 ```
 
-Never commit `*.tfstate` or `*.local.tfvars`. `.terraform.lock.hcl` **is**
-committed, deliberately: it is what makes a plan in CI resolve the same
-provider versions as a plan on a laptop.
+Never commit `*.tfstate` or `*.local.tfvars`. Commit `.terraform.lock.hcl`:
+it makes a plan in CI resolve the same provider versions as a plan on a
+laptop.
 
 ## Before anything
 
@@ -74,7 +74,7 @@ make bootstrap ENV=staging
 which creates `repose-staging` and keeps its state in production's account
 under the key `staging.tfstate`. The `tofu import` commands for adopting
 production's existing resources are at the top of `bootstrap/main.tf`; running
-them is a deliberate decision, not a step in this list.
+them is a decision of its own and no step in this list.
 
 State locking is a blob lease. Versioning is on, so a corrupted state file is
 restored from the previous blob version.
@@ -101,7 +101,7 @@ and nothing else.
 
 ## How the installer reaches a host
 
-Through the edge, always. `nixos-anywhere`, the post-install `/dev/kvm` and
+`nixos-anywhere`, the post-install `/dev/kvm` and
 nested-virtualization checks, and the join-token delivery all connect to the
 host's **private** address with the edge as an SSH jump host, and the module
 graph makes every host depend on the edge having been installed first.
@@ -109,15 +109,14 @@ graph makes every host depend on the edge having been installed first.
 Hosts never get a public IP, not even a temporary one for the install
 (`docs/DECISIONS.md` I-25). A public IP would need an inbound rule on the
 hosts subnet, which is the one thing `policy/tfsec` forbids; the install
-window is about ten minutes, not seconds; and what would be sitting in it is a
-stock Ubuntu image accepting root SSH.
+window is about ten minutes; and during it the host is a stock Ubuntu image
+accepting root SSH.
 
 ```
 you (operator_cidrs) ──ssh──▶ edge :<edge_operator_ssh_port> ──ssh──▶ host :22
 ```
 
-Two things have to be true for that to work, and both are worth checking
-before the first apply:
+Check two things before the first apply:
 
 - **Your address is in `operator_cidrs`.** The edge NSG opens the operator
   SSH port to that list and to the VNet, nothing else.
@@ -129,11 +128,11 @@ before the first apply:
   gateway's `certificate required` banner.
 
 The host side needs nothing configured: Azure's built-in `AllowVnetInBound`
-rule is what lets the edge reach a host's sshd, which is why the hosts NSG can
-have no rules of its own at all.
+rule lets the edge reach a host's sshd, so the hosts NSG can have no rules of
+its own.
 
-The provisioner shape this rests on — bastion connection, `install -d` then a
-`file` provisioner then `remote-exec` — was exercised against a real sshd on
+The provisioner shape this rests on (bastion connection, `install -d` then a
+`file` provisioner then `remote-exec`) was exercised against a real sshd on
 2026-09-19: the token arrived at mode 0600 and its contents appear nowhere in
 the apply log, because it travels as file content and never as an argument.
 
@@ -162,8 +161,8 @@ Leave the spent token in `prod.local.tfvars`. It is single-use and expires in
 proposing to remove the delivery step. Replacing its value is how a token is
 rotated.
 
-The whole thing takes roughly ten minutes, most of it the kexec and the
-closure copy.
+Adding a host takes about ten minutes, most of it the kexec and the closure
+copy.
 
 ## Rotating a join token
 
@@ -187,12 +186,12 @@ log, and it lands on a tmpfs, so it is not on the disk
 
 `coolify_count = 1` creates it: an Ubuntu `Standard_D4s_v7` with a 256 GB
 Premium OS disk and a static public IP in the `control` subnet. It is a
-**server** of the owner's existing Coolify instance, not a Coolify install of
-its own (`docs/DECISIONS.md` I-83): that instance connects over SSH as root,
+**server** of the owner's existing Coolify instance, with no Coolify install
+of its own (`docs/DECISIONS.md` I-83): that instance connects over SSH as root,
 installs its proxy, and deploys the api, the dashboard, Logto and the platform
 Postgres onto it. It stays Ubuntu because Coolify rejects NixOS as a managed
-server (`docs/DECISIONS.md` R4-2), which is why this is the one machine here
-that `nix/` knows nothing about.
+server (`docs/DECISIONS.md` R4-2), so `nix/` knows nothing about this one
+machine.
 
 cloud-init leaves the VM as Coolify's "Validate & configure" expects to find
 it: root login by key, with the operator keys and the instance's own key
@@ -201,9 +200,8 @@ it: root login by key, with the operator keys and the instance's own key
 Docker's apt repository; Tailscale, installed but not joined, so that the
 owner's Coolify reaches the VM by a tailnet address instead of a public-IP
 rule that goes stale (`docs/DECISIONS.md` I-86); `rclone` and `pg_restore`,
-because those are the
-first two commands of `docs/ops/RUNBOOK.md` "Postgres restore" and a restore
-that stops to install something is a restore nobody has rehearsed; the
+because those are the first two commands of `docs/ops/RUNBOOK.md` "Postgres
+restore" and a restore should not stop to install them; the
 WireGuard peer script; and nothing listening but sshd. The apply does not
 return until `terraform_data.ready` has checked each of those over SSH.
 
@@ -216,8 +214,8 @@ Tailscale and needs no rule; a Coolify that is not on the tailnet goes in
 the same port-22 rule, and without it that validation times out and looks
 like a dead machine.
 
-**There is no port 8000.** Coolify's dashboard is the owner's instance, not
-this VM; `azure/modules/network/main.tf` carries a `postcondition` that fails
+**There is no port 8000.** Coolify's dashboard runs on the owner's instance;
+`azure/modules/network/main.tf` carries a `postcondition` that fails
 the plan if 8000, 6001, 6002 or `*` ever appears as an inbound rule on the
 control subnet. 80 and 443 are open to `control_web_cidrs` for the proxy
 Coolify installs on the server, which terminates TLS for the two names in
@@ -225,7 +223,7 @@ Coolify installs on the server, which terminates TLS for the two names in
 
 Everything past the VM is a click path Coolify keeps in its own database, not
 in state: `docs/ops/coolify.md` is that path, including adding the server and
-the one fact that ruins a restore if it is learned late — Coolify encrypts its
+the one fact that ruins a restore if you learn it late: Coolify encrypts its
 stored credentials with `APP_KEY` from the `.env` on the owner's Coolify host,
 so a Postgres dump without that key restores a database of ciphertext.
 Backups and restores are Coolify's own, against a destination the owner
@@ -234,7 +232,7 @@ configures there; nothing in this repository touches them (DECISIONS I-112).
 Setting `coolify_count` back to 0 destroys the VM and its OS disk, the
 platform Postgres included; Coolify's own definitions of the resources
 survive on the owner's instance, pointing at a server that no longer exists.
-The retention that matters is Coolify's own backup plus the owner's `.env`.
+Recovering it takes Coolify's own backup plus the owner's `.env`.
 
 ## DNS
 
@@ -255,7 +253,7 @@ under `ssh.`: Cloudflare's proxy carries neither SSH nor WireGuard.
 
 ### DNS while manage_dns is false
 
-**"No record" is not "no answer" here.** `herakraft.co` serves every name
+**A name with no record still answers here.** `herakraft.co` serves every name
 under it from a proxied wildcard, so with `manage_dns` off the repose names
 resolve to Cloudflare's proxy rather than failing:
 
@@ -268,8 +266,8 @@ $ dig +short ssh.repose.herakraft.co
 A user following the documented `ssh ssh.repose.herakraft.co` reaches
 Cloudflare's proxy, which does not carry SSH, and every host configured with
 that hostname as its WireGuard endpoint fails the same way. The environment
-module raises this as a plan-time warning (`check "dns_is_managed_or_manual"`)
-rather than letting it be discovered from a connection that hangs.
+module raises this as a plan-time warning (`check "dns_is_managed_or_manual"`),
+so you see it before a connection hangs.
 
 Until a token exists, create these by hand in the Cloudflare dashboard, as
 **A records with the proxy off**, and delete them in the same change that sets
@@ -317,11 +315,11 @@ side:
    Keep `edge_wireguard_public_key` in `prod.local.tfvars` anyway, so a
    replacement control VM comes up peered.
 
-What travels over the tunnel: the edge reaches the api's `/internal` and
+Over the tunnel, the edge reaches the api's `/internal` and
 gRPC listeners at `10.255.255.1:8444` and `:8443` (the `api-grpc` app's port
 mappings, `ops/coolify/README.md`), and the monitoring server, once it is a
-peer too, scrapes the api's metrics there. Hosts do **not** use it to reach
-the api: they dial `control_private_ip:8443` on the VNet, because a host
+peer too, scrapes the api's metrics there. Hosts reach the api without the
+tunnel: they dial `control_private_ip:8443` on the VNet, because a host
 registers before it has a tunnel (DECISIONS I-92).
 
 ## Draining and destroying a host
@@ -329,13 +327,13 @@ registers before it has a tunnel (DECISIONS I-92).
 Shrinking the `hosts` list destroys a VM and everything on it. Do this, in
 order:
 
-1. `repose-admin hosts drain host-02` — the scheduler places nothing new.
+1. `repose-admin hosts drain host-02`: the scheduler places nothing new.
 2. Move or stop every project on it: `repose-admin projects move` for each,
    or let tenants stop them. `repose-admin hosts list --json` shows the count.
 3. `repose-admin hosts retire host-02`.
 4. Remove the name from `hosts` in `prod.tfvars`.
-5. The data disk and its attachment carry `prevent_destroy`, so the plan will
-   fail. That is the point. Delete the `prevent_destroy = true` lines in
+5. The data disk and its attachment carry `prevent_destroy`, so the plan
+   fails, as intended. Delete the `prevent_destroy = true` lines in
    `azure/modules/host/main.tf` in a commit somebody reads, apply, and put
    them back.
 
@@ -350,7 +348,7 @@ its connection to Azure Resource Manager mid-refresh: this happened twice from
 the dev box on 2026-09-20, with `context deadline exceeded` on a single
 resource read followed by `Error releasing the state lock`.
 
-"Confirm nobody is running an apply" does not have to be a guess. The lock
+You can confirm nobody is running an apply without guessing. The lock
 blob's metadata records which operation took it, from where, and when:
 
 ```bash
@@ -388,17 +386,17 @@ make plan ENV=staging      # costs nothing; a plan creates nothing
   explicit rule here is always a mistake.
 - **REPOSE-VM-001/002**: no VM may set `secure_boot_enabled` or
   `vtpm_enabled`. Trusted Launch disables nested virtualization, and a host
-  with no `/dev/kvm` boots perfectly and serves nothing.
+  with no `/dev/kvm` boots without an error and serves nothing.
 
-tfsec is in maintenance upstream; trivy is its successor. Two checks is a
-small enough surface to port when that day comes.
+tfsec is in maintenance upstream; trivy is its successor. Porting two checks
+to trivy is a small job.
 
 ## Cost
 
 Re-checked on **2026-09-20**, the date of the first apply, against the Azure
 Retail Prices API (`https://prices.azure.com/api/retail/prices`,
 `armRegionName eq 'eastus'`, `priceType eq 'Consumption'`), for what
-`prod.tfvars` actually creates: one `D16s_v7` host with a 512 GB Premium SSD
+`prod.tfvars` creates: one `D16s_v7` host with a 512 GB Premium SSD
 v2 data disk (DECISIONS I-14, I-39), the edge, and **the control-plane VM**
 (`coolify_count = 1`, DECISIONS I-71). 730 hours to the month, Linux rates, no
 reservation.
@@ -408,8 +406,8 @@ reservation.
 | Host `Standard_D16s_v7` | $1.058/h | $772.34 |
 | Host OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
 | Host data disk, Premium SSD v2, 512 GiB | $0.00011/GiB/h | $41.12 |
-| — its 16,000 IOPS (3,000 free) | $0.000007/IOPS/h | $66.43 |
-| — its 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
+| Host data disk IOPS, 16,000 (3,000 free) | $0.000007/IOPS/h | $66.43 |
+| Host data disk throughput, 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
 | NAT gateway | $0.045/h + $0.045/GB processed | $32.85 + egress |
 | Edge `Standard_D2s_v7` | $0.132/h | $96.36 |
 | Edge OS disk, Premium SSD P6 (64 GiB) + mount | $10.21 + $0.47 | $10.68 |
@@ -418,26 +416,26 @@ reservation.
 | Key Vault standard, operations | $0.03 per 10K | under $1 |
 | **Subtotal, one host and the edge, before egress** | | **about $857** |
 | Control plane `Standard_D4s_v7` | $0.265/h | $193.45 |
-| — its OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
-| — its static IPv4 | $0.005/h | $3.65 |
+| Control plane OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
+| Control plane static IPv4 | $0.005/h | $3.65 |
 | **Total, one host and the control plane, before egress** | | **about $1,094** |
 
 **The 2026-09-19 table had the control plane $53 a month too cheap.** It
 listed the `D4s_v7` at $140.16 a month; the API returns $0.265 an hour, which
-is $193.45. The re-query above is what caught it, which is the whole reason
-this item is on the checklist and dated.
+is $193.45. The re-query above caught it; that is why this item is on the
+checklist with a date.
 
 So the control plane is about **$237** a month, and one host plus the control
-plane is about **$1,094** — over the $1,000 monthly budget alert in
+plane is about **$1,094**, over the $1,000 monthly budget alert in
 `docs/ops/AZURE-SETUP.md` step 7. Raise the budget to $1,200, or drop the
 control plane to a `D2s_v7` (2 vCPU, 8 GB) and save $97. Coolify, Logto,
-Postgres, the api and the dashboard on 8 GB is tight but not absurd for a
-month of testing alone; 16 GB is the size that does not need thinking about.
+Postgres, the api and the dashboard fit in 8 GB for a month of testing
+alone, with little room; 16 GB leaves headroom.
 
-The other thing this table says that the earlier estimate did not:
+The table also shows something the earlier estimate missed:
 **Premium SSD v2 provisioned performance is most of the disk bill.** Capacity
 is $41; the IOPS and throughput above the free tier are another $85.
-`host_data_disk_iops` and `host_data_disk_mbps` are variables for exactly that
+`host_data_disk_iops` and `host_data_disk_mbps` are variables for that
 reason, and both can be raised in place later without downtime, so the first
 host can start at the free tier (3,000 IOPS, 125 MB/s) and save $85 a month
 until there is a guest whose builds justify more.

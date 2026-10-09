@@ -100,7 +100,7 @@ afterwards it means migrating live customers. If not, stay on Stripe.
 
 **A shape that fits the current architecture.** Guests are sized per
 project (small, large, xl), so the simplest pool is a limit on how much
-memory can run at once, not a shared CPU and memory pool:
+memory can run at once, in place of a shared CPU and memory pool:
 
 | Plan | Running at once | Disk | Egress | Projects |
 |---|---|---|---|---|
@@ -128,7 +128,7 @@ around the clock, which the best users will do. exe.dev can charge $20
 because of cheap hardware and oversubscription. The $10k Azure credit
 hides this for a few months only.
 
-So a price near exe.dev's needs one of: hosts on Hetzner; about $59 or
+A price near exe.dev's needs one of: hosts on Hetzner; about $59 or
 more for 8 GB running at once on Azure; or stopping idle guests
 automatically (on the Later list, no code).
 
@@ -214,8 +214,7 @@ Fit for repose:
 2. **What repose sells next to exe.dev** (see memory: continue, shrink or
    shelve). The differences are `repose run` syncing the working tree,
    Nix-declared machines with snapshots, agent notifications and
-   questions, and now `repose fork`. A subscription sells those, not the
-   VM.
+   questions, and now `repose fork`. A subscription sells those.
 3. **Hourly or subscription.** Follows from 1 and 2.
 4. **Stripe or Paddle.** Decide on tax alone; if Paddle, before the first
    real invoice.

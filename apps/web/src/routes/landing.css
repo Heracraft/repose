@@ -493,8 +493,15 @@
 	flex: none;
 	line-height: 0;
 }
-.tier-spec {
+/* The plan's memory gets its own line in ink: it is what the plan sells,
+   and it runs at the same time across the projects (I-402). */
+.tier-run {
 	margin-top: 0.625rem;
+	font-size: 0.9375rem;
+	color: var(--ink);
+}
+.tier-spec {
+	margin-top: 0.125rem;
 	font-size: 0.875rem;
 	color: var(--ink-muted);
 }

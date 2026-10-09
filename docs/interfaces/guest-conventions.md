@@ -1,6 +1,6 @@
 # Guest conventions
 
-What every guest guarantees, so the CLI, hooks and guestd can rely on it.
+The guarantees every guest makes, so the CLI, hooks and guestd can rely on them.
 Produced by `nix/guest/base/` (workstream 02); every path, name and variable
 here exists in that module under exactly this name.
 
@@ -236,7 +236,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   every client terminal for modifyOtherKeys, `\E[>4;2m`, and a program
   in a pane that asks for extended keys gets Shift+Enter as `\E[13;2u`;
   OSC 8 links reach the client; `DCS tmux;` passthrough from a visible
-  pane). What types into a pane (`send-keys`, guestd's prompt delivery)
+  pane). Input typed into a pane (`send-keys`, guestd's prompt delivery)
   is unaffected: text and an unmodified Enter (`\r`) are the same bytes
   in every mode.
 - Terminfo: the base has entries for every `TERM` I-264 names
@@ -403,8 +403,8 @@ project whose `project.json` names herdr runs its server.
   count from 0 in each herdr server process, so the first read after a
   failed one records them and marks no turn finished, and a lower
   `state_change_seq` is a restart (I-561).
-- **Agent keys.** What guestd reports as an agent's window (`AgentProc`,
-  `AgentEvent` and `Question` `tmux_window`, the api's `window`): the
+- **Agent keys.** The key guestd reports as an agent's window (`AgentProc`,
+  `AgentEvent` and `Question` `tmux_window`, the api's `window`) is the
   herdr agent `name` when set (the CLI names agents `claude`,
   `claude-2`, as tmux windows), else `<agent> <pane_id>`; prefixed
   `<checkout>/` when the agent's workspace label is a name listed in
@@ -912,7 +912,7 @@ the tmux server's or the SSH session's on fork: a dev server an agent
 started, a pane's shell, a `repose exec` command). A positive value the
 user set is left alone, and nothing is ever killed or stopped by guestd.
 `dev` cannot lower its own value, which is why root owns this. When the
-kernel does kill something, guestd's `oom` warning names it.
+kernel kills something, guestd's `oom` warning names it.
 
 The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `user@.service` `OOMScoreAdjust=-900`, the user manager's

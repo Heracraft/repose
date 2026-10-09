@@ -18,7 +18,7 @@ that is fast and free, so `/nix` is bind-mounted from it:
 Set up by `sudo scripts/nix-store-on-tempdisk.sh`, which is idempotent.
 
 **What "temp disk" means.** It is scratch space on the physical server the
-VM is currently running on, not a disk that belongs to the VM. A reboot from
+VM runs on, and it does not belong to the VM. A reboot from
 inside the VM keeps it. **Stopping or deallocating the VM from Azure, or an
 Azure maintenance move, brings it back empty.** Everything in the Nix store
 is a cache that rebuilds from `nix/flake.lock`, so nothing is lost except

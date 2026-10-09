@@ -2,9 +2,9 @@
 
 ## 1. Goal
 
-Verify, not assume, that one tenant cannot reach another tenant's guest,
-data, or credentials, and that the platform's own privacy promises are
-mechanically true. This workstream runs alongside every other one and ends
+Verify by test that one tenant cannot reach another tenant's guest, data,
+or credentials, and that the platform's own privacy promises hold
+mechanically. This workstream runs alongside every other one and ends
 with the isolation tests in `../CHECKLIST.md` passing on a shared host and
 the policy text published.
 
@@ -138,8 +138,8 @@ values) run in ordinary CI against the fake hostd.
 ## 8. Rollback
 
 Not applicable; this workstream adds tests and text. If a test is found to
-be wrong, fix the test with a `DECISIONS.md` note explaining what the
-boundary actually is.
+be wrong, fix the test with a `DECISIONS.md` note that states the real
+boundary.
 
 ## 9. Checklist
 
@@ -181,7 +181,7 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
       certificate row (it would put the operator's key on the host). The
       limits row is the next item (run 00:39Z, same file set:
       `isolation-go-20260921T003951Z.txt`, 18 PASS, 1 SKIP). Open: "hostd
-      for host X cannot act on host Y" (one host). — waits on: second host
+      for host X cannot act on host Y" (one host). Waits on: second host
       ("hostd for host X cannot act on host Y").
 - [x] The fork bomb and memory hog test leaves the neighbour within 10
       percent. Evidence (`TestForkBombAndMemoryHogLeaveNeighbourWithinTenPercent`,
@@ -196,7 +196,7 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
       `apps/web/src/content/legal/{privacy,terms}.md` and the same
       sentence in `docs/SECURITY.md`; the live URLs
       (`https://repose.herakraft.co/privacy`, `/terms`) are the m3-web
-      session's text row. — closed: STATUS 2026-09-20 m3-web progress line
+      session's text row. Closed: STATUS 2026-09-20 m3-web progress line
       ("14 text rows": both passages live at
       https://repose.herakraft.co/privacy and /terms) and
       apps/web/tests-live/public.spec.ts against the served pages.
@@ -233,7 +233,7 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
       producer is I-140 (same session: PAM hook to control socket to host
       event to `audit_log`, with the certificate's key id and serial),
       live on host-01 at the next switch; the user-route restore row is
-      still open (L-13's other half, 05). — open: the user-route restore
+      still open (L-13's other half, 05). Open: the user-route restore
       writes no `audit_log` row (review L-13; internal/api/http/restore.go and
       snapshots.go have no audit call), and no production `operator_login` row
       after the I-140 switch is pasted.
@@ -263,20 +263,20 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
       `host.json`; host-01 gets it at the switch carrying I-137 and I-139
       with the runbook's by-hand step, after which an operator
       certificate opens it; "only" then waits on `bootstrap.enable` being
-      turned off (01/11). — waits on: owner (RUNBOOK "Retiring a host's
+      turned off (01/11). Waits on: owner (RUNBOOK "Retiring a host's
       bootstrap key", DECISIONS I-177: Host CA on host-01, an
       operator-certificate login seen, then `bootstrap.keyUntilHostCA = true`
       and a switch).
 - [x] Secrets review comments exist in `STATUS.md` for workstreams 04, 05,
       07. Evidence: the lines. 04: 2026-09-20 (14 review line). 05 and
-      07: 2026-09-20 (M3 integration session lines, below the 14 lines). —
-      closed: STATUS 2026-09-20 lines `14-security | review 04-guestd` and the
+      07: 2026-09-20 (M3 integration session lines, below the 14 lines).
+      Closed: STATUS 2026-09-20 lines `14-security | review 04-guestd` and the
       m3-integration `14-security | review 05` and `review 07` lines.
 - [~] Incident runbook entry exists and the commands in it were run once
       on staging. Evidence: notes. The entry is `ops/RUNBOOK.md`
       "Suspected cross-tenant access"; the suite invocation in it is what
       `ops/checks/isolation-host01.sh` runs on host-01 (there is no
-      staging host; the capture commands have not been run). — open: the
+      staging host; the capture commands have not been run). Open: the
       capture commands in RUNBOOK "Suspected cross-tenant access" have never
       been run; run them once on host-01 against a test project (there is no
       staging host) and paste the notes.

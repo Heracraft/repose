@@ -106,7 +106,7 @@ flake output (`reposeModules.default`, a home-manager module) so one
 Every agent window starts with ten lines of `direnv: export +AR +AS +CC
 +CONFIG_SHELL ...` (mkShell's whole stdenv). The wrapper could set
 `DIRENV_LOG_FORMAT` for the load and print its own one line ("loaded the
-dev shell from flake.nix: ruff, hyperfine, node ...", or just the count),
+dev shell from flake.nix: ruff, hyperfine, node ...", or only the count),
 keeping direnv's output for a failed load, as the quiet mode for `repose
 exec` already does.
 

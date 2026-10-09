@@ -7,7 +7,7 @@ order: 31
 
 ## Your plan
 
-A plan buys memory for running machines, disk for what your projects hold, and egress for the month ([Pricing](/docs/billing)). Solo gives running machines 8 GB of memory (one `large`, or two `small`), Plus 16 GB (one `xl`, two `large`, any mix), Pro 32 GB (two `xl`, four `large`, any mix). Starting a machine that would pass it is refused with exit code 7 and a message that names the machine using the memory; stop it, or upgrade. An `xl` needs Plus or Pro.
+A [plan](/docs/billing) buys memory for running machines, disk for what your projects hold, and egress for the month. Solo keeps 8 GB of machines running at the same time (one `large`, or two `small`), Plus 16 GB (one `xl`, two `large`, any mix), Pro 32 GB (two `xl`, four `large`, any mix). Starting a machine that would pass it is refused with exit code 7 and a message that names the machine using the memory; stop it, or upgrade. An `xl` needs Plus or Pro.
 
 ## Projects
 

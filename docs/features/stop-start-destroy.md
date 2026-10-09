@@ -151,7 +151,7 @@ Start:
   (`ops.PendingRevision`).
 - Start is refused with `payment_required` when billing is `past_due` for
   more than 3 days or `suspended`, with the dashboard billing link.
-- `run` on a stopped project starts it implicitly; `attach` does not, and
+- `run` on a stopped project starts it; `attach` does not, and
   says to `start` or `run`. Every command that needs a running guest names
   the real state (stopped, still building, stopping, in `error` with the
   reason the api recorded) and the command that fits it (I-153).
@@ -204,7 +204,7 @@ Destroy:
 - Always finishes once asked (I-156). If guestd is dead the guest cannot
   be frozen, so the unit is stopped (the hypervisor's shutdown, then a
   kill) and the final snapshot is taken of the stopped volume, which is
-  crash-consistent at worst. If even that is impossible the snapshot is
+  crash-consistent at worst. If that is impossible too, the snapshot is
   skipped with a `snapshot_failed` event and the newest earlier snapshot
   is the one kept 30 days. A guest the host no longer has is already
   destroyed. The op ends `error` only for a real host failure (deleting

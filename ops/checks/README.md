@@ -3,8 +3,7 @@
 `docs/workstreams/PROMPTS.md` "M3 bring-up / m3" asks for a set of things
 done on host-01 through the real api, each closing checklist rows of
 workstreams 05, 12, 13 and 14 with pasted evidence. These scripts are those
-things, written so the evidence is a file somebody can paste rather than a
-terminal history nobody can find again. Each one drives the real api with
+things, written so the evidence lands in a file you can paste. Each one drives the real api with
 the `repose` CLI (and raw HTTP with the CLI's token where the CLI has no
 command, such as the menu route), reaches the guest through the gateway,
 the host through the edge's operator sshd, and `repose-admin` and Postgres
@@ -28,8 +27,8 @@ CLI in (`repose login`); make sure `ssh -p 2222 root@<edge>` and
 | `exec-b.sh` | 6 (helper) | not a check: the `REPOSE_ISOLATION_EXEC_B` prefix `isolation-host01.sh` sets, running a script in guest B through audited `repose-admin exec` on the control VM and passing back only the command's output and exit code, as a plain ssh would | called by `isolation-host01.sh` |
 
 Evidence lands in `out/<check>-<stamp>.txt` (git-ignored). The `evidence`
-blocks are headed the way the checklist rows are worded, so the paste into
-`STATUS.md` or the report is a copy of the block, not a rewrite.
+blocks are headed the way the checklist rows are worded, so you copy a block
+into `STATUS.md` or the report unchanged.
 
 ## Things the scripts cannot do alone
 

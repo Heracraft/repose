@@ -125,7 +125,7 @@ inserts `+1000 "trial"`. Hourly usage first debits the ledger (a negative
 row per hour with `ref = usage_hours pk`) until the balance is zero, and only
 the remainder becomes a Stripe usage record. A user with a positive balance
 and a card is `trial`; when the balance hits zero they become `active`
-and the next hour is billed — the transition happens in the same
+and the next hour is billed. The transition happens in the same
 transaction as the debit that exhausted the balance, because the card gate
 refuses a `trial` account with no credit (`trial_depleted`) and an account
 that merely used its trial credit must not be locked out of its own guests.
@@ -184,8 +184,8 @@ A job at `:05` past each hour, idempotent, keyed on `(project_id, hour)`:
 written against; the shape below is the same contract expressed with
 billing meters, which is what the current API and `stripe-go` v83 offer.
 
-One product `repose`, three **meters** — `repose_compute_cents`,
-`repose_storage_cents`, `repose_egress_cents` — and three metered prices in
+One product `repose`, three **meters** (`repose_compute_cents`,
+`repose_storage_cents`, `repose_egress_cents`) and three metered prices in
 USD, one per meter, billing scheme per unit at 1 cent. Each user has one
 subscription carrying those three prices, created at first card attach with
 the period anchored then (`users.stripe_subscription_id`,
@@ -201,7 +201,7 @@ is the idempotency key: Stripe enforces it as unique over a rolling window
 of at least 24 hours, and it is sent as the HTTP idempotency key as well.
 `usage_hours.stripe_usage_record_id` holds `usage:<project_id>:<hour>` and a
 row that has one is never pushed again. A part worth zero cents is not
-pushed at all. An exempt account's rows are marked `exempt` instead
+pushed. An exempt account's rows are marked `exempt` instead
 (DECISIONS I-16).
 
 The rejected alternative was one price per class with per-hour quantities;

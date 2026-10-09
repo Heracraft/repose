@@ -1,7 +1,7 @@
 # Orchestration: how the waves are run
 
-What actually happened while building Repose with many agents at once, written
-as the procedure to repeat. The design docs say what to build; this says how
+The record of building Repose with many agents at once, written as the
+procedure to repeat. The design docs say what to build; this says how
 the building is coordinated. It is descriptive: every step below was run at
 least once between 2026-09-19 and 2026-09-20. Since 2026-09-23 the work runs
 as rounds instead of waves; "Rounds" below is how, and where it differs
@@ -97,7 +97,7 @@ from the wave cycle, it wins.
   package outside that list (the dashboard's `cmd/fake-logto` importing
   `test/fake-logto`) passes `go build` and fails every `nix build` at the
   vendor step. `nix build .#guestd` is part of the merge check for that
-  reason, not only for the hash.
+  reason as well as for the hash.
 - **Run `go test` with a short `TMPDIR`.** Inside `nix develop` the
   temporary directory is `/tmp/nix-shell.*`, and the tmux and vsock fakes
   put unix sockets under `t.TempDir()`; the socket path limit makes those
@@ -105,8 +105,8 @@ from the wave cycle, it wins.
   `TMPDIR=/tmp/rt` (or similar) for the test step.
 - **A test that passes here and fails on CI is usually the runner's
   PATH.** The dev box has `claude`; the runner does not, so a tmux window
-  running it exits at once. Fix the fixture (remain-on-exit, a stub), not
-  the assertion, and reproduce first with an exiting shim on PATH.
+  running it exits at once. Fix the fixture (remain-on-exit, a stub) and
+  leave the assertion alone; reproduce first with an exiting shim on PATH.
 
 ## Rounds (since 2026-09-23)
 
@@ -126,7 +126,7 @@ from the wave cycle, it wins.
   instead of exhausting the box's memory and disk.
 - **The conductor merges** each finished branch onto `main`, regenerates
   `docs/DECISIONS-INDEX.md`, and reruns the VM checks the merged change
-  touches on the merge itself, not only on the branch.
+  touches on the merge itself as well as on the branch.
 - **Then it deploys and tests live**: push (Coolify redeploys api and web),
   publish a base or tag a CLI release when the round needs one, and try the
   change end to end on throwaway `e2e-*` projects on host-01, never on the
@@ -164,9 +164,9 @@ and "Rounds" above, it wins.
 
 ## Infrastructure applies
 
-- The plan is read before every apply; the apply is run with the log
-  redirected to a file (`~/.cache/repose-apply-<time>.log`) and a `Monitor`
-  tailing the milestones, so the conductor keeps working while it runs.
+- The conductor reads the plan before every apply and runs the apply with
+  the log redirected to a file (`~/.cache/repose-apply-<time>.log`) and a
+  `Monitor` tailing the milestones, so it keeps working while it runs.
 - `-refresh=false` is used for an immediate retry after a run that was
   refreshed seconds earlier; Azure's storage data-plane refresh has timed
   out more than once.

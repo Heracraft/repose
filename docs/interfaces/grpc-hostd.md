@@ -20,10 +20,10 @@ HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
            string nixos_system; string ch_version; uint64 pool_bytes; }
 ```
 
-The join token is minted by `repose-admin hosts add` and placed in the
-host's `/run/repose/join-token` by cloud-init. Register is called once; the
-certificate is stored at `/var/lib/repose/hostd/{cert,key}.pem` and rotated
-by `Rotate` (unary, same shape) every 30 days.
+`repose-admin hosts add` mints the join token, and cloud-init places it in
+the host's `/run/repose/join-token`. hostd calls Register once, stores the
+certificate at `/var/lib/repose/hostd/{cert,key}.pem` and rotates it with
+`Rotate` (unary, same shape) every 30 days.
 
 `Rotate` and `Session` admit a certificate only when its serial is the
 host's `cert_serial`, or the serial the last rotate replaced until the host
@@ -264,14 +264,14 @@ accepted.
 
 ## Idempotency and ordering
 
-Commands for one guest are executed in order; commands for different guests
+hostd executes commands for one guest in order; commands for different guests
 run concurrently (bounded, 8 at a time, builds 2 at a time). A hostd restart
 replays nothing; the api re-sends unfinished commands after `Hello` with the
 same command_id and hostd returns the stored result, re-executes a command
 that had started but not finished (every command except `Exec` is written
 to be safe to re-run; `Exec` returns `internal: command interrupted`), and
 ignores a command_id that is still executing (its result follows).
-Results are kept for 7 days.
+hostd keeps results for 7 days.
 
 ## Fake
 

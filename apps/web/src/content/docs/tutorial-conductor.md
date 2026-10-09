@@ -31,7 +31,7 @@ what is not. Don't push. Ask me only when a decision needs me."
 
 Claude Code's own Agent tool launches workers in isolated worktrees (under `.claude/worktrees/`, each on a `worktree-` branch) and tells the conductor when each finishes. The conductor waits on those notices rather than polling, and merges in dependency order: a task that defines an interface before the tasks that use it.
 
-If you'd rather see each worker in its own tmux window, launch them from your laptop instead, one `repose run -d --worktree -p "..."` per task, and give the conductor the branch names to merge.
+To see each worker in its own tmux window, launch them from your laptop instead, one `repose run -d --worktree -p "..."` per task, and give the conductor the branch names to merge.
 
 ## Watch it run
 
@@ -63,7 +63,7 @@ Put them in the conductor's prompt or in the repository's `CLAUDE.md`, where eve
 
 ## When it gets big
 
-- **Memory.** Six agents plus their test runs want more than a small machine. `repose resize --size large` or `xl` before a round, not during.
+- **Memory.** Six agents plus their test runs want more than a small machine. `repose resize --size large` or `xl` before a round starts.
 - **Nix and other heavy builds.** Have the conductor serialize them (one lock file everyone `flock`s) or the machine spends the round swapping.
 - **A second machine for a second front.** [`repose fork`](/docs/lifecycle#fork-a-project) copies the whole machine; a conductor on the copy can take a different branch of the plan.
 - **You are the rate limit.** The conductor should batch its questions. "Ask me only when a decision needs me" in its prompt, and a notification channel you'll see.

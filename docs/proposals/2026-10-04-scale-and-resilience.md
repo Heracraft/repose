@@ -9,7 +9,7 @@ only through a `DECISIONS.md` entry. The edge work on branch
 here.
 
 Peer facts come from public engineering posts read on 2026-10-04 and are
-listed under "Sources". Where a number could not be checked it says so.
+listed under "Sources". A number that could not be checked is marked so.
 Re-check every price before it is used.
 
 ## Summary
@@ -53,9 +53,9 @@ blast radius of a host failure from 6 seats to 30.
 | Owner's server | No logins (certificates stop after 24 h), no deploys, no alerts | Owner's routine | Logs and metrics |
 | Blob account | No snapshots, restores or moves | Azure | LRS keeps three copies in one datacenter. Without soft delete, a deletion cannot be undone |
 
-Three gaps stand out. The host-loss path has never run. Snapshots can be
-36 hours old before anyone hears about it. And the alerting runs on the
-same server as Logto, so if that server dies, nobody gets paged about it.
+Three gaps stand out: the host-loss path has never run, snapshots can be
+36 hours old before anyone hears about it, and the alerting runs on the
+same server as Logto, so if that server dies, no page goes out.
 
 ## 3. What comparable services do
 
@@ -63,8 +63,8 @@ same server as Logto, so if that server dies, nobody gets paged about it.
 Fly volumes live on one host's NVMe and are not replicated; daily
 snapshots are kept 5 days by default, and Fly's docs say snapshots are not
 a primary backup. Render publishes the same terms: one instance per disk,
-snapshots every 24 hours. repose's R2-3 matches them. What repose lacks
-is the second host to restore onto.
+snapshots every 24 hours. repose's R2-3 matches them; repose lacks the
+second host to restore onto.
 
 **Moving a stateful VM is offline, then lazy.** Fly's 2024 machine
 migrations stop the source, then boot the target on a `dm-clone` device
@@ -129,8 +129,8 @@ hostd reconcile from LVM (`hostd reconcile --rebuild`, since state.db is
 on the OS disk under `/var/lib/repose/hostd`) recovers every guest with
 nothing lost, in the time a VM takes to boot. Azure documents the
 opposite case: local NVMe on its L-series is erased when Azure moves
-a VM after a hardware fault. Drill it once on a scratch host. Note that
-this path ends if hosts move to Hetzner dedicated servers, where the
+a VM after a hardware fault. Drill it once on a scratch host. This path
+ends if hosts move to Hetzner dedicated servers, where the
 disk is the server's own.
 
 **0.3 Snapshots that cannot silently go stale.** Three small changes:
@@ -185,8 +185,8 @@ possible.
 stop, full snapshot, restore, start, and the user waits for the whole
 disk twice. With incremental snapshots: copy a base while the guest
 runs, copy the delta again, stop, copy the last delta, start on the
-target. The downtime becomes the last delta plus a boot. This is what
-lets the owner drain a host for a kernel update without a maintenance
+target. The downtime becomes the last delta plus a boot. That lets the
+owner drain a host for a kernel update without a maintenance
 window. R2-3's trigger ("host maintenance moves become frequent") is met
 the day there are two hosts and a nixpkgs kernel bump.
 

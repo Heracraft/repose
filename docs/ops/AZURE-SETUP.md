@@ -59,7 +59,7 @@ a day.
 
 ## Outside Azure
 
-10. **Postgres backups.** Nothing here, and deliberately: Coolify runs
+10. **Postgres backups.** Nothing here, by design: Coolify runs
     them and the destination is configured in your own Coolify, on the
     Postgres service's Backups tab (`DECISIONS.md` I-112). No bucket, no
     token, no schedule and no check exist on the repose side. The one
@@ -67,10 +67,10 @@ a day.
     "The instance's .env is half any backup".
 
 11. **DNS for `herakraft.co`.** The zone already answers every name under it
-    from a **proxied wildcard**, so the repose names resolve today — to
+    from a **proxied wildcard**, so the repose names resolve today, to
     Cloudflare's proxy, which carries neither SSH nor WireGuard. That makes
-    `ssh.repose.herakraft.co` actively wrong rather than merely missing
-    (`DECISIONS.md` I-72). Until a token is in `CLOUDFLARE_API_TOKEN` and
+    `ssh.repose.herakraft.co` resolve to the wrong place instead of failing
+    to resolve (`DECISIONS.md` I-72). Until a token is in `CLOUDFLARE_API_TOKEN` and
     `manage_dns = true`, create these four by hand as A records **with the
     proxy off**: `ssh.repose` → the edge's IP, and `repose`, `api.repose`,
     `auth.repose` → the control plane's. The table with the reasons is in
@@ -107,7 +107,7 @@ a day.
     secret `CACHIX_AUTH_TOKEN`. CI then pushes the agent overlay on every
     push to `main` and hosts substitute the agents instead of fetching
     upstream (DECISIONS I-46). Until then builds fetch the release
-    binaries themselves, which is slower, not wrong.
+    binaries themselves, which is slower but correct.
 
 17. **Polar objects and the webhook** (after the api has a hostname; do it
     in the sandbox first and repeat in production before launch). Nothing

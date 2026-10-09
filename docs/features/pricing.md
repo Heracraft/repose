@@ -1,8 +1,8 @@
 # Billing: the plan
 
-What a user sees about money: the plan they choose before the first
-machine starts, the week that is free, the number in `repose status`, the
-invoice each month, and what happens when a payment fails. The prices and
+The money a user sees: the plan they choose before the first machine
+starts, the week that is free, the number in `repose status`, the invoice
+each month, and the steps after a failed payment. The prices and
 rules are in [`../PRICING.md`](../PRICING.md); the implementation is
 [`../workstreams/09-billing.md`](../workstreams/09-billing.md) §5.11
 (DECISIONS I-289, I-290, I-291).
@@ -34,10 +34,10 @@ the tax as merchant of record. After paying, Polar returns the browser
 to `/billing?checkout=done` and the page waits for the subscription. An
 email or card that has had a trial before gets the checkout without one. The first
 week is free: the card is taken at checkout and first charged on day
-eight. When the webhook arrives the account is `trial`, and from the first
-real charge `active`.
+eight. The account is `trial` once the webhook arrives, and `active` from
+the first real charge.
 
-When the fleet has no free seat, "Choose" answers `503 waitlisted`:
+With no free seat in the fleet, "Choose" answers `503 waitlisted`:
 `repose is full right now. You're number 3 on the waitlist; we'll email
 you@example.com when there's a seat.` The user is on the waitlist from
 then on and gets one email when a seat is theirs, held for 72 hours
@@ -79,7 +79,7 @@ waiting first, then unused ones, then the biggest), or the gate's
 again; a no prints the refusal and exits 7. Off a terminal the refusal
 exits 7 as before (DECISIONS I-637).
 
-Egress past the allowance is not a refusal: $0.05 a GB is added to the
+Egress past the allowance raises no refusal; it adds $0.05 a GB to the
 renewal order as one line, the plan's metered "Egress overage" price for
 the period's GB over the allowance (50 units at $0.05 for 300 GB on Solo).
 The api sends one event to Polar's meter within three hours of the
@@ -112,9 +112,9 @@ the overage line is computed from. Usage is rolled up once an hour, at
 five past, so the figures lag by up to an hour and a bit.
 
 A gap in the host's samples under-counts that hour: the minutes it did not
-hear about are not counted and are never estimated. That makes a host
-outage visible as a short figure rather than an invented one, and the
-egress it did not see is egress the user is not charged for.
+hear about are not counted and are never estimated. A host outage then
+shows as a short figure, and the user is not charged for egress the host
+did not see.
 
 ## The invoice
 
@@ -155,8 +155,7 @@ revokes the subscription. Meanwhile:
 
 Nothing is deleted before day 33 (DECISIONS R4-11). Paying at any point
 before then returns the account to `active` and unblocks starts; it does
-not start the machines again. That is the user's call, made with `repose
-start`, so nobody is surprised by machines that restarted themselves.
+not start the machines again. The user starts them with `repose start`.
 
 ## "I dispute this charge"
 

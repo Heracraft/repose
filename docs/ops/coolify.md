@@ -17,7 +17,7 @@ The VM itself is `infra/azure/modules/coolify`: an Ubuntu 24.04
 `control` subnet, whose NSG opens 80 and 443 to `control_web_cidrs`, and 22 to
 `operator_cidrs` plus `coolify_manager_cidrs` (the instance's address), and
 nothing else. It stays Ubuntu because Coolify rejects NixOS as a managed
-server (`DECISIONS.md` R4-2). cloud-init leaves it exactly as Coolify's
+server (`DECISIONS.md` R4-2). cloud-init leaves it as Coolify's
 server validation wants to find it: root login by key, with the operator keys
 and the instance's key (`coolify_public_key` in `prod.tfvars`) in
 `/root/.ssh/authorized_keys`; Docker Engine and the compose plugin from
@@ -53,7 +53,7 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    is the key: compare `Keys & Tokens` with `prod.tfvars`. One that hangs is
    the network: `tailscale status` on the VM, or the NSG if using the
    fallback.
-3. **Names and proxy.** The proxy on this server is what serves
+3. **Names and proxy.** The proxy on this server serves
    `repose.herakraft.co` and `api.repose.herakraft.co`; both A records point
    at the VM's public IP (`infra/README.md`, "DNS"). 80 and 443 are open to
    the internet (`control_web_cidrs = ["0.0.0.0/0"]`, owner's call
@@ -102,7 +102,7 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    leaves the VM. The applications deploy themselves on the first push to
    `main` (fact 16); there is no deploy step here.
 
-A health check on every application is not optional: without one Coolify
+Every application needs a health check: without one Coolify
 silently falls back to stop-then-start instead of a rolling deploy, and the
 first anybody hears of it is downtime during a routine deploy
 (`RUNBOOK.md` "Coolify deploy failed"). On `api` and `api-grpc` the check
@@ -133,8 +133,8 @@ the live instance, not taken from the docs. Each one changed a file here.
    `coolify` network before debugging anything else (`RUNBOOK.md`
    "api cannot resolve repose-postgres").
 3. **The Backups tab exists for a postgres image inside a Service**
-   (pasted compose), not for a compose added as a git application. That is
-   why `ops/coolify/postgres/docker-compose.yml` is pasted rather than
+   (pasted compose), not for a compose added as a git application. For that
+   reason `ops/coolify/postgres/docker-compose.yml` is pasted rather than
    pulled from the repository; the file in the repository stays the source
    of truth, and a change to it is a paste.
 4. **Coolify's own health check runs curl or wget inside the container.**
@@ -151,8 +151,8 @@ the live instance, not taken from the docs. Each one changed a file here.
    TLS: configured, not reimplemented. Sidecars that duplicated the backup
    were written and removed the same day (I-87).
 7. **Coolify SSHes to a server from inside its own container.** The VM
-   answering `tailscale ping` from the Coolify host proves the tailnet, not
-   that the `coolify` container can route to it; sshd's journal on the VM
+   answering `tailscale ping` from the Coolify host proves the tailnet and
+   says nothing about whether the `coolify` container can route to it; sshd's journal on the VM
    (`journalctl -u ssh`) shows whether any connection arrived at all.
    `docker exec coolify ssh root@<tailnet ip> true` on the Coolify host is
    the test that matches what Coolify does.
@@ -191,7 +191,7 @@ the live instance, not taken from the docs. Each one changed a file here.
    off for this Service.
 12. **A pre-deployment command runs in the previous container, or not at
    all.** `ApplicationDeploymentJob::run_pre_deployment_command` (4.3.23)
-   does `docker exec` into a currently running container of the app and
+   does `docker exec` into a running container of the app and
    logs "No running containers found. Skipping." when there is none. So
    `repose-admin db migrate` as a pre-deploy command never ran on the first
    deploy, and on later ones would have run the old image's migrations;
@@ -217,31 +217,29 @@ the live instance, not taken from the docs. Each one changed a file here.
 
    Seven for seven, and the delay is the same each time *per
    application*: `web` at +11 or +12 seconds, `api` at +26, both times.
-   That tracks each image's `HEALTHCHECK` start period — `web` 5 s,
-   `api` 20 s — which is what Coolify waits on before it removes the old
-   container, and the failure lands at the removal, not at the start. So
-   this is not the health check failing; it is the absence of a drain
-   after it passes. Traefik keeps the outgoing container in its pool for
+   That tracks each image's `HEALTHCHECK` start period (`web` 5 s,
+   `api` 20 s), which Coolify waits on before it removes the old
+   container, and the failure lands at the removal. The health check
+   passes; the missing piece is a drain after it passes. Traefik keeps the outgoing container in its pool for
    a moment: a request that picks it then either waits out the client's
    timeout (almost all of them, at 5 s) or gets a clean 502 once the
-   container is actually gone (once, at +6 s).
+   container is gone (once, at +6 s).
 
-   "Rolling" therefore means no outage, not no dropped request. On `web`
+   "Rolling" therefore means no outage, with a request or two dropped. On `web`
    that is a page that takes five seconds; on `api` it is a CLI command
    or a dashboard poll that fails, which is the one worth deciding
    about. The lever, if it is worth pulling, is the Coolify proxy's
-   graceful-shutdown/drain setting, not anything in these images.
+   graceful-shutdown/drain setting; nothing in these images changes it.
 
    Reading a probe afterwards: a failure within thirty seconds of a
    container start is this, and one on its own with no deploy near it is
-   not — a single unexplained 000 appeared at 18:20:39Z on one loop, and
+   not: a single unexplained 000 appeared at 18:20:39Z on one loop, and
    folding it into the pattern would have made the pattern wrong.
 
 14. **A port mapping and a rolling deploy are mutually exclusive.** A
    published host port means the old and the new container cannot both be
-   up, so Coolify falls back to stop-then-start — which is exactly why
-   `api-grpc` is a separate application from `api` (I-2), not a
-   convenience. So the HTTP `api` publishes **nothing**: an earlier
+   up, so Coolify falls back to stop-then-start. That fallback is the reason
+   `api-grpc` is a separate application from `api` (I-2). So the HTTP `api` publishes **nothing**: an earlier
    version of `ops/coolify/README.md` told an operator to add
    `9103:9103` to it for metrics, and following that would have quietly
    cost the api its rolling deploys, which is the one property the split
@@ -252,8 +250,8 @@ the live instance, not taken from the docs. Each one changed a file here.
    HTTP, so it must never be reachable from the VNet (`10.200.3.4`), the
    public IP or `0.0.0.0`; the only client is the monitoring peer over the
    tunnel (DECISIONS I-174, review M5-4). 8443 and 8444 are mTLS and stay
-   on every address. Where the api's own
-   metrics go instead is an open choice, written up with both options
+   on every address. The destination of the api's own
+   metrics is an open choice, written up with both options
    and a ready-to-paste label block in `ops/coolify/README.md`, "The
    api's metrics".
 
@@ -262,18 +260,17 @@ the live instance, not taken from the docs. Each one changed a file here.
    tab, against storage the owner configures in their own Coolify. No
    bucket, no token, no on-VM check, no rehearsal script and no alert
    exist on this side any more (`DECISIONS.md` I-112), and `infra/r2` is
-   gone. If a backup question arises, the answer is in Coolify, not in
-   this repository.
+   gone. Backup questions are answered in Coolify; this repository holds
+   nothing about them.
 
 16. **Every push to `main` redeploys.** Coolify watches the repository,
    so `api`, `api-grpc` and `web` rebuild and roll on their own; the
-   deploy is a consequence of merging, not a step anybody performs.
+   deploy follows from merging, and nobody performs it as a step.
    Two things follow. A documented procedure must never say "then
-   redeploy X" — if it needs new code it needs a merge, and if it needs
+   redeploy X": if it needs new code it needs a merge, and if it needs
    only an environment change, that is a Coolify field and the redeploy
    comes with it. And the drop of fact 13 happens on **every merge**,
-   not only on deliberate deploys, which is what makes it worth a
-   decision rather than a shrug.
+   not only on deliberate deploys, which makes it worth a decision.
 
 ## The instance's .env is half any backup
 
@@ -281,8 +278,8 @@ Backups are Coolify's and the destination is the owner's (`DECISIONS.md`
 I-112), so this is a note for whoever owns them rather than a step here,
 and it is the one that ruins a restore if it is learned late.
 
-Coolify encrypts the credentials it holds — every application's secrets,
-the database passwords it generated — with `APP_KEY` from
+Coolify encrypts the credentials it holds (every application's secrets,
+the database passwords it generated) with `APP_KEY` from
 `/data/coolify/source/.env` **on the owner's Coolify host**, not on the
 control VM, which runs no Coolify (I-83). **A Postgres dump restored into
 a Coolify without that key is a database of ciphertext nobody can read.**

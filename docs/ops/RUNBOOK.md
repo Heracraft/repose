@@ -58,15 +58,15 @@ The full click path, with the reasons, is `coolify.md`. The short form:
    `coolify` network itself, I-89; the apps are on it already). Domains,
    port mappings and the health-check settings: `ops/coolify/README.md`.
    Secrets go in each resource's Environment tab, nowhere else. **No
-   pre-deploy command on any of them** — the api applies its own
+   pre-deploy command on any of them**: the api applies its own
    migrations and creates the CA at start, and a pre-deploy command
    would not run on the first deploy anyway (I-90). Backups are set up
    on the Postgres service's Backups tab and are the owner's own
    (I-112).
 5. The applications deploy themselves: Coolify redeploys on every push
    to `main` (`coolify.md` fact 16). `repose-admin ca init` is not a
-   step either — the api does it at first start (I-90) — and it remains
-   for an operator.
+   step either: the api does it at first start (I-90), and the command
+   remains for an operator.
 6. Add the control VM as a WireGuard peer of the edge (`ops/wg/coolify.conf`).
 
 ### Edge
@@ -336,7 +336,7 @@ More than one auth failure per second at the gateway.
    source to the edge NSG deny list. `route_error` in volume means the
    gateway cannot reach the api (see "Gateway relay failures").
 2. `expired` in volume means the CLI's silent refresh is broken for many
-   users: check `repose_api_certs_issued_total` fell off a cliff, and the
+   users: check whether `repose_api_certs_issued_total` dropped sharply, and the
    Logto token endpoint.
 3. `wrong_principal` from one user repeatedly is someone probing other
    projects; `repose-admin audit --user`.
@@ -353,7 +353,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 |---|---|---|
 | `gateway cannot reach control plane; try again shortly` | the api is down or the CA/revocation caches aged past 1 h | `journalctl -u gateway \| grep route_fail`; check the api and `api-grpc` app; existing sessions keep working, new ones resume when a refresh succeeds |
 | `environment is not accepting connections yet` | the guest's sshd is not up yet, or dialed a throwaway host key | the CLI retries 60 s after a `start`; if it persists, `repose-admin projects show` for the guest state, then "Guest not ready" |
-| `cannot reach environment: no route to host` | no WireGuard peer or route for the guest's host | on the edge `wg show wg0` and `ip route \| grep <guest cidr>`; `wgsync` adds them from `/internal/hosts` within 30 s — see "HostWgDown" |
+| `cannot reach environment: no route to host` | no WireGuard peer or route for the guest's host | on the edge `wg show wg0` and `ip route \| grep <guest cidr>`; `wgsync` adds them from `/internal/hosts` within 30 s; see "HostWgDown" |
 | `permission denied (certificate expired)` / `... not yet valid` | the user's certificate is outside its 24 h validity | the CLI refreshes and retries once; a spike of `expired` is "GatewayAuthSpike" step 2 |
 | `permission denied (certificate revoked)` | logout or a revoked serial | expected; takes effect within 30 s of `repose logout` |
 | `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
@@ -539,8 +539,8 @@ keeps arriving (docs/workstreams/10-observability.md §6).
    not, `systemctl restart hostd`.
 4. nftables: `nft list chain inet repose input` must admit 9100, 9101 and the
    Fluent Bit metrics port from `wg0`.
-5. Nothing to do about the gap: Prometheus has no backfill. Say so in the
-   incident note rather than wondering later why a graph has a hole.
+5. Nothing to do about the gap: Prometheus has no backfill. Record it in
+   the incident note, so the hole in the graph has an explanation later.
 
 If *every* target is down at once, including the edge's and the api's, it
 is not the hosts: see "Every Prometheus target is down and WireGuard looks
@@ -556,18 +556,17 @@ scrape still times out.
 The edge is a hub, not a bridge. Its `forward` chain is policy drop with
 `ct state established,related accept` and nothing else, on purpose: hosts
 must not reach one another or the api's gRPC listener through it. A scrape
-from the monitoring peer to a host, or to the control plane, is exactly
-that forwarded traffic, and so is Fluent Bit's push to Loki in the other
+from the monitoring peer to a host, or to the control plane, is that
+forwarded traffic, and so is Fluent Bit's push to Loki in the other
 direction (DECISIONS I-94).
 
 1. The ping answering proves nothing: the edge's own address is `input`,
-   not `forward`. The test that distinguishes them is a scrape of the edge
-   itself against a scrape of anything behind it —
-   `curl http://10.255.0.1:9102/metrics` working while
+   not `forward`. To tell them apart, scrape the edge itself and then
+   something behind it: `curl http://10.255.0.1:9102/metrics` working while
    `curl http://<host wg addr>:9101/metrics` hangs is this entry.
 2. On the edge, `nft list chain inet repose-edge forward`. Two rules
-   naming the monitoring peer's address should be there; if the chain is
-   just the `ct state` accept and a drop, the edge was built without
+   naming the monitoring peer's address should be there; if the chain holds
+   only the `ct state` accept and a drop, the edge was built without
    `repose.edge.monitoring.peerCIDRs` set.
 3. Fix it in `nix/edge/edge-01.nix`, not with `nft add rule`: a live rule
    is gone at the next `nixos-rebuild`, and the peer itself must be in
@@ -582,21 +581,20 @@ direction (DECISIONS I-94).
 `up{job="fluent-bit"} == 0` for a host, for 15 minutes: Prometheus cannot
 reach that host's Fluent Bit at all. Its journald and every guest's
 console log are going nowhere, and unlike "FluentBitStuck" nothing is
-buffering them for later — a shipper that is not running is not
-collecting either.
+buffering them for later: a shipper that is not running does not collect
+either.
 
-This alert exists because the other one cannot see this case.
-`FluentBitStuck` reads `fluentbit_output_retries_failed_total`, which a
-process that is not running does not publish, so the loudest failure was
-the quietest signal.
+`FluentBitStuck` cannot see this case. It reads
+`fluentbit_output_retries_failed_total`, which a process that is not
+running does not publish, so the worst failure raised no alert.
 
 1. **Has a Loki been recorded at all?** `docker exec <api container>
    /usr/local/bin/repose-admin edge loki`. "no Loki recorded" is the
    answer on a fresh platform, and it is the cause: the unit has an
    `ExecCondition` that refuses to start it with an empty `LOKI_HOST`
    rather than retrying a connection to nothing for ever (DECISIONS
-   I-95). Fix it centrally — `repose-admin edge loki http://<loki>:3100`
-   — and the host picks it up at its next `Rotate`, or immediately with
+   I-95). Fix it centrally with `repose-admin edge loki http://<loki>:3100`,
+   and the host picks it up at its next `Rotate`, or immediately with
    an edit of `host.json` and `systemctl restart repose-host-net`.
 2. If a Loki *is* recorded, the host has not received it: `grep LOKI
    /run/repose/host.env` on the host. Empty means the value post-dates
@@ -605,14 +603,14 @@ the quietest signal.
    `systemctl status fluent-bit` and `journalctl -u fluent-bit -n 50`.
    `ConditionPathExists=/run/repose/host.env` unmet means the host never
    registered ("HostUnregistered").
-4. If the unit is running and only the *scrape* fails, this is the
-   tunnel rather than the shipper: "HostScrapeDown", and check the
+4. If the unit is running and only the *scrape* fails, the tunnel is at
+   fault: "HostScrapeDown", and check the
    edge's forward chain ("Every Prometheus target is down and WireGuard
    looks fine").
 
 Nothing in a guest waits on log shipping, so tenants are unaffected
-throughout; what is lost is the operator's view, and the logs for the
-window are lost rather than delayed.
+throughout; the operator loses the view, and the logs for the window
+never arrive.
 
 **The reference case**, host-01, 2026-09-21, which is what step 1 looks
 like when it is the answer:
@@ -627,14 +625,13 @@ grep LOKI /run/repose/host.env
 ```
 
 The journal is the useful half. Fluent Bit **ran for 6h 1min before the
-host switch at 00:16:43Z** and was refused on the restart at 00:16:44Z
-— because those six hours were spent retrying an empty target, shipping
-nothing, and looking in the journal exactly like a Loki that was down.
-That is the failure I-95 exists to convert into a refusal with a reason,
-and `FluentBitLogShipperDown` exists so the refusal is not itself
-silent. A host in this state is correct, not broken; it is waiting for
-`repose-admin edge loki <url>`, which is the owner's step because the
-Loki is theirs.
+host switch at 00:16:43Z** and was refused on the restart at 00:16:44Z.
+For those six hours it retried an empty target, shipped nothing, and
+looked in the journal like a Loki that was down. I-95 converts that
+failure into a refusal with a reason, and `FluentBitLogShipperDown` makes
+sure the refusal is not itself silent. A host in this state is correct;
+it is waiting for `repose-admin edge loki <url>`, which is the owner's
+step because the Loki is theirs.
 
 ## FluentBitStuck
 
@@ -656,11 +653,11 @@ are dropped.
    deadline for fixing Loki before lines are dropped.
 4. Wrong or missing Loki address: `grep LOKI /run/repose/host.env`. It
    comes from `loki_url` in `host.json`, which the api sends at
-   registration from the `loki_url` setting. An **empty** `LOKI_HOST` is
-   not a failure of this alert but of its precondition: the unit refuses
+   registration from the `loki_url` setting. An **empty** `LOKI_HOST` breaks
+   this alert's precondition: the unit refuses
    to start and says so (`systemctl status fluent-bit`), because no Loki
    has been recorded. Fix it centrally with `repose-admin edge loki
-   http://<loki>:3100` — a host picks it up at its next `Rotate`, or
+   http://<loki>:3100`; a host picks it up at its next `Rotate`, or
    immediately by editing `host.json` and `systemctl restart
    repose-host-net` (DECISIONS I-97).
 5. Guests are unaffected throughout: nothing in a guest waits on log
@@ -687,21 +684,21 @@ is listening, so "not ready" means guestd did not start, or sshd did not.
    means guestd is fine and the problem is on hostd's side of the vsock; no
    response with guestd listening means the CID is wrong in hostd's state.
 4. The guest keeps running through all of this. A tenant with a certificate
-   can still SSH in; what is lost is sampling, secrets delivery and config
-   apply.
+   can still SSH in; sampling, secrets delivery and config
+   apply stop.
 
 ## Freeze timeout
 
 A snapshot failed with `freeze_timeout`, or the alert fired from a
 `host_warning` of that kind.
 
-1. This is guestd's watchdog doing its job: it froze the root filesystem for a
+1. guestd's watchdog did its job: it froze the root filesystem for a
    snapshot, no `Thaw` arrived within 10 seconds, and it thawed itself. The
    guest is *not* wedged; nothing needs to be unfrozen by hand.
 2. The cause is on the host side: hostd died mid-snapshot, or the LVM
    snapshot took longer than the window. `journalctl -u hostd | grep
    snapshot` on the host gives which.
-3. If the thin pool is near full, the LVM snapshot is what was slow: see
+3. If the thin pool is near full, the LVM snapshot was the slow step: see
    "PoolFull" above, then `repose-admin projects snapshot <id>` again.
 4. If it repeats for one project only, the guest's root filesystem has a
    writer that will not quiesce (a database in a container). Stop the guest
@@ -783,7 +780,7 @@ A failed handover fails the switch with the gateway's reason (`the
 running gateway refused the handover and serves on: ...`); the old
 gateway still serves. Fix the build and switch again, or restart (below).
 
-When sessions must end, which drops every one of them (users' `run`,
+Some changes need sessions to end, which drops every one of them (users' `run`,
 `attach`, `open` and editors reconnect, I-469):
 
 - **The first switch onto I-471.** The running gateway has no control
@@ -1154,8 +1151,8 @@ desktop is off.
 4. The page connects but the screen stays 1440x900 or the browser window
    does not fill it: `xrandr -display :99` in the guest shows the screen
    Xvnc has; `xdotool getwindowgeometry` on the Chromium window shows
-   whether openbox re-maximised it. A window that did not follow is an
-   openbox restart away (`systemctl restart repose-openbox`).
+   whether openbox re-maximised it. A window that did not follow needs an
+   openbox restart (`systemctl restart repose-openbox`).
 5. The laptop side: `repose browser` reuses a recorded forward only while
    its port answers `/healthz`; `~/.config/repose/browser-forwards/` holds
    the record, and `repose browser --stop` clears it.
@@ -1238,7 +1235,7 @@ reconcile is safe to run any time.
 
 `api` or `api-grpc` logs a DNS failure for the `DATABASE_URL` host at
 start. The Postgres compose file joins the shared `coolify` network itself,
-which is what registers `repose-postgres` there; "Connect to predefined
+and that registers `repose-postgres` there; "Connect to predefined
 network" would register only the container name (`coolify.md`, fact 11).
 
 1. On the VM: `docker inspect $(docker ps -qf name=repose-postgres)
@@ -1247,7 +1244,7 @@ network" would register only the container name (`coolify.md`, fact 11).
    deployed compose lacks the `networks: coolify:` block: paste the current
    `ops/coolify/postgres/docker-compose.yml` again and redeploy the
    Service by hand. (The Service is pasted, not watched, so a push to
-   `main` does not update it the way it updates the applications —
+   `main` does not update it the way it updates the applications;
    `coolify.md` fact 16.) No `coolify` key at all means the file was pasted without its
    top-level `networks:` section.
 2. From the api container's network: `docker run --rm --network coolify
@@ -1287,7 +1284,7 @@ stopped guestd, whose child the activation was, so the switch died before
 its start step (base 2026.09.21.3 on host-01, 2026-09-21 02:59Z: three
 guests). Bases from I-143 on do not restart guestd from the activation;
 guestd restarts itself 3 s after answering, and hostd then logs
-nothing at all when guestd is back within a minute, or `guestd_lost`
+nothing when guestd is back within a minute, or `guestd_lost`
 followed by `guestd_regained` when it is not; both are the healthy shape
 of a switch onto a new guestd (2026.09.21.5 on m3-held, 05:00Z: op
 `done` at 05:00:22, "guestd restart scheduled", guestd active again at
@@ -1335,12 +1332,12 @@ The api, api-grpc or web app's rolling deploy did not go green.
    applies pending migrations itself, I-90): wait, the old container is
    still serving.
 2. A migration failure leaves the new container crash-looping and the old
-   one serving. Fix forward — a corrected commit on `main` redeploys
-   itself (fact 16) — or, if the fix will take a while,
+   one serving. Fix forward (a corrected commit on `main` redeploys
+   itself, fact 16), or, if the fix will take a while,
    `repose-admin db rollback --to <previous>` from the operator machine
    (it connects to Postgres over the control VM's WireGuard address) and
    roll the app back to the previous image from Coolify's deployment
-   history. A rollback is the one deploy nobody gets automatically.
+   history. Nothing rolls a deploy back automatically.
 3. If the deploy fell back to stop-then-start (Coolify does this silently
    when it has no health signal), check that Coolify's own health check is
    off on `api` and `api-grpc` and the image's `HEALTHCHECK` is intact
@@ -1353,9 +1350,9 @@ The api, api-grpc or web app's rolling deploy did not go green.
    single 502 at the same moment, is not a failed deploy. Every
    switchover loses one or two requests per client, at a delay that is
    the same every time for a given app (`web` +11 s, `api` +26 s, which
-   is each image's health-check start period) — measured seven times out
+   is each image's health-check start period), measured seven times out
    of seven (`docs/ops/coolify.md` fact 13). `ops/deploy-probe.sh` against
-   the domain during a deploy is how to tell that from a real outage: a
+   the domain during a deploy tells that apart from a real outage: a
    failure or two and then 200s is the known drain gap, a run of them is
    not.
 6. Evidence after a rollout: Coolify removes the replaced container, and
@@ -1394,8 +1391,8 @@ the plan if somebody adds it. The dashboard is the owner's instance.
 `dig +short ssh.repose.herakraft.co` returns `104.21.x.x` or `172.67.x.x`
 instead of the edge's address, and SSH hangs or is refused. `herakraft.co`
 answers every name under it from a **proxied wildcard record**, so a missing
-`ssh.repose` record does not fail, it resolves to Cloudflare's proxy, which
-carries neither SSH nor WireGuard. Every host configured with that hostname as
+`ssh.repose` record resolves to Cloudflare's proxy instead of failing, and
+that proxy carries neither SSH nor WireGuard. Every host configured with that hostname as
 its WireGuard endpoint fails the same way.
 
 1. `make -C infra plan ENV=prod` says so too, as the `dns_is_managed_or_manual`
@@ -1404,8 +1401,8 @@ its WireGuard endpoint fails the same way.
    `edge_public_ip` output, or set `manage_dns = true` with a
    `CLOUDFLARE_API_TOKEN` and let OpenTofu own it. `infra/README.md`,
    "DNS while manage_dns is false", has the full record table.
-3. Until then the edge is reachable at its literal address, which is what
-   every `ssh_jump` output already prints.
+3. Until then the edge is reachable at its literal address, the one
+   every `ssh_jump` output prints.
 
 ## Host loss
 
@@ -1437,7 +1434,8 @@ drain).
    `docs/incidents/<date>.md`, fix, re-run isolation tests fleet-wide
    before undraining.
 
-Who is told, what is captured, how a tenant hears (workstream 14 §5):
+The people told, the evidence captured and the tenant notice (workstream
+14 §5):
 
 - **Told, in this order:** the owner (ntfy, then the incident file); the
   affected tenants; a third party only if their credentials inside the
@@ -1510,8 +1508,8 @@ fails instead.
 That is the intended outcome. A replaced data disk loses every tenant volume
 on that host; a replaced static IP breaks every host's WireGuard endpoint and
 the DNS that users type. Find what changed (usually `zone`, `disk_size_gb`
-shrinking, or `storage_account_type`) and change it back. If the replacement
-really is wanted, drain the host first
+shrinking, or `storage_account_type`) and change it back. If you want the
+replacement, drain the host first
 (`infra/README.md`, "Draining and destroying a host").
 
 ## Control plane cannot reach the edge network
@@ -1534,7 +1532,7 @@ cannot fetch `/internal/hosts`, or Prometheus cannot scrape.
    refused: the `api-grpc` app has no port mappings (`ops/coolify/README.md`).
 
 The control plane's WireGuard private key is generated on the machine and
-never leaves it, which is why this is two moves rather than one apply.
+never leaves it, so the fix takes two moves instead of one apply.
 
 ## Retiring a host's bootstrap key
 
@@ -1635,8 +1633,8 @@ host store full`. See "StoreFull" above.
 
 ## Caches: npm installs or docker pulls slow or failing in guests
 
-The host's caches (`host-conventions.md` "Caches", I-202). What guests see
-never depends on them working: the npm front falls back to the registry,
+The host's caches (`host-conventions.md` "Caches", I-202). Guests never
+depend on them working: the npm front falls back to the registry,
 dockerd falls back to Docker Hub.
 
 1. On the host: `systemctl status nginx repose-npm-cache docker-registry
@@ -1746,7 +1744,7 @@ api clearing the old guest's address are both automatic.
 ## hostd: build exceeds time
 
 `build_timeout: build timed out after 30 minutes while building <name>`
-and the CLI exits 10. The named derivation is what was compiling when
+and the CLI exits 10. The named derivation was compiling when
 `timeout` fired (the scope's `RuntimeMaxSec` is the backstop 30 s later);
 the tenant either pulls a cached variant or accepts the cap. "Build
 stuck" and `BuildQueueStuck` above cover a build that ignored the cap.
@@ -1941,7 +1939,7 @@ the bar (08-dashboard.md 5.5/6) means the browser's last request to
    `PUBLIC_API_URL` in the dashboard's Coolify environment matches the
    api's real origin exactly (scheme and host). The api sends
    `Access-Control-Allow-Origin: *` on every `/v1` route (I-79); a proxy
-   or CDN in front of it that strips that header reproduces this exact
+   or CDN in front of it that strips that header reproduces this
    symptom.
 3. The bar clears on its own once a poll succeeds; polling backs off to
    60 s while it thinks the api is unreachable (5.3), so a fixed api can
@@ -1956,19 +1954,19 @@ signed in.
 
 1. Open the browser console during the loop. `handleSignInCallback` failing
    (auth.svelte.ts) means either the code was already consumed (a page
-   refresh on `/callback`, or a browser prefetch hitting it twice — see
+   refresh on `/callback`, or a browser prefetch hitting it twice; see
    `data-sveltekit-preload-data="hover"` in app.html) or `PUBLIC_LOGTO_APP_ID`
    / `PUBLIC_LOGTO_ENDPOINT` don't match the Logto application the CLI and
    dashboard were both registered under.
-2. If it loops without ever reaching `/callback` at all, `signIn()` itself
-   threw — almost always `PUBLIC_LOGTO_ENDPOINT` unset or unreachable from
-   the browser (check it the same way as the api origin above; Logto needs
+2. If it loops without reaching `/callback`, `signIn()` itself threw,
+   almost always because `PUBLIC_LOGTO_ENDPOINT` is unset or unreachable
+   from the browser (check it the same way as the api origin above; Logto needs
    the same cross-origin discovery fetch the api does).
 3. A signed-in user may stay on `/`: the landing page no longer redirects
    (DECISIONS I-330) and shows **Dashboard** instead of **Sign in**. If a
    signed-in user still sees **Sign in** there, or a private page never
-   renders, confirm `authState.authenticated` actually resolves (it stays
-   `undefined` forever if `initAuth()` threw), not a Logto problem.
+   renders, confirm `authState.authenticated` resolves (it stays
+   `undefined` forever if `initAuth()` threw); the cause is not Logto.
 
 ## api: op stuck waiting for host
 
@@ -1995,13 +1993,13 @@ secret NAME`.
 ## No notifications arriving
 
 A user reports nothing on their phone or in their inbox for an agent that
-clearly finished.
+finished.
 
 1. `repose status` / `GET /projects/:id/events` first: if the event is not
-   there at all, the problem is upstream of the outbox (the hook never
+   there, the problem is upstream of the outbox (the hook never
    fired, or the guest never reached the api). Check `guestd_ok` in the
    project's signals (`GuestdLost` if it is false) and, on the guest,
-   whether `/run/repose/hooks.sock` exists and the agent's wrapper actually
+   whether `/run/repose/hooks.sock` exists and the agent's wrapper
    ran `repose-agent-setup` (`grep repose-hook` in the agent's own hook
    config file, `guest-conventions.md` "Agent wrappers").
 2. If the event is there but `delivered` has no key for the channel: the
@@ -2010,8 +2008,8 @@ clearly finished.
    (`kind = 'notifications_paused'` events on the project in the last
    hour). `repose_api_outbox_depth` and `repose_api_outbox_lag_seconds`
    rising together mean the worker itself is stuck: it holds
-   `db.LockOutbox`, so `select pg_advisory_lock_...` on the wrong replica
-   or a stuck transaction is what to look for; only one replica runs it
+   `db.LockOutbox`, so look for `select pg_advisory_lock_...` on the wrong
+   replica or a stuck transaction; only one replica runs it
    (`api: rollup or expiry not running on one replica` is the same shape
    for a different job).
 3. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
@@ -2059,7 +2057,7 @@ retried, DECISIONS §5's 4xx rule) and the settings page shows a warning.
 2. A 5xx or timeout retries on the schedule in `13-notifications.md` §5.5
    (7 attempts over roughly 24 h) before `failed`; a self-hosted ntfy
    server that is down for longer than that needs the user to re-set the
-   URL once it is back, which requeues nothing retroactively — only new
+   URL once it is back, which requeues nothing retroactively: only new
    events are affected.
 3. `repose_api_notify_total{channel="ntfy",result="failed"}` rising across
    many users means a widely-used relay (`ntfy.sh`) is down, not a
@@ -2073,7 +2071,7 @@ address"`, permanent, and not a Resend outage).
 
 1. Resend's status page and `RESEND_API_KEY`'s validity
    (`repose-admin` has no direct check; a `401` in the api's logs under
-   `event=notify_fail` for the email channel is the tell — Resend's API key
+   `event=notify_fail` for the email channel is the tell; Resend's API key
    is a Coolify secret, `ops/coolify/api.env.example`).
 2. A `429` retries like any 5xx (the sender treats both as retryable); a
    sustained `429` means the account's Resend rate limit needs raising.
@@ -2147,7 +2145,7 @@ and then `device code expired`.
    `--no-browser` (or `REPOSE_NO_BROWSER=1`) forces device code, which
    only needs outbound HTTPS.
 2. `curl -s https://accounts.herakraft.co/oidc/.well-known/openid-configuration`
-   from the user's machine: a failure here means the CLI cannot even
+   from the user's machine: a failure here means the CLI cannot
    start (`Cannot reach <issuer>`, exit 1), independent of the flow.
 3. Confirm the `repose-cli` Native application in Logto still has the
    loopback redirect (`http://127.0.0.1:*/callback`) and device flow
@@ -2164,7 +2162,7 @@ or `POST /certs` itself fails.
 
 1. `repose certs`... there is no such command; the certificate lives at
    `~/.ssh/repose/id_ed25519-cert.pub`. `ssh-keygen -L -f
-   ~/.ssh/repose/id_ed25519-cert.pub` shows its principals and expiry —
+   ~/.ssh/repose/id_ed25519-cert.pub` shows its principals and expiry;
    confirm the failing project's id is in `Principals` and `Valid` has
    not passed (12h lifetime, R3-9).
 2. A missing or expired principal means the cert predates the project
@@ -2175,7 +2173,7 @@ or `POST /certs` itself fails.
    rapid repeated runs; the CLI reuses the certificate on disk if it still
    has validity and only warns. If none is on disk yet, wait a minute.
 4. A banner that is not one of the two above (gateway-side rejection, not
-   yet built as of 07-cli.md's landing — see 06-gateway-edge) surfaces
+   yet built as of 07-cli.md's landing; see 06-gateway-edge) surfaces
    verbatim with exit 1; file it against the gateway, not the CLI. Since
    DECISIONS I-149 the CLI re-issues the certificate once on its own when
    the gateway answers `Permission denied` before giving up.
@@ -2204,8 +2202,8 @@ reports the project `running`.
    reachable; a `sessions` count that never reflects change means the
    API's view of the guest is the stale part, not SSH.
 3. Retry `repose run`/`attach` once more before escalating: the 60s
-   window is deliberately short so an agent's user is not left staring at
-   a hang; the guest is very likely still coming up.
+   window is short on purpose so an agent's user is not left staring at
+   a hang; the guest is likely still coming up.
 
 ## CLI: a laptop tool is missing in the guest
 
@@ -2239,7 +2237,7 @@ logged). Two causes, in order of likelihood:
 1. **`POLAR_WEBHOOK_SECRET` is not this endpoint's secret.** Polar's
    dashboard > Settings > Webhooks shows the endpoint and its secret; a
    sandbox secret on a production deployment, or a second endpoint, is
-   the usual story. Paste the right one into the Coolify environment of
+   the usual cause. Paste the right one into the Coolify environment of
    `api` and `api-grpc`. During a rotation the api accepts the old and the
    new secret side by side (`billing.NewWebhooks` takes extra secrets), so
    no delivery is lost.

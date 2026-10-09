@@ -1,7 +1,7 @@
 # Notifications
 
-When an agent finishes or gets stuck, the user hears about it on their phone
-or in their inbox, whichever agent it was. Agents' own notification features
+The user hears on their phone or in their inbox when an agent finishes or
+gets stuck, whichever agent it was. Agents' own notification features
 keep working on top.
 
 ## What the user sees
@@ -74,9 +74,9 @@ Events (see agents.md for how each agent produces them):
   or terminal contents beyond what the hook payload carries.
 - Heuristic events (pane idle for agents without hooks) are labelled as
   such in the message: `gemini went idle` rather than `gemini finished`.
-  As shipped, the heuristic never reads pane *text* at all — only whether
-  the pane's process tree has used CPU recently — which is stronger than
-  "never sent", not weaker (DECISIONS I-49).
+  As shipped, the heuristic never reads pane *text*. It reads only whether
+  the pane's process tree has used CPU recently, a stronger guarantee than
+  "never sent" (DECISIONS I-49).
 - An event reaches the API within 10 seconds of the hook (90 seconds for
   heuristics), and the outbox worker picks up undelivered rows every 2
   seconds. Delivery results are stored per channel on the event row.
@@ -86,8 +86,8 @@ Events (see agents.md for how each agent produces them):
   reason.
 - Rate cap: at most 30 notifications per project per hour; past that, one
   message says notifications are paused for this project until the top of
-  the hour, and events are still recorded (never dropped, just not
-  delivered past the cap).
+  the hour, and events are still recorded (never dropped; only delivery stops
+  at the cap).
 
 Agents can message you and ask questions (DECISIONS I-244, I-245):
 
@@ -210,13 +210,13 @@ Dashboard and CLI:
   page shows pending questions above everything else.
 - The dashboard project page's Events card shows the event stream, newest
   first, with the agent and the summary. It answers the first half of "I
-  got nothing": whether the event happened at all. It does not yet answer
-  the second half — whether a delivery failed — because
+  got nothing": whether the event happened. It does not yet answer the
+  second half, whether a delivery failed, because
   `GET /projects/:id/events` returns `{id, ts, kind, agent, summary}` and
   carries no per-channel outcome (DECISIONS I-96). Until it does, that
   half is an operator question: `repose-admin` and the
   `repose_api_outbox_*` metrics, and `ops/RUNBOOK.md` "No notifications
-  arriving" is written for exactly that call.
+  arriving" covers that call.
 
 ## Depends on
 

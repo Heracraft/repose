@@ -79,7 +79,7 @@ expression parses. With `--grafana`, that Grafana accepts seven of them (not the
 `ops/dev/pgcheck.sh` runs every Postgres panel query against a real
 Postgres and makes one partition drop happen.
 
-What none of that shows: whether a real host's values are sensible, whether
-Fluent Bit reaches the real Loki, and whether the alert thresholds are the
+None of that shows whether a real host's values are sensible, whether
+Fluent Bit reaches the real Loki, or whether the alert thresholds are the
 right ones for this fleet. Those are the real-host items in
 `docs/workstreams/10-observability.md` §9.

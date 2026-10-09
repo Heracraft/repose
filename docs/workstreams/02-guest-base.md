@@ -176,7 +176,7 @@ runner using the host's shared store. Everything in
   12 and owned by 12's "overlay" section; this workstream owns the wrappers
   and the hooks.
 - The user fragment composition, restricted eval, build caps (12).
-- How hostd allocates ip, cid, tap, volume and calls `mkGuestRunner` (03).
+- hostd's allocation of ip, cid, tap and volume, and its call to `mkGuestRunner` (03).
 - Preview URLs, `repose mcp forward`, `repose browser bridge` (later
   features).
 
@@ -244,7 +244,7 @@ touch system services, users, networking, kernel or sshd because it is a
 home-manager module, and the platform's `nixosSystem` call passes it only
 there. Users who need a system service (Postgres, Redis) get it from the
 menu catalog (12), which renders to a platform-controlled NixOS snippet
-with an allowlist of services. That boundary is what makes "user Nix on a
+with an allowlist of services. That boundary makes "user Nix on a
 shared host" defensible: the fragment can install anything into the home
 profile and nothing outside it.
 
@@ -276,7 +276,7 @@ Socket activation keeps the desktop's memory cost at zero until asked.
 `systemd-socket-proxyd` service that requires websockify, which pulls in
 Xvnc, openbox and the agents' browser (DECISIONS I-33, I-246, I-292).
 Chromium launched by the agent with `DISPLAY=:99` (the profile snippet
-exports it when the display is up) appears on that desktop. When the
+exports it when the display is up) appears on that desktop. If the
 agent runs headless Chromium, nothing is displayed and nothing is started.
 
 ### Hook mechanism per agent, as verified at overlay build
@@ -340,82 +340,82 @@ A bad base version is rolled back by re-applying the previous
 
 - [ ] `nix build .#nixosModules.guestBase` evaluates and the VM tests in
       `nix/guest/tests/` pass in CI. Evidence: CI.
-      — open: ci.yml runs `nix flake check --no-build` and builds no
+      Open: ci.yml runs `nix flake check --no-build` and builds no
       guest VM test (guest-base, guest-docker, guest-desktop, guestd); add a
       KVM-capable CI job that builds them and link its run.
 - [ ] Base closure size under 6 GB. Evidence: `nix path-info -S` output.
-      — open: no `nix path-info -S` output recorded; RESEARCH §11 gives
+      Open: no `nix path-info -S` output recorded; RESEARCH §11 gives
       "base closure 6.35 GB" (units unstated) and `checks.guest-closure-size`
       is not built in CI. Paste `nix path-info -S ./nix#guest-system`.
 - [ ] In a real guest: `id dev` shows uid 1000 and groups `wheel docker`;
       `sudo -n true` succeeds; `sudo -u root -i` for `dev` works and root
       has no password (`passwd -S root` locked). Evidence: pasted.
-      — open: asserted by `nix/guest/tests/default.nix` subtest "dev user, sudo, locked
+      Open: asserted by `nix/guest/tests/default.nix` subtest "dev user, sudo, locked
       root" in a QEMU VM only; no output pasted from a real guest.
 - [ ] `ssh -i key -o CertificateFile=cert dev@<guest ip>` with a test CA
       certificate carrying the project id succeeds; the same cert with a
       different principal is refused with `Permission denied`. Evidence:
-      both outputs pasted. — open: `nix/guest/tests/default.nix` subtest "sshd
+      both outputs pasted. Open: `nix/guest/tests/default.nix` subtest "sshd
       accepts the right principal and refuses the wrong one" asserts both
       in a QEMU VM; on host-01 the direct-sshd half was skipped by design
       (14 §9 isolation row). Paste both outputs from a real guest.
 - [ ] `mount | grep -E 'ro-store|rw-store'` shows the virtiofs and overlay
       mounts; `nix profile install nixpkgs#cowsay` works and the path lands
-      under `/nix/.rw-store`. Evidence: pasted. — open: RESEARCH §11 times `nix profile
+      under `/nix/.rw-store`. Evidence: pasted. Open: RESEARCH §11 times `nix profile
       install` of cowsay in a host-01 guest (2.5 s) and the VM test checks
       the mounts; neither pastes the `mount` line or the store path.
 - [ ] `docker run --rm hello-world` succeeds; `docker info | grep Storage`
       shows `overlay2`; `docker network create t && docker network inspect t`
-      shows a `172.20.0.0/14` subnet. Evidence: pasted. — open: M1 (STATUS
+      shows a `172.20.0.0/14` subnet. Evidence: pasted. Open: M1 (STATUS
       2026-09-20 m1-integration done line) and RESEARCH §11 (`docker pull`
       overlay2) record overlay2 on host-01 without output; the
       `docker network inspect` subnet is not recorded anywhere.
 - [ ] `tmux ls` as `dev` shows the session named after the slug with window
-      `shell` in `/home/dev/<slug>`. Evidence: pasted. — open: "tmux" is
+      `shell` in `/home/dev/<slug>`. Evidence: pasted. Open: "tmux" is
       listed closed in the STATUS 2026-09-20 m1-integration done line and asserted by the VM test
       subtest "tmux session from project.json"; no `tmux ls` pasted.
 - [ ] Each of `claude --version`, `opencode --version`, `codex --version`,
-      `gemini --version`, `pi --version` runs. Evidence: pasted. — open: the
+      `gemini --version`, `pi --version` runs. Evidence: pasted. Open: the
       STATUS 2026-09-20 m1-integration done line says "agents"; 13 §9 ran pi and gemini on
       m3-check; no `--version` output pasted for the five.
 - [ ] `cat ~/.claude/settings.json` after the first `claude` run shows the
       `repose-hook` entries; a pre-existing hook added before that run is
-      still present. Evidence: pasted before and after. — open: `nix/guest/tests/default.nix`
+      still present. Evidence: pasted before and after. Open: `nix/guest/tests/default.nix`
       subtest "claude hooks merged without clobbering a user hook" proves it
       in a QEMU VM (13 §9 cites it); no before/after paste from a real guest.
 - [ ] `echo '{"agent":"claude","kind":"completed","summary":"t"}' | curl
       --unix-socket /run/repose/hooks.sock -d @- http://x/` returns 200 and
-      hostd receives an `AgentEvent`. Evidence: hostd log line. — open: the path
+      hostd receives an `AgentEvent`. Evidence: hostd log line. Open: the path
       works on host-01 (13 §9 real-guest row: events delivered from
       `repose-hook` on m3-check, e.g. 01a0c14a-f7e3-7926-be1c-75e7728878a1)
       but neither the curl's 200 nor a hostd log line is pasted.
 - [ ] `chromium --headless --screenshot=/tmp/a.png https://example.com`
       produces a PNG with rendered text. Evidence: the file size and a
-      look at it. — open: RESEARCH §11 times it (2.0 s in a host-01
+      look at it. Open: RESEARCH §11 times it (2.0 s in a host-01
       guest); the file size and a look at the PNG are not recorded.
 - [ ] `npx -y @playwright/mcp --headless --version` and `chrome-devtools-
       mcp --version` run from the packaged versions, not a network fetch
       (`REPOSE` guests may have network, but the check runs with
-      `--offline`). Evidence: pasted. — open: `nix/guest/tests/default.nix` subtest "MCP
+      `--offline`). Evidence: pasted. Open: `nix/guest/tests/default.nix` subtest "MCP
       servers run from the packaged versions, offline" checks it in a QEMU
       VM; no output pasted from a real guest.
 - [ ] Connecting to `127.0.0.1:6080` starts Xvnc, openbox, websockify;
       `systemctl status repose-xvnc` active; after 30 idle minutes (or
       `systemctl start repose-desktop-idle` to force) the viewer stops.
-      Evidence: pasted. — open: "noVNC chain" is listed in the STATUS 2026-09-20 m1-integration done line;
+      Evidence: pasted. Open: "noVNC chain" is listed in the STATUS 2026-09-20 m1-integration done line;
       the start, `systemctl status` and idle stop are not pasted.
 - [ ] `sysctl fs.inotify.max_user_watches` is 1048576. Evidence: pasted.
-      — open: asserted by the VM test subtest "sysctls"; no output pasted
+      Open: asserted by the VM test subtest "sysctls"; no output pasted
       from a real guest.
 - [ ] `echo $TZ $LANG $REPOSE $REPOSE_PROJECT` in a login shell shows the
-      project's values. Evidence: pasted. — open: asserted by the VM test subtest
+      project's values. Evidence: pasted. Open: asserted by the VM test subtest
       "environment in a login shell"; no output pasted from a real guest.
 - [ ] `cat /etc/repose/base-version` equals the `base_version` the api
-      shows for the project. Evidence: both pasted. — open: the stamp read
+      shows for the project. Evidence: both pasted. Open: the stamp read
       `dirty` on host-01 until DECISIONS I-118; nobody has pasted the file
       next to the api's `base_version` since.
 - [x] `curl -m2 http://169.254.169.254` fails; `curl https://github.com`
-      succeeds; `ping -c1 <another guest ip>` fails. Evidence: pasted. — closed:
+      succeeds; `ping -c1 <another guest ip>` fails. Evidence: pasted. Closed:
       14 §9 boundary row, `ops/checks/out/isolation-go-20260921T003759Z.txt`
       on host-01 2026-09-21 00:37Z: TestGuestCannotReachIMDS (curl to
       169.254.169.254 fails), TestGuestACannotReachGuestB (ping fails),
@@ -423,17 +423,17 @@ A bad base version is rolled back by re-applying the previous
       succeeds; github reachable in the STATUS 2026-09-20 m1-integration done line).
 - [x] `packages/core/flake.nix` deleted, `nix develop` on the dev box gives
       the same tools, `pnpm-workspace.yaml` updated. Evidence: the commit
-      and `which claude` on the dev box. — closed: commit 4b1ec14 (deletes
+      and `which claude` on the dev box. Closed: commit 4b1ec14 (deletes
       packages/core/flake.{nix,lock}, updates pnpm-workspace.yaml; the tool
       list moved to nix/guest/base/tool-list.nix for the devShell); this
       audit 2026-09-23: `nix develop ./nix -c which claude` ->
       /nix/store/b4lp6dycqflfvmcx83cw16ibr3m2vgi2-repose-claude-code-2.1.278/bin/claude.
 - [ ] `interfaces/guest-conventions.md` matches every path, name and
-      variable in the module. Evidence: a grep list in the PR. — open: guest-conventions.md was rewritten in commit 4b1ec14
+      variable in the module. Evidence: a grep list in the PR. Open: guest-conventions.md was rewritten in commit 4b1ec14
       but no grep list comparing it with nix/guest/base was recorded.
 - [x] `ops/RUNBOOK.md` has entries for: guest not ready, store mount
       missing, docker driver wrong, desktop not starting. Evidence: the
-      entries. — closed: RUNBOOK "Guest not ready", "Store mount missing",
+      entries. Closed: RUNBOOK "Guest not ready", "Store mount missing",
       "Docker driver wrong", "Desktop not starting" (commit 4b1ec14).
 - [x] `rg 'TODO|FIXME' nix/guest nix/overlay` is empty. Evidence: output.
-      — closed: empty output at d3b72d3 (this audit, 2026-09-23).
+      Closed: empty output at d3b72d3 (this audit, 2026-09-23).

@@ -10,8 +10,6 @@ status: experimental
 
 ## Install the server
 
-Install T3 Code as a background service on the machine:
-
 ```
 ssh todo-app.repose 'npx -y t3@latest service install'
 ```
@@ -20,7 +18,7 @@ The service is a systemd user unit, so it comes back by itself after `repose sto
 
 ## Open it on your laptop
 
-While you're attached, the port is already on your laptop: open http://localhost:3773. When you aren't, forward it:
+While you're attached, the port is already on your laptop: open http://localhost:3773. If you aren't, forward it:
 
 ```
 repose open 3773 --project todo-app

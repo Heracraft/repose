@@ -97,7 +97,7 @@
 	];
 	// docs/PRICING.md's three plans, with internal/billing/plans.go's
 	// figures. The Units count is the plan's memory, one square per GB, so
-	// the plans compare at a glance. The cards say "memory" in words and
+	// the plans compare at a glance. The cards say "running at once" in words and
 	// count no agents or machines: a count reads as a ceiling on what the
 	// product does, and the memory is shared by whatever is running
 	// (I-402). Solo shows its introductory price, then the price it
@@ -323,9 +323,9 @@
 
 		<section class="sec">
 			<SectionHead id="pricing" title="Pricing">
-				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is shared by
-				the machines you have running; a stopped machine uses none. A plan's disk counts the data
-				your projects hold.
+				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs
+				at the same time, around the clock, across up to 100 projects; a stopped project uses none.
+				A plan's disk counts the data your projects hold.
 			</SectionHead>
 			<ul class="tiers" use:landOnView>
 				{#each plans as t, i (t.name)}
@@ -336,9 +336,9 @@
 								><Units count={t.memory} /></span
 							>
 						</div>
+						<p class="tier-run">{t.memory} GB running at once</p>
 						<p class="tier-spec">
-							<span>{t.memory} GB of memory ·</span> <span>{t.disk} disk ·</span>
-							<span>{t.egress} egress</span>
+							<span>{t.disk} disk ·</span> <span>{t.egress} egress</span>
 						</p>
 						<p class="tier-price">
 							<span class="n">{t.price}</span>

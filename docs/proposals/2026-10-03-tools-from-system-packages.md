@@ -7,7 +7,7 @@ option.
 
 ## How this came up
 
-On the owner's unwrap machine, `az` printed nothing at all. Two things were
+On the owner's unwrap machine, `az` printed nothing. Two things were
 wrong. The command-not-found hint died silently when one nixpkgs package
 has the command (fixed by I-410). And `az` never reached the machine: the
 owner installed it on an Arch laptop with Octopi, a pacman front end, and

@@ -81,8 +81,8 @@ Two CAs, both ed25519, private keys in the api's secret store:
    client's. Commands multiplexed over the connection end with it.
 6. Report `POST /internal/sessions` on open and close, with the relay's
    own `session_id` (16 random bytes, hex; DECISIONS I-176): a session is
-   a relay, not a certificate, so two terminals under one certificate
-   count as two and closing one leaves the other.
+   a relay, so two terminals under one certificate count as two and
+   closing one leaves the other.
 7. Port forwards (`-L`, `-R`) are passed through. Agent forwarding is
    refused (DECISIONS I-247): an `auth-agent-req@openssh.com` from the
    client is answered with failure and never reaches the guest, and an
@@ -92,7 +92,7 @@ Two CAs, both ed25519, private keys in the api's secret store:
    request is refused.
 8. On the edge, port 22 is a systemd socket (`gateway-ssh.socket`,
    I-470): a connection made while no gateway runs waits and is served
-   by the next one. A deploy is a handover, not a restart (I-471): the
+   by the next one. A deploy is a handover (I-471): the
    new gateway takes the sockets and the new connections, and the old
    one serves its open relays until each ends (item 5). A client sees no
    change; its relay keeps the old gateway's code until it reconnects.

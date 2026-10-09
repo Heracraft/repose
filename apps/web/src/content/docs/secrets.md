@@ -13,8 +13,6 @@ Value for STRIPE_SECRET_KEY: ********************************
 Set STRIPE_SECRET_KEY on todo-app; the running machine has it now.
 ```
 
-Each character you type or paste shows as `*`.
-
 Or pipe the value in, or read it from a file or from your laptop's environment:
 
 ```
@@ -67,7 +65,7 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 
 Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, `gh auth login` is enough for HTTPS GitHub URLs; SSH URLs are rewritten to HTTPS only for a login copied from your laptop.
 
-Never copied: SSH private keys, Claude Code's login, Gemini's OAuth login, the Vercel CLI's login. See [Agents](/docs/agents#log-in) for the agents' logins.
+Never copied: SSH private keys, [Claude Code's login, Gemini's OAuth login](/docs/agents#log-in), the Vercel CLI's login.
 
 The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, either log in there:
 
@@ -110,11 +108,11 @@ The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip =
 
 The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays. Snapshots taken before then still hold the copy; revoke that token where you created it.
 
-Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a token as described below.
+Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a [token](#other-git-hosts).
 
 ### Other git hosts
 
-GitLab, Bitbucket and your own server have no login that repose copies, and your SSH keys stay on your laptop. Pick one of these.
+GitLab, Bitbucket and your own server have no login that repose copies, and your SSH keys stay on your laptop.
 
 **A token, kept as a secret.** Create a token with write access to the repository on the git host, then store it:
 
@@ -146,12 +144,12 @@ Add the public key to that one repository as a deploy key with write access. It 
 
 Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager, editor or diff filter the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Where neither sets a value, the machine's git starts new repositories on `main`, merges on `git pull`, and sets the upstream on the first `git push` of a branch. Commits made on the machine are unsigned, since the signing key stays on your laptop.
 
-Your Claude Code setup is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run. [Agents](/docs/agents#your-claude-code-setup-comes-along) has the details.
+Your [Claude Code setup](/docs/agents#your-claude-code-setup-comes-along) is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run.
 
 ## What an agent on the machine can reach
 
 - **Everything on the machine**, including your checkout, `.env` files and the logins above. It has `sudo`.
-- **The internet**, outbound, with the limits in [Limits](/docs/limits).
+- **The internet**, outbound, within the [limits](/docs/limits).
 - **Your git host**, with whatever credentials the machine has.
 - **Not your other projects.** Each is a separate machine, and the network stops them from reaching each other.
 - **Not your laptop.** The machine can't open connections to it, and it never gets your SSH keys or your ssh-agent. While you're attached, ports on the machine appear on your laptop's `localhost`.
@@ -163,6 +161,6 @@ Your Claude Code setup is copied too: `CLAUDE.md`, `settings.json` (with `env` a
 - Once a minute, for billing and abuse detection: whether the machine is running, CPU, memory, network and disk use, and the names of running processes. Never their arguments or environment.
 - Agent events: which agent, what kind of event, and the agent's own one-line summary.
 
-Never stored: your code, prompts, terminal contents, files on the machine, or the logins copied from your laptop. The [privacy policy](/privacy) has the full list.
+Never stored ([full list](/privacy)): your code, prompts, terminal contents, files on the machine, or the logins copied from your laptop.
 
 Disks aren't encrypted per project yet, so an operator with root on a server can read the disks on it. Every operator login and command inside a machine is audited, and operators look inside only for an incident, an abuse report or a support request you made. Machines and snapshots are in Azure East US.

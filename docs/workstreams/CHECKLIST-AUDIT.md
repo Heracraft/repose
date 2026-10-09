@@ -7,11 +7,11 @@ d3b72d3 was checked against the evidence already recorded: STATUS lines
 `ops/checks/`, test names, CI runs and commit messages. Each row now ends in
 one of:
 
-- `— closed: <citation>` and ticked `[x]`, when the evidence closes the row as
+- `Closed: <citation>` and ticked `[x]`, when the evidence closes the row as
   the row itself specifies;
-- `— open: <what is missing>`, when the evidence was never recorded;
-- `— waits on: owner (<what>)` or `— waits on: second host`;
-- `— superseded: DECISIONS I-NN (<why>)`, when a decision made the row not
+- `Open: <what is missing>`, when the evidence was never recorded;
+- `Waits on: owner (<what>)` or `Waits on: second host`;
+- `Superseded: DECISIONS I-NN (<why>)`, when a decision made the row not
   apply (all eight are 00-benchmark, deferred by I-12).
 
 `[~]` rows (local half closed, real-path half not) were checked the same way;

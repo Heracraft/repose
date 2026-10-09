@@ -5,7 +5,7 @@ section: Using repose
 order: 12
 ---
 
-Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. Your checkout is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot. See [Where the checkout is](/docs/sync#where-the-checkout-is).
+Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
 | Size    | vCPU | Memory | Disk  |
 | ------- | ---- | ------ | ----- |
@@ -57,7 +57,7 @@ air: command not found
 Other packages with air: air-formatter
 ```
 
-The last line only appears when other packages have a command by that name. `repose` itself answers that the CLI runs on your laptop and names the commands the machine has: `repose-ask`, `repose-notify` and `repose-checkout`. Installs made on the machine are not part of the project's configuration. To have a package on every rebuild, or a database set up as a service, add it with `repose config add`; see [Installing software](/docs/config).
+The last line only appears when other packages have a command by that name. `repose` itself answers that the CLI runs on your laptop and names the commands the machine has: `repose-ask`, `repose-notify` and `repose-checkout`. Installs made on the machine are not part of the project's configuration. To have a package on every rebuild, or a database set up as a service, add it with [`repose config add`](/docs/config).
 
 ## Your laptop's tools come along
 
@@ -201,15 +201,15 @@ Playwright test suites (`pnpm exec playwright test` and the like) still run head
 
 ### Use your own Chrome
 
-For a job that needs your logged-in browser (an internal tool behind SSO, an account with a hardware key, an extension), lend the agents your laptop's Chrome instead: `repose run --bridge`, or `repose browser bridge` in a second terminal. While the bridge is open, the machine's two browser tools drive your Chrome, with your logins, and switch back when it closes; nothing on the machine restarts. `--allow` keeps them to the sites you name. It needs Chrome 144 or newer and a running machine. [Lend the agents your Chrome](/docs/your-chrome) has the whole of it: setup, what the agents can and can't do there, and troubleshooting.
+For a job that needs your logged-in browser (an internal tool behind SSO, an account with a hardware key, an extension), [lend the agents your laptop's Chrome](/docs/your-chrome) instead: `repose run --bridge`, or `repose browser bridge` in a second terminal. While the bridge is open, the machine's two browser tools drive your Chrome, with your logins, and switch back when it closes; nothing on the machine restarts. `--allow` keeps them to the sites you name. It needs Chrome 144 or newer and a running machine.
 
 ## Network
 
-The machine can reach the internet over TCP and UDP. Nothing on the internet can reach the machine; the only way in is SSH through repose, with your certificate. Outbound traffic is limited to 200 Mbit/s, and downloads to 1 Gbit/s. npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. For npm, repose adds two lines to `~/.npmrc`; delete them to go direct. An `~/.npmrc` that already names a registry or holds an npmjs token is left alone. [Limits](/docs/limits) has what's blocked.
+The machine can reach the internet over TCP and UDP, with [a few ports blocked](/docs/limits). Nothing on the internet can reach the machine; the only way in is SSH through repose, with your certificate. Outbound traffic is limited to 200 Mbit/s, and downloads to 1 Gbit/s. npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. For npm, repose adds two lines to `~/.npmrc`; delete them to go direct. An `~/.npmrc` that already names a registry or holds an npmjs token is left alone.
 
 ## Memory and disk
 
-When a machine runs out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with `repose resize --size large` (or `xl`); see [Changing the size](#changing-the-size). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
+On a machine out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. If it keeps happening, give the machine more memory with [`repose resize --size large`](#changing-the-size) (or `xl`). The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5, 3 or 6 GB depending on size; a tab past that crashes. Browsers a Playwright test launches have no limit of their own.
 
 A deleted file's space goes back to the server within a day, when the machine runs `fstrim`, and when the machine stops. That is when it stops counting toward your plan's disk; `sudo fstrim /` does it now.
 
@@ -217,7 +217,7 @@ Once a week the machine deletes the nix store paths it downloaded or built itsel
 
 `nix-collect-garbage` and `nix store gc` are safe to run too: they keep the store paths repose shares with the machine, its system included. If an earlier garbage collection hid any of them, the machine's next start puts them back.
 
-`repose status`, `repose ls` and the project's page in the dashboard say when the disk is 90 percent full or more. They count the machine's filesystem, as `df /` does. Grow it with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink. A larger disk adds nothing to your [plan's disk total](/docs/billing#what-a-plan-means), which counts what your projects hold. A disk can grow only as far as the server it runs on has room for; [Limits](/docs/limits#disk-and-console) has the disk speed and size limits.
+`repose status`, `repose ls` and the project's page in the dashboard say when the disk is 90 percent full or more. They count the machine's filesystem, as `df /` does. Grow it with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink. A larger disk adds nothing to your [plan's disk total](/docs/billing#what-a-plan-means), which counts what your projects hold. A disk can grow only as far as the server it runs on has room for, within the [disk limits](/docs/limits#disk-and-console).
 
 ## Seeing what the machine is doing
 
@@ -228,7 +228,7 @@ The project's page in the dashboard has a **Machine** card with the size, its vC
 - **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU is at 100% means more work than vCPUs, for example several builds or test runs at once. Run fewer at a time, or give the machine more vCPUs with `repose resize --size`.
 - **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy, and repose watches for that.
 
-Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type; see the [privacy policy](/privacy).
+Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type, as the [privacy policy](/privacy) promises.
 
 Your SSH sessions and tmux get the CPU before the programs running in your panes when every vCPU is busy, so what you type keeps showing up at once.
 
@@ -236,6 +236,6 @@ Your SSH sessions and tmux get the CPU before the programs running in your panes
 
 A project's size is chosen when it's created (`repose run --size`, default `large`) and can be changed later with `repose resize --size small|large|xl`. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.
 
-The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it, changes it and starts it again. The stop takes no snapshot, since the disk stays as it is; `repose snapshots create` takes one first if you want it. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. A size your plan can't run beside the machines running now is refused before the question, and nothing stops. Asking for the size a project already has does nothing. `repose run --size` or `repose sync --size` on a stopped project changes it too, before starting it.
+The size changes while the machine is stopped. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it, changes it and starts it again. The stop takes no snapshot, since the disk stays as it is; run `repose snapshots create` first for one. The stop ends every process on the machine, agents included, so let running work finish first; `-y`/`--yes` skips the question. A size your plan can't run beside the machines running now is refused before the question, and nothing stops. Asking for the size a project already has does nothing. `repose run --size` or `repose sync --size` on a stopped project changes it too, before starting it.
 
 It prints what the new size gives and which plan it needs, for example `8 vCPU, 16 GB memory; needs the Plus plan`. While the machine runs, its size counts toward the memory your [plan](/docs/billing) runs at once. An `xl` needs Plus or Pro ([Limits](/docs/limits#your-plan)).

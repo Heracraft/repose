@@ -1,8 +1,7 @@
 # Run and attach
 
-`repose run` is the whole product in one command. With no arguments it puts
-you inside your project's session: tmux, or herdr on a project that chose
-it (DECISIONS I-501, I-502; "herdr projects" below). `repose run NAME`
+With no arguments, `repose run` puts you inside your project's session:
+tmux, or herdr on a project that chose it (DECISIONS I-501, I-502; "herdr projects" below). `repose run NAME`
 does that for the machine called NAME, created if there is none (I-603).
 With `-p PROMPT` it starts an agent in a new window (a tab on herdr), types the prompt, and
 leaves it running whether or not you stay attached. Everything above
@@ -97,7 +96,7 @@ repose/claude-2`, documented in /docs/run-and-attach).
 
 Running against a stopped project starts it first (the `Starting
 todo-app` phase on stderr) before the usual `Connected to todo-app
-(large)` line — there is no separate "stopped" message for `run`.
+(large)` line; `run` prints no separate "stopped" message.
 `attach` starts a stopped machine the same way, without a sync, and waits
 for one already starting (I-631, review G7); a machine in `error`,
 `restoring` or `destroying`, or stopped for abuse, still exits 5 for
@@ -125,8 +124,8 @@ Session and windows (see `interfaces/guest-conventions.md`):
   `--worktree` the window opens in `~/<checkout>-worktree-<N>`, a git
   worktree on branch `worktree-<N>` (guest-conventions "tmux"); otherwise in the
   checkout. The agent's interactive TUI runs in that window,
-  never a headless or print mode, because the point is that the user can
-  attach and see the live session with its history.
+  never a headless or print mode, so the user can attach and see the live
+  session with its history.
 - The prompt is typed into the TUI only once the TUI is up. The CLI polls
   `tmux display -p '#{pane_current_command}'` and `tmux capture-pane`
   until the pane's process matches the agent and its content has been
@@ -138,11 +137,11 @@ Session and windows (see `interfaces/guest-conventions.md`):
 - `repose attach` attaches to the project's current window; there is no
   `--window` flag (07-cli.md's command tree has none). If the session does
   not exist, `repose attach` fails the way any other tmux target failure
-  does; recreating a lost session is guestd's job at boot
-  (`guest-conventions.md`), not something the CLI drives.
+  does; guestd recreates a lost session at boot
+  (`guest-conventions.md`), and the CLI does not.
 - Two `repose run` invocations on the same project from two terminals both
   attach; tmux handles the multi-client case and the smaller terminal
-  constrains the size, as tmux always does. That is documented, not hidden.
+  constrains the size, as tmux always does. The user docs say so.
 
 The laptop's clock (I-198):
 
@@ -404,8 +403,8 @@ todo-app uses herdr from its next start; tmux runs until then.
 
 ## herdr projects (I-509, I-510)
 
-Which path a command takes is decided by what runs: the CLI asks the
-guest, in one ssh over the connection it holds (a few milliseconds; the
+The CLI picks a command's path by what runs: it asks the guest, in one
+ssh over the connection it holds (a few milliseconds; the
 fast path asks too), for `repose-herdr-server`'s `ActiveState`, this
 boot's `multiplexer` in `~/.repose/project.json`, and whether a tmux
 server answers. First match wins (I-542):
@@ -527,8 +526,8 @@ attach returns, never over the pane (I-542). Other projects are added
 by their stored `multiplexer`, since the api has no other answer; the
 current one by the guest's (I-542).
 
-**Messages.** What the session helper and the CLI show inside the
-session (`Time zone set to ...`, forwards, carry notices) goes through
+**Messages.** The session helper and the CLI send what they show inside
+the session (`Time zone set to ...`, forwards, carry notices) through
 `herdr notification show repose --body "<text>"` on herdr, where tmux
 uses `display-message`; a script that does not know the multiplexer
 uses herdr when `repose-herdr-server` is active, else tmux, so a tmux

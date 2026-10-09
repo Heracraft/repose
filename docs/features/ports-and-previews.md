@@ -58,7 +58,7 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   silently, since the URLs portless prints name it: `1355 is taken on
   your laptop (portless?); izma's portless is on localhost:1356`. A port
   no laptop port could be found for is tried again after 30 seconds.
-- Output is only ever inside tmux: `display-message` per new forward, and
+- Output appears only inside tmux: `display-message` per new forward, and
   the session's `status-right` set to `⇄ <ports> │ <the global
   status-right>` while any attached CLI forwards. Each CLI keeps its
   ports in `~/.repose/forwards/<id>` in the guest (re-stamped every 20 s,
@@ -86,7 +86,7 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   picks a free one and forwards to that instead, with a message saying
   so, rather than failing. `repose browser` does the same for 6080
   (I-261).
-- When the forward's connection drops (ssh exits 255), `open` says
+- If the forward's connection drops (ssh exits 255), `open` says
   `repose: lost the connection to <slug>. Reconnecting; Ctrl-C stops.`
   and starts the same forward again once the machine answers, for up to
   2 minutes (DECISIONS I-469). Auto-forwards follow a reattach too: the
@@ -126,7 +126,7 @@ use names them:
 - **New connections are rate-limited per guest**, at 200 new outbound
   flows a second with a burst of 2000. A cold package install opens a few
   dozen and a headless browser loading six news sites at once about 1700
-  over twenty seconds, so development does not reach it; a scan does.
+  over twenty seconds, so development stays under it and a scan exceeds it.
   Connections past the limit are dropped (the program sees a timeout),
   connections already open are never touched, and traffic to the host's
   npm and Docker caches does not count.
@@ -174,8 +174,8 @@ Design (DECISIONS R2-6 chose to document it now):
   `VITE_ALLOWED_HOSTS` and the Next.js equivalent for `*.repose.herakraft.co`.
 - The dashboard shows a project's open ports with a preview link each.
 
-What is *not* in that design: custom domains per project, HTTP basic auth
-as an alternative to the cookie, and non-HTTP protocols. Those wait for
+That design leaves out custom domains per project, HTTP basic auth as an
+alternative to the cookie, and non-HTTP protocols. Those wait for
 demand.
 
 ## Depends on

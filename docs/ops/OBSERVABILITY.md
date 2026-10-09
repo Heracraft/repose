@@ -1,7 +1,7 @@
 # Observability, for operators
 
-Where every signal lives, how to look at one project, and what must never
-be in a log. The design rules and the full metric list are in
+Signal locations, how to look at one project, and the fields that must
+never be in a log. The design rules and the full metric list are in
 `../workstreams/10-observability.md`.
 
 ## Where things are
@@ -29,7 +29,7 @@ ship goes over the edge's WireGuard.
 ## Looking at one project
 
 1. `repose-admin projects show <id-or-slug>`: state, host, class, last
-   snapshot, current signals, cost today. This is the first stop.
+   snapshot, current signals, cost today. Start here.
 2. Grafana "Per-guest resources", variable `project_id`: CPU, memory, net,
    disk, and the signals timeline (sessions, tmux clients, agent state)
    from `meter_samples`.
@@ -136,8 +136,7 @@ line stored by us:**
   counter in memory for rate limiting; it does not log the address)
 - card details of any kind, including last four (Polar holds the card; the api never sees it)
 
-`internal/obs` is where the rules live rather than where they are written
-down (in three packages, so that guestd links a logger and not an exporter:
+`internal/obs` enforces the rules in code (in three packages, so that guestd links a logger and not an exporter:
 DECISIONS I-59):
 
 - Every logger comes from `obs.NewLogger`, which puts `component` on the line
@@ -153,13 +152,13 @@ DECISIONS I-59):
 - `internal/obs/obslint`, run by a unit test over `cmd/` and `internal/`,
   refuses the standard library's `log`, a logger or registry built outside
   `obs`, a log call that does not name its `event`, and a never-log field
-  name at a call site — including the wider list (`path`, `output`,
+  name at a call site, including the wider list (`path`, `output`,
   `transcript`, `ip`, `jwt` and the rest) that redaction does not cover.
 
-None of that replaces the reviewer, and the redaction floor is a floor. The
-reason is in the privacy policy: it promises the process-sample boundary in
-plain words, and a log line that crosses it is a broken promise that
-outlives the incident.
+None of that replaces the reviewer: redaction covers only the names listed
+above. The privacy policy promises the process-sample boundary in plain
+words, so a log line that crosses it breaks that promise, and the line
+stays in the logs after the incident is fixed.
 
 ## Retention
 
@@ -187,7 +186,7 @@ The rules in `ops/alerts.yaml`, routed by Alertmanager
 `page` on a topic of its own so a phone can be allowed to make a sound for
 those alone. Each alert name is a heading in `RUNBOOK.md`, and
 `ops/check.sh` fails if one is missing. Each also has a `promtool` test
-case, because an alert whose expression is subtly wrong looks exactly like a
-quiet system until the incident it was written for. Silence with `amtool silence add alertname=...
+case, because an alert with a wrong expression looks like a quiet system until
+the incident it was written for. Silence with `amtool silence add alertname=...
 --duration 2h --comment "..."` and say why in the comment; a silence with
 no comment is deleted by a nightly job.

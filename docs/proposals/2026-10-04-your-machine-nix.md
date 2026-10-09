@@ -58,8 +58,8 @@ Rules:
   checkout. Each says so in one line.
 - Never blocks. A new machine is created and boots as now; its first
   revision is the combined configuration, applied in place as soon as it
-  is built. When the closure is already in the host's store (every guest
-  mounts it, DESIGN §4) and the evaluation is cached (I-405), that takes a
+  is built. With the closure already in the host's store (every guest
+  mounts it, DESIGN §4) and the evaluation cached (I-405), that takes a
   few seconds.
 - Precedence over the laptop. With a personal file on the account, `run`
   skips the global-tools half of the scan. With a `repose.nix` in the
@@ -76,7 +76,7 @@ Measured today (`/docs/config` example, 45 s): evaluate 7.9 s, fetch from
 cache.nixos.org 21 s, build the glue derivations 12 s, switch 3 s. A warm
 re-apply measured 16 s on 2026-10-04.
 
-What is paid once:
+Paid once:
 
 - Evaluation: once per distinct pair of files per base version (I-405's
   eval cache).
@@ -84,11 +84,11 @@ What is paid once:
 - Building: only the small home-manager and system derivations of a new
   combination; packages come from the cache.
 
-What resets it: the weekly base update (evaluation and glue again, the
+Two things reset it: the weekly base update (evaluation and glue again, the
 packages are still there), and a package not on cache.nixos.org, which
 builds from source.
 
-What hides the rest:
+Ways to hide the rest:
 
 1. Never block the boot (above).
 2. Build on save: a new personal file, pushed from the laptop or saved on

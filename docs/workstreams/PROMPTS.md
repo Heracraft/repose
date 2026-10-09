@@ -29,9 +29,9 @@ model choice, and `STATUS.md` carries the state between them.
 The repo ships a project skill at `.claude/skills/ws/SKILL.md`. In a worktree,
 start Claude Code and type `/ws 03`; it loads the preamble and the `03`
 block below and begins. `/ws m4` and `/ws m5` run the integration
-sessions (the "M<n> bring-up" sections below; M1 to M3 are done). The full
-text below is what the skill expands to, kept here so it can be read and
-edited in one place.
+sessions (the "M<n> bring-up" sections below; M1 to M3 are done). The skill
+expands to the full text below, kept here so it can be read and edited in
+one place.
 
 ## Launching agents in parallel
 
@@ -47,7 +47,7 @@ cd ../repose-ws/03-hostd && claude      # paste preamble + block 03
 ```
 
 One worktree per workstream, all branched from the same `main` commit.
-When an agent reports done, the owner reviews and merges: `git merge
+Once an agent reports done, the owner reviews and merges: `git merge
 ws/03-hostd` on main, resolving the shared files (keep both sides of
 `go.mod` requires and run `go mod tidy`; concatenate `STATUS.md` and
 `DECISIONS.md` entries, renumbering `I-<n>` if two agents used the same

@@ -7,7 +7,7 @@ order: 13
 
 There are two ways to install software on a project's machine:
 
-- **On the machine**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk. See [The machine](/docs/machine#installing-more).
+- **[On the machine](/docs/machine#installing-more)**, with `nix profile add`, `npm i -g`, `go install` and the like. It takes seconds and lasts as long as the machine's disk.
 - **In the project's configuration**, with `repose config`. The machine is rebuilt with it, so it's there after rebuilds, platform updates and a restore onto another server, and services such as PostgreSQL are set up and started.
 
 ## Add a package
@@ -117,7 +117,7 @@ The file is a home-manager module, not a flake. A `flake.nix` given to `repose c
 
 Once you edit the Nix by hand, the menu and `repose config add` are off for that project, because they can't read arbitrary Nix. Applying from the menu later replaces your file.
 
-What the file can't do: set NixOS system options other than the database services under `repose.system`, define a user service whose name starts with `repose-`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
+The file can't set NixOS system options other than the database services under `repose.system`, define a user service whose name starts with `repose-`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
 
 ## Your machine.nix
 
@@ -149,7 +149,7 @@ An example:
 
 `home.shellAliases` work in every shell on the machine, and yours replace the machine's own of the same name. `programs.bash.initExtra` is not carried: put shell code in `~/.bashrc` (from machine.nix, `home.file.".bashrc".text`). The machine already runs starship, so the prompt needs only its config file.
 
-It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. When both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
+It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. If both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
 
 ```
 config error: attribute 'ripgrepp' missing at machine.nix:3:21
@@ -163,7 +163,7 @@ config error: attribute 'ripgrepp' missing at machine.nix:3:21
 Applying machine.nix (changed) to 3 machines in the background.
 ```
 
-If you saved it on the dashboard since, the laptop's copy is brought up to date instead, when you haven't changed it. When both changed, `run` pushes nothing and says so in one line; `repose config --global apply` keeps the laptop's copy, `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
+If you saved it on the dashboard since, the laptop's copy is brought up to date instead, when you haven't changed it. If both changed, `run` pushes nothing and says so in one line; `repose config --global apply` keeps the laptop's copy, `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
 
 **On the dashboard.** **Settings** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
 
@@ -171,7 +171,7 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 
 **Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
-**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the tools you installed globally on your laptop; your machine.nix says which tools you want. See [Your laptop's tools come along](/docs/machine#your-laptops-tools-come-along).
+**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the [tools you installed globally on your laptop](/docs/machine#your-laptops-tools-come-along); your machine.nix says which tools you want.
 
 ## Revisions and base updates
 

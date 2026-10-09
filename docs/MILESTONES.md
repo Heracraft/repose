@@ -4,7 +4,7 @@ Each milestone is usable on its own and has a gate. Workstreams (see
 `workstreams/README.md`) map onto milestones; several workstreams run in
 parallel inside one milestone, and some start early because nothing blocks
 them. "Done" for a milestone means every listed workstream's checklist is
-closed and the gate is demonstrated, not that code exists.
+closed and the gate is demonstrated.
 
 ## M0. Benchmark gate (deferred, DECISIONS I-12)
 
@@ -68,8 +68,8 @@ restore has been rehearsed". `DECISIONS.md` I-112 withdrew all of that from
 this side: backups and their restore are configured on the Postgres
 service's Backups tab in the owner's own Coolify, against a destination no
 credential for which exists in this repository, so there is no R2 bucket, no
-on-VM check and no rehearsal script left to gate on. What remains gateable
-here is that the schedule exists, which is a look at that tab.*
+on-VM check and no rehearsal script left to gate on. The one thing left to
+gate on here is that the schedule exists, which is a look at that tab.*
 
 *Where it stands, 2026-09-26: the api side is proven on host-01 (05, 12,
 13, 14 rows closed with evidence). Open, all on the owner: the dashboard's

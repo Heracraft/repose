@@ -361,7 +361,7 @@ DOM). People add a headed browser to watch or intervene (logins, CAPTCHAs):
 https://playwright.dev/docs/docker
 https://github.com/xtr-dev/mcp-playwright-novnc
 
-How remote-dev products handle it:
+Remote-dev products:
 
 - Codespaces and Gitpod: devcontainer plus port forwarding and preview URLs;
   Gitpod documents reverse-forwarding a laptop Playwright server into the
@@ -566,7 +566,7 @@ the dev box.
 
 ---
 
-How this was gathered: web research by sub-agents on 2026-09-16 and
+Method: web research by sub-agents on 2026-09-16 and
 2026-09-17, summarised in the design interview; every URL above is one those
 agents cited. Prices are as quoted on those dates and will drift.
 
@@ -757,7 +757,7 @@ these when the M1 session has them.
 | build timeout case | a derivation sleeping 31 minutes, cap 5 s | 5 s to `build_timeout` | `internal/hostd/nixbuild` real-Nix corpus |
 | closure cap case | 120 MB output, cap 100 MB | under 1 s after the build | `closure_too_large` with the ten largest paths |
 
-So a package-only change on a warm host is about 5 s of evaluation plus
+A package-only change on a warm host is about 5 s of evaluation plus
 the substitution of what is new, and the CLI's `Building ... 38s` in
 `features/config.md` is the right order of magnitude. The first build on
 a fresh host also pulls the base closure's build-time dependencies that

@@ -13,7 +13,7 @@ gives each project a persistent Linux microVM on a shared host, provisioned from
 a Nix configuration, reachable over SSH through a gateway, where an agent runs
 inside tmux and keeps going. The developer checks back from the laptop, a phone,
 or an IDE's remote mode. The environment is the same one every time because it
-is a NixOS closure, not a snowball of apt installs.
+is a NixOS closure.
 
 The commercial idea is the same sentence: devs will pay a flat monthly amount to
 not think about this, and power users will pay by the hour past that.
@@ -82,7 +82,7 @@ managed data disk, not the local temp disk. See DECISIONS I-14. Trusted Launch a
 VMs disable nested virtualization. AMD sizes (`Da*`, `Ea*`, and the `v7` AMD
 line this repo's dev box runs on) are excluded: measured nested-KVM penalties
 on Azure AMD are 50 to 90 percent versus roughly 10 percent on Intel. ARM sizes
-do not support nested virtualization at all.
+do not support nested virtualization.
 
 **OS.** NixOS, installed onto the stock Ubuntu image with `nixos-anywhere`
 from `nix/hosts/`. The host configuration declares:
@@ -107,7 +107,7 @@ from `nix/hosts/`. The host configuration declares:
 The host reserve is 8 GB below 128 GB of RAM and 16 GB above. A `D64s_v7`
 fits 30 large guests, 55 small, or 15 XL, in any mix; a `D16s_v7` fits 7
 large or 14 small. v7 sizes expose disks over NVMe only: OS at
-`/dev/nvme0n1`, the data disk resolved at install time (DECISIONS I-41). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added manually:
+`/dev/nvme0n1`, the data disk resolved at install time (DECISIONS I-41). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added by hand:
 an alert fires at 80 percent reserved memory and a human runs the OpenTofu
 apply for the next host.
 
@@ -184,15 +184,15 @@ of user config:
   3.12, uv, go, rustup, just, ripgrep, jq, gh, git, direnv with nix-direnv,
   starship, zoxide, eza, a C toolchain and everyday CLIs (I-218).
 - `fs.inotify.max_user_watches=1048576`, `max_user_instances=1024`.
-- Under load, what a user types gets through first. The SSH session
-  scopes and the tmux server run at ten times a pane's CPU weight. When
+- Under load, the user's keystrokes get through first. The SSH session
+  scopes and the tmux server run at ten times a pane's CPU weight. Once
   memory runs out, the kernel kills rather than thrashes, and the SSH
   session, the tmux server, dev's user manager, guestd and journald are
   the last killed and the last paged out; the largest build or dev
   server goes first, and agents are kept (DECISIONS I-200, I-494, I-576).
 - `TZ` and `LANG=C.UTF-8` set from the user's profile; `TZ` defaults to the
   laptop's zone as reported by the CLI at project creation.
-- Fluent Bit is *not* in the guest. Console output goes to hostd over the
+- Fluent Bit is not in the guest. Console output goes to hostd over the
   serial device; application logs stay in the guest.
 - `repose-guest-profile`: a small script the CLI's `open`, `sync` and hooks
   rely on, documented in `interfaces/guest-conventions.md`.
@@ -221,7 +221,7 @@ its fragment; the CLI streams the build.
 
 - Thin volume per guest on `vg-guests/thin`, ext4, mounted by the guest as its
   root overlay's upper dir and `/home`.
-- Snapshot = `guestd` runs `fsfreeze -f /` , hostd takes an LVM thin snapshot,
+- Snapshot = `guestd` runs `fsfreeze -f /`, hostd takes an LVM thin snapshot,
   `guestd` runs `fsfreeze -u`, freeze window under one second. The snapshot's
   used blocks (DECISIONS I-164) are read eight chunks at a time around the
   page cache (I-571) and streamed `zstd`-compressed to Azure Blob (`repose-snapshots` container,
@@ -467,7 +467,7 @@ one cap of 100 projects per account, running or stopped and the same on
 every plan, bounds abuse (I-569); egress past the
 allowance is $0.05 a GB as one line on the next invoice, and at four times
 the allowance the machines stop for the period. Polar is the merchant of
-record, so tax is its problem. `PRICING.md` has the rules, the cost floor
+record, so Polar handles tax. `PRICING.md` has the rules, the cost floor
 and the reasoning.
 
 Meters, sampled by hostd every 60 seconds and aggregated hourly by the API
@@ -482,8 +482,6 @@ A failed payment refuses new starts from day 0, stops the running machines
 on day 3, and destroys nothing for 30 days.
 
 ## 15. Observability and anti-abuse
-
-Ship everything, invade nothing.
 
 - Host: node_exporter, hostd's own metrics (`repose_host_*`), Cloud
   Hypervisor per-guest stats, LVM pool usage, nftables byte counters per

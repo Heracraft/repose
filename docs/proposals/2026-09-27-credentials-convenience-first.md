@@ -4,7 +4,7 @@
 stays on the laptop), which is committed on branch
 `worktree-agent-a93d6b299344278b5` and waiting to be merged.** Every item
 below that changes behaviour needs its own `DECISIONS.md` entry and ships
-with its public docs. Where this file and a decision entry disagree, the
+with its public docs. If this file and a decision entry disagree, the
 entry wins.
 
 Sources: the owner's direction in the session of 2026-09-27, and three
@@ -26,12 +26,12 @@ in them was tested against a live guest.
 Developers already take the risk of running agents with full permissions
 on their laptops, with every login they own sitting next to the agent.
 The need for a machine that keeps running is real, but people are managing
-without one. Repose wins on convenience, not on safety they didn't ask
-for. So:
+without one. Repose wins on convenience; users have not asked it for
+safety. So:
 
 - **The default is convenient, and the risk is the user's to take.** Repose
-  copies what makes the machine feel like the laptop, and says plainly
-  what it copied.
+  copies what makes the machine feel like the laptop, and says what it
+  copied.
 - **Safety is opt-in.** A user who wants it sets up scoped keys once, and
   from then on every machine gets its own short-lived keys. Repose never
   pushes anyone into it.
@@ -64,21 +64,21 @@ complaints about Claude Code on the web, Codex, the Copilot agent and
 Docker Sandboxes are about allowlists that miss the CDN, toolchain and
 deploy hosts real work needs.
 
-So protection goes on the credentials. Egress stays open, as R2-10 already
+Protection goes on the credentials. Egress stays open, as R2-10 already
 says. A locked mode is built only if a user asks for it.
 
 ## Default mode
 
-What `repose run` does for a user who changes nothing:
+`repose run`, for a user who changes nothing:
 
 | What | Default | Opt-out | Status |
 |---|---|---|---|
 | Gitignored `.env` files | Copied (I-197) | **New:** a way to not copy them, per project | Opt-out to build |
 | `gh` login | Copied, full scopes (I-150) | Secure mode replaces it (below) | As today |
-| Codex and opencode logins | Copied | — | As today |
-| Vercel login | **Not copied.** Use `vercel login` on the machine or `repose secrets set VERCEL_TOKEN` with a scoped token | — | I-298, on a branch |
-| Claude login | Never copied; one login share per user (I-278) | — | As today |
-| Named secrets | tmpfs in the guest | — | As today |
+| Codex and opencode logins | Copied | None | As today |
+| Vercel login | **Not copied.** Use `vercel login` on the machine or `repose secrets set VERCEL_TOKEN` with a scoped token | None | I-298, on a branch |
+| Claude login | Never copied; one login share per user (I-278) | None | As today |
+| Named secrets | tmpfs in the guest | None | As today |
 | Egress | Open, shaped | Locked mode, if ever asked for | As today |
 
 Two additions make the default honest without taking anything away:
@@ -137,12 +137,12 @@ a `permissions` object. The token expires after an hour.
   click in the design.
 - **Someone else's repo:** not reachable; work in a fork.
 
-What the token cannot do: create repos, change visibility, write gists, or
-touch any other repo. Those need the Repository creation, Administration
+The token cannot create repos, change visibility, write gists, or touch
+any other repo. Those need the Repository creation, Administration
 and Gists permissions, which the token does not get. That closes the
 channel s1ngularity and Shai-Hulud used.
 
-What it can still do: push anything the agent reads into this repo. If the
+It can still push anything the agent reads into this repo. If the
 repo is public, that is publication. A ruleset on the default branch stops
 force-pushes, and that is the user's GitHub setting, not Repose's.
 
@@ -169,10 +169,10 @@ Design points:
 
 ### 2. The credential manager: parent keys in, per-machine keys out
 
-The user stores a parent key once, a key that can create keys. When a
+The user stores a parent key once, a key that can create keys. As a
 machine starts, Repose mints a child for that machine, scoped and expiring
 where the provider allows, and writes it into the machine's copy of `.env`
-in place of the laptop's value. The laptop's file is never touched. When
+in place of the laptop's value. The laptop's file is never touched. Once
 the machine stops or is destroyed, the child is revoked.
 
 Providers fall into three groups (full table with endpoints in the main
@@ -218,8 +218,7 @@ Design points:
   `api.anthropic.com`, because the Claude login share (I-278) talks to it
   and Repose never opens that login. The docs advise a Console key with an
   expiry, in a workspace of its own. Workload identity federation (which
-  AWS, GCP, OpenAI and Anthropic support) would remove the parent key
-  entirely. It needs a spike before anyone promises it.
+  AWS, GCP, OpenAI and Anthropic support) would remove the parent key. It needs a spike before anyone promises it.
 - **Build small.** Infisical, Vault, OpenBao and Doppler don't cover Stripe,
   Resend, SendGrid, Twilio, Vercel, Anthropic or Cloudflare. Each provider
   Repose needs is a few dozen lines against its API: create with scope and
@@ -236,9 +235,9 @@ snapshot" extends to a hosted database.
 A branch copies data. A branch of production hands the agent every
 customer row, and open egress lets them out. Branch from a dev or staging
 parent, or schema-only where the provider allows it. Branching protects
-against destruction, not against theft.
+against destruction only.
 
-This only matters for users whose `DATABASE_URL` points at a hosted
+Branching matters only for users whose `DATABASE_URL` points at a hosted
 database. Compose users already have it through the snapshot. The study
 decides whether it earns a place in the pitch.
 
@@ -246,7 +245,7 @@ decides whether it earns a place in the pitch.
 
 The owner's idea was a browser with something like Bitwarden, where the
 agent logs in as the user without being able to read the password.
-Hiding the password is easy. The session is the problem:
+Hiding the password is easy; protecting the session is hard:
 
 - A filled password sits in the page, where an agent with root can read it.
   1Password's agent autofill, Bitwarden's Agent Access SDK, Steel, Kernel
@@ -261,11 +260,11 @@ Proposed, in order of cost:
 
 1. **Document the takeover login (works today).** The user opens
    `repose open --desktop`, types the password once, and the machine's
-   browser keeps the login. The docs say the trade plainly: the agent can
+   browser keeps the login. The docs state the trade: the agent can
    use that session, and it is in snapshots. Never put a TOTP seed in the
    machine.
-2. **Document the agent's own identity for new services.** When the agent
-   needs a new service, it creates one without the user's account and the
+2. **Document the agent's own identity for new services.** An agent that
+   needs a new service creates one without the user's account, and the
    user claims it later: Neon Claimable Postgres (no account, 72 hours
    unless claimed), Vercel claimable deployments, Clerk keyless dev apps.
    This covers "let the agent sign up for things" without risking anything
@@ -279,7 +278,7 @@ Proposed, in order of cost:
    fourth secret home, and it is the largest build in the research. Wait
    until users ask for agents in their existing dashboards.
 
-Device Bound Session Credentials would solve this cleanly, but in 2026
+Device Bound Session Credentials would solve this, but in 2026
 they run only in Chrome on Windows with a TPM, and almost no site besides
 Google uses them.
 
@@ -385,7 +384,7 @@ the main report, section 2. The questions that decide this proposal:
 | Now | Opt-out for copying `.env` files | Yes, amends I-197 |
 | Now | Docs: the `.env` norm, takeover login, claim flows, the hand-made fine-grained GitHub token | No |
 | Deferred by the owner | Fix `index.md:8` and the `.env.production` example | No |
-| Now | User study and Docker head-to-head | — |
+| Now | User study and Docker head-to-head | n/a |
 | After a "continue" | GitHub App, per-run one-repo tokens, secure mode stops the `gh` copy | Yes, amends I-150 |
 | If the study says users hand over parent keys | Credential manager with the two providers they name, revoke on stop, orphan sweep | Yes |
 | If hosted databases are common | Branch per machine, Neon first | Yes |

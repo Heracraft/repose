@@ -114,8 +114,8 @@ will replace it").
 One failure is said once, in the words `errorText` (`lib/api/errors.ts`)
 gives it: the api's `message`, except for `internal`, whose bare "internal
 error" becomes the caller's sentence plus "The API failed on its side; try
-again shortly." (I-390). Where it is said depends on what the page still
-has:
+again shortly." (I-390). The place it is said depends on what the page
+still has:
 
 - A page's first load that fails leaves nothing to show, so the page shows
   that sentence in a `.banner--error` with a Retry (`LoadState.svelte`,
@@ -225,7 +225,7 @@ running"; the list has no cost columns.
 ## 8. Rollback
 
 Coolify keeps previous images; roll back to the previous one from its
-deployment history. That is the one deploy that is not automatic — a push
+deployment history. That is the one deploy that is not automatic: a push
 to `main` redeploys forward on its own (`docs/ops/coolify.md` fact 16),
 so a rollback is always a deliberate act. The dashboard holds no state,
 so there is nothing to migrate. If a new dashboard depends on
@@ -249,7 +249,7 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       `redirect_uri` refused); the GitHub click is not, because this
       session cannot sign in. The remaining seven tests are written and
       skip with the command that arms them:
-      `pnpm --filter web run live:auth` once, then `run live`. — waits on:
+      `pnpm --filter web run live:auth` once, then `run live`. Waits on:
       owner (the GitHub sign-in in a browser: `pnpm --filter web run
       live:auth` from apps/web, then `run live`; CHECKLIST-AUDIT.md "Waits on
       the owner").
@@ -260,7 +260,7 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       asserts the same of production.
 - [x] Projects list and detail poll at 10 s visible / 60 s hidden and stop
       when the tab is closed. Evidence: `src/lib/poll.test.ts`, 8 tests on
-      fake timers — the 10 s and 60 s intervals, the 60 s backoff while the
+      fake timers: the 10 s and 60 s intervals, the 60 s backoff while the
       api is unreachable (§6), a visibility change rescheduling at once
       rather than waiting out the old interval, `stop()` ending it, and a
       slow poll not overlapping itself.
@@ -323,8 +323,8 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       card, capacity, destroy typed wrong, and a secret over 64 KB on
       both input paths. Not covered: **access-token refresh failure**,
       which the fake Logto cannot be made to refuse, and **`POST
-      /me/notify-test` missing**, which the fake always answers — both
-      need a fake that can fail on demand, not a new page behaviour. — open:
+      /me/notify-test` missing**, which the fake always answers. Both
+      need a fake that can fail on demand, and no new page behaviour. Open:
       tests for access-token refresh failure and a missing `POST
       /me/notify-test`, which need the fake Logto and `internal/fakes/api` to
       fail on demand.
@@ -338,14 +338,14 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       and it is not zero.** `ops/deploy-probe.sh`, three loops at 5/s,
       29,841 responses, 7 switchovers (5 `web`, 2 `api`): every one loses
       one or two requests per client, at a delay fixed per application
-      (`web` +11/+12 s, `api` +26 s — each image's `HEALTHCHECK` start
+      (`web` +11/+12 s, `api` +26 s: each image's `HEALTHCHECK` start
       period, so the loss is at the *removal* of the old container, not a
       health-check failure). Almost all are 5 s hangs; one was a 502. The
       table and the cause are `docs/ops/coolify.md` fact 13; the drain is
       a proxy-side question with the owner.
 - [x] Landing page contains the install command, pricing table matching
       `PRICING.md`, and links to terms and privacy. Evidence:
-      `tests-live/public.spec.ts` against production — the three tier rows
+      `tests-live/public.spec.ts` against production: the three tier rows
       checked cell by cell against `docs/PRICING.md`, the storage, egress
       and trial lines, both legal links followed, and a full-page
       screenshot attached to the run. `/install.sh` is asserted to return
@@ -368,6 +368,6 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       match what the pages do. Evidence: re-read; and two *other* feature
       docs did not match and were corrected rather than left
       (`status-and-logs.md` and `notifications.md` promised a dashboard
-      nobody specified — DECISIONS I-96).
+      nobody specified, DECISIONS I-96).
 - [x] `ops/RUNBOOK.md` has: dashboard up but API bar showing, sign-in loop.
       Evidence: both entries exist under those names.

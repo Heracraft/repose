@@ -11,7 +11,7 @@ subscription. This page is the whole path from "here is a sandbox token"
 to the evidence for the open rows of `docs/workstreams/09-billing.md` §9,
 in one sitting.
 
-What the owner provides, exactly:
+The owner provides exactly this:
 
 1. **A Polar sandbox organization** (sandbox.polar.sh; production runs
    the organization `repose` there until launch) with an **organization

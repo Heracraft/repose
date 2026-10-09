@@ -4,7 +4,7 @@
 `research_notes/Repose feature research/feature_research.md`; read the
 Errata box at its top first. On 2026-09-26 the owner had the items in the first rows built
 (table below) and asked for the rest to be left documented here. Nothing
-below is built. Where this file and a decision entry disagree, the entry
+below is built. If this file and a decision entry disagree, the entry
 wins.
 
 | Item | Outcome |
@@ -36,7 +36,7 @@ its values (I-197, `internal/cli/carry_env.go:44-60`). Egress is open
 machine can push to or delete any repo the user can write to, deploy with
 the Vercel login, or use a production key in `.env`. A snapshot undoes
 none of that. `docs/SECURITY.md:249-251` calls this "the same exposure as
-on the tenant's laptop", which stops being true once the pitch is agents
+on the tenant's laptop", which no longer holds once the pitch is agents
 with full permissions left unattended.
 
 **Smallest version (S, 1-2 days).**
@@ -112,7 +112,7 @@ work back into the laptop checkout for review.
 `Host <slug>.repose` block into `refs/remotes/repose/*`, plus the
 machine's uncommitted work as a `git stash create` ref; `repose diff`
 shows it; never auto-merge; `status` shows drift ("laptop is N commits
-ahead"). Its real value is pairing with item 1: a machine with no write
+ahead"). Its value is pairing with item 1: a machine with no write
 token whose work you review and push from the laptop. Needs an entry
 amending the "no reverse sync" line of `features/sync-at-launch.md`; it
 keeps git as the exchange channel (R1-3).

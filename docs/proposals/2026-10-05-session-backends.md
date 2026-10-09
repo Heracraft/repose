@@ -3,7 +3,7 @@
 **Status: decided 2026-10-05, being built.** The owner answered every
 question in section 1; the decisions are DECISIONS I-501..I-511, the
 contracts are in `docs/interfaces/` and `docs/features/`, and the work
-is split in `docs/workstreams/16-multiplexer.md`. Where this proposal
+is split in `docs/workstreams/16-multiplexer.md`. If this proposal
 and those docs differ, the docs win. Code anchors are checked against
 `main` at `0bc05325`. herdr anchors are against its source at
 `c4653a4f` (v0.9.3 plus 42 commits) unless a release is named.

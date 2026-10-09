@@ -15,9 +15,9 @@ repose is a monthly plan. You choose one before your first machine starts, with 
 
 \*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. Until the $29 month starts, the egress allowance is 100 GB a month: $0.05 a GB is charged past 100 GB, and your machines stop at 400 GB. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
 
-Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan says how much of that may run at the same time; projects cost nothing while stopped, and the month costs the same however many hours run.
+Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan's memory is how much runs at the same time, around the clock: the month costs the same however many hours your machines run. Every plan keeps up to 100 projects, and a stopped one costs nothing.
 
-An agent session needs a `large` to finish its work: a coding agent with its language servers, builds and browser fills 8 GB, and a `small` runs out of memory partway through. So pick by how many agents you want working at once: one on Solo, two on Plus, four on Pro.
+An agent session needs a `large` to finish its work: a coding agent with its language servers, builds and browser fills 8 GB, and a `small` runs out of memory partway through. Pick by how many agents you want working at the same time: one on Solo, two on Plus, four on Pro.
 
 ## The free week
 
@@ -64,7 +64,7 @@ Paying at any point before day 33 unblocks starts. It does not start your machin
 
 ## Refunds
 
-The first charge after the free week is refunded on request within 14 days of it. Renewals are not refunded for a part month; cancelling stops the next one. Refunds go back to the same card. [The full statement](/refunds).
+Under the [refund policy](/refunds), the first charge after the free week is refunded on request within 14 days of it. Renewals are not refunded for a part month; cancelling stops the next one. Refunds go back to the same card.
 
 ## Deleting your account
 

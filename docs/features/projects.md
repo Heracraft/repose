@@ -57,7 +57,7 @@ Identity:
   there is none; it never lands on a project of another name (DECISIONS
   I-348). A NAME that is another repository's project exits 2 instead of
   syncing one repository into the other's machine: by its remote, or,
-  when either side has none, by history (I-631). When the laptop knows
+  when either side has none, by history (I-631). If the laptop knows
   none of the commits the machine's checkout has refs to, one more ssh
   asks the checkout for the laptop's root commits; a checkout with none
   of them is another repository's (`job's checkout shares no commit with
