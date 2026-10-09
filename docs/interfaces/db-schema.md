@@ -9,7 +9,8 @@ trigger. Ids are `uuid` (UUIDv7 generated in Go). Money is `bigint` cents.
 ```sql
 users        (id pk, logto_sub text unique, handle text unique, email text,
               github_login text, tz text, notify_email bool, ntfy_url text,
-              paddle_customer_id text unique,  -- was stripe_customer_id (0008, I-289)
+              billing_customer_id text unique,  -- Polar's customer id; was stripe_customer_id (0008, I-289),
+                                               -- then paddle_customer_id (0020, I-604)
               billing_anchor timestamptz,   -- signup; unused since I-289, the period is the subscription's
               past_due_since timestamptz,   -- first failed payment; the 3-day stop reads it
               billing_status text,  -- none|trial|active|past_due|suspended|exempt (I-16, I-289): a
@@ -122,26 +123,31 @@ credit_ledger (id pk, user_id fk, cents bigint, reason text, ref text, created_a
               -- reason: trial|usage|goodwill|refund|adjustment; ref is
               -- '<project_id>:<hour>' for a usage debit, unique among reason='usage'
 
-subscriptions (id text pk,  -- Paddle's subscription id (0008, I-289)
-              user_id fk, paddle_customer_id text, plan text,  -- solo|plus|pro (0011, I-362)
+subscriptions (id text pk,  -- the provider's subscription id (0008, I-289; Polar's since 0020, I-604)
+              user_id fk, customer_id text,  -- was paddle_customer_id (0020)
+              provider text not null default 'polar',  -- paddle|polar (0020, I-604); rows before it are 'paddle'
+                                       -- 0020 ends every live 'paddle' row and sets its account's billing_status to none
+              plan text,  -- solo|plus|pro (0011, I-362)
               status text,  -- trialing|active|past_due|paused|canceled; at most one live per user
               seats int, period_start, period_end, next_billed_at, trial_end,
               cancel_at null,          -- a scheduled cancellation takes effect here
               scheduled_plan text null, -- a downgrade waiting for period_end
               overage_charged_for timestamptz null,  -- period_start of the last period whose egress line was sent
               intro boolean,           -- carries the introductory discount (0016, I-497)
-              intro_until timestamptz null,  -- when Paddle says it ends; null until Paddle fixes it
+              intro_until timestamptz null,  -- the trial's end (or the start) plus the intro months (I-604)
               created_at, updated_at)
 
-paddle_events (id text pk, type text, occurred_at, received_at, processed_at, error text)
-              -- Paddle's event_id is the dedupe key for webhook replays (I-289)
+billing_events (id text pk, type text, occurred_at, received_at, processed_at, error text)
+              -- was paddle_events (0020, I-604); the webhook-id is the dedupe key for replays
 
 overage_charges (subscription_id fk, period_start, egress_gb numeric, cents bigint,
-              paddle_transaction_id text null, created_at, primary key (subscription_id, period_start))
-              -- one egress line per period, written before the charge is sent (I-289)
+              sent_ref text null, created_at, primary key (subscription_id, period_start))
+              -- one egress line per period, written before it is sent (I-289); sent_ref,
+              -- was paddle_transaction_id (0020, I-604), is the external id
+              -- 'overage:<subscription>:<period start unix>' Polar accepted the meter event under
 
 invoices     (id pk, user_id fk, stripe_invoice_id text unique, period_start,
-              period_end, total_cents, status text)  -- unused since I-289; invoices are read from Paddle
+              period_end, total_cents, status text)  -- unused since I-289; invoices are read from Polar's orders (I-604)
 
 audit_log    (id pk, ts, actor text, action text, target text, detail jsonb)
               -- every Exec, every admin action, every cert issue and revoke
@@ -194,7 +200,7 @@ delivered_at is null`, `questions(deliver_command_id)`, `usage_hours(hour) where
 stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, created_at)`,
 `subscriptions(user_id) where status in (live) unique`, `subscriptions(user_id,
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
-`paddle_events(received_at desc)`,
+`billing_events(received_at desc)` (`billing_events_received`, 0020),
 `ops(state) where state in ('pending','running')`, `events_outbox(next_at)`,
 `events(user_id, ts desc) where user_id is not null`, `waitlist(joined_at,
 user_id) where invited_at is null`, `waitlist(hold_until) where invited_at

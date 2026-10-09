@@ -39,9 +39,9 @@ API does not do for it.
 - Web terminal to the guest (DECISIONS R4-18, not built).
 - Preview URLs (DESIGN §7, later).
 - Teams, org switching (R5-6).
-- Any card form of its own (09-billing owns the Paddle side; the dashboard
-  opens Paddle.js with the transaction `POST /billing/checkout` returns and
-  links to Paddle's portal, DECISIONS I-289).
+- Any card form of its own (09-billing owns the Polar side; the dashboard
+  sends the browser to the hosted checkout URL `POST /billing/checkout`
+  returns and links to Polar's customer portal, DECISIONS I-289, I-604).
 - Admin or operator views (`repose-admin`, 05).
 
 ## 4. Interfaces
@@ -69,8 +69,8 @@ the API's audience check is the control.
 The dashboard has no `+server.ts` routes except `/healthz`. Nothing in
 `apps/web` reads an environment secret; the only build-time env values are
 `PUBLIC_API_URL`, `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`
-(the Paddle client token comes from `GET /billing`, not the build,
-DECISIONS I-289).
+(the dashboard needs no Polar value at all: the checkout is a URL the
+api returns, DECISIONS I-604).
 
 ### 5.2 Routes
 
@@ -82,7 +82,7 @@ DECISIONS I-289).
 | `/projects/[id]` | header with state and actions (Start, Stop, Destroy with confirm typing the slug); cards: connect (`repose run` and `ssh <slug>.repose`), signals (ssh sessions, tmux clients, agents and their state, docker containers, updated N s ago), cost (today, month, projected month at current run rate, using `GET /usage`), disk (used / allocated, Resize with a size picker), events (list from `GET /events`, newest first, agent icon, summary), snapshots (list, Create, Restore with confirm, restore-as-new with a name field), last build (status, link to config) |
 | `/projects/[id]/config` | two tabs: **Menu** and **Nix**. Menu: groups from `GET /catalog` rendered as checkbox lists with descriptions and a search box, plus a "Services" group for things like Postgres and Redis if the catalog has them; Apply sends `{menu}`. Nix: CodeMirror 6 editor with Nix syntax, Apply sends `{fragment}`. Both then open the build log panel (SSE from `/ops/:op/log`), auto-scrolled, and on failure show the error block with the fragment line highlighted in the editor. Revisions list with Re-apply. A `Hold base updates` toggle (PATCH `hold_base_updates`) with the current base version and its changelog. |
 | `/projects/[id]/secrets` | list of names with dates; Add (name, value textarea or file upload, client validates the name regex); Delete with confirm. Values are never displayed after save. |
-| `/billing` | the plan page (§5.8, DECISIONS I-289, I-290): plan cards and Paddle's checkout while there is no subscription and a seat is free, the waitlist while there is none, and with a subscription the plan, its status, usage of the plan, plan changes, cancellation, Paddle's portal and the invoices. |
+| `/billing` | the plan page (§5.8, DECISIONS I-289, I-290): plan cards and Polar's hosted checkout while there is no subscription and a seat is free, the waitlist while there is none, and with a subscription the plan, its status, usage of the plan, plan changes, cancellation, Polar's customer portal and the invoices. |
 | `/settings` | timezone (auto-detected default, select; saved on change, and the detected zone is stored when the account has none), email notifications toggle (saved on change), ntfy URL field with its own Save and a "Send test" button (I-332) (calls `POST /me/notify-test`, added to `interfaces/api.md` by this workstream if missing: see §6), install command, SSH config hint. Since I-578 it also carries what `/account` had: the account section first (handle, email, GitHub login, `id="account"`), machine.nix (`#machine-nix`), and Delete account last (`#delete-account`). |
 | `/account` | a permanent redirect (308) to `/settings`, whose sections took its content: handle, email, GitHub login, Delete account (types handle, calls `DELETE /me`, explains 30-day retention) (I-578). |
 | `/healthz` | `200 ok` |
@@ -173,8 +173,8 @@ names the tests use (`data-testid`):
 | plan cards | no subscription, some `plans[].available` | `seats-line` ("18 seats left."), then `plan-solo` and `plan-pro` from `plans`: name, `price_cents` a month, "Running at once" (`memory_gb`: one large, or two small / one xl, two large, or any mix), disk, egress a month (no project count, I-569), "7 days free, card at checkout, cancel any time.", a "Choose Solo/Pro" button; an unavailable plan's button is disabled with "Needs N seats; M free." |
 | held seat | `waitlist.hold_until` in the future | `seat-held` ("Your seat is held until <time> (<n> left). Choose a plan before then.") over the plan cards |
 | full | no subscription, no plan available, no hold | `full`: "repose is full", "Every seat is taken and W people are waiting.", `join-waitlist` (`POST /billing/waitlist`); with a place, `waitlist-place`: "You're number N on the waitlist. We'll email <email> when a seat frees; you'll have 72 hours to choose a plan." |
-| checkout | "Choose" pressed | `POST /billing/checkout {plan}`; Paddle.js (`https://cdn.paddle.com/paddle/v2/paddle.js`, loaded here only) `Environment.set('sandbox')` when sandbox, `Initialize({token, eventCallback})`, `Checkout.open({transactionId, settings: {displayMode: overlay, theme: the page's scheme, successUrl: /billing?checkout=done}})`; `environment: fake` calls `window.__reposePaddleStub.open` instead (`src/lib/paddle.ts`); `503 waitlisted` reloads into the full state with the place |
-| setting up | `checkout.completed`, or `?checkout=done` with no subscription | `setting-up` ("Setting up your plan"), `GET /billing` every 2 s up to 60 s until `subscription` is set, then the plan; after 60 s a warn banner and the cards again |
+| checkout | "Choose" pressed | `POST /billing/checkout {plan}` → `{url}`; the page sends the browser there (`window.location.assign`), to Polar's hosted checkout, which returns it to `/billing?checkout=done` (I-604); no payment script loads on any page; `503 waitlisted` reloads into the full state with the place |
+| setting up | `?checkout=done` with no subscription | `setting-up` ("Setting up your plan"), `GET /billing` every 2 s up to 60 s until `subscription` is set, then the plan; after 60 s a warn banner and the cards again |
 | plan | `subscription` set | `plan`: name, price a month, `plan-status` ("Trial. First charge of $29 on <date>." / "Active. Renews <date>." / "Payment past due since <date>." / "Cancelled. Ends <date>; machines stop then and snapshots stay 30 days." plus "Changes to Solo on <date>." with `scheduled_plan`); three `Meter` bars `meter-running-now` (`running_gb` of `memory_gb`), `meter-disk-held` (`disk_held_gb`, else `disk_allocated_gb`, of `disk_gb`; over it, "Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less. A deleted file stops counting within a day, or when its machine stops.", I-585), `meter-egress-this-period` (with "Over by N GB: $x on the next invoice at $0.05 a GB." when `overage_cents > 0`); no project count (I-569); buttons Change plan, Cancel plan, "Manage card and receipts" (`POST /billing/portal`); Resume plan instead of the first two while `cancel_at` is set |
 | past due | `subscription.status = past_due` | `status-past-due` banner with "Update card" (`POST /billing/portal {"for":"payment_method"}`) over the plan |
 | suspended | `me.billing.status = suspended` | `status-suspended` banner with "Update card and pay" over the plan |
@@ -290,19 +290,19 @@ suites back most of it: `apps/web/tests/` against `internal/fakes/api`
       every state of the plan page against the fake. Evidence:
       `tests/billing.spec.ts` 13/13 on 2026-09-27 (billing off; the plan
       cards from `GET /billing`; one seat free; a checkout through the
-      Paddle stub to a trialing plan; `?checkout=done`; full, the waitlist
-      and the place; the held seat; trial with the overage line; active
-      with Paddle invoices and the portal; past due and suspended; upgrade
+      Paddle stub (replaced by the redirect in I-604) to a trialing plan;
+      `?checkout=done`; full, the waitlist and the place; the held seat;
+      trial with the overage line; active with the invoices and the portal; past due and suspended; upgrade
       and the `over_plan` conflict; a scheduled downgrade and its undo;
       cancel and resume), `tests/landing.spec.ts` 3/3 (the plans, the seats
       line free and full, the Refunds link), `tests/routes.spec.ts`
       "/terms, /privacy and /refunds render". Captures of each state at
       390 and 1440, light and dark, were looked at at 1x before closing.
-- [ ] Billing against Paddle's sandbox: a checkout with a test card through
-      the real overlay makes the account `trial`; the CSP admits Paddle.js
-      and its frame. Evidence: a recording against the deployed dashboard
-      with `PADDLE_*` set (`docs/ops/M4-GATE.md`). Open, waits on the owner
-      for the sandbox keys.
+- [ ] Billing against Polar's sandbox: a checkout with a test card on
+      Polar's hosted page returns to `/billing?checkout=done` and the page
+      shows the account `trial`; the CSP names no payment host (I-604).
+      Evidence: a recording against the deployed dashboard with `POLAR_*`
+      set (`docs/ops/M4-GATE.md` step 2).
 - [x] The six `payment_required` reasons on the project page (§5.5).
       Evidence: `tests/failure-modes.spec.ts` 7/7 on 2026-09-27
       (`subscription_required` with "Choose a plan", no reason with

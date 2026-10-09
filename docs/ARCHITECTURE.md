@@ -14,7 +14,7 @@ a content hash, not a promise.
 | Component | Runs on | Language | Talks to |
 |---|---|---|---|
 | `repose` (CLI) | laptop | Go | api (HTTPS), gateway (SSH), Logto (browser) |
-| `api` | Coolify VM | Go | Postgres, Logto JWKS, Paddle, Key Vault, hostd (gRPC server side), Resend, ntfy |
+| `api` | Coolify VM | Go | Postgres, Logto JWKS, Polar, Key Vault, hostd (gRPC server side), Resend, ntfy |
 | dashboard | Coolify VM | SvelteKit | api |
 | Logto | Coolify VM | (upstream) | GitHub |
 | `gateway` | edge VM | Go | api (project lookup, revocation), guests over WireGuard |
@@ -64,7 +64,7 @@ hostd timer or api Stop ─▶ hostd ─vsock Freeze─▶ guestd fsfreeze -f /
 ```
 hostd every 60s: per guest {running, class, cpu_secs, mem_rss, net_bytes, disk_alloc}
 guestd every 60s: {ssh_sessions, tmux_clients, agent_procs[], docker_containers, proc_samples[]}
- ─▶ hostd ─gRPC Samples─▶ api ─▶ meter_samples (Postgres) ─hourly rollup─▶ usage rows ─▶ egress overage line (Paddle)
+ ─▶ hostd ─gRPC Samples─▶ api ─▶ meter_samples (Postgres) ─hourly rollup─▶ usage rows ─▶ egress overage event (Polar meter)
  ─▶ hostd /metrics (Prometheus over WireGuard) ─▶ Grafana
 ```
 

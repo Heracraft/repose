@@ -81,16 +81,16 @@ backup schedule, and the Traefik drain for rolling deploys
 
 Workstreams: `09-billing`.
 
-Gate (DECISIONS I-289): in Paddle's sandbox, a checkout with a test card
-creates a `trialing` subscription and a seat and the webhook makes the
-account `trial`; a simulated `transaction.completed` makes it `active`; a
-simulated `transaction.payment_failed` makes it `past_due` and the 3-day
-tick stops the machine; an egress overage for a known number of GB appears
-on the next transaction to the cent.
+Gate (DECISIONS I-289, I-604): in Polar's sandbox, a checkout with a test
+card creates a `trialing` subscription and a seat and the webhook makes
+the account `trial`; ending the trial charges the first period and makes
+it `active`; a renewal on a card that fails makes it `past_due` and the
+3-day tick stops the machine; an egress overage for a known number of GB
+appears on the renewal order to the cent.
 
-*Where it stands, 2026-09-27: rebuilt on Paddle (I-289, ws/paddle); the
-gate waits on the owner's sandbox key, after which `ops/M4-GATE.md` is the
-runbook.*
+*Where it stands, 2026-10-08: moved from Paddle to Polar (I-604, ws/polar);
+`ops/M4-GATE.md` is the runbook, against the sandbox organization
+production runs on.*
 
 ## M5. Public
 
@@ -105,7 +105,7 @@ alerts, runbook and the published privacy policy are closed. Open in
 `CHECKLIST.md` "Release (M5)": a second human on their own laptop, the
 installer on real macOS and Linux arm64 machines, the Postgres backup
 schedule, restore onto a different host and host loss (both need a second
-host), and the Paddle sandbox gate (M4). The b1a5915 row is settled by I-193
+host), and the Polar sandbox gate (M4). The b1a5915 row is settled by I-193
 (key rotated, history kept) but not yet ticked.*
 
 ## Later, in order of likely demand

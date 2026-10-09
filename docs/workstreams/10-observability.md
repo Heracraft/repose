@@ -215,7 +215,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
 | `RollupLag` | `repose_api_rollup_lag_seconds > 2*3600` | warn |
-| `PaddleWebhookRejected` | `sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m])) >= 5` | warn |
+| `BillingWebhookRejected` | `sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m])) >= 5` | warn |
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |
 | `BillingStopped` | `sum by (reason) (increase(repose_api_billing_stops_total[1h])) > 0` | info |
 | `EgressBlocked` | `repose_host_egress_blocked_guests > 0` for 2m (I-238..I-240) | warn |

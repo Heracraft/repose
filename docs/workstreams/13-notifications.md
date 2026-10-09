@@ -35,7 +35,7 @@ every agent, so `repose status` and the dashboard show one timeline.
   designed so they are one file each later).
 - Anything with Claude Code Remote Control or channels: those belong to the
   user's own Claude login and the platform does not touch them.
-- Email for auth or receipts (Logto and Paddle send their own; the account emails of I-291 are ours).
+- Email for auth or receipts (Logto and Polar send their own; the account emails of I-291 are ours).
 
 ## 4. Interfaces
 

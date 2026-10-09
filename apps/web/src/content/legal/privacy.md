@@ -1,6 +1,6 @@
 ---
 title: Privacy policy
-effective: 2026-09-27
+effective: 2026-10-08
 status: this policy is under review before launch. The two sentences in bold under "Process samples" already bind the service today.
 ---
 
@@ -92,11 +92,12 @@ Environments and their disks run on virtual machines in Microsoft Azure
 (East US). Snapshots are in Azure Blob Storage in the same region. Our
 database runs on a virtual machine in the same region and is backed up
 nightly to Cloudflare R2. Identity is handled by a Logto instance we run
-ourselves; GitHub sees only the sign-in. Payments are handled by Paddle,
-the merchant of record: at checkout Paddle receives your email address,
-your country (for tax) and your card, and holds them under
-[Paddle's privacy policy](https://www.paddle.com/legal/privacy). We hold
-Paddle's identifiers for your customer and subscription, your plan and
+ourselves; GitHub sees only the sign-in. Payments are handled by Polar,
+the merchant of record: at checkout Polar receives your email address,
+your country (for tax) and your card, which it processes through Stripe,
+and holds them under
+[Polar's privacy policy](https://polar.sh/legal/privacy-policy). We hold
+Polar's identifiers for your customer and subscription, your plan and
 its status, the dates of the period and the invoice totals, never card
 numbers. Email notifications are sent through Resend;
 push notifications go to the ntfy endpoint you configure, which may be a

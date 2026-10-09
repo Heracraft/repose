@@ -86,12 +86,12 @@ a day.
     Confirm the GitHub connector is enabled. Copy the app ids and the
     issuer URL; agents need them as environment variables, never in git.
 
-13. **Paddle.** A sandbox account is enough to start (DECISIONS I-289).
-    Create an API key (Developer tools > Authentication; `pdl_sdbx_...`)
-    and a client-side token (`test_...`). The objects the api needs are
-    step 17, once there is a hostname to point the webhook at. The live
-    account, its domain review and the `/refunds` page it asks for are a
-    milestone M4 gate, not a prerequisite.
+13. **Polar.** A sandbox organization at sandbox.polar.sh is enough to
+    start (DECISIONS I-604). Create an organization access token
+    (Settings > Developers; `polar_oat_...`) with the scopes the bootstrap
+    names when one is missing. The objects the api needs are step 17, once
+    there is a hostname to point the webhook at. The production
+    organization is a launch step (`LAUNCH.md`), not a prerequisite.
 
 14. **Resend.** Verify the sending domain (`herakraft.co` or
     `repose.herakraft.co`) and copy an API key.
@@ -109,41 +109,49 @@ a day.
     upstream (DECISIONS I-46). Until then builds fetch the release
     binaries themselves, which is slower, not wrong.
 
-17. **Paddle objects and the webhook** (after the api has a hostname; do it
-    in the sandbox first and repeat in live before launch). Nothing is
-    clicked together by hand (DECISIONS I-289). With the API key from
-    Paddle's dashboard (Developer tools > Authentication), from a checkout
-    of this repository:
+17. **Polar objects and the webhook** (after the api has a hostname; do it
+    in the sandbox first and repeat in production before launch). Nothing
+    is clicked together by hand (DECISIONS I-604). With the organization
+    access token, from a checkout of this repository:
 
     ```
-    ops/paddle/bootstrap.sh > /tmp/paddle.env     # prompts for pdl_sdbx_...
+    ops/polar/bootstrap.sh > /tmp/polar.env     # prompts for polar_oat_...
     ```
 
-    It creates, or finds on a rerun: the products `repose Solo`,
-    `repose Plus` and `repose Pro` with one monthly price each ($29, $59
-    and $99, seven-day trial, `custom_data.repose = solo|plus|pro`); the product `repose egress overage`
-    the $0.05/GB line is charged under; and the notification destination
-    `https://api.repose.herakraft.co/v1/billing/webhook` subscribed to the
-    ten events of 09-billing.md §5.11 (`subscription.*`,
-    `transaction.completed`, `transaction.payment_failed`). It refuses a
-    live key unless given `--live`. `/tmp/paddle.env` is the block to paste
-    into the api's Coolify environment (both `api` and `api-grpc`):
-    `PADDLE_PRICE_SOLO`, `PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`,
-    `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`,
-    `PADDLE_WEBHOOK_SECRET`; add `PADDLE_API_KEY` and `PADDLE_CLIENT_TOKEN`
-    from the dashboard beside them. Coolify restarts the app itself. Delete
-    the file afterwards: it holds the webhook secret.
+    It uses `POLAR_ENVIRONMENT` (sandbox by default) and points the
+    webhook at `https://api.repose.herakraft.co/v1/billing/webhook` unless
+    given `--webhook-url`. It creates, or finds on a
+    rerun by `metadata.repose`: the meter "Egress overage" (events named
+    `egress_overage`, the sum of `metadata.gb`); the products `repose
+    Solo`, `repose Plus` and `repose Pro`, each with its monthly price
+    ($29, $59, $99), a metered price of 5 cents a unit on that meter and a
+    seven-day trial; the introductory discount ($9 off, repeating 3 months,
+    Solo's product only, no code); and the webhook endpoint (raw format,
+    `api_version` 2026-10) subscribed to the eight events of 09-billing.md
+    §5.11. It also sets the organization: one subscription per customer,
+    trial abuse prevention, plan and seat changes off in the customer
+    portal, metered usage shown, prices exclusive of tax, and Polar's
+    customer emails that repose sends itself (trial ending, past due,
+    cancellation, revoked, updated) off. It refuses a
+    production organization unless given `--production`. `/tmp/polar.env`
+    is the block to paste into the api's Coolify environment (both `api`
+    and `api-grpc`): `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
+    `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` and,
+    on the run that creates the endpoint, `POLAR_WEBHOOK_SECRET` (a rerun
+    names the endpoint's page in Polar, which shows it); add
+    `POLAR_ACCESS_TOKEN` beside them. Coolify restarts the app itself. Delete the file afterwards: it holds the webhook secret.
 
-    Tax needs nothing here: Paddle is the merchant of record and adds it
+    Tax needs nothing here: Polar is the merchant of record and adds it
     at checkout for the buyer's country.
 
-    Until `PADDLE_API_KEY` is set the api runs normally, the billing routes
-    answer `503 billing_disabled` and every start of a non-exempt account is
-    refused with `subscription_required` (DECISIONS I-16, I-289); with it
-    set but the webhook secret, a price or the overage product missing, the
-    api refuses to start rather than selling nothing quietly. The web
-    application needs no secret: the checkout opens with the public client
-    token `GET /billing` hands it.
+    Until `POLAR_ACCESS_TOKEN` is set the api runs normally, the billing
+    routes answer `503 billing_disabled` and every start of a non-exempt
+    account is refused with `subscription_required` (DECISIONS I-16,
+    I-289); with it set but the environment, the webhook secret, a product
+    or the discount missing, the api refuses to start rather than selling
+    nothing quietly. The web application needs no Polar value: the
+    checkout is Polar's hosted page, reached from the URL
+    `POST /billing/checkout` answers.
 
 ## What you do not need to do
 
