@@ -103,8 +103,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **An image you dropped or pasted didn't attach.** See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
-- Cmd+V did nothing on a Mac: you started with `REPOSE_CLIPBOARD_PATH=0`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
-- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_INPUT_PROXY=0` and Windows paste the laptop's path too.
+- Cmd+V did nothing on a Mac: you started with `REPOSE_NO_CLIPBOARD_PATH=1`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
+- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_NO_INPUT_PROXY=1` and Windows paste the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
 
@@ -135,7 +135,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 ## Notifications
 
-**Nothing arrives.** Run `repose notify test`. An `error` means that channel's settings are wrong. If both are `ok`, `repose events` shows whether the event happened; a project sends at most 30 notifications an hour.
+**Nothing arrives.** Run `repose notify test`. `failed` means that channel's settings are wrong, with the reason when ntfy gave one. If each is `sent`, `repose events` shows whether the event happened; a project sends at most 30 notifications an hour.
 
 ## Something else
 

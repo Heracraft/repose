@@ -17430,3 +17430,150 @@ sync`'s refusals no longer offer `--no-sync`, which only `run` has, and
 `sync` ends on its sync line without `Ready in`. Tests:
 `TestArgRefusalsNameTheFix`, `TestNoProjectHintForm`,
 `TestSyncPrecheckNamesNoSyncOnlyForRun`.
+**I-619. One spelling per idea across the CLI: an undo is a verb, a
+group alone runs its listing, each rm also answers to remove, `--as` on
+both restores, `open LOCAL:PORT`, and `--project` only where a project
+is meant.** (2026-10-09, from the CLI reviews of 2026-10-08: D1, D3, D4,
+D8, the theme-7 grammar rows and the 8.5 `open` row) A flag learned on
+one command failed on the next, so each idea now has one name, and the
+old name is hidden for one release:
+- Undo is a subcommand: `repose browser stop [PROJECT]` (was `browser
+  --stop`), `repose mcp rm NAME...` (was `mcp forward --remove`, alias
+  `remove`, and it prints `Removed NAME from PROJECT.` as `secrets rm`
+  does). `notify set --ntfy off` turns ntfy off; `none` still works.
+  A project named `stop` is reached as `repose browser --project stop`,
+  as one named `bridge` already was.
+- `repose secrets`, `repose snapshots` and `repose mcp` alone run
+  `list`, and `repose config` alone runs `show`; a word after them is
+  still a mistyped subcommand with a suggestion, never a project. The
+  bare forms take no flags: `--json` and `-q` stay on `list`, so no
+  flag is listed twice. `secrets rm` and `mcp rm` answer to `remove`,
+  `config remove` to `rm`; `delete` is a suggestion only. The
+  top-level `repose rm` gets no `remove` alias: it destroys a machine,
+  and the suggestion is enough there.
+- `snapshots restore --as NAME` (was `--as-new`), as `repose restore
+  --as`, and `-y` beside `--yes`; a test holds every `--yes` to having
+  `-y`. Its `--as` path ends with `repose restore`'s line: `Restored
+  NEW from SRC's 1.0 GB snapshot of T in 0.2s; it is running (large).`
+- One name for "print the link": `--no-browser` on `open`, `login` and
+  now `browser` (`--no-open` hidden). On `browser bridge`, where it
+  meant "don't open chrome://inspect", the flag is `--no-inspect`.
+- `repose open [LOCAL:]PORT` as ssh -L and docker -p write it;
+  `--local-port` is hidden. The database ports 5432, 3306, 6379 and
+  27017 open no browser and print `localhost:PORT`, not an http URL.
+- `--project` stays the flag-only way to name the project on `open`,
+  `secrets set|rm|import|choose`, `config add|remove|apply` and `mcp
+  forward|rm` (I-155); cli.md lists them under "Which project", and the
+  flag's help says a command whose usage shows `[PROJECT]` takes it
+  there. `ls`, `login`, `logout`, `notify`, `version` and `completion`
+  exit 2 on `--project`, which they ignored; `$REPOSE_PROJECT` is
+  ambient and stays quiet there. `repose restore` reads `--project` as
+  NAME, which it ignored.
+- Snapshot and revision ids are UUIDv7, whose start changes once a
+  minute, so tables show the last 8 characters (`snapshots list`,
+  `config revisions`, and `shortRev` in "Building revision", the same
+  change as devx-status's I-616), and `snapshots restore` and `config
+  apply --revision` take a whole id, its end or its start (4
+  characters or more) when one id has it. An id the project lacks exits
+  2 with ``todo-app has no snapshot ffffffff. `repose snapshots list
+  todo-app` lists them.``, not the api's `not_found`; exit 4 stays "no
+  such project". The no-project hint keeps the id typed:
+  `repose snapshots restore PROJECT abcd1234`.
+Skipped: an `-p` short form for `--project` (I-603 gave `-p` to the
+prompt). `TestEveryYesHasY`, `TestOneSpellingPerIdea`,
+`TestProjectFlagRefusedOnAccountCommands`, `TestBareGroupsRunTheirListing`,
+`TestParseOpenPorts`, `TestMatchID`, `TestResolveSnapshotID`,
+`TestDocsNameEveryCommandAndFlag`.
+
+**I-620. `repose secrets set` reads a piped value, refuses NAME=VALUE
+before asking, and every secrets line names the project.** (2026-10-09,
+reviews F6, 4.5 and the theme-7 and 8.5 secrets rows) `op read ... |
+repose secrets set NAME` is the usual script form, and it used to exit
+2. When stdin is not a terminal (checked with term.IsTerminal, so a
+terminal with TERM=dumb still gets the hidden prompt and never echoes),
+the value is stdin up to 64 KiB less one trailing newline (and a
+carriage return before it); an empty pipe exits 2. NAME is checked
+before any value is read, and `NAME=VALUE` exits 2 with why: the value
+would stay in the shell's history; the message never repeats the
+value. `Set FOO on todo-app; the running machine has it now.`, `Set FOO
+on todo-app; the machine gets it at its next start.` and `Removed FOO
+from todo-app.` replace the lines that named neither the project nor
+the machine (one said "guest"). `secrets list` takes `--json`; on a
+terminal its second heading says the copied logins land on the
+machine's disk, so in its snapshots and forks, which is where a
+production key in `.env.local` goes. `run`'s `Credentials:` line is
+`Logins copied:`. `secrets choose` keeps its name. `TestCheckSecretName`,
+`TestReadPipedSecret`, `TestSecretsLinesNameTheProject`.
+
+**I-621. One name for each size, positive switches, and a Windows
+drive in `repose cp`.** (2026-10-09, reviews D5, D9, D10) The ls column
+is `SIZE` (small, large, xl), as the flag is; `ls --destroyed` names
+the class `SIZE` and the snapshot's bytes `STORED`, as `snapshots list`
+now does, so SIZE means one thing. config.toml's key is `default_size`;
+`default_class` is read for a release and loses to `default_size`. JSON
+keeps `class`: it is the api's field, and renaming it would break every
+script for no keystroke saved. `REPOSE_NO_INPUT_PROXY=1` and
+`REPOSE_NO_CLIPBOARD_PATH=1` join the other `REPOSE_NO_*=1` switches;
+the `=0` spellings are read for a release. In `repose cp`, one letter
+before the colon (`C:\a.txt`, `C:/a.txt`, `d:notes`) is a local path:
+no project name is one character. Completion (D7): `cp` offers
+`PROJECT:` and no laptop files after it, `secrets rm` the project's
+secret names, `snapshots restore` and `restore --snapshot` snapshot
+ids, `config apply --revision` revisions that built, `reply
+--question` waiting questions, `--temp` 1h, 3h and 24h, and `repose
+completion powershell` exists. `TestParseCpSide`,
+`TestClipboardWatchEnabled`, `TestInputProxySwitches`.
+
+**I-622. The CLI reads and switches what flags and the dashboard set:
+`config revisions`, `config apply --revision`, `config --global on|off`,
+`repose notify`, fork remotes, a `setup` line in status, and an
+`editor` key.** (2026-10-09, reviews G3, G4, G5, 4.6, 8.3, 8.4)
+- `repose config revisions [PROJECT]` (`--json`, `-q`) lists revisions;
+  `config show --revisions` is hidden for a release. `repose config
+  apply --revision ID` switches a running machine to an earlier
+  revision that built, through the api's existing re-apply route; the
+  way back after a `config add` broke the machine no longer needs the
+  dashboard.
+- `repose config --global off|on [PROJECT]` turns your machine.nix off
+  or back on for one machine (`PATCH /projects/:id personal_opt_out`,
+  I-490); `run --no-personal` stays the shortcut for off, and its line
+  drops the pointer to the dashboard. `--global` is optional on these
+  two, which only ever mean machine.nix. No `run --personal`: one undo
+  is enough.
+- `repose config set` and `get` are hidden and exit 2 saying the CLI's
+  settings are config.toml keys, with the file's path. No settings
+  verbs were added (8.3). The help of `run --agent` and `--size` names
+  the config.toml key that gives their default, `sync`'s help names
+  `sync.exclude`, and config.toml takes `editor` (code, cursor or zed),
+  under `--editor` and `REPOSE_EDITOR`. CLI help says `repose.nix` for
+  the project's file and "menu" for the dashboard's list, where it said
+  "fragment" and "catalog".
+- `repose status` prints `setup: agent codex, machine.nix off, base
+  updates held`, each part only when it differs from a new project's;
+  nothing when none does. An agent picked when the project was made no
+  longer looks like a CLI that ignores `default_agent`. A sticky `run
+  --agent X --default` is left for the owner to decide.
+- `repose notify` alone prints the settings (`email: on, to ADDRESS`,
+  `ntfy: off` or the URL; `--json`), as `notify set` does after a
+  change. `notify test` prints `sent`, `off` or `failed: REASON` per
+  channel and exits 1 when any channel that is on failed, or none is
+  on. The api adds `ntfy_error` to `POST /me/notify-test` in a few
+  words (the status, a private address, a redirect, a timeout, a name
+  that does not resolve), never the URL; the user owns that URL, so the
+  reason is theirs to act on. Email failures stay `error` alone: they
+  are repose's to fix. The fake api now leaves a channel that is off
+  out, as the real one always did.
+- `repose fork` in a checkout whose `repose` remote is the source's
+  machine adds a fetch-only remote per copy, named after it, at the
+  same checkout folder (a fork is the source's disk), and prints `Added
+  the git remotes todo-app-fork-1 and todo-app-fork-2.` on stderr: it
+  changed the user's repository. `repose rm` of a copy removes its
+  remote; fetched branches stay. A remote of that name that is not the
+  CLI's is left alone. Nothing is added from a checkout without the
+  source's `repose` remote, so no ssh is spent finding a folder.
+Skipped: `status` printing `attached: nobody` in place of `sessions 0
+tmux clients 0` (4.7) and the multiplexer nouns in `ps`, which are
+devx-status's and devx-agents' (I-606: windows are the noun).
+`TestFindRevision`, `TestConfigRevisionsAndApplyRevision`,
+`TestPersonalSwitch`, `TestNotifyShowAndTest`, `TestSetupLine`,
+`TestForkRemotes`, `TestOutboxTestSaysWhyNtfyFailed`.

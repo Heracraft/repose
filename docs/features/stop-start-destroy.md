@@ -140,7 +140,7 @@ Start:
   `conflict` (`<slug>'s host is <state>; restore its latest snapshot onto
   another host`, `detail.host_state`). There is no `start
   --restore-latest`; the way out is `repose snapshots restore <id>
-  --as-new NAME`.
+  --as NAME`.
 - The newest built revision not yet applied (a change that needed a
   reboot, including a base bump) is put in place during start
   (`ops.PendingRevision`).
@@ -214,7 +214,7 @@ Destroy:
   from its newest snapshot or `--snapshot ID`, with its class, volume
   size, configuration and remote (I-167). `repose ls --destroyed`
   and the dashboard's "Recently destroyed" list what can be restored and
-  until when. `repose snapshots restore <id> --as-new <name>` still
+  until when. `repose snapshots restore <id> --as <name>` still
   works. After 30 days the snapshot is deleted by the retention job and
   neither lists it.
 

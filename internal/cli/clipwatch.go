@@ -27,9 +27,9 @@ import (
 // count, never a process per poll. It writes a heartbeat line; once the
 // CLI is gone the write fails and osascript exits with it. When the
 // session ends the CLI takes the text flavour off again, if the clipboard
-// is still the one the watcher wrote. REPOSE_CLIPBOARD_PATH=0 turns the
-// watcher off; REPOSE_INPUT_PROXY=0 turns off the proxy and with it the
-// watcher.
+// is still the one the watcher wrote. REPOSE_NO_CLIPBOARD_PATH=1 turns the
+// watcher off; REPOSE_NO_INPUT_PROXY=1 turns off the proxy and with it the
+// watcher (each also as its old =0 spelling, I-621).
 
 // clipWatchScript is JXA (osascript -l JavaScript). argv[0] is the
 // directory for the PNG copies. It prints "set <changeCount> <path>" for
@@ -121,9 +121,9 @@ var (
 const clipKeep = 20
 
 // clipboardWatchEnabled is the watcher's switch: macOS only, on unless
-// REPOSE_CLIPBOARD_PATH=0.
+// REPOSE_NO_CLIPBOARD_PATH=1 or the old REPOSE_CLIPBOARD_PATH=0.
 func clipboardWatchEnabled() bool {
-	return goos() == "darwin" && os.Getenv(envClipboardPath) != "0"
+	return goos() == "darwin" && os.Getenv(envNoClipboardPath) != "1" && os.Getenv(envClipboardPath) != "0"
 }
 
 // clipboardDir is where the PNG copies go: the user's cache directory,

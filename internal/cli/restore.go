@@ -365,7 +365,7 @@ func destroyedCells(d DestroyedProject) (until, destroyed, snap, size string) {
 func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 	groups := destroyedByName(list)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "PROJECT\tCLASS\tDESTROYED\tSNAPSHOT\tSIZE\tRESTORABLE UNTIL\tEARLIER")
+	_, _ = fmt.Fprintln(tw, "PROJECT\tSIZE\tDESTROYED\tSNAPSHOT\tSTORED\tRESTORABLE UNTIL\tEARLIER")
 	var inUse []DestroyedProject
 	for _, g := range groups {
 		d := g[0]
@@ -391,7 +391,7 @@ func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 
 func writeDestroyedTableAll(w io.Writer, list []DestroyedProject) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "PROJECT\tID\tCLASS\tDESTROYED\tSNAPSHOT\tSIZE\tRESTORABLE UNTIL")
+	_, _ = fmt.Fprintln(tw, "PROJECT\tID\tSIZE\tDESTROYED\tSNAPSHOT\tSTORED\tRESTORABLE UNTIL")
 	for _, g := range destroyedByName(list) {
 		for i, d := range g {
 			until, destroyed, snap, size := destroyedCells(d)

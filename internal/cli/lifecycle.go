@@ -602,6 +602,10 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 		// away (I-272); what was fetched from it stays.
 		r.errOut = append(r.errOut, "Removed the git remote repose; branches already fetched from it stay as repose/*.")
 	}
+	if forgetForkRemote(gitRepoRoot(e.Cwd), project.Slug) {
+		// The remote `repose fork` added for this copy (I-622).
+		_, _ = fmt.Fprintf(e.ErrOut, "Removed the git remote %s; branches already fetched from it stay as %s/*.\n", project.Slug, project.Slug)
+	}
 	temporary := project.ExpiresAt != nil
 	if !wait {
 		pr.Fail()

@@ -32,7 +32,7 @@ func TestRunWithoutSyncStillCopiesToolLogins(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) == "laptop edit\n" {
 		t.Fatal("--no-sync synced the checkout")
 	}
-	if !strings.Contains(out.buf.String(), "Credentials: gh") {
+	if !strings.Contains(out.buf.String(), "Logins copied: gh") {
 		t.Fatalf("output = %q, want the Credentials line", out.buf.String())
 	}
 }

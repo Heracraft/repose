@@ -193,12 +193,17 @@ func (f *Fake) notifyUnsubscribe(w http.ResponseWriter, r *http.Request) *apiErr
 
 func (f *Fake) notifyTest(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
-	res := map[string]string{"email": "error", "ntfy": "error"}
+	// As the real api: a channel that is off is left out, and a failed
+	// ntfy says why (I-622). A URL with "fail" in it fails, for tests.
+	res := map[string]string{}
 	if u.NotifyEmail {
 		res["email"] = "ok"
 	}
 	if u.NtfyURL != "" {
 		res["ntfy"] = "ok"
+		if strings.Contains(u.NtfyURL, "fail") {
+			res["ntfy"], res["ntfy_error"] = "error", "the server answered 403"
+		}
 	}
 	writeJSON(w, http.StatusOK, res)
 	return nil

@@ -607,5 +607,5 @@ func (e *Env) optOutPersonal(ctx context.Context, project *Project) {
 		return
 	}
 	project.PersonalOptOut = true
-	_, _ = fmt.Fprintf(e.ErrOut, "machine.nix is off for %s from now on (--no-personal); the machine switches without it in the background. The machine.nix switch on the project's Config page turns it back on.\n", project.Slug)
+	_, _ = fmt.Fprintf(e.ErrOut, "machine.nix is off for %s from now on (--no-personal); the machine switches without it in the background.\n", project.Slug)
 }

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-641 entries.
+645 entries.
 
 ## Scope
 
@@ -673,3 +673,7 @@ pointer, not a summary.
 - **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; L17358
 - **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; L17380
 - **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; L17414
+- **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; L17433
+- **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17488
+- **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17508
+- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; L17527

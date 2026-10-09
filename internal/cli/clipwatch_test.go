@@ -119,4 +119,30 @@ func TestClipboardWatchEnabled(t *testing.T) {
 	if clipboardWatchEnabled() {
 		t.Fatal("REPOSE_CLIPBOARD_PATH=0 did not turn it off")
 	}
+	// REPOSE_NO_CLIPBOARD_PATH=1 is the spelling of every other switch
+	// (I-621).
+	t.Setenv(envClipboardPath, "")
+	t.Setenv(envNoClipboardPath, "1")
+	if clipboardWatchEnabled() {
+		t.Fatal("REPOSE_NO_CLIPBOARD_PATH=1 did not turn it off")
+	}
+}
+
+func TestInputProxySwitches(t *testing.T) {
+	t.Setenv("REPOSE_TEST_GOOS", "linux")
+	for _, tc := range []struct {
+		no, old string
+		want    bool
+	}{
+		{"", "", true},
+		{"1", "", false},
+		{"", "0", false},
+		{"0", "", true},
+	} {
+		t.Setenv(envNoInputProxy, tc.no)
+		t.Setenv(envInputProxy, tc.old)
+		if got := inputProxyEnabled(); got != tc.want {
+			t.Errorf("REPOSE_NO_INPUT_PROXY=%q REPOSE_INPUT_PROXY=%q: on = %v, want %v", tc.no, tc.old, got, tc.want)
+		}
+	}
 }

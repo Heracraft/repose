@@ -20,6 +20,12 @@ func TestParseCpSide(t *testing.T) {
 		"/abs/a:b":         {Path: "/abs/a:b"},
 		"dir/a:b":          {Path: "dir/a:b"},
 		"x.log":            {Path: "x.log"},
+		// Windows drives are local (I-621).
+		`C:\a.txt`:   {Path: `C:\a.txt`},
+		"C:/a.txt":   {Path: "C:/a.txt"},
+		"d:notes.md": {Path: "d:notes.md"},
+		`dir\a:b`:    {Path: `dir\a:b`},
+		"ab:/tmp/x":  {Remote: true, Project: "ab", Path: "/tmp/x"},
 	} {
 		if got := parseCpSide(arg); got != want {
 			t.Errorf("parseCpSide(%q) = %+v, want %+v", arg, got, want)

@@ -25,9 +25,13 @@ const (
 	envNoForward       = "REPOSE_NO_FORWARD"
 	envNoFastPath      = "REPOSE_NO_FASTPATH"
 	envNoBrowser       = "REPOSE_NO_BROWSER"
-	envInputProxy      = "REPOSE_INPUT_PROXY"    // "0": run and attach become ssh, no drops or Ctrl+V images (I-280)
-	envClipboardPath   = "REPOSE_CLIPBOARD_PATH" // "0": no path on an image-only clipboard, so Cmd+V pastes nothing (I-341)
-	envInGuest         = "REPOSE"                // "1" inside a repose guest: login never tries a browser there
+	envNoInputProxy    = "REPOSE_NO_INPUT_PROXY"    // "1": run and attach become ssh, no drops or Ctrl+V images (I-280)
+	envNoClipboardPath = "REPOSE_NO_CLIPBOARD_PATH" // "1": no path on an image-only clipboard, so Cmd+V pastes nothing (I-341)
+	// The =0 spellings of the two above, from before each switch was
+	// spelled as a "no" set to 1 (I-621); read for a release.
+	envInputProxy      = "REPOSE_INPUT_PROXY"
+	envClipboardPath   = "REPOSE_CLIPBOARD_PATH"
+	envInGuest         = "REPOSE" // "1" inside a repose guest: login never tries a browser there
 	envXDGConfigHome   = "XDG_CONFIG_HOME"
 	envClaudeConfigDir = "CLAUDE_CONFIG_DIR"
 	envVisual          = "VISUAL"
@@ -40,7 +44,7 @@ const (
 var userEnvVars = []string{
 	envProject, envAPIURL, envTiming, envNoSpinner, envNoForward, envNoFastPath, envNoBrowser,
 	envInGuest, envXDGConfigHome, envClaudeConfigDir, envVisual, envEditor,
-	envWaylandDisplay, envDisplay, envInputProxy, envClipboardPath,
+	envWaylandDisplay, envDisplay, envNoInputProxy, envNoClipboardPath, envInputProxy, envClipboardPath,
 	envReposeEditor,
 }
 

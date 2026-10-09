@@ -819,13 +819,13 @@ func TestMCPForwardRemove(t *testing.T) {
 	fr.cancel()
 	<-fr.done
 	fr.done <- nil
-	if err := mcpRemove(context.Background(), target, "todo-app", []string{"probe"}); err != nil {
+	if err := mcpRemove(context.Background(), io.Discard, target, "todo-app", []string{"probe"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".repose", "mcp", "forward", "probe.json")); !os.IsNotExist(err) {
 		t.Errorf("forward file still there: %v", err)
 	}
-	err := mcpRemove(context.Background(), target, "todo-app", []string{"probe"})
+	err := mcpRemove(context.Background(), io.Discard, target, "todo-app", []string{"probe"})
 	if err == nil || err.Error() != "todo-app has no forwarded MCP server named probe." {
 		t.Errorf("second remove: %v", err)
 	}
@@ -846,7 +846,7 @@ func TestMCPForwardOldBase(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("the forward kept going against an old base")
 	}
-	if err := mcpRemove(context.Background(), target, "todo-app", []string{"probe"}); err == nil || !strings.Contains(err.Error(), "predates the MCP forward") {
+	if err := mcpRemove(context.Background(), io.Discard, target, "todo-app", []string{"probe"}); err == nil || !strings.Contains(err.Error(), "predates the MCP forward") {
 		t.Errorf("remove on an old base: %v", err)
 	}
 }

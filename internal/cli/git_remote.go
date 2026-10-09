@@ -183,3 +183,58 @@ func (e *Env) addReposeRemote(ctx context.Context, p *Project, t sshTarget, chec
 		_, _ = fmt.Fprintln(e.ErrOut, strings.TrimSpace(note))
 	}
 }
+
+// Fork remotes (DECISIONS I-622). In a checkout whose `repose` remote is
+// the project's machine, `repose fork` adds one remote per copy, named
+// after the copy, at the same checkout on the copy's machine: a fork is
+// the project's disk, so its checkout has the same folder. `git fetch
+// todo-app-fork-2` then brings that copy's commits back, as `git fetch
+// repose` does the project's. Like `repose`, each is fetch-only and left
+// out of `git fetch --all`; `repose rm` of the copy removes it.
+
+// addForkRemotes adds the copies' remotes in the checkout at root, and
+// returns the names it added. A name already taken by a remote that is
+// not the CLI's for that copy is left alone.
+func addForkRemotes(root, srcSlug string, forkSlugs []string) []string {
+	if root == "" {
+		return nil
+	}
+	m := reposeRemoteShape.FindStringSubmatch(remoteURLOf(root, reposeRemoteName))
+	if m == nil || m[1] != srcSlug {
+		return nil
+	}
+	dir := m[2]
+	var added []string
+	for _, slug := range forkSlugs {
+		want := reposeRemoteURL(slug, dir)
+		switch cur := remoteURLOf(root, slug); {
+		case cur == want:
+			continue
+		case cur == "":
+			if _, err := gitCmd(root, "remote", "add", slug, want); err != nil {
+				continue
+			}
+		case reposeRemoteHost(cur) == slug:
+			if _, err := gitCmd(root, "remote", "set-url", slug, want); err != nil {
+				continue
+			}
+		default:
+			continue // the user's own remote of that name
+		}
+		_, _ = gitCmd(root, "config", "remote."+slug+".pushurl", reposeRemotePushURL)
+		_, _ = gitCmd(root, "config", "remote."+slug+".skipFetchAll", "true")
+		added = append(added, slug)
+	}
+	return added
+}
+
+// forgetForkRemote removes the remote a fork added for slug, when the
+// checkout at root has it and it is the CLI's. Branches fetched from it
+// stay.
+func forgetForkRemote(root, slug string) bool {
+	if root == "" || slug == reposeRemoteName || reposeRemoteHost(remoteURLOf(root, slug)) != slug {
+		return false
+	}
+	_, err := gitCmd(root, "config", "--remove-section", "remote."+slug)
+	return err == nil
+}

@@ -75,7 +75,7 @@ func TestConfigOpShowsSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "01900000-4f1c2a9e", pr)
+	printApplied(e, p, op, "0199b1c2-0000-7000-8000-00004f1c2a9e", pr)
 	got := errOut.buf.String()
 	last := -1
 	for _, want := range []string{"✓ Got a build slot", "✓ Evaluated your config", "✓ Fetched 3 paths (1.5 MiB)", "✓ Built 2 derivations", "✓ Switched the machine"} {
@@ -88,7 +88,7 @@ func TestConfigOpShowsSteps(t *testing.T) {
 	if strings.Contains(got, "nix ›") {
 		t.Fatalf("nix lines shown without -v:\n%s", got)
 	}
-	if !strings.HasPrefix(out.buf.String(), "Applied revision 4f1c2a9e in ") {
+	if !strings.HasPrefix(out.buf.String(), "Applied revision 4f1c2a9e in ") { // the id's random end (I-619)
 		t.Fatalf("result line %q", out.buf.String())
 	}
 
@@ -115,7 +115,7 @@ func TestConfigOpRebootRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "01900000-4f1c2a9e", pr)
+	printApplied(e, p, op, "0199b1c2-0000-7000-8000-00004f1c2a9e", pr)
 	if got := out.buf.String(); !strings.HasPrefix(got, "Built revision 4f1c2a9e. It changes the kernel") || strings.Contains(got, "Applied") {
 		t.Fatalf("reboot output %q", got)
 	}

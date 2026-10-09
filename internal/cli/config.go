@@ -27,8 +27,14 @@ type Config struct {
 	APIURL string `toml:"api_url"`
 	// "gateway" was here, read and never used; an old file that sets it
 	// still loads, since unknown keys are ignored (DECISIONS I-242).
+	// DefaultSize is the size of new projects (I-621). DefaultClass is
+	// its old name, read for a release; default_size wins over it.
+	DefaultSize  string `toml:"default_size"`
 	DefaultClass string `toml:"default_class"`
 	DefaultAgent string `toml:"default_agent"`
+	// Editor is what `repose code` opens when neither --editor nor
+	// $REPOSE_EDITOR names one: code, cursor or zed (I-622).
+	Editor string `toml:"editor"`
 	// DefaultMultiplexer is the multiplexer of projects `run` creates,
 	// tmux or herdr; empty lets the CLI pick (DECISIONS I-502).
 	DefaultMultiplexer string `toml:"default_multiplexer"`
@@ -117,6 +123,9 @@ func loadConfig(dir string) (Config, error) {
 		cfg.APIURL = defaultAPIURL
 	}
 	cfg.SyncExclude = append(cfg.SyncExclude, cfg.Sync.Exclude...)
+	if cfg.DefaultSize != "" {
+		cfg.DefaultClass = cfg.DefaultSize
+	}
 	if cfg.LogtoIssuer == "" {
 		cfg.LogtoIssuer = defaultLogtoIssuer
 	}

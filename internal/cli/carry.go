@@ -362,7 +362,7 @@ var laptopTZ = func() string {
 }
 
 // carryNotedName is the laptop file that remembers, for each project, the
-// carry lines `run` printed last (DECISIONS I-618): "Credentials: gh,
+// carry lines `run` printed last (DECISIONS I-618): "Logins copied: gh,
 // codex", a login or file the machine kept, what was not carried. A line
 // prints again only when its content changes, so the one new line is not
 // lost among ten that every run repeats.
@@ -448,7 +448,7 @@ func (n *carryNoter) warn(e *Env, line string) {
 // the record of what this run had to say.
 func (n *carryNoter) print(e *Env, copied []string, skip map[string]bool, chosen bool, carried *carryOutcome) {
 	if len(copied) > 0 {
-		if l := "Credentials: " + strings.Join(copied, ", "); n.fresh(l) {
+		if l := "Logins copied: " + strings.Join(copied, ", "); n.fresh(l) {
 			_, _ = fmt.Fprintln(e.Out, l)
 		}
 		if l := loginsLine(copied, skip, chosen); l != "" && n.fresh(l) {

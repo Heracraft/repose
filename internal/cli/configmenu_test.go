@@ -139,11 +139,11 @@ func TestConfigAddFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = ConfigAddCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") || !strings.Contains(err.Error(), "repose config edit") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") || !strings.Contains(err.Error(), "repose config edit") {
 		t.Fatalf("custom fragment: %v", err)
 	}
 	err = ConfigRemoveCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") {
 		t.Fatalf("remove on custom fragment: %v", err)
 	}
 }

@@ -163,12 +163,12 @@ func TestCarryNoterPrintsOnlyChanges(t *testing.T) {
 			t.Fatalf("printed %q, want %q", got, want)
 		}
 	}
-	creds, kept := "Credentials: gh, codex", "Kept the machine's codex login: it is newer than the laptop's."
+	creds, kept := "Logins copied: gh, codex", "Kept the machine's codex login: it is newer than the laptop's."
 	fail := "Could not carry your git config; the machine keeps its previous one."
 	same(run("p1", creds, kept, fail), creds, kept, fail)
 	same(run("p1", creds, kept, fail), fail)
 	same(run("p2", creds), creds) // another project has its own record
-	same(run("p1", "Credentials: gh"), "Credentials: gh")
+	same(run("p1", "Logins copied: gh"), "Logins copied: gh")
 	same(run("p1", creds, kept), creds, kept) // gone for a run, so new again
 	b, err := os.ReadFile(filepath.Join(dir, carryNotedName))
 	if err != nil {

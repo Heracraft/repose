@@ -53,7 +53,7 @@ With nothing new on your laptop, `repose run` says nothing about syncing.
 
 `repose sync` (or `repose sync PROJECT`) copies your laptop's current work over the machine's checkout and returns without attaching. It creates or starts the machine if needed. With nothing new it says `Nothing new to sync: the machine already has this checkout.`
 
-Your tool logins, git identity and Claude Code settings are copied at every `repose run` whether or not the checkout is, so a rotated token reaches the machine on your next run. The lines about them, such as `Credentials: gh, codex`, print when they change, not on every run of the same project.
+Your tool logins, git identity and Claude Code settings are copied at every `repose run` whether or not the checkout is, so a rotated token reaches the machine on your next run. The lines about them, such as `Logins copied: gh, codex`, print when they change, not on every run of the same project.
 
 ## What doesn't
 
@@ -166,7 +166,7 @@ Details:
 - `repose run` and `repose attach` add the remote when the checkout is the project's own, and say so the first time. They leave it alone after that. It lives in `.git/config`.
 - If your checkout already has a remote named `repose` that points somewhere else, it's left alone, and the CLI says once how to add the machine under another name: `git remote add NAME todo-app.repose:~/todo-app`.
 - `repose rm` in the checkout removes the remote. Branches you already fetched stay as `repose/...` until you delete them with `git branch -rd`.
-- Copies made with [`repose fork`](/docs/lifecycle#fork-a-project) don't get a remote of their own. Add one by hand: `git remote add fork-2 todo-app-fork-2.repose:~/todo-app-fork-2`.
+- Copies made with [`repose fork`](/docs/lifecycle#fork-a-project) in your checkout get a remote each, named after the copy: `git fetch todo-app-fork-2`.
 - The machine has to be running. On a stopped one, `git fetch repose` fails with ``todo-app is stopped; run `repose start todo-app` ``.
 
 ### Pushing from the machine

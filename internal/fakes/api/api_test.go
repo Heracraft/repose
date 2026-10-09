@@ -561,7 +561,7 @@ func TestMe(t *testing.T) {
 	}
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
 	want(t, r, 200)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"ok","ntfy":"error"}` {
+	if string(bytes.TrimSpace(r.body)) != `{"email":"ok"}` {
 		t.Fatalf("notify-test: %s", r.body)
 	}
 	wantErr(t, call(t, f, "PATCH", "/v1/me", tok, map[string]any{"tz": "Mars/Olympus"}), 400, "invalid")
@@ -573,12 +573,12 @@ func TestMe(t *testing.T) {
 		t.Fatalf("tz: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"error","ntfy":"ok"}` {
+	if string(bytes.TrimSpace(r.body)) != `{"ntfy":"ok"}` {
 		t.Fatalf("notify-test: %s", r.body)
 	}
 	want(t, call(t, f, "PATCH", "/v1/me", tok, `{"notify": {"ntfy_url": null}}`), 200)
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"error","ntfy":"error"}` {
+	if string(bytes.TrimSpace(r.body)) != `{}` {
 		t.Fatalf("notify-test after clearing: %s", r.body)
 	}
 

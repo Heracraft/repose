@@ -194,7 +194,7 @@ func RenderBuildError(w io.Writer, code, message, localFragmentPath string, frag
 	if file == "machine.nix" || base == "machine.nix" {
 		label = file
 		if file == "fragment.nix" {
-			label = "the project's configuration (fragment.nix)"
+			label = "the project's repose.nix"
 		}
 		// The local copy is shown only when it is the file the error is
 		// in: a machine.nix error under `repose config apply` points at
