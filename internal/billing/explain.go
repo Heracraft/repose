@@ -85,11 +85,11 @@ func Explain(ctx context.Context, pool *db.Pool, projectID uuid.UUID, hour time.
 	if sub != nil {
 		var o OverageRow
 		var txn *string
-		err := pool.QueryRow(ctx, "select period_start, egress_gb::bigint, cents, paddle_transaction_id, created_at from overage_charges where subscription_id = $1 and period_start = $2", sub.ID, e.Period.Start).
+		err := pool.QueryRow(ctx, "select period_start, egress_gb::bigint, cents, sent_ref, created_at from overage_charges where subscription_id = $1 and period_start = $2", sub.ID, e.Period.Start).
 			Scan(&o.PeriodStart, &o.EgressGB, &o.Cents, &txn, &o.CreatedAt)
 		if err == nil {
 			if txn != nil {
-				o.TransactionID = *txn
+				o.SentRef = *txn
 			}
 			e.Charged = &o
 		} else if !db.IsNoRows(err) {
@@ -113,14 +113,14 @@ func (e Explanation) WriteTo(w io.Writer) (int64, error) {
 		row("running seconds", fmt.Sprintf("%d (%d running samples x 60, capped at 3600)%s", e.RunningSeconds, e.RunningSamples, gapNote(e.Gap)))
 		row("disk allocated", fmt.Sprintf("%d GB (the volume size, not what is used)", e.GBAlloc))
 		row("egress this hour", fmt.Sprintf("%d bytes (%.3f GB)", e.EgressBytes, float64(e.EgressBytes)/(1<<30)))
-		row("price version", e.PriceVersion+" (no hourly price: the plan is charged by Paddle, egress over the allowance per period)")
+		row("price version", e.PriceVersion+" (no hourly price: the plan is charged by Polar, egress over the allowance per period)")
 	}
 	row("period", e.Period.Start.Format(time.RFC3339)+" to "+e.Period.End.Format(time.RFC3339))
 	row("plan", fmt.Sprintf("%s: %d GB egress included, $0.%02d a GB over, machines stop at %d GB", e.Plan.Name, e.Plan.EgressGB, OveragePerGBCents, e.Plan.EgressHardStopBytes()>>30))
 	row("period egress", fmt.Sprintf("%.3f GB over every project of the account", float64(e.PeriodEgress)/(1<<30)))
 	row("overage", fmt.Sprintf("ceil(%.3f - %d) = %d GB x %d cents = %d cents", float64(e.PeriodEgress)/(1<<30), e.Plan.EgressGB, e.OverageGB, OveragePerGBCents, e.OverageCents))
 	if e.Charged != nil {
-		row("overage line sent", fmt.Sprintf("%d GB, %d cents, recorded %s, Paddle transaction %s", e.Charged.EgressGB, e.Charged.Cents, e.Charged.CreatedAt.UTC().Format(time.RFC3339), orDash(e.Charged.TransactionID)))
+		row("overage line sent", fmt.Sprintf("%d GB, %d cents, recorded %s, sent %s", e.Charged.EgressGB, e.Charged.Cents, e.Charged.CreatedAt.UTC().Format(time.RFC3339), orDash(e.Charged.SentRef)))
 	} else {
 		row("overage line sent", "not yet (sent within three hours of the period's next_billed_at)")
 	}

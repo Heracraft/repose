@@ -5,58 +5,84 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 )
 
-// Bootstrap creates, or finds, every Paddle object the api needs
-// (DECISIONS I-289): one product per plan with its monthly price and
-// seven-day trial, the introductory discount (DECISIONS I-497), the
-// overage product, and the webhook destination with
-// the events list. It is idempotent: objects are found by
-// custom_data.repose before anything is created, and a second run creates
-// nothing. `repose-admin billing paddle-bootstrap` and
-// ops/paddle/bootstrap.sh run it and print the PADDLE_* block.
+// Bootstrap creates, or finds, every Polar object the api needs
+// (DECISIONS I-289, I-604): the egress overage meter, one monthly product
+// per plan with its fixed price, its metered overage price and the
+// seven-day trial, the introductory discount (DECISIONS I-497), and the
+// webhook endpoint with the events list; and it sets the organization's
+// subscription and customer portal settings. It is idempotent: objects
+// are found by metadata.repose before anything is created, and a second
+// run creates nothing. `repose-admin billing polar-bootstrap` runs it and
+// prints the POLAR_* block.
 
-// ErrLiveKey is returned for a live key without --live.
-var ErrLiveKey = errors.New("this is a live Paddle key; pass --live to bootstrap the live environment on purpose")
+// ErrProduction is returned for a production token without --production.
+var ErrProduction = errors.New("this is Polar's production environment; pass --production to bootstrap it on purpose")
 
 // BootstrapOptions are the command's flags.
 type BootstrapOptions struct {
-	// WebhookURL is the notification destination; empty creates none.
+	// WebhookURL is the endpoint; empty creates none.
 	WebhookURL string
-	// Live allows a live key.
-	Live bool
+	// Production allows the production environment.
+	Production bool
 	// Progress receives one line per object, created or found.
 	Progress io.Writer
 }
 
 // BootstrapResult is what the run found or made.
 type BootstrapResult struct {
-	Environment    string
-	ProductSolo    string
-	ProductPlus    string
-	ProductPro     string
-	ProductOverage string
-	PriceSolo      string
-	PricePlus      string
-	PricePro       string
-	DiscountIntro  string
-	WebhookID      string
-	// WebhookSecret is the endpoint secret Paddle gives once; on a rerun
-	// it is read back from the existing setting.
+	Environment   string
+	Organization  string
+	MeterOverage  string
+	ProductSolo   string
+	ProductPlus   string
+	ProductPro    string
+	DiscountIntro string
+	WebhookID     string
+	// WebhookSecret is the endpoint's signing secret, read back from the
+	// endpoint on a rerun.
 	WebhookSecret string
 	Created       []string
 	Found         []string
 }
 
-// overageProductKey is the custom_data.repose value of the overage product.
-const overageProductKey = "overage"
+// overageMeterKey is the metadata.repose value of the overage meter.
+const overageMeterKey = "overage-meter"
+
+// planProductKey is the metadata.repose value of a plan's product. It
+// names the price, so a changed price makes a new product (Polar locks a
+// subscription to the price it started on) rather than reusing the old.
+func planProductKey(plan Plan) string {
+	return fmt.Sprintf("plan-%s-%d", plan.ID, plan.PriceCents)
+}
+
+// productFits reports whether a found product sells the plan as repose
+// sells it: the fixed monthly price, the overage price on the meter, the
+// trial.
+func productFits(pr Product, plan Plan, meterID string) bool {
+	fixed, metered := false, false
+	for _, price := range pr.Prices {
+		if price.IsArchived {
+			continue
+		}
+		switch price.AmountType {
+		case "fixed":
+			fixed = price.PriceAmount == plan.PriceCents && strings.EqualFold(price.Currency, plan.Currency)
+		case "metered_unit":
+			metered = price.MeterID == meterID && strings.TrimRight(strings.TrimRight(price.UnitAmount, "0"), ".") == fmt.Sprint(OveragePerGBCents)
+		}
+	}
+	return fixed && metered && pr.RecurringInterval == "month" && pr.TrialInterval == "day" && pr.TrialIntervalCount == plan.TrialDays
+}
 
 // Bootstrap runs against the client's environment.
-func Bootstrap(ctx context.Context, p *Paddle, o BootstrapOptions) (*BootstrapResult, error) {
-	if p.Environment() == EnvLive && !o.Live {
-		return nil, ErrLiveKey
+func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapResult, error) {
+	if p.Environment() != EnvSandbox && !o.Production {
+		return nil, ErrProduction
 	}
 	say := func(format string, a ...any) {
 		if o.Progress != nil {
@@ -64,170 +90,195 @@ func Bootstrap(ctx context.Context, p *Paddle, o BootstrapOptions) (*BootstrapRe
 		}
 	}
 	res := &BootstrapResult{Environment: p.Environment()}
+	found := func(what, id string) {
+		res.Found = append(res.Found, what+" "+id)
+		say("found    %-16s %s", what, id)
+	}
+	created := func(what, id, note string) {
+		res.Created = append(res.Created, what+" "+id)
+		say("created  %-16s %s%s", what, id, note)
+	}
+
+	org, err := p.GetOrganization(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read the organization: %w", err)
+	}
+	res.Organization = org.Slug
+	wantSub, wantPortal := OrganizationSettings()
+	if settingsMatch(org.SubscriptionSettings, wantSub) && settingsMatch(org.PortalSettings, wantPortal) && org.DefaultTaxBehavior == TaxBehavior {
+		found("organization", org.Slug)
+	} else {
+		if _, err := p.UpdateOrganization(ctx, org.ID, wantSub, wantPortal); err != nil {
+			return nil, fmt.Errorf("set the organization's subscription and portal settings: %w", err)
+		}
+		say("updated  %-16s %s (one subscription per customer, trial abuse prevention, no plan changes in the portal, prices exclude tax)", "organization", org.Slug)
+	}
+
+	meters, err := p.ListMeters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list meters: %w", err)
+	}
+	for _, m := range meters {
+		if k, _ := m.Metadata["repose"].(string); k == overageMeterKey {
+			res.MeterOverage = m.ID
+			found("meter overage", m.ID)
+			break
+		}
+	}
+	if res.MeterOverage == "" {
+		m, err := p.CreateOverageMeter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create the overage meter: %w", err)
+		}
+		res.MeterOverage = m.ID
+		created("meter overage", m.ID, "")
+	}
+
 	products, err := p.ListProducts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list products: %w", err)
 	}
-	byKey := map[string]Product{}
-	for _, pr := range products {
-		if k, _ := pr.CustomData["repose"].(string); k != "" {
-			byKey[k] = pr
-		}
-	}
-	product := func(key, name, desc string) (string, error) {
-		if pr, ok := byKey[key]; ok {
-			res.Found = append(res.Found, "product "+key+" "+pr.ID)
-			say("found    product %-8s %s", key, pr.ID)
-			return pr.ID, nil
-		}
-		pr, err := p.CreateProduct(ctx, name, desc, map[string]any{"repose": key})
-		if err != nil {
-			return "", fmt.Errorf("create the %s product: %w", key, err)
-		}
-		byKey[key] = pr
-		res.Created = append(res.Created, "product "+key+" "+pr.ID)
-		say("created  product %-8s %s", key, pr.ID)
-		return pr.ID, nil
-	}
 	for _, plan := range Plans {
-		id, err := product(plan.ID, "repose "+plan.Name, fmt.Sprintf("%d GB of memory for running machines, %d GB disk, %d GB egress a month", plan.MemoryGB, plan.DiskGB, plan.EgressGB))
-		if err != nil {
-			return nil, err
-		}
-		prices, err := p.ListPrices(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("list the %s prices: %w", plan.ID, err)
-		}
-		priceID := ""
-		for _, pr := range prices {
-			if k, _ := pr.CustomData["repose"].(string); k == plan.ID && pr.UnitPrice.Amount == fmt.Sprint(plan.PriceCents) && pr.UnitPrice.CurrencyCode == plan.Currency {
-				priceID = pr.ID
+		key := planProductKey(plan)
+		id := ""
+		for _, pr := range products {
+			if k, _ := pr.Metadata["repose"].(string); k == key && productFits(pr, plan, res.MeterOverage) {
+				id = pr.ID
+				found("product "+plan.ID, id)
 				break
 			}
 		}
-		if priceID != "" {
-			res.Found = append(res.Found, "price "+plan.ID+" "+priceID)
-			say("found    price   %-8s %s", plan.ID, priceID)
-		} else {
-			pr, err := p.CreatePlanPrice(ctx, id, plan)
+		if id == "" {
+			pr, err := p.CreatePlanProduct(ctx, plan, res.MeterOverage, key)
 			if err != nil {
-				return nil, fmt.Errorf("create the %s price: %w", plan.ID, err)
+				return nil, fmt.Errorf("create the %s product: %w", plan.ID, err)
 			}
-			priceID = pr.ID
-			res.Created = append(res.Created, "price "+plan.ID+" "+priceID)
-			say("created  price   %-8s %s (%d %s a month, %d-day trial)", plan.ID, priceID, plan.PriceCents, plan.Currency, plan.TrialDays)
+			id = pr.ID
+			created("product "+plan.ID, id, fmt.Sprintf(" (%d %s a month, %d-day trial, egress overage %d cents a GB)", plan.PriceCents, plan.Currency, plan.TrialDays, OveragePerGBCents))
 		}
 		switch plan.ID {
 		case Solo.ID:
-			res.ProductSolo, res.PriceSolo = id, priceID
+			res.ProductSolo = id
 		case Plus.ID:
-			res.ProductPlus, res.PricePlus = id, priceID
+			res.ProductPlus = id
 		case Pro.ID:
-			res.ProductPro, res.PricePro = id, priceID
+			res.ProductPro = id
 		}
 	}
+
 	if plan, ok := IntroPlan(); ok {
-		priceID := res.PriceSolo
-		switch plan.ID {
-		case Plus.ID:
-			priceID = res.PricePlus
-		case Pro.ID:
-			priceID = res.PricePro
-		}
+		productID := Config{ProductSolo: res.ProductSolo, ProductPlus: res.ProductPlus, ProductPro: res.ProductPro}.PlanProduct(plan.ID)
 		discounts, err := p.ListDiscounts(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list discounts: %w", err)
 		}
 		for _, d := range discounts {
-			if k, _ := d.CustomData["repose"].(string); k == introDiscountKey(plan) && slices.Contains(d.RestrictTo, priceID) {
+			ids := make([]string, 0, len(d.Products))
+			for _, pr := range d.Products {
+				ids = append(ids, pr.ID)
+			}
+			if k, _ := d.Metadata["repose"].(string); k == introDiscountKey(plan) && slices.Contains(ids, productID) {
 				res.DiscountIntro = d.ID
-				res.Found = append(res.Found, "discount intro "+d.ID)
-				say("found    discount intro    %s", d.ID)
+				found("discount intro", d.ID)
 				break
 			}
 		}
 		if res.DiscountIntro == "" {
-			d, err := p.CreateIntroDiscount(ctx, plan, priceID)
+			d, err := p.CreateIntroDiscount(ctx, plan, productID)
 			if err != nil {
 				return nil, fmt.Errorf("create the introductory discount: %w", err)
 			}
 			res.DiscountIntro = d.ID
-			res.Created = append(res.Created, "discount intro "+d.ID)
-			say("created  discount intro    %s ($%d off the first %d %s charges)", d.ID, plan.IntroDiscountCents()/100, plan.IntroMonths, plan.ID)
+			created("discount intro", d.ID, fmt.Sprintf(" ($%d off the first %d %s charges)", plan.IntroDiscountCents()/100, plan.IntroMonths, plan.ID))
 		}
 	}
-	if res.ProductOverage, err = product(overageProductKey, "repose egress overage", "Egress past the plan's allowance, $0.05 a GB, one line a period"); err != nil {
-		return nil, err
-	}
+
 	if o.WebhookURL != "" {
-		settings, err := p.ListNotificationSettings(ctx)
+		endpoints, err := p.ListWebhookEndpoints(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list notification settings: %w", err)
+			return nil, fmt.Errorf("list webhook endpoints: %w", err)
 		}
-		for _, s := range settings {
-			if s.Destination == o.WebhookURL && s.Type == "url" {
-				res.WebhookID, res.WebhookSecret = s.ID, s.EndpointSecretKey
-				res.Found = append(res.Found, "webhook "+s.ID)
-				say("found    webhook          %s -> %s", s.ID, o.WebhookURL)
-				if want := p.TrafficSource(); s.TrafficSource != want {
-					if err := p.SetNotificationTrafficSource(ctx, s.ID, want); err != nil {
-						return nil, fmt.Errorf("set the webhook destination's traffic source: %w", err)
-					}
-					say("updated  webhook          %s traffic_source %s", s.ID, want)
-				}
-				if missing := missingEvents(s.SubscribedEvents); len(missing) > 0 {
-					say("warning: the destination lacks %s; add them in Paddle's dashboard", strings.Join(missing, ", "))
-				}
-				break
+		for _, e := range endpoints {
+			if e.URL != o.WebhookURL {
+				continue
 			}
+			res.WebhookID, res.WebhookSecret = e.ID, e.Secret
+			found("webhook", e.ID+" -> "+o.WebhookURL)
+			if len(missingEvents(e.Events)) > 0 || e.APIVersion != APIVersion || !e.Enabled || e.Format != "raw" {
+				if _, err := p.UpdateWebhookEndpoint(ctx, e.ID, WebhookEvents); err != nil {
+					return nil, fmt.Errorf("update the webhook endpoint: %w", err)
+				}
+				say("updated  %-16s %s (events, api_version %s, enabled)", "webhook", e.ID, APIVersion)
+			}
+			if e.Format != "raw" {
+				say("warning: the endpoint's format is %s; set it to raw in Polar's dashboard", e.Format)
+			}
+			break
 		}
 		if res.WebhookID == "" {
-			s, err := p.CreateNotificationSetting(ctx, o.WebhookURL, WebhookEvents)
+			e, err := p.CreateWebhookEndpoint(ctx, o.WebhookURL, WebhookEvents)
 			if err != nil {
-				return nil, fmt.Errorf("create the webhook destination: %w", err)
+				return nil, fmt.Errorf("create the webhook endpoint: %w", err)
 			}
-			res.WebhookID, res.WebhookSecret = s.ID, s.EndpointSecretKey
-			res.Created = append(res.Created, "webhook "+s.ID)
-			say("created  webhook          %s -> %s", s.ID, o.WebhookURL)
+			res.WebhookID, res.WebhookSecret = e.ID, e.Secret
+			created("webhook", e.ID, " -> "+o.WebhookURL)
 		}
 	}
 	return res, nil
 }
 
-func missingEvents(have []string) []string {
-	set := map[string]bool{}
-	for _, e := range have {
-		set[e] = true
+// settingsMatch reports whether every key of want has that value in have.
+func settingsMatch(have, want map[string]any) bool {
+	for k, w := range want {
+		h, ok := have[k]
+		if !ok {
+			return false
+		}
+		if wm, isMap := w.(map[string]any); isMap {
+			hm, _ := h.(map[string]any)
+			if !settingsMatch(hm, wm) {
+				return false
+			}
+			continue
+		}
+		if fmt.Sprint(h) != fmt.Sprint(w) && !reflect.DeepEqual(h, w) {
+			return false
+		}
 	}
+	return true
+}
+
+func missingEvents(have []string) []string {
 	var out []string
 	for _, e := range WebhookEvents {
-		if !set[e] {
+		if !slices.Contains(have, e) {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// EnvBlock is the PADDLE_* block to paste into the api's environment. The
-// key is never printed; the webhook secret is, once, because it is what
-// the operator came for.
+// EnvBlock is the POLAR_* block to paste into the api's environment. The
+// token is never printed; the webhook secret is, because it is what the
+// operator came for.
 func (r *BootstrapResult) EnvBlock() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Paddle %s, from repose-admin billing paddle-bootstrap\n", r.Environment)
-	fmt.Fprintf(&b, "PADDLE_PRICE_SOLO=%s\n", r.PriceSolo)
-	fmt.Fprintf(&b, "PADDLE_PRICE_PLUS=%s\n", r.PricePlus)
-	fmt.Fprintf(&b, "PADDLE_PRICE_PRO=%s\n", r.PricePro)
-	fmt.Fprintf(&b, "PADDLE_PRODUCT_OVERAGE=%s\n", r.ProductOverage)
+	fmt.Fprintf(&b, "# Polar %s, organization %s, from repose-admin billing polar-bootstrap\n", r.Environment, r.Organization)
+	fmt.Fprintf(&b, "POLAR_ENVIRONMENT=%s\n", r.Environment)
+	fmt.Fprintf(&b, "POLAR_PRODUCT_SOLO=%s\n", r.ProductSolo)
+	fmt.Fprintf(&b, "POLAR_PRODUCT_PLUS=%s\n", r.ProductPlus)
+	fmt.Fprintf(&b, "POLAR_PRODUCT_PRO=%s\n", r.ProductPro)
 	if r.DiscountIntro != "" {
-		fmt.Fprintf(&b, "PADDLE_DISCOUNT_INTRO=%s\n", r.DiscountIntro)
+		fmt.Fprintf(&b, "POLAR_DISCOUNT_INTRO=%s\n", r.DiscountIntro)
 	}
-	if r.WebhookSecret != "" {
-		fmt.Fprintf(&b, "PADDLE_WEBHOOK_SECRET=%s\n", r.WebhookSecret)
-	} else if r.WebhookID != "" {
-		b.WriteString("# PADDLE_WEBHOOK_SECRET: Paddle shows it on the notification destination's page\n")
-	} else {
-		b.WriteString("# PADDLE_WEBHOOK_SECRET: no destination created (--webhook-url)\n")
+	switch {
+	case r.WebhookSecret != "":
+		fmt.Fprintf(&b, "POLAR_WEBHOOK_SECRET=%s\n", r.WebhookSecret)
+	case r.WebhookID != "":
+		b.WriteString("# POLAR_WEBHOOK_SECRET: Polar shows it on the webhook endpoint's page\n")
+	default:
+		b.WriteString("# POLAR_WEBHOOK_SECRET: no endpoint created (--webhook-url)\n")
 	}
-	b.WriteString("# PADDLE_CLIENT_TOKEN: Paddle dashboard > Developer tools > Authentication > client-side tokens\n")
+	b.WriteString("# POLAR_ACCESS_TOKEN: the organization access token this ran with\n")
 	return b.String()
 }

@@ -12,12 +12,12 @@ import (
 	"github.com/heracraft/repose/internal/db"
 )
 
-// Sub is a subscriptions row: the record of a Paddle subscription
+// Sub is a subscriptions row: the record of a Polar subscription
 // (db-schema.md). users.billing_status is a projection of Status.
 type Sub struct {
 	ID                string     `db:"id"`
 	UserID            uuid.UUID  `db:"user_id"`
-	CustomerID        string     `db:"paddle_customer_id"`
+	CustomerID        string     `db:"customer_id"`
 	Plan              string     `db:"plan"`
 	Status            string     `db:"status"`
 	Seats             int        `db:"seats"`
@@ -29,17 +29,17 @@ type Sub struct {
 	ScheduledPlan     *string    `db:"scheduled_plan"`
 	OverageChargedFor *time.Time `db:"overage_charged_for"`
 	// Intro is whether the subscription carries the introductory discount
-	// (DECISIONS I-497), and IntroUntil when Paddle says it ends; nil while
-	// Paddle has not fixed the end.
+	// (DECISIONS I-497), and IntroUntil when it ends: the first charged
+	// period plus IntroMonths (DECISIONS I-604); nil when unknown.
 	Intro      bool       `db:"intro"`
 	IntroUntil *time.Time `db:"intro_until"`
 	CreatedAt  time.Time  `db:"created_at"`
 	UpdatedAt  time.Time  `db:"updated_at"`
 }
 
-const subCols = `id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, intro, intro_until, created_at, updated_at`
+const subCols = `id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, intro, intro_until, created_at, updated_at`
 
-// Subscription statuses, Paddle's words.
+// Subscription statuses, Polar's words (unpaid is stored as canceled).
 const (
 	StatusTrialing = "trialing"
 	StatusActive   = "active"
@@ -72,7 +72,7 @@ func (s *Sub) PlanOrSolo() Plan {
 }
 
 // Period is the subscription's current billing period, or the calendar
-// month around at when Paddle has not set one (a subscription just
+// month around at when Polar has not set one (a subscription just
 // created has period_start; a test row may not).
 func (s *Sub) Period(at time.Time) Period {
 	if s != nil && s.PeriodStart != nil && s.PeriodEnd != nil && s.PeriodEnd.After(*s.PeriodStart) {
@@ -111,13 +111,13 @@ func EverSubscribed(ctx context.Context, q store.Querier, userID uuid.UUID) (boo
 
 // IntroAt reports whether the introductory offer covers at: the
 // subscription carries the introductory discount, its plan has an
-// introductory price, and at is before the discount's end (or Paddle has
-// not fixed the end yet).
+// introductory price, and at is before the discount's end (or the end is
+// not known).
 func (s *Sub) IntroAt(at time.Time) bool {
 	return s != nil && s.Intro && s.PlanOrSolo().HasIntro() && (s.IntroUntil == nil || at.Before(*s.IntroUntil))
 }
 
-// ChargeCents is what Paddle charges for the subscription's plan at at:
+// ChargeCents is what Polar charges for the subscription's plan at at:
 // the introductory price while the offer runs, else the plan's price.
 func (s *Sub) ChargeCents(at time.Time) int64 {
 	plan := s.PlanOrSolo()
@@ -139,7 +139,7 @@ func (s *Sub) PlanFor(start time.Time) Plan {
 	return plan
 }
 
-// GetSubscription reads one row by Paddle id; db.ErrNotFound when absent.
+// GetSubscription reads one row by Polar id; db.ErrNotFound when absent.
 func GetSubscription(ctx context.Context, q store.Querier, id string) (*Sub, error) {
 	rows, err := q.Query(ctx, "select "+subCols+" from subscriptions where id = $1", id)
 	if err != nil {
@@ -171,7 +171,7 @@ func LatestSubscription(ctx context.Context, q store.Querier, userID uuid.UUID) 
 	return &subs[0], nil
 }
 
-// upsertSubscription writes a row from Paddle's view of it and returns the
+// upsertSubscription writes a row from Polar's view of it and returns the
 // row as it was before (nil when new), so the caller can tell what changed.
 func upsertSubscription(ctx context.Context, q store.Querier, s Sub) (*Sub, error) {
 	prev, err := GetSubscription(ctx, q, s.ID)
@@ -181,9 +181,9 @@ func upsertSubscription(ctx context.Context, q store.Querier, s Sub) (*Sub, erro
 	if errors.Is(err, db.ErrNotFound) {
 		prev = nil
 	}
-	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, intro, intro_until)
+	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, intro, intro_until)
 		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-		on conflict (id) do update set paddle_customer_id = excluded.paddle_customer_id, plan = excluded.plan, status = excluded.status,
+		on conflict (id) do update set customer_id = excluded.customer_id, plan = excluded.plan, status = excluded.status,
 		seats = excluded.seats, period_start = excluded.period_start, period_end = excluded.period_end, next_billed_at = excluded.next_billed_at,
 		trial_end = excluded.trial_end, cancel_at = excluded.cancel_at, scheduled_plan = excluded.scheduled_plan,
 		intro = excluded.intro, intro_until = excluded.intro_until`,

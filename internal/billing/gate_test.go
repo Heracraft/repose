@@ -15,7 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/db/testdb"
 )
 
-func newGate(pool *db.Pool, f *fakePaddle) *billing.Gate {
+func newGate(pool *db.Pool, f *fakePolar) *billing.Gate {
 	g := billing.NewGate(pool, testConfig(f), nop(), quiet())
 	g.Now = at(time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC))
 	return g
@@ -43,7 +43,7 @@ func refusal(t *testing.T, err error) *billing.Refusal {
 // is the whole sentence.
 func TestGateEveryReason(t *testing.T) {
 	pool := testdb.Open(t)
-	f := newFakePaddle()
+	f := newFakePolar()
 	defer f.Close()
 	g := newGate(pool, f)
 	ctx := context.Background()
@@ -204,7 +204,7 @@ func TestGateEveryReason(t *testing.T) {
 		t.Fatalf("enforce off: %v", err)
 	}
 	g.Enforce = true
-	// Paddle not configured: every non-exempt user is subscription_required,
+	// Polar not configured: every non-exempt user is subscription_required,
 	// even with a row.
 	g.Enabled = false
 	r = refusal(t, g.Check(ctx, user(t, pool, c), billing.Request{}))

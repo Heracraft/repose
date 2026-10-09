@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,11 +19,11 @@ import (
 
 // Service is what the /billing routes call (api.md "Usage and billing"):
 // the overview, checkout, plan changes, cancellation, the portal, the
-// invoices and account deletion. It holds the Paddle client, the seat
+// invoices and account deletion. It holds the Polar client, the seat
 // count and the overage job. A nil *Service is billing disabled.
 type Service struct {
 	pool    *db.Pool
-	paddle  *Paddle
+	polar   *Polar
 	cfg     Config
 	seats   waitlist.Seats
 	overage *Overage
@@ -32,12 +32,12 @@ type Service struct {
 }
 
 // NewService wires the routes' dependencies together.
-func NewService(pool *db.Pool, paddle *Paddle, cfg Config, seats waitlist.Seats, overage *Overage, log *slog.Logger) *Service {
-	return &Service{pool: pool, paddle: paddle, cfg: cfg, seats: seats, overage: overage, log: log.With("component", obs.ComponentAPI), Now: time.Now}
+func NewService(pool *db.Pool, polar *Polar, cfg Config, seats waitlist.Seats, overage *Overage, log *slog.Logger) *Service {
+	return &Service{pool: pool, polar: polar, cfg: cfg, seats: seats, overage: overage, log: log.With("component", obs.ComponentAPI), Now: time.Now}
 }
 
-// Paddle is the client, for the admin commands.
-func (s *Service) Paddle() *Paddle { return s.paddle }
+// Polar is the client, for the admin commands.
+func (s *Service) Polar() *Polar { return s.polar }
 
 // Seats is the seat count in use.
 func (s *Service) Seats() waitlist.Seats { return s.seats }
@@ -138,15 +138,14 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 		"intro_eligible": intro,
 		"seats":          map[string]any{"total": count.Total, "held": count.Held, "free": count.Free, "waiting": count.Waiting},
 		"waitlist":       place.JSON(),
-		"paddle":         map[string]any{"environment": s.cfg.Environment(), "client_token": s.cfg.ClientToken},
 	}
 	return out, nil
 }
 
 // SubJSON is the `subscription` object of GET /billing, nil for none.
-// next_charge_cents is what Paddle charges at next_billed_at, and
+// next_charge_cents is what Polar charges at next_billed_at, and
 // intro_until is when the introductory offer ends, null when the
-// subscription has none or Paddle has not fixed the end (DECISIONS I-497).
+// subscription has none (DECISIONS I-497, I-604).
 func SubJSON(sub *Sub) any {
 	if sub == nil {
 		return nil
@@ -175,14 +174,15 @@ func (s *Service) introEligible(ctx context.Context, u *store.User) (bool, error
 	return !ever, err
 }
 
-// Checkout is POST /billing/checkout: the seat first, then the customer
-// and the transaction the dashboard opens with Paddle.js.
-func (s *Service) Checkout(ctx context.Context, u *store.User, planID string) (transactionID string, err error) {
+// Checkout is POST /billing/checkout: the seat first, then the Polar
+// checkout the dashboard sends the browser to. customerIP is the
+// browser's address, for the tax country.
+func (s *Service) Checkout(ctx context.Context, u *store.User, planID, customerIP string) (checkoutURL string, err error) {
 	plan, ok := PlanByID(planID)
 	if !ok {
 		return "", ErrUnknownPlan
 	}
-	if s.seats == nil || s.paddle == nil {
+	if s.seats == nil || s.polar == nil {
 		return "", ErrDisabled
 	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
@@ -207,9 +207,8 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID string) (t
 		s.log.Info("checkout waitlisted", "event", "waitlist_join", "user_id", u.ID.String(), "position", p.Position)
 		return "", &WaitlistedError{Place: p}
 	}
-	customer, err := s.paddle.EnsureCustomer(ctx, s.pool, u.ID)
-	if err != nil {
-		return "", err
+	if u.Email == nil || *u.Email == "" {
+		return "", errors.New("the account has no email address; Polar needs one for the customer")
 	}
 	discount := ""
 	if plan.HasIntro() {
@@ -221,12 +220,17 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID string) (t
 			discount = s.cfg.DiscountIntro
 		}
 	}
-	txn, err := s.paddle.CreateCheckoutTransaction(ctx, customer, s.cfg.PlanPrice(plan.ID), discount, u.ID)
+	billingURL := s.cfg.BillingURL()
+	co, err := s.polar.CreateCheckout(ctx, CheckoutRequest{ProductID: s.cfg.PlanProduct(plan.ID), UserID: u.ID, Email: *u.Email, DiscountID: discount,
+		CustomerIP: customerIP, SuccessURL: billingURL + "?checkout=done", ReturnURL: billingURL})
 	if err != nil {
-		return "", fmt.Errorf("create the checkout transaction: %w", err)
+		return "", fmt.Errorf("create the checkout: %w", err)
 	}
-	s.log.Info("checkout transaction created", "event", "billing_checkout", "user_id", u.ID.String(), "plan", plan.ID, "intro", discount != "")
-	return txn, nil
+	if co.URL == "" {
+		return "", errors.New("create the checkout: Polar answered no url")
+	}
+	s.log.Info("checkout created", "event", "billing_checkout", "user_id", u.ID.String(), "plan", plan.ID, "intro", discount != "")
+	return co.URL, nil
 }
 
 // PlanChange is POST /billing/plan's answer.
@@ -237,14 +241,14 @@ type PlanChange struct {
 }
 
 // ChangePlan moves the account between plans: an upgrade at once
-// (prorated by Paddle), a downgrade at period_end after checking the
+// (the difference charged by Polar now), a downgrade at period_end after checking the
 // account fits (PRICING.md "Cancelling and changing plans").
 func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) (PlanChange, error) {
 	target, ok := PlanByID(planID)
 	if !ok {
 		return PlanChange{}, ErrUnknownPlan
 	}
-	if s.paddle == nil {
+	if s.polar == nil {
 		return PlanChange{}, ErrDisabled
 	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
@@ -265,8 +269,7 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 		} else if count.Total > 0 && count.Free < target.Seats-current.Seats {
 			return PlanChange{}, ErrNoSeat
 		}
-		ps, err := s.paddle.UpdateSubscriptionItems(ctx, sub.ID, s.cfg.PlanPrice(target.ID), ProrateImmediately)
-		if err != nil {
+		if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateInvoice); err != nil {
 			return PlanChange{}, fmt.Errorf("upgrade the subscription: %w", err)
 		}
 		// The webhook writes the same; writing it here too means the
@@ -281,13 +284,11 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 		if err != nil {
 			return PlanChange{}, err
 		}
-		_ = ps
 		return PlanChange{Plan: target.ID, EffectiveAt: now}, nil
 	}
 	if current.ID == target.ID {
-		// Undo a scheduled downgrade: back to the current price at the
-		// next period, which Paddle expresses as the same item again.
-		if _, err := s.paddle.UpdateSubscriptionItems(ctx, sub.ID, s.cfg.PlanPrice(current.ID), ProrateNextBillingCycle); err != nil {
+		// Undo a scheduled downgrade: Polar drops the pending update.
+		if _, err := s.polar.ClearPendingUpdate(ctx, sub.ID); err != nil {
 			return PlanChange{}, fmt.Errorf("undo the scheduled downgrade: %w", err)
 		}
 		if _, err := s.pool.Exec(ctx, "update subscriptions set scheduled_plan = null where id = $1", sub.ID); err != nil {
@@ -303,7 +304,7 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 	if usage.RunningGB > target.MemoryGB || usage.DiskOver() {
 		return PlanChange{}, &OverPlanError{RunningGB: usage.RunningGB, DiskHeldBytes: usage.DiskHeldBytes, Plan: target}
 	}
-	if _, err := s.paddle.UpdateSubscriptionItems(ctx, sub.ID, s.cfg.PlanPrice(target.ID), ProrateNextBillingCycle); err != nil {
+	if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateNextPeriod); err != nil {
 		return PlanChange{}, fmt.Errorf("schedule the downgrade: %w", err)
 	}
 	if _, err := s.pool.Exec(ctx, "update subscriptions set scheduled_plan = $2 where id = $1", sub.ID, target.ID); err != nil {
@@ -320,7 +321,7 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 // Cancel is POST /billing/cancel: the subscription ends at period_end
 // (during the trial, at trial_end); machines run until then.
 func (s *Service) Cancel(ctx context.Context, u *store.User) (cancelAt time.Time, err error) {
-	if s.paddle == nil {
+	if s.polar == nil {
 		return cancelAt, ErrDisabled
 	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
@@ -333,15 +334,13 @@ func (s *Service) Cancel(ctx context.Context, u *store.User) (cancelAt time.Time
 	if sub.CancelAt != nil {
 		return cancelAt, ErrAlreadyCancelled
 	}
-	ps, err := s.paddle.CancelSubscription(ctx, sub.ID, EffectiveNextBillingPeriod)
+	ps, err := s.polar.SetCancelAtPeriodEnd(ctx, sub.ID, true)
 	if err != nil {
 		return cancelAt, fmt.Errorf("cancel the subscription: %w", err)
 	}
 	cancelAt = s.Now().UTC()
-	if ps.ScheduledChange != nil {
-		if t := paddleTime(ps.ScheduledChange.EffectiveAt); t != nil {
-			cancelAt = *t
-		}
+	if t := ps.CancelAt(); t != nil {
+		cancelAt = *t
 	} else if sub.PeriodEnd != nil {
 		cancelAt = sub.PeriodEnd.UTC()
 	}
@@ -358,7 +357,7 @@ func (s *Service) Cancel(ctx context.Context, u *store.User) (cancelAt time.Time
 
 // Resume is POST /billing/resume: undo a scheduled cancellation.
 func (s *Service) Resume(ctx context.Context, u *store.User) (*Sub, error) {
-	if s.paddle == nil {
+	if s.polar == nil {
 		return nil, ErrDisabled
 	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
@@ -371,7 +370,7 @@ func (s *Service) Resume(ctx context.Context, u *store.User) (*Sub, error) {
 	if sub.CancelAt == nil {
 		return nil, ErrNotCancelled
 	}
-	if _, err := s.paddle.ResumeScheduledChange(ctx, sub.ID); err != nil {
+	if _, err := s.polar.SetCancelAtPeriodEnd(ctx, sub.ID, false); err != nil {
 		return nil, fmt.Errorf("remove the scheduled cancellation: %w", err)
 	}
 	if _, err := s.pool.Exec(ctx, "update subscriptions set cancel_at = null where id = $1", sub.ID); err != nil {
@@ -381,66 +380,62 @@ func (s *Service) Resume(ctx context.Context, u *store.User) (*Sub, error) {
 	return sub, nil
 }
 
-// Portal is POST /billing/portal: Paddle's customer portal, or the deep
-// link that updates the payment method.
+// Portal is POST /billing/portal: Polar's customer portal. Polar has no
+// deep link for the payment method, so purpose is accepted and the same
+// portal answers it. Polar knows a user only after their first checkout.
 func (s *Service) Portal(ctx context.Context, u *store.User, purpose string) (string, error) {
-	if s.paddle == nil {
+	if s.polar == nil {
 		return "", ErrDisabled
 	}
-	customer, err := s.paddle.EnsureCustomer(ctx, s.pool, u.ID)
-	if err != nil {
-		return "", err
+	if u.BillingCustomerID == nil || *u.BillingCustomerID == "" {
+		ever, err := EverSubscribed(ctx, s.pool, u.ID)
+		if err != nil {
+			return "", err
+		}
+		if !ever {
+			return "", ErrNoSubscription
+		}
 	}
-	var subIDs []string
-	sub, err := LiveSubscription(ctx, s.pool, u.ID)
-	if err != nil {
-		return "", err
+	url, err := s.polar.CustomerPortal(ctx, u.ID, s.cfg.PortalReturnURL)
+	if IsPolarStatus(err, 404) || IsPolarStatus(err, 422) {
+		return "", ErrNoSubscription
 	}
-	if sub != nil {
-		subIDs = []string{sub.ID}
-	}
-	urls, err := s.paddle.PortalSession(ctx, customer, subIDs)
 	if err != nil {
 		return "", fmt.Errorf("open the customer portal: %w", err)
 	}
-	if purpose == "payment_method" && sub != nil {
-		if u := urls.UpdatePaymentMethod[sub.ID]; u != "" {
-			return u, nil
-		}
-	}
-	return urls.Overview, nil
+	return url, nil
 }
 
-// Invoices is GET /billing/invoices: Paddle's transactions for the
-// customer, newest first, up to 24, in the shape the dashboard has
-// always read.
+// Invoices is GET /billing/invoices: Polar's orders for the user, newest
+// first, up to 24, in the shape the dashboard has always read. An order
+// whose invoice Polar has not generated yet gets no PDF link this time
+// and is asked for one, which a later listing shows.
 func (s *Service) Invoices(ctx context.Context, u *store.User) ([]map[string]any, error) {
-	if s.paddle == nil {
+	if s.polar == nil {
 		return nil, ErrDisabled
 	}
 	out := []map[string]any{}
-	if u.PaddleCustomerID == nil || *u.PaddleCustomerID == "" {
+	if u.BillingCustomerID == nil || *u.BillingCustomerID == "" {
 		return out, nil
 	}
-	txns, err := s.paddle.ListTransactions(ctx, *u.PaddleCustomerID)
+	orders, err := s.polar.ListOrders(ctx, u.ID)
 	if err != nil {
-		return nil, fmt.Errorf("list the transactions: %w", err)
+		return nil, fmt.Errorf("list the orders: %w", err)
 	}
-	for _, t := range txns {
-		inv := map[string]any{"id": t.ID, "number": t.InvoiceNumber, "status": t.Status, "currency": t.CurrencyCode,
-			"amount_cents": int64(0), "subtotal_cents": int64(0), "tax_cents": int64(0), "created_at": t.CreatedAt,
+	for _, o := range orders {
+		if o.Status == "draft" || o.Status == "void" {
+			continue
+		}
+		inv := map[string]any{"id": o.ID, "number": o.InvoiceNumber, "status": o.Status, "currency": strings.ToUpper(o.Currency),
+			"amount_cents": o.TotalAmount, "subtotal_cents": o.NetAmount, "tax_cents": o.TaxAmount, "created_at": o.CreatedAt,
 			"period_start": nil, "period_end": nil, "hosted_url": nil, "pdf_url": nil}
-		if t.Details != nil {
-			inv["amount_cents"] = minorUnits(t.Details.Totals.GrandTotal)
-			inv["subtotal_cents"] = minorUnits(t.Details.Totals.Subtotal)
-			inv["tax_cents"] = minorUnits(t.Details.Totals.Tax)
-		}
-		if t.BillingPeriod != nil {
-			inv["period_start"], inv["period_end"] = t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt
-		}
-		if t.Status == "completed" || t.Status == "billed" || t.Status == "past_due" {
-			if pdf, err := s.paddle.InvoicePDF(ctx, t.ID); err == nil && pdf != "" {
+		if o.IsInvoiceGenerated {
+			if pdf, err := s.polar.OrderInvoiceURL(ctx, o.ID); err == nil && pdf != "" {
 				inv["pdf_url"], inv["hosted_url"] = pdf, pdf
+			}
+		} else if o.Status != "pending" {
+			if err := s.polar.GenerateOrderInvoice(ctx, o.ID); err != nil {
+				s.log.Warn("invoice generation refused", "event", "billing_invoice", "user_id", u.ID.String(), "result", "error", "err", err.Error())
 			}
 		}
 		out = append(out, inv)
@@ -448,18 +443,13 @@ func (s *Service) Invoices(ctx context.Context, u *store.User) ([]map[string]any
 	return out, nil
 }
 
-func minorUnits(s string) int64 {
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// CloseAccount is DELETE /me's billing half: charge any pending overage
-// for the current period first, then cancel the subscription at once,
-// because Paddle drops one-time charges on a cancelled subscription. A
-// user without a subscription has nothing to do here.
+// CloseAccount is DELETE /me's billing half: send any pending egress
+// overage for the current period first, then end the subscription. With
+// no overage it is revoked at once; with some it is cancelled at the
+// period's end, because Polar bills metered usage only on the order a
+// period's end makes and a revoke makes none (DECISIONS I-604). No new
+// period is charged either way. A user without a subscription has
+// nothing to do here.
 func (s *Service) CloseAccount(ctx context.Context, userID uuid.UUID) error {
 	sub, err := LiveSubscription(ctx, s.pool, userID)
 	if err != nil {
@@ -468,18 +458,33 @@ func (s *Service) CloseAccount(ctx context.Context, userID uuid.UUID) error {
 	if sub == nil {
 		return nil
 	}
-	if s.overage != nil {
-		if _, err := s.overage.ChargePeriod(ctx, sub, EffectiveImmediately); err != nil {
-			return fmt.Errorf("charge the pending overage before cancelling: %w", err)
-		}
-	}
-	if s.paddle == nil {
+	if s.polar == nil {
 		return ErrDisabled
 	}
-	if _, err := s.paddle.CancelSubscription(ctx, sub.ID, EffectiveImmediately); err != nil {
-		return fmt.Errorf("cancel the subscription: %w", err)
+	owed := false
+	if s.overage != nil {
+		c, err := s.overage.ChargePeriod(ctx, sub)
+		if err != nil {
+			return fmt.Errorf("send the pending overage before cancelling: %w", err)
+		}
+		owed = c != nil && c.Cents > 0
 	}
 	now := s.Now().UTC()
+	if owed {
+		ps, err := s.polar.SetCancelAtPeriodEnd(ctx, sub.ID, true)
+		if err != nil {
+			return fmt.Errorf("cancel the subscription: %w", err)
+		}
+		cancelAt := now
+		if t := ps.CancelAt(); t != nil {
+			cancelAt = *t
+		}
+		_, err = s.pool.Exec(ctx, "update subscriptions set cancel_at = $2 where id = $1", sub.ID, cancelAt)
+		return err
+	}
+	if _, err := s.polar.RevokeSubscription(ctx, sub.ID); err != nil {
+		return fmt.Errorf("revoke the subscription: %w", err)
+	}
 	_, err = s.pool.Exec(ctx, "update subscriptions set status = 'canceled', cancel_at = $2 where id = $1", sub.ID, now)
 	if err != nil {
 		return err

@@ -1,11 +1,11 @@
 // Package billing is the api's money: the plan table from docs/PRICING.md,
-// the Paddle client, the webhook that keeps the subscriptions table in
-// step with Paddle, the compute gate a plan buys, the hourly rollup of
+// the Polar client, the webhook that keeps the subscriptions table in
+// step with Polar, the compute gate a plan buys, the hourly rollup of
 // meter samples into usage_hours (the internal record of hours, disk and
 // egress), the egress overage line, dunning and the seat count
-// (docs/workstreams/09-billing.md §5.11, DECISIONS I-289).
+// (docs/workstreams/09-billing.md §5.11, DECISIONS I-289, I-604).
 //
-// Paddle is the merchant of record and the ledger of what was charged;
+// Polar is the merchant of record and the ledger of what was charged;
 // usage_hours is the ledger of what was used; the overage line is the one
 // place the two meet.
 package billing
@@ -26,8 +26,8 @@ type Plan struct {
 	EgressGB   int // a period
 	// IntroCents and IntroMonths are the introductory price: a first
 	// subscription pays IntroCents for its first IntroMonths charges after
-	// the trial, then PriceCents. Zero is no introductory price. Paddle
-	// charges it as a recurring discount (DECISIONS I-497). IntroEgressGB
+	// the trial, then PriceCents. Zero is no introductory price. Polar
+	// charges it as a repeating discount (DECISIONS I-497, I-604). IntroEgressGB
 	// is the egress allowance a period has while the offer runs; zero
 	// keeps EgressGB.
 	IntroCents    int64
@@ -105,7 +105,7 @@ func (p Plan) IntroDiscountCents() int64 {
 }
 
 // IntroPlan is the plan with an introductory price, if any. One plan has
-// one at most: Paddle's discount is restricted to that plan's price.
+// one at most: Polar's discount is restricted to that plan's product.
 func IntroPlan() (Plan, bool) {
 	for _, p := range Plans {
 		if p.HasIntro() {
@@ -162,7 +162,7 @@ type Inputs struct {
 }
 
 // Result is the hour as written to usage_hours. Since plan-v1 no hour
-// carries a price: the plan is charged by Paddle and the egress overage
+// carries a price: the plan is charged by Polar and the egress overage
 // is computed per period from the egress_bytes column, so every cents
 // field is zero and stays in the row only because the columns exist.
 type Result struct {
