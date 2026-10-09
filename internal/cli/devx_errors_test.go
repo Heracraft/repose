@@ -150,7 +150,7 @@ func TestArgRefusalsNameTheFix(t *testing.T) {
 		want string
 	}{
 		{[]string{"secrets", "set", "todo-app", "FOO"}, "repose secrets set takes one NAME, got 2 arguments: todo-app FOO. A project goes in --project: repose secrets set FOO --project todo-app"},
-		{[]string{"open", "todo-app", "80"}, "repose open takes at most one PORT, got 2 arguments: todo-app 80. A project goes in --project: repose open 80 --project todo-app"},
+		{[]string{"open", "todo-app", "80"}, "repose open takes at most one [LOCAL:]PORT, got 2 arguments: todo-app 80. A project goes in --project: repose open 80 --project todo-app"},
 		{[]string{"config", "add"}, "repose config add takes one or more package names, got no arguments"},
 		{[]string{"ssh", "todo-app", "uname"}, "repose ssh takes at most one PROJECT and no command, got 2 arguments: todo-app uname. To run a command: repose exec todo-app uname"},
 	}

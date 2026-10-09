@@ -1275,7 +1275,11 @@ func stashAllScript(msg string, report bool) string {
     repose_git stash push -q -u -m %s
 `, shQuote(msg))
 	if report {
-		s += "    printf '#stashed %s %s\\n' \"$repose_sn\" \"$(git rev-parse --short 'stash@{0}')\"\n"
+		// A short id of digits alone reads as stash@{N} to `git stash
+		// apply`, so that one is printed whole.
+		s += "    repose_sh=$(git rev-parse --short 'stash@{0}' 2>/dev/null || true)\n" +
+			"    case $repose_sh in *[a-f]*) ;; *) repose_sh=$(git rev-parse 'stash@{0}' 2>/dev/null || true) ;; esac\n" +
+			"    printf '#stashed %s %s\\n' \"$repose_sn\" \"$repose_sh\"\n"
 	}
 	return s + "  fi\nfi\n"
 }

@@ -116,7 +116,7 @@ func hintCommand(cmd *cobra.Command) string {
 	depth := 0 // inside an optional [...] group
 	for _, w := range strings.Fields(cmd.Use)[1:] {
 		switch {
-		case depth == 0 && (w == "[PROJECT]" || w == "PROJECT"):
+		case depth == 0 && (strings.HasPrefix(w, "[PROJECT") || strings.HasPrefix(w, "PROJECT")):
 			words = append(words, "PROJECT")
 		case depth == 0 && !strings.HasPrefix(w, "["):
 			words = append(words, w)

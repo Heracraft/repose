@@ -58,7 +58,8 @@ func TestResizeClassChecksThePlanFirst(t *testing.T) {
 			err = ResizeClassCmd(ctx, e, p.ID, c.to, func(string) (bool, error) { asked = true; return false, nil })
 			got, _ := e.Client.GetProject(ctx, p.ID)
 			if c.want == "" {
-				if err != nil || !asked {
+				// The question was asked; the test's no exits 1 (I-614).
+				if !asked || (err != nil && exitCodeOf(err) != ExitGeneric) {
 					t.Fatalf("err %v, asked %v", err, asked)
 				}
 				return

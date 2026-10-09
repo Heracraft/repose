@@ -275,7 +275,7 @@ Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` print
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--idle`.
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--unused`.
 
 ### `repose rm [PROJECT...]`
 
