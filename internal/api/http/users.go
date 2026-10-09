@@ -134,11 +134,12 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// deleteMe begins cancellation: any pending egress overage is charged and
-// the subscription cancelled at once (PRICING.md "Cancelling and changing
-// plans": Paddle drops one-time charges on a cancelled subscription, so
-// the order matters), then every live project is destroyed (a final
-// snapshot kept 30 days) and the account is marked cancelled.
+// deleteMe begins cancellation: any pending egress overage is sent to
+// Polar and the subscription ended (revoked at once, or at the period's
+// end when overage is owed, because Polar bills metered usage only on the
+// order a period's end makes; DECISIONS I-604), then every live project is
+// destroyed (a final snapshot kept 30 days) and the account is marked
+// cancelled.
 func (s *Server) deleteMe(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
 	ctx := r.Context()

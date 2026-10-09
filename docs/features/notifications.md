@@ -162,9 +162,18 @@ one with `events.InsertAccount(ctx, tx, userID, now, kind, payload)` in
 its own transaction (the row and the email are one commit) or
 `Ingest.Account`; `payload` is marshalled into `events.summary` as a small
 JSON object of the fields the template renders, and a template renders
-gracefully when a field is missing. Paddle's own receipts and
-payment-failure emails stay on in Paddle's dashboard, so a failed payment
-produces Paddle's email about the card and ours about the machines.
+gracefully when a field is missing. Polar sends, as
+merchant of record, the order confirmation (the receipt), the subscription
+confirmation, the renewal receipts (`subscription_cycled`,
+`subscription_cycled_after_trial`), the card-expiring reminder and the
+uncanceled, paused and resumed notices; its 7-day renewal reminder is for
+plans of six months or more, so never repose's. `polar-bootstrap` turns
+off Polar's emails that repeat these kinds (I-604):
+`subscription_trial_conversion_reminder` (ours is `trial_ending`),
+`subscription_past_due` (`payment_failed`), `subscription_cancellation`
+(`subscription_cancelled`), `subscription_revoked` (`subscription_ended`)
+and `subscription_updated` (`plan_changed`). A failed payment produces
+one email, ours.
 
 | Kind | Subject | When, and who writes it | `summary` fields |
 |---|---|---|---|
@@ -173,7 +182,7 @@ produces Paddle's email about the card and ours about the machines.
 | `waitlist_invited` | A seat is yours for 72 hours | the invite tick or `repose-admin waitlist admit` (replaces `waitlist_admitted`): choose a plan at `/billing` before `hold_until`, what an expired hold means | `{hold_until}` |
 | `waitlist_expired` | Your seat hold ran out | the tick, when `hold_until` passed unconverted: back on the list at position N | `{position}` |
 | `trial_ending` | Your free week ends soon | billing, two days before `trial_end`: the plan, the amount, the charge date, the cancel link | `{plan, amount_cents, charge_at}` |
-| `payment_failed` | Your payment failed | billing, day 0 and day 2 of `past_due`: update the card in Paddle's portal, machines run three days, then stop | `{plan, amount_cents, portal_url?}` |
+| `payment_failed` | Your payment failed | billing, day 0 and day 2 of `past_due`: update the card in Polar's customer portal, machines run three days, then stop | `{plan, amount_cents, portal_url?}` |
 | `subscription_cancelled` | Your plan is ending | billing, on a cancellation: the end date, machines stop then, snapshots kept 30 days, resume link | `{plan, ends_at}` |
 | `subscription_ended` | Your plan has ended | billing, at the end: machines stopped, the retention date, how to come back | `{plan, ended_at, retention_until}` |
 | `plan_changed` | Your plan changed | billing, on an upgrade or a scheduled downgrade | `{from_plan, to_plan, effective_at}` |

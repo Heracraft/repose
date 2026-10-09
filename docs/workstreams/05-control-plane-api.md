@@ -35,8 +35,8 @@ as a stateless container on Coolify with Postgres beside it.
 - Events and the notification outbox (delivery is workstream 13; the api
   owns the row and the outbox worker calls 13's senders).
 - Metering: `meter_samples` ingest, hourly rollup into `usage_hours`
-  (hours, disk, egress; no price since I-289: the plan table, the Paddle
-  wiring, the gate and the overage line belong to 09; the api owns the
+  (hours, disk, egress; no price since I-289: the plan table, the Polar
+  wiring (I-604), the gate and the overage line belong to 09; the api owns the
   rollup job and calls 09's package).
 - `repose-admin`: `hosts add` (mints a join token), `hosts list|drain|
   retire`, `users suspend|unsuspend|limits`, `projects exec` (audited),
@@ -50,13 +50,13 @@ as a stateless container on Coolify with Postgres beside it.
 
 `repose-admin users exempt <handle>` sets `billing_status=exempt`. Exempt
 users pass the plan gate and still accrue `usage_hours`. With no
-`PADDLE_API_KEY` the api starts normally, billing routes answer
+`POLAR_ACCESS_TOKEN` the api starts normally, billing routes answer
 `503 billing_disabled` and every other account is refused compute with
 `subscription_required` (I-289).
 
 ## 3. Scope: does not build
 
-- The plan table, the Paddle client, the webhook, the gate and the overage
+- The plan table, the Polar client, the webhook, the gate and the overage
   line: workstream 09. The api exposes `/billing/*` by calling 09's package.
 - Email and ntfy senders: workstream 13. The api runs the outbox loop.
 - The dashboard: workstream 08.
@@ -338,7 +338,7 @@ health check `GET /healthz` every 10 s, rolling deploy on. Env from
 Coolify: `DATABASE_URL`, `LOGTO_ISSUER`, `LOGTO_M2M_CLIENT_ID/SECRET`,
 `API_RESOURCE`, `KEYVAULT_URL`, `KEYVAULT_KEY_NAME`,
 `AZURE_CLIENT_ID/SECRET/TENANT_ID`, `BLOB_ACCOUNT_URL`, `BLOB_CONTAINER`,
-`PADDLE_*` (09), `RESEND_API_KEY` (13), `OTEL_EXPORTER_OTLP_ENDPOINT`
+`POLAR_*` (09, I-604), `RESEND_API_KEY` (13), `OTEL_EXPORTER_OTLP_ENDPOINT`
 (optional), `GRPC_SERVER_CERT/KEY`, `GATEWAY_HOST/PORT`, `API_MODE`. The
 full list with defaults is `ops/coolify/api.env.example`; the CA material
 is not an environment variable (I-42). Coolify app `api-grpc`: same
@@ -391,7 +391,7 @@ Traces around every op and every hostd command.
 | Host stream drops mid-op | op stays `running`; resent on Hello; if the host stays unreachable 10 min, op `error: host unreachable` | CLI shows `waiting for host` then the error |
 | Build fails | revision `failed` with error and line; op `error` | CLI prints the Nix error and `fragment.nix:<line>`; exit 10 |
 | Key Vault down | secret writes fail; guest start retries 30 min then errors | CLI: `secret service unavailable`; alert |
-| Paddle refuses the overage charge | `overage_charges` row without a transaction id, `OverageChargeFailed`, `billing overage-now` retries | operator |
+| Polar refuses the overage event | `overage_charges` row without a `sent_ref`, `OverageChargeFailed`; the next hourly tick resends it under the same external id | operator |
 | Postgres down | `/healthz` fails, Coolify does not route; hostd streams drop and buffer samples | alert |
 | Duplicate `Result` or `Event` | ignored by unique indexes | none |
 | Snapshot expiry deletes a blob a restore is reading | restore holds a `snapshots.deleted_at is null` check inside the same transaction that the expiry job uses `select ... for update skip locked` on | none |

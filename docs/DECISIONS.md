@@ -16620,6 +16620,7 @@ that undoes simulated states, so step 4 runs after step 3.
 own subscription. Not changed, for the owner: the intro discount's
 generated code shows in Paddle's order summary (I-497 says it is never
 shown), so a Solo customer who cancels can type it at a later checkout.
+
 **I-601. The home folder is no project's: `run` there needs `--name` or
 `--temp`, never links it, never syncs it, and `rm` forgets the folders
 linked to the machine it destroys.** (owner, 2026-10-08; proposal
@@ -18222,3 +18223,150 @@ implementation*.
 - Evidence: `TestStopWindowScripts` runs the probe, close, remove and
   type scripts against a private tmux server and real git;
   `TestKeptBecause`. Not run against a herdr guest.
+
+**I-604. Billing moves from Paddle to Polar.** (polar, 2026-10-08;
+owner: "we are switching from paddle to polar.sh, verification came in
+faster, handle the whole migration end to end.") Amends I-289, I-497
+and I-600 where they name Paddle's mechanics. What is sold does not
+change: the plans, prices, seven-day trial with the card taken at
+checkout, Solo's introductory price, the egress allowance, overage and
+hard stop, the seats, the gate and dunning (`docs/PRICING.md`). Polar
+is the merchant of record as Paddle was, so the tax row stays closed;
+its Starter fee, 5% + 50¢, is Paddle's (an organization made before
+2026-05-27 keeps 4% + 40¢ plus 0.5% on subscriptions). What changes:
+
+(1) *Client.* `internal/billing/polar.go`: net/http against
+`https://api.polar.sh/v1` or `https://sandbox-api.polar.sh/v1`, an
+organization access token as the bearer, `Polar-Version: 2026-10`
+pinned on every request and on the webhook endpoint. Polar retires a
+version about nine months after it becomes current, so this pin has to
+move before July 2027 (`docs/ops/RUNBOOK.md` "Polar API version").
+Polar's tokens do not say their environment, so
+`POLAR_ENVIRONMENT=sandbox|production` is required with
+`POLAR_ACCESS_TOKEN`; a test refuses production. Environment:
+`POLAR_ACCESS_TOKEN`, `POLAR_ENVIRONMENT`, `POLAR_WEBHOOK_SECRET`,
+`POLAR_PRODUCT_SOLO`, `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`,
+`POLAR_DISCOUNT_INTRO`. With no `POLAR_ACCESS_TOKEN` billing is disabled
+exactly as it was with no `PADDLE_API_KEY`. The `PADDLE_*` variables are
+no longer read.
+
+(2) *Catalog.* `repose-admin billing polar-bootstrap` (replacing
+`paddle-bootstrap`) finds by `metadata.repose`, or creates: the meter
+"Egress overage" (events named `egress_overage`, the sum of
+`metadata.gb`), one monthly product per plan carrying its fixed price,
+a metered price of 5 cents a unit on that meter, and the seven-day
+trial; the introductory discount (fixed, $9 off, `repeating` for 3
+months, restricted to Solo's product, no code); and the webhook
+endpoint (raw format, the events below, `api_version` 2026-10). It
+also sets the organization: one subscription per customer, trial abuse
+prevention on, plan and seat changes off in Polar's customer portal
+(plan changes go through `POST /billing/plan`, which checks seats and
+fit first), metered usage shown, prices exclusive of tax (Polar's
+default was inclusive, which would have made $29 include VAT), and
+Polar's own trial-reminder, past-due, cancellation, revoked and updated
+emails off, because repose sends each of those itself (I-291); Polar's
+receipts and confirmations stay on. Polar counts a repeating discount in
+calendar months from the first charged period (`discount_applied_at`,
+the trial's end), so the first three charges get it, as I-497 says; the
+subscription carries no end date for it, and the api derives
+`intro_until` as the trial's end (or the start) plus `IntroMonths`
+months. A fixed discount applies to the whole order, metered usage
+included, which leaves the overage at full price.
+
+(3) *Checkout.* `POST /billing/checkout {plan}` reserves the seat as
+before and creates a Polar checkout session: the plan's product,
+`external_customer_id` = the user id, the account's email, the intro
+discount when eligible, discount codes off, `metadata.user_id`, the
+customer's IP (from the edge's `X-Forwarded-For`) for the tax country,
+`success_url` `<dashboard>/billing?checkout=done` and `return_url`
+`<dashboard>/billing`. It answers `{url}` and the dashboard sends the
+browser there. Polar's hosted page replaces the Paddle.js overlay, so
+the dashboard loads no payment script, the CSP drops Paddle's hosts and
+`GET /billing` drops its `paddle` object. The old response shape is not
+kept a release (CLAUDE.md "Docs are the spec"): it named Paddle objects
+that no longer exist, the dashboard ships in the same deploy, and the
+CLI never read it. The api creates no customer ahead of the checkout;
+Polar makes one with the external id, and the webhook stores its id in
+`users.billing_customer_id`.
+
+(4) *Webhook.* Polar signs with Standard Webhooks: `webhook-id`,
+`webhook-timestamp` and `webhook-signature` (`v1,<base64>`), an
+HMAC-SHA256 of `id.timestamp.body`. The key is the base64 after
+`whsec_`; Polar's older secrets are keyed by the bytes of the whole
+string, and both are tried. Five minutes of skew; deduped on
+`webhook-id`, the primary key of `billing_events` (the renamed
+`paddle_events`). Handled: `subscription.created|updated|active|
+canceled|uncanceled|revoked|past_due` upsert the row from the payload
+(`product_id` gives the plan, `pending_update.product_id` the scheduled
+plan, `ends_at` with `cancel_at_period_end` the cancel date,
+`discount_id` the intro), and `order.paid` for a subscription is the old
+`transaction.completed` (the account active, past_due cleared, a billing
+suspension lifted). The first move to `past_due` is the old
+`transaction.payment_failed` (day 0 and its email); Polar's own retries
+run 2, 7, 14 and 21 days, and repose's 3-day stop is unchanged. Status
+map: `incomplete` and `incomplete_expired` are no subscription yet and
+are recorded without a row; `unpaid` counts as `canceled`.
+
+(5) *Overage.* Paddle took a one-time charge; Polar bills a metered
+price at the period's end. The hourly tick, within three hours of
+`period_end`, ingests one `egress_overage` event of the period's whole
+GB over the allowance with `external_id` `overage:<subscription>:<period
+start>`, and Polar adds it to the renewal order at 5 cents a GB. The
+external id makes a resend harmless, so a failed send is retried by the
+next tick instead of by hand. `overage_charges.paddle_transaction_id`
+becomes `sent_ref` (the external id, set once Polar accepted it).
+Account deletion ingests the period's overage first; with none it
+revokes the subscription at once, and with some it cancels at the
+period's end, because a revoke ends the period without billing metered
+usage (Polar's `_perform_cancellation` settles meters only on a meter
+cycle, which repose does not use). Either way no new period is charged.
+
+(6) *Plan changes, cancellation, portal, invoices.* An upgrade is
+`PATCH /v1/subscriptions/{id}` with the new product and
+`proration_behavior: invoice` (the difference charged at once, as
+Paddle's `prorated_immediately`). An upgrade from Solo also sends
+`discount_id: null`: Polar carries a subscription's discount onto the new
+product even when the discount names Solo's alone (the sandbox charged a
+Plus upgrade $50 a month), and the introductory offer is Solo's. A
+downgrade uses `next_period`, which
+Polar holds as `pending_update`; undoing it sends `pending_update:
+null`. Cancel and resume set `cancel_at_period_end`. The portal is a
+customer session for the external id; Polar has no payment-method deep
+link, so `for: payment_method` gets the same portal. Invoices are
+Polar's orders for the customer (`external_customer_id`), newest first,
+up to 24, in the same response shape; a PDF link is given once Polar
+has generated the invoice, and the listing asks Polar to generate any
+that are missing.
+
+(7) *Schema* (migration 0020): `users.paddle_customer_id` becomes
+`billing_customer_id`, `subscriptions.paddle_customer_id` becomes
+`customer_id`, `subscriptions.provider` is added (`paddle` for rows
+before the switch, `polar` from it), `paddle_events` becomes
+`billing_events`. A live Paddle row can never hear from Paddle again, so
+the migration ends any such row and returns its account to `none`,
+lifting a billing suspension with it, and clears Paddle's `ctm_`
+customer ids so the first Polar event stores Polar's (production had
+one subscription, already cancelled, on 2026-10-08). Only Paddle's
+`sub_` ids are tagged `paddle`, so a rollback and rerun leaves Polar's
+rows alone. `subscriptions.source_modified_at` keeps Polar's
+`modified_at` of the newest payload applied: Polar sends
+`subscription.updated` and a specific event for each change, and a
+retry can arrive after a newer one, so an older payload changes nothing.
+An event whose apply failed is applied again when Polar retries it or
+an operator redelivers it from Polar's dashboard; only an applied one
+is a duplicate. A subscription that ends while its account is billing
+suspended (Polar revokes after its day-21 retry) lifts the suspension,
+so the account can check out again; an operator's stays.
+
+(8) *Where it runs.* Production moves from Paddle's sandbox block
+(I-600) to Polar's sandbox organization `repose` until the owner
+switches to a production token; until then anyone can check out with
+Stripe's test card, as before.
+
+*Rejected:* Polar's embedded checkout (a script from Polar's CDN in the
+CSP for nothing a redirect lacks); Polar's seat-based pricing (repose's
+seats are a fleet count, not a team's seats); a credits benefit for the
+allowance (the allowance changes with the introductory offer and the
+hard stop needs repose's own count anyway); hourly overage events
+(PRICING.md promises one line a period); keeping both providers behind
+a switch (nothing on either side would exercise the Paddle path again).

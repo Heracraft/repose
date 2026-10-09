@@ -9,66 +9,71 @@ DECISIONS I-289 to I-292.
 
 ## 0. Right after this push (five minutes)
 
-The api on `main` has no `PADDLE_API_KEY`, so billing is disabled: the
+An api with no `POLAR_ACCESS_TOKEN` has billing disabled: the
 plan page says so, and the compute gate refuses every account that is not
-`exempt` with `subscription_required`. Until Paddle is configured, either
+`exempt` with `subscription_required`. Until Polar is configured, either
 set `BILLING_ENFORCE=false` on both api apps (starts go through, nothing
 is charged) or mark the accounts that must keep working exempt:
 `repose-admin users exempt <handle>`. Remove `WAITLIST_PERCENT` from both
 apps at the same time; the api ignores it and logs a warning (I-290).
 
-## 1. Paddle (about an hour, plus Paddle's review)
+## 1. Polar (about an hour)
 
-Steps 2 to 6 are done in the sandbox (2026-10-08, DECISIONS I-600): prod's
-api runs the sandbox keys, so checkout takes Paddle's test card until step
-7 replaces them.
+Steps 2 to 5 are done in the sandbox (2026-10-08, DECISIONS I-604): prod's
+api runs Polar's sandbox organization `repose` (sandbox.polar.sh), so
+checkout takes Stripe's test card until step 6 replaces it.
 
-1. Create a Paddle Billing account at https://vendors.paddle.com (a
-   sandbox account comes with it at https://sandbox-vendors.paddle.com).
-   Paddle reviews the website before live payments are switched on: it
-   wants pricing, terms, privacy and a refund policy on the domain. All
-   four are live after the web deploy: `/#pricing`, `/terms`, `/privacy`,
-   `/refunds`. Fill the review form with those links and "developer
-   tooling: remote development machines for coding agents" as the product.
-2. In the sandbox first: Developer tools, Authentication, create an API
-   key (`pdl_sdbx_apikey_...`) and a client-side token
-   (`test_...`). Paste them into the api's Coolify environment as
-   `PADDLE_API_KEY` and `PADDLE_CLIENT_TOKEN` (both `api` and `api-grpc`
-   apps; the two must match, the grpc app runs the ticks).
-3. Run the bootstrap from a shell that has `DATABASE_URL` and the key:
+1. Create a Polar account at https://polar.sh and an organization for
+   repose (a sandbox organization is made separately at
+   https://sandbox.polar.sh). Polar is the merchant of record: it reviews
+   the organization before payouts and wants pricing, terms, privacy and
+   a refund policy on the domain. All four are live after the web deploy:
+   `/#pricing`, `/terms`, `/privacy`, `/refunds`.
+2. In the sandbox first: Settings, Developers, create an organization
+   access token (`polar_oat_...`). Paste it into the api's Coolify
+   environment as `POLAR_ACCESS_TOKEN` with `POLAR_ENVIRONMENT=sandbox`
+   (both `api` and `api-grpc` apps; the two must match, the grpc app runs
+   the ticks).
+3. Run the bootstrap from this checkout with the token in the environment:
 
    ```
-   PADDLE_API_KEY=... API_PUBLIC_URL=https://api.repose.herakraft.co repose-admin billing paddle-bootstrap
+   POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=sandbox ops/polar/bootstrap.sh > /tmp/polar.env
    ```
 
-   It creates the three products and prices (Solo $29, Plus $59, Pro $99,
-   seven-day trial), Solo's introductory discount ($9 off the first three
-   charges, I-497), the overage product and the webhook destination at
-   `https://api.repose.herakraft.co/v1/billing/webhook`, and prints the
-   env block: `PADDLE_PRICE_SOLO`, `PADDLE_PRICE_PLUS`, `PADDLE_PRICE_PRO`,
-   `PADDLE_PRODUCT_OVERAGE`, `PADDLE_DISCOUNT_INTRO`, `PADDLE_WEBHOOK_SECRET`. Paste it into both
-   api apps and redeploy. It is idempotent: run it again and it prints the
-   same ids.
-4. Checkout settings, Website approval: add `repose.herakraft.co` as an
-   approved domain (Paddle.js refuses to open a checkout on a domain that
-   is not listed). Set the default payment link to
-   `https://repose.herakraft.co/billing`.
-5. Notifications, Customer emails: leave receipts and payment-failure
-   emails on. repose sends its own emails about the machines; Paddle's
-   are about the card (I-291).
-6. Prove the gate in the sandbox with `docs/ops/M4-GATE.md`: a checkout
-   with Paddle's test card `4242 4242 4242 4242` on a throwaway account,
-   the subscription appearing in `repose-admin billing show <handle>`, a
-   simulated `transaction.completed` and `transaction.payment_failed`
-   from Paddle's Notifications, Simulations page, and an overage line with
+   It creates the meter "Egress overage", the three products (Solo $29,
+   Plus $59, Pro $99, each with the metered overage price at 5 cents a GB
+   and a seven-day trial), Solo's introductory discount ($9 off the first
+   three charges, I-497), and the webhook endpoint at
+   `https://api.repose.herakraft.co/v1/billing/webhook`; it sets the
+   organization (one subscription per customer, trial abuse prevention,
+   plan changes off in the customer portal, prices exclusive of tax) and
+   prints the env block: `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
+   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO`,
+   `POLAR_WEBHOOK_SECRET`. Paste it into both api apps and redeploy, then
+   delete the file. It is idempotent: run it again and it creates nothing
+   and prints the same ids.
+4. Check Settings > Notifications in Polar: the bootstrap turned off the
+   customer emails repose sends itself (trial ending, payment failed,
+   cancellation, revoked, plan updated; I-291, I-604) and left the
+   receipts, the subscription confirmation and the card-expiring reminder
+   on. Leave it that way.
+5. Prove the gate in the sandbox with `docs/ops/M4-GATE.md`: a checkout
+   with Stripe's test card `4242 4242 4242 4242` on a throwaway account,
+   the subscription appearing in `repose-admin billing show <handle>`, the
+   trial ended at once so Polar charges the first period, a renewal on
+   the failing card `4000 0000 0000 0341`, and an overage line with
    `repose-admin billing overage-now <handle>`.
-7. When Paddle approves the account for live: repeat steps 2 to 4 with the
-   live key (`pdl_live_apikey_...`), `repose-admin billing paddle-bootstrap
-   --live`, and the live client token. Live keys refuse to run in tests.
+6. Going live: create the production organization at https://polar.sh
+   and its access token, then
+   `POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=production ops/polar/bootstrap.sh --production --webhook-url https://api.repose.herakraft.co/v1/billing/webhook > /tmp/polar.env`,
+   and paste the block with the token and `POLAR_ENVIRONMENT=production`
+   into Coolify for `api` and `api-grpc`. Tests refuse a production
+   environment.
 
-A promotion needs no code: Paddle, Catalog, Discounts, create a code (for
-example 50% off the first three months, limited to 20 redemptions) and put
-the code in the tweet; the checkout has a discount field.
+A promotion needs a code change: the checkout turns Polar's discount
+code field off (I-604). With it turned back on, a code made in Polar's
+dashboard (Products, Discounts; for example 50% off the first three
+months, limited to 20 redemptions) can go in the tweet.
 
 ## 2. Resend (ten minutes)
 

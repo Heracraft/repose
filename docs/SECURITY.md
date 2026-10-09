@@ -11,9 +11,9 @@ mitigate. `workstreams/14-security.md` is the work that verifies this doc.
   Claude session.
 - A tenant's named secrets (API keys they chose to store).
 - The platform CAs (user and host), hostd client certificates, the Key
-  Vault wrapping key, Paddle and Logto credentials.
+  Vault wrapping key, Polar and Logto credentials.
 - The host itself: root on a host is every guest on it.
-- Billing integrity: usage rows, the subscriptions table and the Paddle customer mapping.
+- Billing integrity: usage rows, the subscriptions table and the Polar customer mapping.
 
 ## Actors
 

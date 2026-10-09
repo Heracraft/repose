@@ -23,11 +23,16 @@ restoring and forking a project all answer `payment_required` with
 The dashboard's billing page shows the three plans, Solo at $29 (shown as
 $20 "for 3 months, then $29 and 250 GB egress" with 100 GB of egress to
 an account that never had a subscription, DECISIONS I-497), Plus at
-$59 and Pro at $99 a month, and how many seats are left. "Choose" opens Paddle's checkout
-in the page (Paddle.js with a transaction the api made, so the seat is
-held and the account is stamped before the card form appears); the card
-and the billing address go to Paddle, never to the platform, and Paddle
-adds the tax for the buyer's country as merchant of record. The first
+$59 and Pro at $99 a month, and how many seats are left. "Choose" sends
+the browser to Polar's hosted checkout (a session the api made, so the
+seat is held and the account is stamped before the card form appears;
+DECISIONS I-604). It shows the plan, "7 days free", the introductory line
+on a first Solo checkout, "Additional metered charges may apply" for the
+egress overage, and the tax for the buyer's country on top; the card and
+the billing address go to Polar, never to the platform, and Polar adds
+the tax as merchant of record. After paying, Polar returns the browser
+to `/billing?checkout=done` and the page waits for the subscription. An
+email or card that has had a trial before gets the checkout without one. The first
 week is free: the card is taken at checkout and first charged on day
 eight. When the webhook arrives the account is `trial`, and from the first
 real charge `active`.
@@ -75,8 +80,10 @@ again; a no prints the refusal and exits 7. Off a terminal the refusal
 exits 7 as before (DECISIONS I-637).
 
 Egress past the allowance is not a refusal: $0.05 a GB is added to the
-next invoice as one line, `Egress overage: 50 GB over the Solo plan's 250
-GB (1 Oct to 1 Nov 2026) at $0.05/GB`. The billing page shows the period's
+renewal order as one line, the plan's metered "Egress overage" price for
+the period's GB over the allowance (50 units at $0.05 for 300 GB on Solo).
+The api sends one event to Polar's meter within three hours of the
+period's end, and Polar's customer portal shows the metered usage. The billing page shows the period's
 egress and the overage so far; `repose-admin billing show` prints the
 arithmetic to the cent.
 
@@ -111,16 +118,20 @@ egress it did not see is egress the user is not charged for.
 
 ## The invoice
 
-Monthly, through Paddle, charged to the card given at checkout: the plan's
+Monthly, through Polar, charged to the card given at checkout: the plan's
 price, tax for the buyer's country, and at most one egress overage line.
-`GET /billing/invoices` and the dashboard list them with the PDF; the
-portal (`POST /billing/portal`) is where a user changes the card or the
-address and downloads receipts. Paddle sends its own receipt emails.
+`GET /billing/invoices` and the dashboard list Polar's orders with the PDF
+once Polar has generated it; Polar's customer portal (`POST
+/billing/portal`) is where a user changes the card or the address,
+cancels at period end and downloads receipts. Polar sends its own receipt
+emails.
 
 ## Changing and cancelling
 
-Upgrading to a bigger plan takes effect at once, prorated by Paddle on the
-next invoice, and needs the extra seats free. Downgrading takes effect at
+Upgrading to a bigger plan takes effect at once, with Polar charging the
+prorated difference that day, and needs the extra seats free. Plan
+changes go through the dashboard only; Polar's portal has them turned
+off. Downgrading takes effect at
 the next renewal and is refused (`409 conflict`, `detail.reason =
 over_plan`) while the running memory or the disk the projects hold would not fit the
 smaller plan; stop or
@@ -132,7 +143,8 @@ effect. Every change sends one email (`plan_changed`,
 
 ## A failed payment
 
-Paddle retries on its own schedule. Meanwhile:
+Polar retries the card 2, 7, 14 and 21 days after the first failure, then
+revokes the subscription. Meanwhile:
 
 | When | What happens |
 |---|---|
@@ -151,14 +163,14 @@ start`, so nobody is surprised by machines that restarted themselves.
 `repose-admin billing show <handle>` prints the subscription, the period,
 what ran, the egress and the overage arithmetic; `repose-admin billing
 explain <project> <hour>` prints one hour's inputs and the period's line.
-A refund is made in Paddle's dashboard and lands on the same card
+A refund is made in Polar's dashboard and lands on the same card
 (PRICING.md "Refunds"); nothing in `usage_hours` or `overage_charges` is
 edited. `ops/RUNBOOK.md` "Customer disputes a charge" has the procedure.
 
 ## Deferred
 
 - Per-seat or team pricing (no teams in the first release, DECISIONS R5-6).
-- Currencies other than USD, annual plans, promotions beyond Paddle's own
+- Currencies other than USD, annual plans, promotions beyond Polar's own
   discount codes.
 - Idle auto-stop (R1-5); an idle machine holds its share of the plan's
   memory and the CLI says so.

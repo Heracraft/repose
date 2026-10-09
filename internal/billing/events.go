@@ -90,8 +90,8 @@ type DiskOverPlanPayload struct {
 }
 
 // trialEnding is the payload for a trialing subscription: charged at
-// trial_end (or next_billed_at when Paddle set only that), the amount
-// Paddle charges then, which is the introductory price when the
+// trial_end (or next_billed_at when Polar set only that), the amount
+// Polar charges then, which is the introductory price when the
 // subscription carries the introductory discount (DECISIONS I-497).
 func trialEnding(sub *Sub) TrialEndingPayload {
 	plan := sub.PlanOrSolo()

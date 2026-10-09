@@ -5,11 +5,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -24,32 +25,44 @@ import (
 	"github.com/heracraft/repose/internal/obs"
 )
 
-// The Paddle webhook (09-billing.md §5.11, api.md POST /billing/webhook).
-// Paddle-Signature is the authentication: `ts=...;h1=...`, an HMAC-SHA256
-// of `ts:body` with the endpoint secret, refused past five minutes of
-// skew. Every event is deduped on event_id, the primary key of
-// paddle_events: a duplicate delivery is a no-op and a replay reproduces
-// the same rows.
+// The Polar webhook (09-billing.md §5.11, api.md POST /billing/webhook,
+// DECISIONS I-604). Polar signs with Standard Webhooks: webhook-id,
+// webhook-timestamp and webhook-signature (`v1,<base64>`, space
+// separated), an HMAC-SHA256 of `id.timestamp.body`, refused past five
+// minutes of skew. Every event is deduped on webhook-id, the primary key
+// of billing_events: a duplicate delivery is a no-op and a replay
+// reproduces the same rows.
 
-// ErrBadSignature is returned when Paddle-Signature does not verify. The
+// ErrBadSignature is returned when the signature does not verify. The
 // route answers 400 and logs the event type only; the body is never
 // logged (it carries the customer's details).
-var ErrBadSignature = errors.New("paddle webhook signature is invalid")
+var ErrBadSignature = errors.New("polar webhook signature is invalid")
 
 // ErrDuplicate means the event id was already recorded.
-var ErrDuplicate = errors.New("paddle event already processed")
+var ErrDuplicate = errors.New("polar event already processed")
 
 // The event types the endpoint subscribes to and handles.
 var WebhookEvents = []string{
-	"subscription.created", "subscription.activated", "subscription.trialing", "subscription.updated",
-	"subscription.past_due", "subscription.paused", "subscription.resumed", "subscription.canceled",
-	"transaction.completed", "transaction.payment_failed",
+	"subscription.created", "subscription.updated", "subscription.active", "subscription.canceled",
+	"subscription.uncanceled", "subscription.revoked", "subscription.past_due", "order.paid",
 }
 
-// SignatureSkew is how far a webhook's ts may be from now.
+// SignatureSkew is how far a webhook's timestamp may be from now.
 const SignatureSkew = 5 * time.Minute
 
-// Webhooks applies Paddle events to the database.
+// WebhookHeaders are the three Standard Webhooks headers.
+type WebhookHeaders struct {
+	ID        string
+	Timestamp string
+	Signature string
+}
+
+// HeadersFrom reads the Standard Webhooks headers off a request.
+func HeadersFrom(h http.Header) WebhookHeaders {
+	return WebhookHeaders{ID: h.Get("webhook-id"), Timestamp: h.Get("webhook-timestamp"), Signature: h.Get("webhook-signature")}
+}
+
+// Webhooks applies Polar events to the database.
 type Webhooks struct {
 	pool *db.Pool
 	cfg  Config
@@ -74,148 +87,164 @@ func NewWebhooks(pool *db.Pool, cfg Config, m *metrics.M, log *slog.Logger, extr
 	return &Webhooks{pool: pool, cfg: cfg, secrets: secrets, log: log.With("component", obs.ComponentAPI), m: m, Now: time.Now}
 }
 
-// Sign produces a Paddle-Signature header for a body, which is what the
-// fake Paddle and the tests use to post events.
-func Sign(secret string, ts time.Time, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(strconv.FormatInt(ts.Unix(), 10) + ":"))
-	mac.Write(body)
-	return "ts=" + strconv.FormatInt(ts.Unix(), 10) + ";h1=" + hex.EncodeToString(mac.Sum(nil))
+// signingKeys are the HMAC keys a secret may stand for: the base64 after
+// `whsec_` (Standard Webhooks, Polar's secrets from 2026-09-08) and the
+// bytes of the whole string (Polar's older secrets).
+func signingKeys(secret string) [][]byte {
+	var keys [][]byte
+	if rest, ok := strings.CutPrefix(secret, "whsec_"); ok {
+		if k, err := base64.StdEncoding.DecodeString(rest); err == nil && len(k) > 0 {
+			keys = append(keys, k)
+		}
+	}
+	return append(keys, []byte(secret))
 }
 
-// Verify checks a Paddle-Signature header against the body: any h1 with
-// any accepted secret, constant-time, within the skew.
-func (w *Webhooks) Verify(header string, body []byte) error {
-	var ts string
-	var h1s []string
-	for _, part := range strings.Split(header, ";") {
-		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "ts":
-			ts = v
-		case "h1":
-			h1s = append(h1s, v)
-		}
+func signature(key []byte, id, ts string, body []byte) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(id + "." + ts + "."))
+	mac.Write(body)
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// Sign produces the Standard Webhooks headers for a body, which is what
+// the fake Polar and the tests use to post events.
+func Sign(secret, id string, ts time.Time, body []byte) WebhookHeaders {
+	t := strconv.FormatInt(ts.Unix(), 10)
+	return WebhookHeaders{ID: id, Timestamp: t, Signature: "v1," + signature(signingKeys(secret)[0], id, t, body)}
+}
+
+// Verify checks the headers against the body: any v1 signature with any
+// accepted secret's key, constant-time, within the skew.
+func (w *Webhooks) Verify(h WebhookHeaders, body []byte) error {
+	if h.ID == "" || h.Timestamp == "" || h.Signature == "" {
+		return fmt.Errorf("%w: webhook-id, webhook-timestamp or webhook-signature is missing", ErrBadSignature)
 	}
-	if ts == "" || len(h1s) == 0 {
-		return fmt.Errorf("%w: header has no ts or h1", ErrBadSignature)
-	}
-	unix, err := strconv.ParseInt(ts, 10, 64)
+	unix, err := strconv.ParseInt(h.Timestamp, 10, 64)
 	if err != nil {
-		return fmt.Errorf("%w: ts is not a number", ErrBadSignature)
+		return fmt.Errorf("%w: webhook-timestamp is not a number", ErrBadSignature)
 	}
 	if skew := w.Now().Sub(time.Unix(unix, 0)); skew > SignatureSkew || skew < -SignatureSkew {
-		return fmt.Errorf("%w: ts is %s from now", ErrBadSignature, skew.Round(time.Second))
+		return fmt.Errorf("%w: webhook-timestamp is %s from now", ErrBadSignature, skew.Round(time.Second))
+	}
+	var sigs []string
+	for _, part := range strings.Fields(h.Signature) {
+		if v, ok := strings.CutPrefix(part, "v1,"); ok {
+			sigs = append(sigs, v)
+		}
+	}
+	if len(sigs) == 0 {
+		return fmt.Errorf("%w: no v1 signature", ErrBadSignature)
 	}
 	for _, secret := range w.secrets {
 		if secret == "" {
 			continue
 		}
-		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write([]byte(ts + ":"))
-		mac.Write(body)
-		want := hex.EncodeToString(mac.Sum(nil))
-		for _, got := range h1s {
-			if subtle.ConstantTimeCompare([]byte(want), []byte(strings.ToLower(got))) == 1 {
-				return nil
+		for _, key := range signingKeys(secret) {
+			want := signature(key, h.ID, h.Timestamp, body)
+			for _, got := range sigs {
+				if subtle.ConstantTimeCompare([]byte(want), []byte(got)) == 1 {
+					return nil
+				}
 			}
 		}
 	}
-	return fmt.Errorf("%w: no h1 matched", ErrBadSignature)
+	return fmt.Errorf("%w: no signature matched", ErrBadSignature)
 }
 
-// Event is Paddle's notification envelope.
+// Event is Polar's webhook payload.
 type Event struct {
-	EventID    string          `json:"event_id"`
-	EventType  string          `json:"event_type"`
-	OccurredAt string          `json:"occurred_at"`
+	Type       string          `json:"type"`
+	Timestamp  string          `json:"timestamp"`
+	APIVersion string          `json:"api_version"`
 	Data       json.RawMessage `json:"data"`
 }
 
 // Handle verifies the signature, records the event and applies it. A
 // duplicate returns ErrDuplicate, which the route answers 200 to, because
-// Paddle retries anything else.
-func (w *Webhooks) Handle(ctx context.Context, payload []byte, sigHeader string) (kind string, err error) {
+// Polar retries anything else.
+func (w *Webhooks) Handle(ctx context.Context, payload []byte, h WebhookHeaders) (kind string, err error) {
 	if len(w.secrets) == 0 || w.secrets[0] == "" {
 		return "", ErrDisabled
 	}
 	var ev Event
 	if err := json.Unmarshal(payload, &ev); err == nil {
-		kind = ev.EventType
+		kind = ev.Type
 	}
-	if err := w.Verify(sigHeader, payload); err != nil {
+	if err := w.Verify(h, payload); err != nil {
 		return kind, err
 	}
-	if kind == "" || ev.EventID == "" {
-		return kind, fmt.Errorf("%w: body has no event_id or event_type", ErrBadSignature)
+	if kind == "" {
+		return kind, fmt.Errorf("%w: body has no type", ErrBadSignature)
 	}
 	occurred := w.Now().UTC()
-	if t := paddleTime(ev.OccurredAt); t != nil {
+	if t := polarTime(ev.Timestamp); t != nil {
 		occurred = *t
 	}
-	tag, err := w.pool.Exec(ctx, "insert into paddle_events (id, type, occurred_at) values ($1, $2, $3) on conflict (id) do nothing", ev.EventID, kind, occurred)
+	tag, err := w.pool.Exec(ctx, "insert into billing_events (id, type, occurred_at) values ($1, $2, $3) on conflict (id) do nothing", h.ID, kind, occurred)
 	if err != nil {
 		return kind, err
 	}
 	if tag.RowsAffected() == 0 {
-		return kind, ErrDuplicate
+		// Seen before: a duplicate once applied; an event whose apply
+		// failed is applied again, which is what Polar's retries and a
+		// redelivery from its dashboard are for.
+		var processed *time.Time
+		if err := w.pool.QueryRow(ctx, "select processed_at from billing_events where id = $1", h.ID).Scan(&processed); err != nil {
+			return kind, err
+		}
+		if processed != nil {
+			return kind, ErrDuplicate
+		}
 	}
 	applyErr := w.apply(ctx, &ev)
 	if applyErr != nil {
-		if _, err := w.pool.Exec(ctx, "update paddle_events set error = $2 where id = $1", ev.EventID, applyErr.Error()); err != nil {
+		if _, err := w.pool.Exec(ctx, "update billing_events set error = $2 where id = $1", h.ID, applyErr.Error()); err != nil {
 			return kind, err
 		}
 		return kind, applyErr
 	}
-	if _, err := w.pool.Exec(ctx, "update paddle_events set processed_at = now() where id = $1", ev.EventID); err != nil {
+	if _, err := w.pool.Exec(ctx, "update billing_events set processed_at = now(), error = null where id = $1", h.ID); err != nil {
 		return kind, err
 	}
-	w.log.Info("paddle webhook applied", "event", obs.EventBillingWebhook, "kind", kind, "result", "ok")
+	w.log.Info("polar webhook applied", "event", obs.EventBillingWebhook, "kind", kind, "result", "ok")
 	return kind, nil
 }
 
 func (w *Webhooks) apply(ctx context.Context, ev *Event) error {
 	switch {
-	case strings.HasPrefix(ev.EventType, "subscription."):
+	case strings.HasPrefix(ev.Type, "subscription."):
 		return w.subscription(ctx, ev)
-	case ev.EventType == "transaction.completed":
-		return w.transactionCompleted(ctx, ev)
-	case ev.EventType == "transaction.payment_failed":
-		return w.transactionFailed(ctx, ev)
+	case ev.Type == "order.paid":
+		return w.orderPaid(ctx, ev)
 	}
 	// Anything else the endpoint is subscribed to is recorded and ignored.
 	return nil
 }
 
-// resolveUser finds the account a Paddle object belongs to: custom_data's
-// user_id first, then the customer id. An unknown one is an error the
-// paddle_events row keeps.
-func (w *Webhooks) resolveUser(ctx context.Context, custom map[string]any, customerID string) (*store.User, error) {
-	if custom != nil {
-		if v, _ := custom["user_id"].(string); v != "" {
-			if id, err := uuid.Parse(v); err == nil {
-				u, err := store.GetUser(ctx, w.pool, id)
-				if err == nil {
-					return u, nil
-				}
-				if !errors.Is(err, db.ErrNotFound) {
-					return nil, err
-				}
-			}
+// resolveUser finds the account a Polar object belongs to: the user id
+// the checkout stamped (metadata, then the customer's external id), then
+// the customer id. An unknown one is an error the billing_events row
+// keeps.
+func (w *Webhooks) resolveUser(ctx context.Context, userID uuid.UUID, customerID string) (*store.User, error) {
+	if userID != uuid.Nil {
+		u, err := store.GetUser(ctx, w.pool, userID)
+		if err == nil {
+			return u, nil
+		}
+		if !errors.Is(err, db.ErrNotFound) {
+			return nil, err
 		}
 	}
 	if customerID == "" {
 		return nil, errors.New("event names no user and no customer")
 	}
 	var id uuid.UUID
-	err := w.pool.QueryRow(ctx, "select id from users where paddle_customer_id = $1", customerID).Scan(&id)
+	err := w.pool.QueryRow(ctx, "select id from users where billing_customer_id = $1", customerID).Scan(&id)
 	if db.IsNoRows(err) {
-		// Not ours: a customer made in Paddle's dashboard, or another
-		// product on the same account.
-		return nil, fmt.Errorf("no user for Paddle customer %s", customerID)
+		// Not ours: a customer made in Polar's dashboard, or another
+		// product in the same organization.
+		return nil, fmt.Errorf("no user for Polar customer %s", customerID)
 	}
 	if err != nil {
 		return nil, err
@@ -223,58 +252,114 @@ func (w *Webhooks) resolveUser(ctx context.Context, custom map[string]any, custo
 	return store.GetUser(ctx, w.pool, id)
 }
 
-// subscription upserts the row from Paddle's view and projects it onto the
-// account: status, has_card, the seat conversion and the account events.
+// subscriptionStatus maps Polar's status onto the subscriptions table's:
+// unpaid (retries exhausted) is canceled; incomplete and
+// incomplete_expired are a checkout that never became a subscription,
+// for which there is no row ("").
+func subscriptionStatus(polar string) string {
+	switch polar {
+	case StatusTrialing, StatusActive, StatusPastDue, StatusPaused, StatusCanceled:
+		return polar
+	case "unpaid":
+		return StatusCanceled
+	}
+	return ""
+}
+
+// subscriptionRow is the subscriptions row a Polar subscription stands
+// for. Polar has no next billing date: a subscription that renews bills
+// at its period's end. It names no end for the introductory discount
+// either; Polar counts its months from the first charged period (the
+// trial's end), which is what IntroUntil derives (DECISIONS I-604).
+func (w *Webhooks) subscriptionRow(ps *Subscription, userID uuid.UUID, status string, plan Plan) Sub {
+	row := Sub{ID: ps.ID, UserID: userID, CustomerID: ps.CustomerID, Plan: plan.ID, Status: status, Seats: plan.Seats,
+		PeriodStart: polarTime(ps.CurrentPeriodStart), PeriodEnd: polarTime(ps.CurrentPeriodEnd), TrialEnd: polarTime(ps.TrialEnd), CancelAt: ps.CancelAt(),
+		SourceModifiedAt: polarTime(ps.ModifiedAt)}
+	if IsLive(status) && row.CancelAt == nil {
+		row.NextBilledAt = row.PeriodEnd
+	}
+	if ps.PendingUpdate != nil {
+		if sp := w.cfg.PlanForProduct(ps.PendingUpdate.ProductID); sp != "" && sp != plan.ID {
+			row.ScheduledPlan = &sp
+		}
+	}
+	if w.cfg.DiscountIntro != "" && ps.DiscountID == w.cfg.DiscountIntro {
+		row.Intro = true
+		from := polarTime(ps.TrialEnd)
+		if from == nil {
+			from = polarTime(ps.StartedAt)
+		}
+		if from == nil {
+			from = polarTime(ps.CreatedAt)
+		}
+		if from != nil && plan.IntroMonths > 0 {
+			until := from.AddDate(0, plan.IntroMonths, 0)
+			row.IntroUntil = &until
+		}
+	}
+	return row
+}
+
+// subscription upserts the row from Polar's view and projects it onto the
+// account: status, has_card, the seat conversion, the first payment
+// failure and the account events.
 func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	var ps Subscription
 	if err := json.Unmarshal(ev.Data, &ps); err != nil {
-		return fmt.Errorf("decode the %s subscription: %w", ev.EventType, err)
+		return fmt.Errorf("decode the %s subscription: %w", ev.Type, err)
 	}
 	if ps.ID == "" {
 		return errors.New("subscription event without an id")
 	}
-	u, err := w.resolveUser(ctx, ps.CustomData, ps.CustomerID)
+	status := subscriptionStatus(ps.Status)
+	if status == "" {
+		if ps.Status == "incomplete" || ps.Status == "incomplete_expired" {
+			return nil
+		}
+		return fmt.Errorf("subscription %s has unknown status %q", ps.ID, ps.Status)
+	}
+	uid, _ := ps.UserID()
+	u, err := w.resolveUser(ctx, uid, ps.CustomerID)
 	if err != nil {
 		return err
 	}
-	planID := w.cfg.PlanForPrice(ps.PriceID())
+	planID := w.cfg.PlanForProduct(ps.ProductID)
 	if planID == "" {
-		return fmt.Errorf("subscription %s has no repose plan price (price %q)", ps.ID, ps.PriceID())
+		return fmt.Errorf("subscription %s has no repose plan product (product %q)", ps.ID, ps.ProductID)
 	}
 	plan, _ := PlanByID(planID)
 	now := w.Now().UTC()
-	row := Sub{ID: ps.ID, UserID: u.ID, CustomerID: ps.CustomerID, Plan: plan.ID, Status: ps.Status, Seats: plan.Seats,
-		NextBilledAt: paddleTime(ps.NextBilledAt), TrialEnd: ps.TrialEnd()}
-	if ps.CurrentBillingPeriod != nil {
-		row.PeriodStart = paddleTime(ps.CurrentBillingPeriod.StartsAt)
-		row.PeriodEnd = paddleTime(ps.CurrentBillingPeriod.EndsAt)
-	}
-	if ps.Discount != nil && w.cfg.DiscountIntro != "" && ps.Discount.ID == w.cfg.DiscountIntro {
-		row.Intro, row.IntroUntil = true, paddleTime(ps.Discount.EndsAt)
-	}
-	if ps.ScheduledChange != nil && ps.ScheduledChange.Action == "cancel" {
-		row.CancelAt = paddleTime(ps.ScheduledChange.EffectiveAt)
-	}
-	if !IsLive(ps.Status) && ps.Status != StatusCanceled && ps.Status != StatusPaused {
-		return fmt.Errorf("subscription %s has unknown status %q", ps.ID, ps.Status)
-	}
+	row := w.subscriptionRow(&ps, u.ID, status, plan)
 	var prev *Sub
+	stale := false
 	err = db.InTx(ctx, w.pool, func(tx db.Tx) error {
-		// The downgrade a scheduled plan change is waiting for is ours to
-		// keep: Paddle reports the current price until it takes effect.
-		if cur, err := GetSubscription(ctx, tx, ps.ID); err == nil && cur.ScheduledPlan != nil && *cur.ScheduledPlan != plan.ID && ps.Status != StatusCanceled {
-			row.ScheduledPlan = cur.ScheduledPlan
+		// Polar sends subscription.updated and a specific event for each
+		// change, and a retry can arrive after a newer one: a payload older
+		// than the one applied last changes nothing.
+		if _, err := tx.Exec(ctx, "select 1 from subscriptions where id = $1 for update", ps.ID); err != nil {
+			return err
+		}
+		if cur, err := GetSubscription(ctx, tx, ps.ID); err == nil && cur.SourceModifiedAt != nil && row.SourceModifiedAt != nil && row.SourceModifiedAt.Before(*cur.SourceModifiedAt) {
+			stale = true
+			return nil
+		} else if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return err
 		}
 		prev, err = upsertSubscription(ctx, tx, row)
 		if err != nil {
 			return err
 		}
 		if ps.CustomerID != "" {
-			if _, err := tx.Exec(ctx, "update users set paddle_customer_id = $2 where id = $1 and paddle_customer_id is null", u.ID, ps.CustomerID); err != nil {
+			if _, err := tx.Exec(ctx, "update users set billing_customer_id = $2 where id = $1 and billing_customer_id is null", u.ID, ps.CustomerID); err != nil {
 				return err
 			}
 		}
-		if err := projectStatus(ctx, tx, u.ID, ps.Status, now); err != nil {
+		if status == StatusPastDue && (prev == nil || prev.Status != StatusPastDue) {
+			if err := w.paymentFailed(ctx, tx, u.ID, &row, now); err != nil {
+				return err
+			}
+		}
+		if err := projectStatus(ctx, tx, u.ID, status, now); err != nil {
 			return err
 		}
 		return w.subscriptionEvents(ctx, tx, u, prev, &row, plan, now)
@@ -282,20 +367,42 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	if err != nil {
 		return err
 	}
-	if w.m != nil {
-		w.m.BillingSubscriptions.WithLabelValues(plan.ID, ps.Status).Inc()
+	if stale {
+		w.log.Info("polar webhook older than the subscription row", "event", obs.EventBillingWebhook, "kind", ev.Type, "result", "stale")
+		return nil
 	}
-	if prev == nil && IsLive(ps.Status) && w.Seats != nil {
+	if w.m != nil {
+		w.m.BillingSubscriptions.WithLabelValues(plan.ID, status).Inc()
+	}
+	if prev == nil && IsLive(status) && w.Seats != nil {
 		if err := w.Seats.Converted(ctx, u.ID.String()); err != nil {
 			return fmt.Errorf("record the seat conversion: %w", err)
 		}
 	}
-	if ps.Status == StatusCanceled && (prev == nil || prev.Status != StatusCanceled) && w.Stop != nil {
+	if status == StatusCanceled && (prev == nil || prev.Status != StatusCanceled) && w.Stop != nil {
 		if _, err := stopUserMachines(ctx, w.pool, w.Stop, w.m, w.log, u.ID, StopReasonEnded); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// paymentFailed: a renewal's payment failed and the subscription became
+// past_due. The account is past_due from now (day 0 of PRICING.md
+// "Failed payments") and the payment_failed email goes out. Polar's
+// retries that fail again change nothing (day 2's email is the dunning
+// tick's).
+func (w *Webhooks) paymentFailed(ctx context.Context, tx db.Tx, userID uuid.UUID, sub *Sub, now time.Time) error {
+	tag, err := tx.Exec(ctx, `update users set billing_status = 'past_due', past_due_since = coalesce(past_due_since, $2)
+		where id = $1 and billing_status in ('trial', 'active', 'none')`, userID, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	_, err = events.InsertAccount(ctx, tx, userID, now, KindPaymentFailed, paymentFailed(sub, now))
+	return err
 }
 
 // subscriptionEvents emits the account events a change calls for
@@ -319,65 +426,58 @@ func (w *Webhooks) subscriptionEvents(ctx context.Context, tx db.Tx, u *store.Us
 	return nil
 }
 
-// transactionObject is the subset of a transaction the two handlers read.
-type transactionObject struct {
-	ID             string         `json:"id"`
-	Status         string         `json:"status"`
-	CustomerID     string         `json:"customer_id"`
-	SubscriptionID string         `json:"subscription_id"`
-	Origin         string         `json:"origin"`
-	CustomData     map[string]any `json:"custom_data"`
-	Items          []struct {
-		Price struct {
-			ID        string `json:"id"`
-			ProductID string `json:"product_id"`
-		} `json:"price"`
-	} `json:"items"`
-}
-
-// transactionCompleted: a payment went through. The account is active,
-// past_due_since is cleared, a billing suspension is lifted (an operator's
-// is not), and an overage line the transaction carried gets its id.
-func (w *Webhooks) transactionCompleted(ctx context.Context, ev *Event) error {
-	var t transactionObject
-	if err := json.Unmarshal(ev.Data, &t); err != nil {
-		return fmt.Errorf("decode the transaction: %w", err)
+// orderPaid: a payment went through. The account is active,
+// past_due_since is cleared and a billing suspension is lifted (an
+// operator's is not). A trialing subscription's order is the checkout's
+// $0 one: the account stays trial until the first real charge.
+func (w *Webhooks) orderPaid(ctx context.Context, ev *Event) error {
+	var o struct {
+		ID             string         `json:"id"`
+		CustomerID     string         `json:"customer_id"`
+		SubscriptionID string         `json:"subscription_id"`
+		TotalAmount    int64          `json:"total_amount"`
+		Metadata       map[string]any `json:"metadata"`
+		Customer       *struct {
+			ExternalID string `json:"external_id"`
+		} `json:"customer"`
 	}
-	u, err := w.resolveUser(ctx, t.CustomData, t.CustomerID)
+	if err := json.Unmarshal(ev.Data, &o); err != nil {
+		return fmt.Errorf("decode the order: %w", err)
+	}
+	// Only a subscription's order moves the account; anything else sold
+	// in the organization is not repose's.
+	if o.SubscriptionID == "" {
+		return nil
+	}
+	uid := uuid.Nil
+	if v, _ := o.Metadata["user_id"].(string); v != "" {
+		uid, _ = uuid.Parse(v)
+	}
+	if uid == uuid.Nil && o.Customer != nil {
+		uid, _ = uuid.Parse(o.Customer.ExternalID)
+	}
+	u, err := w.resolveUser(ctx, uid, o.CustomerID)
 	if err != nil {
 		return err
 	}
 	return db.InTx(ctx, w.pool, func(tx db.Tx) error {
 		subStatus := ""
-		if t.SubscriptionID != "" {
-			if cur, err := GetSubscription(ctx, tx, t.SubscriptionID); err == nil {
-				subStatus = cur.Status
-			} else if !errors.Is(err, db.ErrNotFound) {
-				return err
-			}
-			if _, err := tx.Exec(ctx, "update subscriptions set status = 'active' where id = $1 and status = 'past_due'", t.SubscriptionID); err != nil {
-				return err
-			}
-			for _, it := range t.Items {
-				if w.cfg.ProductOverage != "" && it.Price.ProductID == w.cfg.ProductOverage {
-					if _, err := tx.Exec(ctx, `update overage_charges set paddle_transaction_id = $2 where subscription_id = $1 and paddle_transaction_id is null
-						and period_start = (select max(period_start) from overage_charges where subscription_id = $1 and paddle_transaction_id is null)`, t.SubscriptionID, t.ID); err != nil {
-						return err
-					}
-					break
-				}
-			}
+		if cur, err := GetSubscription(ctx, tx, o.SubscriptionID); err == nil {
+			subStatus = cur.Status
+		} else if !errors.Is(err, db.ErrNotFound) {
+			return err
 		}
-		// A trialing subscription's completed transaction is the checkout's
-		// $0 one: the account stays trial until the first real charge.
-		if subStatus == StatusTrialing {
+		if _, err := tx.Exec(ctx, "update subscriptions set status = 'active' where id = $1 and status = 'past_due'", o.SubscriptionID); err != nil {
+			return err
+		}
+		if subStatus == StatusTrialing || o.TotalAmount == 0 && subStatus == "" {
 			return nil
 		}
 		// A payment returns the account to active: from past_due, and from a
 		// suspension the 3-day stop made (suspended_reason billing). An
 		// operator's suspension stays. A trial or plan-less account moves
-		// only when the transaction's subscription is known to be past its
-		// trial; otherwise the subscription event projects the status.
+		// only when the order's subscription is known to be past its trial;
+		// otherwise the subscription event projects the status.
 		fromTrial := subStatus == StatusActive || subStatus == StatusPastDue
 		_, err := tx.Exec(ctx, `update users set billing_status = 'active', past_due_since = null, has_card = true,
 			suspended_at = case when suspended_reason = 'billing' then null else suspended_at end,
@@ -385,55 +485,6 @@ func (w *Webhooks) transactionCompleted(ctx context.Context, ev *Event) error {
 			where id = $1 and (billing_status in ('past_due', 'active')
 			or (billing_status = 'suspended' and suspended_reason = 'billing')
 			or ($2 and billing_status in ('trial', 'none')))`, u.ID, fromTrial)
-		return err
-	})
-}
-
-// transactionFailed: a payment failed. The account is past_due from now
-// (day 0 of PRICING.md "Failed payments") and the payment_failed email
-// goes out.
-func (w *Webhooks) transactionFailed(ctx context.Context, ev *Event) error {
-	var t transactionObject
-	if err := json.Unmarshal(ev.Data, &t); err != nil {
-		return fmt.Errorf("decode the transaction: %w", err)
-	}
-	u, err := w.resolveUser(ctx, t.CustomData, t.CustomerID)
-	if err != nil {
-		return err
-	}
-	now := w.Now().UTC()
-	return db.InTx(ctx, w.pool, func(tx db.Tx) error {
-		// Only a subscription's payment puts the account past due. A card
-		// declined at checkout fails a transaction with no subscription;
-		// the user simply has no plan yet.
-		if t.SubscriptionID == "" {
-			return nil
-		}
-		cur, err := GetSubscription(ctx, tx, t.SubscriptionID)
-		if errors.Is(err, db.ErrNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !cur.Live() {
-			return nil
-		}
-		if _, err := tx.Exec(ctx, "update subscriptions set status = 'past_due' where id = $1 and status in ('trialing','active')", t.SubscriptionID); err != nil {
-			return err
-		}
-		// The first failure moves the account and sends day 0's email;
-		// Paddle's retries that fail again change nothing (day 2's email is
-		// the dunning tick's).
-		tag, err := tx.Exec(ctx, `update users set billing_status = 'past_due', past_due_since = coalesce(past_due_since, $2)
-			where id = $1 and billing_status in ('trial', 'active', 'none')`, u.ID, now)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return nil
-		}
-		_, err = events.InsertAccount(ctx, tx, u.ID, now, KindPaymentFailed, paymentFailed(cur, now))
 		return err
 	})
 }

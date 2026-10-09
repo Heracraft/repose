@@ -130,7 +130,7 @@ pasted; a few need a CI job. The row in the workstream doc carries the detail.
 
 ## Waits on the owner
 
-- Paddle sandbox key in the api's env: 08 billing screenshot, 09 checkout to trial, payment events, the 3-day stop, the overage line to the cent (M4-GATE.md). Live key and card: 09 live charge.
+- Polar sandbox token in the api's env: 08 billing screenshot, 09 checkout to trial, payment events, the 3-day stop, the overage line to the cent (M4-GATE.md). Live key and card: 09 live charge.
 - GitHub sign-in in a browser: 08 `live:auth`.
 - Staging, or permission to pause production Postgres: 05 `/healthz`.
 - Traefik drain on the Coolify proxy: 05 rolling deploy (14 failures in 29,841 responses).

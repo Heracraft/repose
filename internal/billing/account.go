@@ -38,11 +38,13 @@ type Account struct {
 
 // OverageRow is one overage_charges row.
 type OverageRow struct {
-	PeriodStart   time.Time
-	EgressGB      int64
-	Cents         int64
-	TransactionID string
-	CreatedAt     time.Time
+	PeriodStart time.Time
+	EgressGB    int64
+	Cents       int64
+	// SentRef is the external id Polar accepted the line under; "" while
+	// it is not sent.
+	SentRef   string
+	CreatedAt time.Time
 }
 
 // LoadAccount reads the account from the database alone.
@@ -52,8 +54,8 @@ func LoadAccount(ctx context.Context, pool *db.Pool, userID uuid.UUID, at time.T
 		return Account{}, err
 	}
 	a := Account{Handle: u.Handle, UserID: u.ID, Status: u.BillingStatus, HasCard: u.HasCard, PastDueSince: u.PastDueSince, SuspendedAt: u.SuspendedAt}
-	if u.PaddleCustomerID != nil {
-		a.Customer = *u.PaddleCustomerID
+	if u.BillingCustomerID != nil {
+		a.Customer = *u.BillingCustomerID
 	}
 	if a.Sub, err = LiveSubscription(ctx, pool, u.ID); err != nil {
 		return a, err
@@ -76,14 +78,14 @@ func LoadAccount(ctx context.Context, pool *db.Pool, userID uuid.UUID, at time.T
 		return a, err
 	}
 	if a.Sub != nil {
-		rows, err := pool.Query(ctx, "select period_start, egress_gb::bigint, cents, coalesce(paddle_transaction_id, ''), created_at from overage_charges where subscription_id = $1 order by period_start desc limit 6", a.Sub.ID)
+		rows, err := pool.Query(ctx, "select period_start, egress_gb::bigint, cents, coalesce(sent_ref, ''), created_at from overage_charges where subscription_id = $1 order by period_start desc limit 6", a.Sub.ID)
 		if err != nil {
 			return a, err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var o OverageRow
-			if err := rows.Scan(&o.PeriodStart, &o.EgressGB, &o.Cents, &o.TransactionID, &o.CreatedAt); err != nil {
+			if err := rows.Scan(&o.PeriodStart, &o.EgressGB, &o.Cents, &o.SentRef, &o.CreatedAt); err != nil {
 				return a, err
 			}
 			a.Overage = append(a.Overage, o)
@@ -114,7 +116,7 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 	row("handle", a.Handle)
 	row("billing", a.Status)
 	row("has_card", fmt.Sprint(a.HasCard))
-	row("paddle customer", orDash(a.Customer))
+	row("polar customer", orDash(a.Customer))
 	if a.Sub == nil {
 		row("subscription", "- (no plan chosen)")
 	} else {
@@ -152,7 +154,7 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 		if i == 0 {
 			k = "overage lines"
 		}
-		row(k, fmt.Sprintf("%s: %d GB, %d cents, transaction %s", o.PeriodStart.UTC().Format("2006-01-02"), o.EgressGB, o.Cents, orDash(o.TransactionID)))
+		row(k, fmt.Sprintf("%s: %d GB, %d cents, sent %s", o.PeriodStart.UTC().Format("2006-01-02"), o.EgressGB, o.Cents, orDash(o.SentRef)))
 	}
 	return 0, tw.Flush()
 }

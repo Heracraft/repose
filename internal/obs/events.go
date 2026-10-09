@@ -66,7 +66,7 @@ const (
 	// Billing (workstream 09, DECISIONS I-289). billing_gap is the failure
 	// mode "sample gap for a running guest": the minutes are under-billed,
 	// never estimated, and the gap is visible rather than silent. The
-	// Paddle lines carry user_id, kind, reason, plan and result only.
+	// Polar lines carry user_id, kind, reason, plan and result only.
 	EventBillingGap         = "billing_gap"
 	EventBillingWebhook     = "webhook_received"
 	EventOverageCharged     = "overage_charged"

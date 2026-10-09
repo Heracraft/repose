@@ -217,7 +217,7 @@ func TestBillingEnforceFalseLetsStartsThrough(t *testing.T) {
 	e.waitOp(t, r)
 }
 
-// Without PADDLE_API_KEY every /billing route is 503 billing_disabled and
+// Without POLAR_ACCESS_TOKEN every /billing route is 503 billing_disabled and
 // /me still answers.
 func TestBillingDisabledRoutes(t *testing.T) {
 	e := newEnv(t)
@@ -239,16 +239,16 @@ func TestBillingDisabledRoutes(t *testing.T) {
 	}
 }
 
-// The /billing routes against the fake Paddle: the overview's shape,
+// The /billing routes against the fake Polar: the overview's shape,
 // checkout (and its refusals), plan change, cancel, resume, portal and
 // invoices, and the webhook route (no bearer; a bad signature is 400 with
 // the type logged and nothing else; a duplicate is 200).
 func TestBillingRoutes(t *testing.T) {
-	f := newFakePaddle(t)
+	f := newFakePolar(t)
 	var svc *billing.Service
 	e := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
 		cfg := f.cfg
-		p := billing.NewPaddle(cfg, d.Log)
+		p := billing.NewPolar(cfg, d.Log)
 		seats := &billing.SubscriptionSeats{Pool: d.Pool, Total: 30}
 		overage := billing.NewOverage(d.Pool, p, cfg, d.Engine, d.Metrics, d.Log)
 		svc = billing.NewService(d.Pool, p, cfg, seats, overage, d.Log)
@@ -266,10 +266,13 @@ func TestBillingRoutes(t *testing.T) {
 	if r.status != 200 || r.body["subscription"] != nil {
 		t.Fatalf("overview: %d %s", r.status, r.raw)
 	}
-	for _, k := range []string{"subscription", "usage", "plans", "seats", "waitlist", "paddle"} {
+	for _, k := range []string{"subscription", "usage", "plans", "seats", "waitlist"} {
 		if _, ok := r.body[k]; !ok {
 			t.Errorf("overview lacks %s", k)
 		}
+	}
+	if _, ok := r.body["paddle"]; ok {
+		t.Error("the overview still carries the paddle block")
 	}
 	// The disk is what the projects hold (I-585); disk_allocated_gb stays
 	// one release with the same figure, rounded up to a GB.
@@ -280,16 +283,23 @@ func TestBillingRoutes(t *testing.T) {
 	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(5900) || plans[2].(map[string]any)["price_cents"] != float64(9900) {
 		t.Fatalf("plans: %v", plans)
 	}
-	if r.body["paddle"].(map[string]any)["client_token"] != "test_client_token" || r.body["paddle"].(map[string]any)["environment"] != "sandbox" {
-		t.Fatalf("paddle block: %v", r.body["paddle"])
-	}
-	// Checkout: unknown plan, then a transaction.
+	// Checkout: unknown plan, then the hosted checkout's URL, with the
+	// browser's address from the edge for the tax country.
 	if r := e.do(t, tok, "POST", "/billing/checkout", map[string]any{"plan": "gold"}); r.status != 400 || errCode(r) != "invalid" {
 		t.Fatalf("unknown plan: %d %s", r.status, r.raw)
 	}
-	r = e.do(t, tok, "POST", "/billing/checkout", map[string]any{"plan": "solo"})
-	if r.status != 200 || !strings.HasPrefix(r.body["transaction_id"].(string), "txn_") || r.body["client_token"] != "test_client_token" || r.body["environment"] != "sandbox" {
+	cb, _ := json.Marshal(map[string]any{"plan": "solo"})
+	r = e.doRaw(t, "POST", "/billing/checkout", cb, map[string]string{"Authorization": "Bearer " + tok, "X-Forwarded-For": "10.0.0.9, 198.51.100.7"})
+	if r.status != 200 || !strings.HasPrefix(r.body["url"].(string), "https://sandbox.polar.sh/checkout/") || len(r.body) != 1 {
 		t.Fatalf("checkout: %d %s", r.status, r.raw)
+	}
+	if b := f.body("POST /checkouts/"); b["customer_ip_address"] != "198.51.100.7" || b["products"].([]any)[0] != "prod_solo_test" {
+		t.Fatalf("checkout body: %v", b)
+	}
+	// A private or spoofable-looking address is not passed on.
+	r = e.doRaw(t, "POST", "/billing/checkout", cb, map[string]string{"Authorization": "Bearer " + tok, "X-Forwarded-For": "203.0.113.1, 10.1.2.3"})
+	if _, has := f.body("POST /checkouts/")["customer_ip_address"]; r.status != 200 || has {
+		t.Fatalf("private address passed on: %d %v", r.status, f.body("POST /checkouts/"))
 	}
 	// Plan change and cancel before a subscription: 409 no_subscription.
 	if r := e.do(t, tok, "POST", "/billing/plan", map[string]any{"plan": "plus"}); r.status != 409 || errDetail(r, "reason") != "no_subscription" {
@@ -298,22 +308,26 @@ func TestBillingRoutes(t *testing.T) {
 	if r := e.do(t, tok, "POST", "/billing/cancel", nil); r.status != 409 {
 		t.Fatalf("cancel without subscription: %d %s", r.status, r.raw)
 	}
+	if r := e.do(t, tok, "POST", "/billing/portal", nil); r.status != 409 || errDetail(r, "reason") != "no_subscription" {
+		t.Fatalf("portal without subscription: %d %s", r.status, r.raw)
+	}
 	// The webhook brings the subscription: no bearer, signature is the auth.
-	var uid, customer string
-	if err := e.h.Pool.QueryRow(ctx, "select id, paddle_customer_id from users where logto_sub = 'sub-bill'").Scan(&uid, &customer); err != nil {
+	var uid string
+	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-bill'").Scan(&uid); err != nil {
 		t.Fatal(err)
 	}
-	subID := f.addSubscription(customer, "pri_solo_test", "trialing")
-	body := f.event("subscription.created", f.subData(subID, uid, customer, "pri_solo_test", "trialing"))
-	r = e.doRaw(t, "POST", "/billing/webhook", body, map[string]string{"Paddle-Signature": f.sign(body)})
+	customer := "cus_bill_route"
+	subID := f.addSubscription(uid, customer, "prod_solo_test", "trialing")
+	evID, body := f.event("subscription.created", f.subData(subID, uid, customer, "prod_solo_test", "trialing"))
+	r = e.doRaw(t, "POST", "/billing/webhook", body, f.sign(evID, body))
 	if r.status != 200 || r.body["received"] != true {
 		t.Fatalf("webhook: %d %s", r.status, r.raw)
 	}
-	r = e.doRaw(t, "POST", "/billing/webhook", body, map[string]string{"Paddle-Signature": f.sign(body)})
+	r = e.doRaw(t, "POST", "/billing/webhook", body, f.sign(evID, body))
 	if r.status != 200 || r.body["duplicate"] != true {
 		t.Fatalf("duplicate: %d %s", r.status, r.raw)
 	}
-	r = e.doRaw(t, "POST", "/billing/webhook", body, map[string]string{"Paddle-Signature": "ts=1;h1=00"})
+	r = e.doRaw(t, "POST", "/billing/webhook", body, map[string]string{"webhook-id": "msg_x", "webhook-timestamp": "1", "webhook-signature": "v1,AAAA"})
 	if r.status != 400 || errCode(r) != "invalid" {
 		t.Fatalf("bad signature: %d %s", r.status, r.raw)
 	}
@@ -362,22 +376,23 @@ func TestBillingRoutes(t *testing.T) {
 		t.Fatalf("second resume: %d %s", r.status, r.raw)
 	}
 	r = e.do(t, tok, "POST", "/billing/portal", nil)
-	if r.status != 200 || !strings.HasPrefix(r.body["url"].(string), "https://portal.fake/overview/") {
+	if r.status != 200 || !strings.Contains(r.body["url"].(string), "/portal?customer_session_token=") {
 		t.Fatalf("portal: %d %s", r.status, r.raw)
 	}
 	r = e.do(t, tok, "POST", "/billing/portal", map[string]any{"for": "payment_method"})
-	if r.status != 200 || !strings.HasPrefix(r.body["url"].(string), "https://portal.fake/payment/") {
+	if r.status != 200 || !strings.Contains(r.body["url"].(string), "/portal?customer_session_token=") {
 		t.Fatalf("portal payment link: %d %s", r.status, r.raw)
 	}
 	if r := e.do(t, tok, "POST", "/billing/portal", map[string]any{"for": "cancel"}); r.status != 400 {
 		t.Fatalf("portal bad for: %d", r.status)
 	}
-	f.addTransaction(customer, subID, "completed", 2900, 0)
+	f.addOrder(uid, subID, "paid", 2900, 0)
 	r = e.do(t, tok, "GET", "/billing/invoices", nil)
 	if r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["amount_cents"] != float64(2900) {
 		t.Fatalf("invoices: %d %s", r.status, r.raw)
 	}
-	// Deleting the account cancels the subscription at once.
+	// Deleting the account with no overage owed revokes the subscription
+	// at once.
 	r = e.do(t, tok, "DELETE", "/me", nil)
 	if r.status != 202 {
 		t.Fatalf("delete me: %d %s", r.status, r.raw)
@@ -386,12 +401,12 @@ func TestBillingRoutes(t *testing.T) {
 	if err := e.h.Pool.QueryRow(ctx, "select status from subscriptions where id = $1", subID).Scan(&status); err != nil || status != "canceled" {
 		t.Fatalf("subscription after delete: %s %v", status, err)
 	}
-	if f.body("POST /subscriptions/" + subID + "/cancel")["effective_from"] != "immediately" {
-		t.Fatal("account deletion cancels immediately")
+	if f.count("DELETE /subscriptions/"+subID) != 1 {
+		t.Fatal("account deletion revokes the subscription")
 	}
 	// A waitlisted checkout: 503 with the place and the sentence.
 	full := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
-		p := billing.NewPaddle(f.cfg, d.Log)
+		p := billing.NewPolar(f.cfg, d.Log)
 		d.Billing = billing.NewService(d.Pool, p, f.cfg, fullSeats{}, nil, d.Log)
 	})
 	tok2 := full.signIn(t, "sub-full", "full-dev")

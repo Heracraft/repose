@@ -306,7 +306,7 @@ guest ──vsock──▶ hostd
 Go binaries in one module (`cmd/`), one Postgres.
 
 - **`api`**: HTTP JSON for the CLI and dashboard, gRPC server for hosts,
-  scheduler, SSH CA, secrets, metering aggregation, Paddle webhooks, hook
+  scheduler, SSH CA, secrets, metering aggregation, Polar webhooks, hook
   ingest, notification fan-out. Stateless; scale by replicas behind Coolify.
 - **`hostd`**: on each host. Holds the gRPC stream, executes guest lifecycle
   (create, start, stop, destroy, resize, snapshot, restore, apply-config),
@@ -452,7 +452,7 @@ to them.
 
 ## 14. Billing and metering
 
-A monthly plan through Paddle, chosen before the first machine starts,
+A monthly plan through Polar (I-604), chosen before the first machine starts,
 with a card at checkout and a week free (DECISIONS I-289, superseding the
 hourly meter this section first described). Solo, $29 a month, buys 8 GB
 of memory that may run at once (one `large`, or two `small`), 100 GB of
@@ -466,7 +466,7 @@ holds, the plan's disk counting what each volume holds and not its size
 one cap of 100 projects per account, running or stopped and the same on
 every plan, bounds abuse (I-569); egress past the
 allowance is $0.05 a GB as one line on the next invoice, and at four times
-the allowance the machines stop for the period. Paddle is the merchant of
+the allowance the machines stop for the period. Polar is the merchant of
 record, so tax is its problem. `PRICING.md` has the rules, the cost floor
 and the reasoning.
 

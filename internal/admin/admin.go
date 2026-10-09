@@ -60,8 +60,8 @@ const Usage = `repose-admin <command> [args]
   certs     revoke --user HANDLE
   secrets   rewrap
   billing   show HANDLE | rollup [--hour 2026-09-17T14] | explain PROJECT 2026-09-17T14 | suspend HANDLE | unsuspend HANDLE
-            overage-now HANDLE (send this period's egress line to Paddle now)
-            paddle-bootstrap [--webhook-url URL] [--no-webhook] [--live]  (PADDLE_API_KEY in the environment)
+            overage-now HANDLE (send this period's egress line to Polar now)
+            polar-bootstrap [--webhook-url URL] [--no-webhook] [--production]  (POLAR_ACCESS_TOKEN and POLAR_ENVIRONMENT in the environment)
   base      publish --rev SHA40 --changelog TEXT [--version V] [--security] [--repo URL] [--branch main] [--unverified-rev] | release ... | list | status V | rollback V
   ca        init | show | rotate [--user] [--host] | sign-host --principal P... --pubkey FILE | sign-client --name NAME [--operator] [--csr FILE] [--out DIR]
             sign-server --name NAME[,NAME...] [--ttl 43800h] [--csr FILE] [--out DIR]

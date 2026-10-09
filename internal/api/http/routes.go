@@ -72,7 +72,7 @@ func (s *Server) registerUserRoutes() {
 	// page's count and needs no token.
 	s.route(m, "POST /v1/billing/waitlist", a(s.billingWaitlist))
 	s.route(m, "GET /v1/public/seats", s.publicSeats)
-	// Paddle authenticates itself with the Paddle-Signature header, so the
+	// Polar authenticates itself with the Standard Webhooks headers, so the
 	// webhook carries no bearer token.
 	s.route(m, "POST /v1/billing/webhook", s.billingWebhook)
 }

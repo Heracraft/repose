@@ -618,7 +618,7 @@ def billing() -> dict:
     return dashboard(
         "repose-billing",
         "repose / Billing",
-        desc="Plans through Paddle (DECISIONS I-289): the subscription mix, the webhook, the gate's refusals, the egress overage line, and the hours and egress usage_hours records. Paddle holds the money; usage_hours holds what was used.",
+        desc="Plans through Polar (DECISIONS I-289, I-604): the subscription mix, the webhook, the gate's refusals, the egress overage line, and the hours and egress usage_hours records. Polar holds the money; usage_hours holds what was used.",
         time_from="now-2d",
         panels=[
             panel(
@@ -632,13 +632,13 @@ def billing() -> dict:
                 "stat", "Webhooks rejected in 10 minutes",
                 [q('sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m]))', "rejected", instant=True)],
                 w=6, h=6, thresholds=[("green", None), ("red", 5)],
-                desc="Paddle-Signature failures. Five in ten minutes is PaddleWebhookRejected: the secret and the destination have drifted, and no subscription event is applied.",
+                desc="Webhook signature failures. Five in ten minutes is BillingWebhookRejected: the secret and the endpoint have drifted, and no subscription event is applied.",
             ),
             panel(
                 "stat", "Overage charges failed in the last hour",
                 [q('sum(increase(repose_api_billing_overage_charges_total{result="error"}[1h]))', "failed", instant=True)],
                 w=6, h=6, thresholds=[("green", None), ("red", 1)],
-                desc="An egress line Paddle refused. The row waits for `repose-admin billing overage-now`; the invoice locks 30 minutes before charging (OverageChargeFailed).",
+                desc="An egress line Polar refused. The next hourly tick sends it again under the same external id (OverageChargeFailed).",
             ),
             panel(
                 "stat", "Live subscriptions",
@@ -649,7 +649,7 @@ def billing() -> dict:
             panel(
                 "timeseries", "Subscription webhooks by plan and status",
                 [q("sum by (plan, status) (increase(repose_api_billing_subscriptions_total[1h]))", "{{plan}} {{status}}")],
-                desc="Every subscription.* event applied, by the plan it names and Paddle's status. A rising past_due series is the dunning job's next three days.",
+                desc="Every subscription.* event applied, by the plan it names and its status. A rising past_due series is the dunning job's next three days.",
                 unit="none", stack=True,
             ),
             panel(
@@ -662,7 +662,7 @@ def billing() -> dict:
                 "table", "Accounts by plan and status",
                 [sql("""select plan, status, count(*) as accounts, sum(seats) as seats
                         from subscriptions group by 1, 2 order by 1, 2""", fmt="table")],
-                desc="The subscriptions table as it stands: what Paddle told the webhook last.",
+                desc="The subscriptions table as it stands: what Polar told the webhook last.",
                 w=12, h=8,
             ),
             panel(

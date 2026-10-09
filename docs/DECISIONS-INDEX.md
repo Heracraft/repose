@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-657 entries.
+658 entries.
 
 ## Scope
 
@@ -367,7 +367,7 @@ pointer, not a summary.
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7545
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7558
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7583
-- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; L7605
+- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; L7605
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; L7683
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; L7722
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7748
@@ -567,7 +567,7 @@ pointer, not a summary.
 - **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13502
 - **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13615
 - **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13731
-- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; L13772
+- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; L13772
 - **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13843
 - **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13854
 - **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13878
@@ -651,41 +651,42 @@ pointer, not a summary.
 - **I-596** On herdr, the sync that makes the checkout closes the idle `home` workspace, as tmux respawns its `shell` window — 2026-10-07; L16481
 - **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16508
 - **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16544
-- **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; L16586
-- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16623
-- **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16668
-- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16695
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; L16756
-- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16823
-- **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16873
-- **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16907
-- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16922
-- **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16952
-- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; L16964
-- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; L17049
-- **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17138
-- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17164
-- **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17218
-- **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17260
-- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; amended by I-629; amended by I-631; L17278
-- **I-623** One sentence and one exit code per kind of failure: the network is 1, a plan limit is 7, capacity is 8 wherever it happens — 2026-10-09; amended by I-632; L17344
-- **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17388
-- **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17400
-- **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17415
-- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17440
-- **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17476
-- **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17495
-- **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17552
-- **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17572
-- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17591
-- **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17650
-- **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17683
-- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — L17782
-- **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17879
-- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17918
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; L18016
-- **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18079
-- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — L18111
-- **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18153
-- **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — L18176
-- **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18197
+- **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16586
+- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16624
+- **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16669
+- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16696
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; L16757
+- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16824
+- **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16874
+- **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16908
+- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16923
+- **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16953
+- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; L16965
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; L17050
+- **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17139
+- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17165
+- **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17219
+- **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17261
+- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; amended by I-629; amended by I-631; L17279
+- **I-623** One sentence and one exit code per kind of failure: the network is 1, a plan limit is 7, capacity is 8 wherever it happens — 2026-10-09; amended by I-632; L17345
+- **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17389
+- **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17401
+- **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17416
+- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17441
+- **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17477
+- **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17496
+- **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17553
+- **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17573
+- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17592
+- **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17651
+- **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17684
+- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — L17783
+- **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
+- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; L18017
+- **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18080
+- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — L18112
+- **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
+- **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — L18177
+- **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18198
+- **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227

@@ -2,10 +2,12 @@ package admin_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,38 +17,37 @@ import (
 )
 
 // docs/workstreams/09-billing.md §9 (I-289): `repose-admin billing
-// show|rollup|explain|suspend|unsuspend|overage-now|paddle-bootstrap`
+// show|rollup|explain|suspend|unsuspend|overage-now|polar-bootstrap`
 // exist, print what the runbook reads, and write audit_log.
 func TestBillingSubcommands(t *testing.T) {
 	h := apitest.New(t, apitest.Options{})
 	e := &admin.Env{KV: h.KV, Actor: "admin:test"}
 	e.SetPool(h.Pool)
 	ctx := h.Ctx
-	fake := newFakePaddle(t)
-	admin.PaddleBaseURL = fake.URL
-	t.Cleanup(func() { admin.PaddleBaseURL = "" })
-	t.Setenv("PADDLE_API_KEY", "pdl_sdbx_apikey_test")
-	t.Setenv("PADDLE_WEBHOOK_SECRET", "pdl_ntfset_test")
-	t.Setenv("PADDLE_PRICE_SOLO", "pri_solo_test")
-	t.Setenv("PADDLE_PRICE_PLUS", "pri_plus_test")
-	t.Setenv("PADDLE_PRICE_PRO", "pri_pro_test")
-	t.Setenv("PADDLE_PRODUCT_OVERAGE", "pro_overage_test")
-	t.Setenv("PADDLE_DISCOUNT_INTRO", "dsc_intro_test")
+	fake := newFakePolar(t)
+	admin.PolarBaseURL = fake.URL
+	t.Cleanup(func() { admin.PolarBaseURL = "" })
+	t.Setenv("POLAR_ACCESS_TOKEN", "polar_oat_admin_test")
+	t.Setenv("POLAR_ENVIRONMENT", "sandbox")
+	t.Setenv("POLAR_WEBHOOK_SECRET", "whsec_dGVzdA==")
+	t.Setenv("POLAR_PRODUCT_SOLO", "prod_solo_test")
+	t.Setenv("POLAR_PRODUCT_PLUS", "prod_plus_test")
+	t.Setenv("POLAR_PRODUCT_PRO", "prod_pro_test")
+	t.Setenv("POLAR_DISCOUNT_INTRO", "dsc_intro_test")
 
 	// A Solo account with a project, an hour of usage and 260 GB egress.
 	uid, pid, gid := store.NewID(), store.NewID(), store.NewID()
 	hour := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Hour)
 	periodStart := hour.AddDate(0, 0, -10)
 	periodEnd := periodStart.AddDate(0, 1, 0)
-	if _, err := h.Pool.Exec(ctx, `insert into users (id, handle, email, billing_status, has_card, paddle_customer_id, created_at)
-		values ($1, 'payer', 'payer@example.test', 'active', true, 'ctm_payer', $2)`, uid, periodStart); err != nil {
+	if _, err := h.Pool.Exec(ctx, `insert into users (id, handle, email, billing_status, has_card, billing_customer_id, created_at)
+		values ($1, 'payer', 'payer@example.test', 'active', true, 'cus_payer', $2)`, uid, periodStart); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.Pool.Exec(ctx, `insert into subscriptions (id, user_id, paddle_customer_id, plan, status, seats, period_start, period_end, next_billed_at)
-		values ('sub_payer', $1, 'ctm_payer', 'solo', 'active', 1, $2, $3, $3)`, uid, periodStart, periodEnd); err != nil {
+	if _, err := h.Pool.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at)
+		values ('sub_payer', $1, 'cus_payer', 'solo', 'active', 1, $2, $3, $3)`, uid, periodStart, periodEnd); err != nil {
 		t.Fatal(err)
 	}
-	fake.subs["sub_payer"] = true
 	if _, err := h.Pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes, guest_id, created_at)
 		values ($1, $2, 'ledger', 'ledger', 'large', 'running', $3, $4, $5)`, pid, uid, int64(40)<<30, gid, periodStart); err != nil {
 		t.Fatal(err)
@@ -78,15 +79,15 @@ func TestBillingSubcommands(t *testing.T) {
 	}
 	// overage-now sends the line once.
 	out, err = run(t, e, "billing", "overage-now", "payer")
-	if err != nil || !strings.Contains(out, "sent 10 GB over = 50 cents to Paddle") {
+	if err != nil || !strings.Contains(out, "sent 10 GB over = 50 cents to Polar") || !strings.Contains(out, "(event overage:sub_payer:") {
 		t.Fatalf("overage-now: %s %v", out, err)
 	}
-	if fake.charges != 1 {
-		t.Fatalf("%d charges sent", fake.charges)
+	if fake.events != 1 || fake.lastGB != 10 || fake.lastCustomer != uid.String() {
+		t.Fatalf("%d events sent (%v GB for %s)", fake.events, fake.lastGB, fake.lastCustomer)
 	}
 	out, err = run(t, e, "billing", "overage-now", "payer")
-	if err != nil || !strings.Contains(out, "already has its line") || fake.charges != 1 {
-		t.Fatalf("overage-now again: %s %v (%d charges)", out, err, fake.charges)
+	if err != nil || !strings.Contains(out, "already has its line") || fake.events != 1 {
+		t.Fatalf("overage-now again: %s %v (%d events)", out, err, fake.events)
 	}
 	// suspend and unsuspend are the users commands with reason billing.
 	if out, err := run(t, e, "billing", "suspend", "payer"); err != nil {
@@ -99,19 +100,24 @@ func TestBillingSubcommands(t *testing.T) {
 	if out, err := run(t, e, "billing", "unsuspend", "payer"); err != nil {
 		t.Fatalf("unsuspend: %s %v", out, err)
 	}
-	// paddle-bootstrap creates the catalog and prints the block, twice
-	// the same; a live key is refused.
-	out, err = run(t, e, "billing", "paddle-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
-	if err != nil || !strings.Contains(out, "PADDLE_PRICE_SOLO=pri_") || !strings.Contains(out, "PADDLE_DISCOUNT_INTRO=dsc_") || !strings.Contains(out, "PADDLE_WEBHOOK_SECRET=") || strings.Contains(out, "pdl_sdbx_apikey_test") {
+	// polar-bootstrap creates the catalog and prints the block, twice
+	// the same; production is refused without --production; a missing
+	// environment is a usage error.
+	out, err = run(t, e, "billing", "polar-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
+	if err != nil || !strings.Contains(out, "POLAR_PRODUCT_SOLO=prod_") || !strings.Contains(out, "POLAR_DISCOUNT_INTRO=dsc_") || !strings.Contains(out, "POLAR_WEBHOOK_SECRET=whsec_made") || strings.Contains(out, "polar_oat_admin_test") {
 		t.Fatalf("bootstrap: %s %v", out, err)
 	}
-	again, err := run(t, e, "billing", "paddle-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
-	if err != nil || !strings.Contains(again, "created 0 object(s), found 9") {
+	again, err := run(t, e, "billing", "polar-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
+	if err != nil || !strings.Contains(again, "created 0 object(s), found 7") {
 		t.Fatalf("bootstrap rerun: %s %v", again, err)
 	}
-	t.Setenv("PADDLE_API_KEY", "pdl_live_apikey_test")
-	if out, err := run(t, e, "billing", "paddle-bootstrap", "--no-webhook"); err == nil || !strings.Contains(err.Error(), "--live") {
-		t.Fatalf("live key without --live: %s %v", out, err)
+	t.Setenv("POLAR_ENVIRONMENT", "production")
+	if out, err := run(t, e, "billing", "polar-bootstrap", "--no-webhook"); err == nil || !strings.Contains(err.Error(), "--production") {
+		t.Fatalf("production without --production: %s %v", out, err)
+	}
+	t.Setenv("POLAR_ENVIRONMENT", "")
+	if out, err := run(t, e, "billing", "polar-bootstrap", "--no-webhook"); !errors.Is(err, admin.ErrUsage) {
+		t.Fatalf("no environment: %s %v", out, err)
 	}
 	// Every command wrote its audit row.
 	for _, action := range []string{"billing_rollup", "billing_overage_now", "user_suspend", "user_unsuspend"} {
@@ -128,98 +134,124 @@ func TestBillingSubcommands(t *testing.T) {
 	}
 }
 
-// fakePaddle answers the calls the admin commands make: the catalog for
-// the bootstrap and the charge for overage-now.
-type fakePaddle struct {
-	URL      string
-	subs     map[string]bool
-	products map[string]map[string]any
-	prices   map[string]map[string]any
-	settings map[string]map[string]any
-	discount map[string]map[string]any
-	charges  int
-	seq      int
+// fakePolar answers the calls the admin commands make: the catalog for
+// the bootstrap and the event ingestion for overage-now.
+type fakePolar struct {
+	URL          string
+	mu           sync.Mutex
+	seq          int
+	org          map[string]any
+	meters       []any
+	products     []any
+	discounts    []any
+	endpoints    []any
+	events       int
+	lastGB       float64
+	lastCustomer string
 }
 
-func newFakePaddle(t *testing.T) *fakePaddle {
-	f := &fakePaddle{subs: map[string]bool{}, products: map[string]map[string]any{}, prices: map[string]map[string]any{}, settings: map[string]map[string]any{}, discount: map[string]map[string]any{}}
+func newFakePolar(t *testing.T) *fakePolar {
+	f := &fakePolar{org: map[string]any{"id": "org_admin", "slug": "admin-test"}}
 	srv := httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
 	return f
 }
 
-func (f *fakePaddle) write(w http.ResponseWriter, status int, data any) {
+func (f *fakePolar) write(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	_ = json.NewEncoder(w).Encode(data)
 }
 
-func (f *fakePaddle) handle(w http.ResponseWriter, r *http.Request) {
+func page(items []any) map[string]any {
+	if items == nil {
+		items = []any{}
+	}
+	return map[string]any{"items": items, "pagination": map[string]any{"total_count": len(items), "max_page": 1}}
+}
+
+func (f *fakePolar) handle(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	f.seq++
-	id := func(p string) string { return fmt.Sprintf("%s_a%04d", p, f.seq) }
-	list := func(m map[string]map[string]any) []any {
-		out := []any{}
-		for _, v := range m {
-			out = append(out, v)
+	id := func(prefix string) string { f.seq++; return fmt.Sprintf("%s_%04d", prefix, f.seq) }
+	created := func(prefix string) map[string]any {
+		o := map[string]any{"id": id(prefix)}
+		for k, v := range body {
+			o[k] = v
 		}
-		return out
+		return o
 	}
 	switch {
-	case r.Method == "GET" && r.URL.Path == "/products":
-		f.write(w, 200, list(f.products))
-	case r.Method == "POST" && r.URL.Path == "/products":
-		p := map[string]any{"id": id("pro"), "name": body["name"], "status": "active", "custom_data": body["custom_data"]}
-		f.products[p["id"].(string)] = p
+	case r.Method == "GET" && r.URL.Path == "/organizations/":
+		f.write(w, 200, page([]any{f.org}))
+	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/organizations/"):
+		for k, v := range body {
+			f.org[k] = v
+		}
+		f.write(w, 200, f.org)
+	case r.Method == "GET" && r.URL.Path == "/meters/":
+		f.write(w, 200, page(f.meters))
+	case r.Method == "POST" && r.URL.Path == "/meters/":
+		m := created("mtr")
+		f.meters = append(f.meters, m)
+		f.write(w, 201, m)
+	case r.Method == "GET" && r.URL.Path == "/products/":
+		f.write(w, 200, page(f.products))
+	case r.Method == "POST" && r.URL.Path == "/products/":
+		p := created("prod")
+		var prices []any
+		for _, pr := range body["prices"].([]any) {
+			price := pr.(map[string]any)
+			if u, ok := price["unit_amount"].(string); ok {
+				price["unit_amount"] = u + ".000000000000"
+			}
+			prices = append(prices, price)
+		}
+		p["prices"] = prices
+		f.products = append(f.products, p)
 		f.write(w, 201, p)
-	case r.Method == "GET" && r.URL.Path == "/prices":
-		out := []any{}
-		for _, p := range f.prices {
-			if p["product_id"] == r.URL.Query().Get("product_id") {
-				out = append(out, p)
+	case r.Method == "GET" && r.URL.Path == "/discounts/":
+		f.write(w, 200, page(f.discounts))
+	case r.Method == "POST" && r.URL.Path == "/discounts/":
+		d := created("dsc")
+		var prods []any
+		for _, p := range body["products"].([]any) {
+			prods = append(prods, map[string]any{"id": p})
+		}
+		d["products"] = prods
+		f.discounts = append(f.discounts, d)
+		f.write(w, 201, d)
+	case r.Method == "GET" && r.URL.Path == "/webhooks/endpoints":
+		f.write(w, 200, page(f.endpoints))
+	case r.Method == "POST" && r.URL.Path == "/webhooks/endpoints":
+		e := created("whe")
+		e["secret"], e["enabled"] = "whsec_made", true
+		f.endpoints = append(f.endpoints, e)
+		f.write(w, 201, e)
+	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/webhooks/endpoints/"):
+		// A rerun brings an endpoint's events and api_version up to date.
+		for _, e := range f.endpoints {
+			if m := e.(map[string]any); m["id"] == strings.TrimPrefix(r.URL.Path, "/webhooks/endpoints/") {
+				for k, v := range body {
+					m[k] = v
+				}
+				f.write(w, 200, m)
+				return
 			}
 		}
-		f.write(w, 200, out)
-	case r.Method == "POST" && r.URL.Path == "/prices":
-		p := map[string]any{"id": id("pri"), "product_id": body["product_id"], "status": "active", "unit_price": body["unit_price"], "custom_data": body["custom_data"]}
-		f.prices[p["id"].(string)] = p
-		f.write(w, 201, p)
-	case r.Method == "GET" && r.URL.Path == "/discounts":
-		f.write(w, 200, list(f.discount))
-	case r.Method == "POST" && r.URL.Path == "/discounts":
-		d := map[string]any{"id": id("dsc"), "status": "active", "restrict_to": body["restrict_to"], "custom_data": body["custom_data"]}
-		f.discount[d["id"].(string)] = d
-		f.write(w, 201, d)
-	case r.Method == "GET" && r.URL.Path == "/notification-settings":
-		f.write(w, 200, list(f.settings))
-	case r.Method == "POST" && r.URL.Path == "/notification-settings":
-		s := map[string]any{"id": id("ntfset"), "type": "url", "destination": body["destination"], "endpoint_secret_key": "pdl_ntfset_made", "subscribed_events": []any{}}
-		f.settings[s["id"].(string)] = s
-		f.write(w, 201, s)
-	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/notification-settings/"):
-		// The bootstrap sets the destination's traffic source (I-600).
-		s, ok := f.settings[strings.TrimPrefix(r.URL.Path, "/notification-settings/")]
-		if !ok {
-			w.WriteHeader(404)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "entity_not_found", "detail": "no notification setting"}})
-			return
+		f.write(w, 404, map[string]any{"error": "ResourceNotFound", "detail": "Not found"})
+	case r.Method == "POST" && r.URL.Path == "/events/ingest":
+		for _, ev := range body["events"].([]any) {
+			e := ev.(map[string]any)
+			f.events++
+			f.lastGB, _ = e["metadata"].(map[string]any)["gb"].(float64)
+			f.lastCustomer, _ = e["external_customer_id"].(string)
 		}
-		if ts, ok := body["traffic_source"]; ok {
-			s["traffic_source"] = ts
-		}
-		f.write(w, 200, s)
-	case r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/subscriptions/") && strings.HasSuffix(r.URL.Path, "/charge"):
-		sub := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/subscriptions/"), "/charge")
-		if !f.subs[sub] {
-			w.WriteHeader(404)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "entity_not_found", "detail": "no subscription"}})
-			return
-		}
-		f.charges++
-		f.write(w, 200, map[string]any{"id": sub, "status": "active"})
+		f.write(w, 200, map[string]any{"inserted": 1, "duplicates": 0})
 	default:
-		w.WriteHeader(404)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "not_found", "detail": r.Method + " " + r.URL.Path}})
+		f.write(w, 404, map[string]any{"error": "NotFound", "detail": r.Method + " " + r.URL.Path})
 	}
 }

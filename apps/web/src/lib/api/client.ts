@@ -235,7 +235,7 @@ export const getUsage = (from: string, to: string) =>
 		`/usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
 	);
 export const getBilling = () => request<Billing>('/billing');
-/** Opens a Paddle transaction for the plan (I-289); `waitlisted` when its seats are not free. */
+/** Opens a Polar checkout for the plan (I-604) and answers its URL; `waitlisted` when its seats are not free. */
 export const billingCheckout = (plan: PlanId) =>
 	request<Checkout>('/billing/checkout', { method: 'POST', body: { plan } });
 export const billingJoinWaitlist = () =>
@@ -249,7 +249,7 @@ export const billingCancel = () =>
 	request<{ cancel_at: string }>('/billing/cancel', { method: 'POST' });
 export const billingResume = () =>
 	request<{ plan: PlanId; period_end: string }>('/billing/resume', { method: 'POST' });
-/** Paddle's customer portal; `payment_method` deep-links to the card. */
+/** Polar's customer portal; `payment_method` answers the same URL, as Polar has no deep link to the card (I-604). */
 export const billingPortal = (what?: 'payment_method') =>
 	request<{ url: string }>('/billing/portal', {
 		method: 'POST',

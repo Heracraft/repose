@@ -22,7 +22,7 @@ export type BillingStatus = 'none' | 'trial' | 'active' | 'past_due' | 'suspende
 
 export type PlanId = 'solo' | 'plus' | 'pro';
 
-/** The subscription's own status, Paddle's words (docs/interfaces/api.md GET /billing). */
+/** The subscription's own status, Polar's words (docs/interfaces/api.md GET /billing). */
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' | 'canceled';
 
 /** `detail.reason` of a `payment_required` refusal (api.md "Usage and billing"). */
@@ -108,7 +108,7 @@ export interface Subscription {
 	trial_end: string | null;
 	cancel_at: string | null;
 	scheduled_plan: PlanId | null;
-	/** What Paddle charges at next_billed_at, in cents (I-497). */
+	/** What Polar charges at next_billed_at, in cents (I-497). */
 	next_charge_cents?: number | null;
 	/** When the introductory price ends; null for none or not yet fixed (I-497). */
 	intro_until?: string | null;
@@ -173,18 +173,11 @@ export interface Billing {
 	intro_eligible?: boolean;
 	seats: Seats;
 	waitlist: WaitlistPlace | null;
-	paddle: {
-		/** `fake` is internal/fakes/api: the dashboard uses window.__reposePaddleStub instead of Paddle.js. */
-		environment: 'sandbox' | 'live' | 'fake';
-		client_token: string;
-	};
 }
 
-/** POST /billing/checkout's answer: what Paddle.js opens. */
+/** POST /billing/checkout's answer: Polar's hosted checkout, where the browser goes (I-604). */
 export interface Checkout {
-	transaction_id: string;
-	client_token: string;
-	environment: 'sandbox' | 'live' | 'fake';
+	url: string;
 }
 
 export interface AgentSignal {
@@ -413,10 +406,11 @@ export interface UsageRow {
 	cost_cents: number;
 }
 
-/** One element of GET /billing/invoices: a Paddle transaction (I-289). */
+/** One element of GET /billing/invoices: a Polar order (I-604). */
 export interface Invoice {
 	id: string;
 	number?: string | null;
+	/** Polar's order status: `paid`, `pending`, `refunded`, `partially_refunded`. */
 	status: string;
 	currency: string;
 	amount_cents: number;

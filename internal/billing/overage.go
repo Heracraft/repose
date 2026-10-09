@@ -15,36 +15,40 @@ import (
 	"github.com/heracraft/repose/internal/obs"
 )
 
-// The egress overage (PRICING.md "Egress", DECISIONS I-289). Hourly, for
-// every live subscription whose next_billed_at is within three hours and
-// whose period has no line yet: GB over the allowance times five cents,
-// recorded in overage_charges (the primary key makes a retry safe) and
-// sent as a Paddle one-time charge on the next invoice. Paddle locks the
-// invoice about thirty minutes before charging, hence three hours. The
-// same tick applies the hard stop: a user whose period egress passed four
-// times the allowance has their machines stopped once per period.
+// The egress overage (PRICING.md "Egress", DECISIONS I-289, I-604).
+// Hourly, for every live subscription whose period ends within three
+// hours and whose period has no line yet: GB over the allowance, recorded
+// in overage_charges (the primary key makes a retry safe) and sent to
+// Polar as one egress_overage event, which the plan product's metered
+// price bills at five cents a GB on the renewal order. The event's
+// external id is the subscription and period, so a resend after a failure
+// is harmless and the next tick makes it. The same tick applies the hard
+// stop: a user whose period egress passed four times the allowance has
+// their machines stopped once per period.
 
-// ChargeWindow is how close to next_billed_at the line is sent.
+// ChargeWindow is how close to period_end the line is sent: Polar bills
+// metered usage on the order it makes at the period's end, and an event
+// it receives later lands on the next period's order.
 const ChargeWindow = 3 * time.Hour
 
 // Overage is the hourly job.
 type Overage struct {
 	pool   *db.Pool
-	paddle ChargeSender
+	sender OverageSender
 	cfg    Config
 	stop   Stopper
 	m      *metrics.M
 	log    *slog.Logger
-	// Enforce is BILLING_ENFORCE (§8): false sends the charges (money owed
+	// Enforce is BILLING_ENFORCE (§8): false sends the overage (money owed
 	// is owed) but stops no machine.
 	Enforce bool
 	Now     func() time.Time
 }
 
-// NewOverage builds the job. A nil paddle records lines but sends
+// NewOverage builds the job. A nil sender records lines but sends
 // nothing, which is the disabled deploy.
-func NewOverage(pool *db.Pool, paddle ChargeSender, cfg Config, stop Stopper, m *metrics.M, log *slog.Logger) *Overage {
-	return &Overage{pool: pool, paddle: paddle, cfg: cfg, stop: stop, m: m, log: log.With("component", obs.ComponentAPI), Enforce: cfg.Enforce, Now: time.Now}
+func NewOverage(pool *db.Pool, sender OverageSender, cfg Config, stop Stopper, m *metrics.M, log *slog.Logger) *Overage {
+	return &Overage{pool: pool, sender: sender, cfg: cfg, stop: stop, m: m, log: log.With("component", obs.ComponentAPI), Enforce: cfg.Enforce, Now: time.Now}
 }
 
 // Charge is one overage line the run sent or found already sent.
@@ -54,13 +58,20 @@ type Charge struct {
 	PeriodStart    time.Time
 	EgressGB       int64
 	Cents          int64
-	TransactionID  string
-	Sent           bool
+	// Ref is the external id Polar accepted the event under; "" while
+	// it is not sent.
+	Ref  string
+	Sent bool
 }
 
 // Run does both halves and returns what it did.
 func (o *Overage) Run(ctx context.Context) (charges []Charge, stopped []uuid.UUID, err error) {
 	charges, err = o.chargeDue(ctx)
+	if err != nil {
+		return charges, nil, err
+	}
+	late, err := o.resendUnsent(ctx)
+	charges = append(charges, late...)
 	if err != nil {
 		return charges, nil, err
 	}
@@ -119,7 +130,7 @@ func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
 func (o *Overage) chargeDue(ctx context.Context) ([]Charge, error) {
 	now := o.Now().UTC()
 	rows, err := o.pool.Query(ctx, "select "+subCols+` from subscriptions where status in ('trialing','active','past_due')
-		and next_billed_at is not null and next_billed_at <= $1 and period_start is not null
+		and period_end is not null and period_end <= $1 and period_start is not null
 		and (overage_charged_for is null or overage_charged_for <> period_start) order by next_billed_at`, now.Add(ChargeWindow))
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions about to bill: %w", err)
@@ -130,7 +141,7 @@ func (o *Overage) chargeDue(ctx context.Context) ([]Charge, error) {
 	}
 	var out []Charge
 	for i := range subs {
-		c, err := o.ChargePeriod(ctx, &subs[i], EffectiveNextBillingPeriod)
+		c, err := o.ChargePeriod(ctx, &subs[i])
 		if err != nil {
 			if o.m != nil {
 				o.m.BillingOverageChargesTotal.WithLabelValues("error").Inc()
@@ -147,11 +158,11 @@ func (o *Overage) chargeDue(ctx context.Context) ([]Charge, error) {
 
 // ChargePeriod computes and, when over, sends the current period's line
 // for one subscription, then marks the period charged. It is what the
-// tick, `repose-admin billing overage-now` and account deletion call;
-// effectiveFrom is next_billing_period for the first two and immediately
-// for the last. A period with a line already recorded is not sent twice:
-// the recorded row is returned as found.
-func (o *Overage) ChargePeriod(ctx context.Context, sub *Sub, effectiveFrom string) (*Charge, error) {
+// tick, `repose-admin billing overage-now` and account deletion call. A
+// period whose line Polar already accepted is not sent twice: the
+// recorded row is returned as found. A line recorded but not accepted
+// (Polar failed) is brought up to the period's egress so far and sent.
+func (o *Overage) ChargePeriod(ctx context.Context, sub *Sub) (*Charge, error) {
 	if sub.PeriodStart == nil {
 		return nil, nil
 	}
@@ -164,57 +175,101 @@ func (o *Overage) ChargePeriod(ctx context.Context, sub *Sub, effectiveFrom stri
 	overGB, cents := OverageCents(plan, egress)
 	c := &Charge{SubscriptionID: sub.ID, UserID: sub.UserID, PeriodStart: period.Start, EgressGB: overGB, Cents: cents}
 	if cents > 0 {
-		var existingTxn *string
-		var inserted bool
+		var sentRef *string
 		err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
-			tag, err := tx.Exec(ctx, `insert into overage_charges (subscription_id, period_start, egress_gb, cents) values ($1, $2, $3, $4)
-				on conflict (subscription_id, period_start) do nothing`, sub.ID, period.Start, overGB, cents)
-			if err != nil {
+			if _, err := tx.Exec(ctx, `insert into overage_charges (subscription_id, period_start, egress_gb, cents) values ($1, $2, $3, $4)
+				on conflict (subscription_id, period_start) do update set egress_gb = excluded.egress_gb, cents = excluded.cents
+				where overage_charges.sent_ref is null`, sub.ID, period.Start, overGB, cents); err != nil {
 				return err
 			}
-			inserted = tag.RowsAffected() == 1
-			if !inserted {
-				return tx.QueryRow(ctx, "select paddle_transaction_id from overage_charges where subscription_id = $1 and period_start = $2", sub.ID, period.Start).Scan(&existingTxn)
+			var gb, cc int64
+			if err := tx.QueryRow(ctx, "select egress_gb::bigint, cents, sent_ref from overage_charges where subscription_id = $1 and period_start = $2", sub.ID, period.Start).Scan(&gb, &cc, &sentRef); err != nil {
+				return err
 			}
+			c.EgressGB, c.Cents = gb, cc
 			return nil
 		})
 		if err != nil {
 			return nil, fmt.Errorf("record the overage line: %w", err)
 		}
 		switch {
-		case inserted && o.paddle != nil:
-			desc := fmt.Sprintf("Egress overage: %d GB over the %s plan's %d GB (%s to %s) at $0.05/GB", overGB, plan.Name, plan.EgressGB, period.Start.Format("2 Jan"), period.End.Format("2 Jan 2006"))
-			txn, err := o.paddle.CreateOneTimeCharge(ctx, sub.ID, cents, desc, effectiveFrom)
-			if err != nil {
-				// The row stays with no transaction id and no
-				// overage_charged_for, so the next run finds the row,
-				// sees no id, and does not send again: the operator
-				// sends it by hand (RUNBOOK "Overage charge failed").
-				return nil, fmt.Errorf("send the overage charge to Paddle: %w", err)
+		case sentRef != nil:
+			c.Ref = *sentRef
+		case o.sender != nil:
+			ref := OverageExternalID(sub.ID, period.Start)
+			if err := o.sender.SendOverage(ctx, sub.UserID, ref, c.EgressGB, period.Start); err != nil {
+				// The row stays with no sent_ref and the period unmarked,
+				// so the next tick sends it again under the same external
+				// id (RUNBOOK "Overage charge failed").
+				return nil, fmt.Errorf("send the overage to Polar: %w", err)
 			}
-			c.Sent = true
-			c.TransactionID = txn
-			if txn != "" {
-				if _, err := o.pool.Exec(ctx, "update overage_charges set paddle_transaction_id = $3 where subscription_id = $1 and period_start = $2", sub.ID, period.Start, txn); err != nil {
-					return nil, err
-				}
+			if _, err := o.pool.Exec(ctx, "update overage_charges set sent_ref = $3 where subscription_id = $1 and period_start = $2", sub.ID, period.Start, ref); err != nil {
+				return nil, err
 			}
+			c.Sent, c.Ref = true, ref
 			if o.m != nil {
 				o.m.BillingOverageChargesTotal.WithLabelValues("ok").Inc()
 			}
-			o.log.Info("overage charged", "event", obs.EventOverageCharged, "user_id", sub.UserID.String(), "result", "ok", "cents", cents, "gb", overGB)
-		case inserted:
-			o.log.Warn("overage line recorded but Paddle is not configured", "event", obs.EventOverageCharged, "user_id", sub.UserID.String(), "result", "disabled", "cents", cents)
+			o.log.Info("overage charged", "event", obs.EventOverageCharged, "user_id", sub.UserID.String(), "result", "ok", "cents", c.Cents, "gb", c.EgressGB)
 		default:
-			if existingTxn != nil {
-				c.TransactionID = *existingTxn
-			}
+			o.log.Warn("overage line recorded but Polar is not configured", "event", obs.EventOverageCharged, "user_id", sub.UserID.String(), "result", "disabled", "cents", c.Cents)
 		}
 	}
 	if _, err := o.pool.Exec(ctx, "update subscriptions set overage_charged_for = $2 where id = $1", sub.ID, period.Start); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// resendUnsent sends every recorded line of an earlier period that Polar
+// never accepted, as recorded and under its own external id: a period
+// whose sends all failed until its renewal lands on the next renewal
+// order rather than being lost (Polar bills an event by when it arrives).
+func (o *Overage) resendUnsent(ctx context.Context) ([]Charge, error) {
+	if o.sender == nil {
+		return nil, nil
+	}
+	rows, err := o.pool.Query(ctx, `select c.subscription_id, s.user_id, c.period_start, c.egress_gb::bigint, c.cents
+		from overage_charges c join subscriptions s on s.id = c.subscription_id
+		where c.sent_ref is null and s.provider = 'polar' and (s.period_start is null or c.period_start < s.period_start)
+		order by c.period_start`)
+	if err != nil {
+		return nil, fmt.Errorf("list unsent overage lines: %w", err)
+	}
+	var pending []Charge
+	for rows.Next() {
+		var c Charge
+		if err := rows.Scan(&c.SubscriptionID, &c.UserID, &c.PeriodStart, &c.EgressGB, &c.Cents); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		pending = append(pending, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []Charge
+	for _, c := range pending {
+		ref := OverageExternalID(c.SubscriptionID, c.PeriodStart)
+		if err := o.sender.SendOverage(ctx, c.UserID, ref, c.EgressGB, c.PeriodStart); err != nil {
+			if o.m != nil {
+				o.m.BillingOverageChargesTotal.WithLabelValues("error").Inc()
+			}
+			o.log.Error("overage resend failed", "event", obs.EventOverageCharged, "user_id", c.UserID.String(), "result", "error", "err", err.Error())
+			continue
+		}
+		if _, err := o.pool.Exec(ctx, "update overage_charges set sent_ref = $3 where subscription_id = $1 and period_start = $2", c.SubscriptionID, c.PeriodStart, ref); err != nil {
+			return out, err
+		}
+		if o.m != nil {
+			o.m.BillingOverageChargesTotal.WithLabelValues("ok").Inc()
+		}
+		o.log.Info("overage charged late", "event", obs.EventOverageCharged, "user_id", c.UserID.String(), "result", "ok", "cents", c.Cents, "gb", c.EgressGB)
+		c.Sent, c.Ref = true, ref
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 // hardStops stops the machines of every user whose period egress passed

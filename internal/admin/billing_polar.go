@@ -16,41 +16,46 @@ import (
 // DefaultWebhookURL is the api's public webhook route (docs/ops/coolify.md).
 const DefaultWebhookURL = "https://api.repose.herakraft.co/v1/billing/webhook"
 
-// PaddleBaseURL overrides the Paddle API origin (tests point it at the fake).
-var PaddleBaseURL string
+// PolarBaseURL overrides the Polar API origin (tests point it at the fake).
+var PolarBaseURL string
 
-// paddle builds the Paddle client from the environment, or returns
+// polar builds the Polar client from the environment, or returns
 // ErrDisabled so a command can say billing is not configured.
-func (e *Env) paddle() (*billing.Paddle, billing.Config, error) {
+func (e *Env) polar() (*billing.Polar, billing.Config, error) {
 	cfg, on := billing.ConfigFromEnv()
 	if !on {
 		return nil, cfg, billing.ErrDisabled
 	}
-	cfg.BaseURL = PaddleBaseURL
-	return billing.NewPaddle(cfg, e.logger()), cfg, nil
+	if err := cfg.Validate(); err != nil {
+		return nil, cfg, err
+	}
+	cfg.BaseURL = PolarBaseURL
+	return billing.NewPolar(cfg, e.logger()), cfg, nil
 }
 
-// billingPaddleBootstrap creates or finds every Paddle object the api
-// needs and prints the PADDLE_* block for its environment (DECISIONS
-// I-289). It needs no database: the key is read from PADDLE_API_KEY,
-// never from the command line, where it would show in `ps` and shell
-// history. Progress goes to stderr and the block alone to stdout, so
-// `... > paddle.env` captures exactly what is pasted.
-func (e *Env) billingPaddleBootstrap(ctx context.Context, args []string) error {
-	fs, err := flagsFor("paddle-bootstrap", args, func(fs *flag.FlagSet) {
+// billingPolarBootstrap creates or finds every Polar object the api
+// needs and prints the POLAR_* block for its environment (DECISIONS
+// I-289, I-604). It needs no database: the token is read from
+// POLAR_ACCESS_TOKEN, never from the command line, where it would show in
+// `ps` and shell history. Progress goes to stderr and the block alone to
+// stdout, so `... > polar.env` captures exactly what is pasted.
+func (e *Env) billingPolarBootstrap(ctx context.Context, args []string) error {
+	fs, err := flagsFor("polar-bootstrap", args, func(fs *flag.FlagSet) {
 		fs.String("webhook-url", "", "the api's public webhook route (default "+DefaultWebhookURL+", or $API_PUBLIC_URL/v1/billing/webhook)")
-		fs.Bool("no-webhook", false, "do not create the notification destination")
-		fs.Bool("live", false, "allow a live key")
+		fs.Bool("no-webhook", false, "do not create the webhook endpoint")
+		fs.Bool("production", false, "allow Polar's production environment")
 	})
 	if err != nil {
 		return err
 	}
-	key := strings.TrimSpace(os.Getenv("PADDLE_API_KEY"))
-	if key == "" {
-		return fmt.Errorf("%w: PADDLE_API_KEY=pdl_sdbx_... repose-admin billing paddle-bootstrap [--webhook-url URL] [--no-webhook] [--live]", ErrUsage)
+	usage := fmt.Errorf("%w: POLAR_ACCESS_TOKEN=polar_oat_... POLAR_ENVIRONMENT=sandbox|production repose-admin billing polar-bootstrap [--webhook-url URL] [--no-webhook] [--production]", ErrUsage)
+	token := strings.TrimSpace(os.Getenv("POLAR_ACCESS_TOKEN"))
+	environment := strings.TrimSpace(os.Getenv("POLAR_ENVIRONMENT"))
+	if token == "" || (environment != billing.EnvSandbox && environment != billing.EnvProduction) {
+		return usage
 	}
 	get := func(name string) string { return fs.Lookup(name).Value.String() }
-	opts := billing.BootstrapOptions{WebhookURL: get("webhook-url"), Live: get("live") == "true", Progress: e.Stderr}
+	opts := billing.BootstrapOptions{WebhookURL: get("webhook-url"), Production: get("production") == "true", Progress: e.Stderr}
 	if opts.WebhookURL == "" {
 		opts.WebhookURL = DefaultWebhookURL
 		if u := strings.TrimRight(os.Getenv("API_PUBLIC_URL"), "/"); u != "" {
@@ -60,13 +65,13 @@ func (e *Env) billingPaddleBootstrap(ctx context.Context, args []string) error {
 	if get("no-webhook") == "true" {
 		opts.WebhookURL = ""
 	}
-	p := billing.NewPaddle(billing.Config{APIKey: key, BaseURL: PaddleBaseURL}, e.logger())
+	p := billing.NewPolar(billing.Config{AccessToken: token, Env: environment, BaseURL: PolarBaseURL}, e.logger())
 	res, err := billing.Bootstrap(ctx, p, opts)
-	if errors.Is(err, billing.ErrLiveKey) {
+	if errors.Is(err, billing.ErrProduction) {
 		return err
 	}
 	if err != nil {
-		return fmt.Errorf("paddle-bootstrap stopped; rerunning is safe, every object is found before it is made: %w", err)
+		return fmt.Errorf("polar-bootstrap stopped; rerunning is safe, every object is found before it is made: %w", err)
 	}
 	_, _ = fmt.Fprintf(e.Stderr, "%s: created %d object(s), found %d\n\n", res.Environment, len(res.Created), len(res.Found))
 	_, _ = fmt.Fprint(e.Stdout, res.EnvBlock())
@@ -92,7 +97,7 @@ func (e *Env) billingShow(ctx context.Context, args []string) error {
 }
 
 // billingOverageNow sends this period's egress overage line for one
-// account now rather than within three hours of the next bill: the gate
+// account now rather than within three hours of the period's end: the gate
 // proof of docs/ops/M4-GATE.md §4. A period already sent is not sent twice.
 func (e *Env) billingOverageNow(ctx context.Context, args []string) error {
 	if len(args) < 1 {
@@ -102,7 +107,7 @@ func (e *Env) billingOverageNow(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	p, cfg, err := e.paddle()
+	p, cfg, err := e.polar()
 	if err != nil {
 		return err
 	}
@@ -114,7 +119,7 @@ func (e *Env) billingOverageNow(ctx context.Context, args []string) error {
 		return fmt.Errorf("%s has no live subscription", u.Handle)
 	}
 	o := billing.NewOverage(e.pool, p, cfg, nil, metrics.NewNop(), e.logger())
-	c, err := o.ChargePeriod(ctx, sub, billing.EffectiveNextBillingPeriod)
+	c, err := o.ChargePeriod(ctx, sub)
 	if err != nil {
 		return err
 	}
@@ -124,9 +129,9 @@ func (e *Env) billingOverageNow(ctx context.Context, args []string) error {
 	case c.Cents == 0:
 		_, _ = fmt.Fprintf(e.Stdout, "%s: %s to now: egress within the allowance, nothing to charge; period marked\n", u.Handle, c.PeriodStart.Format("2006-01-02"))
 	case c.Sent:
-		_, _ = fmt.Fprintf(e.Stdout, "%s: sent %d GB over = %d cents to Paddle for the period from %s (transaction %s)\n", u.Handle, c.EgressGB, c.Cents, c.PeriodStart.Format("2006-01-02"), orNone(c.TransactionID))
+		_, _ = fmt.Fprintf(e.Stdout, "%s: sent %d GB over = %d cents to Polar for the period from %s (event %s)\n", u.Handle, c.EgressGB, c.Cents, c.PeriodStart.Format("2006-01-02"), c.Ref)
 	default:
-		_, _ = fmt.Fprintf(e.Stdout, "%s: the period from %s already has its line (%d cents, transaction %s); nothing sent\n", u.Handle, c.PeriodStart.Format("2006-01-02"), c.Cents, orNone(c.TransactionID))
+		_, _ = fmt.Fprintf(e.Stdout, "%s: the period from %s already has its line (%d cents, event %s); nothing sent\n", u.Handle, c.PeriodStart.Format("2006-01-02"), c.Cents, orNone(c.Ref))
 	}
 	detail := map[string]any{"sent": false}
 	if c != nil {

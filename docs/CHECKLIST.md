@@ -288,9 +288,10 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
 - [ ] Snapshot restore of a guest onto a *different* host rehearsed.
 - [ ] Host loss rehearsed: deallocate a host, restore its projects elsewhere
       from Blob, users notified.
-- [ ] Paddle: the sandbox gate of `docs/ops/M4-GATE.md` passes (checkout to
-      `trial`, `transaction.completed` to `active`, `payment_failed` to
-      `past_due` and the 3-day stop, an egress overage line to the cent);
+- [ ] Polar: the sandbox gate of `docs/ops/M4-GATE.md` passes (checkout to
+      `trial`, the trial's end and `order.paid` to `active`, a failed
+      renewal to `past_due` and the 3-day stop, an egress overage line to
+      the cent, I-604);
       one live charge of the owner's own card succeeded.
 - [x] Grafana dashboards exist for: host capacity, per-guest resources,
       builds (duration, failures), gateway (sessions, auth failures),

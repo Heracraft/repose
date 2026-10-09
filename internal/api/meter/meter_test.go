@@ -46,7 +46,7 @@ func seed(t *testing.T, pool *db.Pool, class string, created time.Time) (uuid.UU
 
 // One large guest running 10 hours of a day with 40 GB and 3 GB egress:
 // 36000 running seconds, 3 GB of egress, and no cents anywhere (plan-v1,
-// DECISIONS I-289: the plan is charged by Paddle, not the hour).
+// DECISIONS I-289: the plan is charged by Polar, not the hour).
 func TestIngestAndSyntheticDayRollup(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
