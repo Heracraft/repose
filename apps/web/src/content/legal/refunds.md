@@ -10,9 +10,10 @@ This page says when a charge is refunded and how.
 
 ## The trial and the first charge
 
-Every plan starts with seven days free. Your card is taken at checkout and
-first charged on the eighth day unless you cancel before then; cancelling
-during the trial costs nothing.
+Your first plan starts with seven days free; an email address or card
+that has had a free week before checks out without one. Your card is
+taken at checkout and first charged on the eighth day unless you cancel
+before then; cancelling during the trial costs nothing.
 
 If you are charged after the trial and change your mind, ask within 14
 days of that first charge and it is refunded in full. This applies to the

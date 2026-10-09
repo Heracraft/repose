@@ -186,7 +186,16 @@ func (w *Webhooks) Handle(ctx context.Context, payload []byte, h WebhookHeaders)
 		return kind, err
 	}
 	if tag.RowsAffected() == 0 {
-		return kind, ErrDuplicate
+		// Seen before: a duplicate once applied; an event whose apply
+		// failed is applied again, which is what Polar's retries and a
+		// redelivery from its dashboard are for.
+		var processed *time.Time
+		if err := w.pool.QueryRow(ctx, "select processed_at from billing_events where id = $1", h.ID).Scan(&processed); err != nil {
+			return kind, err
+		}
+		if processed != nil {
+			return kind, ErrDuplicate
+		}
 	}
 	applyErr := w.apply(ctx, &ev)
 	if applyErr != nil {
@@ -195,7 +204,7 @@ func (w *Webhooks) Handle(ctx context.Context, payload []byte, h WebhookHeaders)
 		}
 		return kind, applyErr
 	}
-	if _, err := w.pool.Exec(ctx, "update billing_events set processed_at = now() where id = $1", h.ID); err != nil {
+	if _, err := w.pool.Exec(ctx, "update billing_events set processed_at = now(), error = null where id = $1", h.ID); err != nil {
 		return kind, err
 	}
 	w.log.Info("polar webhook applied", "event", obs.EventBillingWebhook, "kind", kind, "result", "ok")
@@ -264,7 +273,8 @@ func subscriptionStatus(polar string) string {
 // trial's end), which is what IntroUntil derives (DECISIONS I-604).
 func (w *Webhooks) subscriptionRow(ps *Subscription, userID uuid.UUID, status string, plan Plan) Sub {
 	row := Sub{ID: ps.ID, UserID: userID, CustomerID: ps.CustomerID, Plan: plan.ID, Status: status, Seats: plan.Seats,
-		PeriodStart: polarTime(ps.CurrentPeriodStart), PeriodEnd: polarTime(ps.CurrentPeriodEnd), TrialEnd: polarTime(ps.TrialEnd), CancelAt: ps.CancelAt()}
+		PeriodStart: polarTime(ps.CurrentPeriodStart), PeriodEnd: polarTime(ps.CurrentPeriodEnd), TrialEnd: polarTime(ps.TrialEnd), CancelAt: ps.CancelAt(),
+		SourceModifiedAt: polarTime(ps.ModifiedAt)}
 	if IsLive(status) && row.CancelAt == nil {
 		row.NextBilledAt = row.PeriodEnd
 	}
@@ -321,7 +331,20 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	now := w.Now().UTC()
 	row := w.subscriptionRow(&ps, u.ID, status, plan)
 	var prev *Sub
+	stale := false
 	err = db.InTx(ctx, w.pool, func(tx db.Tx) error {
+		// Polar sends subscription.updated and a specific event for each
+		// change, and a retry can arrive after a newer one: a payload older
+		// than the one applied last changes nothing.
+		if _, err := tx.Exec(ctx, "select 1 from subscriptions where id = $1 for update", ps.ID); err != nil {
+			return err
+		}
+		if cur, err := GetSubscription(ctx, tx, ps.ID); err == nil && cur.SourceModifiedAt != nil && row.SourceModifiedAt != nil && row.SourceModifiedAt.Before(*cur.SourceModifiedAt) {
+			stale = true
+			return nil
+		} else if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return err
+		}
 		prev, err = upsertSubscription(ctx, tx, row)
 		if err != nil {
 			return err
@@ -343,6 +366,10 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	})
 	if err != nil {
 		return err
+	}
+	if stale {
+		w.log.Info("polar webhook older than the subscription row", "event", obs.EventBillingWebhook, "kind", ev.Type, "result", "stale")
+		return nil
 	}
 	if w.m != nil {
 		w.m.BillingSubscriptions.WithLabelValues(plan.ID, status).Inc()

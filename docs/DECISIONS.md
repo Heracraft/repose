@@ -16737,8 +16737,20 @@ that are missing.
 `customer_id`, `subscriptions.provider` is added (`paddle` for rows
 before the switch, `polar` from it), `paddle_events` becomes
 `billing_events`. A live Paddle row can never hear from Paddle again, so
-the migration ends any such row and returns its account to `none`
-(production had one subscription, already cancelled, on 2026-10-08).
+the migration ends any such row and returns its account to `none`,
+lifting a billing suspension with it, and clears Paddle's `ctm_`
+customer ids so the first Polar event stores Polar's (production had
+one subscription, already cancelled, on 2026-10-08). Only Paddle's
+`sub_` ids are tagged `paddle`, so a rollback and rerun leaves Polar's
+rows alone. `subscriptions.source_modified_at` keeps Polar's
+`modified_at` of the newest payload applied: Polar sends
+`subscription.updated` and a specific event for each change, and a
+retry can arrive after a newer one, so an older payload changes nothing.
+An event whose apply failed is applied again when Polar retries it or
+an operator redelivers it from Polar's dashboard; only an applied one
+is a duplicate. A subscription that ends while its account is billing
+suspended (Polar revokes after its day-21 retry) lifts the suspension,
+so the account can check out again; an operator's stays.
 
 (8) *Where it runs.* Production moves from Paddle's sandbox block
 (I-600) to Polar's sandbox organization `repose` until the owner

@@ -429,3 +429,95 @@ func TestWebhookResolvesByCustomer(t *testing.T) {
 		t.Fatal("status")
 	}
 }
+
+// An event whose apply failed is applied when Polar sends it again (a
+// retry or a redelivery from its dashboard); one that was applied is a
+// duplicate.
+func TestWebhookReappliesAFailedEvent(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	w := newHooks(t, pool, f, nil, nil)
+	a := seedAccount(t, pool, "", "none", "", "")
+	d := subData("sub_retry", a, "prod_solo_test", "trialing", nil)
+	delete(d, "metadata")
+	delete(d, "customer")
+	ev := event("subscription.created", d)
+	// The customer is not known yet: the apply fails and is recorded.
+	if err := post(t, w, f, ev); err == nil {
+		t.Fatal("an unknown customer's event applied")
+	}
+	if _, err := pool.Exec(context.Background(), "update users set billing_customer_id = $2 where id = $1", a.UserID, "cus_"+a.Handle); err != nil {
+		t.Fatal(err)
+	}
+	if err := post(t, w, f, ev); err != nil {
+		t.Fatalf("the retry: %v", err)
+	}
+	if userField(t, pool, a, "billing_status") != "trial" {
+		t.Fatal("the retried event was not applied")
+	}
+	var errText *string
+	if err := pool.QueryRow(context.Background(), "select error from billing_events where id = $1", ev.id).Scan(&errText); err != nil || errText != nil {
+		t.Fatalf("the event row keeps its old error: %v %v", errText, err)
+	}
+	if err := post(t, w, f, ev); !errors.Is(err, billing.ErrDuplicate) {
+		t.Fatalf("a third delivery: %v", err)
+	}
+}
+
+// A payload older than the one applied last changes nothing: a late
+// past_due after the payment, a late active after the end.
+func TestWebhookSkipsOlderPayloads(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	stop := &stopRecorder{}
+	w := newHooks(t, pool, f, stop, nil)
+	a := seedAccount(t, pool, "", "none", "large", "running")
+	at := func(m int) map[string]any {
+		return map[string]any{"modified_at": time.Date(2026, 10, 3, 12, m, 0, 0, time.UTC).Format(time.RFC3339)}
+	}
+	must := func(kind, status string, m int) {
+		t.Helper()
+		if err := post(t, w, f, event(kind, subData("sub_order", a, "prod_solo_test", status, at(m)))); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+	}
+	must("subscription.active", "active", 10)
+	must("subscription.past_due", "past_due", 5)
+	if userField(t, pool, a, "billing_status") != "active" || len(eventKinds(t, pool, a)) != 0 {
+		t.Fatal("a late past_due moved the account")
+	}
+	must("subscription.revoked", "canceled", 20)
+	must("subscription.updated", "active", 15)
+	if userField(t, pool, a, "billing_status") != "none" || len(stop.calls) != 1 {
+		t.Fatalf("a late active revived the account: %s, %d stops", userField(t, pool, a, "billing_status"), len(stop.calls))
+	}
+	if s, _ := billing.LiveSubscription(context.Background(), pool, a.UserID); s != nil {
+		t.Fatalf("the row came back to life: %+v", s)
+	}
+}
+
+// When Polar ends a subscription after its last retry, a billing
+// suspension goes with it: the account can check out again. An
+// operator's suspension stays.
+func TestWebhookEndLiftsBillingSuspension(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	w := newHooks(t, pool, f, nil, nil)
+	ctx := context.Background()
+	for _, reason := range []string{"billing", "abuse"} {
+		a := seedAccount(t, pool, "solo", "past_due", "", "")
+		if _, err := pool.Exec(ctx, "update users set billing_status = 'suspended', suspended_at = now(), suspended_reason = $2 where id = $1", a.UserID, reason); err != nil {
+			t.Fatal(err)
+		}
+		if err := post(t, w, f, event("subscription.revoked", subData(a.SubID, a, "prod_solo_test", "unpaid", nil))); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{"billing": "none", "abuse": "suspended"}[reason]
+		if got := userField(t, pool, a, "billing_status"); got != want {
+			t.Errorf("%s suspension after the end: %s, want %s", reason, got, want)
+		}
+	}
+}

@@ -2268,7 +2268,8 @@ failed` lines with `result=error` carry Polar's status and message). The
 row stays without `sent_ref` and the period is not marked charged, so the
 next hourly tick sends it again under the same external id
 (`overage:<subscription>:<period start unix>`), which Polar dedupes; a
-resend never doubles a line (DECISIONS I-604). Nothing is sent by hand.
+resend never doubles a line (DECISIONS I-604). Waiting for the tick is
+enough; `overage-now` only sends sooner.
 
 ```
 repose-admin billing show <handle>              # "overage lines": the period, the GB, the cents, "sent -" until Polar accepts it

@@ -125,8 +125,11 @@ credit_ledger (id pk, user_id fk, cents bigint, reason text, ref text, created_a
 
 subscriptions (id text pk,  -- the provider's subscription id (0008, I-289; Polar's since 0020, I-604)
               user_id fk, customer_id text,  -- was paddle_customer_id (0020)
-              provider text not null default 'polar',  -- paddle|polar (0020, I-604); rows before it are 'paddle'
-                                       -- 0020 ends every live 'paddle' row and sets its account's billing_status to none
+              provider text not null default 'polar',  -- paddle|polar (0020, I-604); rows with Paddle's sub_ ids are 'paddle'
+                                       -- 0020 ends every live 'paddle' row, sets its account's billing_status to none
+                                       -- (lifting a billing suspension) and clears Paddle's ctm_ customer ids
+              source_modified_at timestamptz null,  -- Polar's modified_at of the newest payload applied (0020, I-604);
+                                       -- an older payload delivered late is skipped
               plan text,  -- solo|plus|pro (0011, I-362)
               status text,  -- trialing|active|past_due|paused|canceled; at most one live per user
               seats int, period_start, period_end, next_billed_at, trial_end,

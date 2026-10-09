@@ -122,7 +122,7 @@ func (e Explanation) WriteTo(w io.Writer) (int64, error) {
 	if e.Charged != nil {
 		row("overage line sent", fmt.Sprintf("%d GB, %d cents, recorded %s, sent %s", e.Charged.EgressGB, e.Charged.Cents, e.Charged.CreatedAt.UTC().Format(time.RFC3339), orDash(e.Charged.SentRef)))
 	} else {
-		row("overage line sent", "not yet (sent within three hours of the period's next_billed_at)")
+		row("overage line sent", "not yet (sent within three hours of the period's end)")
 	}
 	return 0, tw.Flush()
 }

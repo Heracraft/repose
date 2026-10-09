@@ -143,6 +143,11 @@ func (p *Polar) do(ctx context.Context, method, path string, body any, out any) 
 					d = time.Duration(secs) * time.Second
 				}
 			}
+			// A long Retry-After is the next tick's, not this request's.
+			d = min(d, 30*time.Second)
+			if ctx.Err() != nil {
+				return last
+			}
 			p.Sleep(d)
 			wait *= 2
 			continue
@@ -317,6 +322,7 @@ type Subscription struct {
 	EndedAt            string         `json:"ended_at"`
 	PastDueAt          string         `json:"past_due_at"`
 	CreatedAt          string         `json:"created_at"`
+	ModifiedAt         string         `json:"modified_at"`
 	Metadata           map[string]any `json:"metadata"`
 	Customer           *struct {
 		ID         string `json:"id"`

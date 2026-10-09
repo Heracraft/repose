@@ -231,7 +231,7 @@ func (o *Overage) resendUnsent(ctx context.Context) ([]Charge, error) {
 	}
 	rows, err := o.pool.Query(ctx, `select c.subscription_id, s.user_id, c.period_start, c.egress_gb::bigint, c.cents
 		from overage_charges c join subscriptions s on s.id = c.subscription_id
-		where c.sent_ref is null and (s.period_start is null or c.period_start < s.period_start)
+		where c.sent_ref is null and s.provider = 'polar' and (s.period_start is null or c.period_start < s.period_start)
 		order by c.period_start`)
 	if err != nil {
 		return nil, fmt.Errorf("list unsent overage lines: %w", err)

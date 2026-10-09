@@ -270,7 +270,7 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 			return PlanChange{}, ErrNoSeat
 		}
 		// Leaving Solo ends its introductory offer.
-		if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateInvoice, sub.Intro); err != nil {
+		if _, err := s.polar.ChangeProduct(ctx, sub.ID, s.cfg.PlanProduct(target.ID), ProrateInvoice, sub.Intro || current.HasIntro()); err != nil {
 			return PlanChange{}, fmt.Errorf("upgrade the subscription: %w", err)
 		}
 		// The webhook writes the same; writing it here too means the
@@ -423,6 +423,9 @@ func (s *Service) Invoices(ctx context.Context, u *store.User) ([]map[string]any
 	if err != nil {
 		return nil, fmt.Errorf("list the orders: %w", err)
 	}
+	// At most three generation requests a listing: Polar's rate limit is
+	// the account's, and a refused one is asked again on a later listing.
+	generate := 3
 	for _, o := range orders {
 		if o.Status == "draft" || o.Status == "void" {
 			continue
@@ -434,7 +437,8 @@ func (s *Service) Invoices(ctx context.Context, u *store.User) ([]map[string]any
 			if pdf, err := s.polar.OrderInvoiceURL(ctx, o.ID); err == nil && pdf != "" {
 				inv["pdf_url"], inv["hosted_url"] = pdf, pdf
 			}
-		} else if o.Status != "pending" {
+		} else if o.Status != "pending" && generate > 0 {
+			generate--
 			if err := s.polar.GenerateOrderInvoice(ctx, o.ID); err != nil {
 				s.log.Warn("invoice generation refused", "event", "billing_invoice", "user_id", u.ID.String(), "result", "error", "err", err.Error())
 			}
@@ -473,17 +477,19 @@ func (s *Service) CloseAccount(ctx context.Context, userID uuid.UUID) error {
 	now := s.Now().UTC()
 	if owed {
 		ps, err := s.polar.SetCancelAtPeriodEnd(ctx, sub.ID, true)
-		if err != nil {
+		if err != nil && !endedAtPolar(err) {
 			return fmt.Errorf("cancel the subscription: %w", err)
 		}
 		cancelAt := now
-		if t := ps.CancelAt(); t != nil {
-			cancelAt = *t
+		if ps != nil {
+			if t := ps.CancelAt(); t != nil {
+				cancelAt = *t
+			}
 		}
 		_, err = s.pool.Exec(ctx, "update subscriptions set cancel_at = $2 where id = $1", sub.ID, cancelAt)
 		return err
 	}
-	if _, err := s.polar.RevokeSubscription(ctx, sub.ID); err != nil {
+	if _, err := s.polar.RevokeSubscription(ctx, sub.ID); err != nil && !endedAtPolar(err) {
 		return fmt.Errorf("revoke the subscription: %w", err)
 	}
 	_, err = s.pool.Exec(ctx, "update subscriptions set status = 'canceled', cancel_at = $2 where id = $1", sub.ID, now)
@@ -492,4 +498,11 @@ func (s *Service) CloseAccount(ctx context.Context, userID uuid.UUID) error {
 	}
 	_, err = s.pool.Exec(ctx, "update users set billing_status = 'none' where id = $1 and billing_status <> 'exempt'", userID)
 	return err
+}
+
+// endedAtPolar reports whether Polar refused because the subscription is
+// already gone or already cancelled, which for account deletion is done.
+func endedAtPolar(err error) bool {
+	var pe *PolarError
+	return errors.As(err, &pe) && (pe.Status == 404 || pe.Type == "AlreadyCanceledSubscription")
 }

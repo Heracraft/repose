@@ -94,12 +94,15 @@ database runs on a virtual machine in the same region and is backed up
 nightly to Cloudflare R2. Identity is handled by a Logto instance we run
 ourselves; GitHub sees only the sign-in. Payments are handled by Polar,
 the merchant of record: at checkout Polar receives your email address,
-your country (for tax) and your card, which it processes through Stripe,
-and holds them under
+your country (for tax), your IP address (from which it reads the
+country) and your card, which it processes through Stripe, and holds
+them under
 [Polar's privacy policy](https://polar.sh/legal/privacy-policy). We hold
 Polar's identifiers for your customer and subscription, your plan and
 its status, the dates of the period and the invoice totals, never card
-numbers. Email notifications are sent through Resend;
+numbers. Polar holds your repose account id, to match its records to
+yours, and each period's egress past your plan's allowance, which it
+bills. Email notifications are sent through Resend;
 push notifications go to the ntfy endpoint you configure, which may be a
 third party of your choosing. Our feedback board at
 [repose.fider.io](https://repose.fider.io) is hosted by Fider: when you

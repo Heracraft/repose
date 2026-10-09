@@ -461,6 +461,15 @@ func TestCloseAccount(t *testing.T) {
 	if sub.Status != "canceled" || userField(t, pool, b, "billing_status") != "none" {
 		t.Fatalf("after close: %s %s", sub.Status, userField(t, pool, b, "billing_status"))
 	}
+	// Already gone at Polar (revoked from its dashboard): the deletion
+	// goes through.
+	g := seedAccount(t, pool, "solo", "active", "", "")
+	if err := s.CloseAccount(ctx, g.UserID); err != nil {
+		t.Fatalf("a subscription Polar no longer has: %v", err)
+	}
+	if userField(t, pool, g, "billing_status") != "none" {
+		t.Fatal("the account kept its plan")
+	}
 	// A user without a subscription: nothing to do.
 	n := seedAccount(t, pool, "", "none", "", "")
 	if err := s.CloseAccount(ctx, n.UserID); err != nil {

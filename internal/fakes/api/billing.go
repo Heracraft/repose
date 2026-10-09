@@ -955,6 +955,13 @@ func (f *Fake) billingPortal(w http.ResponseWriter, r *http.Request) *apiError {
 	if e := decodeBody(r, &body, true); e != nil {
 		return e
 	}
+	if body.For != "" && body.For != "payment_method" {
+		return invalid("for must be payment_method or absent")
+	}
+	// Polar knows a customer only after a first checkout.
+	if !f.hasSubscription() && !f.bill.introUsed {
+		return errf("conflict", "you have no plan yet; choose one with a checkout").withDetail(map[string]any{"reason": "no_subscription"})
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": portalURL})
 	return nil
 }

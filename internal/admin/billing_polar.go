@@ -26,6 +26,9 @@ func (e *Env) polar() (*billing.Polar, billing.Config, error) {
 	if !on {
 		return nil, cfg, billing.ErrDisabled
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, cfg, err
+	}
 	cfg.BaseURL = PolarBaseURL
 	return billing.NewPolar(cfg, e.logger()), cfg, nil
 }

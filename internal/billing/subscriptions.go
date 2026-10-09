@@ -33,11 +33,14 @@ type Sub struct {
 	// period plus IntroMonths (DECISIONS I-604); nil when unknown.
 	Intro      bool       `db:"intro"`
 	IntroUntil *time.Time `db:"intro_until"`
-	CreatedAt  time.Time  `db:"created_at"`
-	UpdatedAt  time.Time  `db:"updated_at"`
+	// SourceModifiedAt is Polar's modified_at of the newest payload
+	// applied; an older one delivered late is skipped.
+	SourceModifiedAt *time.Time `db:"source_modified_at"`
+	CreatedAt        time.Time  `db:"created_at"`
+	UpdatedAt        time.Time  `db:"updated_at"`
 }
 
-const subCols = `id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, intro, intro_until, created_at, updated_at`
+const subCols = `id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, overage_charged_for, intro, intro_until, source_modified_at, created_at, updated_at`
 
 // Subscription statuses, Polar's words (unpaid is stored as canceled).
 const (
@@ -181,13 +184,14 @@ func upsertSubscription(ctx context.Context, q store.Querier, s Sub) (*Sub, erro
 	if errors.Is(err, db.ErrNotFound) {
 		prev = nil
 	}
-	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, intro, intro_until)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+	_, err = q.Exec(ctx, `insert into subscriptions (id, user_id, customer_id, plan, status, seats, period_start, period_end, next_billed_at, trial_end, cancel_at, scheduled_plan, intro, intro_until, source_modified_at)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		on conflict (id) do update set customer_id = excluded.customer_id, plan = excluded.plan, status = excluded.status,
 		seats = excluded.seats, period_start = excluded.period_start, period_end = excluded.period_end, next_billed_at = excluded.next_billed_at,
 		trial_end = excluded.trial_end, cancel_at = excluded.cancel_at, scheduled_plan = excluded.scheduled_plan,
-		intro = excluded.intro, intro_until = excluded.intro_until`,
-		s.ID, s.UserID, s.CustomerID, s.Plan, s.Status, s.Seats, s.PeriodStart, s.PeriodEnd, s.NextBilledAt, s.TrialEnd, s.CancelAt, s.ScheduledPlan, s.Intro, s.IntroUntil)
+		intro = excluded.intro, intro_until = excluded.intro_until,
+		source_modified_at = coalesce(excluded.source_modified_at, subscriptions.source_modified_at)`,
+		s.ID, s.UserID, s.CustomerID, s.Plan, s.Status, s.Seats, s.PeriodStart, s.PeriodEnd, s.NextBilledAt, s.TrialEnd, s.CancelAt, s.ScheduledPlan, s.Intro, s.IntroUntil, s.SourceModifiedAt)
 	if err != nil {
 		return prev, err
 	}
@@ -216,5 +220,13 @@ func projectStatus(ctx context.Context, q store.Querier, userID uuid.UUID, statu
 	// $2 is referenced by the past_due branch alone; the cast keeps the
 	// parameter in every statement so the argument count matches.
 	_, err := q.Exec(ctx, "update users set "+set+", has_card = true where id = $1 and billing_status not in ('exempt', 'suspended') and $2::timestamptz is not null", userID, now.UTC())
+	if err != nil || (status != StatusCanceled && status != StatusPaused) {
+		return err
+	}
+	// A subscription that ended (Polar revokes after its last retry) takes
+	// a billing suspension with it: the account has no plan and can check
+	// out again; its machines stay stopped. An operator's stays.
+	_, err = q.Exec(ctx, `update users set billing_status = 'none', past_due_since = null, suspended_at = null, suspended_reason = null
+		where id = $1 and billing_status = 'suspended' and suspended_reason = 'billing'`, userID)
 	return err
 }
