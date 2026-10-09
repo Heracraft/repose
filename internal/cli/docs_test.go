@@ -39,6 +39,10 @@ var hiddenCommands = map[string]string{
 	// (I-281), before every ssh to <project>.repose; typing it does what
 	// that ssh would have done, and nobody needs to.
 	"repose ssh-prepare": "run by ssh from ~/.ssh/repose/config",
+	// What a git or npm user types for the CLI's settings; each only
+	// says those are config.toml keys (I-622).
+	"repose config set": "answers that the CLI's settings are config.toml keys",
+	"repose config get": "answers that the CLI's settings are config.toml keys",
 }
 
 // undocumentedFlags is "<command path> --<flag>" for any flag that is
@@ -47,7 +51,15 @@ var undocumentedFlags = map[string]string{
 	// The old name of `repose browser` (I-292): kept working, hidden from
 	// help; cli.md names it once as the old name under repose browser.
 	"repose open --desktop": "old name of repose browser",
-	"repose open --stop":    "old name of repose browser --stop",
+	"repose open --stop":    "old name of repose browser stop",
+	// One spelling per idea (I-619): the old names, hidden for a release.
+	"repose open --local-port":           "old form of repose open LOCAL:PORT",
+	"repose browser --stop":              "old name of repose browser stop",
+	"repose browser --no-open":           "old name of repose browser --no-browser",
+	"repose browser bridge --no-browser": "old name of --no-inspect",
+	"repose snapshots restore --as-new":  "old name of --as",
+	"repose mcp forward --remove":        "old name of repose mcp rm",
+	"repose config show --revisions":     "old name of repose config revisions",
 	// Moved to `repose sync` (I-367): hidden on run for a release, and
 	// they only print where they went.
 	"repose run --stash-remote":   "moved to repose sync --stash-remote",

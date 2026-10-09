@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/signal"
 	"strings"
 	"sync"
@@ -109,7 +110,7 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 	}
 	slug := project.Slug
 	if opts.Remove {
-		return mcpRemove(ctx, target, slug, opts.Names)
+		return mcpRemove(ctx, e.Out, target, slug, opts.Names)
 	}
 	ctx, stopSignals := endOnHangup(ctx)
 	defer stopSignals()
@@ -213,8 +214,8 @@ func MCPForwardCmd(ctx context.Context, e *Env, projectArg string, opts MCPForwa
 
 // mcpRemove is --remove: forward/NAME.json goes, and the agents drop NAME
 // at their next start.
-func mcpRemove(ctx context.Context, t sshTarget, slug string, names []string) error {
-	out, err := runSSH(ctx, t, mcpHoldCommand(names, "--remove"), nil)
+func mcpRemove(ctx context.Context, out io.Writer, t sshTarget, slug string, names []string) error {
+	res, err := runSSH(ctx, t, mcpHoldCommand(names, "--remove"), nil)
 	if err != nil {
 		var se *sshError
 		if errors.As(err, &se) && (se.ExitCode == 127 || strings.Contains(se.Stderr, mcpOldHoldText)) {
@@ -223,7 +224,7 @@ func mcpRemove(ctx context.Context, t sshTarget, slug string, names []string) er
 		return stepFailed("remove the forward from "+slug, err, "")
 	}
 	var missing []string
-	for _, l := range strings.Fields(string(out)) {
+	for _, l := range strings.Fields(string(res)) {
 		if mcpreg.ValidName(l) {
 			missing = append(missing, l)
 		}
@@ -231,6 +232,7 @@ func mcpRemove(ctx context.Context, t sshTarget, slug string, names []string) er
 	if len(missing) > 0 {
 		return exitf(ExitGeneric, "%s has no forwarded MCP server named %s.", slug, strings.Join(missing, ", "))
 	}
+	_, _ = fmt.Fprintf(out, "Removed %s from %s.\n", joinNames(names), slug)
 	return nil
 }
 

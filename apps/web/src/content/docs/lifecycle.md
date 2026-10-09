@@ -7,13 +7,13 @@ order: 17
 
 A project is one machine plus its disk, snapshots, secrets and configuration. The first `repose run` in a checkout creates it. After that, any checkout of the same repository, on any laptop you're logged in on, finds it by its git remote.
 
-To act on a project from elsewhere, name it: `repose attach todo-app`, `repose stop todo-app`. For `repose run`, whose argument is the prompt, use `--project todo-app`.
+To act on a project from elsewhere, name it: `repose attach todo-app`, `repose stop todo-app`, `repose run todo-app`.
 
 ## See what's running
 
 ```
 $ repose ls
-PROJECT   CLASS  STATE    UP     AGENTS               TODAY  MONTH
+PROJECT   SIZE   STATE    UP     AGENTS               TODAY  MONTH
 todo-app  large  running  2h14m  claude: working      2h14m  41h
 api       xl     running  6h40m  2 agents: 2 working  6h40m  12h
 web       small  stopped  -      -                    0h     3h
@@ -53,7 +53,7 @@ A machine is idle when it has been running for 24 hours with no SSH session, no 
 
 ```
 $ repose ls
-PROJECT    CLASS  STATE    UP      AGENTS
+PROJECT    SIZE   STATE    UP      AGENTS
 todo-app   large  running  31h02m  claude: idle
 todo-app: running for 26h with nobody attached
 ```
@@ -85,7 +85,7 @@ repose snapshots restore todo-app SNAPSHOT_ID
 Or restore into a new project and leave the original alone:
 
 ```
-repose snapshots restore SNAPSHOT_ID --as-new todo-app-old
+repose snapshots restore SNAPSHOT_ID --as todo-app-old
 ```
 
 The dashboard's snapshot list has **Create**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
@@ -189,7 +189,7 @@ Not a git repository, so nothing was synced.
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
-- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
+- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
@@ -209,26 +209,25 @@ To have several agents try different approaches from the same starting point, ea
 
 ```
 $ repose fork todo-app -n 3
-Forked todo-app into 3 projects
-from its snapshot of 2026-09-25 14:02 in 48s:
+Forked todo-app into 3 projects from its snapshot of 2026-09-25 14:02 in 48s:
   todo-app-fork-1  running (large)
   todo-app-fork-2  running (large)
   todo-app-fork-3  running (large)
+Added the git remotes todo-app-fork-1, todo-app-fork-2 and todo-app-fork-3.
 ```
 
 `repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
 
-The original keeps running and is still the project `repose run` uses in your checkout. Reach the copies by name: `repose attach todo-app-fork-2`. To keep one copy's work, commit it there and fetch it into your checkout with a remote for that copy:
+The original keeps running and is still the project `repose run` uses in your checkout. Reach the copies by name: `repose attach todo-app-fork-2`. Run in your checkout, `fork` adds a git remote for each copy, named after it, as `run` adds `repose` for the project. To keep one copy's work, commit it there and fetch it:
 
 ```
-git remote add fork-2 todo-app-fork-2.repose:~/todo-app
-git fetch fork-2
-git merge fork-2/main
+git fetch todo-app-fork-2
+git merge todo-app-fork-2/main
 ```
 
-Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`.
+Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`, which removes that copy's remote; branches you fetched from it stay.
 
 Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. `--size small` makes copies that take less of that memory; `--name` changes their names.
 

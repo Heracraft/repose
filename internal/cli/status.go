@@ -111,7 +111,7 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 		disk = disk || diskFullCell(&projects[i]) != ""
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	head := "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
+	head := "PROJECT\tSIZE\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
 	if left {
 		head += "\tLEFT"
 	}
@@ -185,6 +185,9 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 	if t := tempWhen(p, time.Now()); t != "" {
 		// DECISIONS I-347: a temporary machine, and how long it has.
 		_, _ = fmt.Fprintf(w, "  temporary: %s\n", t)
+	}
+	if l := setupLine(p); l != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
 	if p.State == "error" {
 		reason := projectReason(p)

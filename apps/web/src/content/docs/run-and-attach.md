@@ -215,11 +215,11 @@ Claude Code shows an image as `[Image #1]`. Other agents, and the shell, get the
 
 Any terminal that types a dropped file's path works: plain, quoted, with backslashes before spaces, or as a `file://` address.
 
-On macOS, Cmd+V and Ctrl+V both paste the image. A terminal sends nothing for Cmd+V when the clipboard holds only an image, so while you're attached repose adds a text version to such a clipboard: the path of a PNG copy in `~/Library/Caches/repose/clipboard/`. Cmd+V pastes that path, and it's copied to the machine like a dropped file. The image stays on the clipboard as well, so apps that take images still get it; a plain text field gets the path. When you detach, the text is taken off again unless you've copied something since. The last 20 copies are kept for a day. `REPOSE_CLIPBOARD_PATH=0` leaves your clipboard alone, and then only Ctrl+V pastes an image.
+On macOS, Cmd+V and Ctrl+V both paste the image. A terminal sends nothing for Cmd+V when the clipboard holds only an image, so while you're attached repose adds a text version to such a clipboard: the path of a PNG copy in `~/Library/Caches/repose/clipboard/`. Cmd+V pastes that path, and it's copied to the machine like a dropped file. The image stays on the clipboard as well, so apps that take images still get it; a plain text field gets the path. When you detach, the text is taken off again unless you've copied something since. The last 20 copies are kept for a day. `REPOSE_NO_CLIPBOARD_PATH=1` leaves your clipboard alone, and then only Ctrl+V pastes an image.
 
 Ctrl+V reads the clipboard with `pngpaste` if you have it, otherwise `osascript`. On Linux it uses `wl-paste` (from wl-clipboard) under Wayland and `xclip` under X11. With no image on the clipboard, Ctrl+V is an ordinary Ctrl+V. With one, Ctrl+V pastes the image in every window.
 
-`REPOSE_INPUT_PROXY=0` turns this off: `run` and `attach` then hand your terminal straight to `ssh`, and a drop pastes your laptop's path. On Windows it's always off; copy the file with `repose cp FILE :/tmp/` and type its path.
+`REPOSE_NO_INPUT_PROXY=1` turns this off: `run` and `attach` then hand your terminal straight to `ssh`, and a drop pastes your laptop's path. On Windows it's always off; copy the file with `repose cp FILE :/tmp/` and type its path.
 
 ### From a script or another window
 

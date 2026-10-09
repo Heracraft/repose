@@ -29,11 +29,13 @@ repose notify test
 ```
 
 ```text
-email: ok
-ntfy: ok
+email: sent
+ntfy: sent
 ```
 
-A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy none`.
+`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1.
+
+A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 
 Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy URL saves with the **Save** button next to it.
 
@@ -145,4 +147,4 @@ repose events todo-app
 repose events todo-app --since 72h -f
 ```
 
-If an event is listed but nothing arrived, run `repose notify test`. An `error` there means the channel's settings are wrong.
+If an event is listed but nothing arrived, run `repose notify test`. `failed` there means the channel's settings are wrong, and says why when ntfy answered.

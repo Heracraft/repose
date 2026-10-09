@@ -16,7 +16,7 @@ email: ok
 ntfy: ok
 ```
 
-`notify set` takes `--email on|off` and `--ntfy URL|none` (I-8) and sends
+`notify set` takes `--email on|off` and `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619) and sends
 no test; `notify test` does, and exits 1 when neither channel answered ok.
 
 On the phone (ntfy):

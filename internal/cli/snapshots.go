@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"text/tabwriter"
+	"time"
 )
 
 // projectForSnapshots resolves the project for the snapshot commands. A
@@ -52,9 +53,10 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSIZE\tREASON")
+	// The id's random end (I-619); -q and --json give the whole id.
+	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSTORED\tREASON")
 	for _, s := range snaps {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.ID, s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
 	}
 	return tw.Flush()
 }
@@ -85,7 +87,7 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 }
 
 // SnapshotsRestoreCmd implements `repose snapshots restore [PROJECT] SNAPSHOT_ID
-// [--as-new NAME]`. Without --as-new it requires the project stopped and
+// [--as NAME]`. Without --as it requires the project stopped and
 // asks for confirmation (07-cli.md §5.10).
 func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, asNew string, confirm func() (bool, error)) error {
 	var project *Project
@@ -100,7 +102,7 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	}
 	if asNew == "" {
 		if project.State != "stopped" {
-			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as-new NAME.", project.Slug, project.Slug)
+			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
 		}
 		if confirm != nil {
 			ok, err := confirm()
@@ -136,9 +138,30 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	}
 	if asNew != "" {
 		refreshSSHAccess(ctx, e, asNew)
-		_, _ = fmt.Fprintf(e.Out, "Restored into a new project, %s.\n", asNew)
+		// The line `repose restore` ends with (I-619).
+		_, _ = fmt.Fprintln(e.Out, restoredAsLine(ctx, e, project, owner, asNew, snapshotID, pr.Total()))
 		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is stopped.\n", project.Slug)
 	return nil
+}
+
+// restoredAsLine is `snapshots restore --as`'s last line, in the shape
+// of `repose restore`'s: the new project, the snapshot it came from, how
+// long it took, and the state and size it is in. What the api does not
+// answer is left out.
+func restoredAsLine(ctx context.Context, e *Env, src *Project, newID, newSlug, snapshotID string, took time.Duration) string {
+	from := "a snapshot of " + src.Slug
+	if snaps, err := e.Client.ListSnapshots(ctx, src.ID); err == nil {
+		for _, s := range snaps {
+			if s.ID == snapshotID {
+				from = fmt.Sprintf("%s's %s snapshot of %s", src.Slug, humanBytes(s.Bytes), s.CreatedAt.Local().Format("2006-01-02 15:04"))
+			}
+		}
+	}
+	line := fmt.Sprintf("Restored %s from %s in %s", newSlug, from, fmtElapsed(took))
+	if p, err := e.Client.GetProject(ctx, newID); err == nil {
+		return fmt.Sprintf("%s; it is %s (%s).", line, stateWords(p.State), p.Class)
+	}
+	return line + "."
 }

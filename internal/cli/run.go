@@ -438,7 +438,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			_, _ = fmt.Fprintln(e.ErrOut, w)
 		}
 		if len(summary.Copied) > 0 {
-			_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(summary.Copied, ", "))
+			_, _ = fmt.Fprintf(e.Out, "Logins copied: %s\n", strings.Join(summary.Copied, ", "))
 			if l := loginsLine(summary.Copied, skip, chosen); l != "" {
 				_, _ = fmt.Fprintln(e.Out, l)
 			}
@@ -1774,7 +1774,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		return checkout
 	}
 	if len(copied) > 0 {
-		_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(copied, ", "))
+		_, _ = fmt.Fprintf(e.Out, "Logins copied: %s\n", strings.Join(copied, ", "))
 		if l := loginsLine(copied, skip, chosen); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
 		}

@@ -139,11 +139,11 @@ func TestConfigAddFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = ConfigAddCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") || !strings.Contains(err.Error(), "repose config edit") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") || !strings.Contains(err.Error(), "repose config edit") {
 		t.Fatalf("custom fragment: %v", err)
 	}
 	err = ConfigRemoveCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") {
 		t.Fatalf("remove on custom fragment: %v", err)
 	}
 }
@@ -162,7 +162,7 @@ func TestMenuNameAndJoin(t *testing.T) {
 			t.Errorf("joinNames(%v) = %q", c.in, got)
 		}
 	}
-	if shortRev("0123456789abcdef") != "01234567" {
+	if shortRev("0123456789abcdef") != "89abcdef" {
 		t.Error(shortRev("0123456789abcdef"))
 	}
 	if got := genLocRe.ReplaceAllString(`nixpkgs has no package "foo"; search https://search.nixos.org/packages at fragment.nix:11:23`, ""); got != `nixpkgs has no package "foo"; search https://search.nixos.org/packages` {

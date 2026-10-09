@@ -148,7 +148,7 @@ func TestSnapshotsRoundTrip(t *testing.T) {
 	if err := SnapshotsRestoreCmd(ctx, e, "", snaps[0].ID, "rt-copy", nil); err != nil {
 		t.Fatalf("SnapshotsRestoreCmd --as-new: %v", err)
 	}
-	if !strings.Contains(out.String(), "Restored into a new project, rt-copy.") {
+	if !strings.Contains(out.String(), "Restored rt-copy from ") {
 		t.Fatalf("output: %q", out.String())
 	}
 }

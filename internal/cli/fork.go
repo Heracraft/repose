@@ -226,6 +226,15 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	} else {
 		writeForkSummary(e, src, res, pr.Total())
 	}
+	if !e.inHome() {
+		slugs := make([]string, len(res.Projects))
+		for i, f := range res.Projects {
+			slugs[i] = f.Slug
+		}
+		if added := addForkRemotes(gitRepoRoot(e.Cwd), src.Slug, slugs); len(added) > 0 {
+			_, _ = fmt.Fprintf(e.ErrOut, "Added the git %s %s.\n", plural(len(added), "remote", "remotes"), joinNames(added))
+		}
+	}
 	if failed > 0 {
 		return exitf(ExitGeneric, "%d of %d forks did not start. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), src.Slug, res.SnapshotID)
 	}

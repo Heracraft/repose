@@ -20,6 +20,8 @@ Commands that act on a project use, in order: the `PROJECT` argument, `--project
 
 Global flags: `--project NAME`, `-v`/`--verbose` (debug output to stderr), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
 
+A command whose usage shows `[PROJECT]` takes the project there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
+
 ## Working on a project
 
 ### `repose run [PROJECT]`
@@ -28,19 +30,19 @@ Create or start this checkout's machine and attach. With PROJECT, the machine ca
 
 On your laptop, `run` changes one thing in the checkout: it adds a git remote named `repose` for the machine's checkout, so `git fetch repose` brings the agent's commits back. See [Getting work back](/docs/sync#getting-work-back).
 
-| Flag                      | What it does                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it.                                                                                                                                                                                                                                                                                                                                                                 |
-| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`. Needs `-p`.                                                                                                                                                                                                                                                                                                                                            |
-| `--no-attach`             | Don't attach afterwards.                                                                                                                                                                                                                                                                                                                                                                                |
-| `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                                                                                                                                                                    |
-| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                                                                                                                   |
-| `--size small\|large\|xl` | Size of a new project.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).                                                                                                                                                                                                                          |
-| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines).                                                                                                                                                                                                                                       |
-| `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                                                                                                                                                                                                                   |
-| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                                                                                                                                                                                                          |
-| `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                                                                                                                  |
+| Flag                      | What it does                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it.                                                                                                                                                                                                                                                                      |
+| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`. Needs `-p`. Default: the project's agent, which for a new project is `default_agent`, else `claude`.                                                                                                                                                        |
+| `--no-attach`             | Don't attach afterwards.                                                                                                                                                                                                                                                                                     |
+| `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                                                                         |
+| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                        |
+| `--size small\|large\|xl` | Size of a new project. Default: `default_size`, else `large`.                                                                                                                                                                                                                                                |
+| `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).                                                                                                                               |
+| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines).                                                                                                                                            |
+| `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                                                                                                                        |
+| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                                                                     |
+| `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                       |
 | `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else herdr when you run it from a herdr pane on your laptop, else tmux. See [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux). |
 
 ### `repose attach [PROJECT]`
@@ -51,7 +53,7 @@ Attach to the project's tmux session without syncing; on a herdr project, see [h
 
 While you're attached, a file you drop on the terminal, or an image you paste with `Cmd+V` or `Ctrl+V`, is copied to the machine and its path there is pasted. See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
-If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. On Windows, or with `REPOSE_INPUT_PROXY=0`, the command ends with exit code 255 instead. See [Detach and come back](/docs/run-and-attach#detach-and-come-back).
+If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. On Windows, or with `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead. See [Detach and come back](/docs/run-and-attach#detach-and-come-back).
 
 ### `repose sync [PROJECT]`
 
@@ -103,31 +105,35 @@ $ repose code todo-app
 Opening todo-app.repose:/home/dev/todo-app in VS Code
 ```
 
-| Flag              | What it does                                                               |
-| ----------------- | -------------------------------------------------------------------------- |
-| `--editor EDITOR` | `code`, `cursor` or `zed`. Default: `REPOSE_EDITOR`, else the first found. |
+| Flag              | What it does                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `--editor EDITOR` | `code`, `cursor` or `zed`. Default: `REPOSE_EDITOR`, else `editor` in config.toml, else the first found. |
 
 Other editors: see [SSH and editors](/docs/ssh-and-editors).
 
-### `repose open PORT`
+### `repose open [LOCAL:]PORT`
 
-Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`. If the connection drops, `open` reconnects on the same laptop port, for up to 2 minutes.
+Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`. The laptop port is the same as PORT, or LOCAL with `repose open 8080:3000`; when it's taken, a free one, and `open` says which. The database ports 5432, 3306, 6379 and 27017 open no browser. If the connection drops, `open` reconnects on the same laptop port, for up to 2 minutes.
 
-| Flag             | What it does                                                        |
-| ---------------- | ------------------------------------------------------------------- |
-| `--local-port N` | Port on the laptop. Default: the same, or a free one if it's taken. |
-| `--no-browser`   | Print the URL only.                                                 |
+| Flag           | What it does        |
+| -------------- | ------------------- |
+| `--no-browser` | Print the URL only. |
+
+`--local-port N`, the old form of `LOCAL:`, still works.
 
 ### `repose browser [PROJECT]`
 
 Watch the agent's browser on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. [Browser](/docs/machine#browser) has the details.
 
-| Flag        | What it does                                       |
-| ----------- | -------------------------------------------------- |
-| `--no-open` | Print the link only.                               |
-| `--stop`    | Stop the view on the machine and the forward here. |
+| Flag           | What it does         |
+| -------------- | -------------------- |
+| `--no-browser` | Print the link only. |
 
-`repose open --desktop`, with `--stop` and `--no-browser`, is the old name and still works.
+`repose open --desktop`, and `--no-open` and `--stop` on `repose browser`, are old names and still work.
+
+### `repose browser stop [PROJECT]`
+
+Stop the view on the machine and the forward on your laptop. The agent's browser keeps running.
 
 ### `repose browser bridge [PROJECT]`
 
@@ -150,7 +156,7 @@ Needs the machine running (it doesn't start it) and Chrome 144 or newer with rem
 | `--allow HOST`        | Let the agents use only this site: other tabs are hidden from them and other sites fail. Repeatable, or comma-separated; `*.example.com` is `example.com` and its subdomains. |
 | `--cdp URL`           | Bridge a browser started with a remote debugging port instead (`http://127.0.0.1:9222`): any Chromium, no switch, no dialogs.                                                 |
 | `--user-data-dir DIR` | The profile directory of a Chrome that isn't Google Chrome's default one (Chromium, Brave, Edge, a second profile).                                                           |
-| `--no-browser`        | Don't open `chrome://inspect` when remote debugging is off; print what to do and wait.                                                                                        |
+| `--no-inspect`        | Don't open `chrome://inspect` when remote debugging is off; print what to do and wait. `--no-browser` is its old name.                                                        |
 
 Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to two minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
 
@@ -171,13 +177,15 @@ $ repose mcp forward notes -- node ~/mcp/notes.js
 
 The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached, except on Windows, where it does nothing and `attach` says so.
 
-| Flag       | What it does                                                          |
-| ---------- | --------------------------------------------------------------------- |
-| `--remove` | Take NAME off the machine's agents. They drop it at their next start. |
+`repose mcp rm NAME` takes it off again; `--remove` is the old form of that.
+
+### `repose mcp rm NAME...`
+
+Alias `remove`. Take forwarded servers off the machine's agents; they drop them at their next start. The project is the folder's, or `--project`'s. Needs the machine running.
 
 ### `repose mcp list [PROJECT]`
 
-Alias `repose mcp ls`. Show each MCP server on the machine, where it came from, which agents have it, and what it lacks. It reads the agents' configs and starts no server. Needs the machine running.
+Alias `repose mcp ls`, and `repose mcp` alone. Show each MCP server on the machine, where it came from, which agents have it, and what it lacks. It reads the agents' configs and starts no server. Needs the machine running.
 
 ```
 $ repose mcp list
@@ -198,7 +206,7 @@ FROM is `repose` for the browser tools, `laptop` for a server copied from your l
 
 ### `repose cp [-r] SRC... DST`
 
-Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
+Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. One letter before the colon is a Windows drive (`C:\notes.txt`), never a project. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
 
 ### `repose paste [PROJECT]`
 
@@ -225,7 +233,7 @@ repose ls -q | xargs -n1 repose stop
 
 ### `repose status [PROJECT]`
 
-One project in detail, including processes listening on ports, the idle line when it has had nobody on it for a day, and when a temporary one is destroyed. `--json`, `--watch` (every 5 seconds).
+One project in detail, including processes listening on ports, the idle line when it has had nobody on it for a day, and when a temporary one is destroyed. A `setup` line lists what differs from a new project's settings: the agent `run -p` starts, machine.nix kept off, base updates held. `--json`, `--watch` (every 5 seconds).
 
 `disk` is the machine's filesystem, used over size, as the machine reports it; a stopped machine, or one that has not reported, shows the disk's size. At 90 percent full or more, a line under it says so and names the `repose resize` that doubles the disk, up to 320 GB. While your projects hold more than your plan's disk, a line says that too.
 
@@ -251,11 +259,11 @@ Make a temporary machine a normal one: it is no longer destroyed when its time r
 
 ### `repose restore [NAME]`
 
-Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another name, `--snapshot ID` for an older snapshot.
+Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another name, `--snapshot ID` for an older snapshot. It ends with the project, the snapshot, the time it took, and its state and size, as `snapshots restore --as` does.
 
 ### `repose fork [PROJECT]`
 
-Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. Each copy is a project: it counts toward the [100 an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
+Snapshot the project now and start copies of it as new projects, each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead of taking a new one. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--json` prints the copies as JSON. The project itself keeps running. In a checkout whose `repose` remote is the project's machine, `fork` adds a git remote named after each copy, so `git fetch todo-app-fork-2` brings that copy's commits back; `repose rm` of the copy removes its remote. Each copy is a project: it counts toward the [100 an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, nothing is created. See [Fork a project](/docs/lifecycle#fork-a-project).
 
 ### `repose resize [PROJECT] [DISK]`
 
@@ -283,55 +291,64 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 
 ## Snapshots
 
-| Command                                          | What it does                                                                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `repose snapshots list [PROJECT]`                | Alias `ls`. `--json` for JSON, `-q`/`--quiet` for the ids only.                                                    |
-| `repose snapshots create [PROJECT]`              | Take one now.                                                                                                      |
-| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk. `--as-new NAME` restores into a new project instead; `--yes` skips the question. |
+| Command                                          | What it does                                                                                                                                 |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
+| `repose snapshots create [PROJECT]`              | Take one now.                                                                                                                                |
+| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk. `--as NAME` restores into a new project instead, which starts; `-y`/`--yes` skips the question.            |
+
+SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
 
 ## Secrets
 
 | Command                         | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose secrets set NAME`       | Asks for the value. `--from-file PATH` or `--from-env` instead.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `repose secrets set NAME`       | Asks for the value, or reads it from a pipe (`op read op://dev/stripe/key \| repose secrets set STRIPE_KEY`, one trailing newline dropped). `--from-file PATH` or `--from-env` instead. `NAME=VALUE` exits 2, since the value would stay in your shell history.                                                                                                                                                                                                                                      |
 | `repose secrets import [FILE]`  | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--mcp` sets the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config instead, for this project only, and asks once before replacing secrets the project already has (`-y`/`--yes` replaces them without asking). `--dry-run` lists the names and sends nothing.                                                                                                                     |
-| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `repose secrets rm NAME`        | Delete it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`, and `repose secrets` alone. `--json` for JSON.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `repose secrets rm NAME`        | Delete it. Alias `remove`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `repose secrets choose`         | Choose which of your laptop's logins and files `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files), `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle (space toggles, Enter saves, `q` leaves); otherwise it prints the list. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again, `--reset` drops the list. See [Secrets](/docs/secrets#choose-what-is-copied). |
 
-`secrets list` on a terminal also shows what your laptop copies at each run. Piped, it prints only `NAME`, a tab and the date, one secret per line. Without `--project`, `secrets choose` sets the list for every project; with `--project NAME` it sets that project's own list, which replaces the shared one for it, and `--reset` sends the project back to the shared list.
+`secrets set` and `secrets rm` name the project they changed. `secrets list` on a terminal also shows what your laptop copies at each run, which lands on the machine's disk and so in its snapshots and forks. Piped, it prints only `NAME`, a tab and the date, one secret per line. Without `--project`, `secrets choose` sets the list for every project; with `--project NAME` it sets that project's own list, which replaces the shared one for it, and `--reset` sends the project back to the shared list.
 
 ## Configuration
 
-| Command                           | What it does                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------ |
-| `repose config add PACKAGE...`    | Add menu entries or nixpkgs packages, build and apply.                                     |
-| `repose config remove PACKAGE...` | Remove them again. Alias `rm`.                                                             |
-| `repose config show [PROJECT]`    | Print the Nix file. `--revisions` lists revisions.                                         |
-| `repose config edit [PROJECT]`    | Edit in `$EDITOR`, apply on save.                                                          |
-| `repose config apply [PATH]`      | Apply a file. Default `./repose.nix`; with neither, apply the current configuration again. |
+| Command                             | What it does                                                                                                                                                                                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repose config add PACKAGE...`      | Add menu entries or nixpkgs packages, build and apply.                                                                                                                                                                                                  |
+| `repose config remove PACKAGE...`   | Remove them again. Alias `rm`.                                                                                                                                                                                                                          |
+| `repose config show [PROJECT]`      | Print the project's `repose.nix`. `repose config` alone does the same.                                                                                                                                                                                  |
+| `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id, whether it built, and whether it carries your machine.nix. `--json` for JSON, `-q`/`--quiet` for whole ids.                                                                         |
+| `repose config edit [PROJECT]`      | Edit in `$EDITOR`, apply on save.                                                                                                                                                                                                                       |
+| `repose config apply [PATH]`        | Apply a file. Default `./repose.nix`; with neither, apply the current configuration again. `--revision ID` switches the running machine back to an earlier revision that built, by the id `revisions` shows, `Building revision` printed, or its start. |
+| `repose config on [PROJECT]`        | Give the project's machine your machine.nix again.                                                                                                                                                                                                      |
+| `repose config off [PROJECT]`       | Keep your machine.nix off the project's machine, as `repose run --no-personal` does. A running machine switches in the background; a stopped one starts with the change.                                                                                |
 
-With `--global`, the same commands act on your machine.nix instead of the project's file: a home-manager module every machine of your account gets, kept at `~/.config/repose/machine.nix` and on your account. `repose config --global add PACKAGE...` and `remove` edit its `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy (`--revisions` lists its saves), and `apply [PATH]` pushes a file (default `~/.config/repose/machine.nix`) over the account's copy; an empty file removes it. Each push rebuilds every machine that has not opted out: a running one switches in place, a stopped one at its next start. `--global` takes no project. `repose run` pushes the file by itself when it changed since its last push, and refuses with one line when the account's copy changed since too. See [Your machine.nix](/docs/config#your-machine-nix).
+With `--global`, the same commands act on your machine.nix instead of the project's file: a home-manager module every machine of your account gets, kept at `~/.config/repose/machine.nix` and on your account. `repose config --global add PACKAGE...` and `remove` edit its `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file (default `~/.config/repose/machine.nix`) over the account's copy; an empty file removes it. Each push rebuilds every machine that has not opted out: a running one switches in place, a stopped one at its next start. `--global` takes no project; `on` and `off` take one, with or without `--global`. `repose config show --revisions` is the old form of `revisions`. `repose run` pushes the file by itself when it changed since its last push, and refuses with one line when the account's copy changed since too. See [Your machine.nix](/docs/config#your-machine-nix).
+
+The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and says so.
 
 ## Account
 
-| Command                             | What it does                                                                                                                             |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose login`                      | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers).                         |
-| `repose logout`                     | Log out and revoke SSH certificates; connections they opened, on any device, close within 30 seconds. `--purge` removes the CLI's files. |
-| `repose notify set`                 | `--email on\|off`, `--ntfy URL\|none`.                                                                                                   |
-| `repose notify test`                | Send a test on every channel that's on.                                                                                                  |
-| `repose version`                    | Print the version.                                                                                                                       |
-| `repose completion bash\|zsh\|fish` | Print a shell completion script.                                                                                                         |
-| `repose help [COMMAND]`             | Print help for a command.                                                                                                                |
+| Command                                         | What it does                                                                                                                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repose login`                                  | Log in with a code in any browser. `--no-browser` is the same; `--browser`, see [Other servers](#other-servers).                                                                                  |
+| `repose logout`                                 | Log out and revoke SSH certificates; connections they opened, on any device, close within 30 seconds. `--purge` removes the CLI's files.                                                          |
+| `repose notify`                                 | Where notifications go: `email: on, to you@example.com` and `ntfy: off` or its URL. `--json` for JSON.                                                                                            |
+| `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`). Prints the settings.                                                                                                              |
+| `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason ntfy gave (`failed: the server answered 403`). Exits 1 when a channel failed or none is on. |
+| `repose version`                                | Print the version.                                                                                                                                                                                |
+| `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script.                                                                                                                                                                  |
+| `repose help [COMMAND]`                         | Print help for a command.                                                                                                                                                                         |
 
 ## config.toml
 
 `~/.config/repose/config.toml` is optional.
 
 ```toml
-default_class = "small"
+default_size = "small"
 default_agent = "codex"
+editor = "cursor"
 default_multiplexer = "herdr"
 
 [sync]
@@ -350,40 +367,42 @@ forward = ["apple-notes"]
 forward = ["figma"]
 ```
 
-| Key                   | Default  | What it does                                                                                                                                                                                                                          |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default_class`       | `large`  | Size of new projects.                                                                                                                                                                                                                 |
-| `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                                               |
-| `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key. |
-| `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                                                    |
-| `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                                                  |
-| `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                                                       |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project.                           |
-| `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                                                  |
-| `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                                                |
-| `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                                                  |
+| Key                   | Default  | What it does                                                                                                                                                                                                |
+| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default_size`        | `large`  | Size of new projects. `default_class` is its old name and still works; `default_size` wins when a file has both.                                                                                            |
+| `default_class`       | `large`  | The old name of `default_size`.                                                                                                                                                                             |
+| `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
+| `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
+| `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
+| `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
+| `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
+| `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                             |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
+| `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
+| `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
+| `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
 
 ## Environment variables
 
-| Variable                  | What it sets                                                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `REPOSE_PROJECT`          | The project to act on, like `--project`.                                                                                                         |
-| `REPOSE_NO_FORWARD=1`     | Don't forward ports automatically while attached.                                                                                                |
-| `REPOSE_TIMING=1`         | Print how long each step of `run` and `attach` took.                                                                                             |
-| `REPOSE_NO_SPINNER=1`     | One line per step instead of a progress line. `TERM=dumb` does the same.                                                                         |
-| `REPOSE_NO_FASTPATH=1`    | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                      |
-| `REPOSE_NO_BROWSER=1`     | Never open a browser, even with `repose login --browser`.                                                                                        |
-| `REPOSE_INPUT_PROXY=0`    | Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`.                                |
-| `REPOSE_CLIPBOARD_PATH=0` | On macOS, leave the clipboard alone while you are attached, so `Cmd+V` with only an image on it pastes nothing; `Ctrl+V` still pastes the image. |
-| `REPOSE_API_URL`          | Like `--api-url`.                                                                                                                                |
-| `REPOSE=1`                | Set on every repose machine, so scripts can tell where they run.                                                                                 |
-| `XDG_CONFIG_HOME`         | If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`.                                                                                       |
-| `CLAUDE_CONFIG_DIR`       | Where your laptop's Claude Code setup is copied from, instead of `~/.claude`.                                                                    |
-| `CODEX_HOME`              | Where `repose mcp forward` reads your Codex config, instead of `~/.codex`.                                                                       |
-| `VISUAL`, `EDITOR`        | The editor for `repose config edit`. Default `vi`.                                                                                               |
-| `WAYLAND_DISPLAY`         | On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set.                                                           |
-| `DISPLAY`                 | Otherwise it reads the X11 clipboard with `xclip`.                                                                                               |
-| `REPOSE_EDITOR`           | The editor `repose code` opens: `code`, `cursor` or `zed`.                                                                                       |
+| Variable                     | What it sets                                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REPOSE_PROJECT`             | The project to act on, like `--project`.                                                                                                                                                    |
+| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached.                                                                                                                                           |
+| `REPOSE_TIMING=1`            | Print how long each step of `run` and `attach` took.                                                                                                                                        |
+| `REPOSE_NO_SPINNER=1`        | One line per step instead of a progress line. `TERM=dumb` does the same.                                                                                                                    |
+| `REPOSE_NO_FASTPATH=1`       | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                                                                 |
+| `REPOSE_NO_BROWSER=1`        | Never open a browser, even with `repose login --browser`.                                                                                                                                   |
+| `REPOSE_NO_INPUT_PROXY=1`    | Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`. `REPOSE_INPUT_PROXY=0` is its old name.                                   |
+| `REPOSE_NO_CLIPBOARD_PATH=1` | On macOS, leave the clipboard alone while you are attached, so `Cmd+V` with only an image on it pastes nothing; `Ctrl+V` still pastes the image. `REPOSE_CLIPBOARD_PATH=0` is its old name. |
+| `REPOSE_API_URL`             | Like `--api-url`.                                                                                                                                                                           |
+| `REPOSE=1`                   | Set on every repose machine, so scripts can tell where they run.                                                                                                                            |
+| `XDG_CONFIG_HOME`            | If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`.                                                                                                                                  |
+| `CLAUDE_CONFIG_DIR`          | Where your laptop's Claude Code setup is copied from, instead of `~/.claude`.                                                                                                               |
+| `CODEX_HOME`                 | Where `repose mcp forward` reads your Codex config, instead of `~/.codex`.                                                                                                                  |
+| `VISUAL`, `EDITOR`           | The editor for `repose config edit`. Default `vi`.                                                                                                                                          |
+| `WAYLAND_DISPLAY`            | On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set.                                                                                                      |
+| `DISPLAY`                    | Otherwise it reads the X11 clipboard with `xclip`.                                                                                                                                          |
+| `REPOSE_EDITOR`              | The editor `repose code` opens: `code`, `cursor` or `zed`, over `editor` in config.toml.                                                                                                    |
 
 ## Other servers
 

@@ -157,7 +157,7 @@ To forward one port without attaching:
 repose open 3000
 ```
 
-It opens your browser and runs until `Ctrl-C`. It reaches a server listening on `127.0.0.1`, `0.0.0.0` or only on `::1` (as Vite does on some setups); if nothing listens on the port yet, it says so and forwards to `127.0.0.1`. If the port is taken on your laptop, it uses a free one and says which. `--local-port 8080` picks the laptop port, `--no-browser` only prints the URL. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off.
+It opens your browser and runs until `Ctrl-C`. It reaches a server listening on `127.0.0.1`, `0.0.0.0` or only on `::1` (as Vite does on some setups); if nothing listens on the port yet, it says so and forwards to `127.0.0.1`. If the port is taken on your laptop, it uses a free one and says which. `repose open 8080:3000` picks laptop port 8080, and `--no-browser` only prints the URL. A database port (5432, 3306, 6379, 27017) opens no browser. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off.
 
 There are no public URLs for a project's ports. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in the menu: `repose config add cloudflared` on your laptop. Then, on the machine:
 
@@ -187,7 +187,7 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 
 Your browser opens on that link and shows the agent's browser, live, at the size of your tab. The password is the part of the link after `#`, which your browser reads and never sends anywhere. The agent's browser tools use whatever you log into there. Copy and paste work both ways (your browser asks once before the page may read your clipboard; Firefox only lets text travel from the machine to you). If no agent has used the browser yet, the command starts it.
 
-The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-open` to print the link without opening a browser, and `repose browser --stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. Opening the page again wakes a sleeping view. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it. A base update doesn't restart it; the new Chromium runs from its next start.
+The command returns at once and leaves the forward running in the background. Run it again for the same link, `repose browser --no-browser` to print the link without opening a browser, and `repose browser stop` to close the view and the forward. If port 6080 is taken on your laptop (another project's view, say), a free port is used and the link shows it. Opening the page again wakes a sleeping view. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it. A base update doesn't restart it; the new Chromium runs from its next start.
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page. `repose open --desktop` is the old name of the command and still works.
 

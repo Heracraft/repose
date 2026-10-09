@@ -18,14 +18,14 @@ $ repose snapshots create
 Snapshot of todo-app taken in 41s.
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
-todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as-new NAME.
+todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as NAME.
 
 $ repose stop && repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 ...
 Restore over the current volume? Anything since the snapshot is lost. [y/N] y
 Restored todo-app; it is stopped.
 
-$ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as-new todo-app-yesterday
+$ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as todo-app-yesterday
 Restored into a new project, todo-app-yesterday.
 ```
 
@@ -70,7 +70,7 @@ Retention (DECISIONS R4-11):
   "Recently destroyed" in the dashboard and in `repose ls
   --destroyed`; `repose restore <name>` (or the dashboard's Restore)
   brings it back as a new project (DECISIONS I-167), and `snapshots
-  restore <id> --as-new` still does.
+  restore <id> --as` still does.
 - After account cancellation, all guests stop, snapshots are kept 30 days,
   then deleted with the account's other data.
 - A project that has been stopped for months keeps its most recent
@@ -82,9 +82,9 @@ Restoring:
 
 - `restore` into the same project requires the guest to be stopped. On a
   project that is not stopped the CLI refuses and exits 5, naming `repose
-  stop` and `--as-new`; it does not stop it. `repose stop` takes a final
+  stop` and `--as`; it does not stop it. `repose stop` takes a final
   snapshot, which is what makes an in-place restore reversible.
-- `restore --as-new NAME` creates a new project with the same class and
+- `restore --as NAME` creates a new project with the same class and
   volume size, on the host with the most free memory, and starts it. It
   counts toward the account's project cap (100, running or stopped,
   DECISIONS I-569).

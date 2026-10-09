@@ -96,7 +96,7 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   (Ctrl-C, or the parent process exiting). `repose browser`'s is the one
   exception: an `ssh -N` child in its own session, recorded under
   `~/.config/repose/browser-forwards/`, reused by the next `repose
-  browser` and ended by `repose browser --stop` (I-292).
+  browser` and ended by `repose browser stop` (I-292, I-619).
 - Anything bound on `0.0.0.0`, `::`, `127.0.0.1` or `::1` in the guest is
   reachable this way. Nothing in the guest is reachable any other way; the guest has no
   inbound path except through the gateway.

@@ -396,11 +396,7 @@ func rememberProject(cache *ProjectsCache, remote, dir string, p Project) {
 // found none.
 func errNoProject(res *ResolveResult, command string) error {
 	if res.Home {
-		usage := "`repose <command> PROJECT`"
-		if command != "" {
-			usage = "`" + command + " PROJECT`"
-		}
-		return errHomeNoProject(usage)
+		return errHomeNoProject(projectUsage(command))
 	}
 	return errNoProjectFoundFor(res.Remote, command)
 }
@@ -409,15 +405,25 @@ func errNoProject(res *ResolveResult, command string) error {
 // nothing (07-cli.md §5.3 step 4).
 func errNoProjectFound(remote string) error { return errNoProjectFoundFor(remote, "") }
 
+// projectUsage is the command line a no-project error offers: command
+// with PROJECT after it, or as it is when it already places PROJECT
+// among its arguments (`repose snapshots restore PROJECT 0190ab`).
+// command ends in " --project" when the command takes PROJECT as that
+// flag only.
+func projectUsage(command string) string {
+	switch {
+	case command == "":
+		return "`repose <command> PROJECT`"
+	case strings.Contains(command, " PROJECT"):
+		return "`" + command + "`"
+	}
+	return "`" + command + " PROJECT`"
+}
+
 // errNoProjectFoundFor names the command the user typed ("repose attach")
 // in the hint when it is known.
 func errNoProjectFoundFor(remote, command string) error {
-	usage := "`repose <command> PROJECT`"
-	if command != "" {
-		// command ends in " --project" when the command takes PROJECT
-		// as that flag only.
-		usage = "`" + command + " PROJECT`"
-	}
+	usage := projectUsage(command)
 	if remote == "" {
 		return exitf(ExitProjectNotFound, "No repose project here, and this directory has no git remote. Name one: %s (`repose ls` lists them).", usage)
 	}

@@ -31,7 +31,7 @@ repose run
 ✓ Booted your-project  5.2s
 Connected to your-project (large)
 Synced: 3 modified, 1 untracked (2 new commits)
-Credentials: gh
+Logins copied: gh
 Ready in 14s.
 ```
 

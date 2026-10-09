@@ -33,7 +33,7 @@ func unknownCommand(root *cobra.Command, args []string) string {
 		}
 		return ""
 	}
-	if err != nil || cmd == nil || cmd.Runnable() || !cmd.HasSubCommands() {
+	if err != nil || cmd == nil || (cmd.Runnable() && cmd.Annotations[bareRunsKey] == "") || !cmd.HasSubCommands() {
 		return ""
 	}
 	typed := firstPositional(cmd, rest)

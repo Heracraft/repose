@@ -39,13 +39,14 @@ type cpSide struct {
 
 // parseCpSide follows scp's rule: a colon before any slash makes it
 // remote; a path that starts with / or . is always local, so ./a:b is a
-// file.
+// file. One letter before the colon is a Windows drive, C:\a.txt or
+// C:/a.txt, never a project: no project name is one character (I-621).
 func parseCpSide(arg string) cpSide {
 	if strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, ".") {
 		return cpSide{Path: arg}
 	}
 	i := strings.Index(arg, ":")
-	if i < 0 || strings.Contains(arg[:i], "/") {
+	if i < 0 || strings.ContainsAny(arg[:i], "/\\") || i == 1 {
 		return cpSide{Path: arg}
 	}
 	return cpSide{Remote: true, Project: arg[:i], Path: arg[i+1:]}
@@ -82,10 +83,10 @@ func newCpCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cp [-r] SRC... DST",
 		Short: "Copy files to or from a project's machine (PROJECT:PATH, or :PATH for this checkout's)",
-		Long: `Copy files between the laptop and a guest with scp. One side names the
-guest: PROJECT:PATH for a project, :PATH for this checkout's. A relative
-guest path starts at the project's checkout (~/<slug>). Several sources
-copy into the destination directory, so a glob such as ./logs/* works.
+		Long: `Copy files between the laptop and a machine with scp. One side names the
+machine: PROJECT:PATH for a project's, :PATH for this checkout's. A relative
+path on the machine starts at the project's checkout. Several sources copy
+into the destination directory, so a glob such as ./logs/* works.
 
   repose cp :logs/x.log .
   repose cp izma:/tmp/trace.json .
@@ -106,6 +107,7 @@ copy into the destination directory, so a glob such as ./logs/* works.
 		},
 	}
 	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories")
+	cmd.ValidArgsFunction = completeCpArg(env)
 	return cmd
 }
 
@@ -121,7 +123,7 @@ func CpCmd(ctx context.Context, e *Env, srcArgs []string, dstArg string, recursi
 	for i, a := range srcArgs {
 		srcs[i] = parseCpSide(a)
 		if srcs[i].Remote != srcs[0].Remote {
-			return exitf(ExitUsage, "%s and %s are on different sides; the sources of `repose cp` are all on the laptop or all on the guest.", srcArgs[0], a)
+			return exitf(ExitUsage, "%s and %s are on different sides; the sources of `repose cp` are all on the laptop or all on the machine.", srcArgs[0], a)
 		}
 		if srcs[i].Project != srcs[0].Project {
 			return exitf(ExitUsage, "%s and %s name two projects; copy from one at a time.", srcArgs[0], a)
@@ -130,10 +132,10 @@ func CpCmd(ctx context.Context, e *Env, srcArgs []string, dstArg string, recursi
 	if srcs[0].Remote == dst.Remote {
 		side := "the laptop"
 		if dst.Remote {
-			side = "the guest"
+			side = "the machine"
 		}
 		all := strings.Join(append(append([]string{}, srcArgs...), dstArg), " ")
-		return exitf(ExitUsage, "Every argument of `repose cp` is on %s: %s. One side names the guest (PROJECT:PATH, or :PATH for this checkout's project) and the other the laptop.", side, all)
+		return exitf(ExitUsage, "Every argument of `repose cp` is on %s: %s. One side names the machine (PROJECT:PATH, or :PATH for this checkout's project) and the other the laptop.", side, all)
 	}
 	remote := &dst
 	if srcs[0].Remote {

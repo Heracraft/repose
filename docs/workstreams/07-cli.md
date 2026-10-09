@@ -95,7 +95,8 @@ repose start [PROJECT]
 repose stop [PROJECT] [--no-snapshot]
 repose status [PROJECT] [--json] [--watch]
 repose open PORT [--local-port N] [--no-browser]
-repose browser [PROJECT] [--stop] [--no-open]   # I-292; `open --desktop [--stop] [--no-browser]` is the hidden old name
+repose browser [PROJECT] [--no-browser]   # I-292; `open --desktop [--stop] [--no-browser]` is the hidden old name; --no-open hidden since I-619
+repose browser stop [PROJECT]             # I-619; --stop is its hidden old form
 repose cp [-r] SRC DST        # PROJECT:PATH, or :PATH for this checkout's (I-201)
 repose paste [PROJECT] [--window NAME] [--print]   # clipboard image to the guest (I-252)
 repose ps [PROJECT] [-q|--quiet] [--json]      # the tmux windows (I-274)
@@ -112,7 +113,7 @@ repose config add NAME...       # catalog id, else any nixpkgs attribute path (I
 repose config remove NAME...    # alias rm
 repose snapshots list [PROJECT] [-q|--quiet] [--json]   # alias ls
 repose snapshots create [PROJECT]
-repose snapshots restore [PROJECT] SNAPSHOT_ID [--as-new NAME]
+repose snapshots restore [PROJECT] SNAPSHOT_ID [--as NAME] [-y]   # --as-new hidden since I-619; SNAPSHOT_ID may be its end or start
 repose rm [PROJECT] [--yes|-y] [--wait]   # alias destroy, the old name (I-273)
 repose restore [NAME] [--as NEW-NAME] [--snapshot ID]   # no NAME: the checkout's remote finds it
 repose logs [PROJECT] [--kind console|build|ops] [--since 1h] [--follow|-f]
@@ -123,7 +124,8 @@ repose resize [PROJECT] [DISK] [--size small|large|xl] [--yes|-y]   # grow the d
 repose scan [DIR] [--json]     # dry run of what run installs (I-222)
 repose questions [PROJECT] [--json]            # I-245
 repose reply [PROJECT] [ANSWER...] [--question ID] [--json]
-repose notify set [--email on|off] [--ntfy URL|none]
+repose notify [--json]                            # I-622: the settings
+repose notify set [--email on|off] [--ntfy URL|off]   # none is the old off (I-619)
 repose notify test
 repose version
 repose completion bash|zsh|fish

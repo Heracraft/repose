@@ -261,7 +261,10 @@ type Route struct {
 	State    string `json:"state"`
 }
 
+// NotifyTestResult is POST /me/notify-test's answer: "ok" or "error" per
+// channel that is on, absent for one that is off, and why ntfy failed.
 type NotifyTestResult struct {
-	Email string `json:"email"`
-	Ntfy  string `json:"ntfy"`
+	Email     string `json:"email"`
+	Ntfy      string `json:"ntfy"`
+	NtfyError string `json:"ntfy_error"`
 }

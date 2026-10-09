@@ -632,7 +632,7 @@ func pickLoginsTTY(header string, items []loginItem, skip map[string]bool, found
 	return on, true, nil
 }
 
-// loginsLine is `run`'s note under "Credentials:": the logins left on
+// loginsLine is run's note under "Logins copied:": the logins left on
 // the laptop, once a choice was made (I-484: nothing before one). It is said only
 // when the logins' part went (copied names a login, not just "git", which
 // is named on every run), so it comes once per change, not every run.

@@ -184,7 +184,7 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 	}
 	if len(removed) == 0 {
 		if cfg.Menu == nil {
-			return exitf(ExitUsage, "%s's config is a hand-written fragment; remove the package with `repose config edit`.", project.Name)
+			return exitf(ExitUsage, "%s's repose.nix was written by hand; remove the package with `repose config edit`.", project.Name)
 		}
 		return silent(ExitUsage)
 	}
@@ -205,7 +205,7 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 		if asAPIError(err, &apiErr) {
 			switch {
 			case apiErr.Code == "conflict" && strings.Contains(apiErr.Message, "custom fragment"):
-				return exitf(ExitUsage, "%s's config is a hand-written fragment, so the menu is off. Add packages with `repose config edit` (home.packages = [ pkgs.gcc ];).", project.Name)
+				return exitf(ExitUsage, "%s's repose.nix was written by hand, so the menu is off. Add packages with `repose config edit` (home.packages = [ pkgs.gcc ];).", project.Name)
 			case apiErr.Code == "invalid":
 				return exitf(ExitUsage, "%s", apiErr.Message)
 			}
@@ -237,9 +237,6 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 // genLocRe is the " at fragment.nix:L:C" hostd appends to a summary.
 var genLocRe = regexp.MustCompile(` at fragment\.nix:\d+(:\d+)?`)
 
-func shortRev(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
+// shortRev is a revision as lines name it: the random end of its UUIDv7,
+// whose start changes only once a minute (DECISIONS I-619).
+func shortRev(id string) string { return shortID(id) }

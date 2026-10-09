@@ -74,12 +74,16 @@ func editorArgs(ed editorSpec, host, dir string) []string {
 	return []string{"--remote", "ssh-remote+" + host, dir}
 }
 
-// pickEditor resolves --editor, then $REPOSE_EDITOR, then the first
-// editor installed. It returns the spec and its launcher.
-func pickEditor(flag, home string) (editorSpec, string, error) {
+// pickEditor resolves --editor, then $REPOSE_EDITOR, then config.toml's
+// editor (I-622), then the first editor installed. It returns the spec
+// and its launcher.
+func pickEditor(flag, configured, home string) (editorSpec, string, error) {
 	name, from := flag, "--editor"
 	if name == "" {
 		name, from = strings.TrimSpace(os.Getenv(envReposeEditor)), envReposeEditor
+	}
+	if name == "" {
+		name, from = strings.TrimSpace(configured), "config.toml's editor"
 	}
 	if name != "" {
 		for _, ed := range editors {
@@ -131,7 +135,7 @@ func connectRunning(ctx context.Context, e *Env, projectArg string) (*Project, s
 
 // CodeCmd is `repose code`.
 func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
-	ed, bin, err := pickEditor(editorFlag, e.HomeDir)
+	ed, bin, err := pickEditor(editorFlag, e.Cfg.Editor, e.HomeDir)
 	if err != nil {
 		return err
 	}

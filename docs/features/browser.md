@@ -28,10 +28,10 @@ live, the size of the tab. Nothing to type: the password is the part after
 type in the page to log in, solve a captcha or approve a passkey; the
 agent's next tool call sees the result. The command returns at once; the
 forward it started stays up in the background. Run it again and it prints
-the same link; `--no-open` prints the link without opening a browser.
+the same link; `--no-browser` prints the link without opening a browser (`--no-open` is its old name, I-619).
 
 ```
-$ repose browser --stop
+$ repose browser stop
 Stopped watching todo-app's browser.
 ```
 
@@ -154,7 +154,7 @@ its password field; a new CLI against an older base opens stock noVNC's
   that.
 - Claude Code in a fresh guest lists `playwright` and `chrome-devtools` in
   `claude mcp list`.
-- `repose browser [PROJECT] [--stop] [--no-open]`: runs
+- `repose browser [PROJECT] [--no-browser]` (`stop` as its own subcommand since I-619): runs
   `repose-guest-profile desktop start` over SSH (starts the viewer, and
   with it the agents' browser if it is not running; prints the password),
   then reaches the viewer through a forward of 6080 to laptop port 6080 or
@@ -179,7 +179,7 @@ its password field; a new CLI against an older base opens stock noVNC's
   or the user starts appears on the desktop too. Playwright, Puppeteer and
   Cypress default to headless whatever `DISPLAY` says, so a project's test
   suite stays headless unless its config asks otherwise (I-246).
-- `repose browser --stop` stops the viewer. The agents' browser keeps
+- `repose browser stop` stops the viewer. The agents' browser keeps
   running for the agent; with it gone, Xvnc stops and `DISPLAY` is no
   longer exported.
 - The viewer stops after 30 minutes with no client. The agents' browser
