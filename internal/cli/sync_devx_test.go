@@ -44,6 +44,10 @@ func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
 				t.Fatalf("stash list %q, want %q", list, tc.msg)
 			}
 			ref := mustRun(t, g, "git", "rev-parse", "--short", "stash@{0}")
+			if strings.Trim(ref, "0123456789") == "" {
+				// Digits alone read as stash@{N}; the whole id is printed.
+				ref = mustRun(t, g, "git", "rev-parse", "stash@{0}")
+			}
 			if s.StashedFiles != 3 || s.StashRef != ref {
 				t.Fatalf("summary stashed %d as %q, want 3 as %q", s.StashedFiles, s.StashRef, ref)
 			}

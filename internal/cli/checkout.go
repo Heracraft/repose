@@ -233,7 +233,9 @@ func wholeMachineOnly(e *Env, projectArg string) error {
 	if !ok {
 		return nil
 	}
-	cmd := strings.TrimSuffix(e.Command, " --project")
+	// The command as typed, without the hint form's PROJECT words.
+	cmd, _, _ := strings.Cut(e.Command, " --project")
+	cmd, _, _ = strings.Cut(cmd, " PROJECT")
 	if cmd == "" {
 		cmd = "repose"
 	}
