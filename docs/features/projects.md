@@ -122,14 +122,22 @@ Limits:
   dashboard can show it, but nothing boots.
 - `repose resize [PROJECT] [DISK]` grows the disk (`80G`; disks never shrink).
   PROJECT is positional like every other command's (I-155); a lone
-  argument that parses as a size is DISK (I-268).
+  argument that parses as a size is DISK (I-268). DISK needs a unit (M,
+  G or T, with an optional B or iB); a bare number exits 2, and the CLI
+  compares with `volume_bytes` before the POST: the same size is a no-op,
+  a smaller one exits 2 (I-613).
   `repose resize --size small|large|xl` changes the class (DECISIONS
   I-260): the API accepts `class` on `PATCH /projects/:id` only while the
   project is stopped (`conflict` otherwise), so a running project is
   stopped without a snapshot (I-595), patched and started again after a y/N question
   (`--yes` skips it; no terminal and no `--yes` is exit 2). The same class
-  is a no-op; a refused PATCH (the xl limit) starts the project again at
-  its old class. StartGuest carries the class on every start, so the
+  is a no-op. A larger class is first asked of the plan from `/me` and
+  the project list, before the question, and a size the plan can't run
+  beside what runs now exits 7 with nothing stopped (I-610); a PATCH the
+  gate still refuses starts the project again at its old class.
+  `run --size` and `sync --size` on a stopped project of another size
+  PATCH the class before starting it; on a running one they exit 2
+  naming `repose resize` (I-611). StartGuest carries the class on every start, so the
   guest boots at the new vCPUs and memory and its samples, and so its
   billing, report the new class. The dashboard does not change a class.
 

@@ -189,7 +189,7 @@ Not a git repository, so nothing was synced.
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
-- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
+- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file that your laptop does not, so it stays until 14:02.` and names `repose attach`. If the check can't run, the machine stays too. On Windows, or with `REPOSE_INPUT_PROXY=0`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
 - `repose rm` on it asks `Destroy tmp-k3f9? It is temporary: no snapshot is kept and it cannot be restored.` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
@@ -201,7 +201,12 @@ $ repose keep tmp-k3f9
 tmp-k3f9 is no longer temporary.
 ```
 
-It's then a normal project, still reached by name, and gets snapshots like any other from then on.
+It's then a normal project, still reached by name, and gets snapshots like any other from then on. To give it more time and keep it temporary, add a duration, from `10m` to `24h`, counted from now:
+
+```
+$ repose keep tmp-k3f9 3h
+tmp-k3f9 is temporary: destroyed Sep 29 17:02.
+```
 
 ## Fork a project
 
@@ -230,7 +235,7 @@ git merge fork-2/main
 
 Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`.
 
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. `--size small` makes copies that take less of that memory; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before taking the snapshot and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one; `--size small` makes copies that take less of it; `--name` changes their names.
 
 ## Logs and events
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -354,7 +355,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl, for a machine this creates or starts")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
@@ -453,7 +454,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return runRun(cmd.Context(), e, opts, false)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl, for a machine this creates")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl, for a machine this creates or starts")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
@@ -1039,14 +1040,25 @@ func addTempFlag(cmd *cobra.Command, raw *string) {
 }
 
 // newKeepCmd is `repose keep`: a temporary machine becomes a normal one
-// (DECISIONS I-347).
+// (DECISIONS I-347), or, with a duration, goes that long from now (I-612).
 func newKeepCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:               "keep [PROJECT]",
-		Short:             "Keep a temporary machine: it is no longer destroyed when its time runs out",
-		Args:              projectArgs,
+		Use:   "keep [PROJECT] [DURATION]",
+		Short: "Keep a temporary machine for good, or for DURATION (e.g. 3h) from now",
+		Long: "With no DURATION, a temporary machine becomes a normal one and is no longer destroyed.\n" +
+			"With DURATION (10m to 24h), it stays temporary and is destroyed that long from now.\n" +
+			"One argument that reads as a duration is DURATION.",
+		Args:              keepArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var d time.Duration
+			if n := len(args); n > 0 && (n == 2 || looksLikeDuration(args[0])) {
+				var err error
+				if d, err = parseKeepDuration(args[n-1]); err != nil {
+					return cobraUsageError{err}
+				}
+				args = args[:n-1]
+			}
 			project, err := projectFrom(args, g)
 			if err != nil {
 				return err
@@ -1055,9 +1067,17 @@ func newKeepCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return KeepCmd(cmd.Context(), e, project)
+			return KeepCmd(cmd.Context(), e, project, d)
 		},
 	}
+}
+
+// keepArgs allows `keep [PROJECT] [DURATION]`.
+func keepArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 2 {
+		return cobraUsageError{fmt.Errorf("%s takes at most PROJECT and DURATION, got %d arguments: %s", cmd.CommandPath(), len(args), strings.Join(args, " "))}
+	}
+	return nil
 }
 
 // newRmCmd is `repose rm`, which destroys a project. It was `repose
@@ -1151,7 +1171,8 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 		Long: "Snapshots PROJECT (this checkout's, by default) and restores the snapshot into --count new\n" +
 			"projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each running on its own machine\n" +
 			"with the same files, configuration and secrets. PROJECT keeps running and stays the project\n" +
-			"`repose run` uses in its checkout. With --prompt, the agent starts in every fork with that prompt.\n" +
+			"`repose run` uses in its checkout. With --prompt, the agent starts in every fork with that prompt;\n" +
+			"with --no-start, the forks are created stopped.\n" +
 			"Each fork is a project: it counts toward the 100 projects an account can have, toward your\n" +
 			"plan's disk by what it holds (at first what PROJECT holds), and toward the plan's memory while\n" +
 			"it runs.",
@@ -1182,6 +1203,7 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 	cmd.Flags().StringVar(&opts.SnapshotID, "snapshot", "", "fork from this snapshot of PROJECT instead of taking one now")
 	cmd.Flags().StringVar(&opts.Prompt, "prompt", "", "start the agent in every fork with this prompt")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "with --prompt: claude|opencode|codex|gemini|pi (default: PROJECT's)")
+	cmd.Flags().BoolVar(&opts.NoStart, "no-start", false, "create the forks stopped; they take no plan memory until started")
 	cmd.Flags().Bool("json", false, "print the forks as JSON")
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
@@ -1260,7 +1282,9 @@ func parseResizeArgs(args []string, g *globalFlags) (string, int64, error) {
 	case 2:
 		projectArgs, disk = args[:1], args[1]
 	case 1:
-		if _, err := parseSize(args[0]); err == nil {
+		// A bare number is a disk size missing its unit, not a project.
+		var unitErr *sizeUnitError
+		if _, err := parseSize(args[0]); err == nil || errors.As(err, &unitErr) {
 			disk = args[0]
 		} else {
 			projectArgs = args
@@ -1612,25 +1636,47 @@ func stty(arg string) error {
 	return cmd.Run()
 }
 
-func parseSize(s string) (int64, error) {
-	s = strings.TrimSpace(strings.ToUpper(s))
+// sizeUnitError is a disk size typed without a unit: `repose resize izma
+// 100` once grew nothing, reading 100 bytes (I-613).
+type sizeUnitError struct{ in, n string }
+
+func (e *sizeUnitError) Error() string { return fmt.Sprintf("%q needs a unit, like %sG", e.in, e.n) }
+
+// parseSize reads a disk size as typed: a whole number and M, G or T, with
+// an optional B or iB (80G, 80GB, 80GiB, 1T), all binary units. A number
+// without a unit is a *sizeUnitError; errors quote the input as typed.
+func parseSize(in string) (int64, error) {
+	s := strings.ToUpper(strings.TrimSpace(in))
 	s = strings.TrimSuffix(s, "B")
 	s = strings.TrimSuffix(s, "I")
-	mult := int64(1)
-	switch {
-	case strings.HasSuffix(s, "T"):
-		mult = 1 << 40
-		s = strings.TrimSuffix(s, "T")
-	case strings.HasSuffix(s, "G"):
-		mult = 1 << 30
-		s = strings.TrimSuffix(s, "G")
-	case strings.HasSuffix(s, "M"):
-		mult = 1 << 20
-		s = strings.TrimSuffix(s, "M")
+	var mult int64
+	for _, u := range []struct {
+		suffix string
+		mult   int64
+	}{{"T", 1 << 40}, {"G", 1 << 30}, {"M", 1 << 20}} {
+		if strings.HasSuffix(s, u.suffix) {
+			mult, s = u.mult, strings.TrimSuffix(s, u.suffix)
+			break
+		}
 	}
 	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("%q is not a size like 80G", s)
+	if mult == 0 && err == nil && n > 0 {
+		return 0, &sizeUnitError{in: strings.TrimSpace(in), n: s}
+	}
+	if mult == 0 || err != nil || n <= 0 || n > math.MaxInt64/mult {
+		return 0, fmt.Errorf("%q is not a size like 80G", strings.TrimSpace(in))
 	}
 	return n * mult, nil
+}
+
+// diskSize prints a disk size the way it is typed: 80G, 1T, or 1.5 GB
+// for one that is not a whole number of gigabytes.
+func diskSize(n int64) string {
+	switch {
+	case n > 0 && n%(1<<40) == 0:
+		return fmt.Sprintf("%dT", n>>40)
+	case n > 0 && n%(1<<30) == 0:
+		return fmt.Sprintf("%dG", n>>30)
+	}
+	return humanBytes(n)
 }

@@ -302,6 +302,13 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 }
 
 func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *apiError) {
+	return f.createGated(u, name, remoteURL, class, class)
+}
+
+// createGated is create with the class the memory gate is asked about:
+// "" for a project that is not started, as a fork with start: false
+// (the api's gateClass).
+func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string) (*project, *apiError) {
 	if !nameRe.MatchString(name) {
 		return nil, invalid("name: must match [A-Za-z0-9._-]{1,64}")
 	}
@@ -314,7 +321,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 	}
 	// The billing gate runs on every create, fork and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
-	if e := f.gate(u, class, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
+	if e := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
 		return nil, e
 	}
 	if e := f.projectCap(u, 1); e != nil {
@@ -466,6 +473,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ              *string `json:"tz"`
 		// Only null: `repose keep` (DECISIONS I-347).
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// A temporary project's new lifetime from now (I-612).
+		ExpiresIn *int64 `json:"expires_in_s"`
 		// machine.nix off or back on (I-490).
 		PersonalOptOut *bool `json:"personal_opt_out"`
 		// What the next start runs (I-502).
@@ -492,6 +501,9 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 			}
 		}
 	}
+	if len(body.ExpiresAt) > 0 && body.ExpiresIn != nil {
+		return invalid("expires_at: null and expires_in_s cannot both be sent")
+	}
 	if len(body.ExpiresAt) > 0 {
 		if strings.TrimSpace(string(body.ExpiresAt)) != "null" {
 			return invalid("expires_at can only be set to null, which keeps a temporary project")
@@ -500,6 +512,19 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return errf("conflict", "%s is already being destroyed", p.Slug)
 		}
 		p.ExpiresAt = nil
+	}
+	if body.ExpiresIn != nil {
+		if *body.ExpiresIn < 600 || *body.ExpiresIn > 86400 {
+			return invalid("expires_in_s must be between 600 and 86400")
+		}
+		if p.ExpiresAt == nil {
+			return invalid("expires_in_s applies only to a temporary project")
+		}
+		if p.State == "destroying" {
+			return errf("conflict", "%s is already being destroyed", p.Slug)
+		}
+		t := f.now().Add(time.Duration(*body.ExpiresIn) * time.Second)
+		p.ExpiresAt = &t
 	}
 	if body.TZ != nil {
 		if _, err := time.LoadLocation(*body.TZ); err != nil || *body.TZ == "" {
@@ -1372,7 +1397,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			continue
 		}
 		taken[name] = true
-		np, e := f.create(u, name, "", class)
+		gateClass := class
+		if body.Start != nil && !*body.Start {
+			gateClass = "" // a stopped copy takes no memory (api fork.go)
+		}
+		np, e := f.createGated(u, name, "", class, gateClass)
 		if e != nil {
 			return e
 		}

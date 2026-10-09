@@ -231,7 +231,7 @@ func TestKeepClearsExpiry(t *testing.T) {
 	if p.ExpiresAt == nil {
 		t.Fatal("create with expires_in_s answered no expires_at")
 	}
-	if err := KeepCmd(ctx, e, "tmp-abcd"); err != nil {
+	if err := KeepCmd(ctx, e, "tmp-abcd", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.Out.(*discardWriter).buf.String(); got != "tmp-abcd is no longer temporary.\n" {
@@ -242,7 +242,7 @@ func TestKeepClearsExpiry(t *testing.T) {
 		t.Fatalf("after keep: %+v %v", got, err)
 	}
 	e.Out = &discardWriter{}
-	if err := KeepCmd(ctx, e, "tmp-abcd"); err != nil {
+	if err := KeepCmd(ctx, e, "tmp-abcd", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.Out.(*discardWriter).buf.String(); got != "tmp-abcd is not temporary.\n" {
@@ -481,5 +481,53 @@ func TestTempFlagParsing(t *testing.T) {
 		if got := timeLeft(d); got != want {
 			t.Errorf("timeLeft(%s) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Before the session end destroys a temporary machine, the CLI asks its
+// checkout for work the laptop lacks: a commit on no remote-tracking
+// branch, or a changed file, keeps it until its expiry (I-612, review A2).
+func TestTempSessionEndKeepsUnfetchedWork(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	e, _, errOut := freshEnv(f.env, f.local)
+	if err := runRun(ctx, e, RunOptions{Temp: tempDefault, Name: testSlug, NoSync: true, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	p := bySlug(listed(t, e), testSlug)
+	if p == nil || p.ExpiresAt == nil {
+		t.Fatalf("project = %+v", p)
+	}
+	sh := func(cmd string) {
+		t.Helper()
+		if _, err := runSSH(ctx, f.target, "cd ~/"+testSlug+" && "+cmd, nil); err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+	}
+	sh("tmux kill-session -t " + testSlug)
+	sh("git commit -q --allow-empty -m agent && git checkout -q -b side && git commit -q --allow-empty -m side && git checkout -q main")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) == nil {
+		t.Fatal("destroyed with two commits only on it")
+	}
+	want := testSlug + " has 2 commits that your laptop does not, so " + tempStays(p, time.Now()) + ". `repose attach " + testSlug + "` goes back to it.\n"
+	if errOut.buf.String() != want {
+		t.Fatalf("stderr %q, want %q", errOut.buf.String(), want)
+	}
+	// Pushed commits are the laptop's to fetch; a new file is not.
+	sh("git push -q origin main side && echo x > notes.txt")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) == nil || !strings.Contains(errOut.buf.String(), "has 1 changed file that your laptop") {
+		t.Fatalf("stderr %q", errOut.buf.String())
+	}
+	sh("rm notes.txt")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) != nil {
+		t.Fatalf("still there with nothing on it: %q", errOut.buf.String())
 	}
 }

@@ -27,6 +27,9 @@ type ForkOptions struct {
 	SnapshotID string
 	Prompt     string
 	Agent      string
+	// NoStart creates the forks stopped (start: false), so they take
+	// none of the plan's memory until `repose start` (I-610).
+	NoStart bool
 }
 
 // ForkRequest is POST /projects/:id/fork's body.
@@ -36,6 +39,8 @@ type ForkRequest struct {
 	Name       string `json:"name,omitempty"`
 	Class      string `json:"class,omitempty"`
 	RequestID  string `json:"request_id,omitempty"`
+	// Start false makes the forks stopped; omitted, they start.
+	Start *bool `json:"start,omitempty"`
 }
 
 // ForkedProject is one project a fork made.
@@ -93,23 +98,54 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if opts.Count < 1 || opts.Count > maxForks {
 		return exitf(ExitUsage, "--count must be 1 to %d, got %d.", maxForks, opts.Count)
 	}
+	if opts.NoStart && opts.Prompt != "" {
+		return exitf(ExitUsage, "--no-start leaves the forks stopped, so --prompt has no agent to start in them; pass one of the two.")
+	}
 	src, err := requireProject(ctx, e, opts.ProjectArg)
 	if err != nil {
 		return err
 	}
 	// The cap is the api's to enforce, for all N at once; asking first
 	// only spares a snapshot that nothing would use. It counts running
-	// and stopped projects alike (I-569).
-	if me, err := e.Client.GetMe(ctx); err == nil && me.Limits.Projects > 0 {
-		if projects, err := e.Client.ListProjects(ctx); err == nil {
-			have := 0
-			for _, p := range projects {
-				if p.State != "destroying" {
-					have++
+	// and stopped projects alike (I-569). Then the plan's memory for all
+	// N, which the api's gate asks for one machine and only after the
+	// snapshot, so each later fork failed to start (I-610). PROJECT keeps
+	// running, so it counts.
+	if me, err := e.Client.GetMe(ctx); err == nil {
+		var projects []Project
+		var listErr error
+		listed := false
+		list := func() ([]Project, error) {
+			if !listed {
+				projects, listErr = e.Client.ListProjects(ctx)
+				listed = true
+			}
+			return projects, listErr
+		}
+		if me.Limits.Projects > 0 {
+			if projects, err := list(); err == nil {
+				have := 0
+				for _, p := range projects {
+					if p.State != "destroying" {
+						have++
+					}
+				}
+				if have+opts.Count > me.Limits.Projects {
+					return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
 				}
 			}
-			if have+opts.Count > me.Limits.Projects {
-				return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
+		}
+		if !opts.NoStart {
+			class := opts.Size
+			if class == "" {
+				class = src.Class
+			}
+			fix := fmt.Sprintf("`repose fork %s --no-start` creates the fork stopped", src.Slug)
+			if opts.Count > 1 {
+				fix = fmt.Sprintf("`repose fork %s -n %d --no-start` creates them stopped", src.Slug, opts.Count)
+			}
+			if msg := planMemoryRefusalOf(me, list, planAsk{Class: class, Count: opts.Count, Fix: fix}); msg != "" {
+				return exitf(ExitPaymentRequired, "%s", msg)
 			}
 		}
 	}
@@ -153,6 +189,12 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	}
 
 	req := ForkRequest{SnapshotID: snapID, Count: opts.Count, Name: opts.Name, Class: opts.Size, RequestID: newRequestID()}
+	want := "running"
+	if opts.NoStart {
+		no := false
+		req.Start = &no
+		want = "stopped"
+	}
 	pr.Phase(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
 	res, err := forkWithRetry(ctx, e, src.ID, req)
 	if err != nil {
@@ -179,7 +221,11 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	failed := 0
 	for i := range res.Projects {
 		f := &res.Projects[i]
-		pr.Phase("Starting "+f.Slug, "")
+		if opts.NoStart {
+			pr.Phase("Restoring "+f.Slug, "")
+		} else {
+			pr.Phase("Starting "+f.Slug, "")
+		}
 		op, err := waitOp(ctx, e.Client, f.ProjectID, f.OpID, pr)
 		if err != nil {
 			return err
@@ -196,7 +242,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				f.Error = humaneMessage(op.Error.Message)
 			}
 		}
-		if f.State != "running" {
+		if f.State != want {
 			failed++
 		}
 	}
@@ -227,7 +273,11 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		writeForkSummary(e, src, res, pr.Total())
 	}
 	if failed > 0 {
-		return exitf(ExitGeneric, "%d of %d forks did not start. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), src.Slug, res.SnapshotID)
+		verb := "start"
+		if opts.NoStart {
+			verb = "restore"
+		}
+		return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), verb, src.Slug, res.SnapshotID)
 	}
 	return nil
 }

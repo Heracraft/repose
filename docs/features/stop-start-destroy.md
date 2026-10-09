@@ -328,8 +328,14 @@ Lifetime:
   project that is not temporary prints `NAME is not temporary.` and
   exits 0. Setting `expires_at` to anything but null answers `400
   invalid`.
+- `repose keep NAME 3h` (10m to 24h; one argument that reads as a
+  duration is the duration) sends `PATCH /projects/:id {expires_in_s}`,
+  and the api sets `expires_at = now() + expires_in_s` under the same
+  state guard as keep (I-612). Outside 600..86400, on a project that is
+  not temporary, or beside `expires_at: null`, it is `400 invalid`.
 - An hour before `expires_at` a `temp_expiring` notification goes out,
-  once per project (read from the events table). A machine made with a
+  once per expiry (read from the events table: none since `expires_at`
+  minus an hour, so a `keep NAME 3h` after the warning warns again). A machine made with a
   lifetime of an hour or less gets none (I-350).
 
 Expiry:
@@ -366,8 +372,17 @@ Ending the session:
 
 - After the attach returns, on the input-proxy path only, the CLI runs
   `tmux has-session -t =<slug>` over the still-open ControlMaster. When
-  the session is gone and the project is temporary, it prints the line
-  above and sends the DELETE without asking. A detach leaves the session,
+  the session is gone and the project is temporary, it runs one more
+  ssh over the same master that counts, in the machine's checkout,
+  changed files beyond the last sync's fingerprint (I-210) plus every
+  file `git status` lists in its other worktrees, and commits reachable
+  from a branch or a worktree HEAD but from neither a remote-tracking
+  branch nor the commits `.git/repose-synced-key` lists (I-612). Both
+  zero: it prints the line above and sends the DELETE without asking.
+  Either one above zero, or a check that fails: no DELETE, one line
+  (`tmp-q7wd has 2 commits and 1 changed file that your laptop does not,
+  so it stays until 17:10. `repose attach tmp-q7wd` goes back to it.`),
+  and the machine goes at its expiry. A detach leaves the session,
   so it never destroys. An agent window still open keeps the session, so
   an agent working never loses its machine this way.
 - On Windows, without a TTY or with `REPOSE_INPUT_PROXY=0` the CLI has
