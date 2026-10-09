@@ -8,25 +8,59 @@ operations history. The dashboard shows the same data with history.
 
 ```
 $ repose ls
-PROJECT   CLASS  STATE    UP     AGENTS           TODAY  MONTH
-todo-app  large  running  2h14m  claude: working  2h14m  41h
-api-v2    xl     stopped  -      -                0h     63h
+PROJECT     CLASS  STATE    UP     AGENTS
+todo-app *  large  running  2h14m  claude: working
+api-v2      xl     stopped  -      -
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month
 
 $ repose status todo-app          # or --project todo-app, or from the checkout
-todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
-  host host-01   ip 10.100.0.12   disk 6.2 GB/40.0 GB   snapshot 11h8m ago
-  sessions 1   tmux clients 1   docker 0
-  last event 14m ago: claude completed "Added auth flow"
+todo-app  running 2h14m  large
+  agents     claude-2 needs input, claude working
+  checkout   main: 3 commits not on this laptop, 2 files not committed
+             worktree-1: nothing new
+  attached   1 SSH session, 1 tmux client
   listening  node :5173 up 3d 410.0 MB
              :5432
+  disk       6.2 GB of 40.0 GB, snapshot 11h08m ago
+  last event 14m ago, claude done "Added auth flow"
 ```
 
 (`internal/cli/status.go`. A project the platform stopped for mining, or
-in `error`, gets one more line saying why and what to run.)
+in `error`, gets one more line saying why and what to run.) Since
+DECISIONS I-616 the rows are labelled, the running hours are gone (a
+plan bills none), and the host and the guest's address print only under
+`-v` (`host       host-01, ip 10.100.0.12`); `--json` has them as
+`host_id` and `guest_ip`. `docker N containers` prints only when there
+are some. `*` in `ls` marks the project a command run in that folder
+acts on (REPOSE_PROJECT, the folder's link, its remote). The line under
+the table is GET /billing's plan and usage; warning lines follow it near
+a limit that refuses, stops or charges (disk past the plan, egress past
+the allowance, `past_due`).
 
-On a herdr project (DECISIONS I-509) the header reads `todo-app   large
-herdr   running ...` and the sessions line is `sessions 1   docker 0`:
-herdr's clients arrive over SSH and are in `sessions`. The `herdr` word
+The `checkout` row (I-616) is read in the same ssh as the listeners: the
+laptop sends the commit at every branch tip of its checkout (its fetched
+`repose/*` branches included) on that ssh's stdin, only when the folder
+status runs in is the project's checkout (its `repose` remote names the
+project, or its origin is the project's remote). The guest keeps the
+ones it has (`git cat-file --batch-check`) and, for its checkout and
+each `git worktree`, counts the commits not reachable from them
+(`rev-list --count HEAD --not`), the lines of `git status --porcelain`
+(given 2 seconds) and the last commit's time. Without the laptop's
+commits the row shows the last commit's age. `--json` carries the rows
+as `git: [{worktree, branch, commits_not_on_laptop, uncommitted_files,
+last_commit_at}]` beside the Project's fields. Nothing is sampled or
+stored by the platform: the read is the user's own ssh, and only counts,
+branch names, folder names and a time come back.
+
+`--watch` redraws in place on a terminal, prints a block only when it
+changed when piped, and keeps going through an unreachable api, a 5xx or
+a 429 (a line says the read failed). `--wait STATE [--timeout 10m]`
+polls the project every 2 seconds, prints the status once it is in
+STATE, and exits 1 on `error`, on destroyed or at the timeout.
+
+On a herdr project (DECISIONS I-509) the header reads `todo-app  running
+2h14m  large  herdr` and the attached row counts SSH sessions only:
+herdr's clients arrive over SSH and are in them. The `herdr` word
 is what runs now, read from the guest in the same ssh that lists the
 listening processes (`systemctl --user -q is-active
 repose-herdr-server`); a project switched while running shows its old
@@ -42,7 +76,8 @@ a stopped project, or a sample without it, shows the disk's size alone
 (DECISIONS I-567). At 90 percent or more a line under the host
 line reads `disk 95 percent full; \`repose resize todo-app 80G\` grows
 it`, the size double the disk up to 320 GB. AGENTS names the one agent,
-or counts several by state: `3 agents: 1 needs_input, 2 working`.
+or counts several by state: `3 agents: 1 needs input, 2 working`; text
+prints `needs input` in words, `--json` keeps `needs_input` (I-617).
 
 ```
 $ repose logs                    # console of failed boots, last 200 lines each
@@ -69,16 +104,17 @@ project as their argument (`repose logs izma -f`, I-155).
 Status:
 
 - `repose ls` lists every non-destroyed project with class, state,
-  uptime since the last `running` transition, agent state (counted by
-  state when there are several; guestd's `unknown` is not named, I-567),
-  and running hours today and month to date from `usage_hours` (I-289:
-  nothing is priced by the hour). `repose status` prints the
-  same columns for one project, then its detail lines.
+  uptime since the last `running` transition and agent state (counted by
+  state when there are several; guestd's `unknown` is not named, I-567).
+  The running hours it showed until I-616 are gone from both: nothing is
+  priced by the hour (I-289). `repose status` prints the header, then
+  its labelled rows.
 - Agent state per window comes from guestd's latest `AgentState`
   (`working`, `idle`, `needs_input`, `unknown`) and is at most 60 seconds
   stale on a healthy guest.
-- Not built: git state (branch, `HEAD`, dirty count) in `Sample`, the
-  base and config revision lines, and marking stale agent state with `?`.
+- Not built: git state in `Sample` (status reads it over ssh instead,
+  I-616), the base and config revision lines, and marking stale agent
+  state with `?`.
 - Listening processes (DECISIONS I-200, I-207): `repose status PROJECT`
   of a running guest lists each loopback or wildcard TCP listener on port
   1024 and up with its process's name, age and memory, so a dev server

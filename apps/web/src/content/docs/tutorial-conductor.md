@@ -31,7 +31,7 @@ what is not. Don't push. Ask me only when a decision needs me."
 
 Claude Code's own Agent tool launches workers in isolated worktrees (under `.claude/worktrees/`, each on a `worktree-` branch) and tells the conductor when each finishes. The conductor waits on those notices rather than polling, and merges in dependency order: a task that defines an interface before the tasks that use it.
 
-If you'd rather see each worker in its own tmux window, launch them from your laptop instead, one `repose run --worktree -p "..."` per task, and give the conductor the branch names to merge.
+If you'd rather see each worker in its own tmux window, launch them from your laptop instead, one `repose run -d --worktree -p "..."` per task, and give the conductor the branch names to merge.
 
 ## Watch it run
 

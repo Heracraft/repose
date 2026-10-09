@@ -87,7 +87,7 @@ func skippedCredNotice(label string) string {
 // an allowlist, so nothing outside it ever travels. homeDir is the
 // laptop's $HOME; repoDir is the project checkout, whose git config
 // supplies user.name/user.email. It returns the labels copied, in table
-// order, for the one-line "Credentials: gh, opencode" print. It runs
+// order, for the one-line "Logins copied: gh, opencode" print. It runs
 // before the git steps of the sync so the guest's git already knows who
 // the user is and how to reach github when the checkout lands.
 func syncCredentials(ctx context.Context, t sshTarget, homeDir, repoDir string, opts credSyncOptions) ([]string, error) {
@@ -111,7 +111,7 @@ func syncCredentialsAndCarry(ctx context.Context, t sshTarget, homeDir, repoDir 
 	}
 	out, err := c.p.run(ctx, t)
 	if err != nil {
-		return nil, nil, stepFailed("copy your tool logins to the guest", err, "")
+		return nil, nil, stepFailed("copy your tool logins to the machine", err, "")
 	}
 	copied, outcome := c.finish(string(out))
 	return copied, outcome, nil

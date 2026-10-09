@@ -12,13 +12,27 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 )
 
+// sinceParam is since= read leniently: a value that is not RFC 3339 is
+// no limit. Only the gateway's /internal/revoked reads it this way.
 func sinceParam(r *http.Request) time.Time {
-	if v := r.URL.Query().Get("since"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			return t
-		}
+	t, _ := sinceQuery(r)
+	return t
+}
+
+// sinceQuery is since= on events and logs: RFC 3339 (fractional seconds
+// allowed), or absent for no limit. Any other value is 400 invalid; it
+// used to be read as no limit, so `--since 7d` from an older CLI got
+// every line back and exit 0 (DECISIONS I-609).
+func sinceQuery(r *http.Request) (time.Time, error) {
+	v := r.URL.Query().Get("since")
+	if v == "" {
+		return time.Time{}, nil
 	}
-	return time.Time{}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, errf("invalid", "since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
+	}
+	return t, nil
 }
 
 func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
@@ -36,6 +50,10 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 		}
 		limit = n
 	}
+	since, err := sinceQuery(r)
+	if err != nil {
+		return err
+	}
 	var evs []store.Event
 	if v := r.URL.Query().Get("before"); v != "" {
 		before, perr := uuid.Parse(v)
@@ -44,7 +62,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 		}
 		evs, err = store.ListEventsBefore(r.Context(), s.d.Pool, p.ID, before, limit)
 	} else {
-		evs, err = store.ListEvents(r.Context(), s.d.Pool, p.ID, sinceParam(r), limit)
+		evs, err = store.ListEvents(r.Context(), s.d.Pool, p.ID, since, limit)
 	}
 	if err != nil {
 		return err
@@ -71,7 +89,10 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 	if kind == "" {
 		kind = "console"
 	}
-	since := sinceParam(r)
+	since, err := sinceQuery(r)
+	if err != nil {
+		return err
+	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	switch kind {
@@ -114,14 +135,7 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 			if op.CreatedAt.Before(since) {
 				continue
 			}
-			line := map[string]any{"ts": op.CreatedAt, "op_id": op.ID, "kind": op.Kind, "state": op.State, "finished_at": op.FinishedAt}
-			if op.FinishedAt != nil {
-				line["duration_ms"] = op.FinishedAt.Sub(op.CreatedAt).Milliseconds()
-			}
-			if op.Error != nil {
-				line["error"] = op.Error
-			}
-			if err := enc.Encode(line); err != nil {
+			if err := enc.Encode(opsLogLine(op)); err != nil {
 				return nil
 			}
 		}
@@ -214,4 +228,18 @@ func sinceParamNamed(r *http.Request, name string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+// opsLogLine is one line of logs?kind=ops: the op's kind, state, finish
+// time, duration once finished and error. TestOpsLogLineDecodes holds
+// the CLI's decoding to this shape (I-609).
+func opsLogLine(op store.Op) map[string]any {
+	line := map[string]any{"ts": op.CreatedAt, "op_id": op.ID, "kind": op.Kind, "state": op.State, "finished_at": op.FinishedAt}
+	if op.FinishedAt != nil {
+		line["duration_ms"] = op.FinishedAt.Sub(op.CreatedAt).Milliseconds()
+	}
+	if op.Error != nil {
+		line["error"] = op.Error
+	}
+	return line
 }

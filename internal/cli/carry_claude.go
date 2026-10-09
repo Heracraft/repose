@@ -103,7 +103,7 @@ type claudeCarry struct {
 	// Settings is the laptop's settings.json, already checked to be JSON;
 	// nil when absent or invalid.
 	Settings []byte
-	Home     string // the laptop's home, rewritten to /home/dev in the guest
+	Home     string // the laptop's home, rewritten to /home/dev on the machine
 	// CfgDir is $CLAUDE_CONFIG_DIR when it moved the config off
 	// ~/.claude; paths under it are rewritten to the guest's ~/.claude.
 	CfgDir string
@@ -161,13 +161,13 @@ func buildClaudeCarry(homeDir string) (*claudeCarry, error) {
 	switch {
 	case err != nil:
 	case !json.Valid(raw):
-		cc.Notes = append(cc.Notes, "Your ~/.claude/settings.json is not valid JSON, so it was not carried; the guest keeps its own.")
+		cc.Notes = append(cc.Notes, "Your ~/.claude/settings.json is not valid JSON, so it was not carried; the machine keeps its own.")
 	default:
 		var s map[string]any
 		_ = json.Unmarshal(raw, &s)
 		if s == nil {
 			// Valid JSON, not an object: nothing to merge.
-			cc.Notes = append(cc.Notes, "Your ~/.claude/settings.json is not a JSON object, so it was not carried; the guest keeps its own.")
+			cc.Notes = append(cc.Notes, "Your ~/.claude/settings.json is not a JSON object, so it was not carried; the machine keeps its own.")
 			break
 		}
 		var dropped int
@@ -176,7 +176,7 @@ func buildClaudeCarry(homeDir string) (*claudeCarry, error) {
 			return nil, err
 		}
 		if dropped > 0 {
-			cc.Notes = append(cc.Notes, fmt.Sprintf("Left out %d %s of your ~/.claude/settings.json that %s a credential (a token, or a password in a URL); set %s in the guest instead.", dropped, plural(dropped, "entry", "entries"), plural(dropped, "holds", "hold"), plural(dropped, "it", "them")))
+			cc.Notes = append(cc.Notes, fmt.Sprintf("Left out %d %s of your ~/.claude/settings.json that %s a credential (a token, or a password in a URL); set %s on the machine instead.", dropped, plural(dropped, "entry", "entries"), plural(dropped, "holds", "hold"), plural(dropped, "it", "them")))
 		}
 		// Scripts and plugins come from what travels, not the raw file.
 		s = nil
@@ -500,7 +500,7 @@ func claudePlugins(s map[string]any, notes []string) (plugins []string, markets 
 				continue
 			}
 			if local[m] {
-				notes = append(notes, fmt.Sprintf("Plugin %s comes from a marketplace on your laptop, so the guest cannot install it.", id))
+				notes = append(notes, fmt.Sprintf("Plugin %s comes from a marketplace on your laptop, so the machine cannot install it.", id))
 				continue
 			}
 			plugins = append(plugins, id)
@@ -718,7 +718,7 @@ echo '{}' > "$t/empty.json"
 g="$t/empty.json"
 if [ -s "$s" ]; then
   if ! jq empty "$s" 2>/dev/null; then
-    echo "#warn The guest's ~/.claude/settings.json is not valid JSON, so your laptop's settings were not merged into it."
+    echo "#warn The machine's ~/.claude/settings.json is not valid JSON, so your laptop's settings were not merged into it."
     exit 0
   fi
   g="$s"
@@ -817,7 +817,7 @@ $m"; fi
 done
 msg=""
 [ -n "$ok" ] && msg="Installed Claude plugins:$ok."
-[ -n "$bad" ] && msg="$msg Could not install:$bad (claude plugin install in the guest says why)."
+[ -n "$bad" ] && msg="$msg Could not install:$bad (claude plugin install on the machine says why)."
 if [ -n "$msg" ] && ` + muxProbeScript + `; then
   herdr notification show repose --body "$msg" >/dev/null 2>&1 || true
 elif [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then

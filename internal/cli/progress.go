@@ -4,15 +4,18 @@ import (
 	"fmt"
 	"io"
 	"os"
-
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // progress shows what a long command is doing (DECISIONS I-154): on a
 // terminal, one live line with a spinner, the phase and its elapsed time,
 // replaced by a "✓ <done>  <time>" line when the phase ends; elsewhere, one
-// plain "<phase>..." line per phase and nothing that redraws. It writes to
+// plain "<phase>..." line per phase, the same ✓ line when it ends, and a
+// "<phase>... <time>" line every heartbeat while it runs, so a CI log
+// tells a hung step from a slow one (DECISIONS I-609). It writes to
 // stderr only, so stdout stays the command's result (07-cli.md §5.12).
 // Every method is safe on a nil *progress, which is what tests and the
 // commands that have no phases pass.
@@ -21,6 +24,9 @@ type progress struct {
 	tty   bool
 	now   func() time.Time
 	start time.Time
+	// heartbeat is how often a phase off a terminal prints that it is
+	// still running; 0 never.
+	heartbeat time.Duration
 
 	mu         sync.Mutex
 	label      string // the running phase, "" between phases
@@ -35,29 +41,44 @@ type progress struct {
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func newProgress(w io.Writer, tty bool) *progress {
-	p := &progress{w: w, tty: tty, now: time.Now}
+	p := &progress{w: w, tty: tty, now: time.Now, heartbeat: 30 * time.Second}
 	p.start = p.now()
 	return p
 }
 
-// isTerminal reports whether f is a character device, which is what a
-// terminal is; good enough to decide whether to draw a spinner, and it
-// needs no terminal library.
-func isTerminal(f *os.File) bool {
-	if f == nil {
-		return false
-	}
+// canDrawSpinner reports whether f is a terminal a spinner may redraw:
+// not with TERM=dumb (Emacs shells, some IDE consoles) or
+// REPOSE_NO_SPINNER=1. Asking a question is canPrompt's business, so
+// turning the spinner off never stops a confirmation (DECISIONS I-614).
+func canDrawSpinner(f *os.File) bool {
 	if os.Getenv("TERM") == "dumb" || os.Getenv(envNoSpinner) == "1" {
 		return false
 	}
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return isatty(f)
+}
+
+// canPrompt reports whether stdin f is a terminal someone can answer a
+// question on. /dev/null is a character device too, which is what cron,
+// systemd, `ssh -n` and many CI runners give a command; a question read
+// from it gets EOF, so it is not one (DECISIONS I-614).
+func canPrompt(f *os.File) bool { return isatty(f) }
+
+func isatty(f *os.File) bool {
+	return f != nil && term.IsTerminal(int(f.Fd()))
 }
 
 // Phase ends the current phase (printing its done line) and starts label.
 // done is what the ✓ line says when this phase ends ("" for a phase whose
 // result the caller prints itself).
-func (p *progress) Phase(label, done string) {
+func (p *progress) Phase(label, done string) { p.phase(label, done, true) }
+
+// Resume starts label again after a line printed between its parts (run's
+// `Worktree:` line inside "Starting claude"): on a terminal the spinner
+// comes back; off one the start line printed once already, so a log does
+// not read as two starts (I-633).
+func (p *progress) Resume(label, done string) { p.phase(label, done, false) }
+
+func (p *progress) phase(label, done string, announce bool) {
 	if p == nil {
 		return
 	}
@@ -73,8 +94,17 @@ func (p *progress) Phase(label, done string) {
 	p.mu.Lock()
 	p.label, p.done, p.phaseStart = label, done, p.now()
 	if !p.tty {
-		_, _ = fmt.Fprintf(p.w, "%s...\n", label)
+		if announce {
+			_, _ = fmt.Fprintf(p.w, "%s...\n", label)
+		}
+		if p.heartbeat <= 0 {
+			p.mu.Unlock()
+			return
+		}
+		p.stop, p.stopped = make(chan struct{}), make(chan struct{})
+		stop, stopped, every := p.stop, p.stopped, p.heartbeat
 		p.mu.Unlock()
+		go p.beat(stop, stopped, every)
 		return
 	}
 	p.stop, p.stopped = make(chan struct{}), make(chan struct{})
@@ -99,6 +129,26 @@ func (p *progress) Phase(label, done string) {
 	}()
 }
 
+// beat prints the running phase and its time every interval until stop:
+// the off-terminal stand-in for the spinner's clock.
+func (p *progress) beat(stop, stopped chan struct{}, every time.Duration) {
+	defer close(stopped)
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			p.mu.Lock()
+			if p.label != "" {
+				_, _ = fmt.Fprintf(p.w, "%s... %s\n", p.label, fmtElapsed(p.now().Sub(p.phaseStart)))
+			}
+			p.mu.Unlock()
+		}
+	}
+}
+
 // Relabel changes the running phase's label and done text without
 // ending it: a count that moves ("Fetching 17/42 paths"). Without a
 // terminal it prints nothing; the phase's line was printed once.
@@ -117,6 +167,16 @@ func (p *progress) Relabel(label, done string) {
 	}
 }
 
+// busy reports whether a phase is running.
+func (p *progress) busy() bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.label != ""
+}
+
 // End finishes the current phase: on a terminal the spinner line becomes
 // the ✓ line (or disappears when the phase has no done text).
 func (p *progress) End() {
@@ -130,7 +190,7 @@ func (p *progress) End() {
 		return
 	}
 	p.clearLocked()
-	if p.tty && p.done != "" {
+	if p.done != "" {
 		_, _ = fmt.Fprintf(p.w, "✓ %s  %s\n", p.done, fmtElapsed(p.now().Sub(p.phaseStart)))
 	}
 	p.label, p.done = "", ""
@@ -219,7 +279,7 @@ func phaseForState(slug, state string) (label, done string) {
 	case "creating":
 		return "Creating " + slug, "Created " + slug
 	case "building":
-		return "Building the environment", "Built the environment"
+		return "Building the configuration", "Built the configuration"
 	case "starting":
 		return "Booting " + slug, "Booted " + slug
 	case "stopping":

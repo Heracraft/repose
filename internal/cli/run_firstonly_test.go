@@ -55,7 +55,7 @@ func TestRunLeavesAnExistingCheckoutAlone(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.guestRepo(), "notes.txt")); err == nil {
 		t.Fatal("the laptop's untracked file reached the machine")
 	}
-	want := "Not synced: your laptop has work the machine doesn't (1 modified, 1 untracked). `repose sync` sends it."
+	want := "Not synced: your laptop has work the machine doesn't (1 modified, 1 untracked). `repose sync " + testSlug + "` sends it."
 	if !strings.Contains(out.buf.String(), want) {
 		t.Fatalf("output = %q, want %q", out.buf.String(), want)
 	}
@@ -184,18 +184,18 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if !ok || ee.code != ExitDirtyRemoteTree {
 		t.Fatalf("err = %v, want exit %d", err, ExitDirtyRemoteTree)
 	}
-	for _, want := range []string{"  README.md\n", "repose sync --stash-remote", "--discard-remote"} {
+	for _, want := range []string{"  README.md\n", "repose sync --stash-machine"} {
 		if !strings.Contains(ee.msg, want) {
 			t.Errorf("refusal = %q, want %q", ee.msg, want)
 		}
 	}
-	for _, not := range []string{"repose run", "timing.txt"} {
+	for _, not := range []string{"repose run", "timing.txt", "--discard-machine"} {
 		if strings.Contains(ee.msg, not) {
 			t.Errorf("refusal = %q, names %q", ee.msg, not)
 		}
 	}
 	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, StashRemote: true}, false); err != nil {
-		t.Fatalf("sync --stash-remote: %v", err)
+		t.Fatalf("sync --stash-machine: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newest\n" {
 		t.Fatalf("guest README.md = %q, want the laptop's", b)
@@ -208,8 +208,8 @@ func TestRunStashRemoteSaysUseSync(t *testing.T) {
 	defer fake.Close()
 	f := newRunFixture(t, fake)
 	for flag, opts := range map[string]RunOptions{
-		"--stash-remote":   {Name: testSlug, StashRemote: true},
-		"--discard-remote": {Name: testSlug, DiscardRemote: true},
+		"--stash-machine":   {Name: testSlug, StashRemote: true},
+		"--discard-machine": {Name: testSlug, DiscardRemote: true},
 	} {
 		err := runRun(context.Background(), f.env, opts, false)
 		ee, ok := err.(*exitError)

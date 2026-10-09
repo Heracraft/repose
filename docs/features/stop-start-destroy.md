@@ -34,9 +34,22 @@ Booting kanali...
 kanali: its new system did not boot, so it runs its previous one: the system it boots is missing from the machine's store (stage 1 found no stage 2 init); `repose logs --kind console` shows what the new one printed.
 kanali is running (xl), ready in 1m31s.
 
+$ repose stop api                       # an agent mid-turn (I-614)
+api has claude (working). Stopping ends it. Stop api? [y/N] y
+Snapshotting and stopping api...
+Stopped api in 12s with a 1.4 GB snapshot.
+
+$ repose stop --unused                  # several stop at once (I-615)
+Stopping web and docs...
+Stopped web in 9.8s with a 0.9 GB snapshot.
+Stopped docs in 11s with a 1.2 GB snapshot.
+
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
-Destroying todo-app. Its final snapshot is kept for 30 days.
+Destroying todo-app.
+
+$ repose rm -y todo-app
+Destroying todo-app. Its final snapshot is kept until 2026-10-23.
 
 $ repose ls --destroyed
 PROJECT   CLASS  DESTROYED         SNAPSHOT          SIZE    RESTORABLE UNTIL
@@ -86,14 +99,28 @@ Stop:
 
 - `stop` sends `StopGuest{snapshot_first: true, timeout_s: 60}`. guestd gets
   `Shutdown`; systemd in the guest stops services, which includes tmux or
-  herdr and any agent in it. The agent is interrupted; a Claude session can
-  be resumed in the guest after `start` with `claude --resume`, and on a
-  herdr project herdr resumes agents with an integration by itself
-  (I-501). The CLI's stop line is
-  followed by `Interrupted claude (working) and claude-2 (needs input).`
-  when the project's newest sample showed agents working or waiting; idle
-  agents are not named, and the line names no command (DECISIONS I-500,
-  I-484). After 60 seconds without a
+  herdr and any agent in it. The agent is interrupted. On a tmux project
+  guestd first records each agent window (name, agent, folder,
+  conversation id), and the next start opens those windows again under
+  the same names, each agent on its conversation (`claude --resume ID`,
+  I-636), so `repose ps` and `attach -w` find them; on a herdr project
+  herdr resumes agents with an integration by itself (I-501). When the project's newest sample shows agents working or
+  waiting for an answer, the CLI asks before stopping (`api has claude
+  (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
+  nothing, and without a terminal it refuses with exit 2 unless
+  `-y`/`--yes`, after which the stop line is followed by `Ended claude
+  (working) and claude-2 (needs input).` Idle agents are not named, and no
+  line names a command (DECISIONS I-614, revising I-500; I-484).
+- `stop` takes several projects, or `--unused` for every running project
+  the api reports idle (I-262); they are resolved first, asked about once
+  and stopped in parallel, one line each, exit 1 when one failed (I-615).
+- In every laptop folder whose `repose` remote is a machine being
+  stopped (the working directory's checkout, and the folders
+  `projects.json` links to the machine, I-638), the CLI runs `git fetch
+  repose` first and prints `Fetched 3 commits on repose/main.` when
+  commits came, with ` in ~/code/api` for a folder other than the
+  working directory's; a fetch that fails is one line on stderr and the
+  stop goes on (I-615). After 60 seconds without a
   clean shutdown, hostd shuts the VM down through Cloud Hypervisor. The
   guest's user manager, which holds every tmux pane and agent, gets 10
   seconds to stop before what is left of it is killed (I-572).
@@ -118,7 +145,7 @@ Start:
   `conflict` (`<slug>'s host is <state>; restore its latest snapshot onto
   another host`, `detail.host_state`). There is no `start
   --restore-latest`; the way out is `repose snapshots restore <id>
-  --as-new NAME`.
+  --as NAME`.
 - The newest built revision not yet applied (a change that needed a
   reboot, including a base bump) is put in place during start
   (`ops.PendingRevision`).
@@ -192,7 +219,7 @@ Destroy:
   from its newest snapshot or `--snapshot ID`, with its class, volume
   size, configuration and remote (I-167). `repose ls --destroyed`
   and the dashboard's "Recently destroyed" list what can be restored and
-  until when. `repose snapshots restore <id> --as-new <name>` still
+  until when. `repose snapshots restore <id> --as <name>` still
   works. After 30 days the snapshot is deleted by the retention job and
   neither lists it.
 
@@ -247,17 +274,17 @@ creation and is destroyed with no snapshot. The public docs are
 ```
 $ cd ~/code/todo-app
 $ repose run --temp                          # this checkout, on a throwaway machine
-✓ Created tmp-k3f9 (large, temporary: destroyed Sep 29 14:02)  4s
+✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  4s
 ✓ Synced main (full history)
 [tmux]
 
 $ cd ~/Downloads
 $ repose run --temp spike             # no git here: an empty machine
-✓ Created spike (large, temporary: destroyed Sep 29 14:05)  4s
+✓ Created spike (large, temporary until Sep 29 14:05)  4s
 Not a git repository, so nothing was synced.
 
 $ repose run --temp 3h --no-sync             # a shorter life
-✓ Created tmp-q7wd (large, temporary: destroyed Sep 28 17:10)  4s
+✓ Created tmp-q7wd (large, temporary until Sep 28 17:10)  4s
 
 $ repose ls
 PROJECT   CLASS  STATE    UP  AGENTS  TODAY  MONTH  LEFT
@@ -328,8 +355,18 @@ Lifetime:
   project that is not temporary prints `NAME is not temporary.` and
   exits 0. Setting `expires_at` to anything but null answers `400
   invalid`.
+- `repose keep NAME 3h` (10m to 24h; one argument that is a number and
+  a unit, `s`, `m`, `h`, `d` or `w`, is the duration, so `keep 2fa`
+  keeps the project 2fa, I-631) sends `PATCH /projects/:id
+  {expires_in_s}`, and the api sets `expires_at = now() + expires_in_s`
+  under the same state guard as keep (I-612). It prints `NAME is
+  temporary until Sep 29 17:02.`; an answer whose `expires_at` did not
+  move (an api before I-612 ignores the field) exits 1 with `The api did
+  not take the new time for NAME; it goes as before.` Outside 600..86400, on a project that is
+  not temporary, or beside `expires_at: null`, it is `400 invalid`.
 - An hour before `expires_at` a `temp_expiring` notification goes out,
-  once per project (read from the events table). A machine made with a
+  once per expiry (read from the events table: none since `expires_at`
+  minus an hour, so a `keep NAME 3h` after the warning warns again). A machine made with a
   lifetime of an hour or less gets none (I-350).
 
 Expiry:
@@ -366,8 +403,17 @@ Ending the session:
 
 - After the attach returns, on the input-proxy path only, the CLI runs
   `tmux has-session -t =<slug>` over the still-open ControlMaster. When
-  the session is gone and the project is temporary, it prints the line
-  above and sends the DELETE without asking. A detach leaves the session,
+  the session is gone and the project is temporary, it runs one more
+  ssh over the same master that counts, in the machine's checkout,
+  changed files beyond the last sync's fingerprint (I-210) plus every
+  file `git status` lists in its other worktrees, and commits reachable
+  from a branch or a worktree HEAD but from neither a remote-tracking
+  branch nor the commits `.git/repose-synced-key` lists (I-612). Both
+  zero: it prints the line above and sends the DELETE without asking.
+  Either one above zero, or a check that fails: no DELETE, one line
+  (`tmp-q7wd has 2 commits and 1 changed file your laptop does not; it
+  stays until 17:10.`),
+  and the machine goes at its expiry. A detach leaves the session,
   so it never destroys. An agent window still open keeps the session, so
   an agent working never loses its machine this way.
 - On Windows, without a TTY or with `REPOSE_INPUT_PROXY=0` the CLI has

@@ -62,10 +62,10 @@ func TestScanRuntimePins(t *testing.T) {
 	if sc.Ruby == nil || sc.Ruby.Major != "3.3" || sc.Ruby.Source != ".tool-versions" {
 		t.Fatalf("ruby = %+v", sc.Ruby)
 	}
-	if !strings.Contains(sc.Ruby.Note, "ruby 3.2 is not in the guest's nixpkgs (it has 3.3, 3.4, 4.0); ruby_3_3, the closest") {
+	if !strings.Contains(sc.Ruby.Note, "ruby 3.2 is not in the machine's nixpkgs (it has 3.3, 3.4, 4.0); ruby_3_3, the closest") {
 		t.Fatalf("ruby note = %q", sc.Ruby.Note)
 	}
-	if sc.Java == nil || sc.Java.Major != "17" || sc.Java.Note != "jdk17_headless goes into the guest's nix profile when its java is another version" {
+	if sc.Java == nil || sc.Java.Major != "17" || sc.Java.Note != "jdk17_headless goes into the machine's nix profile when its java is another version" {
 		t.Fatalf("java = %+v", sc.Java)
 	}
 	var notes []string

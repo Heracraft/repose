@@ -86,7 +86,12 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 				return &ResolveResult{Project: p, Remote: remote, Checkout: co.Name}, nil
 			}
 			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote && !opts.NoSync {
-				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
+				// The command the user typed (I-633).
+				verb := "run"
+				if opts.Sync {
+					verb = "sync"
+				}
+				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose %s %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, verb, opts.Name, p.Slug)
 			}
 			return &ResolveResult{Project: p, Remote: remote}, nil
 		}
@@ -122,7 +127,7 @@ func resolveOn(ctx context.Context, e *Env, on string, deps resolveDeps) (*Resol
 		return nil, err
 	}
 	if p == nil {
-		return nil, exitf(ExitProjectNotFound, "No repose project is called %s. `repose ls` lists yours.", on)
+		return nil, errNoSuchProject(on)
 	}
 	remote := deps.RemoteFor(e.Cwd)
 	key := dirKey(e.Cwd, deps)
@@ -247,7 +252,7 @@ func resolveProject(ctx context.Context, client *Client, dir, cwd, explicit stri
 			return nil, err
 		}
 		if p == nil {
-			return nil, exitf(ExitProjectNotFound, "No repose project is called %s. `repose ls` lists yours.", explicit)
+			return nil, errNoSuchProject(explicit)
 		}
 		return &ResolveResult{Project: p, Checkout: checkout}, nil
 	}
@@ -396,11 +401,7 @@ func rememberProject(cache *ProjectsCache, remote, dir string, p Project) {
 // found none.
 func errNoProject(res *ResolveResult, command string) error {
 	if res.Home {
-		usage := "`repose <command> PROJECT`"
-		if command != "" {
-			usage = "`" + command + " PROJECT`"
-		}
-		return errHomeNoProject(usage)
+		return errHomeNoProject("`" + projectUsage(command) + "`")
 	}
 	return errNoProjectFoundFor(res.Remote, command)
 }
@@ -409,15 +410,22 @@ func errNoProject(res *ResolveResult, command string) error {
 // nothing (07-cli.md §5.3 step 4).
 func errNoProjectFound(remote string) error { return errNoProjectFoundFor(remote, "") }
 
+// projectUsage is command with PROJECT in it: hintCommand's form as it
+// is, a bare path ("repose rm") with PROJECT after it.
+func projectUsage(command string) string {
+	switch {
+	case command == "":
+		return "repose <command> PROJECT"
+	case strings.Contains(command, "PROJECT"):
+		return command
+	}
+	return command + " PROJECT"
+}
+
 // errNoProjectFoundFor names the command the user typed ("repose attach")
 // in the hint when it is known.
 func errNoProjectFoundFor(remote, command string) error {
-	usage := "`repose <command> PROJECT`"
-	if command != "" {
-		// command ends in " --project" when the command takes PROJECT
-		// as that flag only.
-		usage = "`" + command + " PROJECT`"
-	}
+	usage := "`" + projectUsage(command) + "`"
 	if remote == "" {
 		return exitf(ExitProjectNotFound, "No repose project here, and this directory has no git remote. Name one: %s (`repose ls` lists them).", usage)
 	}

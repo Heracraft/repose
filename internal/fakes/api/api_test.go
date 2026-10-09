@@ -561,7 +561,7 @@ func TestMe(t *testing.T) {
 	}
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
 	want(t, r, 200)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"ok","ntfy":"error"}` {
+	if string(bytes.TrimSpace(r.body)) != `{"email":"ok"}` {
 		t.Fatalf("notify-test: %s", r.body)
 	}
 	wantErr(t, call(t, f, "PATCH", "/v1/me", tok, map[string]any{"tz": "Mars/Olympus"}), 400, "invalid")
@@ -573,12 +573,12 @@ func TestMe(t *testing.T) {
 		t.Fatalf("tz: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"error","ntfy":"ok"}` {
+	if string(bytes.TrimSpace(r.body)) != `{"ntfy":"ok"}` {
 		t.Fatalf("notify-test: %s", r.body)
 	}
 	want(t, call(t, f, "PATCH", "/v1/me", tok, `{"notify": {"ntfy_url": null}}`), 200)
 	r = call(t, f, "POST", "/v1/me/notify-test", tok, nil)
-	if string(bytes.TrimSpace(r.body)) != `{"email":"error","ntfy":"error"}` {
+	if string(bytes.TrimSpace(r.body)) != `{}` {
 		t.Fatalf("notify-test after clearing: %s", r.body)
 	}
 
@@ -665,10 +665,33 @@ func TestInternal(t *testing.T) {
 	if len(hook) != 1 || hook[0].Agent != "claude" {
 		t.Fatalf("events: %s", r.body)
 	}
-	r = call(t, f, "GET", "/v1/projects/"+p.ID+"/events?since="+hook[0].ID, tok, nil)
+	newest := events[0].TS
+	for _, e := range events {
+		if e.TS.After(newest) {
+			newest = e.TS
+		}
+	}
+	r = call(t, f, "GET", "/v1/projects/"+p.ID+"/events?since="+newest.Format(time.RFC3339Nano), tok, nil)
 	want(t, r, 200)
 	if strings.TrimSpace(string(r.body)) != "[]" {
 		t.Fatalf("events since last: %s", r.body)
+	}
+	// since is a time or nothing, as on the api (I-609).
+	wantErr(t, call(t, f, "GET", "/v1/projects/"+p.ID+"/events?since="+hook[0].ID, tok, nil), 400, "invalid")
+	wantErr(t, call(t, f, "GET", "/v1/projects/"+p.ID+"/logs?since=7d", tok, nil), 400, "invalid")
+	r = call(t, f, "GET", "/v1/projects/"+p.ID+"/logs?kind=ops", tok, nil)
+	want(t, r, 200)
+	for _, l := range strings.Split(strings.TrimSpace(string(r.body)), "\n") {
+		if l == "" {
+			continue
+		}
+		var line map[string]any
+		if err := json.Unmarshal([]byte(l), &line); err != nil {
+			t.Fatal(err)
+		}
+		if line["op_id"] == nil || line["state"] == nil || line["line"] != nil {
+			t.Fatalf("ops line is not the api's shape: %s", l)
+		}
 	}
 	r = call(t, f, "GET", "/v1/projects/"+p.ID+"/logs?kind=build", tok, nil)
 	want(t, r, 200)

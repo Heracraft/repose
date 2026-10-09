@@ -1,6 +1,13 @@
 package cli
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+)
 
 // paymentRequiredMessage is what every command prints for the api's
 // payment_required (exit 7): the api's message verbatim, because since
@@ -12,12 +19,16 @@ import "fmt"
 func paymentRequiredMessage(e *APIError) string {
 	reason, _ := e.Detail["reason"].(string)
 	switch reason {
-	case "subscription_required", "plan_limit", "disk_limit", "egress_limit", "past_due", "suspended":
+	case "plan_limit":
+		if e.Message != "" {
+			return namePlanFix(e)
+		}
+	case "subscription_required", "disk_limit", "egress_limit", "past_due", "suspended":
 		if e.Message != "" {
 			return e.Message
 		}
 	}
-	return "Choose a plan at https://repose.herakraft.co/billing first."
+	return "Choose a plan at " + billingURL + " first."
 }
 
 // projectLimitMessage is what every command prints when a create,
@@ -26,9 +37,9 @@ func paymentRequiredMessage(e *APIError) string {
 // api's 400 for run, restore and the rest say it in these words.
 func projectLimitMessage(have, limit, requested int) string {
 	if requested <= 1 {
-		return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped. Destroy one first.", have, limit)
+		return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.", have, limit)
 	}
-	return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped, and %d more would make %d. Destroy some first.", have, limit, requested, have+requested)
+	return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped, and %d more would make %d. Destroy some first with `repose rm PROJECT`.", have, limit, requested, have+requested)
 }
 
 // projectLimitOf reads the api's project cap refusal: 400 invalid with
@@ -52,4 +63,104 @@ func projectLimitOf(e *APIError) (have, limit, requested int, ok bool) {
 		requested = int(r)
 	}
 	return int(p), int(l), requested, true
+}
+
+// namePlanFix puts the command into the gate's plan_limit sentence:
+// "todo-app is using it. `repose stop todo-app` frees it, or upgrade at
+// ..." in place of "Stop it, or upgrade", and for several machines "api
+// and web are using it. `repose stop api web` frees it, or upgrade at
+// ..." in place of "Stop one, or upgrade" (I-610, I-633). Any other
+// wording is printed as the api sent it.
+func namePlanFix(e *APIError) string {
+	ps, _ := e.Detail["projects"].([]any)
+	slugs := make([]string, 0, len(ps))
+	for _, p := range ps {
+		s, _ := p.(string)
+		if s == "" {
+			return e.Message
+		}
+		slugs = append(slugs, s)
+	}
+	switch len(slugs) {
+	case 0:
+		return e.Message
+	case 1:
+		return strings.Replace(e.Message, slugs[0]+" is using it. Stop it, or upgrade", slugs[0]+" is using it. `repose stop "+slugs[0]+"` frees it, or upgrade", 1)
+	}
+	return strings.Replace(e.Message, " are using it. Stop one, or upgrade", " are using it. `repose stop "+strings.Join(slugs, " ")+"` frees it, or upgrade", 1)
+}
+
+// planWaitable is whether a run refused for having no plan may wait for
+// one (DECISIONS I-634): a person at the terminal, and no --json. Tests
+// replace it.
+var planWaitable = func(e *Env) bool {
+	return !e.JSON && canPrompt(os.Stdin) && isatty(os.Stderr)
+}
+
+// planPoll is how often the wait for a plan reads the account; planWaitMax
+// is how long it waits before the run exits 7 as it would have.
+var (
+	planPoll    = 3 * time.Second
+	planWaitMax = 30 * time.Minute
+	openForPlan = openBrowser
+)
+
+// noPlanYet is the refusal a plan bought on the billing page lifts: the
+// gate's subscription_required with nobody waiting for a seat. A
+// waitlisted account cannot buy one, and every other reason (past_due,
+// plan_limit) is not fixed by a checkout.
+func noPlanYet(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) || ae.Code != "payment_required" {
+		return false
+	}
+	if r, _ := ae.Detail["reason"].(string); r != "subscription_required" {
+		return false
+	}
+	return ae.Detail["waitlist"] == nil
+}
+
+// hasPlan is an account whose next create or start the gate lets through.
+func hasPlan(me *Me) bool {
+	return me.Billing.Status == "exempt" || (me.Billing.Plan != nil && *me.Billing.Plan != "")
+}
+
+// waitForPlan is `repose run` on an account with no plan (DECISIONS
+// I-634): instead of exiting 7 and making the person type the command
+// again after checkout, it opens the billing page as login opens its
+// link, and goes on once GET /me shows a plan. It returns false, nil
+// when it cannot wait, so the caller exits 7 as before.
+func waitForPlan(ctx context.Context, e *Env, pr *progress) (bool, error) {
+	if !planWaitable(e) {
+		return false, nil
+	}
+	opts := loginOptsFromEnv(false, false)
+	if browserAvailable(opts.NoBrowser, opts.GuestEnv, opts.Display, opts.GOOS) {
+		_ = openForPlan(billingURL)
+	}
+	if pr == nil {
+		_, _ = fmt.Fprintf(e.ErrOut, "Waiting for a plan at %s...\n", billingURL)
+	} else {
+		pr.Phase("Waiting for a plan at "+billingURL, "")
+		defer pr.End()
+	}
+	deadline := time.Now().Add(planWaitMax)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(planPoll):
+		}
+		me, err := e.Client.GetMe(ctx)
+		if err != nil {
+			if transientAPIError(err) {
+				continue
+			}
+			return false, err
+		}
+		if hasPlan(me) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

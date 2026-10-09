@@ -52,8 +52,14 @@ func TestDiskOverPlanLine(t *testing.T) {
 	fake.SetBilling(fakeapi.BillingActive)
 	fake.SetPlan("solo")
 	got := run()
-	if strings.Count(got, line) != 2 {
-		t.Fatalf("over the plan, ls and status each want the line:\n%s", got)
+	// ls has the figures in its plan line, so its line says only what
+	// happens; status has no plan line and says both (I-631).
+	ls, status, _ := strings.Cut(got, "\n--\n")
+	if !strings.Contains(ls, "112.4 of 100 GB disk") || !strings.Contains(ls, "disk past the plan: creating, restoring, forking and growing a disk are refused until your projects hold less\n") || strings.Contains(ls, line) {
+		t.Fatalf("over the plan, ls:\n%s", ls)
+	}
+	if !strings.Contains(status, line) {
+		t.Fatalf("over the plan, status:\n%s", status)
 	}
 	held(100)
 	if got := run(); strings.Contains(got, "disk:") {

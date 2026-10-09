@@ -160,7 +160,7 @@ func TestSyncCarriesEnvFiles(t *testing.T) {
 	if len(s.EnvKept) != 1 || s.EnvKept[0] != "apps/web/.env" {
 		t.Fatalf("kept = %v", s.EnvKept)
 	}
-	if w := strings.Join(s.Warnings(), "\n"); !strings.Contains(w, "Kept the guest's apps/web/.env") {
+	if w := strings.Join(s.Warnings(), "\n"); !strings.Contains(w, "Kept the machine's apps/web/.env") {
 		t.Errorf("warnings = %q", w)
 	}
 	if b, _ := os.ReadFile(guestWeb); string(b) != "WEB=guest\n" {

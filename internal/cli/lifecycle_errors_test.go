@@ -108,7 +108,7 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	var errOut, out strings.Builder
 	e.ErrOut, e.Out = &errOut, &out
 	ctx := context.Background()
-	err := LogsCmd(ctx, e, "", "console", "", false, nil)
+	err := LogsCmd(ctx, e, "", "console", "", 0, false, nil)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitProjectNotFound || !strings.Contains(ee.msg, "No repose project here") {
 		t.Fatalf("no project: err = %v", err)
@@ -117,7 +117,7 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := LogsCmd(ctx, e, "kanali", "console", "", false, nil); err != nil {
+	if err := LogsCmd(ctx, e, "kanali", "console", "", 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "" || !strings.Contains(errOut.String(), "kanali has no console output") {
@@ -126,11 +126,26 @@ func TestLogsSaysWhatItFound(t *testing.T) {
 	// A failed boot's console prints line by line.
 	errOut.Reset()
 	fake.SetConsole(p.ID, "<<< NixOS Stage 1 >>>", "stage 2 init script (/mnt-root/nix/store/x/init) not found")
-	if err := LogsCmd(ctx, e, "kanali", "console", "", false, nil); err != nil {
+	if err := LogsCmd(ctx, e, "kanali", "console", "", 0, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), " console stage 2 init script") || errOut.String() != "" {
 		t.Fatalf("stdout %q stderr %q", out.String(), errOut.String())
+	}
+}
+
+// An empty answer under --since names the window, not "has no
+// operations" for a project that has some (I-633).
+func TestEmptyLogsLineNamesTheWindow(t *testing.T) {
+	for _, c := range []struct{ kind, since, want string }{
+		{"ops", "", "todo-app has no operations."},
+		{"ops", "1s", "No operations on todo-app in the last 1s."},
+		{"build", "2026-10-01", "No build log on todo-app since 2026-10-01."},
+		{"console", "1h", "No console output on todo-app in the last 1h: repose keeps a machine's console only from a boot that failed."},
+	} {
+		if got := emptyLogsLine("todo-app", c.kind, c.since); got != c.want {
+			t.Errorf("%s %q: %q, want %q", c.kind, c.since, got, c.want)
+		}
 	}
 }
 

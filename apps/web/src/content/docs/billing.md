@@ -1,6 +1,6 @@
 ---
 title: Pricing
-description: The three plans, what each one buys, the free week, and where to see your hours.
+description: The three plans, what each one buys, the free week, and where to see how much of yours is in use.
 section: Account
 order: 30
 ---
@@ -25,22 +25,23 @@ Seven days on any plan, once per email and card: if either has had a free week b
 
 ## What a plan means
 
-- **Memory.** Starting a machine that would put your running machines past the plan is refused, and the message names the machine using the memory: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` An `xl` needs Plus or Pro.
+- **Memory.** Starting a machine that would put your running machines past the plan is refused, and the message names the machine using the memory: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` An `xl` needs Plus or Pro. From a terminal, `repose run`, `start` and `attach` ask instead, as `repose stop` does: `Stop todo-app to start api? [y/N]`. A yes stops it, fetching its commits first, and starts yours; a no, or no terminal, exits 7 with the message.
 - **Disk.** Counts the data your projects hold, running or stopped. A new `large` has a 40 GB disk and counts the gigabyte or so it holds at first; a disk's size is only how far that project can grow, and one project's disk can be at most the plan's whole disk. While your projects hold more than the plan's disk, creating, restoring and forking projects, and growing a disk, are refused, with one email; your machines keep running and starting. A file you delete stops counting within a day, or when its machine stops. Snapshots are free.
 - **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice as one line. At four times the allowance (1 TB on Solo, 400 GB during its introductory months, 2 TB on Plus, 4 TB on Pro) your machines stop until the month turns, and you get an email.
 - **Projects.** A plan doesn't count them: stop one and start another within the plan's memory. A stopped project uses only the disk it holds.
 
 Example: after the first 3 months, a Solo user with a `large` running all month, a 40 GB disk and 20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus $2.50.
 
-## Seeing your hours
+## Seeing your plan
 
-`repose ls` and `repose status` end each project's line with its running time today and this month (the agent column is cut here):
+`repose ls` ends with your plan and how much of it is in use:
 
 ```text
-todo-app   large  running   2h14m   …   today 2h14m  month 41h
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
+this month
 ```
 
-The dashboard's **Billing** page shows the same against your plan: memory running, the disk your projects hold, egress this month and the overage so far, plus your invoices. Hours are totalled a few minutes past each hour, so figures can trail by up to an hour.
+Running memory is what a start is checked against. `repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
 
 ## Changing and cancelling
 

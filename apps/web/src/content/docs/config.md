@@ -22,7 +22,7 @@ Added postgresql and air to todo-app. Building revision 4f1c2a9e ...
 Applied revision 4f1c2a9e in 45s.
 ```
 
-Any package from nixpkgs works; search names at [search.nixos.org](https://search.nixos.org/packages). Nested names work too, such as `python312Packages.black`. A few names are menu entries that set up more than a package: `postgresql`, `redis` and the other databases also start the service.
+Any package from nixpkgs works; search names at [search.nixos.org](https://search.nixos.org/packages). Nested names work too, such as `python312Packages.black`. A few names are menu entries that set up more than a package: `postgresql`, `redis` and the other databases also start the service. `repose config add` with no names lists the menu's entries.
 
 The build steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
 
@@ -42,7 +42,7 @@ Remove with:
 repose config remove air
 ```
 
-If you press Ctrl-C while it builds, only the CLI stops. The build carries on and is applied when it finishes; `repose config show --revisions` shows when it has.
+If you press Ctrl-C while it builds, only the CLI stops. The build carries on and is applied when it finishes; `repose config revisions` shows when it has.
 
 A change to the kernel is built but not switched in, because that needs a restart. The machine starts on it the next time it starts: `repose stop && repose start`.
 
@@ -78,7 +78,7 @@ Commit the file as `repose.nix` at the root of your repository and you don't nee
 Applying repose.nix (revision 4f1c2a9e) in the background.
 ```
 
-`repose config show --revisions` shows when it's applied. An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
+`repose config revisions` shows when it's applied. An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
 
 `repose config apply` with no file and no `./repose.nix` switches the running machine to the project's configuration again: the active revision, or a newer one that built but wasn't applied because its switch failed. Use it when the machine seems to be missing something the configuration has.
 
@@ -167,7 +167,7 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 
 **On the dashboard.** **Settings** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
 
-**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with the switch on the project's Config page.
+**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with `repose config --global on todo-app`, or the switch on the project's Config page; `repose config --global off todo-app` turns it off without a run.
 
 **Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
@@ -175,7 +175,7 @@ If you saved it on the dashboard since, the laptop's copy is brought up to date 
 
 ## Revisions and base updates
 
-Every change is saved as a revision. `repose config show --revisions` lists them with any errors, and the dashboard can re-apply an earlier one. `repose logs --kind build` shows the last build's log.
+Every change is saved as a revision. `repose config revisions` lists them with any errors. To go back after a change broke something, `repose config apply --revision 9c41d2e7` switches the running machine to an earlier revision that built, by the id the list shows; the dashboard can do the same. `repose logs --kind build` shows the last build's log.
 
 The platform updates the base (agents, tools, kernel) about once a week. Each project is rebuilt on the new base and switched in place. If your configuration doesn't build on it, the project stays where it was and you get a notification. To hold a project on its current base, tick **Hold base updates** on its Config page.
 

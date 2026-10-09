@@ -170,7 +170,7 @@ const live = `expires_at is not null and destroyed_at is null and state not in (
 func (r *Reaper) warn(ctx context.Context, now time.Time) (int, error) {
 	rows, err := r.Pool.Query(ctx, `select id, slug, expires_at from projects p
 		where `+live+` and expires_at > $1 and expires_at <= $2 and expires_at - created_at > interval '1 second' * $3
-		and not exists (select 1 from events e where e.project_id = p.id and e.kind = $4)`,
+		and not exists (select 1 from events e where e.project_id = p.id and e.kind = $4 and e.ts >= p.expires_at - interval '1 second' * $3)`,
 		now, now.Add(WarnBefore), int64(WarnBefore/time.Second), KindExpiring)
 	if err != nil {
 		return 0, err

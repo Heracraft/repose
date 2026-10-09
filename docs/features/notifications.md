@@ -16,7 +16,7 @@ email: ok
 ntfy: ok
 ```
 
-`notify set` takes `--email on|off` and `--ntfy URL|none` (I-8) and sends
+`notify set` takes `--email on|off` and `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619) and sends
 no test; `notify test` does, and exits 1 when neither channel answered ok.
 
 On the phone (ntfy):
@@ -34,9 +34,10 @@ codex needs input: "Should I drop the legacy sessions table?"
 In `repose status`:
 
 ```
-todo-app   large  running   3h12m   codex: needs_input   today 3h12m  month 26h
+todo-app  running 3h12m  large
+  agents     codex needs input
   ...
-  last event 2m ago: codex needs_input "Should I drop the legacy sessions table?"
+  last event 2m ago, codex needs input "Should I drop the legacy sessions table?"
 ```
 
 ## Behaviour that must hold
@@ -57,7 +58,8 @@ Events (see agents.md for how each agent produces them):
   `idle_running` (DECISIONS I-262: a running guest with no SSH session,
   no tmux client and no working agent for 24 hours (a laptop herdr's
   bridge is an SSH session, I-511); once per idle
-  stretch, title `<project>: idle, still billing`, never a stop),
+  stretch, title `<project>: unused for 24h, holding plan memory` since
+  I-617, never a stop),
   `temp_expiring` and `temp_destroyed` (DECISIONS I-347: a temporary
   machine an hour before its end, titled `<project>: destroyed in an
   hour`, and its end, `<project>: temporary machine destroyed`), and
@@ -188,7 +190,7 @@ one email, ours.
 | `disk_over_plan` | Your projects hold more than your plan's disk | billing's hourly tick, once a period, when the projects hold more than the plan's disk (I-585): what they hold, the plan's disk, that machines keep running and starting, what is refused until they hold less, and that a deleted file stops counting within a day or at the machine's stop | `{plan, held_gb, limit_gb}` |
 
 `billing_stopped` (`Your machines were stopped: a payment failed`) and
-`abuse_stopped` (`Your guest was stopped: a cryptocurrency miner was
+`abuse_stopped` (`Your machine was stopped: a cryptocurrency miner was
 running`) stay project events with their own subjects, rendered through
 the same layout. Dates in payloads are RFC 3339 and render as `4 October
 2026 at 14:00 UTC`; amounts are cents and render as `$29.00`; plans are

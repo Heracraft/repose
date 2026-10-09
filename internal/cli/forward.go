@@ -129,7 +129,7 @@ func parseListenerLine(line string) (guestListener, bool) {
 type forwarder struct {
 	t    sshTarget
 	slug string
-	id   string // this helper's entry in the guest's forward list
+	id   string // this helper's entry on the machine's forward list
 
 	fwd map[int]forwardEntry // guest port -> the laptop's side
 	// failed holds guest ports no laptop port could be forwarded to, and
@@ -153,6 +153,9 @@ type forwarder struct {
 	// the attach connects again (I-469), a new master has none of them.
 	master   func(ctx context.Context) string
 	masterID string
+	// openURL, when set, opens the links the machine's BROWSER was
+	// handed, which the same poll takes (I-634).
+	openURL func(string) error
 }
 
 func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
@@ -160,7 +163,11 @@ func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
 	_, _ = rand.Read(b)
 	f := &forwarder{t: t, slug: slug, id: hex.EncodeToString(b), fwd: map[int]forwardEntry{}, failed: map[int]time.Time{}, localFree: laptopPortFree, say: say}
 	f.listeners = func(ctx context.Context) (string, error) {
-		out, err := runSSH(ctx, t, "ss -Hltn", nil)
+		cmd := "ss -Hltn"
+		if f.openURL != nil {
+			cmd += "; " + takeOpenURLsScript
+		}
+		out, err := runSSH(ctx, t, cmd, nil)
 		return string(out), err
 	}
 	f.ctl = f.control
@@ -196,7 +203,7 @@ func masterPID(ctx context.Context, t sshTarget) string {
 
 type forwardEntry struct {
 	Local int
-	Host  string // the guest address the forward reaches
+	Host  string // the machine address the forward reaches
 }
 
 // laptopPortFree tries to bind the port on every address a laptop server
@@ -224,6 +231,11 @@ func (f *forwarder) sync(ctx context.Context) (bool, error) {
 	out, err := f.listeners(ctx)
 	if err != nil {
 		return false, err
+	}
+	if f.openURL != nil {
+		for _, u := range parseOpenURLs(out) {
+			_ = f.openURL(u)
+		}
 	}
 	want := parseListeners(out)
 	changed := false

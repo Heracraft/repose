@@ -46,12 +46,24 @@ type muxer interface {
 	// the path into the focused terminal (or window) and prints where;
 	// it exits pasteExitNoPane when there is none.
 	PasteScript(slug, window string) string
+	// TypeScript is shell that types text and Enter into the named
+	// window's (or herdr agent's) terminal, or exits typeExitNoWindow
+	// when there is none (`run -w`, I-639).
+	TypeScript(slug, window, text string) string
+	// CloseScript is shell that closes the named window (or herdr
+	// agent's pane), or exits typeExitNoWindow when there is none
+	// (`stop -w`, I-639).
+	CloseScript(slug, window string) string
 	// MessageScript is shell that shows text to whoever is attached.
 	MessageScript(slug, text string) string
 	// SessionEnded reports whether a temporary machine's session is
 	// over (I-352). An error means it cannot say.
 	SessionEnded(ctx context.Context, t sshTarget, slug string) (bool, error)
 }
+
+// typeExitNoWindow is TypeScript's and CloseScript's exit when the
+// window is not there.
+const typeExitNoWindow = 3
 
 // agentStart is one `repose run -p PROMPT` agent.
 type agentStart struct {
@@ -63,9 +75,12 @@ type agentStart struct {
 	Dir string
 	// Worktree says Dir is a `--worktree` worktree (I-253): herdr opens
 	// it with `herdr worktree open` so it groups under the repository.
-	Worktree   bool
-	Prompt     string
-	AttachOnly bool   // open the terminal and start the agent, type nothing
+	Worktree bool
+	Prompt   string
+	// AttachOnly opens the terminal and starts the agent without typing
+	// into it: Claude Code's login comes first. A Prompt then goes to a
+	// waiter on the machine that types it after the login (I-607).
+	AttachOnly bool
 	OnLoading  func() // called once while the dev shell loads (I-259)
 	// MCPApprovals are the laptop's .mcp.json answers for the
 	// repository, written with claude's folder trust (I-556).
@@ -80,6 +95,10 @@ type attachReq struct {
 	Target  sshTarget
 	Project *Project // Slug always; ExpiresAt when known
 	Window  string   // the agent `run -p PROMPT` just started, "" for the session
+	// Named says the user named Window (`attach --window`, I-606): a
+	// window that is not there is refused, exit 2, instead of the
+	// session.
+	Named   bool
 	TZ      string
 	RepoDir string
 	After   func() // runs when an attach the CLI waited on returns
@@ -204,7 +223,7 @@ func checkMultiplexerFlag(v string) error {
 }
 
 // multiplexerFlagHelp is --multiplexer's help line (features/run-and-attach.md).
-const multiplexerFlagHelp = "tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
+const multiplexerFlagHelp = "the multiplexer `NAME`, tmux or herdr, that runs this machine's terminals from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
 
 // addMultiplexerFlag adds --multiplexer to run and sync.
 func addMultiplexerFlag(cmd *cobra.Command, v *string) {

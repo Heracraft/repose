@@ -23,7 +23,7 @@ repose run --agent codex -p "port the build scripts to bun"
 
 All five get new versions with platform updates.
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. You can also start any agent by hand in a tmux window, or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux). However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project; `repose status` shows a project's agent when it isn't your `default_agent`. You can also start any agent by hand in a tmux window, or a herdr tab on a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux). However it starts, an agent runs in the project's dev environment: its `.envrc`, or its flake's dev shell ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 ## Let it run without asking
 
@@ -96,13 +96,13 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. Add a line to the agent's instructions (`CLAUDE.md`, `AGENTS.md`) telling it to use them. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
 
 ## Log in
 
 Logins are kept on the machine's disk, except Claude Code's (below). They survive stops and are in snapshots.
 
-**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, open the URL on your laptop, approve, paste the code back. Your other machines are then logged in too, including ones you create later. The login is kept on the host, in a 16 MB space of its own that holds only that file, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, the CLI opens the Claude window for the login and asks you to run the prompt again after. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
+**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, approve in the page that opens in your laptop's browser, and paste the code back. With nobody attached, or `REPOSE_NO_BROWSER=1` on your laptop, open the URL Claude Code prints yourself. Your other machines are then logged in too, including ones you create later. The login is kept on the host, in a 16 MB space of its own that holds only that file, so it isn't in snapshots and outlasts destroying a project; it's deleted 30 days after your last machine is gone. If you send a prompt before logging in, `run` opens the Claude window on the login and types your prompt once you've logged in and Claude Code shows its input. With `--no-attach` it exits with code 1 and types nothing. A subscription login keeps Remote Control, so you can follow the session in the Claude app.
 
 Instead of logging in, you can store a long-lived token from your laptop as a secret. Remote Control, connectors and Claude in Chrome don't work with it.
 

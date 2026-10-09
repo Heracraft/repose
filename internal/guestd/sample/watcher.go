@@ -348,9 +348,13 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	now := w.now()
 	type emission struct {
 		agent, window, state, kind, summary string
+		// tmux: the window is a live tmux window, whose StateOption
+		// follows the state.
+		tmux bool
 	}
 	var states []emission
 	var events []emission
+	var unset []string // tmux windows whose StateOption goes
 
 	w.mu.Lock()
 	if tmuxErr == nil {
@@ -445,7 +449,7 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		}
 		if ws.state != ws.announced && now.Sub(ws.stateSince) >= StateDebounce {
 			ws.announced = ws.state
-			states = append(states, emission{agent: p.Agent, window: p.Key, state: ws.state})
+			states = append(states, emission{agent: p.Agent, window: p.Key, state: ws.state, tmux: source == multiplexer.Tmux})
 		}
 
 		if p.RootPID > 0 {
@@ -469,6 +473,12 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		// The window is gone. Say so once, then forget it.
 		if ws.announced != StateUnknown {
 			states = append(states, emission{agent: ws.agent, window: name, state: StateUnknown})
+		}
+		if ws.source == multiplexer.Tmux && ws.announced != "" && ws.announced != StateUnknown {
+			// The agent exited and its shell may keep the window open:
+			// the window's StateOption goes, so neither the status line
+			// nor `repose ps` shows the agent's last state (I-631).
+			unset = append(unset, name)
 		}
 		delete(w.windows, name)
 		delete(w.hooks, name)
@@ -497,9 +507,24 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	w.herdrDropped = herdrDropped
 	w.mu.Unlock()
 
+	slug := w.slugs.Slug()
 	for _, e := range states {
 		w.log.Info("agent state changed", "event", "agent_state", "agent", e.agent, "state", e.state)
 		w.emit.AgentState(e.agent, e.window, e.state)
+		if e.tmux {
+			if err := w.tmux.client.setWindowState(ctx, slug, e.window, e.state); err != nil {
+				w.log.Debug("could not mark the tmux window's state",
+					"event", "agent_state", "error_code", sysdep.CodeOf(err))
+			}
+		}
+	}
+	for _, window := range unset {
+		// A window that closed altogether has nothing to unset; tmux
+		// says so, and that is not worth more than a debug line.
+		if err := w.tmux.client.unsetWindowState(ctx, slug, window); err != nil {
+			w.log.Debug("could not clear the tmux window's state",
+				"event", "agent_state", "error_code", sysdep.CodeOf(err))
+		}
 	}
 	for _, e := range events {
 		w.log.Info("agent event", "event", "agent_event", "agent", e.agent, "kind", e.kind)

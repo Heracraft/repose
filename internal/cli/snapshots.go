@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"text/tabwriter"
+	"time"
 )
 
 // projectForSnapshots resolves the project for the snapshot commands. A
@@ -52,14 +53,17 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSIZE\tREASON")
+	// The id's random end (I-619); -q and --json give the whole id.
+	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSTORED\tREASON")
 	for _, s := range snaps {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.ID, s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
 	}
 	return tw.Flush()
 }
 
-// SnapshotsCreateCmd implements `repose snapshots create`.
+// SnapshotsCreateCmd implements `repose snapshots create`. The line names
+// the snapshot, so `repose snapshots restore` can take it from there
+// (DECISIONS I-615).
 func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
@@ -73,6 +77,9 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	}
 	pr.Phase("Snapshotting "+project.Slug, "")
 	op, err := waitOpPhased(ctx, e, project, opID, pr, false)
+	if interrupted(ctx, err) {
+		return exitf(ExitInterrupted, "Interrupted. The snapshot of %s goes on.", project.Slug)
+	}
 	if err != nil {
 		return err
 	}
@@ -80,14 +87,80 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	if op.State == "error" {
 		return e.opFailed("snapshot", project.Slug, op.Error, "")
 	}
-	_, _ = fmt.Fprintf(e.Out, "Snapshot of %s taken in %s.\n", project.Slug, fmtElapsed(pr.Total()))
+	if e.JSON {
+		// The snapshot the op recorded (its result names it), else the
+		// newest, for an api that does not say (I-609).
+		snaps, err := e.Client.ListSnapshots(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		id, _ := op.Result["snapshot_id"].(string)
+		var got *Snapshot
+		for i := range snaps {
+			s := &snaps[i]
+			if (id != "" && s.ID == id) || (id == "" && (got == nil || s.CreatedAt.After(got.CreatedAt))) {
+				got = s
+			}
+		}
+		if got == nil {
+			return fmt.Errorf("the snapshot of %s was taken, and the api does not list it", project.Slug)
+		}
+		return writeJSONOut(e.Out, got)
+	}
+	took := fmtElapsed(pr.Total())
+	if id, _ := op.Result["snapshot_id"].(string); id != "" {
+		if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
+			if s := stopSnapshot(snaps, id); s != nil {
+				_, _ = fmt.Fprintf(e.Out, "Snapshot %s of %s taken in %s (%s).\n", id, project.Slug, took, humanBytes(s.Bytes))
+				return nil
+			}
+		}
+		_, _ = fmt.Fprintf(e.Out, "Snapshot %s of %s taken in %s.\n", id, project.Slug, took)
+		return nil
+	}
+	_, _ = fmt.Fprintf(e.Out, "Snapshot of %s taken in %s.\n", project.Slug, took)
 	return nil
 }
 
+// snapshotTime is how a question or a line names a snapshot: when it
+// was taken, in the laptop's zone, as `repose snapshots list` shows it.
+func snapshotTime(s *Snapshot) string { return tableTime(s.CreatedAt) }
+
+// restoreInPlacePrompt is the question before a snapshot replaces a
+// stopped project's disk (DECISIONS I-614). It names the project and the
+// snapshot, and says whether a snapshot keeps the disk as it is now: the
+// newest one, when a stop took it after the last start. Otherwise what
+// changed since the newest snapshot is lost for good, as after `resize
+// --size`, whose stop takes none.
+func restoreInPlacePrompt(p *Project, snaps []Snapshot, id string) string {
+	var target *Snapshot
+	for i := range snaps {
+		if snaps[i].ID == id {
+			target = &snaps[i]
+		}
+	}
+	if target == nil {
+		return fmt.Sprintf("Replace %s's disk with snapshot %s? [y/N] ", p.Slug, id)
+	}
+	q := fmt.Sprintf("Replace %s's disk with its snapshot of %s? ", p.Slug, snapshotTime(target))
+	newest := newestSnapshot(snaps)
+	switch {
+	case newest.ID == target.ID, p.StartedAt == nil:
+		// The same snapshot, or a project that has not said when it last
+		// started (never started, or an api that clears it on stop): no
+		// claim either way.
+	case newest.Reason == "stop" && newest.CreatedAt.After(*p.StartedAt):
+		q += fmt.Sprintf("The stop snapshot of %s keeps the disk as it is now. ", snapshotTime(newest))
+	default:
+		q += fmt.Sprintf("No snapshot keeps the disk as it is now; what changed after %s is lost for good. ", snapshotTime(newest))
+	}
+	return q + "[y/N] "
+}
+
 // SnapshotsRestoreCmd implements `repose snapshots restore [PROJECT] SNAPSHOT_ID
-// [--as-new NAME]`. Without --as-new it requires the project stopped and
-// asks for confirmation (07-cli.md §5.10).
-func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, asNew string, confirm func() (bool, error)) error {
+// [--as NAME]`. Without --as it requires the project stopped and asks
+// for confirmation (07-cli.md §5.10); a no exits 1 (I-614).
+func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, asNew string, confirm func(prompt string) (bool, error)) error {
 	var project *Project
 	var err error
 	if asNew != "" {
@@ -98,18 +171,22 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	if err != nil {
 		return err
 	}
+	// The snapshot's time names it in the question and the progress line;
+	// an api that does not list it leaves the id.
+	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
+	from := snapshotID
+	for i := range snaps {
+		if snaps[i].ID == snapshotID {
+			from = project.Slug + "'s snapshot of " + snapshotTime(&snaps[i])
+		}
+	}
 	if asNew == "" {
 		if project.State != "stopped" {
-			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as-new NAME.", project.Slug, project.Slug)
+			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
 		}
 		if confirm != nil {
-			ok, err := confirm()
-			if err != nil {
+			if err := confirmOr(confirm, restoreInPlacePrompt(project, snaps, snapshotID), "Not restored."); err != nil {
 				return err
-			}
-			if !ok {
-				_, _ = fmt.Fprintln(e.Out, "Not restored.")
-				return nil
 			}
 		}
 	}
@@ -119,7 +196,11 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	if err != nil {
 		return err
 	}
-	pr.Phase("Restoring "+snapshotID, "")
+	into := project.Slug
+	if asNew != "" {
+		into = asNew
+	}
+	pr.Phase("Restoring "+into+" from "+from, "")
 	// With --as-new the op belongs to the new project; asked under the
 	// source it is not_found.
 	waitOn := project
@@ -127,6 +208,9 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		waitOn = &Project{ID: owner, Slug: asNew}
 	}
 	op, err := waitOpPhased(ctx, e, waitOn, opID, pr, false)
+	if interrupted(ctx, err) {
+		return exitf(ExitInterrupted, "Interrupted. The restore into %s goes on.", into)
+	}
 	if err != nil {
 		return err
 	}
@@ -136,9 +220,30 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	}
 	if asNew != "" {
 		refreshSSHAccess(ctx, e, asNew)
-		_, _ = fmt.Fprintf(e.Out, "Restored into a new project, %s.\n", asNew)
+		// The line `repose restore` ends with (I-619).
+		_, _ = fmt.Fprintln(e.Out, restoredAsLine(ctx, e, project, owner, asNew, snapshotID, pr.Total()))
 		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is stopped.\n", project.Slug)
 	return nil
+}
+
+// restoredAsLine is `snapshots restore --as`'s last line, in the shape
+// of `repose restore`'s: the new project, the snapshot it came from, how
+// long it took, and the state and size it is in. What the api does not
+// answer is left out.
+func restoredAsLine(ctx context.Context, e *Env, src *Project, newID, newSlug, snapshotID string, took time.Duration) string {
+	from := "a snapshot of " + src.Slug
+	if snaps, err := e.Client.ListSnapshots(ctx, src.ID); err == nil {
+		for _, s := range snaps {
+			if s.ID == snapshotID {
+				from = fmt.Sprintf("%s's %s snapshot of %s", src.Slug, humanBytes(s.Bytes), s.CreatedAt.Local().Format("2006-01-02 15:04"))
+			}
+		}
+	}
+	line := fmt.Sprintf("Restored %s from %s in %s", newSlug, from, fmtElapsed(took))
+	if p, err := e.Client.GetProject(ctx, newID); err == nil {
+		return fmt.Sprintf("%s; it is %s (%s).", line, stateWords(p.State), p.Class)
+	}
+	return line + "."
 }

@@ -114,6 +114,16 @@ func (c *Client) KeepProject(ctx context.Context, id string) (*Project, error) {
 	return &p, nil
 }
 
+// ExtendProject gives a temporary project d more from now: PATCH
+// {expires_in_s} (DECISIONS I-612).
+func (c *Client) ExtendProject(ctx context.Context, id string, d time.Duration) (*Project, error) {
+	var p Project
+	if err := c.patch(ctx, "/projects/"+url.PathEscape(id), map[string]any{"expires_in_s": int64(d / time.Second)}, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (c *Client) PatchProject(ctx context.Context, id string, req PatchProjectRequest) (*Project, error) {
 	var p Project
 	if err := c.patch(ctx, "/projects/"+url.PathEscape(id), req, &p); err != nil {
@@ -366,10 +376,22 @@ func (c *Client) ListEventsBefore(ctx context.Context, id, before string, limit 
 	return e, nil
 }
 
+// LogLine is one line of GET /projects/:id/logs. A console or build
+// line carries line; an ops line carries the op's kind, state, duration
+// and error instead (docs/interfaces/api.md), which the CLI decoded as a
+// line with no text until DECISIONS I-609. raw is the api's object as
+// sent, which --json passes through.
 type LogLine struct {
-	TS   time.Time `json:"ts"`
-	Kind string    `json:"kind"`
-	Line string    `json:"line"`
+	TS         time.Time  `json:"ts"`
+	Kind       string     `json:"kind"`
+	Line       string     `json:"line,omitempty"`
+	OpID       string     `json:"op_id,omitempty"`
+	State      string     `json:"state,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	DurationMS *int64     `json:"duration_ms,omitempty"`
+	Error      *OpError   `json:"error,omitempty"`
+
+	raw json.RawMessage
 }
 
 func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]LogLine, error) {
@@ -386,10 +408,15 @@ func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]Log
 	}
 	var lines []LogLine
 	err := c.getNDJSON(ctx, path, func(dec *json.Decoder) error {
-		var l LogLine
-		if err := dec.Decode(&l); err != nil {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
 			return err
 		}
+		var l LogLine
+		if err := json.Unmarshal(raw, &l); err != nil {
+			return err
+		}
+		l.raw = raw
 		lines = append(lines, l)
 		return nil
 	})
@@ -403,13 +430,22 @@ func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]Log
 // plan, and the disk its projects hold against it (DECISIONS I-585).
 type Billing struct {
 	Subscription *struct {
-		Plan string `json:"plan"`
+		Plan   string `json:"plan"`
+		Status string `json:"status"`
 	} `json:"subscription"`
 	Usage struct {
 		// DiskHeldGB is absent from an api older than I-585.
-		DiskHeldGB *float64 `json:"disk_held_gb"`
-		DiskGB     int      `json:"disk_gb"`
+		DiskHeldGB       *float64 `json:"disk_held_gb"`
+		DiskGB           int      `json:"disk_gb"`
+		RunningGB        int      `json:"running_gb"`
+		MemoryGB         int      `json:"memory_gb"`
+		EgressGB         float64  `json:"egress_gb"`
+		EgressIncludedGB int      `json:"egress_included_gb"`
 	} `json:"usage"`
+	Plans []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"plans"`
 }
 
 func (c *Client) GetBilling(ctx context.Context) (*Billing, error) {

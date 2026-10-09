@@ -5,11 +5,17 @@ section: Reference
 order: 41
 ---
 
-For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time in `run` and `attach` went, and `repose logs --kind ops` lists every operation on the project with its result.
+For more detail on any command, add `-v`: each API request with its status and request ID, which support can look up, and each `ssh` it runs. `REPOSE_TIMING=1` shows where the time in `run` and `attach` went, and `repose logs --kind ops` lists every operation on the project with its result.
 
 ## Logging in and connecting
 
 **``Not logged in. Run `repose login`.``** Your login expired or you logged out.
+
+**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`** Your laptop is offline, or the server is down; run the command again once you're connected.
+
+**`The repose api answered 502`** The API is restarting, usually for a release. A read is tried once more by itself; run the command again in a minute.
+
+**`ssh on this laptop failed before it reached todo-app`** Something in your laptop's ssh setup refused before the connection: a line in `~/.ssh/config`, a `ControlPath` too long for a socket, or `~/.ssh/repose/known_hosts`. The message quotes ssh and names the fix.
 
 **`No repose project for github.com/you/app`** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 
@@ -33,13 +39,13 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 **`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
 
-**`Guest is running but SSH did not answer in 60s.`** `repose stop` and then `repose start` restart it.
+**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started the machine waits 60 s.
 
 ## Machine state
 
-**``todo-app is stopped. Start it with `repose start todo-app` ...``** `attach`, `ssh`, `exec`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`. Run `repose start todo-app`, or `repose run` in the checkout.
+**``todo-app is stopped. `repose start todo-app` starts it.``** `ssh`, `exec`, `ps`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach` and `repose run` do.
 
-**`todo-app is in an error state`** or **`guestd stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
+**`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason. That system isn't tried again on its own; the next base update, or a change to the configuration, builds a new one. `repose logs todo-app --kind console` shows what the failed boot printed.
 
@@ -57,11 +63,11 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Sync
 
-**`Not synced: the machine changed 2 files that your laptop changed too`.** Something on the machine, usually an agent, changed the files listed, and your laptop's new work changes them too. Commit or move them on the machine, or run `repose sync --stash-remote` to keep them in `git stash` or `repose sync --discard-remote` to drop them. The machine's changes to other files never stop a sync. `repose run` never syncs over a machine that already has your checkout, so it attaches either way. See [Sync](/docs/sync#when-the-machine-has-changes-of-its-own).
+**`Not synced: the machine changed 2 files that your laptop changed too`.** Something on the machine, usually an agent, changed the files listed, and your laptop's new work changes them too. Commit or move them on the machine, or run `repose sync --stash-machine` to move them to `git stash` there. The machine's changes to other files never stop a sync. `repose run` never syncs over a machine that already has your checkout, so it attaches either way. See [Sync](/docs/sync#when-the-machine-has-changes-of-its-own).
 
-**The same message names only `flake.lock`.** The repository has an `.envrc` with `use flake` and no committed `flake.lock`, so the machine and your laptop each wrote their own the first time they loaded the dev shell. Commit one: [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix) says how, with or without Nix on your laptop. Until then, `repose sync --discard-remote` is safe; the next load writes the file again.
+**The same message names only `flake.lock`.** The repository has an `.envrc` with `use flake` and no committed `flake.lock`, so the machine and your laptop each wrote their own the first time they loaded the dev shell. Commit one: [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix) says how, with or without Nix on your laptop. Until then, `repose sync --stash-machine` is safe; the next load writes the file again.
 
-**`Not synced: the machine's checkout is in the middle of a git rebase`.** The agent started a merge, rebase, cherry-pick, revert or bisect in the checkout and hasn't finished it. Ask it to finish or abort, or run `repose sync --discard-remote` to throw that and the machine's other uncommitted changes away.
+**`Not synced: the machine's checkout is in the middle of a git rebase`.** The agent started a merge, rebase, cherry-pick, revert or bisect in the checkout and hasn't finished it. Ask it to finish or abort, or run `repose sync --discard-machine` to end it and move the machine's uncommitted changes to `git stash` there.
 
 **`The machine's main has commits that could not be merged with yours`.** An agent committed on the branch, and its commits conflict with your laptop's, or change a file you have uncommitted on your laptop. The machine is on your laptop's commit, detached, and the agent's branches are as they were. Run `git fetch repose` and merge `repose/main` on your laptop, then `repose sync` again. See [Sync](/docs/sync#when-the-machine-has-changes-of-its-own).
 
@@ -93,12 +99,12 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Agents
 
-**`Claude Code is not logged in on this guest yet.`** Finish the login in the window the CLI opened, then run your prompt again. See [Agents](/docs/agents#log-in).
+**`Claude Code is not logged in on todo-app.`** Log in in the window the CLI opened; your prompt is typed after the login. With `--no-attach` nothing is typed: log in with `repose attach todo-app -w claude`, then run your prompt again. See [Agents](/docs/agents#log-in).
 
 **An image you dropped or pasted didn't attach.** See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
-- Cmd+V did nothing on a Mac: you started with `REPOSE_CLIPBOARD_PATH=0`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
-- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_INPUT_PROXY=0` and Windows paste the laptop's path too.
+- Cmd+V did nothing on a Mac: you started with `REPOSE_NO_CLIPBOARD_PATH=1`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
+- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_NO_INPUT_PROXY=1` pastes the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
 
@@ -129,7 +135,7 @@ For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time
 
 ## Notifications
 
-**Nothing arrives.** Run `repose notify test`. An `error` means that channel's settings are wrong. If both are `ok`, `repose events` shows whether the event happened; a project sends at most 30 notifications an hour.
+**Nothing arrives.** Run `repose notify test`. `failed` means that channel's settings are wrong, with the reason when ntfy gave one. If each is `sent`, `repose events` shows whether the event happened; a project sends at most 30 notifications an hour.
 
 ## Something else
 

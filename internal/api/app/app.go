@@ -19,6 +19,7 @@ import (
 	"github.com/heracraft/repose/internal/api/basebump"
 	"github.com/heracraft/repose/internal/api/buildlog"
 	"github.com/heracraft/repose/internal/api/ca"
+	"github.com/heracraft/repose/internal/api/clirelease"
 	"github.com/heracraft/repose/internal/api/config"
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/hostmgr"
@@ -55,6 +56,7 @@ type App struct {
 	sec       *secrets.Store
 	ca        *ca.CA
 	hostMgr   *hostmgr.Server
+	cliLatest *clirelease.Latest // nil reads no release (I-626)
 	engine    *ops.Engine
 	logs      *buildlog.Store
 	events    *events.Ingest
@@ -228,11 +230,15 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		verifier = auth.NewVerifier(cfg.LogtoIssuer, cfg.APIResource, nil)
 		users = auth.NewProvisioner(a.pool, auth.NewLogtoManagement(cfg.LogtoIssuer, cfg.LogtoM2MID, cfg.LogtoM2MSecret, nil))
 	}
+	if u := cfg.CLIReleasesURL; u != "off" && (u != "" || !cfg.Dev) {
+		a.cliLatest = clirelease.New(u, log)
+	}
 	a.server = httpapi.New(httpapi.Deps{
 		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions,
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
-		Gateway: httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
-		Seats:   a.seats,
+		Gateway:   httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
+		Seats:     a.seats,
+		CLILatest: a.cliLatest.Version,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err
@@ -311,6 +317,9 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		httpSrv = &http.Server{Addr: a.cfg.Listen, Handler: a.server.Handler(), ReadHeaderTimeout: 10 * time.Second}
 		go func() { errCh <- serve(httpSrv, "http", a.log) }()
+		if a.cliLatest != nil {
+			go a.cliLatest.Run(bg)
+		}
 	}
 	if a.cfg.Mode == "grpc" || a.cfg.Mode == "all" {
 		var serverCert *tls.Certificate

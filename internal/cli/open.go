@@ -19,7 +19,7 @@ func desktopPassword(out []byte) string {
 	return strings.TrimSpace(lines[len(lines)-1])
 }
 
-// OpenPortCmd implements `repose open PORT [--local-port N] [--no-browser]`
+// OpenPortCmd implements `repose open [LOCAL:]PORT [--no-browser]`
 // (07-cli.md §5.9). It blocks in the foreground running the SSH forward,
 // like plain `ssh -N -L`; callers that want it backgrounded run it in a
 // goroutine.
@@ -54,12 +54,22 @@ func OpenPortCmd(ctx context.Context, e *Env, projectArg string, port int, local
 		_, _ = fmt.Fprintf(e.ErrOut, "Nothing on %s is listening on port %d yet; the forward reaches it once it listens on 127.0.0.1 or 0.0.0.0.\n", project.Slug, port)
 	}
 	url := fmt.Sprintf("http://localhost:%d", localPort)
+	if databasePorts[port] {
+		// A database speaks no HTTP: no browser tab, and no http:// to
+		// paste into a client.
+		url, noBrowser = fmt.Sprintf("localhost:%d", localPort), true
+	}
 	_, _ = fmt.Fprintf(e.Out, "%s → %s:%d (Ctrl-C to stop)\n", url, project.Slug, port)
 	if !noBrowser {
 		_ = openBrowser(url)
 	}
 	return keepForward(ctx, e, project, target, append(ownConnection(), "-N", "-L", openForwardSpec(localPort, l)))
 }
+
+// databasePorts are the well-known ports of Postgres, MySQL, Redis and
+// MongoDB, which `repose open` forwards without opening a browser
+// (DECISIONS I-619).
+var databasePorts = map[int]bool{5432: true, 3306: true, 6379: true, 27017: true}
 
 // keepForward runs a forward's ssh in the foreground until Ctrl-C or until
 // it fails, and starts it again when its connection drops (I-469), so a

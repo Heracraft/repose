@@ -31,7 +31,9 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 	if err := DestroyCmd(ctx, e, p.ID, true, false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "Destroying izma. Its final snapshot is kept for 30 days.\n" {
+	// With --yes nothing asked, so the line says until when (I-614).
+	until := time.Now().AddDate(0, 0, 30).Local().Format("2006-01-02")
+	if got := out.String(); got != "Destroying izma. Its final snapshot is kept until "+until+".\n" {
 		t.Fatalf("destroy said %q", got)
 	}
 
@@ -80,8 +82,11 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 		t.Fatalf("restore onto a taken name: %v", err)
 	}
 	out.Reset()
-	if err := RestoreCmd(ctx, e, p.ID, "", "", func(string) (string, error) { return "", nil }); err != nil || !strings.Contains(out.String(), "Nothing restored") {
+	if err := RestoreCmd(ctx, e, p.ID, "", "", func(string) (string, error) { return "", nil }); exitCode(err) != ExitGeneric || err.Error() != "Nothing restored." {
 		t.Fatalf("cancelled restore: %v %q", err, out.String())
+	}
+	if err := RestoreCmd(ctx, e, p.ID, "", "", func(string) (string, error) { return "", errPromptInterrupted }); exitCode(err) != ExitInterrupted || err.Error() != "Nothing restored." {
+		t.Fatalf("Ctrl-C at the name: %v", err)
 	}
 	var asked string
 	out.Reset()
@@ -240,5 +245,38 @@ func TestListDestroyedReadsEveryPage(t *testing.T) {
 	}
 	if len(list) != 230 || len(seen) != 230 {
 		t.Fatalf("ListDestroyed gave %d (%d distinct), want 230", len(list), len(seen))
+	}
+}
+
+// `repose restore NAME --snapshot ID` takes the short id `repose
+// snapshots list` prints, the way `snapshots restore` does (I-619).
+func TestRestoreTakesAShortSnapshotID(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out strings.Builder
+	e.Out = &out
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "zed", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := DestroyCmd(ctx, e, p.ID, true, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := e.Client.ListSnapshots(ctx, p.ID)
+	if err != nil || len(snaps) == 0 {
+		t.Fatalf("snapshots of the destroyed project: %+v %v", snaps, err)
+	}
+	err = RestoreCmd(ctx, e, "zed", "", "ffffffff", nil)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "zed has no snapshot ffffffff") {
+		t.Fatalf("restore of an unknown short id: %v", err)
+	}
+	out.Reset()
+	if err := RestoreCmd(ctx, e, "zed", "", shortID(snaps[0].ID), nil); err != nil {
+		t.Fatalf("restore --snapshot SHORT: %v", err)
+	}
+	if !strings.HasPrefix(out.String(), "Restored zed from") {
+		t.Fatalf("restore said %q", out.String())
 	}
 }

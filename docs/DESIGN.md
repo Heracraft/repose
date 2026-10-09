@@ -32,7 +32,10 @@ $ repose run -p "finish the auth flow, run the tests, commit"
                                     # opens tmux window "claude", starts Claude
                                     # Code's TUI, types the prompt
 $ repose status
-todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
+todo-app  running 2h14m  large
+  agents     claude working
+  checkout   main: 2 commits not on this laptop
+  ...
 $ repose open 3000                 # http://localhost:3000 -> guest's :3000
 $ repose attach                    # back into tmux, see what the agent did
 $ repose stop                      # snapshot, then deallocate; a stopped project costs nothing
@@ -364,8 +367,8 @@ and no name gives a project named after the folder (I-358).
    never fetches from origin, nothing is pushed), the laptop's `HEAD` is
    checked out, and staged and unstaged changes follow as two diffs, with
    untracked files as a tar. If the guest changed files the sync would
-   write, refuse, name them and offer `--stash-remote` or
-   `--discard-remote`; its changes elsewhere stay (DECISIONS I-573,
+   write, refuse, name them and offer `--stash-machine`, which moves
+   them to a git stash (I-618); its changes elsewhere stay (DECISIONS I-573,
    `features/sync-at-launch.md`). A guest branch with commits the laptop
    lacks takes a merge of the laptop's commit when git can make it
    cleanly (I-574). Since DECISIONS I-367 `run` does this

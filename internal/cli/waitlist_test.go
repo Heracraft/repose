@@ -60,7 +60,7 @@ func TestWaitlistedMessageFallsBack(t *testing.T) {
 	}
 	// No message (a proxy that stripped it): built from the detail.
 	e = &APIError{Code: "waitlisted", Detail: map[string]any{"position": float64(2)}}
-	if got := waitlistedMessage(e); got != "repose is full right now. You're number 2 on the waitlist. The dashboard's plan page shows your place." {
+	if got := waitlistedMessage(e); got != "repose is full right now. You're number 2 on the waitlist; https://repose.herakraft.co/billing shows your place." {
 		t.Fatalf("got %q", got)
 	}
 	e = &APIError{Code: "waitlisted"}

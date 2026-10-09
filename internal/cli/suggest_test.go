@@ -24,7 +24,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		{[]string{"secrets", "--project", "izma", "imprt"}, "Did you mean `repose secrets import`?"},
 		{[]string{"snapshots", "lst"}, "Did you mean `repose snapshots list`?"},
 		{[]string{"config", "remov", "air"}, "Did you mean `repose config remove`?"},
-		{[]string{"zzzz"}, "Run `repose --help` for the commands."},
+		{[]string{"zzzz"}, "`repose --help` shows its usage."},
 		// Real commands, aliases, help and completion are not unknown.
 		{[]string{"ls"}, ""},
 		{[]string{"projects", "--destroyed"}, ""},
@@ -38,7 +38,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		{[]string{"--version"}, ""},
 		{nil, ""},
 	} {
-		got := unknownCommand(newRootCmd("test"), tc.args)
+		got := unknownCommand(newRootCmd("test"), tc.args, nil)
 		if tc.want == "" {
 			if got != "" {
 				t.Errorf("%v: flagged as unknown:\n%s", tc.args, got)
@@ -50,7 +50,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		}
 	}
 	// A group names its own --help.
-	if got := unknownCommand(newRootCmd("test"), []string{"secrets", "qqq"}); !strings.Contains(got, "Run `repose secrets --help` for its commands.") {
+	if got := unknownCommand(newRootCmd("test"), []string{"secrets", "qqq"}, nil); !strings.Contains(got, "`repose secrets --help` shows its usage.") {
 		t.Errorf("group hint missing:\n%s", got)
 	}
 }

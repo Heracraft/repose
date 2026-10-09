@@ -17,7 +17,7 @@ func waitlistedMessage(e *APIError) string {
 	}
 	email, _ := e.Detail["email"].(string)
 	if email == "" {
-		return fmt.Sprintf("repose is full right now. You're number %d on the waitlist. The dashboard's plan page shows your place.", int(pos))
+		return fmt.Sprintf("repose is full right now. You're number %d on the waitlist; %s shows your place.", int(pos), billingURL)
 	}
 	return fmt.Sprintf("repose is full right now. You're number %d on the waitlist; we'll email %s when there's a seat.", int(pos), email)
 }

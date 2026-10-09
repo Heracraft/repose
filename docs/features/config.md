@@ -231,7 +231,7 @@ Applying (DECISIONS R3-3):
   and a start boots the newest built revision. Applying it to a running
   guest from the API needs `?reboot=true` (409 `conflict` without it).
 - On a stopped guest, apply happens at next start.
-- Switching back: `repose config show --revisions` lists revisions; the
+- Switching back: `repose config revisions` lists revisions and `repose config apply --revision ID` switches back to one that built (I-622); the
   dashboard's Revisions list re-applies an earlier one, which rebuilds
   nothing while its closure is still a GC root.
 

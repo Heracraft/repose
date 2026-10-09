@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +63,7 @@ func TestLoginDeviceCode(t *testing.T) {
 	cfg.APIURL = fake.URL() + "/v1"
 	cfg.LogtoIssuer = oidc.Issuer()
 
-	err := runLogin(context.Background(), dir, cfg, http.DefaultClient, loginOptions{NoBrowser: true, GOOS: "linux"})
+	err := runLogin(context.Background(), dir, cfg, http.DefaultClient, loginOptions{NoBrowser: true, GOOS: "linux", Stdout: devNull(t)})
 	if err != nil {
 		t.Fatalf("runLogin: %v", err)
 	}
@@ -113,13 +116,49 @@ func TestRunLogoutRemovesCredentialsAndCert(t *testing.T) {
 	cfg.APIURL = fake.URL() + "/v1"
 	cfg.LogtoIssuer = oidc.Issuer()
 
-	if err := runLogin(context.Background(), dir, cfg, http.DefaultClient, loginOptions{NoBrowser: true, GOOS: "linux"}); err != nil {
+	if err := runLogin(context.Background(), dir, cfg, http.DefaultClient, loginOptions{NoBrowser: true, GOOS: "linux", Stdout: devNull(t)}); err != nil {
 		t.Fatalf("runLogin: %v", err)
 	}
-	if err := runLogout(context.Background(), dir, cfg, http.DefaultClient, false); err != nil {
+	if err := runLogout(context.Background(), dir, cfg, http.DefaultClient, false, io.Discard); err != nil {
 		t.Fatalf("runLogout: %v", err)
 	}
 	if _, ok, _ := loadCredentials(dir); ok {
 		t.Fatal("credentials still present after logout")
+	}
+}
+
+func devNull(t *testing.T) *os.File {
+	f, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return f
+}
+
+// With a browser to open, the device login opens its link and still
+// prints it; with --no-browser it opens nothing (DECISIONS I-627).
+func TestLoginDeviceCodeOpensTheLink(t *testing.T) {
+	withHome(t)
+	oidc := newFakeOIDC()
+	defer oidc.Close()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	cfg := defaultConfig()
+	cfg.APIURL = fake.URL() + "/v1"
+	cfg.LogtoIssuer = oidc.Issuer()
+	for _, noBrowser := range []bool{false, true} {
+		var opened []string
+		open := func(u string) error { opened = append(opened, u); return nil }
+		err := runLogin(context.Background(), t.TempDir(), cfg, http.DefaultClient, loginOptions{NoBrowser: noBrowser, GOOS: "linux", Display: ":0", Open: open, Stdout: devNull(t)})
+		if err != nil {
+			t.Fatalf("runLogin: %v", err)
+		}
+		if noBrowser && len(opened) != 0 {
+			t.Errorf("--no-browser opened %q", opened)
+		}
+		if !noBrowser && (len(opened) != 1 || !strings.HasSuffix(opened[0], "/device")) {
+			t.Errorf("opened %q, want the device link", opened)
+		}
 	}
 }

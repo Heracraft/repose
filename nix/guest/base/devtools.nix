@@ -63,6 +63,15 @@ let
           } >&2
           exit 127
           ;;
+        # The CLI runs on the laptop; typing it here is the commonest
+        # wrong turn (review 8.7, DECISIONS I-630).
+        repose)
+          {
+            printf 'repose: command not found\n'
+            printf 'The repose CLI runs on your laptop. On this machine: repose-ask, repose-notify, repose-checkout.\n'
+          } >&2
+          exit 127
+          ;;
         crontab | cron | crond | at)
           {
             printf '%s: command not found\n' "$cmd"

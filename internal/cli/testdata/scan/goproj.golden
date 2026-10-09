@@ -2,13 +2,13 @@ Your laptop's tools (0):
   none found
 
 This project (goproj):
-  air                  nixpkgs, looked up in the guest; from Makefile dev
-  golangci-lint        nixpkgs, looked up in the guest; from Makefile lint
-  overmind             nixpkgs, looked up in the guest; from Procfile worker
-  sqlc                 nixpkgs, looked up in the guest; from Makefile gen
-  staticcheck          nixpkgs, looked up in the guest; from Makefile lint
-  templ                nixpkgs, looked up in the guest; from Makefile gen
+  air                  nixpkgs, looked up on the machine; from Makefile dev
+  golangci-lint        nixpkgs, looked up on the machine; from Makefile lint
+  overmind             nixpkgs, looked up on the machine; from Procfile worker
+  sqlc                 nixpkgs, looked up on the machine; from Makefile gen
+  staticcheck          nixpkgs, looked up on the machine; from Makefile lint
+  templ                nixpkgs, looked up on the machine; from Makefile gen
   go 1.23.0 (go.mod go): go fetches it itself (GOTOOLCHAIN)
   go go1.23.4 (go.mod toolchain): go fetches it itself (GOTOOLCHAIN)
 
-6 to check in the guest; each one it lacks is installed in the background after `repose run`.
+6 to check on the machine; each one it lacks is installed in the background after `repose run`.

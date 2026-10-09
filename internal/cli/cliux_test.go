@@ -53,7 +53,7 @@ func TestDestroyReportsAFailedOp(t *testing.T) {
 		wants []string
 	}{
 		{"older api: the host's wording", map[string]any{"code": "guest_unresponsive", "message": rawGuestdError},
-			[]string{"Could not destroy todo-app", "stopped responding", "(guest_unresponsive)", "`repose rm todo-app` tries again", "still there"}},
+			[]string{"Could not destroy todo-app", "stopped answering", "(guest_unresponsive)", "`repose rm todo-app` tries again", "still there"}},
 		{"api with I-159 sentences", map[string]any{"code": "internal", "message": "the host could not remove the volume", "detail": "lvremove: exit 5"},
 			[]string{"Could not destroy todo-app: the host could not remove the volume (internal).", "`repose rm todo-app` tries again"}},
 	} {
@@ -107,13 +107,16 @@ func TestDestroyConfirmationIsYesNo(t *testing.T) {
 
 	var asked string
 	no := func(prompt string) (bool, error) { asked = prompt; return false, nil }
-	if err := DestroyCmd(ctx, e, p.ID, false, false, no); err != nil {
+	// A no exits 1 with its line on stderr, so `repose rm x && next`
+	// stops there (DECISIONS I-614).
+	err = DestroyCmd(ctx, e, p.ID, false, false, no)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != "Nothing destroyed." {
 		t.Fatalf("declined destroy: %v", err)
 	}
 	if asked != "Destroy age-calculator? A final snapshot is kept for 30 days. [y/N] " {
 		t.Fatalf("prompt = %q", asked)
 	}
-	if !strings.Contains(out.String(), "Nothing destroyed") {
+	if out.Len() != 0 {
 		t.Fatalf("out = %q", out.String())
 	}
 	if _, err := e.Client.GetProject(ctx, p.ID); err != nil {
@@ -124,9 +127,9 @@ func TestDestroyConfirmationIsYesNo(t *testing.T) {
 	if err := DestroyCmd(ctx, e, p.ID, false, false, yes); err != nil {
 		t.Fatalf("confirmed destroy: %v", err)
 	}
-	// I-166: the destroy returns once accepted, and says how long it can
-	// come back (I-484: without the command).
-	if !strings.Contains(out.String(), "Destroying age-calculator. Its final snapshot is kept for 30 days.\n") {
+	// I-166: the destroy returns once accepted; the question just said
+	// what is kept, so the line does not repeat it (I-614).
+	if out.String() != "Destroying age-calculator.\n" {
 		t.Fatalf("out = %q", out.String())
 	}
 	if _, err := e.Client.GetProject(ctx, p.ID); !isNotFound(err) {
@@ -140,7 +143,7 @@ func TestNotRunningMessagesSayTheTruth(t *testing.T) {
 	le := "guest_unresponsive: " + rawGuestdError
 	errProject := &Project{Slug: "age-calculator", State: "error", LastError: &le}
 	msg := notRunningMessage(errProject)
-	for _, w := range []string{"age-calculator is in an error state", "stopped responding", "`repose start age-calculator`"} {
+	for _, w := range []string{"age-calculator is in an error state", "stopped answering", "`repose start age-calculator`"} {
 		if !strings.Contains(msg, w) {
 			t.Errorf("error-state message lacks %q: %s", w, msg)
 		}
@@ -232,7 +235,7 @@ func TestProjectsTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "STATE") || !strings.Contains(lines[0], "MONTH") {
+	if !strings.HasPrefix(lines[0], "PROJECT") || !strings.Contains(lines[0], "STATE") || strings.Contains(lines[0], "MONTH") {
 		t.Fatalf("no header row:\n%s", out.String())
 	}
 	if strings.Contains(lines[0], "LEFT") {
@@ -324,8 +327,9 @@ func TestPositionalProject(t *testing.T) {
 	if err := run("status", "izma", "--project", "other"); !isUsage(err) {
 		t.Fatalf("conflicting positional and --project: %v", err)
 	}
-	if err := run("attach", "izma", "other"); !isUsage(err) {
-		t.Fatalf("two positionals: %v", err)
+	// A second word is the window (I-606); a third is a usage error.
+	if err := run("attach", "izma", "claude", "other"); !isUsage(err) {
+		t.Fatalf("three positionals: %v", err)
 	}
 	if err := run("projects", "extra"); !isUsage(err) {
 		t.Fatalf("projects with a stray word: %v", err)
@@ -492,11 +496,12 @@ func TestRunTypesAPromptThatIsAProjectName(t *testing.T) {
 }
 
 func TestReasonFor(t *testing.T) {
-	if got := reasonFor("guest_unresponsive", rawGuestdError); strings.Contains(got, "01a0") || !strings.Contains(got, "stopped responding") {
+	if got := reasonFor("guest_unresponsive", rawGuestdError); strings.Contains(got, "01a0") || !strings.Contains(got, "stopped answering") {
 		t.Errorf("raw host wording: %q", got)
 	}
 	s := "the environment's agent (guestd) stopped answering; `repose start` restarts it"
-	if got := reasonFor("guest_unresponsive", s+"."); got != s {
+	// The api's sentence, in the CLI's word for the machine (I-630).
+	if got := reasonFor("guest_unresponsive", s+"."); got != "repose's service on the machine stopped answering; `repose start` restarts it" {
 		t.Errorf("api sentence: %q", got)
 	}
 	if got := reasonFor("", ""); got != "" {
@@ -514,7 +519,7 @@ func TestReasonFor(t *testing.T) {
 func TestSSHErrorsAreSentences(t *testing.T) {
 	err := stepFailed("read the guest's checkout", &sshError{ExitCode: 255, Stderr: "Connection closed by 20.102.98.254 port 22\r\n"}, "")
 	msg := err.Error()
-	if msg != "Could not read the guest's checkout: the SSH connection to the guest failed (Connection closed by 20.102.98.254 port 22)." {
+	if msg != "Could not read the guest's checkout: the SSH connection to the machine failed (Connection closed by 20.102.98.254 port 22)." {
 		t.Fatalf("msg = %q", msg)
 	}
 	msg = stepFailed("sync your checkout to the guest", &sshError{ExitCode: 128, Stderr: "fatal: bad object\n"}, "").Error()
@@ -530,7 +535,8 @@ func TestProgressOutput(t *testing.T) {
 	p.Phase("Building the environment", "Built the environment")
 	_, _ = p.Write([]byte("nix › building\n"))
 	p.End()
-	if plain.String() != "Creating izma...\nBuilding the environment...\nnix › building\n" {
+	// Off a terminal each phase ends with its ✓ line too (I-609).
+	if got := elapsedRE.ReplaceAllString(plain.String(), "  T\n"); got != "Creating izma...\n✓ Created izma  T\nBuilding the environment...\nnix › building\n✓ Built the environment  T\n" {
 		t.Fatalf("non-TTY output = %q", plain.String())
 	}
 

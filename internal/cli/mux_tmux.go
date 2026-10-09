@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -37,6 +38,10 @@ func (tmuxMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error 
 // Attach starts the session helper beside `tmux attach` (I-195).
 func (tmuxMux) Attach(e *Env, a attachReq) error {
 	startSessionHelper(e, a.Helper)
+	if a.Named {
+		colour := attachColour(os.Getenv("COLORTERM"))
+		return attachSSH(a.Target, a.Project.Slug, colour+attachNamedCommand(a.Project.Slug, a.Target.Checkout, a.Window), colour+attachCommand(a.Project.Slug, a.Target.Checkout, ""), a.TZ, a.RepoDir, a.After, a.Renew)
+	}
 	return attachTmux(a.Target, a.Project.Slug, a.Window, a.TZ, a.RepoDir, a.After, a.Renew)
 }
 
@@ -47,6 +52,23 @@ tmux set-buffer -b repose-paste -- "$f" || exit 1
 tmux paste-buffer -p -d -b repose-paste -t "$p" || exit 1
 tmux display-message -p -t "$p" '#{window_name}'
 `, shQuote(t), pasteExitNoPane)
+}
+
+// TypeScript types text into the window's active pane as keys, then
+// Enter, as startAgentWindow types a prompt.
+func (tmuxMux) TypeScript(slug, window, text string) string {
+	t := shQuote(tmuxWindowTarget(slug, window))
+	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[3]d
+tmux send-keys -t %[1]s -l %[2]s && tmux send-keys -t %[1]s Enter
+`, t, shQuote(text), typeExitNoWindow)
+}
+
+// CloseScript kills the window and every process in it.
+func (tmuxMux) CloseScript(slug, window string) string {
+	t := shQuote(tmuxWindowTarget(slug, window))
+	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[2]d
+tmux kill-window -t %[1]s
+`, t, typeExitNoWindow)
 }
 
 // MessageScript shows text on the session's clients for four seconds
@@ -141,13 +163,32 @@ func nextWindowName(agent string, taken func(string) bool) string {
 // prompt while agent window exists", DECISIONS I-253). othersOpen says
 // another window of the same agent is open, which is what the
 // shared-working-tree warning is for.
+//
+// An agent typed by hand in a window of another name (`claude` in the
+// shell window, the first login before I-607) shares the tree too, so a
+// window whose program is the agent counts for the warning; only in the
+// machine's own checkout, whose windows carry no prefix.
 func windowNameFor(ctx context.Context, t sshTarget, slug, agent string) (name string, othersOpen bool, err error) {
-	windows, err := listWindows(ctx, t, slug)
+	out, err := runSSH(ctx, t, fmt.Sprintf("tmux list-windows -t %s -F '#{window_name}\t#{pane_current_command}'", slug), nil)
 	if err != nil {
 		return "", false, err
 	}
+	windows, byHand := windowsAndAgent(string(out), agent, t.Checkout == "")
 	name, othersOpen = pickWindow(windowLabel(t.Checkout, agent), windows, nil)
-	return name, othersOpen, nil
+	return name, othersOpen || byHand, nil
+}
+
+// windowsAndAgent reads "<name>\t<command>" lines: the window names, and
+// whether a window of another name runs agent (when byCommand).
+func windowsAndAgent(out, agent string, byCommand bool) (windows []string, byHand bool) {
+	for _, l := range nonEmptyLines(out) {
+		name, command, _ := strings.Cut(l, "\t")
+		windows = append(windows, name)
+		if byCommand && command == agent && !isWindowOf(agent, name) {
+			byHand = true
+		}
+	}
+	return windows, byHand
 }
 
 // pickWindow is windowNameFor's choice over a known window list;
@@ -199,6 +240,11 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 		return err
 	}
 	if attachOnly {
+		if prompt != "" {
+			// Typed after the login (I-607).
+			_, err := runSSH(ctx, t, pendingPromptTmux(slug, windowName, prompt), nil)
+			return err
+		}
 		return nil
 	}
 	if err := waitPaneIdle(ctx, t, slug, windowName, binary, onLoading); err != nil {
@@ -461,7 +507,7 @@ func shQuote(s string) string {
 type agentWorktree struct {
 	Window string // tmux window or herdr agent name, "<agent>" or "<agent>-N"
 	N      int    // the worktree's number, 1 and up
-	Dir    string // "~/<checkout>-worktree-<N>", as the guest's shell spells it
+	Dir    string // "~/<checkout>-worktree-<N>", as the machine's shell spells it
 	// Checkout is the checkout's name under the home (I-368).
 	Checkout string
 	Branch   string // "worktree-<N>"
@@ -528,7 +574,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m muxer) (*agentWorktree, error) {
 	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout, m.NamesScript(slug)), nil)
 	if err != nil {
-		step := "list the guest's tmux windows"
+		step := "list the machine's tmux windows"
 		if m.Name() == multiplexer.Herdr {
 			step = "list herdr's agents on the machine"
 		}
@@ -570,7 +616,7 @@ func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m
 	wt.Branch = worktreeBranch(wt.N)
 	out, err = runSSH(ctx, t, worktreeAddScript(wt), nil)
 	if err != nil {
-		return nil, stepFailed("create the worktree "+wt.Dir+" in the guest", err, "")
+		return nil, stepFailed("create the worktree "+wt.Dir+" on the machine", err, "")
 	}
 	for _, l := range nonEmptyLines(string(out)) {
 		if l == "#env" {

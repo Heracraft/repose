@@ -92,6 +92,10 @@ type Deps struct {
 	// checkout asks it before a Polar checkout. nil answers those
 	// routes with 500 (tests that do not care).
 	Seats *waitlist.Service
+	// CLILatest is the newest CLI release ("v0.1.32"), named in every
+	// answer's X-Repose-CLI-Latest header (DECISIONS I-626); nil or ""
+	// sends no header.
+	CLILatest func() string
 }
 
 // RateLimits are the per-user limits from docs/interfaces/api.md.
@@ -341,6 +345,11 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 			rid = uuid.NewString()
 		}
 		w.Header().Set("X-Request-Id", rid)
+		if s.d.CLILatest != nil {
+			if v := s.d.CLILatest(); v != "" {
+				w.Header().Set("X-Repose-CLI-Latest", v)
+			}
+		}
 		log := s.d.Log.With("request_id", rid)
 		// info is filled in by authed further down; the request the mux
 		// sees is a copy, so neither its Pattern nor its context reaches

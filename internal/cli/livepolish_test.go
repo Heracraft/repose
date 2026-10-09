@@ -58,7 +58,7 @@ func TestRateLimitedNeverShowsTheRawCode(t *testing.T) {
 	defer srv.Close()
 	_, err := newClient(srv.URL, staticToken("tok")).GetProject(context.Background(), "p1")
 	var out bytes.Buffer
-	if code := exitCodeFor(err, &out); code != ExitGeneric || strings.Contains(out.String(), "rate_limited") || !strings.Contains(out.String(), "too many in the last minute") {
+	if code := exitCodeFor(err, &out); code != ExitGeneric || strings.Contains(out.String(), "rate_limited") || !strings.Contains(out.String(), "Too many requests from this account in the last minute.") {
 		t.Fatalf("exit %d, %q", code, out.String())
 	}
 	t.Logf("%s", out.String())
@@ -186,7 +186,7 @@ func TestProgressPrintsAPhaseOnce(t *testing.T) {
 	pr.Phase("Creating teksafari-org", "Created teksafari-org")
 	pr.Phase("Booting teksafari-org", "Booted teksafari-org")
 	pr.End()
-	if got := b.String(); got != "Creating teksafari-org...\nBooting teksafari-org...\n" {
+	if got := elapsedRE.ReplaceAllString(b.String(), "  T\n"); got != "Creating teksafari-org...\n✓ Created teksafari-org (large)  T\nBooting teksafari-org...\n✓ Booted teksafari-org  T\n" {
 		t.Fatalf("%q", got)
 	}
 	var tty strings.Builder
@@ -213,7 +213,13 @@ func TestStatusShowsHostNameAndNewestEvent(t *testing.T) {
 	var b strings.Builder
 	writeStatusLines(&b, p, route, nil, events)
 	got := b.String()
-	if !strings.Contains(got, "host host-01 ") || strings.Contains(got, route.HostID) || !strings.Contains(got, `"running"`) || strings.Contains(got, `"creating"`) {
+	if !strings.Contains(got, "\n  host       host-01, ip 10.64.0.2\n") || strings.Contains(got, route.HostID) || !strings.Contains(got, `"running"`) || strings.Contains(got, `"creating"`) {
 		t.Fatalf("%s", got)
+	}
+	// Without -v status reads no route, and prints no host (I-616).
+	b.Reset()
+	writeStatusLines(&b, p, nil, nil, events)
+	if strings.Contains(b.String(), "host") || strings.Contains(b.String(), "10.64") {
+		t.Fatalf("host without -v:\n%s", b.String())
 	}
 }

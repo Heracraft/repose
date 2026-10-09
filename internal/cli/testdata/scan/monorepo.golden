@@ -2,15 +2,15 @@ Your laptop's tools (0):
   none found
 
 This project (monorepo):
-  air                  nixpkgs, looked up in the guest; from packages/wasm/package.json script dev:wasm
-  pagefind             nixpkgs, looked up in the guest; from apps/docs/package.json script build
+  air                  nixpkgs, looked up on the machine; from packages/wasm/package.json script dev:wasm
+  pagefind             nixpkgs, looked up on the machine; from apps/docs/package.json script build
   portless             nixpkgs, else npm portless; from package.json script clean
-  rimraf               nixpkgs, looked up in the guest; from package.json script clean
-  stripe               nixpkgs, looked up in the guest; from apps/web/package.json script stripe
-  tinygo               nixpkgs, looked up in the guest; from packages/wasm/package.json script build:wasm
-  node 22 (package.json engines.node): nodejs_22 goes into the guest's nix profile when its node is another major
-  packageManager pnpm@9.0.0 (package.json packageManager): pnpm/npm in the guest are the base's
+  rimraf               nixpkgs, looked up on the machine; from package.json script clean
+  stripe               nixpkgs, looked up on the machine; from apps/web/package.json script stripe
+  tinygo               nixpkgs, looked up on the machine; from packages/wasm/package.json script build:wasm
+  node 22 (package.json engines.node): nodejs_22 goes into the machine's nix profile when its node is another major
+  packageManager pnpm@9.0.0 (package.json packageManager): pnpm/npm on the machine are the base's
   not installed: astro (a dependency), changeset (from the dependency @changesets/cli), concurrently (a dependency), drizzle-kit (a dependency), eslint (a dependency), next (a dependency), play (the project's own command), playwright (from the dependency @playwright/test), prettier (a dependency), tsc (from the dependency typescript), tsup (a dependency), turbo (a dependency)
 
-6 to check in the guest; each one it lacks is installed in the background after `repose run`.
-Made the guest's default the same way when it has another version: node 22.
+6 to check on the machine; each one it lacks is installed in the background after `repose run`.
+Made the machine's default the same way when it has another version: node 22.

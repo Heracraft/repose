@@ -37,12 +37,13 @@ import (
 // (checked against Claude Code 2.1.280, I-280). Everything here is pure
 // over byte streams except dropHandler, which talks to the guest.
 //
-// REPOSE_INPUT_PROXY=0 turns it off: the CLI becomes ssh as before.
+// REPOSE_NO_INPUT_PROXY=1 (or the old REPOSE_INPUT_PROXY=0) turns it off:
+// the CLI becomes ssh as before.
 
 // inputProxyEnabled is the kill switch; the platform and terminal checks
 // are runInputProxy's.
 func inputProxyEnabled() bool {
-	return os.Getenv(envInputProxy) != "0" && goos() != "windows"
+	return os.Getenv(envNoInputProxy) != "1" && os.Getenv(envInputProxy) != "0" && goos() != "windows"
 }
 
 var (

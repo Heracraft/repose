@@ -27,6 +27,9 @@ type ForkOptions struct {
 	SnapshotID string
 	Prompt     string
 	Agent      string
+	// NoStart creates the forks stopped (start: false), so they take
+	// none of the plan's memory until `repose start` (I-610).
+	NoStart bool
 }
 
 // ForkRequest is POST /projects/:id/fork's body.
@@ -36,6 +39,8 @@ type ForkRequest struct {
 	Name       string `json:"name,omitempty"`
 	Class      string `json:"class,omitempty"`
 	RequestID  string `json:"request_id,omitempty"`
+	// Start false makes the forks stopped; omitted, they start.
+	Start *bool `json:"start,omitempty"`
 }
 
 // ForkedProject is one project a fork made.
@@ -93,23 +98,54 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	if opts.Count < 1 || opts.Count > maxForks {
 		return exitf(ExitUsage, "--count must be 1 to %d, got %d.", maxForks, opts.Count)
 	}
+	if opts.NoStart && opts.Prompt != "" {
+		return exitf(ExitUsage, "--no-start leaves the forks stopped, so --prompt has no agent to start in them; pass one of the two.")
+	}
 	src, err := requireProject(ctx, e, opts.ProjectArg)
 	if err != nil {
 		return err
 	}
 	// The cap is the api's to enforce, for all N at once; asking first
 	// only spares a snapshot that nothing would use. It counts running
-	// and stopped projects alike (I-569).
-	if me, err := e.Client.GetMe(ctx); err == nil && me.Limits.Projects > 0 {
-		if projects, err := e.Client.ListProjects(ctx); err == nil {
-			have := 0
-			for _, p := range projects {
-				if p.State != "destroying" {
-					have++
+	// and stopped projects alike (I-569). Then the plan's memory for all
+	// N, which the api's gate asks for one machine and only after the
+	// snapshot, so each later fork failed to start (I-610). PROJECT keeps
+	// running, so it counts.
+	if me, err := e.Client.GetMe(ctx); err == nil {
+		var projects []Project
+		var listErr error
+		listed := false
+		list := func() ([]Project, error) {
+			if !listed {
+				projects, listErr = e.Client.ListProjects(ctx)
+				listed = true
+			}
+			return projects, listErr
+		}
+		if me.Limits.Projects > 0 {
+			if projects, err := list(); err == nil {
+				have := 0
+				for _, p := range projects {
+					if p.State != "destroying" {
+						have++
+					}
+				}
+				if have+opts.Count > me.Limits.Projects {
+					return exitf(ExitPaymentRequired, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
 				}
 			}
-			if have+opts.Count > me.Limits.Projects {
-				return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
+		}
+		if !opts.NoStart {
+			class := opts.Size
+			if class == "" {
+				class = src.Class
+			}
+			fix := fmt.Sprintf("`repose fork %s --no-start` creates the fork stopped", src.Slug)
+			if opts.Count > 1 {
+				fix = fmt.Sprintf("`repose fork %s -n %d --no-start` creates them stopped", src.Slug, opts.Count)
+			}
+			if msg := planMemoryRefusalOf(me, list, planAsk{Class: class, Count: opts.Count, Fix: fix}); msg != "" {
+				return exitf(ExitPaymentRequired, "%s", msg)
 			}
 		}
 	}
@@ -117,6 +153,15 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	pr := e.newProgress()
 	defer pr.Fail()
 	snapID := opts.SnapshotID
+	if snapID != "" {
+		// The id `repose snapshots list` prints is the end of the
+		// whole one (I-619).
+		id, err := resolveSnapshotID(ctx, e, src.ID, snapID)
+		if err != nil {
+			return err
+		}
+		snapID = id
+	}
 	if snapID == "" {
 		if src.State != "running" && src.State != "stopped" {
 			return notRunningError(src)
@@ -128,6 +173,10 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		pr.Phase("Snapshotting "+src.Slug, "Snapshot of "+src.Slug+" taken")
 		op, err := waitOpPhased(ctx, e, src, opID, pr, false)
 		if err != nil {
+			if interrupted(ctx, err) {
+				// Ctrl-C says what exists (review A6, I-633).
+				return exitf(ExitInterrupted, "Interrupted. The snapshot of %s goes on; nothing was forked.", src.Slug)
+			}
 			return err
 		}
 		if op.State == "error" {
@@ -153,16 +202,25 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	}
 
 	req := ForkRequest{SnapshotID: snapID, Count: opts.Count, Name: opts.Name, Class: opts.Size, RequestID: newRequestID()}
+	want := "running"
+	if opts.NoStart {
+		no := false
+		req.Start = &no
+		want = "stopped"
+	}
 	pr.Phase(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
 	res, err := forkWithRetry(ctx, e, src.ID, req)
 	if err != nil {
 		pr.Fail()
+		if interrupted(ctx, err) {
+			return exitf(ExitInterrupted, "Interrupted. The forks of %s may have been created; `repose ls` shows them.", src.Slug)
+		}
 		var apiErr *APIError
 		// The api's cap refusal (a create elsewhere since the check
 		// above, or /me unreadable) in the words every command uses.
 		if errors.As(err, &apiErr) {
 			if have, limit, n, ok := projectLimitOf(apiErr); ok {
-				return exitf(ExitGeneric, "%s", projectLimitMessage(have, limit, n))
+				return exitf(ExitPaymentRequired, "%s", projectLimitMessage(have, limit, n))
 			}
 		}
 		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
@@ -179,9 +237,16 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	failed := 0
 	for i := range res.Projects {
 		f := &res.Projects[i]
-		pr.Phase("Starting "+f.Slug, "")
+		if opts.NoStart {
+			pr.Phase("Restoring "+f.Slug, "")
+		} else {
+			pr.Phase("Starting "+f.Slug, "")
+		}
 		op, err := waitOp(ctx, e.Client, f.ProjectID, f.OpID, pr)
 		if err != nil {
+			if interrupted(ctx, err) {
+				return interruptedFork(res, opts.NoStart)
+			}
 			return err
 		}
 		if p, err := e.Client.GetProject(ctx, f.ProjectID); err == nil {
@@ -196,7 +261,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				f.Error = humaneMessage(op.Error.Message)
 			}
 		}
-		if f.State != "running" {
+		if f.State != want {
 			failed++
 		}
 	}
@@ -226,10 +291,51 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	} else {
 		writeForkSummary(e, src, res, pr.Total())
 	}
+	if !e.inHome() {
+		slugs := make([]string, len(res.Projects))
+		for i, f := range res.Projects {
+			slugs[i] = f.Slug
+		}
+		if added := addForkRemotes(gitRepoRoot(e.Cwd), src.Slug, slugs); len(added) > 0 {
+			_, _ = fmt.Fprintf(e.ErrOut, "Added the git %s %s.\n", plural(len(added), "remote", "remotes"), joinNames(added))
+		}
+	}
 	if failed > 0 {
-		return exitf(ExitGeneric, "%d of %d forks did not start. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), src.Slug, res.SnapshotID)
+		verb := "start"
+		if opts.NoStart {
+			verb = "restore"
+		}
+		return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), verb, src.Slug, res.SnapshotID)
 	}
 	return nil
+}
+
+// interruptedFork is Ctrl-C while the copies start: they exist, and
+// their starts (or restores) go on without the CLI.
+func interruptedFork(res *ForkResult, noStart bool) error {
+	slugs := make([]string, len(res.Projects))
+	for i, f := range res.Projects {
+		slugs[i] = f.Slug
+	}
+	verb, goes := "start", "goes"
+	if noStart {
+		verb = "restore"
+	}
+	if len(slugs) > 1 {
+		verb, goes = verb+"s", "go"
+	}
+	exist := "exists"
+	if len(slugs) > 1 {
+		exist = "exist"
+	}
+	return exitf(ExitInterrupted, "Interrupted. %s %s, and %s %s on.", joinNames(slugs), exist, theirOrIts(len(slugs))+" "+verb, goes)
+}
+
+func theirOrIts(n int) string {
+	if n == 1 {
+		return "its"
+	}
+	return "their"
 }
 
 // forkWithRetry posts the fork, and posts it again with the same

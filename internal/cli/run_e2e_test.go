@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -162,14 +163,12 @@ func TestRunClaudeNotLoggedInAttachesInstead(t *testing.T) {
 		t.Fatalf("remain-on-exit on the guest session: %v", err)
 	}
 
-	if err := runRun(ctx, f.env, RunOptions{
+	// With --no-attach nobody logs in now: exit 1, nothing typed, and
+	// the line names the window to log in in (I-607).
+	err := runRun(ctx, f.env, RunOptions{
 		Name: testSlug, Agent: "claude", Prompt: "finish the feature", NoAttach: true,
-	}, false); err != nil {
-		t.Fatalf("runRun: %v", err)
-	}
-	if !strings.Contains(out.String(), "Claude Code is not logged in") {
-		t.Fatalf("expected the not-logged-in message, got: %s", out.String())
-	}
+	}, false)
+	wantLoginRefusal(t, err, "claude")
 
 	// tmux creates the window asynchronously to the client's return; on a
 	// slow runner the first look can miss it (CI, 2026-09-20).
@@ -196,6 +195,19 @@ func TestRunClaudeNotLoggedInAttachesInstead(t *testing.T) {
 	if strings.Contains(pane, "finish the feature") {
 		t.Fatalf("prompt must not have been sent: %s", pane)
 	}
+	if ps, _ := runSSH(ctx, f.target, "pgrep -f '[f]inish the feature' || true", nil); strings.TrimSpace(string(ps)) != "" {
+		t.Fatalf("--no-attach left a waiter with the prompt: %s", ps)
+	}
+}
+
+// wantLoginRefusal is `run --no-attach -p` on a machine with no Claude
+// Code login (I-607): exit 1 naming the window.
+func wantLoginRefusal(t *testing.T, err error, window string) {
+	t.Helper()
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != ExitGeneric || !strings.Contains(ee.msg, "Claude Code is not logged in on "+testSlug+", so your prompt was not typed. Log in with `repose attach "+testSlug+" -w "+window+"`, then run your prompt again.") {
+		t.Fatalf("want the login refusal for %s, got %v", window, err)
+	}
 }
 
 // TestRunWorktreeThenPlainRun: `repose run --worktree PROMPT` opens the
@@ -217,9 +229,7 @@ func TestRunWorktreeThenPlainRun(t *testing.T) {
 
 	// Claude is not logged in in the fixture, so the window opens and
 	// nothing is typed: what matters here is where it opens.
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, Agent: "claude", Prompt: "try it one way", NoAttach: true, Worktree: true}, false); err != nil {
-		t.Fatalf("runRun --worktree: %v", err)
-	}
+	wantLoginRefusal(t, runRun(ctx, f.env, RunOptions{Name: testSlug, Agent: "claude", Prompt: "try it one way", NoAttach: true, Worktree: true}, false), "claude")
 	if !strings.Contains(out.String(), "Worktree: ~/proj-worktree-1 on branch worktree-1\n") {
 		t.Fatalf("stdout lacks the worktree line: %s", out.String())
 	}
@@ -235,9 +245,7 @@ func TestRunWorktreeThenPlainRun(t *testing.T) {
 	}
 
 	errOut.Reset()
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, Agent: "claude", Prompt: "try it another way", NoAttach: true}, false); err != nil {
-		t.Fatalf("runRun: %v", err)
-	}
+	wantLoginRefusal(t, runRun(ctx, f.env, RunOptions{Name: testSlug, Agent: "claude", Prompt: "try it another way", NoAttach: true}, false), "claude-2")
 	if !strings.Contains(errOut.String(), "Another claude window is open; two agents share one working tree. `repose run --worktree` gives the next one its own.") {
 		t.Fatalf("stderr lacks the shared-tree warning: %s", errOut.String())
 	}

@@ -389,3 +389,28 @@ func filterTestEnv(env []string, drop ...string) []string {
 	}
 	return out
 }
+
+// No global git config is an empty list on every git: 2.55 exits 128
+// for a missing ~/.gitconfig, which printed `Could not read your git
+// config` on every run (I-633).
+func TestReadGitConfigWithoutAGlobalFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("GIT_CONFIG_GLOBAL", "")
+	_ = os.Unsetenv("GIT_CONFIG_GLOBAL") // t.Setenv restores it
+	es, err := readGitConfig(t.TempDir())
+	if err != nil || len(es) != 0 {
+		t.Fatalf("no file: %v %v", es, err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".config", "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config", "git", "config"), []byte("[user]\n\tname = Ada\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	es, err = readGitConfig(t.TempDir())
+	if err != nil || len(es) != 1 || es[0].Key != "user.name" || es[0].Value != "Ada" {
+		t.Fatalf("xdg file: %v %v", es, err)
+	}
+}

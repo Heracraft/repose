@@ -55,7 +55,7 @@ type Project struct {
 	ConfigRevisionID string     `json:"config_revision_id"`
 	VolumeBytes      int64      `json:"volume_bytes"`
 	DiskUsedBytes    int64      `json:"disk_used_bytes,omitempty"` // the volume's allocated blocks; not shown (I-567)
-	RootUsedBytes    int64      `json:"root_used_bytes,omitempty"` // the guest's root filesystem, newest sample (I-567)
+	RootUsedBytes    int64      `json:"root_used_bytes,omitempty"` // the machine's root filesystem, newest sample (I-567)
 	RootSizeBytes    int64      `json:"root_size_bytes,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
@@ -94,6 +94,11 @@ type Project struct {
 	// which multiplexer.Normalize reads as tmux. What a running machine
 	// runs now is the guest's answer (muxFor), not this.
 	Multiplexer string `json:"multiplexer,omitempty"`
+
+	// waitedSince is, per agent window, when its current wait for an
+	// answer began, read from the project's events by the CLI (I-634);
+	// never sent or printed as JSON.
+	waitedSince map[string]time.Time
 }
 
 // ProjectIdle is Project.idle.
@@ -233,7 +238,12 @@ type Event struct {
 	TS      time.Time `json:"ts"`
 	Kind    string    `json:"kind"`
 	Agent   string    `json:"agent,omitempty"`
+	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
+	// Project is the project's name, which the CLI adds (the api answers
+	// for one project); `repose events` outside a checkout covers them
+	// all (DECISIONS I-609).
+	Project string `json:"project,omitempty"`
 }
 
 type CatalogItem struct {
@@ -261,7 +271,10 @@ type Route struct {
 	State    string `json:"state"`
 }
 
+// NotifyTestResult is POST /me/notify-test's answer: "ok" or "error" per
+// channel that is on, absent for one that is off, and why ntfy failed.
 type NotifyTestResult struct {
-	Email string `json:"email"`
-	Ntfy  string `json:"ntfy"`
+	Email     string `json:"email"`
+	Ntfy      string `json:"ntfy"`
+	NtfyError string `json:"ntfy_error"`
 }

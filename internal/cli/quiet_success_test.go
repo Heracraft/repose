@@ -16,20 +16,21 @@ import (
 // a repose command, each with why (DECISIONS I-484). The key is
 // file:function:the string's first 40 characters.
 var quietAllowed = map[string]string{
+	"helptopics.go:unknownTopicMessage:\n`repose help` lists the commands and to": "a refusal: exit 2, no command or help topic of that name (I-635)",
 	"sync.go:mergeMessage: (repose sync)":                                         "the subject of the merge commit a sync makes on the guest (I-574), not output",
 	"repoconfig.go:lastRepoConfigStands:%s did not build last time (revision %s:": "a failure: the last build of this repose.nix failed",
 	"repoconfig.go:applyRepoConfig:%s was not applied (%s). `repose config ":      "a refusal: the api refused the repose.nix",
 	"repoconfig.go:applyRepoConfig:Could not send %s (%s); the machine keep":      "a failure: the repose.nix could not be sent",
 	"mux_herdr.go:herdrFocusScript:%s has no checkout %s. `repose run --on ":      "a refusal: exit 2, the machine has no such checkout (herdr)",
-	"run.go:attachCommand:%s has no checkout %s. `repose run --on ":               "a refusal: exit 2, the machine has no such checkout",
+	"checkout.go:noCheckoutMsg:%s has no checkout %s. `repose run --on ":          "a refusal: exit 2, the machine has no such checkout",
+	"mux_herdr.go:herdrFocusNamedScript:%s has no agent %s. `repose ps %s` lists": "a refusal: exit 2, the herdr session has no such agent",
+	"run.go:attachNamedCommand:%s has no window %s. `repose ps %s` list":          "a refusal: exit 2, the session has no such window",
 	"buildprogress.go:printApplied:Built revision %s. It changes the kernel":      "the change does nothing until a restart the user times",
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
-	"status.go:writeStatusLinesMux:  the environment's agent (guestd) is no":      "a failure that status reports",
+	"status.go:writeStatus:  repose's service on the machine is not":              "a failure that status reports",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
-	"lifecycle.go:DestroyCmd:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
-	"run.go:laptopAheadLine:Not synced: your laptop has work the mac":             "a warning: the laptop's work did not go",
+	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
-	"login.go:runLogin:No plan yet. Choose one at https://repos":                  "blocked: nothing runs without a plan",
 	"creds.go:skippedCredNotice: login an earlier repose run copied to t":         "says why a copy was removed",
 	"sync.go:Warnings:Removed the .env file an earlier repose ":                   "says why a copy was removed",
 	"sync.go:Warnings:Removed the %d .env files an earlier rep":                   "says why a copy was removed",
@@ -38,13 +39,19 @@ var quietAllowed = map[string]string{
 	"logins.go:loginsHeader: at each repose run (the shared list)":                "names when, not what to type",
 	"logins.go:saveLoginSkip:Saved: %s %s on your laptop, for %s. The":            "names when, not what to type",
 	"secrets.go:SecretsListCmd:Copied from this laptop at each repose r":          "names when, not what to type",
-	"scan.go:printScan:\n%d to check in the guest; each one it l":                 "names when, not what to type",
-	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal, w":          "says what reply can't do",
+	"scan.go:printScan:\n%d to check on the machine; each one it":                 "names when, not what to type",
+	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal; `":          "the header of rows only run -w answers; it replaced the line that said reply can't (I-639)",
 	"cert.go:refreshSSHAccess:Could not renew your SSH certificate for":           "a failure",
 	"fork.go:ForkCmd:Could not start the agent in %s: %s. `re":                    "a failure",
 	"login.go:setUpPlainSSH:warning: could not write ~/.ssh/repose/c":             "a failure",
 	"run.go:failedStart:Fix it with `repose config edit %s`.\n":                   "a failure: the config did not build",
 	"temp.go:tempSessionEndedWith:Could not destroy %s (%s). It goes at it":       "a failure",
+	"temp.go:tempSessionEndedWith:%s is temporary and its session has ende":       "prevents a loss: the destroy was held because the work check failed (I-612)",
+	"fork.go:ForkCmd:`repose fork %s --no-start` creates the ":                    "a refusal: exit 7, the plan's memory, before the snapshot (I-610)",
+	"fork.go:ForkCmd:`repose fork %s -n %d --no-start` create":                    "a refusal: exit 7, the plan's memory, before the snapshot (I-610)",
+	"payment.go:namePlanFix: is using it. `repose stop ":                          "a refusal: exit 7, the gate's plan_limit (I-610)",
+	"payment.go:namePlanFix: are using it. `repose stop ":                         "a refusal: exit 7, the gate's plan_limit for several machines (I-633)",
+	"resize_class.go:fixOr:`repose stop %s` frees it":                             "a refusal: exit 7, the plan's memory (I-610)",
 	"run.go:runArgs:The prompt goes after -p: `repose run -p":                     "prevents a loss: the old prompt form stops working next release (I-603)",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",
 	"carry_mcp.go:mcpLines: repose mcp forward NAME runs one from h":              "unblocks: a server was left on the laptop (I-556, I-557)",
@@ -70,6 +77,9 @@ var quietFailureFuncs = map[string]bool{
 	"waitForSSH": true, "briefErr": true, "Error": true, "ReadPNG": true,
 	"exitCodeFor": true, // the login and rate-limit refusals
 	"applyScript": true, // a shell script run on the guest, not output
+	// The api's refusals as sentences, the unknown project, the project
+	// cap and a failed revoke (I-623, I-627).
+	"apiErrorExit": true, "noSuchProjectMessage": true, "projectLimitMessage": true,
 }
 
 // reposeCommand finds "repose NAME" past the string's start; at its start

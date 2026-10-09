@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -181,26 +182,241 @@ func writeListening(w io.Writer, procs []listeningProc) {
 // guestStatus is what status reads from the guest itself.
 type guestStatus struct {
 	procs []listeningProc
-	mux   string // "herdr", "tmux", or "" when the guest did not answer
+	mux   string // "herdr", "tmux", or "" when the machine did not answer
 	disk  guestDisk
+	git   []gitRow // nil when the machine has no checkout or did not say
+	// probeErr is why the machine did not say (I-634): "ssh_timeout"
+	// when it did not answer in time, "ssh_failed" when ssh failed; ""
+	// when it answered.
+	probeErr string
+	// probeDetail is ssh's last error line, for the row.
+	probeDetail string
 }
 
 // guestStatusRead asks the guest, best effort, for its listening
-// processes, its root filesystem and the multiplexer that runs now
-// (I-509). It rides a multiplexed connection when one is open and never
-// leaves a new one behind (ControlMaster=no), so a status does not hold a
-// gateway session for ControlPersist's ten minutes.
-func guestStatusRead(ctx context.Context, t sshTarget) guestStatus {
+// processes, its root filesystem, the multiplexer that runs now (I-509)
+// and its checkout's git state (I-616). have is the laptop's commit ids
+// (laptopCommits), sent on stdin, so the machine can count the commits
+// the laptop lacks. It rides a multiplexed connection when one is open
+// and never leaves a new one behind (ControlMaster=no), so a status does
+// not hold a gateway session for ControlPersist's ten minutes.
+func guestStatusRead(ctx context.Context, t sshTarget, slug string, have []string) guestStatus {
 	ctx, cancel := context.WithTimeout(ctx, statusProcsTimeout)
 	defer cancel()
 	args := append([]string{"-o", "ControlMaster=no", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes"}, t.Args...)
-	out, err := runSSH(ctx, sshTarget{Args: args}, statusProcsScript, nil)
-	if err != nil && !strings.Contains(string(out), "#mux") {
-		return guestStatus{}
+	var stdin io.Reader
+	if len(have) > 0 {
+		stdin = strings.NewReader(strings.Join(have, "\n") + "\n")
+	}
+	raw, err := runSSH(ctx, sshTarget{Args: args}, statusScript(slug), stdin)
+	out := string(raw)
+	if err != nil && !strings.Contains(out, "#mux") {
+		var se *sshError
+		if ctx.Err() != nil || (errors.As(err, &se) && strings.Contains(strings.ToLower(se.Stderr), "timed out")) {
+			return guestStatus{probeErr: "ssh_timeout"}
+		}
+		g := guestStatus{probeErr: "ssh_failed"}
+		if errors.As(err, &se) {
+			g.probeDetail = sshStderrDetail(se.Stderr)
+		}
+		return g
 	}
 	mux := multiplexer.Tmux
-	if _, m, ok := strings.Cut(string(out), "#mux"); ok && strings.TrimSpace(m) == multiplexer.Herdr {
-		mux = multiplexer.Herdr
+	if _, m, ok := strings.Cut(out, "#mux"); ok {
+		m, _, _ = strings.Cut(m, "#git")
+		if strings.TrimSpace(m) == multiplexer.Herdr {
+			mux = multiplexer.Herdr
+		}
 	}
-	return guestStatus{procs: parseStatusProcs(string(out)), mux: mux, disk: parseStatusDisk(string(out))}
+	return guestStatus{procs: parseStatusProcs(out), mux: mux, disk: parseStatusDisk(out), git: parseStatusGit(out, len(have) > 0)}
+}
+
+// statusScript is statusProcsScript, which reads the laptop's commit
+// ids from stdin first so no later command takes them, then the git
+// section.
+func statusScript(slug string) string {
+	return "repose_have=$(cat)\n" + statusProcsScript + "\necho '#git'\n" + checkoutVar(slug, "") + statusGitScript
+}
+
+// statusGitScript prints, after "#git", one line per worktree of the
+// machine's checkout, the checkout itself first, tab-separated: "wt",
+// the worktree's folder, its branch ("" when detached), how many of its
+// commits are not among the laptop's ("-" when the laptop sent none, or
+// none of them is on the machine), how many files `git status` lists
+// ("-" when it took over two seconds) and its last commit's time in Unix
+// seconds ("" for none). Nothing for a machine with no checkout or a
+// checkout that is not a repository. The laptop's ids are filtered to
+// commits the machine has, so one it lacks never fails the count.
+const statusGitScript = `[ "$repose_co" != "$HOME" ] && cd "$repose_co" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 && {
+repose_not=
+[ -n "$repose_have" ] && repose_not=$(printf '%s\n' "$repose_have" | grep -E '^[0-9a-f]{40,64}$' | git cat-file --batch-check='%(objectname) %(objecttype)' 2>/dev/null | awk '$2 == "commit" { print "^" $1 }')
+git worktree list --porcelain 2>/dev/null | awk '
+/^worktree / { p = substr($0, 10); b = ""; bare = 0 }
+/^branch / { b = substr($0, 8); sub(/^refs\/heads\//, "", b) }
+/^bare/ { bare = 1 }
+/^$/ { if (p != "" && !bare) print p "\t" b; p = "" }
+END { if (p != "" && !bare) print p "\t" b }' | while IFS='	' read -r p b; do
+  [ -d "$p" ] || continue
+  n=-
+  [ -n "$repose_not" ] && n=$(printf '%s\n' "$repose_not" | git -C "$p" rev-list --count HEAD --stdin 2>/dev/null)
+  if s=$(timeout 2 git -C "$p" status --porcelain 2>/dev/null); then d=$(printf '%s' "$s" | grep -c .); else d=-; fi
+  t=$(git -C "$p" log -1 --format=%ct 2>/dev/null)
+  printf 'wt\t%s\t%s\t%s\t%s\t%s\n' "${p##*/}" "$b" "${n:--}" "$d" "$t"
+done
+}
+true
+`
+
+// gitRow is one worktree of the machine's checkout as status shows it
+// and `status --json` carries it (I-616).
+type gitRow struct {
+	// Worktree is the folder under /home/dev: the checkout's, or a
+	// worktree's beside it.
+	Worktree string `json:"worktree"`
+	// Branch is "" when the worktree is on a detached HEAD.
+	Branch string `json:"branch"`
+	// NotOnLaptop counts the branch's commits the laptop that ran status
+	// does not have, which `git fetch repose` brings; absent when status
+	// ran outside the project's checkout and cannot tell.
+	NotOnLaptop *int `json:"commits_not_on_laptop,omitempty"`
+	// Uncommitted counts the files `git status` lists; absent when it
+	// did not answer in time.
+	Uncommitted  *int       `json:"uncommitted_files,omitempty"`
+	LastCommitAt *time.Time `json:"last_commit_at,omitempty"`
+}
+
+// parseStatusGit reads statusGitScript's lines. counted is whether the
+// laptop sent its commits: without them no count is believed.
+func parseStatusGit(out string, counted bool) []gitRow {
+	_, sec, ok := strings.Cut(out, "#git")
+	if !ok {
+		return nil
+	}
+	var rows []gitRow
+	for _, l := range strings.Split(sec, "\n") {
+		f := strings.Split(l, "\t")
+		if len(f) != 6 || f[0] != "wt" || f[1] == "" {
+			continue
+		}
+		r := gitRow{Worktree: f[1], Branch: f[2]}
+		if n, err := strconv.Atoi(f[3]); err == nil && n >= 0 && counted {
+			r.NotOnLaptop = &n
+		}
+		if d, err := strconv.Atoi(f[4]); err == nil && d >= 0 {
+			r.Uncommitted = &d
+		}
+		if ts, err := strconv.ParseInt(f[5], 10, 64); err == nil && ts > 0 {
+			t := time.Unix(ts, 0).UTC()
+			r.LastCommitAt = &t
+		}
+		rows = append(rows, r)
+	}
+	return rows
+}
+
+// laptopCommitsMax bounds the ids status sends: a laptop with thousands
+// of branches still answers in one round trip.
+const laptopCommitsMax = 4000
+
+// laptopCommits is the commit at every branch tip of p's checkouts on
+// this laptop, their fetched `repose/*` branches included: the checkout
+// at the working directory when it is p's (its `repose` remote names p's
+// machine, or its origin is p's remote), and every other folder whose
+// `repose` remote names it (laptopFolders, I-638), so `status todo-app`
+// from ~ counts too. Nil when there is none, and status then shows each
+// branch's last commit instead of what the laptop lacks (I-616).
+func laptopCommits(e *Env, p *Project) []string {
+	var roots []string
+	if root := gitRepoRoot(e.Cwd); root != "" {
+		if reposeRemoteHost(remoteURLOf(root, reposeRemoteName)) == p.Slug || (p.RemoteURL != "" && gitRemoteOrigin(root) == p.RemoteURL) {
+			roots = append(roots, root)
+		}
+	}
+	for _, r := range e.laptopFolders(p) {
+		if len(roots) == 0 || r != roots[0] {
+			roots = append(roots, r)
+		}
+	}
+	seen := map[string]bool{}
+	var ids []string
+	for _, root := range roots {
+		out, err := gitCmd(root, "for-each-ref", "--format=%(objectname)", "refs/heads", "refs/remotes")
+		if err != nil {
+			continue
+		}
+		for _, id := range nonEmptyLines(out) {
+			if !seen[id] && len(ids) < laptopCommitsMax {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		if head, err := gitHeadCommit(root); err == nil && !seen[head] {
+			seen[head] = true
+			ids = append(ids, head)
+		}
+	}
+	return ids
+}
+
+// writeGitRows prints the checkout row, one line per worktree:
+//
+//	checkout   main: 3 commits not on this laptop, 2 files not committed
+//	           worktree-1: nothing new
+func writeGitRows(w io.Writer, rows []gitRow, now time.Time) {
+	writeGitRowsOr(w, rows, now, "", "")
+}
+
+// writeGitRowsOr is writeGitRows, or, when the probe failed, one row
+// that says the checkout is unknown and why (I-634): no row would read
+// as a machine with no checkout.
+func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string) {
+	switch probeErr {
+	case "ssh_timeout":
+		statusRow(w, "checkout", fmt.Sprintf("unknown (no ssh answer in %d s)", int(statusProcsTimeout.Seconds())))
+		return
+	case "ssh_failed":
+		if detail != "" {
+			statusRow(w, "checkout", "unknown (ssh failed: "+detail+")")
+		} else {
+			statusRow(w, "checkout", "unknown (ssh failed)")
+		}
+		return
+	}
+	for i, r := range rows {
+		line := gitRowText(r, now)
+		if i == 0 {
+			statusRow(w, "checkout", line)
+		} else {
+			_, _ = fmt.Fprintln(w, statusIndent+line)
+		}
+	}
+}
+
+func gitRowText(r gitRow, now time.Time) string {
+	name := r.Branch
+	if name == "" {
+		name = r.Worktree + " (detached)"
+	}
+	var parts []string
+	switch {
+	case r.NotOnLaptop != nil && *r.NotOnLaptop > 0:
+		parts = append(parts, count(*r.NotOnLaptop, "commit")+" not on this laptop")
+	case r.NotOnLaptop == nil && r.LastCommitAt != nil:
+		age := "just now"
+		if d := now.Sub(*r.LastCommitAt); d >= time.Minute {
+			age = compactAge(d) + " ago"
+		}
+		parts = append(parts, "last commit "+age)
+	}
+	if r.Uncommitted != nil && *r.Uncommitted > 0 {
+		parts = append(parts, count(*r.Uncommitted, "file")+" not committed")
+	}
+	if len(parts) == 0 {
+		if r.NotOnLaptop == nil && r.LastCommitAt == nil {
+			parts = append(parts, "no commits")
+		} else {
+			parts = append(parts, "nothing new")
+		}
+	}
+	return name + ": " + strings.Join(parts, ", ")
 }

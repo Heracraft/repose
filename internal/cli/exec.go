@@ -30,6 +30,35 @@ type ExecOptions struct {
 	// MayNameProject: the words came with no -- and no --project, so a
 	// first word that is one of the account's projects is PROJECT (I-411).
 	MayNameProject bool
+	// Workdir is --workdir: where the command runs instead of the
+	// checkout (DECISIONS I-608), as workdirShell reads it.
+	Workdir string
+}
+
+// workdirShell is --workdir DIR as a shell word, after checkoutVar: the
+// names `repose ps` shows in TREE, or a path. checkout and worktree-N
+// (I-342) are the checkout and its worktrees, each with an optional
+// /SUBDIR; ~ and ~/PATH are under the home folder; /PATH is itself;
+// anything else is a path inside the checkout.
+func workdirShell(dir string) string {
+	sub := func(rest string) string {
+		if rest == "" {
+			return ""
+		}
+		return "/" + shQuote(rest)
+	}
+	first, rest, _ := strings.Cut(dir, "/")
+	switch {
+	case strings.HasPrefix(dir, "/"):
+		return shQuote(dir)
+	case first == "~":
+		return `"$HOME"` + sub(rest)
+	case first == "checkout":
+		return `"$repose_co"` + sub(rest)
+	case strings.HasPrefix(first, "worktree-") && allDigits(strings.TrimPrefix(first, "worktree-")):
+		return `"$repose_co"` + shQuote("-"+first) + sub(rest)
+	}
+	return `"$repose_co"/` + shQuote(dir)
 }
 
 // execDevshell is where a base with I-275 keeps the agent wrappers'
@@ -43,6 +72,12 @@ const execDevshell = "/etc/repose/devshell.sh"
 // exec the command, each argument quoted so the guest's shell passes it
 // through unchanged, as docker exec does. A shell pipeline is `sh -c`'s job.
 func execScript(slug, extra string, argv []string) string {
+	return execScriptIn(slug, extra, "", argv)
+}
+
+// execScriptIn is execScript in --workdir dir ("" for the checkout). A
+// folder that is not there exits 2 with one line, before the command.
+func execScriptIn(slug, extra, dir string, argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
 		quoted[i] = shQuote(a)
@@ -51,11 +86,16 @@ func execScript(slug, extra string, argv []string) string {
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		name = name[i+1:]
 	}
-	return fmt.Sprintf(`%[1]scd "$repose_co"
+	cd := `cd "$repose_co"`
+	if dir != "" {
+		missing := fmt.Sprintf("%s has no folder %s.", slug, dir)
+		cd = fmt.Sprintf("cd %s 2>/dev/null || { printf '%%s\\n' %s >&2; exit 2; }", workdirShell(dir), shQuote(missing))
+	}
+	return fmt.Sprintf(`%[1]s%[5]s
 [ -r /etc/profile.d/repose.sh ] && . /etc/profile.d/repose.sh
 if [ -r %[2]s ]; then . %[2]s; REPOSE_DEVSHELL_QUIET=1 _repose_devshell %[3]s; unset -f _repose_devshell _repose_devshell_done
 elif command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
-exec %[4]s`, checkoutVar(slug, extra), execDevshell, shQuote(name), strings.Join(quoted, " "))
+exec %[4]s`, checkoutVar(slug, extra), execDevshell, shQuote(name), strings.Join(quoted, " "), cd)
 }
 
 // execSSHArgs are ssh's arguments for opts on target.
@@ -86,10 +126,27 @@ func execSeparated(args []string, opts *ExecOptions) (project string, command []
 					opts.TTY = true
 				case "-it", "-ti":
 					opts.Interactive, opts.TTY = true, true
+				default:
+					if v, ok := strings.CutPrefix(f, "--workdir="); ok {
+						opts.Workdir = v
+					}
+				}
+			}
+			for j := 1; j < k-1; j++ {
+				if args[j] == "--workdir" {
+					opts.Workdir = args[j+1]
 				}
 			}
 			return args[0], args[k+1:], true
 		case "-i", "-t", "-it", "-ti", "--interactive", "--tty":
+			continue
+		case "--workdir":
+			if k+1 < len(args) && args[k+1] != "--" {
+				k++
+				continue
+			}
+		}
+		if strings.HasPrefix(args[k], "--workdir=") {
 			continue
 		}
 		return "", nil, false
@@ -100,17 +157,17 @@ func execSeparated(args []string, opts *ExecOptions) (project string, command []
 func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts ExecOptions
 	cmd := &cobra.Command{
-		Use:   "exec [PROJECT] [--] COMMAND [ARG...]",
+		Use:   "exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]",
 		Short: "Run one command in the checkout on the machine",
-		Long: "Runs COMMAND in the checkout on PROJECT's machine (this checkout's project, by default), with\n" +
-			"the environment an agent there has: the project's secrets and its dev shell. Output streams\n" +
-			"back; the exit code is the command's. The words are passed through as they are; for a\n" +
-			"pipeline use sh -c '...'. A first word that names one of your projects is PROJECT; put --\n" +
-			"before COMMAND to run a command that has a project's name. exec's own flags go before\n" +
-			"COMMAND.\n\n" +
-			"Without -i the command gets no input, and without -t no terminal; -it gives both, for\n" +
-			"something interactive such as a REPL.",
-		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql",
+		Long: "Run COMMAND in the checkout on PROJECT's machine (this checkout's project, by\n" +
+			"default), with the project's secrets and dev shell, as an agent there has them.\n" +
+			"Output streams back, and the exit code is the command's. The words pass through\n" +
+			"as they are; for a pipeline, use sh -c '...'. A first word that names one of\n" +
+			"your projects is PROJECT; put -- before a command that has a project's name.\n" +
+			"exec's own flags go before COMMAND.\n\n" +
+			"Without -i the command gets no input, and without -t no terminal; -it gives\n" +
+			"both, for something interactive such as a REPL.",
+		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec --workdir worktree-1 npm test",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 || cmd.ArgsLenAtDash() == len(args) {
 				return cobraUsageError{fmt.Errorf("no command: repose exec [PROJECT] [--] COMMAND")}
@@ -149,6 +206,7 @@ func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().BoolVarP(&opts.Interactive, "interactive", "i", false, "pass this terminal's input to the command")
 	cmd.Flags().BoolVarP(&opts.TTY, "tty", "t", false, "give the command a terminal (with -i, for interactive programs)")
+	cmd.Flags().StringVar(&opts.Workdir, "workdir", "", "run in `DIR`: worktree-N, checkout, ~/PATH, /PATH, or a path in the checkout")
 	return cmd
 }
 
@@ -164,14 +222,17 @@ func execProjectWord(ctx context.Context, e *Env, opts *ExecOptions) error {
 	if err != nil {
 		return nil // a real api failure is reported by the connect that follows
 	}
+	// PROJECT:CHECKOUT names one of its checkouts (I-480).
+	word := opts.Command[0]
+	slug, _, _ := strings.Cut(word, ":")
 	for _, p := range projects {
-		if p.Slug != opts.Command[0] {
+		if p.Slug != slug {
 			continue
 		}
 		if len(opts.Command) == 1 {
-			return exitf(ExitUsage, "%q is one of your projects. Give the command after it: `repose exec %s COMMAND`, or `repose exec -- %s` to run a command of that name.", p.Slug, p.Slug, p.Slug)
+			return exitf(ExitUsage, "%q is one of your projects. Give the command after it: `repose exec %s COMMAND`, or `repose exec -- %s` to run a command of that name.", word, word, word)
 		}
-		opts.ProjectArg, opts.Command = p.Slug, opts.Command[1:]
+		opts.ProjectArg, opts.Command = word, opts.Command[1:]
 		return nil
 	}
 	return nil
@@ -188,7 +249,7 @@ func ExecCmd(ctx context.Context, e *Env, opts ExecOptions, stdin io.Reader) err
 	if err != nil {
 		return err
 	}
-	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScript(project.Slug, target.Checkout, opts.Command))...)
+	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScriptIn(project.Slug, target.Checkout, opts.Workdir, opts.Command))...)
 	c.Stdout, c.Stderr = e.Out, e.ErrOut
 	if opts.Interactive || opts.TTY {
 		c.Stdin = stdin
@@ -219,12 +280,13 @@ func sshShellScript(slug, extra string) string {
 
 func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ssh [PROJECT]",
-		Short: "Open a shell on the machine, in the checkout (outside tmux)",
-		Long: "Opens an interactive login shell in the checkout on PROJECT's machine (this checkout's\n" +
-			"project, by default), outside the tmux session: exit ends it. `repose attach` opens the tmux\n" +
-			"session instead, and `repose exec PROJECT COMMAND` runs one command.",
-		Args:              projectArgs,
+		Use:   "ssh [PROJECT[:CHECKOUT]]",
+		Short: "Open a shell in the checkout on the machine",
+		Long: "Open a login shell in the checkout on PROJECT's machine (this checkout's\n" +
+			"project, by default), outside the session that attach opens: exit ends it.\n" +
+			"repose exec runs one command instead.",
+		SuggestFor:        []string{"shell", "connect", "console", "sh"},
+		Args:              sshArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, err := projectFrom(args, g)
@@ -238,6 +300,16 @@ func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SSHCmd(cmd.Context(), e, project)
 		},
 	}
+}
+
+// sshArgs is projectArgs for `repose ssh`, whose second word is a
+// command a peer's ssh would run: the refusal names exec, which runs it
+// (DECISIONS I-275 keeps ssh a shell; I-628).
+func sshArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 1 {
+		return cobraUsageError{fmt.Errorf("%s takes at most one PROJECT and no command, got %s. To run a command: repose exec %s", cmd.CommandPath(), gotArgs(args), strings.Join(args, " "))}
+	}
+	return nil
 }
 
 // SSHCmd implements `repose ssh`: the certificate and config as for

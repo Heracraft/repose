@@ -25,9 +25,13 @@ const (
 	envNoForward       = "REPOSE_NO_FORWARD"
 	envNoFastPath      = "REPOSE_NO_FASTPATH"
 	envNoBrowser       = "REPOSE_NO_BROWSER"
-	envInputProxy      = "REPOSE_INPUT_PROXY"    // "0": run and attach become ssh, no drops or Ctrl+V images (I-280)
-	envClipboardPath   = "REPOSE_CLIPBOARD_PATH" // "0": no path on an image-only clipboard, so Cmd+V pastes nothing (I-341)
-	envInGuest         = "REPOSE"                // "1" inside a repose guest: login never tries a browser there
+	envNoInputProxy    = "REPOSE_NO_INPUT_PROXY"    // "1": run and attach become ssh, no drops or Ctrl+V images (I-280)
+	envNoClipboardPath = "REPOSE_NO_CLIPBOARD_PATH" // "1": no path on an image-only clipboard, so Cmd+V pastes nothing (I-341)
+	// The =0 spellings of the two above, from before each switch was
+	// spelled as a "no" set to 1 (I-621); read for a release.
+	envInputProxy      = "REPOSE_INPUT_PROXY"
+	envClipboardPath   = "REPOSE_CLIPBOARD_PATH"
+	envInGuest         = "REPOSE" // "1" inside a repose guest: login never tries a browser there
 	envXDGConfigHome   = "XDG_CONFIG_HOME"
 	envClaudeConfigDir = "CLAUDE_CONFIG_DIR"
 	envVisual          = "VISUAL"
@@ -40,7 +44,7 @@ const (
 var userEnvVars = []string{
 	envProject, envAPIURL, envTiming, envNoSpinner, envNoForward, envNoFastPath, envNoBrowser,
 	envInGuest, envXDGConfigHome, envClaudeConfigDir, envVisual, envEditor,
-	envWaylandDisplay, envDisplay, envInputProxy, envClipboardPath,
+	envWaylandDisplay, envDisplay, envNoInputProxy, envNoClipboardPath, envInputProxy, envClipboardPath,
 	envReposeEditor,
 }
 
@@ -66,13 +70,17 @@ type Env struct {
 	// Quiet is -q on a listing: only the names or ids, one per line, for
 	// a pipe into xargs (DECISIONS I-276).
 	Quiet bool
+	// jsonLines makes printJSON write one compact line, for a command
+	// that prints a value per refresh (`status -f --json`, I-609).
+	jsonLines bool
+	// acted is the project run or sync acted on, for `sync --json`.
+	acted *Project
 	// TTY is whether stderr is a terminal: a spinner there, plain phase
 	// lines otherwise (I-154).
 	TTY bool
-	// Command is what the user ran ("repose attach"), for hints that
-	// show the command again with a PROJECT argument; it ends in
-	// " --project" for a command that takes PROJECT as that flag only
-	// ("repose mcp forward --project").
+	// Command is what the user ran with PROJECT in it ("repose attach
+	// PROJECT", "repose secrets set NAME --project PROJECT"), for hints
+	// that show the command again naming a project (hintCommand).
 	Command string
 
 	active *progress // the command's progress display, so warnings do not tear its line
@@ -94,6 +102,10 @@ type Env struct {
 	// machine has not opted out: the tool scan leaves the laptop's
 	// global tools to it (DECISIONS I-490).
 	personalOn bool
+	// longSSHWait is set by run, start and attach, which may have just
+	// booted the machine: its first ssh may take the whole minute
+	// (I-634).
+	longSSHWait bool
 }
 
 func (e *Env) target(slug string) sshTarget {
@@ -133,7 +145,7 @@ func newEnv(apiURLFlag string, jsonOut, verbose bool) (*Env, error) {
 		return nil, err
 	}
 
-	httpClient := withTiming(&http.Client{Timeout: 30 * time.Second})
+	httpClient := withVerbose(withTiming(&http.Client{Timeout: 30 * time.Second}), cfg.APIURL)
 	var tokens TokenSource
 	if creds, ok, err := loadCredentials(dir); err == nil && ok && (creds.RefreshToken != "" || creds.AccessToken != "") {
 		tokens = newOIDCTokenSource(dir, httpClient, creds)
@@ -145,7 +157,7 @@ func newEnv(apiURLFlag string, jsonOut, verbose bool) (*Env, error) {
 		Dir: dir, Cfg: cfg, Cache: cache, Cwd: cwd, HomeDir: home,
 		Client: newClient(cfg.APIURL, tokens), Out: os.Stdout, ErrOut: os.Stderr,
 		JSON: jsonOut, Verbose: verbose, httpClient: httpClient,
-		TTY: isTerminal(os.Stderr),
+		TTY: canDrawSpinner(os.Stderr),
 	}, nil
 }
 
@@ -190,18 +202,23 @@ func exitCodeFor(err error, stderr io.Writer) int {
 		}
 		return ee.code
 	}
+	var loginAway *loginUnreachableError
+	if errors.As(err, &loginAway) {
+		// Offline or the login server's outage: a network problem, and
+		// `repose login` would fail the same way (DECISIONS I-623).
+		_, _ = fmt.Fprintln(stderr, loginAway.Error())
+		return ExitGeneric
+	}
 	var notLoggedIn *notLoggedInError
 	if errors.As(err, &notLoggedIn) {
 		// A refresh Logto refused (invalid_grant: the refresh token expired
-		// or was revoked) is an expired login, not a missing one; a refresh
-		// that never got an answer is a network problem, and "Not logged
-		// in" would send the user to log in again for nothing.
+		// or was revoked) is an expired login, not a missing one.
 		msg := notLoggedIn.Error()
 		switch {
 		case strings.Contains(msg, "invalid_grant"):
 			_, _ = fmt.Fprintln(stderr, "Your login has expired. Run `repose login`.")
 		case strings.HasPrefix(msg, "refreshing session"):
-			_, _ = fmt.Fprintf(stderr, "Could not refresh your login: %v. Check your connection, or run `repose login`.\n", errors.Unwrap(notLoggedIn.cause))
+			_, _ = fmt.Fprintf(stderr, "The login server refused to renew your login (%v). Run `repose login`.\n", errors.Unwrap(notLoggedIn.cause))
 		default:
 			_, _ = fmt.Fprintln(stderr, "Not logged in. Run `repose login`.")
 		}
@@ -209,43 +226,17 @@ func exitCodeFor(err error, stderr io.Writer) int {
 	}
 	var unreachable *unreachableError
 	if errors.As(err, &unreachable) {
-		_, _ = fmt.Fprintf(stderr, "Cannot reach the api: %v\n", unreachable.cause)
+		_, _ = fmt.Fprintln(stderr, unreachable.message())
+		return ExitGeneric
+	}
+	var notAPI *notAPIError
+	if errors.As(err, &notAPI) {
+		_, _ = fmt.Fprintln(stderr, notAPI.Error())
 		return ExitGeneric
 	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		switch apiErr.Code {
-		case "unauthenticated":
-			_, _ = fmt.Fprintln(stderr, "Not logged in. Run `repose login`.")
-			return ExitNotLoggedIn
-		case "payment_required":
-			_, _ = fmt.Fprintln(stderr, paymentRequiredMessage(apiErr))
-			return ExitPaymentRequired
-		case "capacity":
-			_, _ = fmt.Fprintln(stderr, "No capacity right now; try again in a few minutes. (We have been alerted.)")
-			return ExitCapacity
-		case "waitlisted":
-			// A first project while the fleet is near full (DECISIONS
-			// I-269): the user is on the waitlist and gets an email.
-			_, _ = fmt.Fprintln(stderr, waitlistedMessage(apiErr))
-			return ExitCapacity
-		case "invalid":
-			// One wording for the project cap whichever command met it
-			// (I-569); fork says the same before it snapshots.
-			if have, limit, n, ok := projectLimitOf(apiErr); ok {
-				_, _ = fmt.Fprintln(stderr, projectLimitMessage(have, limit, n))
-				return ExitGeneric
-			}
-			_, _ = fmt.Fprintf(stderr, "%s: %s\n", apiErr.Code, apiErr.Message)
-			return ExitGeneric
-		case "rate_limited":
-			// Only after the client waited out rateLimitBudget (I-187).
-			_, _ = fmt.Fprintln(stderr, "The api is refusing this account's requests for now: too many in the last minute (a dashboard tab or another repose command may be polling). Try again in a minute; `repose status` shows where things stand.")
-			return ExitGeneric
-		default:
-			_, _ = fmt.Fprintf(stderr, "%s: %s\n", apiErr.Code, apiErr.Message)
-			return ExitGeneric
-		}
+		return apiErrorExit(apiErr, stderr)
 	}
 	msg := err.Error()
 	if msg != "" {
@@ -253,4 +244,67 @@ func exitCodeFor(err error, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stderr, msg)
 	return ExitGeneric
+}
+
+// apiErrorExit prints the sentence for an api refusal and returns its
+// exit code: one sentence per kind of answer, the code in parentheses
+// where support needs it, and the request id on a failure of the api's
+// own (DECISIONS I-623).
+func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
+	say := func(format string, args ...any) { _, _ = fmt.Fprintf(stderr, format+"\n", args...) }
+	switch apiErr.Code {
+	case "unauthenticated":
+		say("Not logged in. Run `repose login`.")
+		return ExitNotLoggedIn
+	case "payment_required":
+		say("%s", paymentRequiredMessage(apiErr))
+		return ExitPaymentRequired
+	case "capacity":
+		say("repose has no room for this machine right now. Try again in a few minutes.")
+		return ExitCapacity
+	case "waitlisted":
+		// A first project while the fleet is near full (DECISIONS
+		// I-269): the user is on the waitlist and gets an email.
+		say("%s", waitlistedMessage(apiErr))
+		return ExitCapacity
+	case "rate_limited":
+		// Only after the client waited out rateLimitBudget (I-187).
+		say("Too many requests from this account in the last minute. Try again in a minute.")
+		return ExitGeneric
+	case "billing_disabled":
+		// A 503 that is an answer, not an outage (api.md).
+		say("%s", apiRefusal(apiErr))
+		return ExitGeneric
+	case "invalid":
+		// One wording for the project cap whichever command met it
+		// (I-569), and the plan-limit exit code (I-623).
+		if have, limit, n, ok := projectLimitOf(apiErr); ok {
+			say("%s", projectLimitMessage(have, limit, n))
+			return ExitPaymentRequired
+		}
+	}
+	if apiErr.Raw || apiErr.Status >= 500 {
+		rid := ""
+		if apiErr.RequestID != "" {
+			rid = ", request " + apiErr.RequestID
+		}
+		if apiErr.Raw {
+			say("The repose api answered %d%s. Try again in a minute.", apiErr.Status, rid)
+		} else {
+			say("The repose api failed (%s%s). Try again in a minute.", apiErr.Code, rid)
+		}
+		return ExitGeneric
+	}
+	say("%s", apiRefusal(apiErr))
+	return ExitGeneric
+}
+
+// apiRefusal is a 4xx refusal as a sentence: the api's message, which
+// since I-159 is written for the user, with its code after it.
+func apiRefusal(apiErr *APIError) string {
+	m := strings.TrimSuffix(strings.TrimSpace(apiErr.Message), ".")
+	if m == "" {
+		return fmt.Sprintf("The api refused it (%s).", apiErr.Code)
+	}
+	return fmt.Sprintf("%s (%s).", strings.ToUpper(m[:1])+m[1:], apiErr.Code)
 }

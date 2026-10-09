@@ -89,7 +89,7 @@ func TestIdleRunningProjectWarnsOncePerStretch(t *testing.T) {
 	if err := e.h.Pool.QueryRow(ctx, "select e.summary, (select count(*) from events_outbox o where o.event_id = e.id) from events e where e.project_id = $1 and e.kind = 'idle_running'", p.ID).Scan(&summary, &outbox); err != nil {
 		t.Fatal(err)
 	}
-	if outbox == 0 || !strings.Contains(summary, "repose stop forgotten") || !strings.Contains(summary, "holding 8 GB of your plan's memory") || !strings.Contains(summary, "for 26h") {
+	if outbox == 0 || !strings.Contains(summary, "repose stop forgotten") || !strings.Contains(summary, "holds 8 GB of your plan's memory") || !strings.Contains(summary, "for 26h") {
 		t.Fatalf("summary %q, outbox rows %d", summary, outbox)
 	}
 	if st := e.h.Project(p.ID).State; st != "running" {

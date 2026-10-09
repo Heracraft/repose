@@ -162,7 +162,9 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 		return target, true, nil
 	}
 	timingf("connect: files cover the project, no ssh master")
-	err = waitForSSH(ctx, target, certRefusalHandler(func() error {
+	slow, done := e.connectingPhase(project.Slug)
+	defer done()
+	err = waitForSSH(ctx, target, e.sshWait(), slow, certRefusalHandler(func() error {
 		// A refusal of the certificate on disk (revoked, a rotated CA):
 		// the slow path's forced re-issue, which needs the account.
 		me, err := e.Client.GetMe(ctx)
@@ -247,7 +249,7 @@ func warmTarget(ctx context.Context, e *Env, guess *Project) (t sshTarget, cover
 // the project and a master that answers proves its guest is running, which is
 // everything the attach needs. done is false when the full path must
 // run; it then has done nothing.
-func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done bool, err error) {
+func attachFast(ctx context.Context, e *Env, explicit string, bridge bool, window string) (done bool, err error) {
 	deps := defaultResolveDeps()
 	guess := cachedGuess(e, explicit, deps)
 	target, _, master := warmTarget(ctx, e, guess)
@@ -273,13 +275,13 @@ func attachFast(ctx context.Context, e *Env, explicit string, bridge bool) (done
 	defer e.keepTokenFresh()()
 	// The cache keeps no expiry: a temporary machine is never cached
 	// (I-351), so the guess is never one.
-	return true, mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: guess, TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
+	return true, mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: guess, Window: window, Named: window != "", TZ: tz, RepoDir: helper.RepoDir, Renew: renewFor(e, guess), Release: release, Helper: helper})
 }
 
 // fastAttachHelper is the session helper's options for attachFast: the
 // same as the full path's, --bridge included (I-305).
 func fastAttachHelper(e *Env, guess *Project, target sshTarget, tz, explicit string, bridge bool) sessionOptions {
-	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge, Checkout: target.Checkout}
+	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: bridge, Checkout: target.Checkout, OpenURLs: laptopOpensURLs()}
 	if skip, _, _ := e.Cfg.loginSkip(guess.Slug); skip[mcpLogin] {
 		helper.MCPOff = true // I-556
 	}

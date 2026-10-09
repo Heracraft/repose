@@ -83,19 +83,20 @@ paths, `REPOSE=1`).
 ### 5.1 Command tree
 
 ```
-repose login [--no-browser]
+repose login [--no-browser] [--status]   # I-627
 repose logout
 repose run [PROJECT] [-p PROMPT] [--agent claude|opencode|codex|gemini|pi] [--size small|large|xl]
             [--temp [DURATION]] [--no-sync] [--no-attach] [--worktree]
             # --name NAME: hidden, PROJECT's old spelling (I-603); words that are not
             # one project name are the prompt for one release, with a line on stderr
-            # --stash-remote, --discard-remote: hidden, exit 2 naming `repose sync` (I-367)
+            # --stash-machine, --discard-machine: hidden, exit 2 naming `repose sync` (I-367)
 repose attach [PROJECT]
 repose start [PROJECT]
 repose stop [PROJECT] [--no-snapshot]
 repose status [PROJECT] [--json] [--watch]
 repose open PORT [--local-port N] [--no-browser]
-repose browser [PROJECT] [--stop] [--no-open]   # I-292; `open --desktop [--stop] [--no-browser]` is the hidden old name
+repose browser [PROJECT] [--no-browser]   # I-292; `open --desktop [--stop] [--no-browser]` is the hidden old name; --no-open hidden since I-619
+repose browser stop [PROJECT]             # I-619; --stop is its hidden old form
 repose cp [-r] SRC DST        # PROJECT:PATH, or :PATH for this checkout's (I-201)
 repose paste [PROJECT] [--window NAME] [--print]   # clipboard image to the guest (I-252)
 repose ps [PROJECT] [-q|--quiet] [--json]      # the tmux windows (I-274)
@@ -112,7 +113,7 @@ repose config add NAME...       # catalog id, else any nixpkgs attribute path (I
 repose config remove NAME...    # alias rm
 repose snapshots list [PROJECT] [-q|--quiet] [--json]   # alias ls
 repose snapshots create [PROJECT]
-repose snapshots restore [PROJECT] SNAPSHOT_ID [--as-new NAME]
+repose snapshots restore [PROJECT] SNAPSHOT_ID [--as NAME] [-y]   # --as-new hidden since I-619; SNAPSHOT_ID may be its end or start
 repose rm [PROJECT] [--yes|-y] [--wait]   # alias destroy, the old name (I-273)
 repose restore [NAME] [--as NEW-NAME] [--snapshot ID]   # no NAME: the checkout's remote finds it
 repose logs [PROJECT] [--kind console|build|ops] [--since 1h] [--follow|-f]
@@ -123,7 +124,8 @@ repose resize [PROJECT] [DISK] [--size small|large|xl] [--yes|-y]   # grow the d
 repose scan [DIR] [--json]     # dry run of what run installs (I-222)
 repose questions [PROJECT] [--json]            # I-245
 repose reply [PROJECT] [ANSWER...] [--question ID] [--json]
-repose notify set [--email on|off] [--ntfy URL|none]
+repose notify [--json]                            # I-622: the settings
+repose notify set [--email on|off] [--ntfy URL|off]   # none is the old off (I-619)
 repose notify test
 repose version
 repose completion bash|zsh|fish
@@ -132,8 +134,10 @@ repose browser bridge [PROJECT] [--cdp URL] [--user-data-dir DIR] [--no-browser]
 ```
 
 Global flags: `--project ID|SLUG` (or `REPOSE_PROJECT`), `--api-url` (or
-`REPOSE_API_URL`), `--json` on read commands, `-v` for debug logging to
-stderr.
+`REPOSE_API_URL`), `--json` on read commands, `-v` for one stderr line
+per api request (method, path, status, time, request id, a refusal's
+body) and per ssh (options, target, the remote command's first word),
+never a header or token (I-624).
 
 PROJECT (DECISIONS I-155): the commands whose object is a project take it
 as their one argument, docker-style; `--project` and `REPOSE_PROJECT` keep
@@ -173,7 +177,9 @@ account's slugs for PROJECT and `--project`.
    Waiting...
    ```
 
-   and poll at the returned interval.
+   and poll at the returned interval. With a browser available (as in
+   step 2, `WAYLAND_DISPLAY` counts too) and no `--no-browser`, also open
+   the link with the code in it (I-627).
 4. Store per `interfaces/cli-config.md`: macOS keychain for the refresh
    token (service `repose`, account `<issuer>`), else
    `credentials.json` 0600.
@@ -190,11 +196,23 @@ account's slugs for PROJECT and `--project`.
 Access token refresh happens transparently in the API client: on 401 with
 `unauthenticated`, refresh once, retry once. If the refresh fails, exit 3
 with `Not logged in. Run \`repose login\`.`
+A refresh or discovery that never got an OAuth answer (offline, the login
+server down, a proxy's page) is a network failure, exit 1 with `Could
+not reach the login server (<host>): <reason>. Check your connection.`
+(I-623).
+
+`repose login --status` prints `<handle> (<email>) on <api host>, <Plan>
+plan` from `GET /me`, exit 3 when there is no login. `repose run` on a
+terminal with no stored login runs the device flow first, then goes on
+(I-627).
 
 `repose logout` revokes the refresh token at Logto, deletes the stored
 tokens, calls `POST /certs/revoke {all:true}`, removes
 `~/.ssh/repose/id_ed25519-cert.pub`. It leaves `projects.json` and the ssh
-config in place.
+config in place. It prints `Logged out. Your SSH certificates are revoked;
+connections they opened, on any device, close within 30 seconds.`; when
+the revoke fails it still deletes the tokens, says the certificates were
+not revoked and stop working within 24 hours, and exits 1 (I-627).
 
 ### 5.3 Project resolution
 
@@ -330,9 +348,11 @@ $ repose run
       only when the guest changed a path the sync writes (DECISIONS
       I-573).
 
-      `--stash-remote` runs `git stash push -u -m "repose run"`,
-      `--discard-remote` runs `git reset --hard && git clean -fd`; both run
-      at the start of step d's script. A non-empty status whose
+      `--stash-machine` runs `git stash push -u -m "repose sync
+      --stash-machine"`, `--discard-machine` ends a git operation in progress
+      and stashes the same way under its own name before `git reset --hard
+      && git clean -fd` (DECISIONS I-618); both run at the start of step
+      d's script. A non-empty status whose
       fingerprint (`HEAD` and the `git add -A` tree, built in a copy of the
       index) equals `.git/repose-synced` is the previous sync's own diff
       and untracked files, not an agent's: no exit 6, and step d stashes it
@@ -364,9 +384,9 @@ $ repose run
       (DECISIONS I-574: `git merge-tree --write-tree` clean, the guest's
       commits since the merge base leave `paths` alone, a committer
       identity, the laptop's from the tar's `ident`); before that,
-      without `--discard-remote`, a merge, rebase, am, cherry-pick,
+      without `--discard-machine`, a merge, rebase, am, cherry-pick,
       revert or bisect in progress in the guest exits 3 (I-573; the CLI
-      exits 6 naming it); without `--stash-remote` or `--discard-remote`, the
+      exits 6 naming it); without `--stash-machine` or `--discard-machine`, the
       overlap check of `features/sync-at-launch.md` (I-573: the guest's
       dirty and untracked files against `paths` plus what the checkout to
       `H` or the merge tree changes; any overlap exits 3 naming them,
@@ -497,7 +517,7 @@ measures them):
   the retry, in `repose status`, and as a `destroy_failed` notification
   (I-165). `--wait` keeps the old behaviour for scripts: wait on the op,
   then on `GET` answering 404, and only then print `Destroyed <slug> in
-  <time>. Its last snapshot is kept until <date>.`; an op in `error` prints `Could not destroy
+  <time>. Its final snapshot is kept until <date>.`; an op in `error` prints `Could not destroy
   <slug>: <reason> (<code>). <slug> is still there, <state>. \`repose
   destroy <slug>\` tries again.` and exits 1. An api that answers without
   an op id is waited on by polling the project (DECISIONS I-153).
@@ -521,20 +541,26 @@ measures them):
 
 ```
 $ repose status
-todo-app   large  running   2h14m   claude: working      today 2h14m  month 41h
-  host eastus/h-01   ip 10.64.0.7   disk 8.1/40 GB   snapshot 6h ago
-  sessions 1   tmux clients 1   docker 2
-  last event 12m ago: claude completed "ran tests, 3 failures fixed"
+todo-app  running 2h14m  large
+  agents     claude working
+  checkout   main: 3 commits not on this laptop, 2 files not committed
+  attached   1 SSH session, 1 tmux client
+  docker     2 containers
+  disk       8.1 GB of 40.0 GB, snapshot 6h00m ago
+  last event 12m ago, claude done "ran tests, 3 failures fixed"
 ```
 
-`--watch` refreshes every 5 seconds. `--json` prints the `Project` object.
+Labelled rows since DECISIONS I-616; `-v` adds `host` (name and the
+guest's address). `--watch` redraws every 5 seconds; `--wait STATE`
+waits for a state. `--json` prints the `Project` object plus `git`.
 A project in `error` gets an `error: <reason>` line under the first.
 `repose ls` prints a table with a header row (`PROJECT CLASS STATE
-UP AGENTS TODAY MONTH`, `-` where a column does not apply, uptime only
+UP AGENTS` since I-616, `*` after the name of the project a command
+there acts on, `-` where a column does not apply, uptime only
 while running, and `LEFT`, a temporary machine's time left, only while
 one is listed), then one line per project in `error` with its reason and
 the command that fixes it; with no projects it says `No projects yet.`
-(I-484).
+(I-484). The plan's line follows the table (I-616).
 `--json` is the api's list, unchanged (DECISIONS I-153).
 `repose ls --destroyed` lists `GET /projects/destroyed` one row per
 name, the one `repose restore NAME` restores (that name's newest
@@ -750,8 +776,8 @@ removes all of them including the `Include` line.
       2026-09-20 "m2 e2e from the dev box" progress and done lines (`ssh
       <slug>.repose` from a plain terminal after one run, I-108); predates
       I-149's own key, whose laptop re-run is the I-149 row below
-- [ ] Sync: dirty remote refused with exit 6; `--stash-remote` stashes and
-      the stash is listed; `--discard-remote` discards; a commit not on
+- [ ] Sync: dirty remote refused with exit 6; `--stash-machine` stashes and
+      the stash is listed; `--discard-machine` discards; a commit not on
       origin arrives in the guest without a push or a prompt (I-150); an
       empty guest checkout gets the whole history; a diverged guest branch
       is left alone; untracked files respecting gitignore arrive; binary

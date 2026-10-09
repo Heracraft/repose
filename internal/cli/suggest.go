@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,8 +20,11 @@ import (
 
 // unknownCommand returns the message for args that name no command, or
 // "" when they do (or when cobra should report the problem itself, such
-// as a bad flag).
-func unknownCommand(root *cobra.Command, args []string) string {
+// as a bad flag). isProject, when not nil, says whether a word is one of
+// the user's projects: after a group whose bare form lists a project's
+// things (`repose snapshots todo-app`), the word gets the command that
+// takes it instead of a guess at a subcommand (I-633).
+func unknownCommand(root *cobra.Command, args []string, isProject func(string) bool) string {
 	if len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd) {
 		return "" // shell completion's hidden command, which cobra adds as it runs
 	}
@@ -33,20 +38,51 @@ func unknownCommand(root *cobra.Command, args []string) string {
 		}
 		return ""
 	}
-	if err != nil || cmd == nil || cmd.Runnable() || !cmd.HasSubCommands() {
+	// A group takes no words of its own (`repose notify`, `repose
+	// secrets`), so a word after it is a mistyped subcommand, --help or
+	// not (review theme 7); a runnable group whose usage takes words
+	// (`repose browser [PROJECT]`) reads it as one of those.
+	if err != nil || cmd == nil || !cmd.HasSubCommands() || (cmd.Runnable() && cmd.Annotations[bareRunsKey] == "" && takesWords(cmd)) {
 		return ""
 	}
 	typed := firstPositional(cmd, rest)
 	if typed == "" {
 		return ""
 	}
+	if sub := cmd.Annotations[bareRunsKey]; sub != "" && isProject != nil && len(suggestCommands(cmd, typed)) == 0 && isProject(typed) {
+		return fmt.Sprintf("%s is a project: `%s %s %s`.", typed, cmd.CommandPath(), sub, typed)
+	}
 	return unknownCommandMessage(cmd, typed)
+}
+
+// slugShape is what a project's slug can be; any other word is not
+// looked up.
+var slugShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// projectWord is unknownCommand's isProject for Execute: the slugs in
+// projects.json first, then the account's list (two seconds at most, on
+// a path that already failed).
+func projectWord(word string) bool {
+	if !slugShape.MatchString(word) {
+		return false
+	}
+	if dir, err := configDir(); err == nil {
+		if c, err := loadProjectsCache(dir); err == nil {
+			for _, p := range c.ByRemote {
+				if p.Slug == word {
+					return true
+				}
+			}
+		}
+	}
+	return slices.Contains(projectSlugsForCompletion(func() (*Env, error) { return newEnv("", false, false) }), word)
 }
 
 // firstPositional is the first argument that is not a flag or a flag's
 // value, as cmd would parse args; "" when there is none or the flags do
 // not parse.
 func firstPositional(cmd *cobra.Command, args []string) string {
+	cmd.InitDefaultHelpFlag() // so `secrets remvoe --help` parses
 	fs := cmd.Flags()
 	if err := fs.Parse(args); err != nil {
 		return ""
@@ -66,10 +102,8 @@ func unknownCommandMessage(parent *cobra.Command, typed string) string {
 		}
 		msg += "\nDid you mean " + strings.Join(quoted, " or ") + "?"
 	}
-	if parent.HasParent() {
-		return msg + fmt.Sprintf("\nRun `%s --help` for its commands.", parent.CommandPath())
-	}
-	return msg + "\nRun `repose --help` for the commands."
+	// One wording for every usage error's pointer to help (I-631).
+	return msg + fmt.Sprintf("\n`%s --help` shows its usage.", parent.CommandPath())
 }
 
 // suggestCommands names parent's visible subcommands that typed could
@@ -127,7 +161,9 @@ func suggestCommands(parent *cobra.Command, typed string) []string {
 	})
 	var out []string
 	for _, h := range hits {
-		if len(out) == 3 {
+		// An exact alias or SuggestFor word (`up` for run) beats a guess
+		// at a typo (`up` one edit from cp).
+		if len(out) == 3 || (len(out) > 0 && hits[0].dist == 0 && h.dist > 0) {
 			break
 		}
 		out = append(out, h.name)
@@ -160,4 +196,9 @@ func editDistance(a, b string) int {
 		}
 	}
 	return d[len(ra)][len(rb)]
+}
+
+// takesWords is whether cmd's usage line has arguments of its own.
+func takesWords(cmd *cobra.Command) bool {
+	return len(strings.Fields(cmd.Use)) > 1
 }

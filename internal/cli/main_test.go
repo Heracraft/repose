@@ -23,6 +23,7 @@ func TestMain(m *testing.M) {
 	if h := os.Getenv(testHelperEnv); h != "" {
 		os.Exit(runTestHelper(h, os.Args[1:]))
 	}
+	closeInheritedFDs()
 	realHome = os.Getenv("HOME")
 	home, err := os.MkdirTemp("", "repose-cli-test-home-")
 	if err != nil {

@@ -291,6 +291,9 @@ printf '#pane %%s\n' "$repose_p"
 `, shQuote(s.Name), focus)
 	if s.AttachOnly {
 		fmt.Fprintf(&b, "herdr pane run \"$repose_p\" %s >/dev/null\n", shQuote(s.Agent))
+		if s.Prompt != "" {
+			b.WriteString(pendingPromptHerdr(s.Prompt)) // typed after the login (I-607)
+		}
 		return b.String()
 	}
 	fmt.Fprintf(&b, `repose_r=$(herdr agent start %s --kind %s --pane "$repose_p" --timeout %d 2>&1)
@@ -417,6 +420,13 @@ repose_ws=$(herdr workspace list | jq -r --arg l %[1]s 'first(.result.workspaces
 	return b.String()
 }
 
+// herdrFocusNamedScript is herdrFocusScript for `attach --window NAME`
+// (I-606): an agent herdr does not have exits 2 with noWindow's line.
+func herdrFocusNamedScript(slug, extra, agentName string) string {
+	missing := fmt.Sprintf("%s has no agent %s. `repose ps %s` lists them.", slug, agentName, slug)
+	return herdrFocusScript(slug, extra, "") + fmt.Sprintf("herdr agent focus %s >/dev/null 2>&1 || { printf '%%s\\n' %s >&2; exit 2; }\n", shQuote(agentName), shQuote(missing))
+}
+
 // Attach is the attach rule (features/run-and-attach.md "herdr
 // projects"), first match wins: in a laptop herdr pane with the machine
 // in its sidebar, the CLI stays as the session helper and opens no
@@ -434,7 +444,11 @@ func (herdrMux) Attach(e *Env, a attachReq) error {
 		ctx = context.Background()
 	}
 	slug := a.Project.Slug
-	if script := herdrFocusScript(slug, a.Target.Checkout, a.Window); script != "" {
+	script := herdrFocusScript(slug, a.Target.Checkout, a.Window)
+	if a.Named {
+		script = herdrFocusNamedScript(slug, a.Target.Checkout, a.Window)
+	}
+	if script != "" {
 		fctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		_, err := runSSH(fctx, a.Target, script, nil)
 		cancel()
@@ -573,6 +587,28 @@ herdr pane send-text "$p" "$f" >/dev/null || exit 1
 n=$(herdr agent list | jq -r --arg p "$p" 'first(.result.agents[] | select(.pane_id == $p) | .name // empty) // empty')
 printf '%%s\n' "${n:-$p}"
 `, pasteExitNoPane)
+}
+
+// herdrAgentPane is shell that sets $p to the pane of the herdr agent
+// named name, or exits typeExitNoWindow.
+func herdrAgentPane(name string) string {
+	return fmt.Sprintf(`p=$(herdr agent list | jq -r --arg n %s 'first(.result.agents[] | select(.name == $n) | .pane_id) // empty')
+[ -n "$p" ] || exit %d
+`, shQuote(name), typeExitNoWindow)
+}
+
+// TypeScript sends the text to the agent's pane, then Enter. Not
+// `herdr agent prompt`: it refuses an agent that is blocked, and
+// answering one that is is what `run -w` is for.
+func (herdrMux) TypeScript(slug, window, text string) string {
+	return herdrAgentPane(window) + fmt.Sprintf(`herdr pane send-text "$p" %s >/dev/null && herdr pane send-keys "$p" enter >/dev/null
+`, shQuote(text))
+}
+
+// CloseScript closes the agent's pane.
+func (herdrMux) CloseScript(slug, window string) string {
+	return herdrAgentPane(window) + `herdr pane close "$p" >/dev/null
+`
 }
 
 // MessageScript is a herdr notification titled repose (herdr shows it

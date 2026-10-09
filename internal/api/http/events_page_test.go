@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,5 +80,29 @@ func TestEventsPageBack(t *testing.T) {
 	other := e.h.NewProject(u, "quiet", "large")
 	if r := e.do(t, tok, "GET", "/projects/"+other.ID.String()+"/events?before="+before, nil); r.status != 200 || len(r.list) != 0 {
 		t.Fatalf("foreign before: %d %d", r.status, len(r.list))
+	}
+}
+
+// DECISIONS I-609: since= on events and logs is RFC 3339 or absent; any
+// other value is 400 invalid, where it used to mean no limit.
+func TestEventsSinceInvalid(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-since", "sincer")
+	me := e.do(t, tok, "GET", "/me", nil)
+	u, err := store.GetUser(e.h.Ctx, e.h.Pool, uuid.MustParse(me.body["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := e.h.NewProject(u, "since", "small")
+	base := "/projects/" + p.ID.String()
+	for _, q := range []string{"/events?since=7d", "/events?since=yesterday", "/logs?since=2026-10-01", "/logs?kind=ops&since=1h"} {
+		if r := e.do(t, tok, "GET", base+q, nil); r.status != 400 || !strings.Contains(string(r.raw), "invalid") {
+			t.Errorf("%s: %d %s, want 400 invalid", q, r.status, r.raw)
+		}
+	}
+	for _, q := range []string{"/events?since=2026-10-01T00:00:00Z", "/events?since=2026-10-01T00:00:00.123456789-04:00", "/logs?kind=ops&since=2026-10-01T00:00:00Z", "/events"} {
+		if r := e.do(t, tok, "GET", base+q, nil); r.status != 200 {
+			t.Errorf("%s: %d %s, want 200", q, r.status, r.raw)
+		}
 	}
 }

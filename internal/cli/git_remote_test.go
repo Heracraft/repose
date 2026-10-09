@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -318,5 +319,45 @@ func TestRunAddsTheReposeRemote(t *testing.T) {
 	}
 	if !strings.Contains(out.buf.String(), "Removed the git remote repose") {
 		t.Fatalf("destroy did not say it removed the remote:\n%s", out.buf.String())
+	}
+}
+
+// `repose rm` of several fork copies removes each copy's remote: the
+// destroys run at once, and git refuses a second writer of .git/config,
+// so the edits take turns (I-631).
+func TestRmOfSeveralForksRemovesEachRemote(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatalf("runRun: %v", err)
+	}
+	var forks []string
+	for i := 1; i <= 4; i++ {
+		slug := fmt.Sprintf("%s-fork-%d", testSlug, i)
+		if _, err := fake.CreateProject(slug, "small"); err != nil {
+			t.Fatal(err)
+		}
+		forks = append(forks, slug)
+	}
+	if got := addForkRemotes(f.local, testSlug, forks); len(got) != len(forks) {
+		t.Fatalf("fork remotes added: %v", got)
+	}
+	out := &discardWriter{}
+	f.env.ErrOut = out
+	if err := DestroyProjectsCmd(ctx, f.env, forks, true, false, nil); err != nil {
+		t.Fatalf("rm: %v", err)
+	}
+	for _, slug := range forks {
+		if got := remoteURLOf(f.local, slug); got != "" {
+			t.Errorf("remote %s still there: %q", slug, got)
+		}
+		if !strings.Contains(out.buf.String(), "Removed the git remote "+slug+".\n") {
+			t.Errorf("rm did not say it removed %s:\n%s", slug, out.buf.String())
+		}
+	}
+	if remoteURLOf(f.local, "repose") == "" {
+		t.Error("rm of the forks took the source's repose remote")
 	}
 }

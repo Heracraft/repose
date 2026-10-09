@@ -193,12 +193,17 @@ func (f *Fake) notifyUnsubscribe(w http.ResponseWriter, r *http.Request) *apiErr
 
 func (f *Fake) notifyTest(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
-	res := map[string]string{"email": "error", "ntfy": "error"}
+	// As the real api: a channel that is off is left out, and a failed
+	// ntfy says why (I-622). A URL with "fail" in it fails, for tests.
+	res := map[string]string{}
 	if u.NotifyEmail {
 		res["email"] = "ok"
 	}
 	if u.NtfyURL != "" {
 		res["ntfy"] = "ok"
+		if strings.Contains(u.NtfyURL, "fail") {
+			res["ntfy"], res["ntfy_error"] = "error", "the server answered 403"
+		}
 	}
 	writeJSON(w, http.StatusOK, res)
 	return nil
@@ -253,7 +258,7 @@ func (f *Fake) event(p *project, kind, agent, summary string) *Event {
 }
 
 func (f *Fake) newOp(p *project, kind string) *op {
-	o := &op{id: f.nextID(), projectID: p.ID, kind: kind}
+	o := &op{id: f.nextID(), projectID: p.ID, kind: kind, created: f.now()}
 	o.State = "done"
 	o.LogURL = fmt.Sprintf("%s/v1/projects/%s/ops/%s/log", f.Server.URL, p.ID, o.id)
 	f.ops[o.id] = o
@@ -275,7 +280,9 @@ func (f *Fake) run(p *project) {
 	}
 	p.StartedAt = &now
 	p.Signals = &Signals{Agents: []AgentSignal{}, GuestdOK: true}
-	f.event(p, "guest.started", "", "guest started on "+hostID)
+	// The api's event for a state change: kind guest_state_changed, the
+	// state as its summary (internal/api/events, I-609).
+	f.event(p, "guest_state_changed", "", "running")
 }
 
 func (f *Fake) snapshot(p *project, reason string) *Snapshot {
@@ -297,11 +304,18 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
-	f.event(p, "guest.stopped", "", "guest stopped")
+	f.event(p, "guest_state_changed", "", "stopped")
 	return s
 }
 
 func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *apiError) {
+	return f.createGated(u, name, remoteURL, class, class)
+}
+
+// createGated is create with the class the memory gate is asked about:
+// "" for a project that is not started, as a fork with start: false
+// (the api's gateClass).
+func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string) (*project, *apiError) {
 	if !nameRe.MatchString(name) {
 		return nil, invalid("name: must match [A-Za-z0-9._-]{1,64}")
 	}
@@ -314,7 +328,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 	}
 	// The billing gate runs on every create, fork and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
-	if e := f.gate(u, class, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
+	if e := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
 		return nil, e
 	}
 	if e := f.projectCap(u, 1); e != nil {
@@ -342,7 +356,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 		secrets:   map[string]*SecretMeta{},
 		eventKeys: map[string]bool{},
 	}
-	rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "applied", BaseVersion: baseVersion, AppliedAt: &now}
+	rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "applied", Fragment: fakeDefaultFragment, BaseVersion: baseVersion, AppliedAt: &now}
 	p.revisions = append(p.revisions, rev)
 	p.ConfigRevisionID = rev.ID
 	f.projects[p.ID] = p
@@ -466,6 +480,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		TZ              *string `json:"tz"`
 		// Only null: `repose keep` (DECISIONS I-347).
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// A temporary project's new lifetime from now (I-612).
+		ExpiresIn *int64 `json:"expires_in_s"`
 		// machine.nix off or back on (I-490).
 		PersonalOptOut *bool `json:"personal_opt_out"`
 		// What the next start runs (I-502).
@@ -492,6 +508,9 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 			}
 		}
 	}
+	if len(body.ExpiresAt) > 0 && body.ExpiresIn != nil {
+		return invalid("expires_at: null and expires_in_s cannot both be sent")
+	}
 	if len(body.ExpiresAt) > 0 {
 		if strings.TrimSpace(string(body.ExpiresAt)) != "null" {
 			return invalid("expires_at can only be set to null, which keeps a temporary project")
@@ -500,6 +519,19 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 			return errf("conflict", "%s is already being destroyed", p.Slug)
 		}
 		p.ExpiresAt = nil
+	}
+	if body.ExpiresIn != nil {
+		if *body.ExpiresIn < 600 || *body.ExpiresIn > 86400 {
+			return invalid("expires_in_s must be between 600 and 86400")
+		}
+		if p.ExpiresAt == nil {
+			return invalid("expires_in_s applies only to a temporary project")
+		}
+		if p.State == "destroying" {
+			return errf("conflict", "%s is already being destroyed", p.Slug)
+		}
+		t := f.now().Add(time.Duration(*body.ExpiresIn) * time.Second)
+		p.ExpiresAt = &t
 	}
 	if body.TZ != nil {
 		if _, err := time.LoadLocation(*body.TZ); err != nil || *body.TZ == "" {
@@ -970,7 +1002,7 @@ func renderMenu(raw json.RawMessage) (string, *apiError) {
 }
 
 // fakeDefaultFragment is what a new project starts with in the real api
-// (internal/api/http DefaultFragment); the fake's first revision has none.
+// (internal/api/http DefaultFragment), and the fake's first revision too.
 const fakeDefaultFragment = "{ pkgs, ... }:\n{\n  home.packages = [ ];\n}\n"
 
 func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
@@ -1372,7 +1404,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			continue
 		}
 		taken[name] = true
-		np, e := f.create(u, name, "", class)
+		gateClass := class
+		if body.Start != nil && !*body.Start {
+			gateClass = "" // a stopped copy takes no memory (api fork.go)
+		}
+		np, e := f.createGated(u, name, "", class, gateClass)
 		if e != nil {
 			return e
 		}
@@ -1627,20 +1663,18 @@ func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	out := []Event{}
-	since := r.URL.Query().Get("since")
+	// since is RFC 3339 or absent, as on the api; anything else is
+	// invalid (DECISIONS I-609).
 	var sinceTS time.Time
-	sinceIsTime := false
-	if since != "" {
-		if t, err := time.Parse(time.RFC3339, since); err == nil {
-			sinceTS, sinceIsTime = t, true
+	if s := r.URL.Query().Get("since"); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return invalid("since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
 		}
+		sinceTS = t
 	}
 	for _, ev := range p.events {
-		switch {
-		case since == "":
-		case sinceIsTime && !ev.TS.After(sinceTS):
-			continue
-		case !sinceIsTime && ev.ID <= since:
+		if !sinceTS.IsZero() && !ev.TS.After(sinceTS) {
 			continue
 		}
 		out = append(out, *ev)
@@ -1678,10 +1712,13 @@ func (f *Fake) projectLogs(w http.ResponseWriter, r *http.Request) *apiError {
 	if kind != "console" && kind != "build" && kind != "ops" {
 		return invalid("kind: must be console, build or ops")
 	}
+	var since time.Time
 	if s := r.URL.Query().Get("since"); s != "" {
-		if _, err := time.Parse(time.RFC3339, s); err != nil {
-			return invalid("since: must be RFC 3339")
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return invalid("since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
 		}
+		since = t
 	}
 	p, e := f.projectAny(userFrom(r), r.PathValue("id"))
 	if e != nil {
@@ -1701,9 +1738,41 @@ func (f *Fake) projectLogs(w http.ResponseWriter, r *http.Request) *apiError {
 			lines = append(lines, map[string]any{"ts": ts, "kind": kind, "seq": i + 1, "line": l})
 		}
 	case "ops":
-		for _, ev := range p.events {
-			lines = append(lines, map[string]any{"ts": ev.TS, "kind": kind, "line": ev.Kind + ": " + ev.Summary})
+		// The api's shape (internal/api/http opsLogLine): one line per
+		// op, oldest first, with its kind, state, duration and error. This
+		// sent {kind: "ops", line} until I-609, which the CLI printed and
+		// the api never sent.
+		var ops []*op
+		for _, o := range f.ops {
+			if o.projectID == p.ID && !o.created.Before(since) {
+				ops = append(ops, o)
+			}
 		}
+		sort.SliceStable(ops, func(i, j int) bool {
+			if !ops[i].created.Equal(ops[j].created) {
+				return ops[i].created.Before(ops[j].created)
+			}
+			return ops[i].id < ops[j].id
+		})
+		for _, o := range ops {
+			l := map[string]any{"ts": o.created, "op_id": o.id, "kind": o.kind, "state": o.State, "finished_at": nil}
+			if o.State == "done" || o.State == "error" {
+				l["finished_at"], l["duration_ms"] = o.created, 0
+			}
+			if o.Error != "" {
+				l["error"] = map[string]any{"code": "failed", "message": o.Error}
+			}
+			lines = append(lines, l)
+		}
+	}
+	if kind != "ops" && !since.IsZero() {
+		kept := lines[:0]
+		for _, l := range lines {
+			if ts, _ := l["ts"].(time.Time); ts.After(since) {
+				kept = append(kept, l)
+			}
+		}
+		lines = kept
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)

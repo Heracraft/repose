@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,10 @@ var hiddenCommands = map[string]string{
 	// (I-281), before every ssh to <project>.repose; typing it does what
 	// that ssh would have done, and nobody needs to.
 	"repose ssh-prepare": "run by ssh from ~/.ssh/repose/config",
+	// What a git or npm user types for the CLI's settings; each only
+	// says those are config.toml keys (I-622).
+	"repose config set": "answers that the CLI's settings are config.toml keys",
+	"repose config get": "answers that the CLI's settings are config.toml keys",
 }
 
 // undocumentedFlags is "<command path> --<flag>" for any flag that is
@@ -47,14 +52,33 @@ var undocumentedFlags = map[string]string{
 	// The old name of `repose browser` (I-292): kept working, hidden from
 	// help; cli.md names it once as the old name under repose browser.
 	"repose open --desktop": "old name of repose browser",
-	"repose open --stop":    "old name of repose browser --stop",
+	"repose open --stop":    "old name of repose browser stop",
+	// One spelling per idea (I-619): the old names, hidden for a release.
+	"repose open --local-port":           "old form of repose open LOCAL:PORT",
+	"repose browser --stop":              "old name of repose browser stop",
+	"repose browser --no-open":           "old name of repose browser --no-browser",
+	"repose browser bridge --no-browser": "old name of --no-inspect",
+	"repose snapshots restore --as-new":  "old name of --as",
+	"repose mcp forward --remove":        "old name of repose mcp rm",
+	"repose config show --revisions":     "old name of repose config revisions",
 	// Moved to `repose sync` (I-367): hidden on run for a release, and
 	// they only print where they went.
-	"repose run --stash-remote":   "moved to repose sync --stash-remote",
-	"repose run --discard-remote": "moved to repose sync --discard-remote",
+	"repose run --stash-machine":   "moved to repose sync --stash-machine",
+	"repose run --discard-machine": "moved to repose sync --discard-machine",
+	"repose run --stash-remote":    "old name, moved to repose sync --stash-machine",
+	"repose run --discard-remote":  "old name, moved to repose sync --discard-machine",
+	// The names before I-633, hidden for a release.
+	"repose sync --stash-remote":   "old name of --stash-machine",
+	"repose sync --discard-remote": "old name of --discard-machine",
 	// PROJECT's old spelling (I-603): hidden for a release.
 	"repose run --name":  "old spelling of repose run PROJECT",
 	"repose sync --name": "old spelling of repose sync PROJECT",
+	// The old name of status -f (I-609): kept working, hidden from help;
+	// cli.md names it once as the old name.
+	"repose status --watch": "old name of repose status -f",
+	// Hidden from help, which every user reads, for the few who run
+	// their own server (review 8.7); cli.md's "Other servers" has it.
+	"repose --api-url": "for a test or self-hosted server",
 }
 
 // internalEnvVars are REPOSE_* names the package reads that no user sets.
@@ -212,6 +236,13 @@ func TestDocsNameEveryCommandAndFlag(t *testing.T) {
 		if c.Hidden {
 			if _, ok := hiddenCommands[path]; !ok {
 				missing = append(missing, path+": hidden, and not in hiddenCommands with a reason")
+			}
+			return
+		}
+		if c.IsAdditionalHelpTopicCommand() {
+			// A help topic is `repose help NAME` (I-635).
+			if !strings.Contains(doc, "`repose help "+c.Name()+"`") {
+				missing = append(missing, path+": no `repose help "+c.Name()+"` in cli.md")
 			}
 			return
 		}
@@ -411,6 +442,165 @@ func TestDocsListEveryExitCode(t *testing.T) {
 	for v := range rows {
 		if _, ok := codes[v]; !ok {
 			t.Errorf("ghost in cli.md: exit code %d is not an Exit constant in exitcode.go", v)
+		}
+	}
+}
+
+// docsCommandLines is every `repose ...` a docs page shows: backticked
+// spans, and the lines of fenced code blocks (a leading "$ " dropped),
+// with the page and line for the message.
+func docsCommandLines(t *testing.T) []struct{ where, text string } {
+	t.Helper()
+	pages, err := filepath.Glob(filepath.Join(docsDir, "*.md"))
+	if err != nil || len(pages) == 0 {
+		t.Fatalf("no docs pages under %s: %v", docsDir, err)
+	}
+	var out []struct{ where, text string }
+	for _, page := range pages {
+		b, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fenced := false
+		for i, line := range strings.Split(string(b), "\n") {
+			where := filepath.Base(page) + ":" + strconv.Itoa(i+1)
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				fenced = !fenced
+				continue
+			}
+			if fenced {
+				l := strings.TrimPrefix(strings.TrimSpace(line), "$ ")
+				if strings.HasPrefix(l, "repose ") {
+					out = append(out, struct{ where, text string }{where, l})
+				}
+				continue
+			}
+			for _, sp := range backtickSpans(line) {
+				if strings.HasPrefix(sp, "repose ") {
+					out = append(out, struct{ where, text string }{where, sp})
+				}
+			}
+		}
+	}
+	return out
+}
+
+var quotedRE = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+
+// docsNotCommands are spans that start with "repose " and are output,
+// not a command: messages, a typo shown on purpose, a git remote line.
+var docsNotCommands = []string{"repose lss", "repose is ", "repose gateway:", "repose run: ", "repose  "}
+
+// TestEveryDocsPageNamesRealCommands holds every docs page, not only
+// cli.md, to the CLI (review C7): a `repose X` must be a command, and a
+// flag after it must be one that X takes, so `repose sync --agent`
+// fails though `repose run` has --agent.
+func TestEveryDocsPageNamesRealCommands(t *testing.T) {
+	root := docsRoot()
+	for _, l := range docsCommandLines(t) {
+		if slices.ContainsFunc(docsNotCommands, func(p string) bool { return strings.HasPrefix(l.text, p) }) {
+			continue
+		}
+		text := quotedRE.ReplaceAllString(l.text, "Q")
+		for _, sep := range []string{" $(", " # ", " && ", " | ", " || ", "; "} {
+			if i := strings.Index(text, sep); i >= 0 {
+				text = text[:i]
+			}
+		}
+		path, _, ghost := commandPath(root, text)
+		if ghost != "" {
+			t.Errorf("%s: `%s` names %s, which is not a command", l.where, l.text, ghost)
+			continue
+		}
+		cmd, _, err := root.Find(strings.Fields(path)[1:])
+		if err != nil {
+			t.Errorf("%s: %v", l.where, err)
+			continue
+		}
+		rest := strings.Fields(text)[len(strings.Fields(path)):]
+		positional := 0
+		for _, tok := range rest {
+			if tok == "--" {
+				break
+			}
+			// exec's flags end at COMMAND; what follows is the command's own.
+			if !strings.HasPrefix(tok, "-") {
+				positional++
+				if strings.Contains(cmd.Use, "COMMAND") && (positional > 1 || !looksLikeProjectWord(tok)) {
+					break
+				}
+				continue
+			}
+			name, _, _ := strings.Cut(tok, "=")
+			var f *pflag.Flag
+			if strings.HasPrefix(name, "--") {
+				f = cmd.Flags().Lookup(name[2:])
+				if f == nil {
+					f = cmd.InheritedFlags().Lookup(name[2:])
+				}
+			} else if len(name) >= 2 {
+				// -it is -i and -t.
+				for _, r := range name[1:] {
+					f = cmd.Flags().ShorthandLookup(string(r))
+					if f == nil {
+						f = cmd.InheritedFlags().ShorthandLookup(string(r))
+					}
+					if f == nil {
+						break
+					}
+				}
+			}
+			if f == nil && name != "--help" && name != "-h" {
+				t.Errorf("%s: `%s` gives %s a flag it does not have: %s", l.where, l.text, path, name)
+			}
+		}
+	}
+}
+
+// looksLikeProjectWord is a word the docs use for a project in an exec
+// example: a placeholder or a slug such as todo-app.
+func looksLikeProjectWord(s string) bool {
+	return s == "PROJECT" || strings.HasPrefix(s, "PROJECT:") || strings.Contains(s, "-")
+}
+
+// The help topics print cli.md's three reference tables (I-635): each
+// row here is the row there, cell for cell, and no row is missing on
+// either side.
+func TestHelpTopicsMatchTheDocs(t *testing.T) {
+	doc := readCLIDoc(t)
+	for _, c := range []struct {
+		title string
+		rows  []topicRow
+	}{{"Environment variables", envTopic}, {"Exit codes", exitTopic}, {"config.toml", configTopic}} {
+		var docRows []topicRow
+		header := true
+		for _, line := range strings.Split(section(t, doc, c.title), "\n") {
+			if !strings.HasPrefix(line, "| ") {
+				continue
+			}
+			if header || strings.HasPrefix(line, "| ---") || strings.HasPrefix(line, "| -") {
+				header = false
+				continue
+			}
+			cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), " | ")
+			for i := range cells {
+				cells[i] = strings.TrimSpace(cells[i])
+			}
+			docRows = append(docRows, topicRow{keys: cells[:len(cells)-1], text: cells[len(cells)-1]})
+		}
+		if !reflect.DeepEqual(docRows, c.rows) {
+			for i := 0; i < max(len(docRows), len(c.rows)); i++ {
+				var d, h topicRow
+				if i < len(docRows) {
+					d = docRows[i]
+				}
+				if i < len(c.rows) {
+					h = c.rows[i]
+				}
+				if !reflect.DeepEqual(d, h) {
+					t.Errorf("%s row %d:\n cli.md %q %q\n help   %q %q", c.title, i, d.keys, d.text, h.keys, h.text)
+				}
+			}
 		}
 	}
 }

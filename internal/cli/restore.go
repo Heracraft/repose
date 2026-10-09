@@ -116,6 +116,73 @@ func stillDestroying(ctx context.Context, e *Env, slug string) bool {
 	return false
 }
 
+// nothingRestored ends a restore whose question got no name: exit 1 for
+// an empty answer or EOF, 130 for Ctrl-C, with the line on stderr
+// (DECISIONS I-614). Any other error passes through.
+func nothingRestored(err error) error {
+	switch {
+	case errors.Is(err, errPromptInterrupted):
+		return exitf(ExitInterrupted, "Nothing restored.")
+	case err != nil:
+		return err
+	}
+	return exitf(ExitGeneric, "Nothing restored.")
+}
+
+// resolveRestoreSnapshot is the full id of the snapshot that the end
+// or start of an id names (I-619), among the snapshots of the destroyed
+// projects NAME means: each destroy of that name, the one with that id,
+// or with no NAME the ones whose remote is this checkout's. With none
+// to look in, the fragment goes to the api as it is, which refuses it.
+func resolveRestoreSnapshot(ctx context.Context, e *Env, name, part string) (string, error) {
+	var ids []string
+	if looksLikeUUID(name) {
+		ids = []string{name}
+	} else {
+		list, err := e.Client.ListDestroyed(ctx)
+		if err != nil {
+			return "", err
+		}
+		remote := ""
+		if name == "" {
+			remote = gitRemoteOrigin(e.Cwd)
+		}
+		for _, d := range list {
+			if (name != "" && d.Slug == name) || (remote != "" && d.RemoteURL != "" && normalizeRemote(d.RemoteURL) == remote) {
+				ids = append(ids, d.ID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return part, nil
+	}
+	var all []string
+	for _, id := range ids {
+		snaps, err := e.Client.ListSnapshots(ctx, id)
+		if err != nil {
+			if isNotFound(err) {
+				continue
+			}
+			return "", err
+		}
+		for _, s := range snaps {
+			all = append(all, s.ID)
+		}
+	}
+	of := name
+	if of == "" {
+		of = "the destroyed project"
+	}
+	switch hits := matchID(all, part); len(hits) {
+	case 1:
+		return hits[0], nil
+	case 0:
+		return "", exitf(ExitUsage, "%s has no snapshot %s. `repose snapshots list %s` lists them.", of, part, ids[0])
+	default:
+		return "", exitf(ExitUsage, "%s names %d snapshots of %s; give more of the id.", part, len(hits), of)
+	}
+}
+
 // restoreHint is the line a destroy ends with.
 func restoreHint(slug string) string { return "repose restore " + slug }
 
@@ -127,6 +194,13 @@ func restoreHint(slug string) string { return "repose restore " + slug }
 // (askName) and anything else is told to pass --as.
 func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askName func(prompt string) (string, error)) error {
 	name = strings.TrimSpace(name)
+	if snapshotID != "" && !looksLikeUUID(snapshotID) {
+		id, err := resolveRestoreSnapshot(ctx, e, name, snapshotID)
+		if err != nil {
+			return err
+		}
+		snapshotID = id
+	}
 	req := RestoreRequest{SnapshotID: snapshotID, Name: as}
 	switch {
 	case name == "" && snapshotID == "":
@@ -183,11 +257,10 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 			}
 			newName, err := askName(fmt.Sprintf("A project called %s already exists. Name for the restored one (empty to cancel): ", taken))
 			if err != nil {
-				return err
+				return nothingRestored(err)
 			}
 			if strings.TrimSpace(newName) == "" {
-				_, _ = fmt.Fprintln(e.Out, "Nothing restored.")
-				return nil
+				return nothingRestored(nil)
 			}
 			req.Name = strings.TrimSpace(newName)
 			continue
@@ -203,6 +276,9 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 	pr.Phase("Restoring "+res.Slug, "Restored "+res.Slug)
 	project := &Project{ID: res.ProjectID, Slug: res.Slug, Name: res.Name}
 	op, err := waitOpPhased(ctx, e, project, res.OpID, pr, true)
+	if interrupted(ctx, err) {
+		return exitf(ExitInterrupted, "Interrupted. The restore of %s goes on.", res.Slug)
+	}
 	if err != nil {
 		return err
 	}
@@ -230,8 +306,8 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 // no NAME means: the one whose remote is this checkout's (DECISIONS
 // I-172). Several projects destroyed under one name are one choice (the
 // newest destroy is restored, from its newest snapshot, as by name);
-// several names are asked about on a terminal and listed otherwise. A nil
-// project with a nil error means the user cancelled.
+// several names are asked about on a terminal and listed otherwise. A
+// cancelled question is an error (nothingRestored).
 func destroyedForCheckout(ctx context.Context, e *Env, ask func(prompt string) (string, error)) (*DestroyedProject, error) {
 	remote := gitRemoteOrigin(e.Cwd)
 	if remote == "" {
@@ -266,12 +342,11 @@ func destroyedForCheckout(ctx context.Context, e *Env, ask func(prompt string) (
 	for {
 		answer, err := ask(fmt.Sprintf("Several destroyed projects were checkouts of %s: %s. Which one (empty to cancel)? ", remote, names))
 		if err != nil {
-			return nil, err
+			return nil, nothingRestored(err)
 		}
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
-			_, _ = fmt.Fprintln(e.Out, "Nothing restored.")
-			return nil, nil
+			return nil, nothingRestored(nil)
 		}
 		if d := newest[answer]; d != nil {
 			return d, nil
@@ -351,7 +426,7 @@ func destroyedCells(d DestroyedProject) (until, destroyed, snap, size string) {
 func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 	groups := destroyedByName(list)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "PROJECT\tCLASS\tDESTROYED\tSNAPSHOT\tSIZE\tRESTORABLE UNTIL\tEARLIER")
+	_, _ = fmt.Fprintln(tw, "PROJECT\tSIZE\tDESTROYED\tSNAPSHOT\tSTORED\tRESTORABLE UNTIL\tEARLIER")
 	var inUse []DestroyedProject
 	for _, g := range groups {
 		d := g[0]
@@ -377,7 +452,7 @@ func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 
 func writeDestroyedTableAll(w io.Writer, list []DestroyedProject) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "PROJECT\tID\tCLASS\tDESTROYED\tSNAPSHOT\tSIZE\tRESTORABLE UNTIL")
+	_, _ = fmt.Fprintln(tw, "PROJECT\tID\tSIZE\tDESTROYED\tSNAPSHOT\tSTORED\tRESTORABLE UNTIL")
 	for _, g := range destroyedByName(list) {
 		for i, d := range g {
 			until, destroyed, snap, size := destroyedCells(d)
@@ -415,4 +490,10 @@ func destroyedSlugsForCompletion(env func() (*Env, error)) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// countDestroyed is "1" or "3": the names `repose restore NAME` can bring
+// back, each counted once however often it was destroyed.
+func countDestroyed(list []DestroyedProject) string {
+	return fmt.Sprint(len(destroyedByName(list)))
 }

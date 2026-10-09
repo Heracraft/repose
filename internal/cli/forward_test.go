@@ -150,7 +150,7 @@ func TestForwardOverTheControlMaster(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(cmDir) })
 	mux := sshTarget{Args: append([]string{"-o", "ControlMaster=auto", "-o", "ControlPath=" + filepath.Join(cmDir, "cm-%C"), "-o", "ControlPersist=60"}, f.target.Args...)}
 	t.Cleanup(func() { _ = exec.Command("ssh", append([]string{"-O", "exit"}, mux.Args...)...).Run() })
-	if err := waitForSSH(ctx, mux, nil); err != nil {
+	if err := waitForSSH(ctx, mux, sshWaitTimeout, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runSSH(ctx, mux, "tmux new-session -d -s "+testSlug, nil); err != nil {

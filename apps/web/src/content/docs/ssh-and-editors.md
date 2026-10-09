@@ -93,4 +93,4 @@ With your `gh` login copied over, git on the machine sends `git@github.com:` and
 
 ## Windows
 
-Install the CLI inside WSL. `ssh`, `scp`, `rsync` and `git` inside WSL work as above. VS Code, Cursor and Zed running on Windows use Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, so they can't connect to a project yet.
+Install the CLI inside WSL. `ssh`, `scp`, `rsync` and `git` inside WSL work as above. VS Code, Cursor and Zed running on Windows use Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, so they can't connect to a project yet. `repose code` under WSL exits 1 and says so when the editor it finds is the Windows app; an editor installed inside WSL works.

@@ -92,11 +92,12 @@ Integrate whenever branches are queued; it needs no owner approval.
 4. **Verify the merge, not the branches.** In the batch worktree, for
    everything the batch ships as:
    - always: `python3 ops/dev/decisions-index.py --check`; `go build ./...`,
-     `go vet ./...`, `golangci-lint run ./...`; `go test -race ./...`
+     `go vet ./...`, `golangci-lint run ./...`; `go test -race -timeout 30m ./...`
      with a real Postgres for the api packages (on a repose guest, unset
      `REPOSE_PROJECT REPOSE REPOSE_HOOK_AGENT` first, and keep `TMPDIR`
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
-     108-byte limit); `go test ./internal/cli
+     108-byte limit; internal/cli alone takes about 15 minutes with
+     GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
      `docs/CHECKLIST.md` greps. A batch that adds or changes CLI output:
      read its success lines and listings as a user on the hundredth run

@@ -90,7 +90,7 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	route := &Route{HostName: "host-01", GuestIP: "10.64.0.8"}
 	var b bytes.Buffer
 	writeStatusLinesMux(&b, p, route, nil, nil, "tmux", gd)
-	if !strings.Contains(b.String(), "disk 37.1 GB/39.1 GB") {
+	if !strings.Contains(b.String(), "disk       37.1 GB of 39.1 GB (40G disk), no snapshot yet") {
 		t.Errorf("disk is not the guest's filesystem:\n%s", b.String())
 	}
 	if !strings.Contains(b.String(), "\n  disk 95 percent full; `repose resize kanali 80G` grows it\n") {
@@ -104,7 +104,7 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	}
 	b.Reset()
 	writeStatusLinesMux(&b, p, route, nil, nil, "tmux", guestDisk{})
-	if !strings.Contains(b.String(), "disk 40.0 GB   ") || strings.Contains(b.String(), "38.6") {
+	if !strings.Contains(b.String(), "disk       40.0 GB, ") || strings.Contains(b.String(), "38.6") {
 		t.Errorf("a guest that did not answer shows the volume's size alone:\n%s", b.String())
 	}
 
@@ -114,13 +114,13 @@ func TestStatusDiskIsTheGuestsFilesystem(t *testing.T) {
 	fromAPI := *p
 	fromAPI.RootUsedBytes, fromAPI.RootSizeBytes = 37<<30, 39<<30
 	writeStatusLinesMux(&b, &fromAPI, route, nil, nil, "tmux", guestDisk{})
-	if !strings.Contains(b.String(), "disk 37.0 GB/39.0 GB") || !strings.Contains(b.String(), "disk 94 percent full;") {
+	if !strings.Contains(b.String(), "disk       37.0 GB of 39.0 GB (40G disk)") || !strings.Contains(b.String(), "disk 94 percent full;") {
 		t.Errorf("the api's root filesystem is not the fallback:\n%s", b.String())
 	}
 	// The guest's own answer wins over the api's minute-old sample.
 	b.Reset()
 	writeStatusLinesMux(&b, &fromAPI, route, nil, nil, "tmux", guestDisk{Used: 30 << 30, Size: 39 << 30})
-	if !strings.Contains(b.String(), "disk 30.0 GB/39.0 GB") || strings.Contains(b.String(), "percent full") {
+	if !strings.Contains(b.String(), "disk       30.0 GB of 39.0 GB") || strings.Contains(b.String(), "percent full") {
 		t.Errorf("the guest's answer did not win:\n%s", b.String())
 	}
 
@@ -168,7 +168,7 @@ func TestAgentStateCountsEveryAgent(t *testing.T) {
 		{Agent: "claude", State: "working"}, {Agent: "claude", State: "idle"}, {Agent: "codex", State: "needs_input"},
 		{Agent: "claude", State: "working"}, {Agent: "pi", State: "unknown"},
 	}
-	if got := agentState(p); got != "5 agents: 1 needs_input, 2 working, 1 idle" {
+	if got := agentState(p); got != "5 agents: 1 needs input, 2 working, 1 idle" {
 		t.Errorf("five agents: %q", got)
 	}
 	// unknown is guestd's state between busy and idle; it is not named.

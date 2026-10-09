@@ -231,7 +231,7 @@ func TestKeepClearsExpiry(t *testing.T) {
 	if p.ExpiresAt == nil {
 		t.Fatal("create with expires_in_s answered no expires_at")
 	}
-	if err := KeepCmd(ctx, e, "tmp-abcd"); err != nil {
+	if err := KeepCmd(ctx, e, "tmp-abcd", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.Out.(*discardWriter).buf.String(); got != "tmp-abcd is no longer temporary.\n" {
@@ -242,7 +242,7 @@ func TestKeepClearsExpiry(t *testing.T) {
 		t.Fatalf("after keep: %+v %v", got, err)
 	}
 	e.Out = &discardWriter{}
-	if err := KeepCmd(ctx, e, "tmp-abcd"); err != nil {
+	if err := KeepCmd(ctx, e, "tmp-abcd", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.Out.(*discardWriter).buf.String(); got != "tmp-abcd is not temporary.\n" {
@@ -394,6 +394,14 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 	if e.Cache.ByRemote[remote].ProjectID != own || len(e.Cache.ByDir) != 0 {
 		t.Fatalf("cache moved: %+v %+v", e.Cache.ByRemote, e.Cache.ByDir)
 	}
+	// The second machine gets a git remote of its own name, as a fork's
+	// copy does, and `repose` stays the original's (I-633).
+	if got, want := remoteURLOf(f.local, "proj-experiment"), reposeRemoteURL("proj-experiment", checkoutName(f.local)); got != want {
+		t.Fatalf("remote proj-experiment = %q, want %q (stderr %q)", got, want, errOut.buf.String())
+	}
+	if h := reposeRemoteHost(remoteURLOf(f.local, reposeRemoteName)); h == "proj-experiment" {
+		t.Fatalf("the repose remote moved to the second machine")
+	}
 	// Again by name: the same second project.
 	e2, _, _ := freshEnv(f.env, f.local)
 	if err := runRun(ctx, e2, RunOptions{Name: "proj-experiment", NoAttach: true, NoSync: true}, false); err != nil {
@@ -407,8 +415,13 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true}, false)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "github.com/someone/else") {
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "github.com/someone/else") || !strings.Contains(ee.msg, "`repose run other`") {
 		t.Fatalf("--name of another repository's project: %v", err)
+	}
+	// The refusal names the command typed (I-633).
+	err = runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true, Sync: true}, false)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "`repose sync other`") {
+		t.Fatalf("sync of another repository's project: %v", err)
 	}
 }
 
@@ -434,7 +447,7 @@ func TestRmAndLsOfATemporaryProject(t *testing.T) {
 	if err := DestroyCmd(ctx, e, "tmp-q7wd", false, true, confirm); err != nil {
 		t.Fatal(err)
 	}
-	if asked != "Destroy tmp-q7wd? It is temporary: no snapshot is kept and it cannot be restored. [y/N] " {
+	if asked != "tmp-q7wd is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-q7wd? [y/N] " {
 		t.Fatalf("asked %q", asked)
 	}
 	if out := e.Out.(*discardWriter).buf.String(); !strings.Contains(out, "It was temporary, so no snapshot was kept.") || strings.Contains(out, "restore") {
@@ -469,6 +482,15 @@ func TestTempFlagParsing(t *testing.T) {
 		{"25h", nil, 0, 0, true},
 		{"soon", nil, 0, 0, true},
 		{tempBare, []string{"48h"}, 0, 0, true},
+		// After the PROJECT, as interleaved flags leave it (review C3).
+		{tempBare, []string{"spike", "3h"}, 3 * time.Hour, 1, false},
+		{tempBare, []string{"1d"}, 24 * time.Hour, 0, false},
+		// A project whose name starts with digits is the PROJECT (I-631).
+		{tempBare, []string{"2fa"}, 24 * time.Hour, 1, false},
+		{tempBare, []string{"1password", "fix"}, 24 * time.Hour, 2, false},
+		{tempBare, []string{"3dprint"}, 24 * time.Hour, 1, false},
+		{tempBare, []string{"2d"}, 0, 0, true},
+		{"1d", nil, 24 * time.Hour, 0, false},
 	} {
 		d, rest, err := resolveTempFlag(c.raw, c.args)
 		if (err != nil) != c.wantErr || (!c.wantErr && (d != c.want || len(rest) != c.rest)) {
@@ -481,5 +503,53 @@ func TestTempFlagParsing(t *testing.T) {
 		if got := timeLeft(d); got != want {
 			t.Errorf("timeLeft(%s) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Before the session end destroys a temporary machine, the CLI asks its
+// checkout for work the laptop lacks: a commit on no remote-tracking
+// branch, or a changed file, keeps it until its expiry (I-612, review A2).
+func TestTempSessionEndKeepsUnfetchedWork(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	e, _, errOut := freshEnv(f.env, f.local)
+	if err := runRun(ctx, e, RunOptions{Temp: tempDefault, Name: testSlug, NoSync: true, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	p := bySlug(listed(t, e), testSlug)
+	if p == nil || p.ExpiresAt == nil {
+		t.Fatalf("project = %+v", p)
+	}
+	sh := func(cmd string) {
+		t.Helper()
+		if _, err := runSSH(ctx, f.target, "cd ~/"+testSlug+" && "+cmd, nil); err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+	}
+	sh("tmux kill-session -t " + testSlug)
+	sh("git commit -q --allow-empty -m agent && git checkout -q -b side && git commit -q --allow-empty -m side && git checkout -q main")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) == nil {
+		t.Fatal("destroyed with two commits only on it")
+	}
+	want := testSlug + " has 2 commits your laptop does not; " + tempStays(p, time.Now()) + ".\n"
+	if errOut.buf.String() != want {
+		t.Fatalf("stderr %q, want %q", errOut.buf.String(), want)
+	}
+	// Pushed commits are the laptop's to fetch; a new file is not.
+	sh("git push -q origin main side && echo x > notes.txt")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) == nil || !strings.Contains(errOut.buf.String(), "has 1 changed file your laptop does not;") {
+		t.Fatalf("stderr %q", errOut.buf.String())
+	}
+	sh("rm notes.txt")
+	errOut.buf.Reset()
+	tempSessionEnded(ctx, e, f.target, p)
+	if bySlug(listed(t, e), testSlug) != nil {
+		t.Fatalf("still there with nothing on it: %q", errOut.buf.String())
 	}
 }

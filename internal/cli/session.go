@@ -66,6 +66,12 @@ type sessionOptions struct {
 	// Multiplexer is what the machine runs (I-509): messages go to tmux's
 	// status line or herdr's notifications. "" is tmux.
 	Multiplexer string `json:"multiplexer,omitempty"`
+	// OpenURLs opens, in this laptop's browser, the https links the
+	// machine's BROWSER is handed while attached (I-634).
+	OpenURLs bool `json:"open_urls,omitempty"`
+	// Messages are shown on the multiplexer first: a line the run printed
+	// just before the attach covered it (DECISIONS I-618).
+	Messages []string `json:"messages,omitempty"`
 }
 
 // windowsMCPForwardLine is [mcp] forward on Windows, where attach runs no
@@ -81,7 +87,7 @@ func startSessionHelper(e *Env, opts sessionOptions) {
 		// Set and silently ignored would read as a broken forward.
 		_, _ = fmt.Fprintln(e.ErrOut, windowsMCPForwardLine)
 	}
-	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.Bridge && len(opts.MCP) == 0) {
+	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.OpenURLs && !opts.Bridge && len(opts.MCP) == 0 && len(opts.Messages) == 0) {
 		return
 	}
 	b, err := json.Marshal(opts)
@@ -150,6 +156,9 @@ func runSessionWith(ctx context.Context, opts sessionOptions, alive func() bool,
 			}
 		}
 	}()
+	for _, m := range opts.Messages {
+		say(m)
+	}
 	carried := make(chan struct{})
 	go func() {
 		defer close(carried)
@@ -180,7 +189,13 @@ func runSessionWith(ctx context.Context, opts sessionOptions, alive func() bool,
 		}
 	}()
 	if opts.Forward {
-		runForwards(ctx, newForwarder(t, opts.Slug, say), alive)
+		f := newForwarder(t, opts.Slug, say)
+		if opts.OpenURLs {
+			f.openURL = openBrowser
+		}
+		runForwards(ctx, f, alive)
+	} else if opts.OpenURLs {
+		runOpenURLs(ctx, t, openBrowser, alive)
 	}
 	<-mcpDone
 	<-bridged
@@ -202,7 +217,7 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 	if opts.RepoDir != "" {
 		gc, err := buildGitCarry(opts.RepoDir, opts.HomeDir)
 		if err != nil {
-			warnings = append(warnings, "Could not read your git config ("+oneLine(err.Error())+"); the guest keeps its own.")
+			warnings = append(warnings, "Could not read your git config ("+oneLine(err.Error())+"); the machine keeps its own.")
 		}
 		co.Git = gc
 		if gc != nil {

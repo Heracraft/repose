@@ -16,7 +16,7 @@ import (
 func TestIdleLineOnStatusAndProjects(t *testing.T) {
 	since := time.Now().Add(-26*time.Hour - 10*time.Minute)
 	p := &Project{Slug: "todo-app", Class: "large", State: "running", Idle: &ProjectIdle{Since: since, HourlyCents: 14}}
-	want := "running for 26h with nobody attached"
+	want := "unused for 26h"
 	var b strings.Builder
 	writeStatusLines(&b, p, nil, nil, nil)
 	if !strings.Contains(b.String(), "\n  "+want+"\n") {
@@ -31,6 +31,16 @@ func TestIdleLineOnStatusAndProjects(t *testing.T) {
 	stopped.State = "stopped"
 	if idleLine(&stopped, time.Now()) != "" {
 		t.Fatal("a stopped project shown as idle")
+	}
+	// An agent waiting for an answer is why it is unused (I-617).
+	waiting := *p
+	waiting.Signals = &Signals{Agents: []AgentSignal{{Agent: "claude", Window: "claude-2", State: "needs_input"}, {Agent: "codex", State: "idle"}}}
+	if got := idleLine(&waiting, time.Now()); got != "unused for 26h; claude-2 needs input" {
+		t.Fatalf("waiting agent: %q", got)
+	}
+	waiting.Signals.Agents[1].State = "needs_input"
+	if got := idleLine(&waiting, time.Now()); got != "unused for 26h; claude-2, codex need input" {
+		t.Fatalf("two waiting agents: %q", got)
 	}
 	if got := idleFor(75 * time.Hour); got != "3d" {
 		t.Fatalf("idleFor(75h) = %q", got)
@@ -50,7 +60,7 @@ func TestIdleOthersNoteOncePerStretch(t *testing.T) {
 		{ID: "c", Slug: "busy", State: "running"},
 	}
 	got := idleOthersNote(dir, ps, "b", now)
-	if got != "Still running with nobody on it: api-v2 (idle 30h)." {
+	if got != "Running and unused: api-v2 (30h)." {
 		t.Fatalf("first note: %q", got)
 	}
 	if got := idleOthersNote(dir, ps, "b", now); got != "" {
@@ -58,11 +68,11 @@ func TestIdleOthersNoteOncePerStretch(t *testing.T) {
 	}
 	// api-v2 was used, then idle again from a later time: a new stretch.
 	ps[0].Idle = &ProjectIdle{Since: now.Add(-25 * time.Hour), HourlyCents: 28}
-	if got := idleOthersNote(dir, ps, "b", now); !strings.Contains(got, "api-v2 (idle 25h") {
+	if got := idleOthersNote(dir, ps, "b", now); !strings.Contains(got, "api-v2 (25h") {
 		t.Fatalf("new stretch not noted: %q", got)
 	}
 	// Attaching api-v2 itself drops it, so its next stretch is new too.
-	if got := idleOthersNote(dir, ps, "a", now); !strings.Contains(got, "here (idle 30h") {
+	if got := idleOthersNote(dir, ps, "a", now); !strings.Contains(got, "here (30h") {
 		t.Fatalf("here not noted: %q", got)
 	}
 	if got := idleOthersNote(dir, ps, "b", now); !strings.Contains(got, "api-v2") {
@@ -90,7 +100,7 @@ func TestStartIdleNoteReadsTheAPI(t *testing.T) {
 	note := startIdleNote(context.Background(), e)
 	time.Sleep(50 * time.Millisecond) // the list is asked for at the start of the command
 	note(here.ID)
-	if got := errOut.buf.String(); got != "Still running with nobody on it: api-v2 (idle 2d).\n" {
+	if got := errOut.buf.String(); got != "Running and unused: api-v2 (2d).\n" {
 		t.Fatalf("note: %q", got)
 	}
 }
@@ -110,7 +120,7 @@ func TestRunMentionsOtherIdleProject(t *testing.T) {
 	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
 		t.Fatalf("runRun: %v", err)
 	}
-	if got := f.env.ErrOut.(*discardWriter).buf.String(); !strings.Contains(got, "Still running with nobody on it: forgotten (idle 27h).") {
+	if got := f.env.ErrOut.(*discardWriter).buf.String(); !strings.Contains(got, "Running and unused: forgotten (27h).") {
 		t.Fatalf("stderr: %s", got)
 	}
 }

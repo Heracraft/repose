@@ -54,7 +54,7 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 		t.Fatalf("guestAhead=%v unchanged=%v ssh=%d", s.GuestAhead, s.Unchanged, n)
 	}
 	// Every file counts, each of gen/'s 26 too (I-573).
-	want := "Nothing new to sync. The machine has changes your laptop doesn't have (27 files)."
+	want := "Nothing new to sync. The machine has uncommitted changes to 27 files."
 	if s.String() != want {
 		t.Fatalf("summary = %q\nwant      %q", s.String(), want)
 	}
@@ -67,14 +67,14 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 		t.Fatalf("stashed: %q", list)
 	}
 
-	// --stash-remote still syncs over them, keeping them in the stash.
+	// --stash-machine still syncs over them, keeping them in the stash.
 	if s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{StashRemote: true}); err != nil || s.GuestAhead {
-		t.Fatalf("--stash-remote: %+v %v", s, err)
+		t.Fatalf("--stash-machine: %+v %v", s, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "laptop\n" {
-		t.Fatalf("README.md after --stash-remote = %q", b)
+		t.Fatalf("README.md after --stash-machine = %q", b)
 	}
-	if list := mustRun(t, f.guestRepo(), "git", "stash", "list"); !strings.Contains(list, "repose run") {
+	if list := mustRun(t, f.guestRepo(), "git", "stash", "list"); !strings.Contains(list, "repose sync --stash-machine") {
 		t.Fatalf("stash list = %q", list)
 	}
 }
@@ -98,7 +98,7 @@ func TestSyncLeavesTheGuestsCommitsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.GuestAhead || s.Detached || s.String() != "Nothing new to sync. The machine has commits your laptop doesn't have." {
+	if !s.GuestAhead || s.Detached || s.String() != "Nothing new to sync. The machine has 1 commit on main your laptop doesn't have." {
 		t.Fatalf("summary %+v %q", s, s.String())
 	}
 	if got := mustRun(t, f.guestRepo(), "git", "rev-parse", "HEAD"); got != agentHead {
@@ -134,7 +134,7 @@ func TestSyncRefusalNamesOnlyTheOverlap(t *testing.T) {
 	want := "Not synced: the machine changed 10 files that your laptop changed too:\n" +
 		"  agent00.txt\n  agent01.txt\n  agent02.txt\n  agent03.txt\n  agent04.txt\n  agent05.txt\n  agent06.txt\n  agent07.txt\n" +
 		"  and 2 more\n" +
-		"`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away."
+		"`repose sync --stash-machine` moves the machine's changes to its git stash first."
 	if msg != want {
 		t.Fatalf("message:\n%s\nwant:\n%s", msg, want)
 	}
@@ -185,7 +185,7 @@ func TestSyncLeavesItAloneWhenOnlyTheMachineChanged(t *testing.T) {
 	if err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
 		t.Fatalf("second runRun: %v", err)
 	}
-	if !strings.Contains(out.String(), "Nothing new to sync. The machine has changes your laptop doesn't have (1 file).\n") {
+	if !strings.Contains(out.String(), "Nothing new to sync. The machine has uncommitted changes to 1 file.\n") {
 		t.Fatalf("output = %q", out.String())
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "agent\n" {

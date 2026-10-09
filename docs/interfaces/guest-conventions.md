@@ -54,7 +54,10 @@ it picks the laptop folder's safe name, else `<name>-2`, `<name>-3`, ...,
 skipping the checkout, its `-worktree-N` directories, names already
 listed and non-empty directories, makes the directory and appends the
 name. The CLI's scripts for such a folder use `/home/dev/<name>` instead
-of the rule. Agent windows there are `<name>/<agent>` and
+of the rule, and exit 2 when `<name>` is neither listed nor a directory
+(I-618). `repose rm PROJECT:<name>` deletes the directory and its
+`<name>-worktree-N` worktrees and drops the name from the list, unless a
+process has its working directory in one of them. Agent windows there are `<name>/<agent>` and
 `<name>/<agent>-N` (a `.` in the name becomes `-`), and a shell window
 the attach opens is `<name>`. guestd reads only the list of names, to
 prefix a herdr agent's key with its checkout (see "herdr", I-504).
@@ -135,6 +138,34 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   unit's cgroup (one started over ssh during the 5 s), so the unit does
   not start again every 5 s with nothing to supervise; run by hand it
   skips that check.
+- guestd sets the window option `@repose-state` on an agent window to
+  the state it last announced (`working`, `idle`, `needs_input`,
+  `unknown`) each time that changes (DECISIONS I-606). `repose ps` reads
+  it as STATE, and `/etc/tmux.conf`'s window formats put `?` after the
+  name of a window at `needs_input`. When the agent exits and its shell
+  keeps the window, guestd unsets the option (I-631). A window with no
+  value is a base before I-606 or a window with no agent; the CLI then
+  takes the api's sample when it is under two minutes old. A window whose
+  `pane_current_command` is a shell has no state, whatever the option
+  says.
+- A stop records the agent windows and the next start opens them again
+  (DECISIONS I-636). When hostd asks for the shutdown, guestd runs
+  `repose-tmux-save` as dev (5 s at most) before `systemctl poweroff`. It
+  writes `~/.repose/agent-windows`, one line per window whose name is an
+  agent's (`claude`, `claude-2`, `<checkout>/codex`) and whose pane runs
+  something other than a shell: name, agent, the pane's folder and the
+  pane option `@repose-session`, separated by `\037`. No such window
+  removes the file. `repose-hook` sets `@repose-session` on its
+  `$TMUX_PANE` to the agent's conversation id from every hook payload:
+  Claude Code's `session_id`, Codex's `thread-id`. When
+  `repose-tmux-session` creates the session it renames the file, opens
+  each window under its name in its folder with the agent's resume form
+  (`claude --resume ID` or `claude --continue`, `codex resume ID` or
+  `codex resume --last`, `opencode --continue`, `pi --continue`, `gemini
+  --resume latest`), and removes it. A folder that is gone is skipped,
+  and of two windows with no id in one folder for one agent only the
+  first opens. A tmux server that exits later in the boot starts with
+  `shell` alone.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names
@@ -957,7 +988,11 @@ was the read-only store path), `PRISMA_ENGINES_MIRROR=http://127.0.0.1:850`
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`, `PUPPETEER_SKIP_DOWNLOAD=1`,
 `PUPPETEER_EXECUTABLE_PATH` and `CHROME_BIN` (the guest's chromium),
 `BROWSER` (a store-path script that prints `Open in your browser: URL`
-to stderr and exits 0; I-541).
+to stderr and exits 0; I-541; since I-634 it also appends `SECONDS URL`
+for each `https://` argument to `~/.cache/repose/open-urls`, which an
+attached CLI's session helper renames away, reads and deletes on each
+poll, opening the links under two minutes old on the laptop; a base
+before I-634 writes no file and a CLI before it reads none).
 `GOPATH=/home/dev/go`, `CARGO_HOME=/home/dev/.cargo`,
 `RUSTUP_HOME=/home/dev/.rustup`, `BUN_INSTALL=/home/dev/.bun`,
 `DENO_INSTALL_ROOT=/home/dev/.deno`,

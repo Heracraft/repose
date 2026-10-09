@@ -2,10 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -18,32 +23,63 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 	if err != nil {
 		return err
 	}
-	if e.JSON {
-		return writeJSONOut(e.Out, project)
-	}
-	// The guest's answer (listeners, its disk, and what runs its
-	// terminals, I-509, I-567) is asked beside the api's reads.
+	return statusFor(ctx, e, project)
+}
+
+// statusJSON is `repose status --json`: the api's Project, unchanged,
+// plus what the machine said about its checkout (I-616). Git is absent
+// for a machine that is not running or did not answer.
+type statusJSON struct {
+	*Project
+	Git []gitRow `json:"git,omitempty"`
+	// GitError is why git is absent from a running machine (I-634):
+	// ssh_timeout or ssh_failed. Absent when the machine answered.
+	GitError string `json:"git_error,omitempty"`
+	// GitAt is set on a stopped machine's rows: when this laptop read
+	// them, before its stop (I-634).
+	GitAt *time.Time `json:"git_at,omitempty"`
+}
+
+// statusFor prints project's status, read now.
+func statusFor(ctx context.Context, e *Env, project *Project) error {
+	// The machine's answer (listeners, its disk, what runs its
+	// terminals and its checkout's git state, I-509, I-567, I-616) is
+	// asked beside the api's reads.
 	guest := make(chan guestStatus, 1)
 	if project.State == "running" {
-		go func() { guest <- guestStatusRead(ctx, e.target(project.Slug)) }()
+		have := laptopCommits(e, project)
+		go func() { guest <- guestStatusRead(ctx, e.target(project.Slug), project.Slug, have) }()
 	} else {
 		guest <- guestStatus{}
 	}
+	left, hasLeft := stoppedRows(e.Dir, project)
+	if e.JSON {
+		g := <-guest
+		doc := statusJSON{Project: project, Git: g.git, GitError: g.probeErr}
+		if hasLeft {
+			doc.Git, doc.GitAt = left.Rows, &left.At
+		}
+		return e.printJSON(doc)
+	}
 	bill := make(chan *Billing, 1)
 	go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
-	route, _ := e.Client.ProjectRoute(ctx, project.ID)
+	var route *Route
+	if e.Verbose {
+		route, _ = e.Client.ProjectRoute(ctx, project.ID)
+	}
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
+	noteWaits(project, events)
 	g := <-guest
 	mux := g.mux
 	if mux == "" {
 		mux = multiplexer.Normalize(project.Multiplexer)
 	}
-	writeStatusLinesMux(e.Out, project, route, snaps, events, mux, g.disk)
-	if l := diskOverPlanLine(<-bill); l != "" {
-		_, _ = fmt.Fprintf(e.Out, "  %s\n", l)
-	}
-	writeListening(e.Out, g.procs)
+	writeStatus(e.Out, statusView{
+		p: project, route: route, snaps: snaps, events: events, mux: mux,
+		disk: g.disk, procs: g.procs, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, bill: <-bill, now: time.Now(),
+		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent,
+	})
 	return nil
 }
 
@@ -51,7 +87,7 @@ func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
 // ignoring cwd, with a header row and, under a project in `error`, why
 // (DECISIONS I-153). --json is the api's list, unchanged.
 func ProjectsCmd(ctx context.Context, e *Env) error {
-	// The plan's disk is read beside the list, for the table only.
+	// The plan is read beside the list, for the table only.
 	bill := make(chan *Billing, 1)
 	if !e.JSON && !e.Quiet {
 		go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
@@ -73,14 +109,159 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	if len(projects) == 0 {
-		_, _ = fmt.Fprintln(e.Out, "No projects yet.")
+		// Whose list was empty: an empty list on the wrong account or
+		// server read as a lost project (review 8.5, I-633).
+		whose := ""
+		if me, err := e.Client.GetMe(ctx); err == nil && me.Handle != "" {
+			whose = " for " + me.Handle
+		}
+		if e.Cfg.APIURL != "" && e.Cfg.APIURL != defaultAPIURL {
+			whose += " on " + hostOf(e.Cfg.APIURL)
+		}
+		// A destroyed project can still come back; "yet" said otherwise
+		// (DECISIONS I-615).
+		if gone, err := e.Client.ListDestroyed(ctx); err == nil && len(gone) > 0 {
+			_, _ = fmt.Fprintf(e.Out, "No projects%s. %s destroyed in the last 30 days can be restored.\n", whose, countDestroyed(gone))
+			return nil
+		}
+		_, _ = fmt.Fprintf(e.Out, "No projects yet%s.\n", whose)
 		return nil
 	}
-	writeProjectsTable(e.Out, projects)
-	if l := diskOverPlanLine(<-bill); l != "" {
+	noteWaitsOf(ctx, e.Client, projects)
+	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects))
+	b := <-bill
+	pl := planLine(b)
+	if pl != "" {
+		_, _ = fmt.Fprintln(e.Out, pl)
+	}
+	// Under the plan line, which has the figures, a warning says only
+	// what happens (I-631).
+	for _, l := range planWarningsAfter(b, pl != "") {
 		_, _ = fmt.Fprintln(e.Out, l)
 	}
 	return nil
+}
+
+// hereProjectID is the project a command run here with no PROJECT acts
+// on, from what `repose ls` already has (no api call): REPOSE_PROJECT,
+// then this folder's link, then its git remote, by resolveProject's
+// order (I-616). "" for none, and in the home folder (I-601).
+func (e *Env) hereProjectID(projects []Project) string {
+	byID := map[string]*Project{}
+	for i := range projects {
+		byID[projects[i].ID] = &projects[i]
+	}
+	if x := e.resolveArg(""); x != "" {
+		x, _, _ = strings.Cut(x, ":")
+		for i := range projects {
+			if projects[i].ID == x || projects[i].Slug == x || projects[i].Name == x {
+				return projects[i].ID
+			}
+		}
+		return ""
+	}
+	if e.Cwd == "" {
+		return ""
+	}
+	deps := defaultResolveDeps()
+	if inHomeFolder(e.Cwd, deps) {
+		return ""
+	}
+	key := dirKey(e.Cwd, deps)
+	for _, k := range uniqueStrings(key, e.Cwd) {
+		if co, ok := e.Cache.Checkouts[k]; ok && byID[co.ProjectID] != nil {
+			return co.ProjectID
+		}
+	}
+	remote := deps.RemoteFor(e.Cwd)
+	for _, k := range uniqueStrings(key, e.Cwd) {
+		if id, ok := e.Cache.ByDir[k]; ok && byID[id] != nil && byID[id].RemoteURL == remote {
+			return id
+		}
+	}
+	if remote == "" {
+		return ""
+	}
+	if c, ok := e.Cache.ByRemote[remote]; ok && byID[c.ProjectID] != nil && byID[c.ProjectID].RemoteURL == remote {
+		return c.ProjectID
+	}
+	for i := range projects {
+		if projects[i].RemoteURL == remote {
+			return projects[i].ID
+		}
+	}
+	return ""
+}
+
+// planLine is the line under `repose ls` with what the plan buys and
+// how much of it is in use (I-616): the memory that refuses a start,
+// the disk that refuses a create, the egress that adds a charge. Empty
+// with no plan, or from an api that does not say.
+func planLine(b *Billing) string {
+	if b == nil || b.Subscription == nil || b.Usage.MemoryGB <= 0 {
+		return ""
+	}
+	line := fmt.Sprintf("%s: %d of %d GB running", billingPlanName(b), b.Usage.RunningGB, b.Usage.MemoryGB)
+	if b.Usage.DiskHeldGB != nil && b.Usage.DiskGB > 0 {
+		line += fmt.Sprintf(", %s of %d GB disk", gbFigure(*b.Usage.DiskHeldGB), b.Usage.DiskGB)
+	}
+	if b.Usage.EgressIncludedGB > 0 {
+		line += fmt.Sprintf(", %s of %d GB egress this month", gbFigure(b.Usage.EgressGB), b.Usage.EgressIncludedGB)
+	}
+	return line
+}
+
+// billingPlanName is the plan's name as the api lists it ("Solo"), else its id
+// with a capital.
+func billingPlanName(b *Billing) string {
+	id := b.Subscription.Plan
+	for _, p := range b.Plans {
+		if p.ID == id && p.Name != "" {
+			return p.Name
+		}
+	}
+	if id == "" {
+		return "Plan"
+	}
+	return strings.ToUpper(id[:1]) + id[1:]
+}
+
+// gbFigure is a GB figure with at most one decimal, none when whole.
+func gbFigure(f float64) string {
+	return strconv.FormatFloat(math.Round(f*10)/10, 'f', -1, 64)
+}
+
+// planWarnings are the lines `repose ls` and `repose status` print near
+// a limit that refuses or stops something or adds a charge (I-585,
+// I-616): the disk past the plan, egress past the allowance, a failed
+// payment. Each names what happens.
+func planWarnings(b *Billing) []string { return planWarningsAfter(b, false) }
+
+// planWarningsAfter is planWarnings, without the figures the plan line
+// above already printed when figures is true.
+func planWarningsAfter(b *Billing, figures bool) []string {
+	var out []string
+	if l := diskOverPlanLine(b); l != "" {
+		if figures {
+			l = "disk past the plan: creating, restoring, forking and growing a disk are refused until your projects hold less"
+		}
+		out = append(out, l)
+	}
+	if b == nil || b.Subscription == nil {
+		return out
+	}
+	if inc := b.Usage.EgressIncludedGB; inc > 0 && b.Usage.EgressGB > float64(inc) {
+		if figures {
+			out = append(out, fmt.Sprintf("egress past the plan: each GB past %d GB adds $0.05, and your machines stop at %d GB", inc, 4*inc))
+		} else {
+			out = append(out, fmt.Sprintf("egress: %s GB this month, past the plan's %d GB: each GB past it adds $0.05, and your machines stop at %d GB",
+				gbFigure(b.Usage.EgressGB), inc, 4*inc))
+		}
+	}
+	if b.Subscription.Status == "past_due" {
+		out = append(out, "payment failed: starting a machine is refused, and running machines stop on the third day; update your card at "+billingURL)
+	}
+	return out
 }
 
 // diskOverPlanLine is the line `repose ls` and `repose status` print
@@ -101,6 +282,13 @@ func diskOverPlanLine(b *Billing) string {
 }
 
 func writeProjectsTable(w io.Writer, projects []Project) {
+	writeProjectsTableHere(w, projects, "")
+}
+
+// writeProjectsTableHere is the table with the row of here, the project
+// a command run in this folder acts on, marked `*` after its name, as
+// `docker context ls` marks the current context (I-616).
+func writeProjectsTableHere(w io.Writer, projects []Project, here string) {
 	now := time.Now()
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
@@ -111,7 +299,7 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 		disk = disk || diskFullCell(&projects[i]) != ""
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	head := "PROJECT\tCLASS\tSTATE\tUP\tAGENTS\tTODAY\tMONTH"
+	head := "PROJECT\tSIZE\tSTATE\tUP\tAGENTS"
 	if left {
 		head += "\tLEFT"
 	}
@@ -121,9 +309,12 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 	_, _ = fmt.Fprintln(tw, head)
 	for i := range projects {
 		p := &projects[i]
-		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
-			p.Slug, p.Class, p.State, orDash(uptime(p)), orDash(agentState(p)),
-			runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
+		name := p.Slug
+		if here != "" && p.ID == here {
+			name += " *"
+		}
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s",
+			name, p.Class, p.State, orDash(uptime(p)), orDash(agentState(p)))
 		if left {
 			row += "\t" + orDash(tempLeft(p, now))
 		}
@@ -161,30 +352,78 @@ func orDash(s string) string {
 	return s
 }
 
+// statusView is what `repose status` prints, read.
+type statusView struct {
+	p      *Project
+	route  *Route // only under -v: the host and the machine's address
+	snaps  []Snapshot
+	events []Event
+	mux    string
+	disk   guestDisk
+	procs  []listeningProc
+	git    []gitRow
+	// probeErr and probeDetail say why git is empty on a running
+	// machine (I-634).
+	probeErr, probeDetail string
+	// left is a stopped machine's rows from this laptop's stop of it.
+	left    stopLeft
+	hasLeft bool
+	// defaultAgent is config.toml's default_agent, which the setup line
+	// compares the project's agent with.
+	defaultAgent string
+	bill         *Billing
+	now          time.Time
+}
+
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
 	writeStatusLinesMux(w, p, route, snaps, events, multiplexer.Normalize(p.Multiplexer), guestDisk{})
 }
 
 // writeStatusLinesMux is writeStatusLines with what the guest said: the
-// multiplexer that runs now, so herdr is named after the size and its
-// sessions line has no tmux clients, since herdr's arrive over SSH
+// multiplexer that runs now, so herdr is named after the size and the
+// attached row has no tmux clients, since herdr's arrive over SSH
 // (I-509); and its root filesystem, which the disk figure is (I-567).
 func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event, mux string, gd guestDisk) {
+	writeStatus(w, statusView{p: p, route: route, snaps: snaps, events: events, mux: mux, disk: gd, now: time.Now()})
+}
+
+// statusRow prints one labelled row of `repose status`, in the
+// `fly status` style (I-616): the label in a column, then the value.
+func statusRow(w io.Writer, label, value string) {
+	_, _ = fmt.Fprintf(w, "  %-10s %s\n", label, value)
+}
+
+// statusIndent lines a continuation up under a row's value.
+const statusIndent = "             "
+
+// writeStatus prints `repose status`: a header with the name, state,
+// size and a multiplexer other than tmux; one line for each thing that
+// needs the reader (a stop by the platform, an unused machine, a
+// temporary one's end, an error, a disk near full, a plan limit); then
+// labelled rows. The host and the machine's address are platform
+// internals nobody acts on, so they print only under -v (I-616, which
+// amends I-192); --json has them as host_id and guest_ip.
+func writeStatus(w io.Writer, v statusView) {
+	p := v.p
+	gd := v.disk
 	if gd.Size <= 0 {
 		gd = apiDisk(p)
 	}
-	_, _ = fmt.Fprintln(w, statusFirstLineMux(p, mux))
+	_, _ = fmt.Fprintln(w, statusFirstLineMux(p, v.mux))
 	if r := abuseStopReason(p); r != "" {
 		// DECISIONS I-239: the platform stopped it, and says why.
 		_, _ = fmt.Fprintf(w, "  %s\n", r)
 	}
-	if l := idleLine(p, time.Now()); l != "" {
-		// DECISIONS I-262: nobody on it for a day, and still billing.
+	if l := idleLine(p, v.now); l != "" {
+		// DECISIONS I-262, I-617: nobody on it for a day.
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
-	if t := tempWhen(p, time.Now()); t != "" {
+	if t := tempWhen(p, v.now); t != "" {
 		// DECISIONS I-347: a temporary machine, and how long it has.
 		_, _ = fmt.Fprintf(w, "  temporary: %s\n", t)
+	}
+	if l := setupLine(p, v.defaultAgent); l != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
 	if p.State == "error" {
 		reason := projectReason(p)
@@ -197,37 +436,88 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 		// DECISIONS I-590: running, on its previous system.
 		_, _ = fmt.Fprintf(w, "  %s\n", withNext(r, ""))
 	}
-	if route != nil {
-		host := route.HostName
-		if host == "" {
-			host = route.HostID // an api without host_name
-		}
-		_, _ = fmt.Fprintf(w, "  host %s   ip %s   disk %s   snapshot %s\n", orDash(host), orDash(route.GuestIP), statusDisk(p, gd), snapshotAge(snaps))
+	running := p.State == "running"
+	if running && guestdDead(p) {
+		_, _ = fmt.Fprintf(w, "  repose's service on the machine is not answering, so the agents and sessions below are old; `repose start %s` restarts it\n", p.Slug)
 	}
 	if l := diskFullLine(p, gd); l != "" {
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
-	if p.Signals != nil && p.State == "running" {
+	for _, l := range planWarnings(v.bill) {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
+	}
+	if a := agentList(p); a != "" {
+		statusRow(w, "agents", a)
+	}
+	if v.hasLeft {
+		writeStoppedRows(w, v.left, v.now)
+	} else {
+		writeGitRowsOr(w, v.git, v.now, v.probeErr, v.probeDetail)
+	}
+	if running && p.Signals != nil {
+		statusRow(w, "attached", attachedCell(p.Signals, v.mux))
 		docker := p.Signals.Docker
 		if p.Signals.DockerContainers > docker {
 			docker = p.Signals.DockerContainers
 		}
-		if mux == multiplexer.Herdr {
-			_, _ = fmt.Fprintf(w, "  sessions %d   docker %d\n", p.Signals.SSHSessions, docker)
-		} else {
-			_, _ = fmt.Fprintf(w, "  sessions %d   tmux clients %d   docker %d\n", p.Signals.SSHSessions, p.Signals.TmuxClients, docker)
-		}
-		if guestdDead(p) {
-			_, _ = fmt.Fprintf(w, "  the environment's agent (guestd) is not answering; `repose start %s` restarts it\n", p.Slug)
+		if docker > 0 {
+			statusRow(w, "docker", count(docker, "container"))
 		}
 	}
-	if last := newestEvent(events); last != nil {
+	writeListening(w, v.procs)
+	statusRow(w, "disk", statusDisk(p, gd)+", "+snapshotCell(p, v.snaps))
+	if last := newestEvent(v.events); last != nil {
 		agent := last.Agent
 		if agent != "" {
 			agent += " "
 		}
-		_, _ = fmt.Fprintf(w, "  last event %s: %s%s %q\n", humanAge(last.TS), agent, last.Kind, last.Summary)
+		verb, summary := eventCells(*last)
+		statusRow(w, "last event", fmt.Sprintf("%s, %s%s %q", humanAge(last.TS), agent, verb, summary))
 	}
+	if v.route != nil {
+		host := v.route.HostName
+		if host == "" {
+			host = v.route.HostID // an api without host_name
+		}
+		statusRow(w, "host", fmt.Sprintf("%s, ip %s", orDash(host), orDash(v.route.GuestIP)))
+	}
+}
+
+// attachedCell is who is on the machine: its SSH sessions (an attach, an
+// editor, a `repose exec`) and, on tmux, the clients attached to the
+// session; "nobody" when there are none.
+func attachedCell(s *Signals, mux string) string {
+	tmux := 0
+	if mux != multiplexer.Herdr {
+		tmux = s.TmuxClients
+	}
+	if s.SSHSessions == 0 && tmux == 0 {
+		return "nobody"
+	}
+	cell := count(s.SSHSessions, "SSH session")
+	if tmux > 0 {
+		cell += ", " + count(tmux, "tmux client")
+	}
+	return cell
+}
+
+// count is "1 commit", "3 commits".
+func count(n int, noun string) string {
+	return fmt.Sprintf("%d %s", n, plural(n, noun, noun+"s"))
+}
+
+// snapshotCell is the newest snapshot's age, from the list or else the
+// project's last_snapshot_at. A fork has none of its own until its first
+// stop or night: "no snapshot yet" says that, where "none" read as if
+// the fork had come from nowhere.
+func snapshotCell(p *Project, snaps []Snapshot) string {
+	if s := newestSnapshot(snaps); s != nil {
+		return "snapshot " + humanAge(s.CreatedAt)
+	}
+	if p.LastSnapshotAt != nil {
+		return "snapshot " + humanAge(*p.LastSnapshotAt)
+	}
+	return "no snapshot yet"
 }
 
 // statusDisk is the disk figure: the guest's root filesystem, used over
@@ -235,9 +525,18 @@ func writeStatusLinesMux(w io.Writer, p *Project, route *Route, snaps []Snapshot
 // with neither, the volume's size alone. The api's disk_used_bytes is not
 // shown: it counts the volume's allocated blocks, which a deleted file
 // keeps until the guest's daily fstrim (I-567, I-585).
+//
+// With the volume's size known it follows in parentheses, as `resize`
+// prints it: "1.0 GB of 78.0 GB (80G disk)". The filesystem keeps part
+// of the volume for itself, so `resize 80G` then a status of 78.0 GB
+// read as two answers (review 5.7, I-633).
 func statusDisk(p *Project, gd guestDisk) string {
 	if gd.Size > 0 {
-		return fmt.Sprintf("%s/%s", humanBytes(gd.Used), humanBytes(gd.Size))
+		s := fmt.Sprintf("%s of %s", humanBytes(gd.Used), humanBytes(gd.Size))
+		if p.VolumeBytes > 0 {
+			s += fmt.Sprintf(" (%s disk)", diskSize(p.VolumeBytes))
+		}
+		return s
 	}
 	if p.VolumeBytes > 0 {
 		return humanBytes(p.VolumeBytes)
@@ -294,29 +593,20 @@ func statusFirstLine(p *Project) string {
 	return statusFirstLineMux(p, multiplexer.Normalize(p.Multiplexer))
 }
 
-// statusFirstLineMux names herdr after the size; tmux is not named.
+// statusFirstLineMux is the header: the name, the state with its uptime,
+// the size, and herdr when it runs the terminals (tmux is not named). The
+// running hours it ended with since I-289 cost nothing on a plan, so they
+// are gone (I-616); the agents have their own row.
 func statusFirstLineMux(p *Project, mux string) string {
-	class := fmt.Sprintf("%-6s", p.Class)
+	state := p.State
+	if up := uptime(p); up != "" {
+		state += " " + up
+	}
+	line := fmt.Sprintf("%s  %s  %s", p.Slug, state, p.Class)
 	if mux == multiplexer.Herdr {
-		class += " herdr "
+		line += "  herdr"
 	}
-	return fmt.Sprintf("%-10s %s %-9s %-7s %-20s today %s  month %s",
-		p.Slug, class, p.State, uptime(p), agentState(p), runHours(p.RunningSecondsToday), runHours(p.RunningSecondsMonth))
-}
-
-// runHours renders running seconds as `2h14m` under a day and whole hours
-// from there (`41h`): what `repose status` and `repose ls` show since
-// I-289, in place of a price.
-func runHours(secs int64) string {
-	if secs <= 0 {
-		return "0h"
-	}
-	h := secs / 3600
-	m := (secs % 3600) / 60
-	if h >= 24 || m == 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dh%02dm", h, m)
+	return line
 }
 
 // uptime is only meaningful while running: v0.1.4 printed "47h30m" for a
@@ -328,35 +618,59 @@ func uptime(p *Project) string {
 	return humanDuration(time.Since(*p.StartedAt))
 }
 
+// agentStateWords are guestd's agent states as text prints them
+// (I-617); --json keeps the api's snake_case. `unknown` (an agent quiet
+// for less than the idle time, or a window that just closed) tells the
+// reader nothing, so it is not named.
+var agentStateWords = map[string]string{"needs_input": "needs input", "working": "working", "idle": "idle"}
+
+// agentStateOrder puts the agent that needs you first.
+var agentStateOrder = []string{"needs_input", "working", "idle"}
+
+func agentWord(state string) string {
+	if w, ok := agentStateWords[state]; ok {
+		return w
+	}
+	if state == "unknown" {
+		return ""
+	}
+	return strings.ReplaceAll(state, "_", " ")
+}
+
 // agentState is the AGENTS column: the one agent with its state, or, for
-// several, how many are in each state, needs_input first. It showed the
+// several, how many are in each state, needs input first. It showed the
 // first agent alone, so a machine with five read `claude: working`
-// (I-567). guestd's `unknown` (an agent quiet for less than the idle
-// time, or a window that just closed) tells the reader nothing, so it is
-// not named: one such agent reads `claude`, and several are counted
-// without it.
+// (I-567).
 func agentState(p *Project) string {
 	if p.Signals == nil || p.State != "running" || len(p.Signals.Agents) == 0 {
 		return ""
 	}
+	now := time.Now()
 	agents := p.Signals.Agents
 	if len(agents) == 1 {
-		if agents[0].State == "unknown" || agents[0].State == "" {
-			return agents[0].Agent
+		if w := agentWord(agents[0].State); w != "" {
+			return fmt.Sprintf("%s: %s%s%s", agents[0].Agent, w, staleMark(p, now), waitAge(p, agents[0], now))
 		}
-		return fmt.Sprintf("%s: %s", agents[0].Agent, agents[0].State)
+		return agents[0].Agent
 	}
-	counts := map[string]int{}
-	var order []string
-	for _, st := range []string{"needs_input", "working", "idle"} {
-		order = append(order, st)
-		counts[st] = 0
-	}
+	// The longest wait is the one to act on (I-634).
+	var longest string
+	var longestD time.Duration
 	for _, a := range agents {
-		if a.State == "unknown" || a.State == "" {
+		if a.State != "needs_input" {
 			continue
 		}
-		if _, ok := counts[a.State]; !ok {
+		if t, ok := p.waitedSince[agentKey(a)]; ok && now.Sub(t) > longestD {
+			longestD, longest = now.Sub(t), waitAge(p, a, now)
+		}
+	}
+	counts := map[string]int{}
+	order := append([]string{}, agentStateOrder...)
+	for _, a := range agents {
+		if agentWord(a.State) == "" {
+			continue
+		}
+		if _, ok := counts[a.State]; !ok && !slices.Contains(order, a.State) {
 			order = append(order, a.State)
 		}
 		counts[a.State]++
@@ -364,13 +678,152 @@ func agentState(p *Project) string {
 	var parts []string
 	for _, st := range order {
 		if counts[st] > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", counts[st], st))
+			part := fmt.Sprintf("%d %s", counts[st], agentWord(st))
+			if st == "needs_input" && longest != "" {
+				part += " (" + strings.TrimSpace(longest) + ")"
+			}
+			parts = append(parts, part)
 		}
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("%d agents", len(agents))
 	}
-	return fmt.Sprintf("%d agents: %s", len(agents), strings.Join(parts, ", "))
+	return fmt.Sprintf("%d agents: %s%s", len(agents), strings.Join(parts, ", "), staleMark(p, now))
+}
+
+// agentKey is how an agent's window is matched to its events: the
+// window's name, else the agent's.
+func agentKey(a AgentSignal) string {
+	if a.Window != "" {
+		return a.Window
+	}
+	return a.Agent
+}
+
+// waitAge is " 4h" after an agent that needs input, for how long it has
+// waited: since the event that started its wait (I-634). "" when no
+// event says.
+func waitAge(p *Project, a AgentSignal, now time.Time) string {
+	if a.State != "needs_input" {
+		return ""
+	}
+	t, ok := p.waitedSince[agentKey(a)]
+	if !ok {
+		return ""
+	}
+	if d := now.Sub(t); d >= time.Minute {
+		return " " + compactAge(d)
+	}
+	return " now"
+}
+
+// staleMark is "?" after agent states read from a sample older than
+// signalFresh, as ps marks them (I-634): the agent may have moved on.
+func staleMark(p *Project, now time.Time) string {
+	if p.Signals != nil && p.Signals.SampledAt != nil && now.Sub(*p.Signals.SampledAt) >= signalFresh {
+		return "?"
+	}
+	return ""
+}
+
+// noteWaits reads, from a project's events, when each agent that needs
+// input began to wait: the newest event of its window, when that event
+// is the question (I-634). Anything after it (done, an error) means the
+// event that started this wait is not in the list.
+func noteWaits(p *Project, events []Event) {
+	if p.Signals == nil {
+		return
+	}
+	newest := map[string]Event{}
+	for _, ev := range events {
+		k := ev.Window
+		if k == "" {
+			k = ev.Agent
+		}
+		if k == "" {
+			continue
+		}
+		if cur, ok := newest[k]; !ok || ev.TS.After(cur.TS) {
+			newest[k] = ev
+		}
+	}
+	for _, a := range p.Signals.Agents {
+		if a.State != "needs_input" {
+			continue
+		}
+		ev, ok := newest[agentKey(a)]
+		if !ok || (ev.Kind != "needs_input" && ev.Kind != "agent_question") {
+			continue
+		}
+		if p.waitedSince == nil {
+			p.waitedSince = map[string]time.Time{}
+		}
+		p.waitedSince[agentKey(a)] = ev.TS
+	}
+}
+
+// needsAnswer reports whether an agent on p waits for an answer.
+func needsAnswer(p *Project) bool {
+	if p.Signals == nil || p.State != "running" {
+		return false
+	}
+	for _, a := range p.Signals.Agents {
+		if a.State == "needs_input" {
+			return true
+		}
+	}
+	return false
+}
+
+// noteWaitsOf reads the events of each project with an agent that needs
+// input, at once, for ls (I-634). A failed read leaves that project's
+// ages out.
+func noteWaitsOf(ctx context.Context, c *Client, projects []Project) {
+	var wg sync.WaitGroup
+	for i := range projects {
+		p := &projects[i]
+		if !needsAnswer(p) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if evs, err := c.ListEvents(ctx, p.ID, ""); err == nil {
+				noteWaits(p, evs)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// agentList is status's agents row: each agent by its window's name
+// (claude-2 when two run), with its state, the ones that need you first
+// (I-616): `claude-2 needs input, claude working, codex idle`.
+func agentList(p *Project) string {
+	if p.Signals == nil || p.State != "running" || len(p.Signals.Agents) == 0 {
+		return ""
+	}
+	rank := func(st string) int {
+		if i := slices.Index(agentStateOrder, st); i >= 0 {
+			return i
+		}
+		return len(agentStateOrder)
+	}
+	agents := slices.Clone(p.Signals.Agents)
+	sort.SliceStable(agents, func(i, j int) bool { return rank(agents[i].State) < rank(agents[j].State) })
+	now := time.Now()
+	parts := make([]string, 0, len(agents))
+	for _, a := range agents {
+		name := a.Window
+		if name == "" {
+			name = a.Agent
+		}
+		if w := agentWord(a.State); w != "" {
+			name += " " + w + staleMark(p, now) + waitAge(p, a, now)
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func humanDuration(d time.Duration) string {
@@ -391,18 +844,10 @@ func humanAge(t time.Time) string {
 	return humanDuration(d) + " ago"
 }
 
-// snapshotAge and newestEvent pick by time, not position: the api lists
+// newestEvent and snapshotCell pick by time, not position: the api lists
 // newest first and the fake oldest first, and status took the last
 // element, which showed a running project's first event
 // (guest_state_changed "creating") as its last (I-192).
-func snapshotAge(snaps []Snapshot) string {
-	s := newestSnapshot(snaps)
-	if s == nil {
-		return "none"
-	}
-	return humanAge(s.CreatedAt)
-}
-
 func newestEvent(events []Event) *Event {
 	var best *Event
 	for i := range events {
@@ -411,4 +856,128 @@ func newestEvent(events []Event) *Event {
 		}
 	}
 	return best
+}
+
+// statusWatchEvery is how often `repose status --watch` reads again.
+var statusWatchEvery = 5 * time.Second
+
+// StatusWatch is `repose status --watch` (I-616): on a terminal it
+// redraws the screen in place; elsewhere it prints the status again only
+// when it changed. An api that cannot be reached, or answers 5xx or 429,
+// does not end the watch: the last status stays, with a line saying the
+// read failed. Any other error (no such project, logged out) ends it.
+func StatusWatch(ctx context.Context, e *Env, projectArg string, tty bool) error {
+	out := e.Out
+	var last, lastErr string
+	for {
+		var b strings.Builder
+		e2 := *e
+		e2.Out = &b
+		err := StatusCmd(ctx, &e2, projectArg)
+		switch {
+		case ctx.Err() != nil:
+			return nil
+		case err != nil && !transientErr(err):
+			return err
+		case err != nil:
+			msg := fmt.Sprintf("Could not read the status at %s: %s", time.Now().Format("15:04:05"), briefErr(err))
+			if tty {
+				_, _ = fmt.Fprint(out, "\x1b[H\x1b[2J"+last+msg+"\n")
+			} else if msg != lastErr {
+				_, _ = fmt.Fprintln(e.ErrOut, msg)
+			}
+			lastErr = msg
+		case tty:
+			last = b.String()
+			_, _ = fmt.Fprint(out, "\x1b[H\x1b[2J"+last)
+		case b.String() != last:
+			if last != "" && !e.JSON {
+				_, _ = fmt.Fprintln(out)
+			}
+			last = b.String()
+			_, _ = fmt.Fprint(out, last)
+		}
+		if err == nil {
+			lastErr = ""
+		}
+		if sleepOrDone(ctx, statusWatchEvery) != nil {
+			return nil
+		}
+	}
+}
+
+// transientErr is an error a later read can clear: the api not reached,
+// a 5xx, a 429.
+func transientErr(err error) bool {
+	var u *unreachableError
+	if errors.As(err, &u) {
+		return true
+	}
+	var a *APIError
+	return errors.As(err, &a) && (a.Status >= 500 || a.Status == 429)
+}
+
+// projectStates are the states `--wait` takes: the api's state enum
+// (docs/interfaces/README.md).
+var projectStates = []string{"creating", "building", "starting", "running", "stopping", "stopped", "restoring", "destroying", "destroyed", "error"}
+
+// statusWaitEvery is how often `repose status --wait` reads the state.
+var statusWaitEvery = 2 * time.Second
+
+// StatusWait is `repose status --wait STATE` (I-616): it reads the
+// project until it is in STATE and then prints its status (exit 0), for
+// a script that started something elsewhere (the dashboard, a fork) and
+// needs it there. A project that lands in error, or is destroyed, while
+// another state is awaited exits 1 at once, as does the timeout.
+func StatusWait(ctx context.Context, e *Env, projectArg, want string, timeout time.Duration) error {
+	if !slices.Contains(projectStates, want) {
+		return exitf(ExitUsage, "--wait takes a state: %s.", strings.Join(projectStates, ", "))
+	}
+	p, err := requireProject(ctx, e, projectArg)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		if p.State == want {
+			return statusFor(ctx, e, p)
+		}
+		if p.State == "error" || p.State == "destroyed" {
+			msg := fmt.Sprintf("%s is %s, not %s", p.Slug, p.State, want)
+			if r := projectReason(p); r != "" && p.State == "error" {
+				msg += ": " + r
+			}
+			return exitf(ExitGeneric, "%s.", strings.TrimSuffix(msg, "."))
+		}
+		if !time.Now().Before(deadline) {
+			return exitf(ExitGeneric, "%s is still %s after %s, not %s.", p.Slug, p.State, shortDuration(timeout), want)
+		}
+		if sleepOrDone(ctx, statusWaitEvery) != nil {
+			return exitf(ExitInterrupted, "Interrupted.")
+		}
+		next, err := e.Client.GetProject(ctx, p.ID)
+		switch {
+		case isNotFound(err) && want != "destroyed":
+			return exitf(ExitGeneric, "%s is destroyed, not %s.", p.Slug, want)
+		case isNotFound(err):
+			_, _ = fmt.Fprintf(e.Out, "%s is destroyed.\n", p.Slug)
+			return nil
+		case err != nil && !transientErr(err):
+			return err
+		case err == nil:
+			p = next
+		}
+	}
+}
+
+// shortDuration is d without its zero parts: 10m, 1h, 1h30m, 45s.
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }

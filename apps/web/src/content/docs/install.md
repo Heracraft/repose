@@ -49,13 +49,34 @@ This confirms that the repose release workflow built the archive. It works for v
 repose login
 ```
 
-The CLI prints a link and a short code. Open the link in any browser, on any device: check the code on the page matches the one in your terminal, then sign in with your email or with GitHub. This works over SSH too.
+The CLI prints a link and a short code, and opens the link in this computer's browser when it has one. Or open it in any browser, on any device: check the code on the page matches the one in your terminal, then sign in with your email or with GitHub. This works over SSH too. `repose login --status` shows the account you're logged in as.
+
+The first `repose run` on a computer that has never logged in logs in this way first.
 
 You stay logged in until you run `repose logout`.
 
+## Choose a plan
+
+A machine starts only on an account with a plan. Choose one at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Run from a terminal, `repose run`, `start` and `attach` on an account with no plan open that page and wait for it, then go on; off a terminal, or with `--json`, they exit 7. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+
+## Shell completion
+
+`repose completion SHELL` prints a script that completes commands, flags and project names. To load it in every new shell:
+
+```
+# bash
+echo 'source <(repose completion bash)' >> ~/.bashrc
+
+# zsh
+repose completion zsh > "${fpath[1]}/_repose"
+
+# fish
+repose completion fish > ~/.config/fish/completions/repose.fish
+```
+
 ## Update
 
-Run the install command again. It replaces the binary and leaves your login and settings alone.
+Run the install command again. It replaces the binary and leaves your login and settings alone. When a newer release is out, the CLI says so once.
 
 ## Uninstall
 

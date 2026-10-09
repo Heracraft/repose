@@ -29,35 +29,37 @@ repose notify test
 ```
 
 ```text
-email: ok
-ntfy: ok
+email: sent
+ntfy: sent
 ```
 
-A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy none`.
+`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1.
+
+A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 
 Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy URL saves with the **Save** button next to it.
 
 ## What you'll get
 
-| Title                                   | When                                                                                                                                                                        |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `todo-app: claude finished`             | The agent finished and is waiting.                                                                                                                                          |
-| `todo-app: claude needs input`          | The agent is asking you something, usually a permission.                                                                                                                    |
-| `todo-app: claude hit an error`         | The agent reported an error.                                                                                                                                                |
-| `todo-app: snapshot failed`             | A snapshot couldn't be taken.                                                                                                                                               |
-| `todo-app: base update failed`          | A platform update didn't build with your configuration.                                                                                                                     |
-| `todo-app: base updated`                | A platform update was switched into the machine.                                                                                                                            |
-| `todo-app: machine.nix did not apply`   | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                  |
-| `todo-app: new system did not boot`     | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                          |
-| `todo-app: destroy failed`              | A destroy didn't finish; the body says why.                                                                                                                                 |
-| `todo-app: host moved`                  | The project was restored onto another server from its latest snapshot.                                                                                                      |
-| `todo-app: abuse stopped`               | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your guest was stopped: a cryptocurrency miner was running`.     |
-| `todo-app: idle, still billing`         | The machine has run 24 hours with nobody on it and no agent working. Once per idle stretch ([Idle machines](/docs/lifecycle#idle-machines)).                                |
-| `tmp-k3f9: destroyed in an hour`        | A temporary machine has an hour left; `repose keep tmp-k3f9` keeps it. Only for one made with more than an hour ([Temporary machines](/docs/lifecycle#temporary-machines)). |
-| `tmp-k3f9: temporary machine destroyed` | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                  |
-| `todo-app: claude says`                 | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                              |
-| `todo-app: claude asks`                 | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                        |
-| `todo-app: notifications paused`        | The project reached 30 notifications this hour.                                                                                                                             |
+| Title                                           | When                                                                                                                                                                                          |
+|-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                            |
+| `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                      |
+| `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                  |
+| `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                                 |
+| `todo-app: base update failed`                  | A platform update didn't build with your configuration.                                                                                                                                       |
+| `todo-app: base updated`                        | A platform update was switched into the machine.                                                                                                                                              |
+| `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                    |
+| `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                            |
+| `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                   |
+| `todo-app: host moved`                          | The project was restored onto another server from its latest snapshot.                                                                                                                        |
+| `todo-app: abuse stopped`                       | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your machine was stopped: a cryptocurrency miner was running`.                     |
+| `todo-app: unused for 24h, holding plan memory` | The machine has run 24 hours with nobody on it and no agent working, and its memory counts against your plan. Once per unused stretch ([Unused machines](/docs/lifecycle#unused-machines)).   |
+| `tmp-k3f9: destroyed in an hour`                | A temporary machine has an hour left; `repose keep tmp-k3f9` keeps it. Only for one made with more than an hour ([Temporary machines](/docs/lifecycle#temporary-machines)).                   |
+| `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
+| `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
+| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                                          |
+| `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                               |
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
 
@@ -145,4 +147,4 @@ repose events todo-app
 repose events todo-app --since 72h -f
 ```
 
-If an event is listed but nothing arrived, run `repose notify test`. An `error` there means the channel's settings are wrong.
+If an event is listed but nothing arrived, run `repose notify test`. `failed` there means the channel's settings are wrong, and says why when ntfy answered.

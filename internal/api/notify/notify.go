@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/eventverbs"
 )
 
 // Message is one notification to deliver.
@@ -299,10 +301,8 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
-	verb := map[string]string{"completed": "finished", "needs_input": "needs input", "error": "hit an error", "agent_message": "says", "agent_question": "asks", "idle_running": "idle, still billing", "temp_expiring": "destroyed in an hour", "temp_destroyed": "temporary machine destroyed", "personal_failed": "machine.nix did not apply", "boot_failed": "new system did not boot"}[m.Kind]
-	if verb == "" {
-		verb = strings.ReplaceAll(m.Kind, "_", " ")
-	}
+	// The CLI's `repose events` says the same words (I-634).
+	verb := eventverbs.Verb(m.Kind)
 	if m.Agent != "" {
 		return fmt.Sprintf("%s: %s %s", m.Project, m.Agent, verb)
 	}
@@ -453,10 +453,10 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	}
 	_ = resp.Body.Close() // status is all we need
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		return fmt.Errorf("ntfy: status %d", resp.StatusCode)
+		return &statusError{"ntfy", resp.StatusCode}
 	}
 	if resp.StatusCode >= 400 {
-		return Permanent{fmt.Errorf("ntfy: status %d", resp.StatusCode)}
+		return Permanent{&statusError{"ntfy", resp.StatusCode}}
 	}
 	return nil
 }
@@ -522,24 +522,58 @@ func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 		m.NtfyURL = *u.NtfyURL
 	}
 	if u.NotifyEmail && m.Email != "" {
-		out["email"] = o.try(ctx, "email", m)
+		out["email"], _ = o.try(ctx, "email", m)
 	}
 	if m.NtfyURL != "" {
-		out["ntfy"] = o.try(ctx, "ntfy", m)
+		var why string
+		if out["ntfy"], why = o.try(ctx, "ntfy", m); why != "" {
+			// The URL is the user's, so why it failed is theirs to fix
+			// (DECISIONS I-622): ntfy_error says it in a few words.
+			out["ntfy_error"] = why
+		}
 	}
 	return out
 }
 
-func (o *Outbox) try(ctx context.Context, channel string, m Message) string {
+// try sends m on channel: "ok", or "error" with why in a few words.
+func (o *Outbox) try(ctx context.Context, channel string, m Message) (string, string) {
 	s := o.senders[channel]
 	if s == nil {
-		return "error"
+		return "error", "not configured on this server"
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := s.Send(sctx, m); err != nil {
 		o.log.Warn("notify test failed", "event", "notify_fail", "channel", channel)
-		return "error"
+		return "error", sendFailure(err)
 	}
-	return "ok"
+	return "ok", ""
 }
+
+// sendFailure is a failed send in a few words a user can act on: the
+// status the server answered, or why there was none. Never the URL.
+func sendFailure(err error) string {
+	var status *statusError
+	var dns *net.DNSError
+	switch {
+	case errors.As(err, &status):
+		return fmt.Sprintf("the server answered %d", status.code)
+	case errors.Is(err, ErrNonPublicAddress):
+		return "the address is not on the public internet"
+	case errors.Is(err, ErrRedirect):
+		return "the server redirects, and repose follows no redirect"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "no answer within 15 seconds"
+	case errors.As(err, &dns):
+		return "the host name does not resolve"
+	}
+	return "could not connect"
+}
+
+// statusError is an HTTP answer a sender treats as a failure.
+type statusError struct {
+	channel string
+	code    int
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("%s: status %d", e.channel, e.code) }

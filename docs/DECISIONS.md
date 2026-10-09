@@ -15155,6 +15155,9 @@ stderr and exits 0, so no new command lands on PATH. It never opens the
 agents' Chromium: that would put the user's logins in the agents'
 browser. A user's own `BROWSER` wins. Python's `webbrowser.open`, which
 launched a separate Chromium, now prints too.
+*Later (I-634):* the script also leaves each `https` link in
+`~/.cache/repose/open-urls`; an attached laptop opens it in its own
+browser. Claude Code's `/login` calls `BROWSER`, checked against 2.1.283.
 **I-552. Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named.**
 (personal-removal, 2026-10-06; follows I-490, I-496) On kanali the owner
 pushed a machine.nix that themed tmux and reloaded it into the running
@@ -16747,6 +16750,1479 @@ DESIGN. Not changed: the guest's wrapper comment in
 rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
 `TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
 `TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.
+*Later (I-635):* `--agent` without `-p` no longer exits 2. It makes
+the agent the project's own, as `--multiplexer` does; the agent is not
+dropped, which was the refusal's reason.
+
+**I-614. A confirmation is asked only on a terminal, a no exits 1,
+Ctrl-C at it ends the command, and `stop` asks before it ends a busy
+agent.** (devx-confirm, 2026-10-08; amends I-500; review
+`reviews/2026-10-08-cli-ergonomics-critique.md` A1, A3, A4, A5, A8 and
+`reviews/2026-10-08-cli-devx.md` 5.6) One check decided both whether to
+draw a spinner and whether to ask: stdin a character device, and neither
+`TERM=dumb` nor `REPOSE_NO_SPINNER=1`. /dev/null is a character device,
+so `repose rm x </dev/null` (cron, systemd, `ssh -n`, CI) printed the
+question, read EOF, said "Nothing destroyed." and exited 0, and the
+script went on as if it had destroyed. An Emacs shell, or anyone who
+turned the spinner off, could not confirm at all and was told to pass
+`--yes`, the less safe path. Now:
+- `canDrawSpinner` reads `TERM` and `REPOSE_NO_SPINNER` and checks that
+  stderr is a terminal; `canPrompt` is a real isatty on stdin
+  (golang.org/x/term), and nothing else. The secrets prompt, `reply` and
+  `restore`'s name question use `canPrompt` too.
+- A no, an empty answer to `[y/N]` or EOF ends the command with exit 1
+  and its line (`Nothing destroyed.`, `Nothing stopped.`, `Not
+  restored.`, `Not changed. x is still large.`, `Nothing restored.`) on
+  stderr, so `repose rm x && next` stops at a no. Exit 1 ("failed; the
+  message says why") rather than a new code: a script that checks for
+  nonzero is what this is for, and one more code is one more thing to
+  learn. `secrets import --mcp`'s question is not a confirmation of the
+  whole command (a no imports the rest), so it still exits 0.
+- The answer is read in a goroutine that selects on the command's
+  context: the first Ctrl-C prints a newline and the same line and exits
+  130. It used to need a second Ctrl-C (I-598's handler) and printed
+  nothing.
+- `repose stop` reads the agents the newest sample shows working or
+  waiting for an answer, as I-500 did, and now asks before the stop:
+  `api has claude (working) and codex-2 (needs input). Stopping ends
+  them. Stop api? [y/N]`. I-500 named them after the stop because the
+  sample can be a minute old; a stale "working" costs one keystroke, and
+  a stop typed in the wrong checkout ends a turn nobody can resume as it
+  was, while `resize --size` already asked. With no busy agent there is
+  no question. `-y`/`--yes` is new on `stop`; without a terminal and
+  without it, a stop with a busy agent exits 2 naming the agents. After
+  `--yes` the line is `Ended claude (working).`: "Interrupted" read as
+  the CLI's own Ctrl-C line. After a yes nothing repeats what the
+  question said. `rm`'s question names busy agents the same way.
+- `snapshots restore` in place names both ends: `Replace demo's disk with
+  its snapshot of 2026-10-08 17:47? The stop snapshot of 2026-10-08 17:49
+  keeps the disk as it is now. [y/N]`. When the newest snapshot is not a
+  stop's taken after the last start (a `--no-snapshot` stop, `resize
+  --size`), it says `No snapshot keeps the disk as it is now; what
+  changed after <newest> is lost for good.` A project with no
+  `started_at` gets neither sentence. "Volume" is gone (the word is
+  disk). The progress line is `Restoring demo from demo's snapshot of
+  ...`. Still y/N, not the dashboard's typed name: owner's 2026-09-23
+  choice for recoverable actions, and the question now says when it is
+  not recoverable.
+- `rm`: after an interactive yes the line is `Destroying demo.`; with
+  `--yes` it is `Destroying demo. Its final snapshot is kept until
+  2026-11-07.` (today plus 30 days: the snapshot is taken in the next
+  minute, so near midnight the date can be a day early, never late). The
+  `--wait` line says "final" too, where it said "last". A temporary
+  project's question puts the loss first: `tmp-k3f9 is temporary:
+  destroying it keeps no snapshot and it cannot be restored. Destroy
+  tmp-k3f9? [y/N]` (5.6's cheaper option; the typed name was not taken,
+  for the reason above).
+Not done here: Ctrl-C lines for `resize --size` and `fork` (their files
+belong to other work this round). `TestAskYesNoFrom`,
+`TestCanPromptIsATerminalCheck`, `TestConfirmOr`,
+`TestStopAsksBeforeEndingABusyAgent`, `TestDestroyPrompt`,
+`TestRestoreInPlacePrompt`, `TestSnapshotsRestoreDeclined`,
+`TestDestroyConfirmationIsYesNo`, `TestStopNamesInterruptedAgents`.
+
+**I-615. `stop` and `rm` take several projects, `stop --idle` stops the
+idle ones, a stop in the checkout fetches first, and the commands that
+make a way back name it.** (devx-confirm, 2026-10-08; review A6, A7,
+1.1, 5.4 and theme 7 "stop takes one project") `fork -n 10` makes ten
+projects; cleaning up took ten `rm`s and ten answers, or an xargs loop
+with `-y` that skips every check. Freeing plan memory took `ls -q |
+xargs -n1 repose stop`, one at a time. Now:
+- `repose stop [PROJECT...]` and `repose rm [PROJECT...]` resolve every
+  name first (a typo in the third acts on none, exit 4), ask one
+  question, and act on all; a project named twice counts once. Stops run
+  in parallel, as do `rm --wait`'s waits; the laptop files a destroy
+  edits (projects.json, the herdr config, the `repose` remote) are
+  edited one at a time. One line per project in the order named; one
+  failure gives its own exit code, several give 1. `--project` beside
+  several arguments must be one of them.
+- `repose stop --idle` stops every running project the api marks idle
+  (I-262: a day with no SSH session and no agent working), the ones `ls`
+  prints the idle line for. None idle: `No machine is idle.`, exit 0. It
+  takes no PROJECT. The plan_limit question the review proposed for
+  `run` is not part of this.
+- In a checkout whose `repose` remote is one of the running machines
+  being stopped, the stop runs `git fetch repose` first (the CLI's own
+  ssh config, BatchMode, 10 s to connect, 60 s in all) and prints
+  `Fetched 3 commits on repose/main and 5 on repose/worktree-1.`,
+  counting commits no ref of the checkout had; nothing when nothing came.
+  A stopped machine cannot be fetched from, so the next morning's fetch
+  cost a start and a stop. A failed fetch is one line on stderr and the
+  stop goes on: the commits are in the snapshot. Ctrl-C during it stops
+  nothing. Outside such a checkout nothing is fetched or counted (that
+  needs the machine to run git for the CLI; 1.1's status row is other
+  work).
+- Ctrl-C while the CLI waits on an op the api accepted says the op goes
+  on, instead of the bare `Interrupted.`: `Interrupted. The stop of demo
+  goes on.` (and for several, `The stops of api and web go on.`), the
+  destroy of `rm --wait`, `snapshots create`, `snapshots restore`
+  (`The restore into demo goes on.`) and `restore`. No command is
+  named: these are statements of what is happening, and `repose ls`
+  shows it.
+- `snapshots create` prints `Snapshot <id> of demo taken in 0.4s (1.0
+  GB).`: the id is what `snapshots restore` takes. `stop` keeps its line
+  (its snapshot is the newest, and the restore question names it by
+  time). `rm` does not print `repose restore NAME` (I-484); its date is
+  I-614's.
+- `repose ls` with no projects but restorable destroyed ones says `No
+  projects. 2 destroyed in the last 30 days can be restored.` instead of
+  `No projects yet.`, which read as if the work was gone.
+Docs: cli.md, lifecycle, features/stop-start-destroy, features/snapshots,
+interfaces/cli-config (exit 1). `TestStopSeveral`, `TestStopIdle`,
+`TestDestroySeveral`, `TestStopFetchesFirst`,
+`TestSnapshotsCreateNamesIt`, `TestLsEmptyCountsDestroyed`.
+**I-610. `resize --size` and `fork` ask the plan's memory before they
+stop or snapshot anything; `fork --no-start`; a plan refusal with one
+machine in the way names `repose stop`.** (cli-devx review 5.1, 5.2,
+6.7, 2026-10-08) `repose resize --size xl` on Solo asked y/N about
+ending every agent, stopped the machine, and only then met the gate's
+refusal on the PATCH; `repose fork demo -n 3` took a snapshot and then
+met it on the fork, and the gate asked about one machine of the N. The
+CLI now asks the same question first, from `/me` (`billing.plan`,
+`limits.memory_gb`) and the project list, counting what the gate counts
+(running, starting, restoring, creating, building): `resize --size` to a
+larger size before its prompt, leaving the project itself out since it
+stops first; `fork` for all N, the source included since it keeps
+running, before the snapshot. A refusal exits 7 in the gate's words:
+`Your Solo plan runs 8 GB at once and an xl machine needs 16 GB.
+Upgrade to Plus at https://repose.herakraft.co/billing.`, or, for fork,
+`... and 3 large machines need 24 GB beside the 8 GB demo is using.
+`repose fork demo -n 3 --no-start` creates them stopped, or upgrade at
+...`. The CLI answers only when it can tell: no plan, an exempt account,
+or an unreadable `/me` or list leave it to the api's gate, which still
+decides every start. `fork --no-start` sends the api's existing `start:
+false` (api.md since I-254); the forks end `stopped`, take no memory,
+and the summary lists them so; with `--prompt` it exits 2. The gate's
+`plan_limit` sentence with one machine in the way reads `todo-app is
+using it. `repose stop todo-app` frees it, or upgrade at ...` in every
+command: the CLI swaps `Stop it` for the command when `detail.projects`
+has one slug, and prints any other wording as sent, so the api and the
+dashboard keep their sentence. *Not done:* the api's fork gate still
+asks for one machine; a client other than the CLI meets the rest as
+failed restores. *Rejected:* `Nothing was stopped.` on the refusal: the
+refusal comes before the question, so nothing suggests a stop.
+`TestResizeClassChecksThePlanFirst`, `TestForkChecksThePlanBeforeTheSnapshot`,
+`TestPlanMemoryRefusalLeavesUnknownsToTheAPI`, `TestPaymentRequiredMessage`,
+`TestClassSpecsMatchBillingAndHost`.
+
+**I-611. `run --size` and `sync --size` size a stopped project before
+starting it, and refuse a running one of another size.** (cli-ergonomics
+review B6, 2026-10-08) `--size` was read only on the create path, so
+`repose run --size xl` after an agent ran out of memory attached to the
+same machine and said nothing. Now, on a project that exists with
+another size: stopped, the CLI PATCHes the class (the gate answers a
+size the plan can't run, exit 7) and starts it at the new size, since
+nothing runs on it to lose; running or in any other state, it exits 2
+with `todo-app is large and running; --size sizes a machine this command
+creates or starts. `repose resize todo-app --size xl` changes it, which
+restarts it.`, because the restart ends every agent and `resize` asks
+about that first. An unknown `--size` exits 2 in the CLI. *Rejected:*
+resizing a running project from `run` behind a question: `run` would
+then be the second command that stops agents. `TestRunSizeOnAnExistingProject`.
+
+**I-612. A temporary machine whose checkout has work the laptop lacks
+outlives its session end; `repose keep PROJECT DURATION`.** (cli-ergonomics
+review A2, cli-devx 6.4, 2026-10-08; amends I-352) Exiting the last tmux
+window destroyed a temporary machine at once, and with no `repose`
+remote and no snapshot its commits and files went with it. Before the
+DELETE the CLI now runs one more ssh over the attach's master: in the
+checkout, the changed files beyond the last sync's fingerprint (I-210)
+plus every file `git status` lists in its other worktrees, and the
+commits reachable from a branch or worktree HEAD but from neither a
+remote-tracking branch nor the commits in `.git/repose-synced-key`. Any
+of either, or a check that fails, and there is no DELETE: `tmp-k3f9 has
+2 commits and 1 changed file that your laptop does not, so it stays
+until 14:02. `repose attach tmp-k3f9` goes back to it.` The machine then
+goes at its expiry as any temporary machine does. Files outside the
+checkout are not looked at. `repose keep PROJECT 3h` (10m to 24h, one
+argument that reads as a duration is the duration) keeps it temporary
+and moves the expiry to that long from now: `PATCH /projects/:id
+{expires_in_s}`, added to api.md beside `expires_at: null`, which still
+works; the fake does the same. The `temp_expiring` warning now goes once
+per expiry (no warning since `expires_at` minus an hour), so a machine
+given more time is warned again. *Rejected:* the `repose` remote for a
+temporary machine (the review's third change): the remote names the
+checkout's own project and `run` there would then mean the temporary
+one (I-347); `git fetch tmp-k3f9.repose:~/DIR BRANCH` stays the way back.
+*Not done:* 6.4's status line `C-b d detach · exit destroys`: with this
+check an `exit` no longer loses work, so the line would be a hint on
+every screen. `TestTempSessionEndKeepsUnfetchedWork`,
+`TestTempSessionEndDestroys`, `TestKeepForADuration`, `TestParseTempWork`,
+`TestTempStays`, `TestTempExtendContract`.
+
+**I-613. `repose resize DISK` needs a unit and compares with the disk
+first.** (cli-ergonomics review D6, 2026-10-08) `parseSize` read `80` as
+80 bytes, so `repose resize izma 100` asked the api for a 100-byte
+disk; a shrink came back as `invalid: volume_bytes: volumes only grow`;
+errors quoted the input upper-cased and cut (`"BI"`). Now a bare number
+exits 2 with `"100" needs a unit, like 100G`, one bare-number argument is
+DISK rather than a project called `100`, and errors quote the input as
+typed. Before the POST the CLI compares with `volume_bytes`: the same
+size prints `izma's disk is already 80G.` and exits 0, a smaller one
+exits 2 with `izma's disk is 80G and can only grow.` The success line is
+`Resized izma's disk to 120G.` `TestParseSizeNeedsAUnit`,
+`TestResizeDiskComparesFirst`, `TestParseResizeArgs`.
+**I-618. `sync`'s remote flags stash and say where; the no-op line
+counts commits and files apart; carry lines print when they change;
+`run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT`
+is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the
+checkout.** (devx-sync, from the 2026-10-08 CLI reviews: devx 5.3, 3.6,
+4.8, 1.1's sync line; ergonomics G6, B7; amends I-573, I-480, I-367,
+I-248) The reviews found `--discard-remote` offered beside
+`--stash-remote` in the exit-6 refusal as an equal choice, though it ran
+`git reset --hard && git clean -fd` over every submodule and kept no
+copy; `Credentials: gh, codex` and the kept-login lines printed on every
+run; the no-op line mixed the machine's commits with its uncommitted
+files; the `Not synced` line scrolled behind tmux; and `repose status
+todo-app:api` or `repose rm todo-app:api` dropped `:api` without a word
+(the second asked to destroy the whole machine), while a typo in CHECKOUT
+made an empty checkout. Now:
+- `--stash-remote` stashes as `repose sync --stash-remote` (was `repose
+  run`), `--discard-remote` ends a git operation in progress, then
+  stashes the same way under `repose sync --discard-remote` before its
+  reset and clean, which now find nothing to remove. Both add
+  `; stashed the machine's changes to N files (git stash <short commit>)`
+  to the summary (the superproject's paths, every untracked file
+  counted). The overlap refusal ends ``\`repose sync --stash-remote\`
+  moves the machine's changes to its git stash first.``; the busy
+  refusal still names `--discard-remote`, the one flag that ends the
+  operation, as "to end it and move the machine's changes to its git
+  stash". Both flags stay: they differ only on an operation in progress,
+  and merging them would make `--stash-remote` end a rebase unasked. No
+  agent-working prompt was added: with nothing destroyed, the flag is
+  the confirmation, as before.
+- With nothing new on the laptop: ``Nothing new to sync. The machine has
+  3 commits on main your laptop doesn't have, and uncommitted changes to
+  2 files.``, either half alone when the other is zero. The probe counts
+  the guest HEAD's commits not reachable from the last sync's laptop
+  HEAD and origin/<branch> (`#ahead`); once the laptop has the guest's
+  HEAD (`git fetch repose`) the count is none. No `git fetch repose`
+  hint: the review's proposal had one, and success lines name no next
+  command (I-485).
+- Carry lines (`Credentials:`, `Left on your laptop:`, kept logins and
+  files, `Not carried`, git and Claude notes, MCP lines) print only when
+  their text differs from what the last run of that project printed;
+  `carry-noted.json` keeps their hashes per project. A line that goes
+  away and comes back prints again. Lines starting `Could not` always
+  print. User-visible "guest" in these lines became "machine".
+- When `run` leaves the checkout alone and the laptop has work, the
+  `Not synced` line also goes to the session helper, which shows it on
+  tmux's status line or as a herdr notification once attached. No
+  `Sync first? [y/N]`, which G6 offered: I-367's reason (the owner did
+  not want every attach to weigh the two sides) stands.
+- Commands that act on the whole machine (`requireProject`) exit 2 on
+  `PROJECT:CHECKOUT`: ``\`repose status\` acts on the whole machine, so
+  it takes todo-app, not todo-app:api.``. `run`, `attach`, `sync`,
+  `exec` (its first word may be `PROJECT:CHECKOUT` now), `ssh`, `code`
+  and the `connectRunning` commands keep taking it; their usage reads
+  `[PROJECT[:CHECKOUT]]`.
+- A CHECKOUT the machine neither lists in `~/.repose/checkouts` nor has
+  a directory for is refused by the guest script itself, exit 2 with
+  ``todo-app has no checkout apii. `repose run --on todo-app` in its
+  folder adds it.``; only `run --on` adds one. A listed name whose
+  directory is gone is still made again by a sync.
+- `repose rm PROJECT:CHECKOUT` removes that checkout on the running
+  machine, after `Remove ~/api from todo-app? It is deleted with its
+  worktrees, uncommitted work and any commits you have not fetched or
+  pushed. [y/N]` (`-y` skips it; none without a terminal, exit 2):
+  `~/api`, the `~/api-worktree-N` that are its worktrees, its line in the
+  list, and every laptop folder's link to it. Exit 6 while a process
+  has its working directory in one of them; exit 2 for a name not
+  listed, naming the ones that are. It prints `Removed ~/api from
+  todo-app.`.
+- `sync`'s Short is "Send this checkout's changes to its machine (one
+  way), creating or starting it if needed", and cli.md says nothing
+  comes back. `cp --help` no longer says the checkout is `~/<slug>`.
+*Already done on this base:* B1 (`repose sync` outside a repository
+refuses before creating anything, I-601,
+`TestSyncOutsideARepositoryRefuses`). *Not done:* 6.6's `Create
+"downloads"? [Y/n]` question for a plain `run` outside a repository:
+I-358 and I-601 keep the empty machine as the owner's choice, and the
+home folder, the case that bit, already refuses. `TestSyncRemoteFlagsStashAndSaySo`,
+`TestSyncDiscardRemoteOnACleanMachine`, `TestOverlapRefusalOffersOnlyTheStash`,
+`TestGuestAheadLine`, `TestSyncCountsTheMachinesCommits`,
+`TestCarryNoterPrintsOnlyChanges`, `TestSessionShowsTheRunsMessages`,
+`TestWholeMachineCommandsRefuseACheckout`, `TestCheckoutsAreNamedNotMade`,
+`TestSyncDiscardRemoteEndsTheAgentsMerge`, `TestSyncedTreeIsStashed`.
+*Later (I-633):* the flags are `--stash-machine` and `--discard-machine`
+(review C4): "remote" read as a git remote, and the repo's word for that
+side is the machine. The old names stay hidden for a release.
+**I-616. `repose status` is labelled rows with the checkout's git state;
+`ls` and `status` drop the running hours, show the plan, and mark the
+project this folder acts on.** (cli-devx, 2026-10-08; reviews
+`docs/reviews/2026-10-08-cli-devx.md` 1.1, 3.1, 3.2, 3.8, 4.1, 4.3 and
+`2026-10-08-cli-ergonomics-critique.md` F2; amends I-192, I-289's
+display, I-567's status layout) The person `status` is for comes back
+to a "claude finished" email and wants to know whether the agent
+committed and what is waiting for them. `status` answered with a host
+name, a private address and three counters that feed idle detection,
+and ended its first line with hours a plan does not bill. Now:
+- The header is `todo-app  running 2h14m  large` (`herdr` after the
+  size when it runs the terminals). Under it, the lines that need the
+  reader (a platform stop, an unused machine, a temporary end, an error,
+  a disk near full, a plan limit), then labelled rows: `agents` (each by
+  its window's name, the one that needs input first), `checkout`,
+  `attached` (`nobody`, or SSH sessions and tmux clients), `docker`
+  (only when containers run), `listening`, `disk` (`6.2 GB of 39.0 GB,
+  snapshot 11h08m ago`; `no snapshot yet` where it said `none`, which
+  read on a fork as if it came from nowhere), `last event`. The host and
+  the machine's address print only under `-v` (I-192 named them; they
+  are internals nobody acts on), and status reads the route only then;
+  `--json` keeps `host_id` and `guest_ip`. The guestd line reads
+  `repose's service on the machine is not answering, so the agents and
+  sessions below are old`.
+- `checkout`: the one ssh status already makes (I-200) also runs git in
+  the machine's checkout and each `git worktree` of it: the branch, the
+  commits the laptop lacks, the files `git status --porcelain` lists
+  (given 2 s) and the last commit's time. The laptop sends the commit at
+  each of its branch tips, `repose/*` included, on that ssh's stdin, only
+  when the folder is the project's checkout (its `repose` remote names
+  the project, or its origin is the project's remote); the guest keeps
+  the ones it has (`cat-file --batch-check`) and counts `rev-list HEAD
+  --not` them, so a laptop commit the machine lacks never fails the
+  count. Elsewhere the row shows `last commit 2h ago`. Counting against
+  every laptop ref, not `repose/<branch>`, makes "not on this laptop"
+  mean what `git fetch repose` would bring. No guestd, hostd or api
+  change: a `Sample` field would need all three and a migration, and
+  status is the only reader. `status --json` is the Project plus `git:
+  [{worktree, branch, commits_not_on_laptop, uncommitted_files,
+  last_commit_at}]`, absent for a stopped machine or one that did not
+  answer (an addition; every old key stays).
+- TODAY and MONTH are gone from `ls`, and `today … month …` from status:
+  since I-289 they cost nothing, and read as a meter people stopped
+  machines to save. `running_seconds_*` stay on the Project. Under the
+  `ls` table one line gives the plan from GET /billing:
+  `Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
+  this month`, the figures that refuse a start or a create or add a
+  charge. Warning lines follow it, and print in status, only near such a
+  limit: I-585's disk line, egress past the allowance (`each GB past it
+  adds $0.05, and your machines stop at 1000 GB`), and a `past_due`
+  subscription (`starting a machine is refused, and running machines
+  stop on the third day`, with the billing URL). No `plan` noun.
+- `ls` marks with `*` after its name the project a command run here
+  with no PROJECT acts on: `REPOSE_PROJECT`, then the folder's
+  `checkouts` and `by_dir` entries, then its remote, by resolveProject's
+  order, from the list it already has (no api call). A stale
+  `REPOSE_PROJECT` shows as a marked row elsewhere.
+- `status --watch` redraws in place on a terminal and, piped, prints a
+  status again only when it changed; an unreachable api, a 5xx or a 429
+  prints `Could not read the status at HH:MM:SS: ...` and the watch goes
+  on, any other error ends it. `status --wait STATE [--timeout 10m]`
+  polls every 2 s and prints the status once the project is in STATE;
+  `error` or destroyed while waiting for another state, or the timeout,
+  exits 1.
+- Short ids are the random tail everywhere: `shortRev` cut a revision's
+  first 8 characters, a UUIDv7's timestamp, so two applies a minute
+  apart printed the same id; it now cuts the last 8, as questions do.
+- Help: `start` and `stop` say "a project" where they said "a project's
+  machine" (4.3).
+*Not done:* naming in `status` how the project was picked (`this
+checkout, by git remote origin`): a line on every run that the `*` in
+`ls` already answers; a FROM column in `ls`, which needs the api to
+store a fork's parent, which it does not; the commit counts in the
+"finished" notification body (the hook would have to run git); `stop`
+fetching before it snapshots (another command's change).
+`TestStatusRowsAreLabelled`, `TestGitRowText`, `TestParseStatusGit`,
+`TestStatusShowsTheCheckoutsGit`, `TestLsMarksHereAndDropsHours`,
+`TestHereProjectID`, `TestPlanLineAndWarnings`, `TestLsPrintsThePlan`,
+`TestStatusWait`, `TestStatusWatchPrintsChangesAndRidesOutErrors`,
+`TestStatusShowsHostNameAndNewestEvent`, `TestMenuNameAndJoin`.
+*Later (I-633):* `start`'s help still said "a project's machine" and now
+says "Start a project, or restart one in error"; `keep` keeps "temporary
+machine", the docs' name for what `--temp` makes. The `ps` header
+(`todo-app · running · tmux`) and a stderr note when `REPOSE_PROJECT`
+disagrees with the folder are not done: the header repeats what the
+table and `status` show (I-484), and `stop`, `rm`, `resize` and
+`restore` name the project in their question or result line, while `ls`
+marks the one `REPOSE_PROJECT` picks.
+
+**I-617. One vocabulary for agents and machines: agents are `working`,
+`idle` or `needs input`; a machine nobody used for a day is unused.**
+(cli-devx, 2026-10-08; review `docs/reviews/2026-10-08-cli-devx.md` 3.3,
+4.4; amends I-262's wording) "Idle" meant an agent at its prompt in
+`ls` and a machine with nobody on it for a day in the idle line, the
+notification and the dashboard, so an email called todo-app idle while
+`ls` showed `claude: working` on it, and `needs_input` printed in snake
+case beside notifications that said `needs input`. Now text output
+(`ls`, `status`, the dashboard's agent list) prints `needs input`;
+`--json`, the api and the event kinds keep `needs_input`. The machine
+state is "unused": `todo-app: unused for 26h` under `ls` and in
+`status`, with `; claude-2 needs input` when an agent waits for an
+answer (the machine is unused because nobody answered it, which is a
+different thing to act on); `Running and unused: todo-app (26h).` on
+`run` and `attach`; `unused 26h` on the dashboard. The `idle_running`
+notification's title was `todo-app: idle, still billing`, which no plan
+does since I-289; it is `todo-app: unused for 24h, holding plan memory`,
+the cost a plan has (another start refused). The kind `idle_running`,
+the api's `idle` field and the warner are unchanged. `status`'s last
+event says `done` for `completed`, the word the other text output uses.
+The docs section is "Unused machines". `TestIdleLineOnStatusAndProjects`,
+`TestIdleOthersNoteOncePerStretch`, `TestAgentStateCountsEveryAgent`,
+`TestSubjectUsesPlatformWording`.
+*Later (I-634):* `completed` is `finished` in `repose events` too, and
+every kind takes the notification's word (`internal/eventverbs`): the
+phone said `finished` while the CLI said `done`.
+**I-606. Agents are addressed by window: `ps` shows each one's state and
+tree and prints its last lines, and `attach` opens a named window.**
+(cli-devx review 2026-10-08, items 1.2, 2.1-2.5, F7, G2; amends I-274,
+I-509) You hand work to agents and agents live in windows, but `attach`
+could not open one, `ps` on tmux knew less than `ls`, and reading what
+an agent printed meant attach, `Ctrl-b w`, read, detach. Now:
+- guestd sets the tmux window option `@repose-state` to the state it
+  announces for an agent window (working, idle, needs_input, unknown),
+  once per change; a restarted guestd announces again, so the option
+  comes back within the debounce. One `tmux set-option` per change, as
+  dev; a failure logs its error code only. `/etc/tmux.conf`'s window
+  formats print `?` after the name of a window at needs_input, so an
+  attached user sees which other agent waits. The option carries a
+  state word, never pane content, so I-49 holds.
+- `repose ps` on tmux reads it in the same `list-windows`, with
+  `pane_current_path`: `WINDOW COMMAND STATE TREE ACTIVE`. STATE falls
+  back to the api's sample for that window when the sample is under two
+  minutes old (a base before this), else `-`; `unknown` prints `-` as
+  `ls` hides it (I-567). TREE is worked out on the laptop: `checkout`,
+  `worktree-N`, `~/PATH`, or the path; the path goes to the user's
+  terminal only. herdr's STATE now uses the same words (blocked is
+  needs_input, done is idle).
+- `ps --json` has one shape on both: name, agent, command, state, tree,
+  focused, idle_seconds, null where a side cannot know. The old keys
+  (tmux index, current, activity; herdr workspace) stay one release.
+- `repose ps [PROJECT] [WINDOW]`, or `-w NAME`, prints that window's
+  last 20 lines, `-n`/`--tail N` for N (1 to 10000); `-n` alone prints
+  every window's under `==> 1:claude <==` heads, as tail(1) does. tmux:
+  `capture-pane -p -J -S -N` over the existing connection, trailing
+  blank rows dropped; herdr: `herdr agent read NAME --lines N --source
+  recent-unwrapped --format text`. Nothing goes through guestd or the
+  api. Folded under `ps` (what runs and what it shows), not `logs`,
+  which is the machine's console and builds.
+- `repose attach [PROJECT] [WINDOW]`, or `-w NAME`: a number is the
+  window's index, anything else its exact name (tmux `=slug:=name`, so a
+  prefix never lands on another window). A window that is not there
+  exits 2 with ``todo-app has no window claude-9. `repose ps todo-app`
+  lists them.`` On herdr NAME is an agent, focused with `herdr agent
+  focus`. The fast attach (I-223) takes it too. `PROJECT:WINDOW` was
+  not used: `PROJECT:CHECKOUT` has that meaning (I-480). The window
+  `run -p` attaches to is now targeted exactly as well.
+- `questions` and `reply` name the window (`claude-2`) where the agent
+  sent one, and the terminal waits read `claude-2 on todo-app`.
+*Not done:* a wait age on the terminal waits (needs a `since` on the
+signal); completion of `--window` (an ssh per Tab); window names
+`worktree-2/claude` and a `repose` command that removes a worktree (G2):
+TREE and `exec --workdir` (I-608) answer which window is which tree,
+renaming would change the names guestd and the api key states by, and a
+removal needs to know what the laptop has fetched, which the machine
+cannot. `TestParsePs`, `TestPsRows`, `TestTreeOf`, `TestPsLastLines`,
+`TestPsListsWindows`, `TestPsTailsAWindow`, `TestAttachNamedWindow`,
+`TestPsJSONOneShape`, `TestWatcherMarksTheTmuxWindowState`,
+`TestQuestionsNameTheWindow`.
+
+**I-607. The first `run -p` without a Claude Code login types the prompt
+after the login; `-d` is `--no-attach`, and it names the window.**
+(cli-devx review 2026-10-08, B4, 6.1, 2.4, theme 7; amends 07-cli.md
+§5.5 step 7) A first prompt on an account was dropped: the window
+opened on Claude Code's login and the CLI said to run the prompt again,
+and `--no-attach` exited 0 with no agent at work. Now:
+- Attached: the window opens on the login as before, and a waiter
+  started beside it on the machine (`setsid -f sh -c`, stdin and output
+  closed, so the ssh returns) types the prompt once
+  `~/.claude/.credentials.json` is non-empty, the pane runs `claude`,
+  its screen has not changed for 3 s, and it shows none of the agent
+  dialogs `run` never types into (I-486, I-556) nor "Press Enter to
+  continue" / "Enter to confirm", the screens after a login that an
+  Enter would answer. It ends when the window closes, after a day with
+  no login, or 30 minutes after the login. On herdr the same waiter
+  watches the pane (`herdr pane read`), checks that a program and not
+  the shell is in front (`process-info`), and types with `herdr pane
+  run`. The line reads `Claude Code is not logged in on todo-app. Log in
+  in the window that opens; your prompt is typed after the login.` The
+  prompt lives in the waiter's shell on the machine and is never logged.
+- `--no-attach`: exit 1, nothing typed, no waiter: ``Claude Code is not
+  logged in on todo-app, so your prompt was not typed. Log in with
+  `repose attach todo-app -w claude`, then run your prompt again.`` A
+  queued prompt would make a retried script start the task twice. On
+  herdr the hint has no `-w` (the login tab has no agent name, I-509,
+  and is focused).
+- `-d` is the short form of `--no-attach`, as `docker run -d`; no
+  second long name. With `-p` it prints `Window: claude-2` (`Tab:` on
+  herdr) on stdout, the handle `attach -w`, `ps` and `paste --window`
+  take; an attached run lands in it and prints nothing more. The
+  tutorials fire several prompts with `run -d --worktree -p`.
+- The shared-tree warning also fires when the agent runs in a window
+  of another name (`claude` typed in `shell`), in the machine's own
+  checkout: one more field in the same `list-windows`.
+- The quickstart drops its manual-login step: `run -p` does the login
+  inline.
+*Rejected:* typing the prompt into the login screens, or pressing
+their Enter; a prompt file on the laptop (the CLI may be gone, or
+replaced by ssh on Windows). `TestPendingPromptTypesAfterLogin`,
+`TestPendingPromptWaitsOnBlockers`, `TestPendingPromptHerdrScript`, `TestRunClaudeNotLoggedInAttachesInstead`, `TestRunWorktreeThenPlainRun`,
+`TestRunArgs`, `TestWindowsAndAgent`, `TestDocsNameEveryCommandAndFlag`.
+
+**I-608. `exec --workdir DIR`, and `reply` takes any project's name as
+PROJECT.** (cli-devx review 2026-10-08, 2.2, B2) Testing a worktree's
+branch took `repose exec -- sh -c 'cd ~/todo-app-worktree-1 && npm
+test'`. `exec --workdir DIR` runs in DIR: `worktree-N` and `checkout`
+(each with an optional `/SUBDIR`) as `ps` shows them in TREE, `~` and
+`~/PATH`, `/PATH`, else a path inside the checkout; resolved on the
+machine against the checkout `exec` uses. A folder that is not there
+exits 2 with one line before the command runs. No short form: `-w` is
+`--window` on `ps` and `attach`. It also works in the old `PROJECT
+--workdir DIR -- COMMAND` form. `reply`'s first word was PROJECT only
+when that project had a waiting question, so `repose reply izma main`
+with none waiting in izma sent "izma main" to another project's agent,
+which cannot be undone. The first word is now PROJECT when it names any
+project on the account (slug or id), and one with no waiting question
+exits 1 sending nothing; `--` before the answer keeps every word in it
+(`repose reply -- izma is fine`), and `reply PROJECT -- ANSWER` names
+the project. `TestWorkdirShell`, `TestExecWorkdir`,
+`TestReplyNeverSendsAProjectName`.
+**I-609. Streams and script output: `--since` is parsed and checked,
+`logs --kind ops` prints the api's fields, `events` reads as a table
+and covers every project outside a checkout, streams' `--json` is one
+object per line, and the commands that change a project take
+`--json`.** (2026-10-08, from the CLI reviews of that day: B5, F1, F3,
+F4, F5, 3.4, 3.5, 3.7, and theme 7's time shapes and list contract)
+- `--since` on `logs` and `events` takes a Go duration with `d` and `w`
+  in front (`90m`, `2d`, `1w`, `1d12h`), a date (local midnight) or RFC
+  3339; anything else exits 2 naming the forms. It used to reach the api
+  unchanged, and the api read a value it could not parse as no limit,
+  so `--since 7d` printed every log line with exit 0. The api's
+  `since=` on `/events` and `/logs` is now `400 invalid` unless it is
+  RFC 3339, the only value it ever honoured; the gateway's
+  `/internal/revoked` keeps the lenient read. The fake matches: its
+  events no longer take an event id as `since`.
+- `logs` gets no default `--since` (the review asked for 24h, as on
+  `events`): `console` and `build` hold only the last failed boots and
+  the last build, and a 24h window would hide the one that matters the
+  day after. `-n`/`--tail N` keeps the last N lines, as `docker logs -n`
+  does, and `-f` then prints new ones.
+- `logs --kind ops` decodes what the api sends (`op_id`, `state`,
+  `duration_ms`, `error {code, message}`) and prints `<time> <kind>
+  <done|failed|running> <duration> <code>: <message>`; it decoded `line`,
+  which only the fake sent, so every production row was `<time> start`.
+  The fake now sends the api's shape, and `TestOpsLogLineDecodes` holds
+  the CLI's `LogLine` to the handler's own `opsLogLine`.
+- `events` prints local RFC 3339, the agent with its tmux window, the
+  kind as the verb `notify.Title` uses (`finished`, `asks`, `machine`
+  for a state change), and the summary on one line, in padded columns.
+  `--json` keeps the raw `kind` and adds `project`. With no PROJECT
+  where no project resolves and the directory has no git remote (any
+  folder that is not a checkout, the home folder), it covers every
+  project with a project column, as `questions` does (I-419); a
+  checkout with a remote and no project still exits 4. An empty answer
+  prints `No events on todo-app in the last 1h.` on stderr, as `logs`
+  does (I-592). The fake's `guest.started` event "guest started on
+  host-01" is now the api's `guest_state_changed` "running".
+- Time shapes: tables print local `YYYY-MM-DD HH:MM` (`secrets list`
+  and `config show --revisions` printed UTC with no zone), streams
+  local RFC 3339, `--json` the api's UTC. cli.md "Output" says so and
+  that only `--json` and `-q` are for scripts; F4's other option, TSV
+  for every list off a terminal, was not taken: it changes what every
+  piped table prints for a guarantee cli.md can give in one line.
+- `--json` on `logs`, `events` and `status -f` is NDJSON: one compact
+  object per line (an indented object per event broke `while read`).
+  `status` takes `-f`/`--follow`, the flag `logs` and `events` use;
+  `--watch` stays, hidden, as its old name.
+- `start`, `stop`, `resize` and `sync` take `--json` and print the
+  Project once done, their sentence going to stderr; `snapshots create
+  --json` prints the Snapshot, so a script gets its id. `secrets list`
+  takes `--json` (it had the code and no flag). `questions -q` prints
+  the question ids, and `questions --json` adds the agents waiting at a
+  terminal prompt as `kind: "terminal"` beside `kind: "question"`.
+- Without a terminal, a progress phase prints its `✓` line with its
+  time when it ends and `<phase>... 30s` every 30 s while it runs: a
+  piped `run --no-attach` printed two start lines and a minute of
+  silence before an error.
+- *Not done (F3):* `--no-wait`/`--timeout` on every operation. `start`,
+  `stop`, `resize` and `snapshots create` already wait; `timeout 5m
+  repose stop` bounds one, and the op goes on at the api either way.
+  `rm`'s `--wait` is unchanged.
+`TestParseSince`, `TestStreamsRefuseBadSince`, `TestLogsTailAndNDJSON`,
+`TestLogsOpsLines`, `TestEventLine`, `TestEventsEveryProjectAndEmpty`,
+`TestProgressOffTerminal`, `TestQuestionsQuietAndTerminalJSON`,
+`TestStateChangesPrintJSON`, `TestStreamFlags`, `TestOpsLogLineDecodes`,
+`TestEventsSinceInvalid`, the fake's `TestInternal`.
+**I-623. One sentence and one exit code per kind of failure: the
+network is 1, a plan limit is 7, capacity is 8 wherever it happens.**
+(2026-10-09, cli-devx review E1, E2, E3, E6, E8, E9) Before this, an
+offline laptop or a Logto outage read as "Not logged in" with exit 3
+(the discovery read ran before the refresh's own wrap), a host that ran
+out of room during a boot exited 1 while the api's own `capacity` exited
+8, the project cap exited 1 beside the other limits' 7, and a deploy's
+502 printed `internal: <html>`. Now:
+- Every transport failure in the token source (discovery, refresh,
+  device request, a non-JSON answer from the token endpoint) is
+  `loginUnreachableError`: `Could not reach the login server (<host>):
+  <reason>. Check your connection.`, exit 1. Exit 3 is a missing login,
+  an expired one (`invalid_grant`), or another OAuth refusal of the
+  refresh. A failed `repose login` follows the same split.
+- The api out of reach is `Could not reach <host>: <reason>.` with
+  `connection refused`, `timed out`, `the name X does not resolve` and
+  the like in place of Go's text.
+- A refusal is the api's message as a sentence with its code after it
+  (`Kind must be console, build or ops (invalid).`); a 5xx is `The
+  repose api failed (<code>, request <id>). Try again in a minute.`, or
+  `The repose api answered 502, request <id>.` when a proxy answered;
+  a GET answered 502/503/504 by a proxy is sent once more after 2 s
+  (never a POST: the api may have taken it). A 200 that is not JSON is
+  `<url> is not a repose api. Check --api-url or $REPOSE_API_URL.`
+- A failed op maps its code once (`opExitCode`): `insufficient_capacity`
+  exits 8 and `payment_required` 7; no second "try again" after a reason
+  that has one; "(We have been alerted.)" is gone everywhere. The
+  project cap (I-569) exits 7 and ends `Destroy one first with
+  `repose rm PROJECT`.` A 429 after the wait (I-187) says `Too many
+  requests from this account in the last minute. Try again in a
+  minute.` and the wait prints `Waiting for the api's rate limit...`
+  once.
+- `--size` on run, sync and fork and `--kind` on logs are checked in
+  the CLI (exit 2, the `--size must be small, large or xl, got "x"`
+  shape) before anything is sent; `--since` is B5's.
+- One helper words an unknown project name (`errNoSuchProject`); ssh's
+  ProxyCommand keeps its `repose:` prefix. A config file that cannot be
+  read is `<path> does not exist.` (exit 2).
+Docs: cli.md exit codes, limits, troubleshooting, cli-config.md. Tests:
+`TestExitCodeForLoginFailures`, `TestOfflineRefreshIsANetworkError`,
+`TestAPIErrorSentences`, `TestGatewayErrorRetriesAGetOnce`,
+`TestSuccessThatIsNotJSONIsNotAnAPI`, `TestOpFailedExitCodes`,
+`TestRateLimitWaitSaysSo`.
+
+**I-624. `-v` logs every api request and every ssh.** (2026-10-09,
+cli-devx review E4) `-v` was documented as debug output and printed
+only an op's detail. Now each api or login-server round trip is one
+stderr line, `repose: GET /v1/projects/<id> -> 404 31ms request <id>`,
+plus the first 400 bytes of a refusal's body; the host is shown for
+anything but the api; the path drops its query (the log stream's carries
+`access_token`). Each ssh the CLI runs or execs is `repose: ssh <options>
+<target> <first word of the remote command>`, the remote command named
+the way REPOSE_TIMING names it (I-223), never in full. Headers, tokens and
+request bodies are never written. The transport checks `-v` per request,
+so it costs nothing without it. Test: `TestVerboseLogsRequests`.
+
+**I-625. ssh failures of the laptop's own end the 60 s wait at once.**
+(2026-10-09, cli-devx review E5) `waitForSSH` retried every failure for
+a minute and then advised `repose stop` and `repose start`, which takes a
+snapshot, ends every agent and fixes nothing on the laptop. Now ssh's
+stderr is matched against laptop faults: a ControlPath too long for a
+socket, a bad config line, a config file others can write, `Could not
+resolve hostname NAME.repose` (the Include line is missing), any other
+name that does not resolve, and `Host key verification failed`; each
+ends the wait with `ssh on this laptop failed before it reached
+todo-app: <ssh's line>. <the fix>`, exit 1. Timeouts, refused
+connections and the gateway's refusals keep the wait (and I-175's one
+re-issue). A wait that runs out says `todo-app is running but did not
+answer ssh in 60 s.` and ssh's last line, with no restart advice. Test:
+`TestLaptopSSHFaults`.
+
+**I-626. The api names the newest CLI release; an older CLI says so
+once per release.** (2026-10-09, cli-devx review G1) An old CLI lacks
+flags the docs describe and its `unknown flag` does not say why. The api
+reads the GitHub `releases/latest` redirect install.sh follows, once an
+hour (`internal/api/clirelease`; `CLI_RELEASES_URL` overrides, `off`
+disables, off by default with `REPOSE_DEV=1`), and sends
+`X-Repose-CLI-Latest: vX.Y.Z` on every answer once it has read one. The
+CLI sends `User-Agent: repose-cli/<version>` (the api still logs only
+`client: cli`). A release build older than the header prints, at the end
+of the command or just before an attach replaces it with ssh (the line
+is then on the screen tmux restores on detach), `repose v0.1.20 is
+older than v0.1.24, the latest release. `curl -fsSL
+https://repose.herakraft.co/install.sh | sh` updates it.`, once per newer
+release (`~/.config/repose/cli-latest-noticed`). A dev build, a
+pre-release, and the CLI on a machine (`REPOSE=1`) never print it. Not
+done: a minimum version with its own exit code (the api has no version
+it refuses; nothing to enforce yet), and folding `version` with
+`--version` (the grammar package's). The api's header is additive; a
+client must accept answers without it. Tests:
+`TestNewerCLINoticeOncePerRelease`, `TestVersionOlder`,
+`TestFetchReadsTheTagFromTheRedirect`, `TestAnswersNameTheLatestCLI`.
+*Later (I-633):* `repose version` and `repose --version` stay both
+(review G1): they print the same line, and docker, gh, kubectl and go
+users type either.
+
+**I-627. `repose login` opens its link, `login --status` names the
+account, `logout` says what it revoked, and a first `run` logs in.**
+(2026-10-09, cli-devx review G8, 5.5, 8.5; amends I-101) The device
+flow stays the default; when this computer has a browser (macOS,
+Windows, `DISPLAY` or `WAYLAND_DISPLAY`, not on a machine, no
+`--no-browser`, no `REPOSE_NO_BROWSER=1`) the CLI also opens the link
+with the code in it, and still prints it. `--browser` stays visible: it
+is the documented flow for another server (cli.md "Other servers"), and
+its help says the hosted login cannot use it. `--no-browser` now means
+what it says. `login` honours `--api-url` (it read only config.toml).
+- `repose login --status` prints `heracraft (email) on <api host>, Solo
+  plan` from `GET /me`, with the subscription state in parentheses when
+  it is not active, and exits 3 with `Not logged in.` when there is no
+  login; an expired or revoked one fails as any command does. `whoami`,
+  `auth` and `signin` suggest `login` (SuggestFor). A separate `whoami`
+  or `auth status` command was not added (no near-duplicate names).
+- `repose logout` prints `Logged out. Your SSH certificates are revoked;
+  connections they opened, on any device, close within 30 seconds.`
+  After a lost laptop this is the line that matters. When the revoke
+  fails it still deletes the login here and exits 1 with the reason and
+  that the certificates stop working within 24 hours (I-267). With no
+  login it prints `Not logged in.` and exits 0.
+- `repose run` on a terminal (stdin and stderr), on a laptop with no
+  stored login, runs the device flow (instructions on stderr) and then
+  the run. An expired login still exits 3: its user knows the command.
+- CI token login is not built. A token would be a fourth home for a
+  credential (CLAUDE.md "Secrets have three homes"), and Logto rotates
+  refresh tokens, so a copied `credentials.json` breaks the laptop's.
+  The person this product is for drives agents from a laptop; cli.md
+  says in one line that there is no login without a browser for CI.
+Docs: cli.md Account, install.md, 07-cli §5.2. Tests:
+`TestLoginStatus`, `TestLogoutSaysWhatItRevoked`,
+`TestLoginDeviceCodeOpensTheLink`.
+*Later (I-634):* inside a first `repose run`, login prints no `No plan
+yet` line; the run waits for the plan and names the page once.
+
+**I-628. Usage errors name what the command takes and the line that
+works.** (2026-10-09, cli-devx review D2, C2, E7, 8.5) cobra's own
+validators printed `accepts 1 arg(s), received 2` and sent the user to
+the root help. Now every typed command's argument check says what it
+takes and what it got (I-346), and on a command that takes PROJECT only
+as `--project` the likeliest mistake gets its fix: `repose secrets set
+takes one NAME, got 2 arguments: todo-app FOO. A project goes in
+--project: repose secrets set FOO --project todo-app`. `repose ssh
+todo-app uname` answers `... To run a command: repose exec todo-app
+uname` (I-275 keeps ssh a shell). A cobra refusal points at the
+command's own `--help`. The not-found hint shows the whole command
+(`repose exec PROJECT COMMAND`, `repose secrets set NAME --project
+PROJECT`), so `Env.Command` holds that form. Flag usage holds no
+backticked command (pflag read `repose snapshots list ID` as the value
+name of `restore --snapshot`; `TestFlagValueNamesAreOneWord`). `repose
+sync`'s refusals no longer offer `--no-sync`, which only `run` has, and
+`sync` ends on its sync line without `Ready in`. Tests:
+`TestArgRefusalsNameTheFix`, `TestNoProjectHintForm`,
+`TestSyncPrecheckNamesNoSyncOnlyForRun`.
+**I-619. One spelling per idea across the CLI: an undo is a verb, a
+group alone runs its listing, each rm also answers to remove, `--as` on
+both restores, `open LOCAL:PORT`, and `--project` only where a project
+is meant.** (2026-10-09, from the CLI reviews of 2026-10-08: D1, D3, D4,
+D8, the theme-7 grammar rows and the 8.5 `open` row) A flag learned on
+one command failed on the next, so each idea now has one name, and the
+old name is hidden for one release:
+- Undo is a subcommand: `repose browser stop [PROJECT]` (was `browser
+  --stop`), `repose mcp rm NAME...` (was `mcp forward --remove`, alias
+  `remove`, and it prints `Removed NAME from PROJECT.` as `secrets rm`
+  does). `notify set --ntfy off` turns ntfy off; `none` still works.
+  A project named `stop` is reached as `repose browser --project stop`,
+  as one named `bridge` already was.
+- `repose secrets`, `repose snapshots` and `repose mcp` alone run
+  `list`, and `repose config` alone runs `show`; a word after them is
+  still a mistyped subcommand with a suggestion, never a project. The
+  bare forms take no flags: `--json` and `-q` stay on `list`, so no
+  flag is listed twice. `secrets rm` and `mcp rm` answer to `remove`,
+  `config remove` to `rm`; `delete` is a suggestion only. The
+  top-level `repose rm` gets no `remove` alias: it destroys a machine,
+  and the suggestion is enough there.
+- `snapshots restore --as NAME` (was `--as-new`), as `repose restore
+  --as`, and `-y` beside `--yes`; a test holds every `--yes` to having
+  `-y`. Its `--as` path ends with `repose restore`'s line: `Restored
+  NEW from SRC's 1.0 GB snapshot of T in 0.2s; it is running (large).`
+- One name for "print the link": `--no-browser` on `open`, `login` and
+  now `browser` (`--no-open` hidden). On `browser bridge`, where it
+  meant "don't open chrome://inspect", the flag is `--no-inspect`.
+- `repose open [LOCAL:]PORT` as ssh -L and docker -p write it;
+  `--local-port` is hidden. The database ports 5432, 3306, 6379 and
+  27017 open no browser and print `localhost:PORT`, not an http URL.
+- `--project` stays the flag-only way to name the project on `open`,
+  `secrets set|rm|import|choose`, `config add|remove|apply` and `mcp
+  forward|rm` (I-155); cli.md lists them under "Which project", and the
+  flag's help says a command whose usage shows `[PROJECT]` takes it
+  there. `ls`, `login`, `logout`, `notify`, `version` and `completion`
+  exit 2 on `--project`, which they ignored; `$REPOSE_PROJECT` is
+  ambient and stays quiet there. `repose restore` reads `--project` as
+  NAME, which it ignored.
+- Snapshot and revision ids are UUIDv7, whose start changes once a
+  minute, so tables show the last 8 characters (`snapshots list`,
+  `config revisions`, and `shortRev` in "Building revision", the same
+  change as devx-status's I-616), and `snapshots restore` and `config
+  apply --revision` take a whole id, its end or its start (4
+  characters or more) when one id has it. An id the project lacks exits
+  2 with ``todo-app has no snapshot ffffffff. `repose snapshots list
+  todo-app` lists them.``, not the api's `not_found`; exit 4 stays "no
+  such project". The no-project hint keeps the id typed:
+  `repose snapshots restore PROJECT abcd1234`.
+Skipped: an `-p` short form for `--project` (I-603 gave `-p` to the
+prompt). `TestEveryYesHasY`, `TestOneSpellingPerIdea`,
+`TestProjectFlagRefusedOnAccountCommands`, `TestBareGroupsRunTheirListing`,
+`TestParseOpenPorts`, `TestMatchID`, `TestResolveSnapshotID`,
+`TestDocsNameEveryCommandAndFlag`.
+*Later:* `restore --snapshot` and `fork --snapshot` take a prefix or
+suffix since I-631 (D8).
+
+**I-620. `repose secrets set` reads a piped value, refuses NAME=VALUE
+before asking, and every secrets line names the project.** (2026-10-09,
+reviews F6, 4.5 and the theme-7 and 8.5 secrets rows) `op read ... |
+repose secrets set NAME` is the usual script form, and it used to exit
+2. When stdin is not a terminal (checked with term.IsTerminal, so a
+terminal with TERM=dumb still gets the hidden prompt and never echoes),
+the value is stdin up to 64 KiB less one trailing newline (and a
+carriage return before it); an empty pipe exits 2. NAME is checked
+before any value is read, and `NAME=VALUE` exits 2 with why: the value
+would stay in the shell's history; the message never repeats the
+value. `Set FOO on todo-app; the running machine has it now.`, `Set FOO
+on todo-app; the machine gets it at its next start.` and `Removed FOO
+from todo-app.` replace the lines that named neither the project nor
+the machine (one said "guest"). `secrets list` takes `--json`; on a
+terminal its second heading says the copied logins land on the
+machine's disk, so in its snapshots and forks, which is where a
+production key in `.env.local` goes. `run`'s `Credentials:` line is
+`Logins copied:`. `secrets choose` keeps its name. `TestCheckSecretName`,
+`TestReadPipedSecret`, `TestSecretsLinesNameTheProject`.
+
+**I-621. One name for each size, positive switches, and a Windows
+drive in `repose cp`.** (2026-10-09, reviews D5, D9, D10) The ls column
+is `SIZE` (small, large, xl), as the flag is; `ls --destroyed` names
+the class `SIZE` and the snapshot's bytes `STORED`, as `snapshots list`
+now does, so SIZE means one thing. config.toml's key is `default_size`;
+`default_class` is read for a release and loses to `default_size`. JSON
+keeps `class`: it is the api's field, and renaming it would break every
+script for no keystroke saved. `REPOSE_NO_INPUT_PROXY=1` and
+`REPOSE_NO_CLIPBOARD_PATH=1` join the other `REPOSE_NO_*=1` switches;
+the `=0` spellings are read for a release. In `repose cp`, one letter
+before the colon (`C:\a.txt`, `C:/a.txt`, `d:notes`) is a local path:
+no project name is one character. Completion (D7): `cp` offers
+`PROJECT:` and no laptop files after it, `secrets rm` the project's
+secret names, `snapshots restore` and `restore --snapshot` snapshot
+ids, `config apply --revision` revisions that built, `reply
+--question` waiting questions, `--temp` 1h, 3h and 24h, and `repose
+completion powershell` exists. `TestParseCpSide`,
+`TestClipboardWatchEnabled`, `TestInputProxySwitches`.
+
+**I-622. The CLI reads and switches what flags and the dashboard set:
+`config revisions`, `config apply --revision`, `config --global on|off`,
+`repose notify`, fork remotes, a `setup` line in status, and an
+`editor` key.** (2026-10-09, reviews G3, G4, G5, 4.6, 8.3, 8.4)
+- `repose config revisions [PROJECT]` (`--json`, `-q`) lists revisions;
+  `config show --revisions` is hidden for a release. `repose config
+  apply --revision ID` switches a running machine to an earlier
+  revision that built, through the api's existing re-apply route; the
+  way back after a `config add` broke the machine no longer needs the
+  dashboard.
+- `repose config --global off|on [PROJECT]` turns your machine.nix off
+  or back on for one machine (`PATCH /projects/:id personal_opt_out`,
+  I-490); `run --no-personal` stays the shortcut for off, and its line
+  drops the pointer to the dashboard. `--global` is optional on these
+  two, which only ever mean machine.nix. No `run --personal`: one undo
+  is enough.
+- `repose config set` and `get` are hidden and exit 2 saying the CLI's
+  settings are config.toml keys, with the file's path. No settings
+  verbs were added (8.3). The help of `run --agent` and `--size` names
+  the config.toml key that gives their default, `sync`'s help names
+  `sync.exclude`, and config.toml takes `editor` (code, cursor or zed),
+  under `--editor` and `REPOSE_EDITOR`. CLI help says `repose.nix` for
+  the project's file and "menu" for the dashboard's list, where it said
+  "fragment" and "catalog".
+- `repose status` prints `setup: agent codex, machine.nix off, base
+  updates held`, each part only when it differs from a new project's;
+  nothing when none does. An agent picked when the project was made no
+  longer looks like a CLI that ignores `default_agent`. A sticky `run
+  --agent X --default` is left for the owner to decide.
+- `repose notify` alone prints the settings (`email: on, to ADDRESS`,
+  `ntfy: off` or the URL; `--json`), as `notify set` does after a
+  change. `notify test` prints `sent`, `off` or `failed: REASON` per
+  channel and exits 1 when any channel that is on failed, or none is
+  on. The api adds `ntfy_error` to `POST /me/notify-test` in a few
+  words (the status, a private address, a redirect, a timeout, a name
+  that does not resolve), never the URL; the user owns that URL, so the
+  reason is theirs to act on. Email failures stay `error` alone: they
+  are repose's to fix. The fake api now leaves a channel that is off
+  out, as the real one always did.
+- `repose fork` in a checkout whose `repose` remote is the source's
+  machine adds a fetch-only remote per copy, named after it, at the
+  same checkout folder (a fork is the source's disk), and prints `Added
+  the git remotes todo-app-fork-1 and todo-app-fork-2.` on stderr: it
+  changed the user's repository. `repose rm` of a copy removes its
+  remote; fetched branches stay. A remote of that name that is not the
+  CLI's is left alone. Nothing is added from a checkout without the
+  source's `repose` remote, so no ssh is spent finding a folder.
+Skipped: `status` printing `attached: nobody` in place of `sessions 0
+tmux clients 0` (4.7) and the multiplexer nouns in `ps`, which are
+devx-status's and devx-agents' (I-606: windows are the noun).
+`TestFindRevision`, `TestConfigRevisionsAndApplyRevision`,
+`TestPersonalSwitch`, `TestNotifyShowAndTest`, `TestSetupLine`,
+`TestForkRemotes`, `TestOutboxTestSaysWhyNtfyFailed`.
+*Later (I-633):* `run NAME` and `sync NAME` into a machine that is not
+the checkout's own add a remote named after it, as a fork does. `fork
+--temp` is not done: the fork request has no expiry, so it needs an api
+change, and `repose rm todo-app-fork-1 todo-app-fork-2` ends the copies
+in one command.
+
+**I-629. One vocabulary across the 2026-10-08 CLI packages (cli-devx,
+2026-10-09).** Amends I-606, I-609, I-614, I-615, I-617, I-618.
+*Made during implementation* (cli-devx integration). Eight packages
+(I-606..I-628) changed the same commands from different sides; where
+two said the same thing two ways, one way was kept:
+- `repose stop --idle` (I-615) is `repose stop --unused`. I-617 calls
+  a machine nobody used for a day "unused" and keeps "idle" for an
+  agent between turns; a flag named for the agent word would stop
+  machines whose agents are idle and nothing else. The flag never
+  shipped, so no old name is kept. With none, it prints `No machine is
+  unused.`
+- `ps` prints STATE in the words `ls` and `status` print: `needs input`,
+  and `--json` keeps `needs_input` (I-606 printed the json word in the
+  table).
+- `events` and `status`'s last event line use one word per kind:
+  `completed` prints `done` (I-609 printed `finished`, I-617 `done`),
+  `idle_running` prints `unused` (I-609 printed `idle`).
+- `repose rm` takes several projects (I-615) or one PROJECT:CHECKOUT
+  (I-618). A PROJECT:CHECKOUT among several exits 2: one question
+  covering a checkout removal and machine destroys would hide which
+  is which.
+- `stop --json` (I-609) with several projects or `--unused` prints an
+  array of Projects; with one, the Project object as before.
+- `status -f`/`--follow` (I-609) is devx-status's watch (I-616): it
+  redraws in place on a terminal, prints only changes when piped,
+  rides out failed reads, and with `--json` prints each change as one
+  line. `--watch` stays a hidden old name.
+- The carry line that grammar renamed to `Logins copied:` (I-619) is
+  the one the change-only printer (I-618) records.
+- Usage validators added by the earlier packages keep cobra's forms
+  where they were custom already (stop, rm, attach, keep); the rest go
+  through `argsN` (I-628).
+
+**I-630. The help teaches in the CLI's own words: grouped root help,
+one-clause Shorts, 80 columns, "machine" everywhere, and every docs
+page held to the real commands (cli-devx, 2026-10-09).** Amends I-276,
+I-351, I-612. *Made during implementation* (cli-devx help and docs
+pass; reviews of 2026-10-08: C1, C3 to C10, D2, G9, 4.2, 6.2, 6.3,
+6.5, 8.1, 8.2, 8.5 to 8.7 and the theme-7 rows on Short lines and
+unknown subcommands).
+- Root help lists the commands in four groups by what you do, in the
+  order you meet them: work on a machine (run, attach, sync, exec,
+  ssh, code, cp, paste, open, browser), follow the agents (ps,
+  events, questions, reply, mcp), manage projects (ls ... logs) and
+  set up (login, logout, config, secrets, notify, scan); help,
+  version and completion stay under cobra's "Additional Commands". It
+  ends with one line, `Docs: https://repose.herakraft.co/docs/cli`.
+  Command sorting is off (`cobra.EnableCommandSorting`), so subcommand
+  lists follow the order they are added too (`mcp`: list, forward,
+  rm). No `help TOPIC` pages were added: cli.md has the environment
+  variables, exit codes and config.toml, and a second copy in the
+  binary would drift.
+- Every Short is one clause that starts with a verb, under 70 columns,
+  with no semicolon (`logs`: "Show a machine's console, build or
+  operation log"; `events`: "Show what agents and repose did on a
+  project"). Every Long starts with the verb as a command (Run, not
+  Runs) and wraps at 80 columns; flag text wraps at 80 through
+  `FlagUsagesWrapped`. Examples are commands that run as written;
+  run, sync, stop, rm, restore, resize, reply, fork, keep, open,
+  events, logs, snapshots restore, config apply, secrets set and mcp
+  forward have them, and cp's moved out of its Long. `completion`
+  prints the line that loads it for bash, zsh and fish, and install.md
+  has a Shell completion section; install.sh writes no shell file
+  (an installer editing rc files nobody asked it to is ceremony).
+  `TestShortLinesAreOneClause`, `TestHelpFitsEightyColumns`,
+  `TestRootHelpIsGrouped`.
+- `run`'s help says what it does after the first time: a new machine
+  gets a copy of the checkout, and `repose sync` sends later work
+  (C1). `sync`'s Long names exit 6, `--stash-remote` and that nothing
+  comes back (8.6). `start` no longer says "without syncing (restarts
+  one in error)" in its Short; that is its Long.
+- `--temp` shows as `--temp[=DURATION]`, not `string[="bare"]` (C3).
+  Its duration, and `keep`'s, is read as `--since` reads one, so `1d`
+  is 24h. After a bare `--temp`, a word shaped like a number and a
+  unit is its duration wherever it stands (`repose run spike --temp
+  3h`, where flags and arguments interleave), and one that is not a
+  duration (`2x`) exits 2 instead of becoming a project's name.
+- One word for the machine (C4): no "guest", "guestd", "environment"
+  or "fragment" in help or in a string the CLI prints.
+  `TestHelpSaysMachine` renders every command's help and
+  `TestMessagesSayMachine` reads every string literal in the package
+  (struct tags, regexps, timing lines and shell comments aside).
+  The api's op messages still say "the environment" and "the
+  environment's agent (guestd)"; the CLI prints them as "the machine"
+  and "repose's service on the machine", the words `status` already
+  used, and leaves the api's text to the api and dashboard, which read
+  it too. The create's build phase prints "Building the
+  configuration".
+- `logs --kind` shows its default, `console`, and the Long says what
+  each kind holds and that a clean boot leaves no console log (C5).
+- `--api-url` is hidden from help (8.7); cli.md's "Other servers"
+  keeps it. `login --browser` says what it does without PKCE or Logto
+  (C8). `--project` reads "act on project NAME or id (or
+  $REPOSE_PROJECT)".
+- Words from other CLIs lead to the repose command (8.5): `up`,
+  `create`, `new`, `init` to run; `shell`, `connect`, `console`, `sh`
+  to ssh; `down`, `halt` to stop; `port`, `forward`, `tunnel`,
+  `expose` to open; `env` to secrets; `undo`, `undelete`, `recover`
+  to restore; `clone`, `copy` to fork. An exact one of these beats an
+  edit-distance guess, so `up` names run alone, not run or cp.
+- A word after a group that takes no words of its own is a mistyped
+  subcommand with or without `--help` (`repose secrets remvoe --help`
+  and `repose notify foo` exit 2 with the suggestion), where cobra
+  printed the group's help with exit 0.
+- `repose code` under WSL, when the editor it finds is a Windows app on
+  a `/mnt` drive, exits 1 and says that app connects with Windows'
+  ssh (C10). The docs drop the sentences about a native Windows CLI,
+  which does not ship (.goreleaser builds darwin and linux).
+- On the machine, typing `repose` answers that the CLI runs on the
+  laptop and names repose-ask, repose-notify and repose-checkout
+  (8.7). The waitlist line names https://repose.herakraft.co/billing
+  instead of "the dashboard's plan page".
+- Docs: `TestEveryDocsPageNamesRealCommands` checks every page under
+  apps/web/src/content/docs, backticks and code blocks both, for a
+  `repose X` that is no command and for a flag X does not take (C7;
+  run-and-attach.md named `repose undo` and `repose destroy`). The
+  quickstart and install.md have a "Choose a plan" step (6.2), and the
+  quickstart and "tmux keys" say Ctrl-b twice reaches the machine's
+  tmux from a laptop tmux (6.3; the CLI prints nothing about it).
+  run-and-attach.md "Several agents, separate trees" opens with one
+  table for the two ways to run agents side by side, `--worktree` on
+  one machine and `fork` on a machine each, with how each one's work
+  comes back and how it is cleaned up (4.2); lifecycle.md points there
+  instead of recommending `run NAME` for the same need. agents.md no
+  longer asks you to add repose-ask instructions the machine's guide
+  already gives.
+- Not done: moving the plumbing `repose-*` helpers off the machine's
+  PATH (G9) changes what the agent guide and guest tests call and can
+  only be proved by booting a guest, which this machine cannot do; it
+  stays for a nix change of its own. No line is printed on a first
+  attach from inside a laptop tmux (6.3): the docs say it once.
+
+**I-631. The cli-devx follow-ups: ids the tables print work
+everywhere, rm takes each fork's remote, attach starts a stopped
+machine, a word that names no project is a window, and a sync into
+another repository's history is refused (cli-devx, 2026-10-09).**
+Amends I-603, I-606, I-609, I-612, I-619, I-622, I-626, I-630. *Made
+during implementation* (review of the cli-devx branch against
+reviews/2026-10-08-cli-devx.md and -cli-ergonomics-critique.md; G7).
+- `fork --snapshot` and `restore --snapshot` take the end or start of
+  an id, as `snapshots restore` does (I-619): the table prints the last
+  8 characters, and the api refused those. `restore` looks among the
+  snapshots of every destroy of NAME, the destroyed project with that
+  id, or with no NAME the ones whose remote is this checkout's; with
+  none to look in, the fragment goes to the api, which answers.
+  `TestFork`, `TestRestoreTakesAShortSnapshotID`.
+- `rm` of several fork copies removed one remote at most: the
+  destroys run at once and git refuses a second writer of .git/config.
+  The fork remote is now removed under the lock that already held the
+  `repose` remote's removal, and its line prints in order with the
+  others. `TestRmOfSeveralForksRemovesEachRemote`.
+- guestd unsets `@repose-state` on a tmux window whose agent exited
+  and whose shell keeps the window open (`tmux set-option -wu`); the
+  status line showed `claude?` and `ps` said `needs input` for a
+  shell. `ps` also gives no state to an agent-named window with a
+  shell (`bash`, `zsh`, `fish`, `sh`, `dash`) in front, for a base
+  before this guestd. guest-conventions.md "tmux" says both; the old
+  option value is still read. `TestWatcherMarksTheTmuxWindowState`,
+  `TestPsRows`.
+- The once-per-release older-CLI notice (I-626) does not print after
+  tab completion (`__complete`, `__completeNoDesc`) or a hidden
+  command (`ssh-prepare`, the session helper), whose stderr the shell
+  or ssh throws away; it used up the notice unseen.
+  `TestNoticeAfterSkipsCompletion`.
+- A duration after a bare `--temp`, and `keep`'s one argument, is a
+  number and a unit from s, m, h, d or w (I-630 took any letters), so
+  `repose keep 2fa` keeps the project 2fa and `run 1password --temp`
+  runs 1password. `2x` is then a project's name, which the api answers
+  for. `TestTempFlagParsing`.
+- `keep DURATION` against an api that ignores `expires_in_s` answers
+  with the old expiry; the CLI compared it with nil and reported the
+  extension as taken. It now exits 1 unless the expiry moved, or the
+  old one is within a minute of what was asked. The success line is
+  `tmp-k3f9 is temporary until Oct 9 11:43.`, and the create line
+  `(large, temporary until Sep 29 14:02)`: "destroyed Oct 9" read as
+  done. `TestKeepForADuration`.
+- `questions --json` is again the Question array it was before I-609,
+  so `jq -r '.[].id'` feeds `reply --question`; agents at a terminal
+  prompt have no id and are in `ls --json` (`signals.agents`, state
+  `needs_input`). `ps --json` rows gain `agent_state` (working, idle,
+  needs_input, unknown) on tmux and herdr; on herdr `state` stays
+  herdr's own value (`blocked`, `done`) until the next release, as
+  before I-606, and then becomes `agent_state`'s. The table reads
+  `agent_state`. `TestQuestionsQuietAndTerminalJSON`, `TestPsJSONOneShape`.
+- `repose ls` under its plan line, which has the figures, says only
+  what follows: `egress past the plan: each GB past 100 GB adds $0.05,
+  and your machines stop at 400 GB` and `disk past the plan: creating,
+  restoring, forking and growing a disk are refused until your
+  projects hold less`. `status` has no plan line and keeps the figures.
+  `TestDiskOverPlanLine`, `TestPlanLineAndWarnings`.
+- A sync into a machine whose checkout shares no history with the
+  laptop's is refused with exit 2 before anything is written (I-603
+  refused only by remote, so two repositories without one were
+  merged: the machine's checkout ended detached on the other root).
+  When the laptop knows none of the commits the machine's checkout
+  has refs to, one more ssh asks the checkout for the laptop's root
+  commits (at most 50); none present is `job's checkout shares no
+  commit with this one, so `repose sync job` here would sync one
+  repository into the other's machine.` Unknown tips alone are an
+  agent's commits on a project with no remote, so they only lead to
+  the question; a shallow repository on either side, or a machine
+  that does not answer, is not refused. The run's `Not synced` line
+  names the project when the command named it (`repose sync
+  todo-app`). `TestSyncRefusesAnUnrelatedCheckout`,
+  `TestLaptopAheadLineNamesTheProject`.
+- `ps WORD` and `attach WORD`, where WORD names none of the account's
+  projects and this folder resolves to one (no `--project`, no `-w`),
+  take WORD as that project's window, as `exec` reads its first word
+  (I-411). The project is tried first, so `attach todo-app` costs no
+  extra call. `TestOneWordIsAWindowWhereAProjectResolves`.
+- `attach` starts a stopped machine, as `run` does, without a sync,
+  and waits for one already starting (review G7). A machine stopped
+  for abuse, in `error`, `restoring` or `destroying` still exits 5.
+  `ps`, `exec`, `ssh`, `code`, `open` and `cp` do not start one: a read
+  or a one-off command should not take the plan's memory unasked, and
+  `ps` of a stopped machine has no windows to show. The stopped
+  refusal reads `todo-app is stopped. `repose start todo-app` starts
+  it.`; it named `repose run` "in its checkout" to a user already
+  there. `TestAttachStartsAStoppedMachine`.
+- `events` sizes its agent and verb columns to the widest cell printed
+  so far (a `%-12s` cut `snapshot created` and `config applied`), and
+  a summary that starts with the noun of a two-word verb says it once:
+  `snapshot  taken (stop)`, `project  created as large`, the way
+  `machine  stopped` reads. `status`'s last event row uses the same
+  cells. `TestEventLine`.
+- `ls --help`, and the help of the other commands that refuse
+  `--project` (login, logout, version, completion, notify), no longer
+  list it under Global Flags. `TestHelpHidesProjectWhereRefused`.
+
+**I-632. A copy pass over the cli-devx lines: facts once, no
+reassurance, one pointer to help (cli-devx, 2026-10-09).** Amends
+I-272, I-612, I-622, I-623, I-627, I-628, I-629. *Made during
+implementation* (owner's rule I-484, I-485 applied to lines the branch
+added or touched).
+- A usage error's pointer to help is one line in one wording on every
+  path: `` `repose stop --help` shows its usage.`` after an unknown
+  flag (was `(... lists its flags)`), an unknown subcommand (was `Run
+  ... for its commands.`) and cobra's refusals.
+- `rm` prints `Removed the git remote repose.` and `Removed the git
+  remote todo-app-fork-1.`; the clause that fetched branches stay is
+  in the docs, which say it once.
+- A temporary machine kept for its work: `tmp-k3f9 has 2 commits and 1
+  changed file your laptop does not; it stays until 14:02.` The
+  `repose attach` clause after it is gone.
+- The unused-machine email ends at `` `repose stop todo-app`.``; "repose
+  never stops a machine for being unused" repeated "until you stop it".
+- `Could not reach the login server (auth.example): connection
+  refused.` and ssh's unresolved-name failure end with the reason ssh
+  or the network gave; "Check your connection" was wrong for a server
+  that is down.
+- `login` with no plan prints `No plan yet:
+  https://repose.herakraft.co/billing`; the first free week is on the
+  billing page and in the docs.
+- `stop --help` says what stop does (`It asks first when an agent is
+  mid-turn ...; Run in the machine's checkout, it runs git fetch repose
+  first.`) instead of reading as orders.
+- `--json` help says "print the project as JSON when done" on start,
+  stop, sync, resize and status, and "the snapshot" on snapshots
+  create. `--size` shows as `--size SIZE` and `--multiplexer` as
+  `--multiplexer NAME`.
+- The billing-stopped email says "Your machines were stopped: a
+  payment failed", the subject I-600 gave it on main (it said guests),
+  and notifications.md quotes the abuse email as it is sent ("Your
+  machine was stopped").
+- troubleshooting.md drops "Your login is still there"; agents.md says
+  the machine's guide covers repose-ask and a rule in CLAUDE.md or
+  AGENTS.md overrides it.
+
+**I-633. The second cli-devx follow-up: the fake says the gate's words,
+a project word after a group, run's phase says what it does, a second
+machine gets its own remote, the stash flags say machine (cli-devx,
+2026-10-09).** Amends I-367, I-603, I-610, I-612, I-614, I-616, I-618,
+I-619, I-622, I-626. *Made during implementation* (a review of cli-devx
+against the two 2026-10-08 reviews, after main's r20261009-1 merged in).
+- The fake api's plan_limit sentence is `billing.PlanLimitMessage`'s,
+  word for word (it said `A large (8 GB) would pass ... Stop one or
+  upgrade.`), so tests and walks against the fake see the CLI's
+  rewrite. With several machines in the way the rewrite names them all:
+  ``a and b are using it. `repose stop a b` frees it, or upgrade at
+  ...``; `resize --size` and `fork` say the same. The fake's first
+  config revision is the api's default repose.nix, as a real project's
+  is, so `config show` on a new project prints it there too (an empty
+  answer was the fake's, and no empty-state line was added).
+  `TestPlanLimitMessageIsTheGates`, `TestPaymentRequiredMessage`.
+- `repose snapshots todo-app`, `config todo-app`, `mcp todo-app` and
+  `secrets todo-app`, where the word is one of the user's projects
+  (projects.json, then the account's list, two seconds at most) and no
+  subcommand's typo, exit 2 with ``todo-app is a project: `repose
+  snapshots list todo-app`.`` The word stays a subcommand slot (I-619).
+  `TestBareGroupsRunTheirListing`.
+- `run` into a machine that already has the checkout names its phase
+  `Copying logins`, not `Syncing`: after the first sync it copies only
+  logins and the carry (I-367). A run that creates the machine, and
+  `sync`, still say `Syncing`. Off a terminal, a phase resumed after a
+  line inside it (the `Worktree:` line, the shared-tree warning) does
+  not print its start again, so `Starting claude...` shows once.
+  `TestRunNamesItsPhaseForWhatItDoes`, `TestProgressResumeOffTerminal`.
+- No global git config is an empty list on git 2.55, which exits 128
+  for a missing ~/.gitconfig: the files ($GIT_CONFIG_GLOBAL, else
+  ~/.gitconfig and $XDG_CONFIG_HOME/git/config) are looked for first.
+  Every run and sync printed `Could not read your git config`.
+  `TestReadGitConfigWithoutAGlobalFile`.
+- `logs --since` with nothing in the window says so: `No operations on
+  todo-app in the last 1s.` (`todo-app has no operations` was false of
+  a project with four). `TestEmptyLogsLineNamesTheWindow`.
+- I-603's cross-repository refusal names the command typed (`repose
+  sync alpha`). The mcp row of `secrets choose` reads `Claude Code MCP
+  servers, without their tokens`, one parenthetical with the found
+  note. `secrets rm NOPE` says `todo-app has no secret NOPE.`, exit 1,
+  as `mcp rm` does. `TestRunNameInCheckoutMakesASecondProject`,
+  `TestLoginRowsHaveOneParenthetical`, `TestSecretsLinesNameTheProject`.
+- `status`'s disk row puts the disk's size after the filesystem's
+  figures, as `resize` names it: `1.0 GB of 78.0 GB (80G disk)`. `resize
+  80G` and then `of 78.0 GB` read as two answers (review 5.7); the
+  filesystem keeps part of the volume. `TestStatusDiskIsTheGuestsFilesystem`.
+- An attach with no terminal (`attach -w claude-2 </dev/null`) exits 1
+  with `Attaching needs a terminal, and this command has none.` before
+  tmux runs: `tmux attach -t session:window` made the window current and
+  then failed, so the next plain attach landed on it. Selecting in the
+  same tmux command would not help; tmux selects first.
+  `TestAttachNamedWindow`.
+- Ctrl-C during `resize --size` says `Interrupted. The stop of demo goes
+  on, and it stays large.`, or after the size changed `demo is xl now;
+  repose start demo starts it if it is stopped.`; during `fork`, `The
+  snapshot of demo goes on; nothing was forked.`, `The forks of demo may
+  have been created`, or `demo-fork-1 and demo-fork-2 exist, and their
+  starts go on.` (review A6, deferred by I-614).
+  `TestInterruptedResizeAndForkSayWhatIsLeft`.
+- `repose run NAME` and `sync NAME` into a machine that is not the
+  checkout's own add a git remote named after it, as `fork` does
+  (I-622), and `rm` removes it; lifecycle.md drops the hand-typed `git
+  remote add`. A temporary machine still gets none (I-612). `fork
+  --temp` is not done (I-622's later line). Review 4.2.
+- `repose config add` with no names lists the menu's entries by group
+  and exits 0 (it exited 2); `--global add` with none still exits 2.
+  Review 8.5. `TestConfigAddWithNoNamesListsTheMenu`.
+- `sync --stash-remote` and `--discard-remote` are `--stash-machine` and
+  `--discard-machine` (review C4): "remote" read as a git remote. The
+  old names stay hidden for a release, on `run` too, where all four
+  exit 2 naming `sync`. The stash on the machine is named `repose sync
+  --stash-machine`.
+- The empty `ls` names the account, and the server when it is not
+  repose's: `No projects yet for heracraft.` An empty list on another
+  account read as lost projects (review 8.5). `TestLsEmptyCountsDestroyed`.
+- `start`'s help says "Start a project, or restart one in error" (I-616
+  claimed it); `questions`' says it covers every project.
+- The quickstart's first task is `repose run -p "..."`, which creates
+  the machine, logs Claude Code in inline (I-607) and types the prompt:
+  the shell-first run and the detach-and-run-again step are gone. Its
+  last step says `repose stop` fetches the agent's commits first, and
+  that `attach` starts a stopped machine.
+- One `billingURL` constant in the CLI; status, waitlist, login and the
+  payment fallback used their own literals.
+- internal/cli's tests mark inherited descriptors close-on-exec, so a
+  fake guest's tmux server that outlives a timed-out test binary no
+  longer holds the `flock` lock the run was started under. RELEASE.md's
+  `go test -race` gets `-timeout 30m`: internal/cli alone takes about
+  15 minutes at GOMAXPROCS=2.
+*Rejected:* a line for the empty `config show` (the real api never
+answers empty; above); the `ps` header and the `REPOSE_PROJECT` notice
+(I-616's later line); folding `version` into `--version` (I-626's
+later line). Already done before this entry: attach starting a stopped
+machine and the stopped refusal's wording (I-631; reviews G7, C1, 6.5),
+`questions --json` keeping its old shape (I-631), `restore --snapshot`
+prefixes (I-631; D8).
+
+**I-634. The first run waits for a plan, links open on the laptop, and
+the CLI says what it does not know (cli-devx, 2026-10-09).** Amends
+I-289, I-541, I-606, I-615, I-616, I-617, I-625, I-627. *Made during
+implementation* (the third cli-devx pass over the two 2026-10-08
+reviews).
+- A `repose run` (or `start`, `attach`) refused with
+  `subscription_required` and no waitlist place, with a person at the
+  terminal and no `--json`, opens the billing page as login opens its
+  link (not with `REPOSE_NO_BROWSER=1` or without a display), shows
+  `Waiting for a plan at https://repose.herakraft.co/billing` as a
+  phase, reads `GET /me` every 3 s until the account has a plan (or is
+  exempt), and creates or starts as it would have. It gives up after 30
+  minutes with the exit 7 it had. Off a terminal it exits 7 at once.
+  Inside the run's inline login, login's `No plan yet` line is gone, so
+  the URL prints once. A fresh account no longer types the command
+  twice. `TestRunWaitsForAPlan`.
+- While a laptop is attached, the machine's `BROWSER` hands `https`
+  links to it: `repose-print-url` appends `SECONDS URL` to
+  `~/.cache/repose/open-urls`, and the session helper takes the file in
+  the poll it already makes each second for forwards (its own 2 s poll
+  with `REPOSE_NO_FORWARD=1`), by renaming it, and opens links under two
+  minutes old with the opener login uses. Claude Code's `/login` page
+  opens in the laptop's browser, so only the code is pasted back.
+  Rejected: scanning the tmux pane for the URL (it reads what the user
+  sees, and only finds Claude's); an `xdg-open` on PATH (I-541 kept
+  PATH clean, and `BROWSER` is enough). With nobody attached the link
+  is printed as before and expires unopened.
+  `TestOpenURLsTakenOnce`. Not run here: the guest VM test.
+- `ps`, `exec`, `cp`, `ssh` and `status`, which found the machine
+  running, wait 15 s for its first ssh answer instead of 60, and once
+  the first try fails show a `Connecting to SLUG` phase (a spinner, or
+  a line and the 30 s heartbeat off a terminal). A command that started
+  or created the machine (run, start, attach of a stopped one) waits the
+  minute. `TestSlowSSHShowsConnecting`.
+- `status` on a running machine whose probe failed prints `checkout
+  unknown (no ssh answer in 4 s)` or `unknown (ssh failed: REASON)`;
+  `--json` has `git_error` (`ssh_timeout`, `ssh_failed`) in place of
+  `git`. No row read as a machine with no checkout.
+  `TestStatusSaysTheProbeFailed`.
+- An agent that needs input says how long it has waited: `claude-2
+  needs input 4h` on status's agents row and its unused line, `1 needs
+  input (4h)` in ls for the longest wait. The time is the newest event
+  of that window when that event is `needs_input` or `agent_question`;
+  guestd's sample carries no state-change time, and adding one would
+  change hostd's proto for a figure the events already give. ls reads
+  events only for projects with an agent waiting. A `?` follows the
+  states when the sample is over two minutes old, as ps marks them.
+  `TestAgentWaitAges`.
+- One verb table, `internal/eventverbs`, serves the notification title
+  and `repose events`. The notification's words win: they reach the
+  phone and the email subject first, and a mail filter matches them.
+  `events` prints `finished` (was `done`), `machine.nix did not apply`,
+  `new system did not boot`, `unused for 24h, holding plan memory`,
+  `destroyed in an hour` and `temporary machine destroyed`.
+- `stop` reads the machine's checkout with status's git script before
+  the stop and ends its line with what stays there: `Stopped todo-app
+  in 11s with a 2.1 GB snapshot; 3 commits on main not fetched, 4 files
+  not committed.` Commits are counted only in the project's checkout;
+  elsewhere only files. The rows go to `~/.config/repose/stop-left.json`
+  and `status` shows them for the stopped machine, `(at the stop, 9h
+  ago)`, until it runs again; `--json` has them with `git_at`. A stop
+  that read nothing removes the entry. `TestStopSaysWhatItLeaves`.
+
+**I-635. Help topics, flag suggestions, and the project's agent from
+the CLI (cli-devx, 2026-10-09).** Amends I-276, I-603, I-622, I-628.
+*Made during implementation*.
+- `repose help environment`, `help exit-codes` and `help config-file`
+  print cli.md's three tables offline, listed under root help's
+  "Additional help topics". The rows live in `helptopics_data.go` as
+  cli.md's Markdown, and `TestHelpTopicsMatchTheDocs` fails when a row
+  differs, so neither can drift. `repose help NAME` with no such
+  command or topic exits 2 with `No help for "NAME".` and the same
+  did-you-mean as a mistyped command (cobra printed root help and
+  exited 0). `TestHelpTopics`.
+- An unknown flag gets a suggestion on the refusal's line: another
+  tool's spelling (`run --detach` names `-d (--no-attach)`, `stop`,
+  `rm` and `resize --force` name `-y (--yes)`), a typo of one of the
+  command's flags (`--promt`), or for an unknown `-x` the long flag
+  starting with x that has no letter (`exec -w` names `--workdir`).
+  Where the command needs no flag the line says why: `repose ps lists
+  every window.`, `repose ls lists every project, stopped ones too.`,
+  `repose sync does not attach.` A hidden `--detach` alias was not
+  added: one spelling per flag. `TestUnknownFlagSuggestions`.
+- I-628's corrected command takes as PROJECT the word that is not the
+  command's own: `repose open 8080 todo-app` now suggests `repose open
+  8080 --project todo-app` (it suggested `open todo-app --project
+  8080`). With no such word, or two, no command is printed.
+- `repose run --agent NAME` without `-p` makes NAME the project's agent
+  (PATCH `agent_default`, or the create's field), as `--multiplexer`
+  makes its multiplexer; no new verb or flag. `status`'s setup line
+  names the agent whenever it differs from config.toml's
+  `default_agent`, not from `claude`, so an older project that starts
+  Claude under `default_agent = "codex"` says so. `--agent`'s help
+  names `default_agent`. `TestRunAgentWithoutPromptSticks`.
+
+**I-636. A stop records the tmux agent windows and the next start opens
+them on their conversations (cli-devx, 2026-10-09).** Amends I-500,
+I-606. *Made during implementation* (the fourth cli-devx pass over the
+2026-10-08 reviews, "A stop ends every tmux agent").
+- tmux is the default multiplexer, and a Solo user stops machines at
+  night to free plan memory; each morning the agents' windows were gone
+  and `claude --resume` was picked by hand in each folder, which also
+  lost the names `ps`, `attach -w` and the questions use. herdr already
+  resumed its agents (I-501).
+- When hostd asks for the shutdown, guestd runs `repose-tmux-save` as
+  dev (5 s at most) before `systemctl poweroff`, while every agent still
+  runs. Not an `ExecStop` on the session unit: at poweroff the user
+  manager stops each pane's `tmux-spawn` scope beside the unit, so the
+  windows would be closing while they were listed. A guest that dies
+  without a shutdown (a host crash) records nothing, as before.
+- The file is `~/.repose/agent-windows`: per window named after an agent
+  whose pane runs something other than a shell, its name, agent, folder
+  and conversation id, separated by `\037` (a tab collapses empty
+  fields in `read`). `repose-hook` puts the id in the pane option
+  `@repose-session` from every hook payload (Claude Code's `session_id`,
+  Codex's `thread-id`); the other agents have none.
+- `repose-tmux-session`, when it creates the session, renames the file
+  and opens each window under its name in its folder: `claude --resume
+  ID` or `claude --continue`, `codex resume ID` or `codex resume
+  --last`, `opencode --continue`, `pi --continue`, `gemini --resume
+  latest` (flags checked against the installed binaries: Claude Code
+  2.1, Codex 0.157 `resume [SESSION_ID] --last` filtered to the folder,
+  opencode `-c`, pi `-c`, Gemini CLI `-r latest`). Without an id an
+  agent continues the folder's newest conversation, so of two such
+  windows for one agent in one folder only the first opens. A tmux
+  server that exits later in the boot starts with `shell` alone.
+- No `--no-resume` on start: it would need a field from the CLI through
+  the api and hostd to guestd for a rare opt-out, and `repose stop -w
+  WINDOW` (I-639) closes a reopened window. No output line was added.
+- Evidence: the two scripts run against a private tmux server with
+  stand-in agents (`claude --resume abc-123`, `--continue`, `codex
+  resume --last` started under the old names and folders; a second run
+  of the session script opened nothing); shellcheck clean;
+  `TestSessionIDOf`, `TestRecordSessionOnlyInTmux`, guestd's Shutdown
+  subtest checks the save runs as dev before the poweroff. Not run here:
+  the guest VM test, and a real stop and start.
+
+**I-637. A start the plan's memory refuses asks to stop what is in the
+way (cli-devx, 2026-10-09).** Amends I-610, I-614, I-634. *Made during
+implementation*.
+- On Solo every second `large` was exit 7 naming `repose stop api`, then
+  the run typed again. On a terminal, without `--json`, `run`, `start`
+  and `attach` now turn the gate's `plan_limit` into stop's question:
+  `api has claude (working). Stopping ends it. Stop api to start
+  todo-app? [y/N]`. A yes runs `repose stop` on those machines (fetch
+  first, the stop lines; no `Ended` line, the question named them) and
+  asks for the start or create once more. A no prints the refusal and
+  exits 7; off a terminal the refusal exits 7 as before. No flag, no
+  new line on success.
+- Which machines: the fewest running ones that make room by the CLI's
+  count from `/me` and the project list, those with no agent working or
+  waiting first, then unused ones, then the biggest. When the CLI's count
+  finds no such set (an exempt account, an api that counts otherwise) it
+  offers the gate's `projects`. A class bigger than the plan (`an xl
+  machine needs 16 GB`) carries no machines and is not asked about.
+- `fork` and `resize --size` keep their own refusal before they
+  snapshot (I-610): stopping other machines in the middle of those is a
+  second decision the user did not start.
+  `TestRunStopsWhatIsInTheWayOfThePlan`, `TestMachinesToStop`.
+
+**I-638. stop fetches and status counts in every laptop folder of the
+machine (cli-devx, 2026-10-09).** Amends I-615, I-616, I-634. *Made
+during implementation*.
+- `stop api web`, `stop --unused` and `status todo-app` from ~ fetched
+  nothing and counted nothing: only the working directory's checkout was
+  looked at, so a machine stopped from elsewhere kept its commits until
+  the next start. projects.json gains `folders` (repository root to
+  project id), written when `run`, `sync` or `attach` finds or makes the
+  folder's `repose` remote for the machine. It is never read to resolve
+  a project (I-152 holds). The folders are those, `by_dir` and
+  `checkouts`, each used only while its `repose` remote still names the
+  machine.
+- `stop` fetches in each, four at a time, before the stop, and prints
+  `Fetched 3 commits on repose/main.` for the working directory's
+  checkout and `... in ~/code/api.` for another; nothing when nothing
+  came. `status` (and the stop line's clause) counts commits not on
+  this laptop over the tips of all of them. `rm` drops the entries with
+  the project's others. An older CLI writes the key back as a remote,
+  which reads as no folders; the next run in a folder records it again.
+  `TestStopFetchesInTheRecordedFolder`, `TestStatusShowsTheCheckoutsGit`.
+
+**I-639. `run -w WINDOW -p TEXT` types into an agent's window, `stop -w
+WINDOW` closes one (cli-devx, 2026-10-09).** Amends I-606 (its G2, the
+window and worktree removal left open), I-607. *Made during
+implementation*.
+- Answering a Claude Code permission prompt, or a follow-up, took
+  attach, find, type, detach; `questions` listed those waits with
+  nothing to answer them. `-w` on `run` names an existing window (a name
+  or number from `ps`, a herdr agent's name) and `-p` is what is typed,
+  then Enter. `run` does what it does otherwise up to the agent step
+  (logins copied, no sync after the first, I-367), and attaches to that
+  window unless `-d`. A missing window exits 2 with attach's line. `-w`
+  needs `-p` and refuses `--worktree` and `--agent`. On herdr the text
+  goes through `herdr pane send-text` and `send-keys enter`: `herdr
+  agent prompt` refuses a blocked agent, the case this is for. The
+  questions header now names the command instead of saying `reply`
+  can't answer (same one line).
+- `stop -w WINDOW` closes one window and the machine keeps running,
+  under stop's question when that agent is working or waiting. Folded
+  under stop rather than a new verb (CLI surface taste). On tmux the
+  window's worktree (a `<checkout>-worktree-N` linked worktree no other
+  window works in, with nothing in `git status`) goes too, after stop's
+  fetch, only when a laptop folder of the project has its tip on a ref;
+  `git worktree remove` without `--force`, the branch kept. Otherwise
+  the line says why it stays. On herdr only the pane closes: herdr's
+  agent list gives no folder to check.
+- Evidence: `TestStopWindowScripts` runs the probe, close, remove and
+  type scripts against a private tmux server and real git;
+  `TestKeptBecause`. Not run against a herdr guest.
 
 **I-604. Billing moves from Paddle to Polar.** (polar, 2026-10-08;
 owner: "we are switching from paddle to polar.sh, verification came in

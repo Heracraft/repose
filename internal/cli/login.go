@@ -2,9 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -25,26 +29,47 @@ type loginOptions struct {
 	// it with a stub that hits the loopback callback directly instead of
 	// launching a real browser.
 	Open func(string) error
+	// ForRun is the login a first `repose run` does inline: the run waits
+	// for a plan itself and names the billing page then (I-634), so
+	// login's own no-plan line would print the URL twice.
+	ForRun bool
 }
 
 func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Client, opts loginOptions) error {
 	doc, err := discover(ctx, httpClient, dir, cfg.LogtoIssuer)
 	if err != nil {
-		return exitf(ExitGeneric, "Cannot reach %s: %v", cfg.LogtoIssuer, err)
+		return loginFailed(err)
 	}
 
 	open := opts.Open
 	if open == nil {
 		open = openBrowser
 	}
+	stdout := opts.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	canOpen := browserAvailable(opts.NoBrowser, opts.GuestEnv, opts.Display, opts.GOOS)
 	var tr *tokenResponse
-	if opts.Browser && browserAvailable(opts.NoBrowser, opts.GuestEnv, opts.Display, opts.GOOS) {
+	if opts.Browser && canOpen {
 		tr, err = loginPKCE(ctx, httpClient, doc, cfg.LogtoClientID, open)
 	} else {
-		tr, err = loginDeviceCode(ctx, httpClient, doc, cfg.LogtoClientID, func(s string) { fmt.Println(s) })
+		// The device code is printed, and opened in this computer's
+		// browser when it has one (DECISIONS I-627): the page is the same
+		// one the link leads to, so a failed open costs nothing.
+		tr, err = loginDeviceCode(ctx, httpClient, doc, cfg.LogtoClientID, func(da deviceAuthResponse) {
+			_, _ = fmt.Fprintln(stdout, deviceInstructions(da))
+			if canOpen {
+				u := da.VerificationURIComplete
+				if u == "" {
+					u = da.VerificationURI
+				}
+				_ = open(u)
+			}
+		})
 	}
 	if err != nil {
-		return exitf(ExitGeneric, "Login failed: %v", err)
+		return loginFailed(err)
 	}
 
 	creds := Credentials{
@@ -59,18 +84,70 @@ func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Clie
 	}
 
 	client := newClient(cfg.APIURL, staticToken(tr.AccessToken))
+	client.HTTP = httpClient
 	me, err := client.GetMe(ctx)
 	if err != nil {
 		return exitf(ExitGeneric, "Logged in, but could not fetch your account: %v", err)
 	}
-	fmt.Printf("Logged in as %s (%s)\n", me.Handle, me.Email)
-	if me.Billing.Status == "none" || (me.Billing.Status == "" && !me.Billing.HasCard) {
-		fmt.Printf("No plan yet. Choose one at https://repose.herakraft.co/billing before the first `repose run`; the first week is free.\n")
+	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", me.Handle, me.Email)
+	if !opts.ForRun && (me.Billing.Status == "none" || (me.Billing.Status == "" && !me.Billing.HasCard)) {
+		_, _ = fmt.Fprintf(stdout, "No plan yet: %s\n", billingURL)
 	}
 	if !opts.GuestEnv {
 		setUpPlainSSH()
 	}
 	return nil
+}
+
+// loginFailed is a failed login flow: the login server out of reach is a
+// network problem; a refusal (the code expired, the user declined) is
+// the login's.
+func loginFailed(err error) error {
+	var lu *loginUnreachableError
+	if errors.As(err, &lu) {
+		return exitf(ExitGeneric, "%s", lu.Error())
+	}
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	return exitf(ExitNotLoggedIn, "Login failed: %v.", strings.TrimSuffix(err.Error(), "."))
+}
+
+// loginStatus is `repose login --status` (DECISIONS I-627): the account
+// this laptop is logged in as, read from the api so a revoked or expired
+// login shows as one, and nothing else. Exit 3 when there is none.
+func loginStatus(ctx context.Context, e *Env) error {
+	if _, ok := e.Client.Tokens.(notLoggedInSource); ok {
+		return exitf(ExitNotLoggedIn, "Not logged in.")
+	}
+	me, err := e.Client.GetMe(ctx)
+	if err != nil {
+		return err
+	}
+	plan := "no plan"
+	if me.Billing.Plan != nil && *me.Billing.Plan != "" {
+		plan = planTitle(*me.Billing.Plan) + " plan"
+		if me.Billing.Status != "" && me.Billing.Status != "active" && me.Billing.Status != "exempt" {
+			plan += " (" + strings.ReplaceAll(me.Billing.Status, "_", " ") + ")"
+		}
+	}
+	_, _ = fmt.Fprintf(e.Out, "%s (%s) on %s, %s\n", me.Handle, me.Email, hostOf(e.Cfg.APIURL), plan)
+	return nil
+}
+
+func planTitle(p string) string {
+	if p == "" {
+		return p
+	}
+	return strings.ToUpper(p[:1]) + p[1:]
+}
+
+// hostOf is a URL's host, or the URL when it has none.
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
 }
 
 // setUpPlainSSH writes ~/.ssh/repose/config and the Include line at login,
@@ -95,18 +172,21 @@ func setUpPlainSSH() {
 	}
 }
 
-func runLogout(ctx context.Context, dir string, cfg Config, httpClient *http.Client, purge bool) error {
+func runLogout(ctx context.Context, dir string, cfg Config, httpClient *http.Client, purge bool, out io.Writer) error {
 	creds, ok, err := loadCredentials(dir)
 	if err != nil {
 		return err
 	}
-	// Best effort: revoking the SSH certificates and deleting the local
-	// credentials matters more than Logto's own refresh-token revocation,
-	// which this CLI does not call (not part of the discovery document it
-	// reads); an un-revoked refresh token simply expires on its own.
-	if ok && creds.AccessToken != "" {
+	// Revoking the SSH certificates is what makes a logout after a lost
+	// laptop mean something, so its result is said (DECISIONS I-627).
+	// Logto's own refresh-token revocation is not called (not part of the
+	// discovery document this CLI reads); an un-revoked refresh token
+	// expires on its own.
+	var revokeErr error
+	if ok && (creds.AccessToken != "" || creds.RefreshToken != "") {
 		client := newClient(cfg.APIURL, newOIDCTokenSource(dir, httpClient, creds))
-		_ = client.RevokeCertsAll(ctx)
+		client.HTTP = httpClient
+		revokeErr = client.RevokeCertsAll(ctx)
 	}
 	if err := deleteCredentials(dir); err != nil {
 		return err
@@ -117,7 +197,29 @@ func runLogout(ctx context.Context, dir string, cfg Config, httpClient *http.Cli
 	}
 	_ = os.Remove(sd + "/id_ed25519-cert.pub")
 	if purge {
-		return purgeCLIFiles(dir, sd)
+		if err := purgeCLIFiles(dir, sd); err != nil {
+			return err
+		}
+	}
+	switch {
+	case !ok:
+		_, _ = fmt.Fprintln(out, "Not logged in.")
+	case revokeErr != nil:
+		return exitf(ExitGeneric, "Logged out on this laptop, but the SSH certificates were not revoked: %s They stop working within 24 hours.", revokeReason(revokeErr))
+	default:
+		_, _ = fmt.Fprintln(out, "Logged out. Your SSH certificates are revoked; connections they opened, on any device, close within 30 seconds.")
 	}
 	return nil
+}
+
+// revokeReason is why a revoke failed, as a sentence. A "try again"
+// is dropped: with the login gone there is nothing to try again with.
+func revokeReason(err error) string {
+	var b strings.Builder
+	_ = exitCodeFor(err, &b)
+	s := strings.TrimSpace(b.String())
+	if i := strings.Index(s, " Try again"); i > 0 {
+		s = s[:i]
+	}
+	return s
 }

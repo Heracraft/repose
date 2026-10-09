@@ -15,22 +15,25 @@ ID                                    TAKEN             SIZE    REASON
 01999c9b-1a07-7d55-8e66-0f1a2b3c4d5e  2026-09-16 03:00  1.9 GB  scheduled
 
 $ repose snapshots create
-Snapshot of todo-app taken in 41s.
+Snapshot 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 of todo-app taken in 41s (1.9 GB).
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
-todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as-new NAME.
+todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as NAME.
 
 $ repose stop && repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 ...
-Restore over the current volume? Anything since the snapshot is lost. [y/N] y
+Replace todo-app's disk with its snapshot of 2026-09-16 03:00? The stop snapshot of 2026-09-16 17:49 keeps the disk as it is now. [y/N] y
 Restored todo-app; it is stopped.
 
-$ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as-new todo-app-yesterday
+$ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as todo-app-yesterday
 Restored into a new project, todo-app-yesterday.
 ```
 
 Snapshot ids are UUIDv7 like every id (interfaces/README.md). TAKEN is
-the laptop's local time. `--yes` skips the question.
+the laptop's local time. `--yes` skips the question. The question names
+the snapshot by its time and says whether a snapshot keeps the disk as it
+is now (the newest, when a stop took it after the last start) or what is
+lost for good; a no exits 1 (DECISIONS I-614).
 `list`, `create` and `restore` act on the checkout's project, or the one
 named first: `repose snapshots list izma`, `repose snapshots restore izma
 SNAPSHOT_ID` (DECISIONS I-566).
@@ -70,7 +73,7 @@ Retention (DECISIONS R4-11):
   "Recently destroyed" in the dashboard and in `repose ls
   --destroyed`; `repose restore <name>` (or the dashboard's Restore)
   brings it back as a new project (DECISIONS I-167), and `snapshots
-  restore <id> --as-new` still does.
+  restore <id> --as` still does.
 - After account cancellation, all guests stop, snapshots are kept 30 days,
   then deleted with the account's other data.
 - A project that has been stopped for months keeps its most recent
@@ -82,9 +85,9 @@ Restoring:
 
 - `restore` into the same project requires the guest to be stopped. On a
   project that is not stopped the CLI refuses and exits 5, naming `repose
-  stop` and `--as-new`; it does not stop it. `repose stop` takes a final
+  stop` and `--as`; it does not stop it. `repose stop` takes a final
   snapshot, which is what makes an in-place restore reversible.
-- `restore --as-new NAME` creates a new project with the same class and
+- `restore --as NAME` creates a new project with the same class and
   volume size, on the host with the most free memory, and starts it. It
   counts toward the account's project cap (100, running or stopped,
   DECISIONS I-569).
@@ -106,7 +109,7 @@ Restoring:
 Forking (DECISIONS I-254, I-255):
 
 - `repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID]
-  [--prompt TEXT [--agent A]]` takes a manual snapshot of a live project
+  [--prompt TEXT [--agent A]] [--no-start]` takes a manual snapshot of a live project
   (running or stopped; the source keeps running) unless `--snapshot`
   names one of its own, then `POST /projects/:id/fork` restores it into N
   new projects called `<slug>-fork-<k>` (or `NAME-<k>`), `k` the lowest
@@ -128,6 +131,12 @@ Forking (DECISIONS I-254, I-255):
   source's `~/<slug>`, made by guestd's `SetupProject` (I-255).
 - With `--prompt`, the CLI starts the agent with that prompt in each
   running copy, without syncing the laptop into it, and does not attach.
+- Before the snapshot the CLI asks the plan's memory for all N copies
+  beside what runs now, the source included, from `/me` and the project
+  list, and refuses with exit 7 naming `--no-start` when they don't fit
+  (I-610). `--no-start` sends `start: false`: the copies are restored
+  and left `stopped`, and take no memory until started; with `--prompt`
+  it exits 2.
 - Each copy is a project: it counts toward the project limit and the
   plan's disk, and toward the plan's memory while it runs (I-570). There is no fork lineage in the api, no "promote a copy", and no
   dashboard action yet.

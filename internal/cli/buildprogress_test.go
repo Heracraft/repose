@@ -75,7 +75,7 @@ func TestConfigOpShowsSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "4f1c2a9e-0000", pr)
+	printApplied(e, p, op, "0199b1c2-0000-7000-8000-00004f1c2a9e", pr)
 	got := errOut.buf.String()
 	last := -1
 	for _, want := range []string{"✓ Got a build slot", "✓ Evaluated your config", "✓ Fetched 3 paths (1.5 MiB)", "✓ Built 2 derivations", "✓ Switched the machine"} {
@@ -88,7 +88,7 @@ func TestConfigOpShowsSteps(t *testing.T) {
 	if strings.Contains(got, "nix ›") {
 		t.Fatalf("nix lines shown without -v:\n%s", got)
 	}
-	if !strings.HasPrefix(out.buf.String(), "Applied revision 4f1c2a9e in ") {
+	if !strings.HasPrefix(out.buf.String(), "Applied revision 4f1c2a9e in ") { // the id's random end (I-619)
 		t.Fatalf("result line %q", out.buf.String())
 	}
 
@@ -115,7 +115,7 @@ func TestConfigOpRebootRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printApplied(e, p, op, "4f1c2a9e-0000", pr)
+	printApplied(e, p, op, "0199b1c2-0000-7000-8000-00004f1c2a9e", pr)
 	if got := out.buf.String(); !strings.HasPrefix(got, "Built revision 4f1c2a9e. It changes the kernel") || strings.Contains(got, "Applied") {
 		t.Fatalf("reboot output %q", got)
 	}
@@ -148,9 +148,19 @@ func TestConfigApplyWithoutFileReapplies(t *testing.T) {
 	if err := ConfigAddCmd(ctx, e, "", []string{"gcc"}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := e.Client.GetConfig(ctx, p.ID)
+	revs, err := e.Client.ListRevisions(ctx, p.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The active revision. Its id differs from the newest one only in
+	// the tail, which shortRev shows since I-616; the first 8 characters
+	// it cut before were the same for every revision.
+	var cfg struct{ RevisionID string }
+	for _, r := range revs {
+		if r.Status == "applied" {
+			cfg.RevisionID = r.ID
+			break
+		}
 	}
 	out := &discardWriter{}
 	e.Out = out
@@ -187,10 +197,10 @@ func TestLogLinesAndSince(t *testing.T) {
 	if got := logLineText(LogLine{TS: ts, Kind: "build", Line: "x"}, "build"); got != ts.Local().Format(time.RFC3339)+" build x" {
 		t.Fatalf("%q", got)
 	}
-	if got := sinceArg("1h", ts); got != "2026-09-28T00:02:03Z" {
-		t.Fatalf("1h: %q", got)
+	if got, err := parseSince("1h", ts); err != nil || apiSince(got) != "2026-09-28T00:02:03Z" {
+		t.Fatalf("1h: %q %v", apiSince(got), err)
 	}
-	if got := sinceArg("2026-09-27T00:00:00Z", ts); got != "2026-09-27T00:00:00Z" {
-		t.Fatalf("time: %q", got)
+	if got, err := parseSince("2026-09-27T00:00:00Z", ts); err != nil || apiSince(got) != "2026-09-27T00:00:00Z" {
+		t.Fatalf("time: %q %v", apiSince(got), err)
 	}
 }

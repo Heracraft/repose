@@ -17,17 +17,17 @@ on a terminal; this is what stays on screen, DECISIONS I-154):
 $ repose run
 ✓ Created todo-app (large)  0.3s
 nix › building '/nix/store/…-repose-guest.drv'...
-✓ Built the environment  41s
+✓ Built the configuration  41s
 ✓ Booted todo-app  6.2s
 Connected to todo-app (large)
 Synced: 3 modified, 1 untracked (12 new commits)
-Credentials: gh, git
+Logins copied: gh, git
 Ready in 49s.
 dev@todo-app:~/todo-app$
 ```
 
 Without a terminal on stderr (CI, a pipe) the phases are plain lines,
-`Creating todo-app...`, `Building the environment...`, `Booting
+`Creating todo-app...`, `Building the configuration...`, `Booting
 todo-app...`, `Connecting to todo-app...`, `Syncing...`. One `repose run`
 makes one SSH connection and asks for nothing: the CLI's own key has no
 passphrase (I-149).
@@ -97,9 +97,15 @@ repose/claude-2`, documented in /docs/run-and-attach).
 
 Running against a stopped project starts it first (the `Starting
 todo-app` phase on stderr) before the usual `Connected to todo-app
-(large)` line — there is no separate "stopped" message for `run` (only
-`attach` and `open` refuse a guest that is not running, exit 5, since
-starting one is not their job). A project in `error` is restarted by the
+(large)` line — there is no separate "stopped" message for `run`.
+`attach` starts a stopped machine the same way, without a sync, and waits
+for one already starting (I-631, review G7); a machine in `error`,
+`restoring` or `destroying`, or stopped for abuse, still exits 5 for
+attach. `open`, `ps`, `exec`, `ssh`, `code` and `cp` refuse a machine that
+is not running, exit 5: a read or a command does not start a machine and
+take the plan's memory unasked. With one operand that names no project,
+`attach` and `ps` resolve this folder's project and take the operand as
+WINDOW (I-631), as `exec` reads its first word. A project in `error` is restarted by the
 api on the same start (`Restarting todo-app (its agent stopped
 answering)`, I-157).
 
@@ -166,6 +172,8 @@ I-199), shown in the session's status bar.
 Agent picker:
 
 - `--agent` accepts exactly `claude`, `opencode`, `codex`, `gemini`, `pi`.
+  Without `-p` it sets the project's `agent_default` (PATCH, or the
+  create's field), as `--multiplexer` sets its multiplexer (I-635).
   Anything else exits 2 listing the five. The default is the project's
   `agent_default`, set at creation from `default_agent` in the laptop's
   `~/.config/repose/config.toml` (`claude` unless set; I-241). An existing
@@ -222,7 +230,10 @@ Failure output:
   there's room.` (projects.md, "Limits"; DECISIONS I-269).
 - Build failed: exit 10, the Nix error verbatim, the fragment line if known,
   and `edit with \`repose config edit\``.
-- SSH does not answer within 60s of the API reporting `running`: exit 1,
+- SSH does not answer within 60s of the API reporting `running` (15 s
+  when the command found the machine already running: ps, exec, cp, ssh,
+  status, a run or attach that started nothing; a `Connecting to SLUG`
+  phase shows after the first failed attempt, I-634): exit 1,
   `Guest is running but SSH did not answer in 60s. \`repose logs --kind
   console\` may show why.`, followed by ssh's last error line. A gateway
   refusal (`Permission denied`, a revoked certificate) during that window
@@ -342,7 +353,7 @@ is not a terminal: the CLI execs ssh as before. Nothing is logged.
 ```
 $ repose run --help
 ...
-      --multiplexer string   tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else tmux)
+      --multiplexer NAME     the multiplexer NAME, tmux or herdr, that runs this machine's terminals from its next start (default: config.toml's default_multiplexer, else tmux)
 ```
 
 ```toml
@@ -421,7 +432,8 @@ that same command switched a running machine (I-542).
 | `repose run -p "prompt"` | a tab in the checkout's workspace, the agent, the prompt, then the attach rule |
 | `repose run --worktree -p "prompt"` | the git worktree as on tmux, `herdr worktree open --path DIR` so herdr groups it under the repository, then the agent in it |
 | `repose attach P:CHECKOUT` (I-480) | focuses that checkout's workspace, creating it in `/home/dev/<name>` when missing, then the attach rule |
-| `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`; `--json` gives `{workspace, agent, name, state, focused}`; `-q` the names. No cwd, no title |
+| `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`, STATE in `ls`'s words (blocked is `needs_input`, done is `idle`); `--json` gives the tmux shape with `command` and `idle_seconds` null, `tree` the workspace, and `workspace` for one release (I-606); `-q` the names. No cwd, no title. `ps NAME -n N` is `herdr agent read NAME --lines N` |
+| `repose attach -w NAME` | `herdr agent focus NAME` first; an agent herdr does not have exits 2 (I-606) |
 | `repose paste` | `herdr pane send-text <pane> <path>` into the focused pane (from `herdr pane list`), or into agent NAME's pane with `--window NAME`; no Enter |
 | `repose status` | `herdr` after the size in the header; the sessions line drops `tmux clients` |
 | `repose ls` AGENTS, dashboard | herdr's agents and states, gone when the pane closes |
@@ -537,11 +549,43 @@ it (I-542). The api cannot tell an old CLI apart.
 ## ps, exec and ssh (I-274, I-275)
 
 - `repose ps [PROJECT]` is one ssh over the project's connection:
-  `date +%s` and `tmux list-windows` with index, name,
-  `pane_current_command` (the process name, never its arguments),
-  `window_activity` and `window_active`. Idle time is the guest's clock
-  minus the activity time, so a skewed laptop clock does not matter.
-  `-q` prints names, `--json` the records. Nothing is logged.
+  `date +%s`, the home folder and the checkout, and `tmux list-windows`
+  with index, name, `pane_current_command` (the process name, never its
+  arguments), `window_activity`, `window_active`, `@repose-state` and
+  `pane_current_path`. Idle time is the guest's clock minus the activity
+  time, so a skewed laptop clock does not matter. STATE is
+  `@repose-state`, else the api's sample for the window when under two
+  minutes old (I-606); a window named after an agent with a shell in
+  front has none, since its agent exited (I-631). TREE is the pane's folder as `checkout`,
+  `worktree-N` or `~/PATH`, worked out on the laptop. `-q` prints names,
+  `--json` the records, one shape on tmux and herdr (I-606). With a
+  WINDOW (or `-w`), or `-n N`, it prints the window's last lines from
+  `tmux capture-pane -p -J -S -N` (herdr: `herdr agent read --lines N`),
+  trailing blank rows dropped. Nothing is logged.
+- `repose run [PROJECT] -w WINDOW -p TEXT` (I-639) runs as `run` does up
+  to the agent step, then types TEXT and Enter into the window (`tmux
+  send-keys -l`, then `Enter`; herdr: `herdr pane send-text` and
+  `send-keys enter` on the agent's pane, since `herdr agent prompt`
+  refuses a blocked agent) instead of starting an agent, and attaches to
+  it unless `-d`. A window the session does not have exits 2 with
+  the line `attach -w` prints for it.
+  `-w` needs `-p` and refuses `--worktree` and `--agent` (exit 2).
+- `repose stop [PROJECT] -w WINDOW` (I-639) closes one window (`tmux
+  kill-window`; herdr: `herdr pane close`) and leaves the machine
+  running. It asks first, or needs `--yes` off a terminal, when the
+  sample shows that window's agent working or waiting. On tmux, the same
+  ssh first reads the window's folder: when it is a linked worktree named
+  `<checkout>-worktree-N`, its branch, tip, `git status --porcelain`
+  count and the other windows working in it. After the close, with no
+  file listed and no other window there, the CLI runs stop's fetch in the
+  project's laptop folders, and when a ref in one of them contains the
+  tip it runs `git worktree remove` from the checkout. The branch is
+  kept. The line says what happened: `Closed claude-2 on todo-app and
+  removed its worktree ~/todo-app-worktree-2.`, or `...; its worktree
+  ~/todo-app-worktree-2 stays: REASON.` with REASON `claude-3 is working
+  in it`, `2 files not committed` or `worktree-2 is not fetched to this
+  laptop`. `-w` takes one PROJECT and refuses `--unused` and
+  `--no-snapshot` (exit 2).
 - `repose exec [PROJECT] [--] CMD...` runs, over ssh, `cd` into the
   checkout (the home directory when the machine has none, I-368), `/etc/profile.d/repose.sh`, then
   `/etc/repose/devshell.sh` (the agent wrappers' loader, I-259) or, on an
@@ -552,8 +596,10 @@ it (I-542). The api cannot tell an old CLI apart.
   (I-411): flags stop at the first word, so the command's own flags pass
   through; with no `--` and no `--project`, a first word that is one of
   the account's slugs is PROJECT, and that word alone is refused (exit 2).
-  A `--` after one word and `-i`/`-t` only is the old PROJECT separator;
-  any other `--` is the command's.
+  A `--` after one word and `-i`/`-t`/`--workdir DIR` only is the old
+  PROJECT separator; any other `--` is the command's. `--workdir DIR`
+  (I-608) runs it in `checkout`, `worktree-N`, `~/PATH`, `/PATH` or a
+  path inside the checkout; a missing folder exits 2 before the command.
 - `repose ssh [PROJECT]` replaces the CLI with `ssh -t <slug>.repose` running
   a login shell in the checkout, outside tmux.
 - All three need a running project (exit 5 otherwise) and ensure the

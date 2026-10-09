@@ -24,9 +24,10 @@ import (
 
 func main() {
 	billing := flag.Bool("billing", false, "start with billing on and the account active on Solo, instead of billing off (503 billing_disabled, an exempt account)")
+	cliLatest := flag.String("cli-latest", "", "send this as the newest CLI release (X-Repose-CLI-Latest) on every answer")
 	flag.Parse()
 
-	f := api.New(api.Options{Billing: *billing})
+	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest})
 	defer f.Close()
 
 	admin, err := newAdminServer(f)

@@ -328,7 +328,7 @@ func TestSyncOverAMultiplexedConnection(t *testing.T) {
 	})
 
 	start := time.Now()
-	if err := waitForSSH(context.Background(), target, nil); err != nil {
+	if err := waitForSSH(context.Background(), target, sshWaitTimeout, nil, nil); err != nil {
 		t.Fatalf("waitForSSH: %v", err)
 	}
 	if time.Since(start) > sshWaitDelay {

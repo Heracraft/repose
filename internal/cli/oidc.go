@@ -60,21 +60,25 @@ func discover(ctx context.Context, httpClient *http.Client, configDirPath, issue
 	if err != nil {
 		return nil, err
 	}
+	// Every failure here is the login server out of reach or not answering
+	// as one (offline, its outage, a captive portal), never a login the
+	// user has to make again (DECISIONS I-623).
+	unreachable := func(err error) error { return &loginUnreachableError{host: req.URL.Host, cause: err} }
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("discovering %s: %w", issuer, err)
+		return nil, unreachable(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, unreachable(err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("discovering %s: %s: %s", issuer, resp.Status, string(b))
+		return nil, unreachable(&statusError{status: resp.StatusCode})
 	}
 	var doc discoveryDoc
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, err
+		return nil, unreachable(err)
 	}
 	cache := cachedDiscovery{Issuer: issuer, Doc: doc, FetchedAt: time.Now()}
 	if cb, err := json.Marshal(cache); err == nil {
@@ -120,12 +124,16 @@ func postForm(ctx context.Context, httpClient *http.Client, endpoint string, for
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &loginUnreachableError{host: req.URL.Host, cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var tr tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
-		return nil, err
+		// An OAuth refusal is JSON; anything else is a proxy or an outage.
+		if resp.StatusCode >= 400 {
+			err = &statusError{status: resp.StatusCode}
+		}
+		return nil, &loginUnreachableError{host: req.URL.Host, cause: err}
 	}
 	if tr.Error != "" {
 		return nil, fmt.Errorf("%s: %s", tr.Error, tr.ErrorDesc)
@@ -229,8 +237,8 @@ type deviceAuthResponse struct {
 }
 
 // loginDeviceCode runs RFC 8628 device authorization (07-cli.md §5.2 step
-// 3). print is called once with the user-facing instructions.
-func loginDeviceCode(ctx context.Context, httpClient *http.Client, doc *discoveryDoc, clientID string, print func(string)) (*tokenResponse, error) {
+// 3). show is called once with the device code, to print and open it.
+func loginDeviceCode(ctx context.Context, httpClient *http.Client, doc *discoveryDoc, clientID string, show func(deviceAuthResponse)) (*tokenResponse, error) {
 	// resource on the device request and on every token request: without
 	// it Logto issues an opaque token for its own userinfo endpoint, and the
 	// api answers "invalid token" to a login that looked successful (M2
@@ -243,14 +251,17 @@ func loginDeviceCode(ctx context.Context, httpClient *http.Client, doc *discover
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &loginUnreachableError{host: req.URL.Host, cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var da deviceAuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&da); err != nil {
-		return nil, err
+	if err := json.NewDecoder(resp.Body).Decode(&da); err != nil || da.DeviceCode == "" {
+		if err == nil || resp.StatusCode >= 400 {
+			err = &statusError{status: resp.StatusCode}
+		}
+		return nil, &loginUnreachableError{host: req.URL.Host, cause: err}
 	}
-	print(deviceInstructions(da))
+	show(da)
 
 	interval := time.Duration(da.Interval) * time.Second
 	if interval <= 0 {

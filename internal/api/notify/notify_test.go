@@ -289,9 +289,10 @@ func TestSubjectUsesPlatformWording(t *testing.T) {
 	if got != "todo-app: snapshot failed" {
 		t.Fatalf("subject %q", got)
 	}
-	// The idle-cost warning (DECISIONS I-262).
+	// The unused-machine warning (DECISIONS I-262, I-617): a plan
+	// bills no hours, so the title names what the machine holds.
 	got = notify.Subject(notify.Message{Kind: "idle_running", Project: "todo-app"})
-	if got != "todo-app: idle, still billing" {
+	if got != "todo-app: unused for 24h, holding plan memory" {
 		t.Fatalf("subject %q", got)
 	}
 }

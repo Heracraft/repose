@@ -10,17 +10,21 @@ order: 14
 ```
 $ repose secrets set STRIPE_SECRET_KEY
 Value for STRIPE_SECRET_KEY: ********************************
-Set STRIPE_SECRET_KEY (pushed to running guest)
+Set STRIPE_SECRET_KEY on todo-app; the running machine has it now.
 ```
 
 Each character you type or paste shows as `*`.
 
-Or read the value from a file or from your laptop's environment:
+Or pipe the value in, or read it from a file or from your laptop's environment:
 
 ```
+op read op://dev/stripe/secret-key \
+  | repose secrets set STRIPE_SECRET_KEY
 repose secrets set GOOGLE_CREDENTIALS --from-file ./sa.json
 repose secrets set OPENAI_API_KEY --from-env
 ```
+
+A piped value loses one trailing newline. `repose secrets set NAME=VALUE` is refused, since the value would stay in your shell history.
 
 To set several at once from a `.env` file, import it:
 
@@ -92,7 +96,7 @@ space toggles, enter saves, q leaves
   [x] codex     Codex CLI login
   [ ] opencode  opencode login (not logged in on this laptop)
   [x] env       gitignored .env files (2 in this checkout)
-  [x] mcp       Claude Code MCP servers (tokens stay on the laptop)
+  [x] mcp       Claude Code MCP servers, without their tokens
 ```
 
 Or name them, which also works in scripts:

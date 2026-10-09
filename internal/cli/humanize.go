@@ -21,13 +21,13 @@ func reasonFor(code, message string) string {
 	// restarts it"); older builds sent the host's wording, which carries a
 	// guest id and is replaced by the mapping below.
 	if m := strings.TrimSuffix(strings.TrimSpace(firstLine(message)), "."); m != "" && !containsUUID(m) {
-		return m
+		return machineWords(m)
 	}
 	switch code {
 	case "guest_unresponsive":
-		return "the environment's agent (guestd) stopped responding"
+		return "repose's service on the machine stopped answering"
 	case "boot_failed":
-		return "the environment did not boot"
+		return "the machine did not boot"
 	case "insufficient_capacity", "capacity":
 		return "the host had no room for it right now"
 	case "build_failed":
@@ -37,9 +37,9 @@ func reasonFor(code, message string) string {
 	case "build_timeout":
 		return "building its configuration took too long"
 	case "closure_too_large":
-		return "its configuration is larger than the environment allows"
+		return "its configuration is larger than the machine allows"
 	case "not_found":
-		return "the host no longer has its guest"
+		return "the host no longer has the machine"
 	case "store_path_hidden":
 		return "a nix garbage collection inside the machine hid parts of its new system"
 	case "host_unreachable", "unreachable":
@@ -56,6 +56,20 @@ func reasonFor(code, message string) string {
 	}
 }
 
+// machineWords puts the api's older words for the machine into the
+// CLI's: the api's op messages say "the environment" and "the
+// environment's agent (guestd)", and the CLI says "machine" everywhere
+// (review C4, DECISIONS I-630).
+var machineWordsReplacer = strings.NewReplacer(
+	"the environment's agent (guestd)", "repose's service on the machine",
+	"The environment's agent (guestd)", "Repose's service on the machine",
+	"the environment's", "the machine's",
+	"the environment", "the machine",
+	"The environment", "The machine",
+)
+
+func machineWords(s string) string { return machineWordsReplacer.Replace(s) }
+
 // humaneMessage strips what is noise to a user from a raw message: guest
 // and op UUIDs, trailing detail after the first line.
 func humaneMessage(msg string) string {
@@ -70,7 +84,7 @@ func humaneMessage(msg string) string {
 	}
 	s := strings.Join(out, " ")
 	s = strings.TrimSuffix(strings.TrimSpace(strings.TrimSuffix(s, "for guest")), ":")
-	return s
+	return machineWords(s)
 }
 
 func containsUUID(s string) bool {
@@ -159,7 +173,7 @@ func notRunningMessage(p *Project) string {
 		if r := abuseStopReason(p); r != "" {
 			return fmt.Sprintf("%s is %s", s, strings.TrimSuffix(r, ".")+".")
 		}
-		return fmt.Sprintf("%s is stopped. Start it with `repose start %s`, or `repose run` in its checkout to start, sync and attach.", s, s)
+		return fmt.Sprintf("%s is stopped. `repose start %s` starts it.", s, s)
 	case "creating", "building", "starting":
 		return fmt.Sprintf("%s is still %s. `repose run` in its checkout waits for it and attaches; `repose status %s` shows progress.", s, p.State, s)
 	case "stopping":
@@ -201,10 +215,23 @@ func opFailed(verb, slug string, e OpError, next string) error {
 		code = " (" + e.Code + ")"
 	}
 	msg := fmt.Sprintf("Could not %s %s: %s%s.", verb, slug, reason, code)
-	if next != "" && !strings.Contains(reason, "`repose ") {
+	if next != "" && !strings.Contains(reason, "`repose ") && !strings.Contains(strings.ToLower(reason), "try again") {
 		msg += " " + next
 	}
-	return exitf(ExitGeneric, "%s", msg)
+	return exitf(opExitCode(e.Code), "%s", msg)
+}
+
+// opExitCode is a failed op's exit code: the one the same refusal from
+// the api has, so a script that retries on 8 retries a host that ran out
+// of room during the boot too (DECISIONS I-623).
+func opExitCode(code string) int {
+	switch code {
+	case "insufficient_capacity", "capacity":
+		return ExitCapacity
+	case "payment_required":
+		return ExitPaymentRequired
+	}
+	return ExitGeneric
 }
 
 // nextAfterFailedStart is the advice after a start (or the start inside
@@ -212,10 +239,10 @@ func opFailed(verb, slug string, e OpError, next string) error {
 func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
-		return "Try again in a few minutes; we have been alerted."
+		return "Try again in a few minutes."
 	case "guest_unresponsive", "boot_failed":
 		// hostd kept the console of this boot (DECISIONS I-592).
-		return fmt.Sprintf("`repose logs %s --kind console` shows what the guest printed; `repose start %s` tries again.", slug, slug)
+		return fmt.Sprintf("`repose logs %s --kind console` shows what the machine printed; `repose start %s` tries again.", slug, slug)
 	default:
 		return fmt.Sprintf("`repose start %s` tries again.", slug)
 	}

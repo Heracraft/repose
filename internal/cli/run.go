@@ -15,8 +15,11 @@ import (
 
 // RunOptions is `repose run`'s flags (07-cli.md §5.1).
 type RunOptions struct {
-	Prompt        string
-	Agent         string
+	Prompt string
+	Agent  string
+	// SetAgent is --agent without -p: Agent becomes the project's agent,
+	// which `run -p` starts from then on (I-635).
+	SetAgent      bool
 	Size          string
 	Name          string
 	StashRemote   bool
@@ -43,6 +46,11 @@ type RunOptions struct {
 	// Multiplexer is --multiplexer: tmux or herdr for a new project, or a
 	// switch from the next start for an existing one (DECISIONS I-502).
 	Multiplexer string
+	// Window is `attach --window`: the window (or herdr agent) the
+	// attach opens on, which must exist (DECISIONS I-606). With a
+	// prompt it is `run -w`: the prompt is typed there instead of into
+	// a new agent, and the attach opens on it (I-639).
+	Window string
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -67,7 +75,15 @@ func pollDelay(started time.Time) time.Duration {
 	}
 }
 
-const sshWaitTimeout = 60 * time.Second
+// sshWaitTimeout is how long a command that has just started or created
+// the machine waits for its first ssh answer; sshWaitShort is the wait of
+// one that found it running (ps, exec, cp, ssh, status), where a minute
+// of silence reads as a hang (DECISIONS I-634).
+var (
+	sshWaitTimeout = 60 * time.Second
+	sshWaitShort   = 15 * time.Second
+)
+
 const sshRetryInterval = time.Second
 
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
@@ -79,16 +95,19 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// answer instead of after it (DECISIONS I-223).
 	var early *earlyProbe
 	if attachOnly {
-		if done, err := attachFast(ctx, e, e.resolveArg(opts.ProjectArg), opts.Bridge); done {
+		if done, err := attachFast(ctx, e, e.resolveArg(opts.ProjectArg), opts.Bridge, opts.Window); done {
 			return err
 		}
 	} else {
 		if !opts.Sync && (opts.StashRemote || opts.DiscardRemote) {
-			flag := "--stash-remote"
+			flag := "--stash-machine"
 			if opts.DiscardRemote {
-				flag = "--discard-remote"
+				flag = "--discard-machine"
 			}
 			return exitf(ExitUsage, "`repose run` no longer syncs a machine that already has your checkout; `repose sync %s` does.", flag)
+		}
+		if _, ok := classSpecs[opts.Size]; opts.Size != "" && !ok {
+			return exitf(ExitUsage, "--size must be small, large or xl, got %q.", opts.Size)
 		}
 		if opts.Sync && e.inHome() {
 			return errHomeSync()
@@ -139,7 +158,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// reads run beside the api's.
 	precheck := make(chan error, 1)
 	if !attachOnly && !opts.NoSync && !e.inHome() {
-		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd)) }()
+		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd), !opts.Sync) }()
 	} else {
 		precheck <- nil
 	}
@@ -169,6 +188,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return err
 		}
 	}
+	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+		if err := sizeExisting(ctx, e, res.Project, opts.Size); err != nil {
+			return err
+		}
+	}
 	// runningMux is what a machine that was already running runs while
 	// this command switches its setting: the old value until its next
 	// start (I-502), which the sidebar of a sync goes by.
@@ -184,12 +208,24 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			runningMux = before
 		}
 	}
+	if !attachOnly && res.Project != nil && opts.SetAgent && res.Project.AgentDefault != opts.Agent {
+		// --agent without -p on a project that exists: it sticks.
+		got, err := e.Client.PatchProject(ctx, res.Project.ID, PatchProjectRequest{AgentDefault: &opts.Agent})
+		if err != nil {
+			return err
+		}
+		res.Project.AgentDefault = opts.Agent
+		if got != nil && got.AgentDefault != "" {
+			res.Project.AgentDefault = got.AgentDefault
+		}
+	}
 	project := res.Project
 	// made is the project this command created, until the sync or carry
 	// reaches it. Ctrl-C before then: it is this command's own and nothing
 	// has used it, so the directory does not keep it (the next plain run
 	// would land on it unasked) and one line says it exists (I-575).
 	var made *Project
+	created := false // this run made the machine, so its sync copies the checkout
 	defer func() {
 		if made != nil && retErr != nil && ctx.Err() != nil {
 			retErr = interruptedCreate(e, made)
@@ -205,6 +241,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return err
 		}
 		made = project
+		created = true
 	}
 
 	endEnsure := timeSpan("phase ensure-running")
@@ -222,7 +259,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			*project = *p
 		}
 		if project.State != "running" {
-			return notRunningError(project)
+			// A stopped machine starts, as with run, and is not synced; a
+			// start in progress is waited for (I-631, review G7). The
+			// other states, and a machine stopped for abuse, cannot.
+			switch project.State {
+			case "stopped", "creating", "building", "starting", "stopping":
+				if abuseStopReason(project) != "" {
+					return notRunningError(project)
+				}
+				if err := ensureRunningFrom(ctx, e, project, pr, true); err != nil {
+					return err
+				}
+			default:
+				return notRunningError(project)
+			}
 		}
 	} else if err := ensureRunningFrom(ctx, e, project, pr, fresh); err != nil {
 		return err
@@ -233,6 +283,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	early.settle(ctx, e, project, wasRunning)
 
 	endEnsure()
+	e.acted = project
 	if !attachOnly {
 		personal.finish(ctx, e, opts.NoPersonal, project)
 		if opts.NoPersonal && !project.PersonalOptOut {
@@ -264,7 +315,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs()}
 	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
 		helper.MCPOff = true // I-556: attach honours the off switch too
 	}
@@ -295,7 +346,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		return muxOnce, nil
 	}
-	attach := func(window string) error {
+	attach := func(window string, named bool) error {
 		mux, err := muxNow()
 		if err != nil {
 			return err
@@ -307,7 +358,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// session has ended goes at once (I-352).
 		afterAttach := func() { tempSessionEndedWith(ctx, e, target, project, mux) }
 		defer e.keepTokenFresh()()
-		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
+		return mux.Attach(e, attachReq{Ctx: ctx, Target: target, Project: project, Window: window, Named: named, TZ: tz, RepoDir: helper.RepoDir, After: afterAttach, Renew: renewFor(e, project), Release: release, Helper: helper})
 	}
 	if attachOnly {
 		// The carry runs beside the attach, never before it (I-195).
@@ -317,7 +368,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
-		return attach("")
+		return attach(opts.Window, opts.Window != "")
 	}
 
 	// The machine's checkout, as its sync or carry found it (I-368).
@@ -333,7 +384,13 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if repoRoot == "" {
 			repoRoot = e.Cwd
 		}
-		pr.Phase("Syncing", "")
+		// After the first sync `run` only copies logins and the carry
+		// (I-367), and a phase called Syncing then was false (I-633).
+		if opts.Sync || created {
+			pr.Phase("Syncing", "")
+		} else {
+			pr.Phase("Copying logins", "")
+		}
 		endSync := timeSpan("phase sync")
 		skip, chosen := e.loginSkip(project.Slug)
 		// Tool logins, the git identity and the carry run first in the
@@ -382,6 +439,8 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if target.Checkout != "" {
 			remoteURL = res.Remote
 		}
+		// Carry lines print only when they change (DECISIONS I-618).
+		noted := newCarryNoter(e.Dir, project.ID)
 		summary, err := syncGuest(ctx, target, repoRoot, project.Slug, SyncOptions{
 			StashRemote: opts.StashRemote, DiscardRemote: opts.DiscardRemote, FirstOnly: !opts.Sync,
 			Exclude: e.Cfg.SyncExclude, NoRemote: remoteURL == "", RemoteURL: remoteURL,
@@ -395,26 +454,26 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 					mcpAppr = b.mc.Approvals
 				}
 				if b.gcErr != nil {
-					e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(b.gcErr.Error()))
+					e.warn("Could not read your git config (%s); the machine keeps its own.", oneLine(b.gcErr.Error()))
 				}
 				if gc != nil {
 					for _, n := range gc.Notes {
-						e.warn("%s", n)
+						noted.warn(e, n)
 					}
 				}
 				if cc != nil {
 					for _, n := range cc.Notes {
-						e.warn("%s", n)
+						noted.warn(e, n)
 					}
 				}
 				for _, n := range b.mcNotes {
-					e.warn("%s", n)
+					noted.warn(e, n)
 				}
 				return buildCredentialsAndCarry(e.HomeDir, repoRoot, credSyncOptions{
 					RemoteURL: remoteURL,
 					Skip:      skip,
 					Kept: func(label string) {
-						e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
+						noted.warn(e, keptLoginLine(label))
 					},
 				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
 			},
@@ -428,8 +487,19 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if !summary.Skipped && target.Checkout == "" {
 			e.linkExplicitSync(project, opts)
 		}
-		if l := syncResultLine(summary, opts.NoAttach); l != "" {
+		// A project named on the command line is named in the line's
+		// command too: a bare `repose sync` here may mean another (I-631).
+		named := ""
+		if opts.Name != "" || opts.ProjectArg != "" {
+			named = project.Slug
+		}
+		if l := syncResultLine(summary, opts.NoAttach, named); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
+			if summary.Skipped && !opts.NoAttach {
+				// The attach covers the terminal: the multiplexer shows
+				// the line too (DECISIONS I-618).
+				helper.Messages = append(helper.Messages, l)
+			}
 		}
 		if summary.Created {
 			_, _ = fmt.Fprintf(e.Out, "Checkout: %s on the machine\n", tildePath(summary.Checkout))
@@ -437,30 +507,38 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		for _, w := range summary.Warnings() {
 			_, _ = fmt.Fprintln(e.ErrOut, w)
 		}
-		if len(summary.Copied) > 0 {
-			_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(summary.Copied, ", "))
-			if l := loginsLine(summary.Copied, skip, chosen); l != "" {
-				_, _ = fmt.Fprintln(e.Out, l)
-			}
-		}
-		if summary.Carried != nil {
-			for _, l := range summary.Carried.Lines() {
-				_, _ = fmt.Fprintln(e.ErrOut, l)
-			}
-		}
+		noted.print(e, summary.Copied, skip, chosen, summary.Carried)
 	} else {
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
 	}
 	// The machine has its checkout now: point this checkout's `repose`
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
+	if !skipSync && !opts.NoSync && !homeRun && target.Checkout == "" && checkout != nil {
+		e.addSecondMachineRemote(project, *checkout)
+	}
 	// The checkout's repose.nix is the machine's configuration (I-489).
 	if !skipSync && !opts.NoSync && !homeRun {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
 	}
 
 	window := ""
-	if opts.Prompt != "" {
+	if opts.Window != "" && opts.Prompt != "" {
+		// Typed into an agent already there: an answer to its question,
+		// or a follow-up (I-639).
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
+		if _, err := runSSH(ctx, target, mux.TypeScript(project.Slug, opts.Window, opts.Prompt), nil); err != nil {
+			var se *sshError
+			if errors.As(err, &se) && se.ExitCode == typeExitNoWindow {
+				return noWindow(project.Slug, opts.Window, mux.Unit())
+			}
+			return stepFailed("type into "+opts.Window, err, "")
+		}
+		window = opts.Window
+	} else if opts.Prompt != "" {
 		mux, err := muxNow()
 		if err != nil {
 			return err
@@ -491,17 +569,17 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			if wt.Dirty {
 				_, _ = fmt.Fprintf(e.ErrOut, "The worktree starts at the last commit; the uncommitted changes in %s are not in it.\n", tildePath(wt.Checkout))
 			}
-			pr.Phase("Starting "+agent, "")
+			pr.Resume("Starting "+agent, "")
 		} else {
 			n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
 			if err != nil {
-				return stepFailed("list the guest's "+mux.Name()+" "+mux.Unit()+"s", err, "")
+				return stepFailed("list the machine's "+mux.Name()+" "+mux.Unit()+"s", err, "")
 			}
 			name = n
 			if othersOpen {
 				pr.Fail()
 				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent, mux.Unit())
-				pr.Phase("Starting "+agent, "")
+				pr.Resume("Starting "+agent, "")
 			}
 		}
 		window = name
@@ -518,26 +596,48 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 		}
 		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: opts.Prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
+		prompt := opts.Prompt
+		if attachInstead && opts.NoAttach {
+			// Nobody logs in now: the prompt is refused below, not
+			// left to type itself later (I-607).
+			prompt = ""
+		}
+		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
 			// on the dialog, and the prompt was not typed.
 			pr.Fail()
 			if opts.NoAttach {
-				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug)
+				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s -w %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug, name)
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
 		} else if err != nil {
-			return stepFailed("start "+agent+" in the guest", err, "")
+			return stepFailed("start "+agent+" on the machine", err, "")
 		}
 		pr.End()
 		if attachInstead {
-			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on this guest yet. Finish the login in the %s that opens, then re-run with your prompt.\n", mux.Unit())
+			if opts.NoAttach {
+				// herdr's login tab has no agent name (`herdr pane run`),
+				// but it is the focused one.
+				at := "repose attach " + project.Slug
+				if mux.Name() != multiplexer.Herdr {
+					at += " -w " + name
+				}
+				return exitf(ExitGeneric, "Claude Code is not logged in on %s, so your prompt was not typed. Log in with `%s`, then run your prompt again.", project.Slug, at)
+			}
+			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on %s. Log in in the %s that opens; your prompt is typed after the login.\n", project.Slug, mux.Unit())
+		} else if opts.NoAttach {
+			// Where the prompt went: the name `attach -w` and `ps`
+			// take (I-607).
+			_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(mux.Unit()), name)
 		}
 	}
 
-	_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
+	if !opts.Sync {
+		// `repose sync` ends on its sync line (DECISIONS I-628).
+		_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
+	}
 	if l := tempLine(project, time.Now()); l != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, l)
 	}
@@ -559,7 +659,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		waitHerdrAdds(30 * time.Second)
 		return nil
 	}
-	return attach(window)
+	return attach(window, false)
 }
 
 // linkExplicitSync remembers this directory for project after `repose
@@ -660,10 +760,10 @@ func justCreated(p *Project) bool {
 // the laptop (the apply skipped, I-224, I-248) a run that attaches says
 // nothing (I-303); `repose sync` and --no-attach have nothing else to
 // say, so they say that.
-func syncResultLine(s *SyncSummary, noAttach bool) string {
+func syncResultLine(s *SyncSummary, noAttach bool, named string) string {
 	switch {
 	case s.Skipped && s.LaptopAhead:
-		return laptopAheadLine(s)
+		return laptopAheadLine(s, named)
 	case s.Skipped:
 		return ""
 	case !s.Unchanged:
@@ -676,7 +776,7 @@ func syncResultLine(s *SyncSummary, noAttach bool) string {
 
 // laptopAheadLine is what a run that left the machine's checkout alone
 // says when the laptop has work the machine never took (I-367).
-func laptopAheadLine(s *SyncSummary) string {
+func laptopAheadLine(s *SyncSummary, named string) string {
 	var parts []string
 	if s.Modified > 0 {
 		parts = append(parts, fmt.Sprintf("%d modified", s.Modified))
@@ -690,7 +790,11 @@ func laptopAheadLine(s *SyncSummary) string {
 	case s.Commits > 1:
 		parts = append(parts, fmt.Sprintf("%d commits", s.Commits))
 	}
-	return fmt.Sprintf("Not synced: your laptop has work the machine doesn't (%s). `repose sync` sends it.", strings.Join(parts, ", "))
+	cmd := "repose sync"
+	if named != "" {
+		cmd += " " + named
+	}
+	return fmt.Sprintf("Not synced: your laptop has work the machine doesn't (%s). `%s` sends it.", strings.Join(parts, ", "), cmd)
 }
 
 // saveProjectTZ moves the project's stored zone to the laptop's when they
@@ -764,7 +868,9 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		}
 	}
 	defer timeSpan("connect first ssh")()
-	err = waitForSSH(ctx, target, certRefusalHandler(func() error {
+	slow, done := e.connectingPhase(project.Slug)
+	defer done()
+	err = waitForSSH(ctx, target, e.sshWait(), slow, certRefusalHandler(func() error {
 		params.Force = true
 		_, err := ensureCert(ctx, e.Client, params, nil)
 		return err
@@ -773,6 +879,39 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		return sshTarget{}, err
 	}
 	return target, nil
+}
+
+// sshWait is how long this command waits for the machine's first ssh
+// answer: a minute after it started or created the machine, else
+// sshWaitShort (I-634).
+func (e *Env) sshWait() time.Duration {
+	if e.longSSHWait {
+		return sshWaitTimeout
+	}
+	return sshWaitShort
+}
+
+// connectingPhase is the "Connecting to SLUG" phase a slow first ssh
+// shows (I-634): a spinner on a terminal, a line and the heartbeat off
+// one. A command already in a phase (run's own) keeps it. done ends the
+// phase, if slow started one.
+func (e *Env) connectingPhase(slug string) (slow func(), done func()) {
+	var started *progress
+	slow = func() {
+		if e.JSON {
+			return
+		}
+		pr := e.active
+		if pr == nil {
+			pr = e.newProgress()
+		}
+		if pr.busy() {
+			return
+		}
+		pr.Phase("Connecting to "+slug, "")
+		started = pr
+	}
+	return slow, func() { started.End() }
 }
 
 // The gateway's refusals that are about the certificate itself
@@ -940,9 +1079,9 @@ func attachColour(colorterm string) string {
 // "<checkout>/...") used last, else a new shell window "<checkout>"
 // there. A checkout the machine does not have is refused, exit 2.
 func attachCommand(slug, extra, window string) string {
-	co := checkoutVar(slug, extra)
+	co := checkoutVar(slug, extra) + attachTTYGuard
 	if window == "" && extra != "" {
-		missing := fmt.Sprintf("%s has no checkout %s. `repose run --on %s` in its folder adds it.", slug, extra, slug)
+		missing := noCheckoutMsg(slug, extra)
 		return co + fmt.Sprintf(`[ -d "$repose_co" ] || { printf '%%s\n' %[3]s >&2; exit 2; }
 repose_w=$(tmux list-windows -t %[1]s -F '#{window_activity} #{window_name}' 2>/dev/null | while read -r a n; do case $n in %[2]s|%[2]s/*) printf '%%s %%s\n' "$a" "$n" ;; esac; done | sort -n | tail -n 1 | cut -d' ' -f2-)
 if [ -z "$repose_w" ]; then repose_w=%[2]s; tmux new-window -d -t %[1]s -n "$repose_w" -c "$repose_co"; fi
@@ -951,26 +1090,56 @@ exec tmux attach -t %[1]s:"$repose_w" -c "$repose_co"`, shQuote(slug), shQuote(w
 	if window == "" {
 		return co + fmt.Sprintf(`exec tmux attach -t %s -c "$repose_co"`, shQuote(slug))
 	}
-	target := shQuote(slug + ":" + window)
+	target := shQuote(tmuxWindowTarget(slug, window))
 	msg := fmt.Sprintf("The %s window closed before the attach: the agent in it exited. Attached to the session instead; start the agent again there.", window)
 	return co + fmt.Sprintf("if tmux has-session -t %[1]s 2>/dev/null; then exec tmux attach -t %[1]s -c \"$repose_co\"; fi; printf '%%s\\n' %[3]s >&2; exec tmux attach -t %[2]s -c \"$repose_co\" \\; display-message -d 10000 %[3]s",
 		target, shQuote(slug), shQuote(msg))
 }
 
+// attachNamedCommand is the guest-side command of `attach --window`
+// (I-606): the window the user named, by exact name or number, or exit
+// 2 with noWindow's line when the session has no such window.
+func attachNamedCommand(slug, extra, window string) string {
+	target := shQuote(tmuxWindowTarget(slug, window))
+	missing := fmt.Sprintf("%s has no window %s. `repose ps %s` lists them.", slug, window, slug)
+	return checkoutVar(slug, extra) + fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || { printf '%%s\n' %[2]s >&2; exit 2; }
+`+attachTTYGuard+`exec tmux attach -t %[1]s -c "$repose_co"`, target, shQuote(missing))
+}
+
+// attachTTYGuard ends an attach that has no terminal before tmux sees
+// it: `tmux attach -t session:window` makes the window the session's
+// current one before it finds there is no terminal, so `attach -w
+// claude-2 </dev/null` failed and still moved the next plain attach
+// onto claude-2 (I-633).
+const attachTTYGuard = `[ -t 0 ] || { echo 'Attaching needs a terminal, and this command has none.' >&2; exit 1; }
+`
+
 // waitForSSH is step 4: `ssh <target> true` until it answers, for up to
 // sshWaitTimeout. onRefused is offered each ssh failure and returns true
 // when it changed something worth an immediate retry (a re-issued
-// certificate).
-func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (bool, error)) error {
-	deadline := time.Now().Add(sshWaitTimeout)
-	for {
+// certificate). A failure on the laptop's side, which waiting does not
+// clear, ends the wait at once (DECISIONS I-625).
+//
+// slow, when set, is called once after the first failure, so the command
+// can show that it is waiting (I-634).
+func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(), onRefused func(*sshError) (bool, error)) error {
+	deadline := time.Now().Add(wait)
+	for first := true; ; first = false {
 		err := runSSHOK(ctx, t, "true")
 		if err == nil {
 			return nil
 		}
+		if first && slow != nil {
+			slow()
+		}
 		var se *sshError
 		if errors.As(err, &se) && se.ExitCode == -1 {
 			return exitf(ExitGeneric, "Could not run ssh: %v. repose needs the OpenSSH client (`ssh`) on your PATH.", se.Err)
+		}
+		if se != nil {
+			if fix, ok := laptopSSHFault(se); ok {
+				return exitf(ExitGeneric, "%s", strings.TrimSpace(fmt.Sprintf("ssh on this laptop failed before it reached %s: %s. %s", targetName(t), sshStderrDetail(se.Stderr), fix)))
+			}
 		}
 		if se != nil && onRefused != nil {
 			retry, err := onRefused(se)
@@ -982,13 +1151,11 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 			}
 		}
 		if time.Now().After(deadline) {
-			detail := ""
+			msg := fmt.Sprintf("%s is running but did not answer ssh in %d s.", targetName(t), int(wait.Seconds()))
 			if se != nil {
-				detail = sshStderrDetail(se.Stderr)
-			}
-			msg := "Guest is running but SSH did not answer in 60s. `repose stop` and then `repose start` restart it."
-			if detail != "" {
-				msg += "\nLast error from ssh: " + detail
+				if detail := sshStderrDetail(se.Stderr); detail != "" {
+					msg += " Last error from ssh: " + detail
+				}
 			}
 			return exitf(ExitGeneric, "%s", msg)
 		}
@@ -998,6 +1165,58 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		case <-time.After(sshRetryInterval):
 		}
 	}
+}
+
+// targetName is the machine an ssh target reaches, for a message.
+func targetName(t sshTarget) string {
+	if n := len(t.Args); n > 0 && strings.HasSuffix(t.Args[n-1], ".repose") {
+		return strings.TrimSuffix(t.Args[n-1], ".repose")
+	}
+	return "The machine"
+}
+
+// laptopSSHFaults are ssh failures of the laptop's own: its config, its
+// name lookup, its known_hosts. Each is the same a minute later, and the
+// sentence names what fixes it. The first that matches ssh's stderr,
+// lowercased, wins.
+var laptopSSHFaults = []struct {
+	match []string // all of these
+	fix   string
+}{
+	{[]string{"too long for unix domain socket"}, controlPathFix},
+	{[]string{"controlpath too long"}, controlPathFix},
+	{[]string{"bad configuration option"}, "Fix the line ssh names in that file."},
+	{[]string{"garbage at end of line"}, "Fix the line ssh names in that file."},
+	{[]string{"bad owner or permissions on"}, "ssh refuses a config file that others can write; `chmod 600` the file it names."},
+	// NAME.repose is a name only repose's ssh config gives; an ssh that
+	// has not read it looks the name up in DNS.
+	{[]string{"could not resolve hostname", ".repose:"}, "Your ~/.ssh/config does not include ~/.ssh/repose/config, which defines that name; add `Include ~/.ssh/repose/config` at its top."},
+	// ssh's own line names the host that did not resolve (I-631).
+	{[]string{"could not resolve hostname"}, ""},
+	{[]string{"host key verification failed"}, "~/.ssh/repose/known_hosts does not match the gateway; delete it, and the next repose command writes it again."},
+}
+
+// controlPathFix: the socket path comes from repose's own ssh config
+// (~/.ssh/repose/cm-%C, too long under a long home folder) or the user's.
+const controlPathFix = "The ControlPath ssh uses is longer than a socket path may be; set a shorter one for Host *.repose in ~/.ssh/config, above its Include line."
+
+// laptopSSHFault reports whether ssh failed on the laptop's side, and
+// the fix.
+func laptopSSHFault(se *sshError) (string, bool) {
+	if se.ExitCode != 255 {
+		return "", false
+	}
+	s := strings.ToLower(se.Stderr)
+	for _, f := range laptopSSHFaults {
+		all := true
+		for _, m := range f.match {
+			all = all && strings.Contains(s, m)
+		}
+		if all {
+			return f.fix, true
+		}
+	}
+	return "", false
 }
 
 // keepTokenFresh keeps the access token fresh while an attach runs
@@ -1055,6 +1274,9 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	if project.State == "running" && !guestdDead(project) {
 		return nil
 	}
+	// Whatever follows boots the machine, or waits for a boot: its first
+	// ssh may take the whole minute (I-634).
+	e.longSSHWait = true
 	// A project just created (or being started by someone else) has an op
 	// in flight; starting it again is the conflict the first real run hit
 	// ("recruiting is already starting", DECISIONS I-106). Wait on that op
@@ -1109,6 +1331,29 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			sr, err = e.Client.StartProject(ctx, project.ID)
 			return err
 		})
+		if noPlanYet(err) {
+			// A stopped machine on an account whose plan ended (I-634).
+			if ok, werr := waitForPlan(ctx, e, pr); werr != nil {
+				return werr
+			} else if ok {
+				err = retryOnOpConflict(ctx, func() error {
+					var err error
+					sr, err = e.Client.StartProject(ctx, project.ID)
+					return err
+				})
+			}
+		}
+		// The plan's memory is in use: stop what is in the way, on a
+		// yes (I-637).
+		if ok, serr := stopToFit(ctx, e, err, project.Slug, project.Class, pr); serr != nil {
+			return serr
+		} else if ok {
+			err = retryOnOpConflict(ctx, func() error {
+				var err error
+				sr, err = e.Client.StartProject(ctx, project.ID)
+				return err
+			})
+		}
 	}
 	if err != nil {
 		var apiErr *APIError
@@ -1116,7 +1361,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
 		}
 		if errors.As(err, &apiErr) && apiErr.Code == "capacity" {
-			return exitf(ExitCapacity, "No capacity right now; try again in a few minutes. (We have been alerted.)")
+			return exitf(ExitCapacity, "repose has no room for this machine right now. Try again in a few minutes.")
 		}
 		return err
 	}
@@ -1469,6 +1714,9 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if isAgent(e.Cfg.DefaultAgent) {
 		req.AgentDefault = e.Cfg.DefaultAgent
 	}
+	if opts.SetAgent {
+		req.AgentDefault = opts.Agent
+	}
 	// The multiplexer (I-502): the flag, config.toml, a laptop herdr
 	// pane, else tmux, which is the api's default and is not sent.
 	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer)
@@ -1477,6 +1725,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	}
 
 	waited := map[string]bool{}
+	waitedPlan, stoppedForPlan := false, false
 	for attempt := 1; attempt <= 10; attempt++ {
 		p, err := e.Client.CreateProject(ctx, req)
 		if err != nil && ctx.Err() != nil {
@@ -1517,6 +1766,26 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			}
 			return p, nil
 		}
+		if noPlanYet(err) && !waitedPlan {
+			// No plan yet (I-634): wait for the checkout, then create.
+			waitedPlan = true
+			if ok, werr := waitForPlan(ctx, e, pr); werr != nil {
+				return nil, werr
+			} else if ok {
+				attempt--
+				continue
+			}
+		}
+		if !stoppedForPlan && len(planLimitSlugs(err)) > 0 {
+			// The plan's memory is in use (I-637).
+			stoppedForPlan = true
+			if ok, serr := stopToFit(ctx, e, err, req.Name, class, pr); serr != nil {
+				return nil, serr
+			} else if ok {
+				attempt--
+				continue
+			}
+		}
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Code == "payment_required" {
 			return nil, exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
@@ -1548,6 +1817,26 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 // runDestroyWait bounds how long `repose run` waits for the destroy of
 // the project it resolved to before it creates a fresh one (I-301).
 var runDestroyWait = 10 * time.Minute
+
+// sizeExisting is --size on a project that exists (I-611): a stopped one
+// takes the size before this command starts it, as `repose resize --size`
+// would change it, and nothing runs on it to lose. A running one is
+// refused: changing it stops every agent on it, which `repose resize`
+// asks about first.
+func sizeExisting(ctx context.Context, e *Env, p *Project, size string) error {
+	if p.State != "stopped" {
+		return exitf(ExitUsage, "%s is %s and %s; --size sizes a machine this command creates or starts. `repose resize %s --size %s` changes it, which restarts it.", p.Slug, p.Class, stateWords(p.State), p.Slug, size)
+	}
+	np, err := e.Client.PatchProject(ctx, p.ID, PatchProjectRequest{Class: &size})
+	if err != nil {
+		return err
+	}
+	p.Class = size
+	if np != nil && np.Class != "" {
+		p.Class = np.Class
+	}
+	return nil
+}
 
 // startOver is `repose run` on a project being destroyed (DECISIONS I-301):
 // wait for the destroy to end, forget the old project, and leave res and
@@ -1627,6 +1916,11 @@ func forgetProject(cache *ProjectsCache, id string) {
 	for k, c := range cache.Checkouts {
 		if c.ProjectID == id {
 			delete(cache.Checkouts, k)
+		}
+	}
+	for k, v := range cache.Folders {
+		if v == id {
+			delete(cache.Folders, k)
 		}
 	}
 }
@@ -1726,7 +2020,7 @@ func tzFromLocaltime(path string) string {
 func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Project, repoDir, tz string) *string {
 	out, err := runSSH(ctx, t, checkoutVar(project.Slug, t.Checkout)+checkoutReport+markerScript()+credsMissingScript(), nil)
 	if err != nil {
-		e.warn("Could not copy your tool logins to the guest (%s).", oneLine(err.Error()))
+		e.warn("Could not copy your tool logins to the machine (%s).", oneLine(err.Error()))
 		return nil
 	}
 	var checkout *string
@@ -1737,28 +2031,29 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 	if strings.Contains(string(out), "#credsmissing") {
 		delete(markers, credsMarker)
 	}
+	noted := newCarryNoter(e.Dir, project.ID) // DECISIONS I-618
 	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {
-			e.warn("Could not read your git config (%s); the guest keeps its own.", oneLine(err.Error()))
+			e.warn("Could not read your git config (%s); the machine keeps its own.", oneLine(err.Error()))
 		}
 		if gc != nil {
 			for _, n := range gc.Notes {
-				e.warn("%s", n)
+				noted.warn(e, n)
 			}
 		}
 		co.Git = gc
 	}
 	if cc, _ := buildClaudeCarry(e.HomeDir); cc != nil {
 		for _, n := range cc.Notes {
-			e.warn("%s", n)
+			noted.warn(e, n)
 		}
 		co.Claude = cc
 	}
 	mc, notes := buildMCPCarry(e.HomeDir, repoDir, project.Slug, t.Checkout, toolBinsOf(co.Tools)) // I-556
 	for _, n := range notes {
-		e.warn("%s", n)
+		noted.warn(e, n)
 	}
 	co.MCP = mc
 	skip, chosen := e.loginSkip(project.Slug)
@@ -1766,24 +2061,14 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		RemoteURL: project.RemoteURL,
 		Skip:      skip,
 		Kept: func(label string) {
-			e.warn("Kept the guest's %s login: it is newer than the laptop's.", label)
+			noted.warn(e, keptLoginLine(label))
 		},
 	}, co)
 	if err != nil {
 		e.warn("%s", oneLine(err.Error()))
 		return checkout
 	}
-	if len(copied) > 0 {
-		_, _ = fmt.Fprintf(e.Out, "Credentials: %s\n", strings.Join(copied, ", "))
-		if l := loginsLine(copied, skip, chosen); l != "" {
-			_, _ = fmt.Fprintln(e.Out, l)
-		}
-	}
-	if carried != nil {
-		for _, l := range carried.Lines() {
-			_, _ = fmt.Fprintln(e.ErrOut, l)
-		}
-	}
+	noted.print(e, copied, skip, chosen, carried)
 	return checkout
 }
 
@@ -1826,4 +2111,12 @@ func positionalProject(opts *RunOptions, arg string) error {
 	}
 	opts.Name = arg
 	return nil
+}
+
+// capitalize is s with its first letter upper case (ASCII).
+func capitalize(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return string(s[0]-'a'+'A') + s[1:]
 }

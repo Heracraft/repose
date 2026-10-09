@@ -71,12 +71,46 @@ func isAre(n int) string {
 	return "are"
 }
 
+// ConfigMenuListCmd is `repose config add` with no names: the menu's
+// entries, the names `config add` takes beside any nixpkgs attribute,
+// grouped as the dashboard's Config page groups them (review 8.5, I-633).
+// It needs no project.
+func ConfigMenuListCmd(ctx context.Context, e *Env) error {
+	items, err := e.Client.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, items)
+	}
+	var groups []string
+	byGroup := map[string][]CatalogItem{}
+	width := 0
+	for _, it := range items {
+		if _, ok := byGroup[it.Group]; !ok {
+			groups = append(groups, it.Group)
+		}
+		byGroup[it.Group] = append(byGroup[it.Group], it)
+		width = max(width, len(it.ID))
+	}
+	for i, g := range groups {
+		if i > 0 {
+			_, _ = fmt.Fprintln(e.Out)
+		}
+		_, _ = fmt.Fprintln(e.Out, g)
+		for _, it := range byGroup[g] {
+			_, _ = fmt.Fprintf(e.Out, "  %-*s  %s\n", width, it.ID, it.Description)
+		}
+	}
+	return nil
+}
+
 // ConfigAddCmd implements `repose config add <package>...`: each name is a
 // catalog id when the catalog has it, otherwise a nixpkgs attribute path.
 // The selection is PUT as the menu and the build streams as for apply.
 func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string) error {
 	if len(args) == 0 {
-		return exitf(ExitUsage, "Name at least one package: `repose config add gcc air`.")
+		return ConfigMenuListCmd(ctx, e)
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
@@ -184,7 +218,7 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 	}
 	if len(removed) == 0 {
 		if cfg.Menu == nil {
-			return exitf(ExitUsage, "%s's config is a hand-written fragment; remove the package with `repose config edit`.", project.Name)
+			return exitf(ExitUsage, "%s's repose.nix was written by hand; remove the package with `repose config edit`.", project.Name)
 		}
 		return silent(ExitUsage)
 	}
@@ -205,7 +239,7 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 		if asAPIError(err, &apiErr) {
 			switch {
 			case apiErr.Code == "conflict" && strings.Contains(apiErr.Message, "custom fragment"):
-				return exitf(ExitUsage, "%s's config is a hand-written fragment, so the menu is off. Add packages with `repose config edit` (home.packages = [ pkgs.gcc ];).", project.Name)
+				return exitf(ExitUsage, "%s's repose.nix was written by hand, so the menu is off. Add packages with `repose config edit` (home.packages = [ pkgs.gcc ];).", project.Name)
 			case apiErr.Code == "invalid":
 				return exitf(ExitUsage, "%s", apiErr.Message)
 			}
@@ -237,9 +271,6 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 // genLocRe is the " at fragment.nix:L:C" hostd appends to a summary.
 var genLocRe = regexp.MustCompile(` at fragment\.nix:\d+(:\d+)?`)
 
-func shortRev(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
+// shortRev is a revision as lines name it: the random end of its UUIDv7,
+// whose start changes only once a minute (DECISIONS I-619).
+func shortRev(id string) string { return shortID(id) }

@@ -280,3 +280,38 @@ func (t tmuxClient) windowOfPane(ctx context.Context, pane string) (string, erro
 	}
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
+
+// StateOption is the tmux window option guestd keeps an agent window's
+// state in (DECISIONS I-606, guest-conventions.md "tmux"): `repose ps`
+// reads it as STATE, and the status line marks a window that waits for
+// input. It is set when the announced state changes, so a guestd that
+// restarts sets it again within StateDebounce.
+const StateOption = "@repose-state"
+
+// setWindowState sets StateOption on window of session; best effort. The
+// window is named exactly, so a prefix never hits another window.
+func (t tmuxClient) setWindowState(ctx context.Context, session, window, state string) error {
+	return t.windowOption(ctx, []string{"tmux", "set-option", "-w", "-t", "=" + session + ":=" + window, StateOption, state})
+}
+
+// unsetWindowState removes StateOption from window of session: the
+// window no longer runs an agent (I-631). Best effort.
+func (t tmuxClient) unsetWindowState(ctx context.Context, session, window string) error {
+	return t.windowOption(ctx, []string{"tmux", "set-option", "-wu", "-t", "=" + session + ":=" + window, StateOption})
+}
+
+func (t tmuxClient) windowOption(ctx context.Context, argv []string) error {
+	res, err := t.run.Run(ctx, sysdep.RunSpec{
+		Argv:      argv,
+		User:      "dev",
+		Env:       sysdep.DevEnv(t.paths, "dev"),
+		MaxOutput: 4 << 10,
+	})
+	if err != nil {
+		return sysdep.Errf(sysdep.CodeInternal, "set tmux window state: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return sysdep.Errf(sysdep.CodeInternal, "set tmux window state: tmux exited %d (%s)", res.ExitCode, tmuxFailure(string(res.Stderr)))
+	}
+	return nil
+}

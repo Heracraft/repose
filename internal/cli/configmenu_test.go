@@ -139,11 +139,11 @@ func TestConfigAddFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = ConfigAddCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") || !strings.Contains(err.Error(), "repose config edit") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") || !strings.Contains(err.Error(), "repose config edit") {
 		t.Fatalf("custom fragment: %v", err)
 	}
 	err = ConfigRemoveCmd(ctx, e, "", []string{"gcc"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "hand-written fragment") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose.nix was written by hand") {
 		t.Fatalf("remove on custom fragment: %v", err)
 	}
 }
@@ -162,10 +162,36 @@ func TestMenuNameAndJoin(t *testing.T) {
 			t.Errorf("joinNames(%v) = %q", c.in, got)
 		}
 	}
-	if shortRev("0123456789abcdef") != "01234567" {
-		t.Error(shortRev("0123456789abcdef"))
+	// The random tail, as questions cut theirs (I-616): two UUIDv7
+	// revisions made a minute apart share their first 8 digits.
+	for id, want := range map[string]string{
+		"0123456789abcdef":                     "89abcdef",
+		"01900000-1a2b-7c3d-8e4f-0123456789ab": "456789ab",
+		"01900000-ffff-7c3d-8e4f-ba9876543210": "76543210",
+		"short":                                "short",
+	} {
+		if got := shortRev(id); got != want {
+			t.Errorf("shortRev(%q) = %q, want %q", id, got, want)
+		}
 	}
 	if got := genLocRe.ReplaceAllString(`nixpkgs has no package "foo"; search https://search.nixos.org/packages at fragment.nix:11:23`, ""); got != `nixpkgs has no package "foo"; search https://search.nixos.org/packages` {
 		t.Error(got)
+	}
+}
+
+// `repose config add` with no names lists the menu by group, the names
+// it takes beside any nixpkgs attribute (review 8.5, I-633).
+func TestConfigAddWithNoNamesListsTheMenu(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	out := &discardWriter{}
+	e.Out = out
+	if err := ConfigAddCmd(context.Background(), e, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	got := out.buf.String()
+	if !strings.HasPrefix(got, "runtimes\n  bun ") || !strings.Contains(got, "\n\ndatabases\n") || !strings.Contains(got, "  postgresql ") {
+		t.Fatalf("menu:\n%s", got)
 	}
 }
