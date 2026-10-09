@@ -174,8 +174,8 @@ func KeepCmd(ctx context.Context, e *Env, projectArg string) error {
 
 // tempSessionEnded is run and attach after an attach the CLI waited on
 // returned (DECISIONS I-352): when the project is temporary and its
-// session is gone (the last tmux window exited, or herdr has no pane
-// left; a detach leaves either), the machine is destroyed at once, as
+// session is gone (the last tmux window exited; a detach leaves it; herdr
+// never says so, I-602), the machine is destroyed at once, as
 // `docker run --rm` would. The check rides the ssh master the attach
 // used. Only the multiplexer answering that the session is over counts;
 // an ssh that could not connect says nothing, and the machine then waits

@@ -15,10 +15,10 @@ Every machine has five coding agents installed, unmodified:
 | Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | When it goes idle     |
 | pi          | `pi`       | A provider's API key as a secret           | When it goes idle     |
 
-`repose run "prompt"` uses Claude Code. To use another agent for one prompt:
+`repose run -p "prompt"` uses Claude Code. To use another agent for one prompt:
 
 ```
-repose run --agent codex "port the build scripts to bun"
+repose run --agent codex -p "port the build scripts to bun"
 ```
 
 All five get new versions with platform updates.
@@ -87,7 +87,7 @@ bash /tmp/oc2-install --no-modify-path
 ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
 ```
 
-You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode` starts. Without it, the installer puts OpenCode 2 first on your `PATH` in `.bashrc`, so a plain `opencode` in a new shell is OpenCode 2, and it starts outside the project's dev environment.
+You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode -p "..."` starts. Without it, the installer puts OpenCode 2 first on your `PATH` in `.bashrc`, so a plain `opencode` in a new shell is OpenCode 2, and it starts outside the project's dev environment.
 
 - **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and sends "finished", "needs input" and "error". If you edit the plugin, run `opencode2 service restart`.
 - **Logins.** The first time it runs, OpenCode 2 imports the opencode logins `repose run` copied. After that, run `opencode2 auth login` on the machine, or store the provider's API key as a secret.

@@ -18,7 +18,7 @@ A conductor is one more agent whose only job is to run the others. repose was bu
 Attach and start Claude Code in the checkout, with a prompt that sets the role:
 
 ```
-repose run "You are the conductor for this repository. \
+repose run -p "You are the conductor for this repository. \
 Read docs/PLAN.md. Split the open items into tasks that touch \
 different files. For each task, launch a worker agent in its own \
 worktree with a prompt naming the files it may touch and what to \
@@ -31,7 +31,7 @@ what is not. Don't push. Ask me only when a decision needs me."
 
 Claude Code's own Agent tool launches workers in isolated worktrees (under `.claude/worktrees/`, each on a `worktree-` branch) and tells the conductor when each finishes. The conductor waits on those notices rather than polling, and merges in dependency order: a task that defines an interface before the tasks that use it.
 
-If you'd rather see each worker in its own tmux window, launch them from your laptop instead, one `repose run --worktree "..."` per task, and give the conductor the branch names to merge.
+If you'd rather see each worker in its own tmux window, launch them from your laptop instead, one `repose run --worktree -p "..."` per task, and give the conductor the branch names to merge.
 
 ## Watch it run
 

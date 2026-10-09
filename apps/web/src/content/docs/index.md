@@ -52,7 +52,7 @@ Claude Code on the machine starts in `bypassPermissions` mode, so it doesn't sto
 Detach from tmux with `Ctrl-b` then `d`. Back on your laptop:
 
 ```
-repose run "write tests for src/billing.ts and commit them"
+repose run -p "write tests for src/billing.ts and commit them"
 ```
 
 The CLI starts Claude Code in a new tmux window on the machine, types your prompt and attaches you. Detach and close the laptop; the agent keeps working.

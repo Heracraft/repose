@@ -16618,6 +16618,136 @@ own subscription. Not changed, for the owner: the intro discount's
 generated code shows in Paddle's order summary (I-497 says it is never
 shown), so a Solo customer who cancels can type it at a later checkout.
 
+**I-601. The home folder is no project's: `run` there needs `--name` or
+`--temp`, never links it, never syncs it, and `rm` forgets the folders
+linked to the machine it destroys.** (owner, 2026-10-08; proposal
+`docs/proposals/2026-10-08-home-folder-and-sidebar.md`; amends I-152,
+I-358, I-575) The owner ran `repose run --name obsidian` in `~` to get a
+machine with no checkout. The run's first sync into a named project with
+no remote linked `~` to it (I-575), so every later plain command in `~`
+meant `obsidian`: `run` landed on it, and `repose rm` would have
+destroyed it after a question that named the project but not why it was
+picked. The owner wants `~` to be where a terminal opens and loose
+machines start, several of them, with prompts. Now the home folder is
+the laptop's home directory (symlinks resolved) or any folder above it,
+or a folder inside a git repository whose root is one of those (a
+dotfiles repository); its subfolders are ordinary folders, so I-358's
+`~/Downloads/job search` keeps its machine.
+- With no explicit project, resolution there finds nothing: no
+  `checkouts`, no `by_dir`, no lookup by the folder's remote, in the full
+  path and in the fast attach's and early probe's cache guess. An entry
+  an older CLI wrote for the folder is deleted when read, with no line.
+- A plain `repose run` there (a prompt included) exits 2 with `Your home
+  folder is not a project. cd into one, or pass --name NAME or --temp.`
+  Commands that need a project exit 4 with `Your home folder is not a
+  project. Name one: \`repose rm PROJECT\` (\`repose ls\` lists them).`
+- `run --name NAME` creates NAME or uses it; `run --temp` works as
+  anywhere. Neither syncs (no precheck, no apply), neither writes
+  `by_dir`, the new project gets no `remote_url` even when `~` has one,
+  and no `repose` git remote is added. The carry runs as for `--no-sync`
+  (logins, settings, tools, no git or `.env` carry) and no `Not a git
+  repository` line prints: nothing was asked to sync.
+- `repose sync` there exits 2 (`Your home folder is never synced. cd
+  into a checkout.`), with or without a project; `run --on` exits 2.
+- `repose rm` removes every `by_dir` and `checkouts` entry naming the
+  destroyed project, so a plain run in such a folder makes a new machine
+  instead of landing on the dying one (I-301's `startOver`).
+And the drift I-358 left: it said `repose sync` outside a repository
+still refuses, and the code skipped the sync and went on. `repose sync`
+there now exits 2 before creating anything (`This folder is not a git
+checkout, so there is nothing to sync.`); a plain `run` still makes an
+empty machine. *Not done:* a positional `repose run NAME` (the words are
+the prompt; the owner put it aside), and the `rm` question naming why it
+picked the project (the owner's call: skip). `TestIsHomeFolder`,
+`TestRunInTheHomeFolder`, `TestRunInAHomeFolderThatIsARepository`,
+`TestHomeFolderForgetsAnOldLink`, `TestDestroyForgetsLinkedFolders`,
+`TestSyncOutsideARepositoryRefuses`.
+
+**I-602. A temporary machine may run herdr; on herdr it goes at its
+expiry, and only a working agent holds it past that.** (owner,
+2026-10-08: "use time as the reason why machines die"; supersedes the
+temporary-machine paragraph of the I-542 review, amends I-352, I-510)
+I-542 kept temporary machines on tmux because the session end that
+destroys one (I-352) never comes on herdr: with a client attached, herdr
+opens a fresh workspace and shell as soon as its last pane closes. That
+left a herdr user's "just get a machine" with no sidebar entry and a
+different multiplexer. Now `--temp` picks the multiplexer as any new
+project does (flag, `default_multiplexer`, a laptop herdr pane, tmux);
+`--temp --multiplexer herdr` and `--multiplexer herdr` on a temporary
+project are accepted; the sidebar reconcile and the attach's pane path
+take temporary projects; `herdrMux.SessionEnded` is never true, so the
+CLI destroys nothing when a herdr attach returns. The reaper's hold
+changes for herdr only: a laptop herdr keeps an SSH bridge to every
+machine in its sidebar (I-511), which would hold the destroy for the
+whole 24 h grace, so on herdr `ssh_sessions` does not hold an expired
+temporary project and a working agent still does (`temp.Holds` takes the
+multiplexer). The hour's warning (`temp_expiring`) is unchanged. A
+destroyed machine's sidebar entry goes at the next reconcile (`run`,
+`attach`, a certificate refresh). *Rejected for now:* asking herdr
+whether a client is looking at the machine, to tell a bridge from a
+user (needs a herdr socket call nobody has checked); a hard expiry for
+tmux too. `TestSwitchTemporaryToHerdr`, `TestPickMultiplexerOrder`, `TestRunNewProjectFromHerdrPane`,
+`TestPlanHerdrCatalog`, `TestHerdrAttachPath`,
+`TestTempHerdrExpiryIgnoresSessions`.
+
+**I-603. `repose run [PROJECT]` and `repose sync [PROJECT]`: the
+argument is the machine of that name, created if there is none, and the
+prompt is `-p`/`--prompt`.** (owner, 2026-10-08: "the run \"prompt\" is
+a gimmick"; supersedes R1-4's `run "prompt"`, the run half of I-155's
+exception and I-348's `--name`) `run` was the one project command whose
+argument was not the project (I-155), so starting a named machine from
+the home folder (I-601) took `--name`, and a one-word prompt equal to a
+slug had to be refused. Now:
+- `run PROJECT` and `sync PROJECT` mean what `--name PROJECT` meant
+  (I-348): the project of that name or slug wherever the command runs,
+  created when there is none, a second machine for a checkout whose
+  remote another project has, refused when it is another repository's.
+  An id or `PROJECT:CHECKOUT` (I-480) must exist, as with `--project`.
+  `sync PROJECT` before this had to exist; it now creates, as `run`
+  does, so the two read the same. A sync by name (`sync NAME`, or `run
+  NAME`'s first sync) into a project with no remote links an unlinked
+  checkout with no remote, as `--project` did (I-575); `--name` never
+  did. A temporary machine is never linked (I-351). From a folder `run
+  --on` added, the name of its machine means that checkout (I-480), as a
+  plain run there does. The early probe (I-223) guesses from the name
+  too, through the cache, and only when the cached project's remote is
+  this checkout's, so it never makes a folder on another repository's
+  machine. The refusal of another repository's project by name (I-348)
+  does not apply with `--no-sync`, where nothing is synced into it, as
+  `--project` never refused.
+- `-p`/`--prompt PROMPT` starts the agent; `--agent` and `--worktree`
+  (which needs `-p`) are unchanged. `fork --prompt` already had the name.
+- For one release the old shapes work: `--name` is hidden on both
+  commands, and several words, or one word with a space in it, are the
+  prompt, with ``The prompt goes after -p: `repose run -p 'fix the tests'`. This
+  form stops working in the next release.`` on stderr. A
+  single word with no space is a project from now on, so `repose run
+  refactor` makes a machine called `refactor`; the create line says so.
+  A project name with a space needs `--name` during that release. A
+  word beside `--project` or `--name` that is not the project they name
+  is the old prompt too (`repose run --project X fix`, the form an older
+  `fork` warning printed), so for that release `run Y --project X` types
+  `Y` into X's agent instead of exiting 2; the same name both ways is
+  the project.
+- The one-word-prompt refusal (`refusePromptThatIsASlug`) is gone.
+  `--agent` without `-p` exits 2, as `--worktree` does: it used to send
+  a one-word prompt (`repose run --agent claude todo-app`), and now
+  would be dropped in silence. `sync --temp 2h spike` counts its words
+  after `--temp` took the duration.
+- Accepted: `repose run -p fix tests`, unquoted, makes or uses a
+  machine `tests` and types `fix`; flags and words mix in any order, so
+  the CLI cannot tell. The docs say to quote a prompt of more than one
+  word. I-601's home-folder line now reads ``cd into one, or run
+  `repose run NAME` or `repose run --temp`.``. The positional wins over
+  `REPOSE_PROJECT`, as on every command.
+Docs: cli.md, run-and-attach, lifecycle, sync, agents, index, machine,
+troubleshooting, the tutorials; features, 07-cli, guest-conventions,
+DESIGN. Not changed: the guest's wrapper comment in
+`nix/overlay/agents/wrap.nix` (inside the wrapper's text, so editing it
+rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`, `TestTempByNameLinksNothing`,
+`TestSyncNameLinksAnUnlinkedCheckout`, `TestRunOnAddsAnotherCheckout`,
+`TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.
+
 **I-604. Billing moves from Paddle to Polar.** (polar, 2026-10-08;
 owner: "we are switching from paddle to polar.sh, verification came in
 faster, handle the whole migration end to end.") Amends I-289, I-497

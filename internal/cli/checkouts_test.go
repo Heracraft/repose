@@ -131,6 +131,20 @@ func TestRunOnAddsAnotherCheckout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.guestHome, "api", "new.txt")); err != nil {
 		t.Fatalf("sync did not reach ~/api: %v", err)
 	}
+	// By the machine's name (I-603) the folder is still its other
+	// checkout: the work reaches ~/api, never the machine's own.
+	if err := os.WriteFile(filepath.Join(api, "named.txt"), []byte("named\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+		t.Fatalf("sync %s from the folder: %v", testSlug, err)
+	}
+	if _, err := os.Stat(filepath.Join(f.guestHome, "api", "named.txt")); err != nil {
+		t.Fatalf("sync %s did not reach ~/api: %v", testSlug, err)
+	}
+	if _, err := os.Stat(filepath.Join(f.guestRepo(), "named.txt")); err == nil {
+		t.Fatalf("sync %s from the folder landed in the machine's checkout", testSlug)
+	}
 	projects, err := f.env.Client.ListProjects(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -28,7 +28,7 @@ $ repose run                       # creates project "todo-app" on first use,
                                     # attaches to tmux inside it
 dev@todo-app:~/todo-app$            # tmux session "todo-app", window "shell"
 ^b d                                # detach; the guest keeps running
-$ repose run "finish the auth flow, run the tests, commit"
+$ repose run -p "finish the auth flow, run the tests, commit"
                                     # opens tmux window "claude", starts Claude
                                     # Code's TUI, types the prompt
 $ repose status
@@ -49,7 +49,7 @@ write Nix.
   many projects. No teams in the first release.
 - A **project** is one microVM (the **guest**) plus its thin volume, its
   snapshots, its Nix fragment, and its metering rows. Projects are identified by
-  the git remote URL plus the user, overridable with `--name`. Nothing is
+  the git remote URL plus the user, overridable with `repose run NAME`. Nothing is
   written into the user's repository.
 - A **host** is an Azure VM running NixOS that holds many guests from many
   users. Isolation between users is the hypervisor boundary (Cloud Hypervisor on
@@ -351,7 +351,7 @@ overrides the cwd-derived project.
 Project resolution: read `git remote get-url origin`, normalise
 (`git@github.com:a/b.git` and `https://github.com/a/b` are the same), look up
 `(user, remote)` in `~/.config/repose/projects.json`, then the API. No remote
-and no `--name` is an error with a one-line fix.
+and no name gives a project named after the folder (I-358).
 
 `run` sequence:
 

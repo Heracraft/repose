@@ -8,17 +8,17 @@ order: 10
 ## Start an agent with a prompt
 
 ```
-repose run "move the date handling to Temporal, fix the tests"
+repose run -p "move dates to Temporal, fix the tests"
 ```
 
-Quotes are optional; everything after the flags is the prompt. A one-word prompt that is the name of one of your projects is refused as a likely slip (exit code 2); to send it anyway, name the agent: `repose run --agent claude todo-app`. `run` creates or starts the machine, copies your checkout into it if the machine is new ([Sync](/docs/sync)), opens a new tmux window, starts the agent there, types your prompt and attaches you to it.
+Quote a prompt of more than one word. `run` creates or starts the machine, copies your checkout into it if the machine is new ([Sync](/docs/sync)), opens a new tmux window, starts the agent there, types your prompt and attaches you to it.
 
 Without a prompt, `repose run` drops you in the last active window.
 
 Pick a different agent for one prompt with `--agent`:
 
 ```
-repose run --agent codex "port the build scripts to bun"
+repose run --agent codex -p "port the build scripts to bun"
 ```
 
 The agent is the normal interactive program, the same as running `claude` yourself.
@@ -38,7 +38,7 @@ If the agent exits before you're attached, its window closes with it. `run` then
 `--worktree` starts the agent in its own git worktree, so it doesn't edit the files another agent is working on:
 
 ```
-$ repose run --worktree "try the other approach"
+$ repose run --worktree -p "try the other approach"
 Worktree: ~/todo-app-worktree-1 on branch worktree-1
 Copied 1 .env file from ~/todo-app
 ```
@@ -81,7 +81,7 @@ The checkouts share one machine, so they share these:
 - Ports. Two dev servers on port 3000 collide; give one another port.
 - Disk, snapshots and undo. `repose undo` and a restore roll back every checkout, and `repose destroy` deletes them all.
 
-The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with `--temp`, `--name`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. To remove an added checkout, delete its folder on the machine and its line in `~/.repose/checkouts`; on your laptop, the folder's entry under `checkouts` in `~/.config/repose/projects.json`.
+The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with PROJECT, `--temp`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. To remove an added checkout, delete its folder on the machine and its line in `~/.repose/checkouts`; on your laptop, the folder's entry under `checkouts` in `~/.config/repose/projects.json`.
 
 ## Detach and come back
 
@@ -130,7 +130,7 @@ A machine can run its terminals in [herdr](https://herdr.dev), a multiplexer mad
 repose run --multiplexer herdr
 ```
 
-The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise. A [temporary machine](/docs/lifecycle#temporary-machines) always runs tmux.
+The choice stays with the project. To make herdr the default for every project `run` creates, put `default_multiplexer = "herdr"` in [`config.toml`](/docs/cli#config-toml). A project you create from a terminal inside herdr on your laptop gets herdr unless the flag or that key says otherwise.
 
 A switch takes effect at the next start. A running machine keeps its current multiplexer and its agents until it stops:
 
@@ -142,7 +142,7 @@ todo-app uses herdr from its next start; tmux runs until then.
 On a herdr project the commands on this page work through herdr:
 
 - In herdr's sidebar the machine carries the project's name, and the checkout's workspace under it is `checkout`. Another checkout added with `--on` has its own name, and a machine with no checkout has `home`.
-- `repose run "prompt"` opens a tab in the `checkout` workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under `checkout` in herdr's sidebar.
+- `repose run -p "prompt"` opens a tab in the `checkout` workspace, starts the agent there and types the prompt. With `--worktree` the worktree shows under `checkout` in herdr's sidebar.
 - `repose attach` from a terminal inside herdr on your laptop opens nothing new: the machine is in herdr's sidebar, and the command prints `todo-app is in herdr's sidebar. Ctrl-C ends its forwards.` and keeps port forwards and the browser bridge going until you press Ctrl-C. With forwarding off (`REPOSE_NO_FORWARD=1`) and no bridge, it prints the first sentence and returns. Elsewhere, with herdr 0.9.0 or newer installed, it opens `herdr --remote todo-app.repose`. Without herdr on the laptop, it runs herdr's client on the machine over SSH.
 - `repose ps` lists herdr's agents with their workspace (`checkout` for the checkout) and state. `repose paste` sends the image's path to the focused pane, or to an agent's pane with `--window NAME`.
 - `repose status` shows `herdr` after the size. The dashboard shows it on a stopped machine, which starts with herdr.
@@ -156,7 +156,15 @@ repose's messages inside the session (the time zone, new port forwards, copied f
 delivery = "herdr"
 ```
 
-`run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications) and for [temporary machines](/docs/lifecycle#temporary-machines). Disable an entry in herdr to stop that.
+`run` and `attach` keep herdr's sidebar on your laptop in step: a running herdr project is added there, and `repose rm` removes it. Entries you made for other hosts are left alone, and so is an entry you disabled. Each machine in the sidebar keeps an SSH connection open, which counts as someone using it for the [idle notice](/docs/notifications). To take a machine out of the sidebar for a while, disable its entry; its agents keep running:
+
+```
+id=$(herdr machine list --json |
+  jq -r '.[] | select(.label=="todo-app") | .id')
+herdr machine disable "$id"
+```
+
+`herdr machine enable` with the same id brings it back. `herdr machine remove` doesn't last: the next `run` or `attach` adds the machine again while it runs herdr.
 
 A machine on herdr needs repose 0.1.31 or newer (`repose version`). An older CLI answers `no server running` on `attach`; [update](/docs/install#update) it.
 
@@ -227,19 +235,18 @@ repose paste
 ## Useful flags
 
 ```
-repose run --no-attach "..."  # start it, keep your shell
-repose sync                   # send your laptop's work, no attach
-repose run --no-sync          # a new machine without your checkout
-repose run --size xl          # size of a new project
-repose run --name scratch     # a project by name, made if missing
-repose run --temp             # a new machine, gone after 24 hours
-repose run --multiplexer herdr # herdr, from the next start
-repose run --project todo-app # a project other than this checkout's
+repose run --no-attach -p "..." # start it, keep your shell
+repose sync                     # send your laptop's work
+repose run --no-sync            # a new machine, no checkout
+repose run --size xl            # size of a new project
+repose run scratch              # by name, made if missing
+repose run --temp               # gone after 24 hours
+repose run --multiplexer herdr  # herdr, from the next start
 ```
 
-`--name` is also how you get [a second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository), and `--temp` is described under [Temporary machines](/docs/lifecycle#temporary-machines).
+`repose run NAME` is also how you get [a second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository), and `--temp` is described under [Temporary machines](/docs/lifecycle#temporary-machines).
 
-The full list is in the [CLI reference](/docs/cli#repose-run-prompt).
+The full list is in the [CLI reference](/docs/cli#repose-run-project).
 
 ## SSH and editors
 

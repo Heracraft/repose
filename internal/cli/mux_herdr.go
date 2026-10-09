@@ -496,7 +496,7 @@ func chooseHerdrPath(lh *laptopHerdrCLI, p *Project, t sshTarget, inSidebar func
 	if lh == nil {
 		return herdrPathSSH
 	}
-	if inHerdrPane() && p.ExpiresAt == nil && inSidebar() {
+	if inHerdrPane() && inSidebar() {
 		return herdrPathSidebar
 	}
 	if plainAlias(t, p.Slug) {
@@ -582,18 +582,12 @@ func (herdrMux) MessageScript(slug, text string) string {
 	return fmt.Sprintf("herdr notification show repose --body %s >/dev/null 2>&1 || true", shQuote(text))
 }
 
-// SessionEnded is herdr answering that it has no pane left. A herdr
-// that does not answer says nothing.
-func (herdrMux) SessionEnded(ctx context.Context, t sshTarget, slug string) (bool, error) {
-	out, err := runSSH(ctx, t, `herdr pane list | jq -r '.result.panes | length'`, nil)
-	if err != nil {
-		return false, err
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return false, fmt.Errorf("herdr pane list: %q", strings.TrimSpace(string(out)))
-	}
-	return n == 0, nil
+// SessionEnded is never true on herdr: with a client attached, herdr
+// opens a fresh workspace and shell as soon as its last pane closes, so
+// a session never reaches its end (I-542). A temporary herdr machine goes
+// at its expiry (I-602).
+func (herdrMux) SessionEnded(context.Context, sshTarget, string) (bool, error) {
+	return false, nil
 }
 
 // herdrMessage is the session helper's message on herdr: one

@@ -11,7 +11,7 @@ The first `repose run` for a machine copies your checkout to it. After that, `re
 
 ## Where the checkout is
 
-The first sync puts your checkout in the machine's home directory under your laptop folder's name, whatever the project is called. Run `repose run --name kanali` in `~/Downloads/projects/factory` and the project is `kanali` but the checkout is `/home/dev/factory`, and the run says so:
+The first sync puts your checkout in the machine's home directory under your laptop folder's name, whatever the project is called. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` but the checkout is `/home/dev/factory`, and the run says so:
 
 ```text
 Synced: 14 modified, 30 untracked, 1 env file
@@ -184,6 +184,6 @@ The checkout must be a git repository with at least one commit and full history.
 
 It says so before it creates or starts a machine, so a refused run costs nothing. `repose run` in a directory that isn't a repository makes a machine without syncing and says `Not a git repository, so nothing was synced.` `repose sync` there refuses.
 
-A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `--name` picks another name. To sync it into a machine you already have, run `repose sync job` once: from then on a plain `repose sync` there uses `job`. If you press `Ctrl-C` after a sync created a machine and before it connected, that directory doesn't keep the machine, and the CLI names it so you can remove it with `repose rm`.
+A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `repose run NAME` picks another name. To sync it into a machine you already have, run `repose sync job` once: from then on a plain `repose sync` there uses `job`. If you press `Ctrl-C` after a sync created a machine and before it connected, that directory doesn't keep the machine, and the CLI names it so you can remove it with `repose rm`.
 
 For a repository on github.com over about 20 MB, the first sync has the machine clone the history from GitHub and sends only what GitHub doesn't have. If that clone fails, the CLI sends everything itself.

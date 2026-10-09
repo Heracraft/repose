@@ -32,7 +32,7 @@ to `tmux attach`, so new windows open there. On a herdr machine the sync runs
 `repose-herdr-workspace` instead (see "herdr"), only when the command
 exists and `repose-herdr-server` is active, activating or reloading, and
 herdr's tabs open in the workspace's directory. The same step, and every
-`repose run PROMPT` in the checkout, then closes each workspace labelled
+`repose run -p PROMPT` in the checkout, then closes each workspace labelled
 `home` (or with the checkout's directory name, the label before I-597)
 that is one tab with one pane whose shell runs nothing in the
 foreground (`herdr pane process-info`: the foreground process group is
@@ -143,7 +143,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   program is its foreground process (`sample.AgentByCommand`, I-421:
   `claude` typed in the `shell` window), except gemini, whose process is
   `node`; hooks from it carry that window's name.
-- `repose run --worktree "prompt"` (I-253, I-342) first runs `git -C
+- `repose run --worktree -p "prompt"` (I-253, I-342) first runs `git -C
   /home/dev/<checkout> worktree add -b worktree-<N>
   /home/dev/<checkout>-worktree-<N> <HEAD>`, copies the checkout's
   gitignored `.env` and `.env.*` files into it (I-343), and opens the

@@ -286,7 +286,7 @@ Checklist:
       but TestCarryGitConfig and TestToolsCarryOldBase.
 - [ ] (open: needs the release that ships mux-api, mux-base, mux-guestd
       and sets herdrMinBase) Live, after the base and api ship: from a fresh laptop config with
-      `default_multiplexer = "herdr"`, `repose run "say done"` shows the
+      `default_multiplexer = "herdr"`, `repose run -p "say done"` shows the
       reply; `repose ps` lists it; `--worktree` groups under the
       repository in herdr; attach with and without a laptop herdr and
       from inside a laptop herdr pane; a temporary herdr machine is

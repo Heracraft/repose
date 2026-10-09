@@ -2,8 +2,9 @@
 
 `repose run` is the whole product in one command. With no arguments it puts
 you inside your project's session: tmux, or herdr on a project that chose
-it (DECISIONS I-501, I-502; "herdr projects" below). With a prompt it
-starts an agent in a new window (a tab on herdr), types the prompt, and
+it (DECISIONS I-501, I-502; "herdr projects" below). `repose run NAME`
+does that for the machine called NAME, created if there is none (I-603).
+With `-p PROMPT` it starts an agent in a new window (a tab on herdr), types the prompt, and
 leaves it running whether or not you stay attached. Everything above
 "herdr projects" describes tmux.
 
@@ -34,14 +35,14 @@ passphrase (I-149).
 Run with a prompt:
 
 ```
-$ repose run "finish the auth flow, run the tests, commit when green"
+$ repose run -p "finish the auth flow, run the tests, commit when green"
 Connected to todo-app (large)
 ```
 
 Run with another agent and an explicit size for a new project:
 
 ```
-$ repose run --agent codex --size xl "port the build to bun"
+$ repose run --agent codex --size xl -p "port the build to bun"
 ```
 
 Attach to an existing session later, from the checkout or from anywhere
@@ -61,16 +62,17 @@ $ repose attach age-calculator
 age-calculator is in an error state: the environment's agent (guestd) stopped answering; `repose start` restarts it.
 ```
 
-`repose run izma` is refused with exit 2 when `izma` is one of your
-projects: `run`'s argument is the prompt, so the CLI points at `repose run
---project izma` or `repose attach izma` instead of typing the word into
-an agent (`--agent` sends it anyway). The prompt is everything after the
-flags, so quoting is optional.
+`run`'s argument is the project, as on every command whose object is a
+project (I-155, I-603): `repose run izma` works on `izma`, and creates it
+when there is none. The prompt is `-p`/`--prompt`. For one release the
+old form still runs: several words, or one with a space in it, are the
+prompt, and stderr says ``The prompt goes after -p: `repose run -p 'fix the
+tests'`. This form stops working in the next release.``
 
 Run a prompt while an agent is already running:
 
 ```
-$ repose run "also update the README"
+$ repose run -p "also update the README"
 Another claude window is open; two agents share one working tree. `repose run --worktree` gives the next one its own.
 ```
 
@@ -80,7 +82,7 @@ number, with no limit (DECISIONS I-253).
 Run a prompt in its own git worktree (I-253):
 
 ```
-$ repose run --worktree "try the other approach"
+$ repose run --worktree -p "try the other approach"
 Worktree: ~/todo-app-claude-2 on branch repose/claude-2
 The worktree starts at the last commit; the uncommitted changes in ~/todo-app are not in it.
 ```
@@ -370,8 +372,8 @@ todo-app uses herdr from its next start; tmux runs until then.
   `herdr`; anything else exits 2 naming both.
 - A new project gets, in order: `--multiplexer`; `default_multiplexer`
   in `config.toml`; `herdr` when `HERDR_ENV=1` is in the CLI's
-  environment; `tmux`. A temporary project takes tmux from every source
-  but the flag, and `--temp --multiplexer herdr` exits 2 (I-542). The create line
+  environment; `tmux`. A temporary project picks the same way (I-602;
+  before, it took tmux from every source but the flag, I-542). The create line
   names herdr (`Created todo-app (large, herdr)`) and says nothing for
   tmux.
 - On an existing project `--multiplexer` with another value than the
@@ -416,8 +418,8 @@ that same command switched a running machine (I-542).
 | Command | herdr project |
 |---|---|
 | `repose run`, `repose attach` | the attach rule below |
-| `repose run "prompt"` | a tab in the checkout's workspace, the agent, the prompt, then the attach rule |
-| `repose run --worktree "prompt"` | the git worktree as on tmux, `herdr worktree open --path DIR` so herdr groups it under the repository, then the agent in it |
+| `repose run -p "prompt"` | a tab in the checkout's workspace, the agent, the prompt, then the attach rule |
+| `repose run --worktree -p "prompt"` | the git worktree as on tmux, `herdr worktree open --path DIR` so herdr groups it under the repository, then the agent in it |
 | `repose attach P:CHECKOUT` (I-480) | focuses that checkout's workspace, creating it in `/home/dev/<name>` when missing, then the attach rule |
 | `repose ps` | herdr's agents (`herdr agent list` and `herdr workspace list`): `WORKSPACE  AGENT  NAME  STATE`; `--json` gives `{workspace, agent, name, state, focused}`; `-q` the names. No cwd, no title |
 | `repose paste` | `herdr pane send-text <pane> <path>` into the focused pane (from `herdr pane list`), or into agent NAME's pane with `--window NAME`; no Enter |
@@ -425,7 +427,7 @@ that same command switched a running machine (I-542).
 | `repose ls` AGENTS, dashboard | herdr's agents and states, gone when the pane closes |
 | `repose stop` | as on tmux, the `Interrupted ...` line included (I-500); herdr resumes agents with an integration at the next start |
 | `repose rm` | also removes the laptop herdr's entry for the machine |
-| temporary machine | always tmux (I-542): `--temp --multiplexer herdr` exits 2, and `--multiplexer herdr` on a temporary project exits 2 naming `repose keep` |
+| temporary machine | herdr allowed (I-602): in the sidebar like any machine; closing panes never ends it, it goes at its expiry, and only a working agent holds it past that |
 
 **The attach rule**, first match wins:
 
@@ -499,7 +501,7 @@ I-542); an entry whose target is
 the dashboard, another laptop or an expiry); anything else, including an
 entry you disabled, stays. A stopped machine keeps its entry, and herdr
 shows the gateway's "stopped" line until you start it. Temporary
-machines are never added. Each add reads herdr's list again under
+machines are added too (I-602). Each add reads herdr's list again under
 `~/.config/repose/herdr-sidebar.lock`, so two commands at once make one
 entry, and the reconcile removes all but one entry for a live slug (the
 enabled one kept). An attach that execs ssh in place of the CLI (no

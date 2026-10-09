@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,18 +32,15 @@ func TestPickMultiplexerOrder(t *testing.T) {
 		name        string
 		flag, cfg   string
 		herdrEnv    bool
-		temp        bool
 		want        string
 		wantAutoSet bool
 	}{
-		{"nothing", "", "", false, false, "tmux", false},
-		{"flag wins over config and env", "tmux", "herdr", true, false, "tmux", false},
-		{"flag herdr", "herdr", "", false, false, "herdr", false},
-		{"config", "", "herdr", false, false, "herdr", false},
-		{"config tmux wins over the herdr pane", "", "tmux", true, false, "tmux", false},
-		{"herdr pane", "", "", true, false, "herdr", true},
-		{"herdr pane, temporary", "", "", true, true, "tmux", false},
-		{"config herdr on a temporary machine", "", "herdr", false, true, "tmux", false},
+		{"nothing", "", "", false, "tmux", false},
+		{"flag wins over config and env", "tmux", "herdr", true, "tmux", false},
+		{"flag herdr", "herdr", "", false, "herdr", false},
+		{"config", "", "herdr", false, "herdr", false},
+		{"config tmux wins over the herdr pane", "", "tmux", true, "tmux", false},
+		{"herdr pane", "", "", true, "herdr", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -51,9 +49,9 @@ func TestPickMultiplexerOrder(t *testing.T) {
 			} else {
 				t.Setenv("HERDR_ENV", "")
 			}
-			got, auto := pickMultiplexer(c.flag, c.cfg, c.temp)
+			got, auto := pickMultiplexer(c.flag, c.cfg)
 			if got != c.want || auto != c.wantAutoSet {
-				t.Fatalf("pickMultiplexer(%q, %q, temp=%v) = %q, auto=%v; want %q, %v", c.flag, c.cfg, c.temp, got, auto, c.want, c.wantAutoSet)
+				t.Fatalf("pickMultiplexer(%q, %q) = %q, auto=%v; want %q, %v", c.flag, c.cfg, got, auto, c.want, c.wantAutoSet)
 			}
 		})
 	}
@@ -61,37 +59,43 @@ func TestPickMultiplexerOrder(t *testing.T) {
 
 func TestMultiplexerFlagRefusesOtherValues(t *testing.T) {
 	for _, v := range []string{"", "tmux", "herdr"} {
-		if err := checkMultiplexerFlag(v, false); err != nil {
+		if err := checkMultiplexerFlag(v); err != nil {
 			t.Fatalf("%q: %v", v, err)
 		}
 	}
-	err := checkMultiplexerFlag("screen", false)
+	err := checkMultiplexerFlag("screen")
 	var ue cobraUsageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "tmux or herdr") || !strings.Contains(err.Error(), `"screen"`) {
 		t.Fatalf("screen: %v", err)
 	}
-	// A temporary machine takes tmux only (I-542): herdr never lets the
-	// session end, which is what destroys one.
-	for _, v := range []string{"", "tmux"} {
-		if err := checkMultiplexerFlag(v, true); err != nil {
-			t.Fatalf("--temp %q: %v", v, err)
-		}
-	}
-	err = checkMultiplexerFlag("herdr", true)
-	if !errors.As(err, &ue) || !strings.HasPrefix(err.Error(), "--temp machines run tmux: ") {
-		t.Fatalf("--temp herdr: %v", err)
-	}
 }
 
-// --multiplexer herdr on a project that is temporary exits 2 before any
-// PATCH, and names `repose keep`.
-func TestSwitchTemporaryToHerdrRefused(t *testing.T) {
+// --multiplexer herdr on a temporary project switches it, as on any
+// other (I-602): it goes at its expiry either way.
+func TestSwitchTemporaryToHerdr(t *testing.T) {
 	exp := time.Now().Add(time.Hour)
-	e := &Env{Out: io.Discard, ErrOut: io.Discard}
-	err := switchMultiplexer(context.Background(), e, &Project{ID: "p1", Slug: "tmp-k3f9", State: "running", ExpiresAt: &exp}, "herdr")
-	var ee *exitError
-	if !errors.As(err, &ee) || ee.code != ExitUsage || !strings.Contains(err.Error(), "tmp-k3f9 is temporary and runs tmux") || !strings.Contains(err.Error(), "`repose keep tmp-k3f9`") {
+	var patched []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var body PatchProjectRequest
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Multiplexer != nil {
+				patched = append(patched, *body.Multiplexer)
+			}
+			_ = json.NewEncoder(w).Encode(Project{ID: "p1", Slug: "tmp-k3f9", State: "running", Multiplexer: "herdr", ExpiresAt: &exp})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	var out bytes.Buffer
+	e := &Env{Out: &out, ErrOut: io.Discard, Client: newClient(srv.URL+"/v1", staticToken("t"))}
+	p := &Project{ID: "p1", Slug: "tmp-k3f9", State: "running", ExpiresAt: &exp}
+	if err := switchMultiplexer(context.Background(), e, p, "herdr"); err != nil {
 		t.Fatalf("switch of a temporary machine: %v", err)
+	}
+	if len(patched) != 1 || patched[0] != "herdr" || p.Multiplexer != "herdr" {
+		t.Fatalf("patched %v, project %+v", patched, p)
 	}
 }
 
@@ -197,15 +201,22 @@ func TestRunNewProjectFromHerdrPane(t *testing.T) {
 		t.Fatalf("paned %+v, want herdr", p)
 	}
 
-	// A temporary machine from a herdr pane stays on tmux.
+	// A temporary machine from a herdr pane takes herdr too (I-602).
 	e3, _, _ := freshEnv(f.env, f.local)
 	if err := runRun(ctx, e3, RunOptions{Temp: tempDefault, NoAttach: true, NoSync: true}, false); err != nil {
 		t.Fatal(err)
 	}
+	temps := 0
 	for _, p := range listed(t, e3) {
-		if p.ExpiresAt != nil && p.Multiplexer != "tmux" {
-			t.Fatalf("temporary machine got %q", p.Multiplexer)
+		if p.ExpiresAt != nil {
+			temps++
+			if p.Multiplexer != "herdr" {
+				t.Fatalf("temporary machine got %q", p.Multiplexer)
+			}
 		}
+	}
+	if temps != 1 {
+		t.Fatalf("%d temporary machines, want 1", temps)
 	}
 }
 
@@ -391,8 +402,8 @@ func TestPlanHerdrCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := planHerdrCatalog(entries, catalogProjects())
-	if strings.Join(plan.Add, ",") != "new-one" {
-		t.Fatalf("add %v, want only new-one (not the stopped, tmux, temporary, disabled or destroying ones)", plan.Add)
+	if strings.Join(plan.Add, ",") != "new-one,tmp-k3f9" {
+		t.Fatalf("add %v, want new-one and tmp-k3f9 (not the stopped, tmux, disabled or destroying ones)", plan.Add)
 	}
 	if strings.Join(plan.Remove, ",") != "ssh-2,ssh-5" {
 		t.Fatalf("remove %v, want the entries of gone slugs only (old, gone-off), never work box", plan.Remove)
@@ -404,10 +415,24 @@ func TestSyncHerdrMachinesRunsHerdrsCommands(t *testing.T) {
 	var warned []string
 	syncHerdrMachines(context.Background(), catalogProjects(), true, func(s string) { warned = append(warned, s) })
 	waitHerdrAdds(10 * time.Second)
-	got := strings.Join(l.calls(t), "\n")
-	want := "machine list --json\nmachine remove ssh-2\nmachine remove ssh-5\nmachine list --json\nmachine add new-one.repose --label new-one --remote-session default"
-	if got != want {
-		t.Fatalf("calls:\n%s\nwant:\n%s", got, want)
+	// The removes, then for each add a list again under the lock; the
+	// adds run beside each other, in either order.
+	calls := l.calls(t)
+	got := strings.Join(calls, "\n")
+	want := "machine list --json\nmachine remove ssh-2\nmachine remove ssh-5"
+	if len(calls) != 7 || strings.Join(calls[:3], "\n") != want {
+		t.Fatalf("calls:\n%s\nwant %s, then a list and an add for each of new-one and tmp-k3f9", got, want)
+	}
+	var adds []string
+	for i := 3; i < 7; i += 2 {
+		if calls[i] != "machine list --json" {
+			t.Fatalf("calls:\n%s\nwant a list before each add", got)
+		}
+		adds = append(adds, calls[i+1])
+	}
+	sort.Strings(adds)
+	if strings.Join(adds, "\n") != "machine add new-one.repose --label new-one --remote-session default\nmachine add tmp-k3f9.repose --label tmp-k3f9 --remote-session default" {
+		t.Fatalf("adds %q", adds)
 	}
 	if len(warned) != 0 {
 		t.Fatalf("warned %v", warned)
@@ -493,8 +518,8 @@ func TestParseHerdrVersion(t *testing.T) {
 }
 
 // The attach rule's choice (features/run-and-attach.md "herdr
-// projects"): the pane path needs HERDR_ENV, a project that is not
-// temporary, a laptop herdr of 0.9.0 or newer and an enabled entry; the
+// projects"): the pane path needs HERDR_ENV, a laptop herdr of 0.9.0 or
+// newer and an enabled entry, a temporary project's too (I-602); the
 // child client needs that herdr and the plain alias; else ssh.
 func TestHerdrAttachPath(t *testing.T) {
 	exp := time.Now().Add(time.Hour)
@@ -514,7 +539,7 @@ func TestHerdrAttachPath(t *testing.T) {
 	}{
 		{"pane, sidebar", "herdr 0.9.3", true, normal, alias, true, herdrPathSidebar},
 		{"pane, entry disabled", "herdr 0.9.3", true, normal, alias, false, herdrPathRemote},
-		{"pane, temporary", "herdr 0.9.3", true, temp, tempAlias, true, herdrPathRemote},
+		{"pane, temporary", "herdr 0.9.3", true, temp, tempAlias, true, herdrPathSidebar},
 		{"no pane, laptop herdr", "herdr 0.9.0", false, normal, alias, true, herdrPathRemote},
 		{"old laptop herdr", "herdr 0.8.5", true, normal, alias, true, herdrPathSSH},
 		{"no laptop herdr", "", true, normal, alias, true, herdrPathSSH},

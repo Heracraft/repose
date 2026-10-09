@@ -144,7 +144,7 @@ modify() { # three tracked files changed
 run_one() { # scenario i
   local s=$1 i=$2 log="$OUT/$1-$2.log" r
   case $s in
-    setup) r=$(cd "$DIR" && drive "$log" "$BIN" run --name "$PROJECT"); echo "$PROJECT" >>"$OUT/created" ;;
+    setup) r=$(cd "$DIR" && drive "$log" "$BIN" run "$PROJECT"); echo "$PROJECT" >>"$OUT/created" ;;
     warm) r=$(cd "$DIR" && drive "$log" "$BIN" run) ;;
     clean) [ "$i" != 1 ] || git -C "$DIR" checkout -q -- .; r=$(cd "$DIR" && drive "$log" "$BIN" run) ;;
     dirty) modify "$i"; r=$(cd "$DIR" && drive "$log" "$BIN" run) ;;
@@ -157,7 +157,7 @@ run_one() { # scenario i
       local name="$PROJECT-f$i-$RANDOM" d="$OUT/first-$i"
       git clone -q "$DIR" "$d"
       git -C "$d" remote set-url origin "https://github.com/gin-gonic/$name"
-      r=$(cd "$d" && drive "$log" "$BIN" run --name "$name")
+      r=$(cd "$d" && drive "$log" "$BIN" run "$name")
       echo "$name" >>"$OUT/created"
       (cd "$d" && "$BIN" destroy -y --wait "$name" >/dev/null 2>&1) || echo "destroy $name failed" >&2
       ;;

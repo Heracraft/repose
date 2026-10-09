@@ -85,8 +85,10 @@ paths, `REPOSE=1`).
 ```
 repose login [--no-browser]
 repose logout
-repose run [PROMPT...] [--agent claude|opencode|codex|gemini|pi] [--size small|large|xl]
-            [--name NAME] [--temp [DURATION]] [--no-sync] [--no-attach] [--worktree]
+repose run [PROJECT] [-p PROMPT] [--agent claude|opencode|codex|gemini|pi] [--size small|large|xl]
+            [--temp [DURATION]] [--no-sync] [--no-attach] [--worktree]
+            # --name NAME: hidden, PROJECT's old spelling (I-603); words that are not
+            # one project name are the prompt for one release, with a line on stderr
             # --stash-remote, --discard-remote: hidden, exit 2 naming `repose sync` (I-367)
 repose attach [PROJECT]
 repose start [PROJECT]
@@ -136,9 +138,9 @@ stderr.
 PROJECT (DECISIONS I-155): the commands whose object is a project take it
 as their one argument, docker-style; `--project` and `REPOSE_PROJECT` keep
 working, the same project named both ways is fine, two different ones is
-exit 2. `run`'s argument stays the prompt (all remaining words, joined),
-and a one-word prompt equal to one of the user's slugs is refused with
-exit 2 pointing at `--project`/`attach` (`--agent` sends it anyway).
+exit 2. `run`'s and `sync`'s PROJECT is the project of that name,
+created if there is none, as `--name` was; an id or `PROJECT:CHECKOUT`
+must exist, as with `--project` (I-603). The prompt is `-p`.
 `open` and the subcommands whose argument is something else (`secrets
 set NAME`, `config add PACKAGE...`, `config apply PATH`) keep
 `--project`; `snapshots list`, `snapshots create`, `secrets list`,
@@ -200,6 +202,10 @@ Order:
 
 1. PROJECT / `--project` / `REPOSE_PROJECT`: id or slug, resolved via `GET
    /projects`. Writes nothing to the cache (DECISIONS I-152).
+   Without one, in the home folder (the home directory, a folder above
+   it, or a repository rooted at one of those) resolution stops here
+   with nothing, and an old `by_dir` entry for the folder is deleted
+   (DECISIONS I-601); see `features/projects.md`.
 2. `projects.json` `by_dir[<repo root, else cwd>]` (set when `run`
    created a project with no remote there, or when a sync into a named
    project with no remote came from a directory with no remote and no
@@ -217,7 +223,7 @@ Order:
    or name one: `repose attach PROJECT`.
    ```
 
-No git remote and no `--name` on `run`: create a project named after the
+No git remote and no PROJECT on `run`: create a project named after the
 repository root, else the cwd, with characters outside `[A-Za-z0-9._-]`
 replaced by `-`, and write `by_dir` for it (DECISIONS I-358). A Ctrl-C
 after the create and before the connect removes that entry and exits 130
@@ -273,7 +279,7 @@ $ repose run
 ```
 
 1. Resolve the project. If none: `POST /projects {name: <repo basename or
-   --name>, remote_url, class: --size or config default_class or large, tz:
+   PROJECT>, remote_url, class: --size or config default_class or large, tz:
    local zone}`. On `payment_required` exit 7 with the billing URL. On
    `conflict` for the name, append `-2`.., ask.
 2. `GET /projects/:id`. A create or start in flight is waited on (its op,
@@ -389,15 +395,15 @@ $ repose run
       commits travelled, `, merged with the machine's <branch>` after a
       merge, and `; kept the machine's changes to N files` when the guest
       had changes elsewhere.
-   f. A project created with `--name` in a directory that has no git
+   f. A project created by name (`repose run NAME`) in a directory that has no git
       remote takes the same path without `origin` or remote-tracking refs
       (this replaced I-138's whole-tree commit): its commits travel, and a
       deletion committed on the laptop is a deletion in the guest.
    Print one line `Credentials: gh, opencode` naming what step 5 copied.
-7. If PROMPT given: agent = `--agent` or project `agent_default`. Over SSH:
+7. If `-p PROMPT` given: agent = `--agent` or project `agent_default`. Over SSH:
    `tmux new-window -t <slug> -n <agent> -c <checkout> -d '<agent>'` (name
    becomes the lowest free `<agent>-N`, N >= 2, if the window exists,
-   DECISIONS I-253; with `--worktree`, which needs a PROMPT, the directory
+   DECISIONS I-253; with `--worktree`, which needs `-p`, the directory
    is a new `git worktree add -b worktree-<N> ~/<checkout>-worktree-<N> HEAD`
    and the name also skips any N whose worktree path or branch exists; a
    checkout with no `.git` or no commit is refused with exit 2), wait until the pane has been

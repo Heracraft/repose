@@ -22,7 +22,7 @@ Not a git repository, so nothing was synced.
 ```
 
 ```
-$ repose run --name todo-app-experiment
+$ repose run todo-app-experiment
 ✓ Created todo-app-experiment (large)  4s
 ...
 ```
@@ -38,11 +38,11 @@ Identity:
 - The CLI reads `git remote get-url origin` and normalises it as
   `interfaces/cli-config.md` says. `git@github.com:A/B.git` and
   `https://github.com/a/b` resolve to the same project.
-- A directory with a remote and no `--name` maps to the project keyed on
+- A directory with a remote and no PROJECT maps to the project keyed on
   `(user, remote)`. The first `run` creates it; every later `run` finds it.
-- A `--name` project in a directory with no remote remembers the
+- A project named on `run` in a directory with no remote remembers the
   repository (or directory) it was created from (`projects.json` `by_dir`),
-  so a later `run` there without `--name` finds it. That memory is only
+  so a later `run` there without a name finds it. That memory is only
   trusted while the project's remote matches the directory's (both empty
   for such a project), and naming a project explicitly (`repose attach
   izma`, `--project`) never writes it, so one checkout can never be sent
@@ -51,7 +51,8 @@ Identity:
   project with no remote, from a directory with no remote and no `by_dir`
   entry, writes `by_dir` for that project, since the directory's work is
   now in it (DECISIONS I-575).
-- `--name NAME` on `run` or `sync` means the project called NAME (by name,
+- `repose run NAME` and `repose sync NAME` mean the project called NAME
+  (`--name NAME` before I-603, hidden for a release; by name,
   or by the slug NAME gets) wherever the command runs, and creates it when
   there is none; it never lands on a project of another name (DECISIONS
   I-348). A NAME that is another repository's project exits 2 instead of
@@ -65,7 +66,7 @@ Identity:
   there, and says so on stderr (`Using boxd, the machine last made in
   this directory.`). `repose run --temp` there always makes a new
   machine.
-- `repose run` in a directory with no remote, no `--name` and no
+- `repose run` in a directory with no remote, no PROJECT and no
   `by_dir` entry creates a project named after the directory (the
   repository root's name inside a repository), characters outside
   `[A-Za-z0-9._-]` replaced by `-` (`job search` is `job-search`), with the
@@ -76,6 +77,18 @@ Identity:
   the account (DECISIONS I-575). Any other command that finds no project exits 4 (`No
   repose project here, and this directory has no git remote. Name one:
   ...`).
+- The home folder (the laptop's home directory, a folder above it, or a
+  folder in a repository rooted at one of those) is no project's
+  (DECISIONS I-601). Without an explicit project nothing resolves there:
+  no `by_dir`, no `checkouts`, no remote lookup, and an old `by_dir`
+  entry for it is deleted when read. A plain `run` exits 2 (`Your home
+  folder is not a project. cd into one, or run `repose run NAME` or
+  `repose run --temp`.`); other commands exit 4 asking for the name. `run NAME` and
+  `run --temp` there sync nothing, write no `by_dir`, send no
+  `remote_url` and add no `repose` git remote; `sync` and `run --on`
+  exit 2. Its subfolders are ordinary directories.
+- `repose rm` deletes every `by_dir` and `checkouts` entry naming the
+  destroyed project (DECISIONS I-601).
 - The project name becomes the slug: lowercase, `[a-z0-9-]`, other characters
   replaced by `-`, runs collapsed, 1 to 40 characters. `Todo App` and
   `todo-app` collide, and the CLI says so with the existing project's name.

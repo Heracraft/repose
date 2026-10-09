@@ -22,6 +22,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/multiplexer"
 )
 
 // The lifetime `POST /projects` accepts in expires_in_s.
@@ -85,6 +86,11 @@ func Busy(l *meter.Latest) bool {
 	if l.SSHSessions > 0 || l.TmuxClients > 0 {
 		return true
 	}
+	return agentWorking(l)
+}
+
+// agentWorking says an agent in the sample is not at its prompt.
+func agentWorking(l *meter.Latest) bool {
 	for _, a := range l.Agents {
 		if s := a["state"]; s != "idle" && s != "needs_input" {
 			return true
@@ -94,13 +100,20 @@ func Busy(l *meter.Latest) bool {
 }
 
 // Holds reports whether the destroy of a project that expired at
-// expiresAt waits at now, given its newest sample (nil when none).
-func Holds(now, expiresAt time.Time, l *meter.Latest) bool {
+// expiresAt waits at now, given its newest sample (nil when none) and the
+// multiplexer it runs. On herdr only a working agent holds it: a laptop
+// herdr keeps an SSH connection to each machine in its sidebar whether
+// anyone looks at it or not (I-511), so a session says nothing there, and
+// the machine goes at its expiry (I-602).
+func Holds(now, expiresAt time.Time, l *meter.Latest, mux string) bool {
 	if !now.Before(expiresAt.Add(Grace)) {
 		return false
 	}
 	if l == nil || now.Sub(l.TS) > Fresh {
 		return false
+	}
+	if multiplexer.Normalize(mux) == multiplexer.Herdr {
+		return agentWorking(l)
 	}
 	return Busy(l)
 }
@@ -245,7 +258,7 @@ func (r *Reaper) reap(ctx context.Context, id uuid.UUID, now time.Time) (destroy
 		if !ok {
 			l = nil
 		}
-		if Holds(now, *p.ExpiresAt, l) {
+		if Holds(now, *p.ExpiresAt, l, p.Multiplexer) {
 			waiting = true
 			return errSkip
 		}

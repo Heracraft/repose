@@ -90,19 +90,23 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 			return exitf(ExitUsage, "`repose run` no longer syncs a machine that already has your checkout; `repose sync %s` does.", flag)
 		}
+		if opts.Sync && e.inHome() {
+			return errHomeSync()
+		}
 		if opts.Temp > 0 && opts.ProjectArg != "" {
-			return exitf(ExitUsage, "--temp always creates a new machine; it cannot be used with --project (%s).", opts.ProjectArg)
+			return exitf(ExitUsage, "--temp always creates a new machine; drop %s, or drop --temp to use it.", opts.ProjectArg)
 		}
 		if opts.On != "" && (opts.Temp > 0 || opts.Name != "" || opts.ProjectArg != "" || opts.Size != "") {
-			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with --temp, --name, --project or --size.")
+			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with PROJECT, --temp, --project or --size.")
 		}
 		if opts.Name != "" && opts.ProjectArg != "" && opts.Name != opts.ProjectArg {
-			return exitf(ExitUsage, "--name %s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
+			return exitf(ExitUsage, "%s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
 		}
-		if opts.Temp == 0 && opts.Name == "" && opts.On == "" {
-			// A guess from the cache: the checkout's project. --name and
-			// --temp name another, and the probe (which creates the
-			// checkout's directory) must not touch this one.
+		if opts.Temp == 0 && opts.On == "" {
+			// A guess from the cache: the checkout's project, or the one
+			// PROJECT names (I-603). --temp makes another, and the probe
+			// (which creates the checkout's directory) must not touch
+			// this one.
 			early = startEarlyProbe(ctx, e, opts)
 		}
 		e.early = early
@@ -110,7 +114,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// one (I-480).
 		ownCheckout := opts.On == "" && e.extraCheckout() == nil
 		e.guestUp = func(p *Project) {
-			startBootProbe(ctx, e, p, ownCheckout && !opts.NoSync && gitRepoRoot(e.Cwd) != "")
+			startBootProbe(ctx, e, p, ownCheckout && !opts.NoSync && !e.inHome() && gitRepoRoot(e.Cwd) != "")
 		}
 	}
 
@@ -134,7 +138,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// before a machine is created or started for it (I-353); the git
 	// reads run beside the api's.
 	precheck := make(chan error, 1)
-	if !attachOnly && !opts.NoSync {
+	if !attachOnly && !opts.NoSync && !e.inHome() {
 		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd)) }()
 	} else {
 		precheck <- nil
@@ -144,18 +148,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if err != nil {
 		return err
 	}
-	if !attachOnly && opts.Agent == "" && opts.Prompt != "" && !strings.ContainsAny(strings.TrimSpace(opts.Prompt), " \t\n") {
-		if err := refusePromptThatIsASlug(ctx, e, opts.Prompt); err != nil {
-			return err
-		}
-	}
 	skipSync := false
 	if err := <-precheck; err != nil {
 		if gitRepoRoot(e.Cwd) != "" {
 			return err
 		}
+		if opts.Sync {
+			// `repose sync` exists to send a checkout (I-358).
+			return exitf(ExitUsage, "This folder is not a git checkout, so there is nothing to sync.")
+		}
 		skipSync = true // outside a repository: an empty machine (I-358)
 	}
+	// The home folder is never synced, a dotfiles repository included
+	// (I-601); the run carries what --no-sync carries, and says nothing.
+	homeRun := !attachOnly && e.inHome()
 
 	endResolve()
 	if !attachOnly && res.Project != nil && res.Project.State == "destroying" {
@@ -191,7 +197,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}()
 	if project == nil {
 		if attachOnly {
-			return errNoProjectFoundFor(res.Remote, e.Command)
+			return errNoProject(res, e.Command)
 		}
 		personal.finish(ctx, e, opts.NoPersonal, nil)
 		project, err = createProjectForRun(ctx, e, res.CreateRemote(), opts, pr)
@@ -322,7 +328,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if skipSync {
 		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
-	} else if !opts.NoSync {
+	} else if !opts.NoSync && !homeRun {
 		repoRoot := gitRepoRoot(e.Cwd)
 		if repoRoot == "" {
 			repoRoot = e.Cwd
@@ -449,7 +455,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
 	// The checkout's repose.nix is the machine's configuration (I-489).
-	if !skipSync && !opts.NoSync {
+	if !skipSync && !opts.NoSync && !homeRun {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
 	}
 
@@ -565,6 +571,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 // directory (DECISIONS I-575, narrowing I-152 for this case).
 func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
 	explicit := e.resolveArg(opts.ProjectArg)
+	if explicit == "" {
+		explicit = opts.Name // `repose sync NAME` (I-603)
+	}
+	if opts.Temp > 0 || project.ExpiresAt != nil {
+		return // a temporary machine is reached by name only (I-351)
+	}
 	if explicit == "" || strings.Contains(explicit, ":") || project.RemoteURL != "" || e.extraCheckout() != nil {
 		return
 	}
@@ -591,18 +603,24 @@ func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
 // the line names it. The api has no cancel for a create in flight, so the
 // project stays until the user removes it.
 func interruptedCreate(e *Env, p *Project) error {
-	forgetProject(&e.Cache, p.ID)
-	// From the file as it is: the create's own save added the entries,
-	// and a save of e.Cache only removes what its load had (mergeInto).
+	e.forgetProjectOnDisk(p.ID)
+	return interruptedCreated(p.Slug)
+}
+
+// forgetProjectOnDisk removes every cache entry for id, in e.Cache and
+// in projects.json as it is on disk: a save of e.Cache only removes what
+// its load had (mergeInto), and this command's own saves may have added
+// entries since.
+func (e *Env) forgetProjectOnDisk(id string) {
+	forgetProject(&e.Cache, id)
 	disk, err := loadProjectsCache(e.Dir)
 	if err == nil {
-		forgetProject(&disk, p.ID)
+		forgetProject(&disk, id)
 		err = saveProjectsCache(e.Dir, disk)
 	}
 	if err != nil {
 		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
 	}
-	return interruptedCreated(p.Slug)
 }
 
 func interruptedCreated(slug string) error {
@@ -697,23 +715,6 @@ func saveProjectTZ(ctx context.Context, e *Env, project *Project, tz string) (wa
 		case <-time.After(2 * time.Second):
 		}
 	}
-}
-
-// refusePromptThatIsASlug catches `repose run izma`: every other command
-// takes the project as its argument (I-155), but `run`'s argument is the
-// prompt, and a one-word prompt that is exactly a project's name is far
-// more likely a slip than an instruction to an agent.
-func refusePromptThatIsASlug(ctx context.Context, e *Env, prompt string) error {
-	projects, err := e.Client.ListProjects(ctx)
-	if err != nil {
-		return nil // the check is a courtesy; the run itself reports a real api failure
-	}
-	for _, p := range projects {
-		if p.Slug == prompt {
-			return exitf(ExitUsage, "%q is one of your projects, but `repose run`'s argument is a prompt for the agent. To work on it: `repose run --project %s` (or `repose attach %s`). To send the word itself as a prompt, name the agent: `repose run --agent claude %s`.", prompt, prompt, prompt, prompt)
-		}
-	}
-	return nil
 }
 
 // connect is steps 3 and 4: the certificate and config, then the first
@@ -923,7 +924,7 @@ func attachColour(colorterm string) string {
 }
 
 // attachCommand is the guest-side command of the attach. With a window
-// (the agent `repose run PROMPT` just started), an agent that exited in
+// (the agent `repose run -p PROMPT` just started), an agent that exited in
 // the moment between its prompt and the attach has taken its window with
 // it, and `tmux attach -t <slug>:<window>` failed with "can't find window"
 // (I-304). The window is checked on the guest, in the same ssh, and when
@@ -1448,7 +1449,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		if remote == "" {
 			name = dirProjectName(name)
 			if name == "" {
-				return nil, exitf(ExitUsage, "This directory's name cannot be a project name. Pass --name NAME.")
+				return nil, exitf(ExitUsage, "This folder's name cannot be a project name. Name one: `repose run NAME`.")
 			}
 		}
 	}
@@ -1463,14 +1464,14 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		req.RemoteURL, req.ExpiresIn = "", int64(opts.Temp/time.Second)
 	}
 	// config.toml's default_agent becomes the new project's own default,
-	// which is what `run PROMPT` without --agent reads; an existing
+	// which is what `run -p PROMPT` without --agent reads; an existing
 	// project keeps the one it was created with (I-241).
 	if isAgent(e.Cfg.DefaultAgent) {
 		req.AgentDefault = e.Cfg.DefaultAgent
 	}
 	// The multiplexer (I-502): the flag, config.toml, a laptop herdr
 	// pane, else tmux, which is the api's default and is not sent.
-	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer, opts.Temp > 0)
+	mux, auto := pickMultiplexer(opts.Multiplexer, e.Cfg.DefaultMultiplexer)
 	if mux != multiplexer.Tmux {
 		req.Multiplexer = mux
 	}
@@ -1503,8 +1504,8 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			}
 			deps := defaultResolveDeps()
 			dir := ""
-			if remote == "" && deps.RemoteFor(e.Cwd) == "" {
-				// A --name project with no remote has nothing else to be
+			if remote == "" && deps.RemoteFor(e.Cwd) == "" && !e.inHome() {
+				// A project named on run with no remote has nothing else to be
 				// found by; one with a remote is found by it (I-152). A
 				// second project for a checkout that has a remote (I-348)
 				// is reached by name: by_dir would not be believed there.
@@ -1541,7 +1542,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		}
 		return nil, err
 	}
-	return nil, exitf(ExitGeneric, "Could not find a free project name after 10 attempts; pass --name NAME.")
+	return nil, exitf(ExitGeneric, "Could not find a free project name after 10 attempts. Name one: `repose run NAME`.")
 }
 
 // runDestroyWait bounds how long `repose run` waits for the destroy of
@@ -1621,6 +1622,11 @@ func forgetProject(cache *ProjectsCache, id string) {
 	for k, v := range cache.ByDir {
 		if v == id {
 			delete(cache.ByDir, k)
+		}
+	}
+	for k, c := range cache.Checkouts {
+		if c.ProjectID == id {
+			delete(cache.Checkouts, k)
 		}
 	}
 }
@@ -1779,4 +1785,45 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		}
 	}
 	return checkout
+}
+
+// runArgs reads `repose run`'s words (DECISIONS I-603): one word is the
+// project, as for attach and sync. Before I-603 the words were the
+// prompt; for one release several words, one with a space in it, or a
+// word beside --project or --name that is not the project they name
+// (`repose run --project X fix`), still are, with a line saying where
+// the prompt went.
+func runArgs(opts *RunOptions, args []string, project string, errOut io.Writer) error {
+	switch {
+	case len(args) == 0:
+		return nil
+	case len(args) == 1 && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
+		w := args[0]
+		if (project == "" || project == w) && (opts.Name == "" || opts.Name == w) {
+			return positionalProject(opts, w)
+		}
+	}
+	prompt := strings.TrimSpace(strings.Join(args, " "))
+	if opts.Prompt != "" {
+		return cobraUsageError{fmt.Errorf("run takes one PROJECT; put the prompt after -p, quoted")}
+	}
+	opts.Prompt = prompt
+	_, _ = fmt.Fprintf(errOut, "The prompt goes after -p: `repose run -p %s`. This form stops working in the next release.\n", shQuote(prompt))
+	return nil
+}
+
+// positionalProject is the PROJECT of run and sync (I-603): the machine
+// of that name, created if there is none, as --name was. An id, or
+// PROJECT:CHECKOUT (I-480), names a project that exists, as --project
+// does.
+func positionalProject(opts *RunOptions, arg string) error {
+	if looksLikeUUID(arg) || strings.Contains(arg, ":") {
+		opts.ProjectArg = arg
+		return nil
+	}
+	if opts.Name != "" && opts.Name != arg {
+		return cobraUsageError{fmt.Errorf("%s and --name %s name two projects; pass one", arg, opts.Name)}
+	}
+	opts.Name = arg
+	return nil
 }

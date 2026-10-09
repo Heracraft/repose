@@ -32,6 +32,9 @@ type ResolveResult struct {
 	// named (`repose run --on`, DECISIONS I-480); "" for the checkout
 	// itself.
 	Checkout string
+	// Home says no project was named and the working directory is the
+	// home folder, which resolves to nothing (I-601).
+	Home bool
 }
 
 // CreateRemote is the remote_url a project created from this result
@@ -63,16 +66,27 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 	case opts.Temp > 0:
 		return &ResolveResult{Remote: deps.RemoteFor(e.Cwd), NoRemote: true}, nil
 	case opts.On != "":
+		if explicit == "" && inHomeFolder(e.Cwd, deps) {
+			return nil, exitf(ExitUsage, "Your home folder is not a checkout, so it cannot join %s.", opts.On)
+		}
 		return resolveOn(ctx, e, opts.On, deps)
 	case opts.Name != "":
 		remote := deps.RemoteFor(e.Cwd)
+		if inHomeFolder(e.Cwd, deps) {
+			// A dotfiles repository's remote is not the machine's.
+			remote = ""
+		}
 		p, err := findByName(ctx, e.Client, opts.Name)
 		if err != nil {
 			return nil, err
 		}
 		if p != nil {
-			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote {
-				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run --name %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another --name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
+			if co := e.extraCheckout(); co != nil && co.ProjectID == p.ID {
+				// This folder is one of p's other checkouts (I-480).
+				return &ResolveResult{Project: p, Remote: remote, Checkout: co.Name}, nil
+			}
+			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote && !opts.NoSync {
+				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
 			}
 			return &ResolveResult{Project: p, Remote: remote}, nil
 		}
@@ -86,11 +100,14 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 	if err != nil {
 		return nil, err
 	}
+	if res.Home {
+		return nil, errHomeRun()
+	}
 	if explicit == "" && res.Project != nil && res.Remote == "" && deps.RootFor(e.Cwd) == "" {
 		// A directory that is not a repository (the home directory, say)
 		// found its project through by_dir: the last one `run` made
 		// here. Say which, and how to get another (I-348, I-358).
-		e.warn("Using %s, the machine last made in this directory.", res.Project.Slug)
+		e.warn("Using %s, the machine last made in this folder.", res.Project.Slug)
 	}
 	return res, nil
 }
@@ -235,8 +252,32 @@ func resolveProject(ctx context.Context, client *Client, dir, cwd, explicit stri
 		return &ResolveResult{Project: p, Checkout: checkout}, nil
 	}
 
-	remote := deps.RemoteFor(cwd)
 	key := dirKey(cwd, deps)
+	if inHomeFolder(cwd, deps) {
+		// The home folder is no project's (I-601). An older CLI may have
+		// linked it to the first machine made there: forget that.
+		forget := func(c *ProjectsCache) bool {
+			forgot := false
+			for _, k := range uniqueStrings(key, cwd) {
+				if _, ok := c.ByDir[k]; ok {
+					delete(c.ByDir, k)
+					forgot = true
+				}
+				if _, ok := c.Checkouts[k]; ok {
+					delete(c.Checkouts, k)
+					forgot = true
+				}
+			}
+			return forgot
+		}
+		forget(cache)
+		// From the file as it is, as forgetProjectOnDisk does.
+		if disk, err := loadProjectsCache(dir); err == nil && forget(&disk) {
+			_ = saveProjectsCache(dir, disk)
+		}
+		return &ResolveResult{Home: true}, nil
+	}
+	remote := deps.RemoteFor(cwd)
 	// A folder added to another machine with `repose run --on` (I-480).
 	// It has a remote of its own, which is not the project's, so the
 	// by_dir rule below would refuse it.
@@ -340,7 +381,7 @@ func isInvalid(err error) bool {
 
 // rememberProject caches a project under its remote and, when dir is not
 // "", under that directory (only `run` creating a project writes a
-// directory: a --name project with no remote has nothing else to be found
+// directory: a project named on run, with no remote, has nothing else to be found
 // by).
 func rememberProject(cache *ProjectsCache, remote, dir string, p Project) {
 	if remote != "" {
@@ -349,6 +390,19 @@ func rememberProject(cache *ProjectsCache, remote, dir string, p Project) {
 	if dir != "" {
 		cache.ByDir[dir] = p.ID
 	}
+}
+
+// errNoProject is what a command that needs a project reports when res
+// found none.
+func errNoProject(res *ResolveResult, command string) error {
+	if res.Home {
+		usage := "`repose <command> PROJECT`"
+		if command != "" {
+			usage = "`" + command + " PROJECT`"
+		}
+		return errHomeNoProject(usage)
+	}
+	return errNoProjectFoundFor(res.Remote, command)
 }
 
 // errNoProjectFound is what non-run commands report when resolution finds

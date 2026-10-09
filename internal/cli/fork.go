@@ -214,7 +214,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				continue
 			}
 			if err := forkStartAgent(ctx, e, f.Slug, opts.Agent, opts.Prompt); err != nil {
-				e.warn("Could not start the agent in %s: %s. `repose run --project %s --no-sync PROMPT` tries again.", f.Slug, oneLine(err.Error()), f.Slug)
+				e.warn("Could not start the agent in %s: %s. `repose run %s --no-sync -p PROMPT` tries again.", f.Slug, oneLine(err.Error()), f.Slug)
 			}
 		}
 	}

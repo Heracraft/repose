@@ -62,7 +62,7 @@ func TestSyncWithAProjectLinksAnUnlinkedDirectory(t *testing.T) {
 	}
 
 	if err := runRun(ctx, f.env, RunOptions{ProjectArg: "job", NoAttach: true, Sync: true}, false); err != nil {
-		t.Fatalf("repose sync job: %v", err)
+		t.Fatalf("repose sync --project job: %v", err)
 	}
 	key := dirKey(f.local, defaultResolveDeps())
 	if got := f.env.Cache.ByDir[key]; got != job.ID {
@@ -91,7 +91,7 @@ func TestSyncWithAProjectLeavesACheckoutWithARemoteUnlinked(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := runRun(ctx, f.env, RunOptions{ProjectArg: "other", NoAttach: true, Sync: true}, false); err != nil {
-		t.Fatalf("repose sync other: %v", err)
+		t.Fatalf("repose sync --project other: %v", err)
 	}
 	if len(f.env.Cache.ByDir) != 0 {
 		t.Fatalf("by_dir = %v", f.env.Cache.ByDir)

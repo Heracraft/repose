@@ -202,6 +202,9 @@ func cachedGuess(e *Env, explicit string, deps resolveDeps) *Project {
 		}
 		return nil
 	}
+	if inHomeFolder(e.Cwd, deps) {
+		return nil // the home folder resolves to nothing (I-601)
+	}
 	remote := deps.RemoteFor(e.Cwd)
 	if remote == "" {
 		return nil
@@ -318,10 +321,20 @@ func startEarlyProbe(ctx context.Context, e *Env, opts RunOptions) *earlyProbe {
 	// Outside a repository nothing syncs, and the probe would make a
 	// checkout the machine should not have (I-358, I-368).
 	root := gitRepoRoot(e.Cwd)
-	if opts.NoSync || root == "" {
+	if opts.NoSync || root == "" || e.inHome() || e.extraCheckout() != nil {
 		return nil
 	}
-	guess := cachedGuess(e, e.resolveArg(opts.ProjectArg), defaultResolveDeps())
+	named := e.resolveArg(opts.ProjectArg)
+	byName := named == ""
+	if byName {
+		named = opts.Name // `repose run NAME` (I-603); a name the cache lacks guesses nothing
+	}
+	guess := cachedGuess(e, named, defaultResolveDeps())
+	if byName && guess != nil && guess.RemoteURL != defaultResolveDeps().RemoteFor(e.Cwd) {
+		// Another repository's machine: the run refuses it (resolveForRun),
+		// and the probe would make this checkout's folder there first.
+		return nil
+	}
 	target, covered, master := warmTarget(ctx, e, guess)
 	if !covered {
 		return nil

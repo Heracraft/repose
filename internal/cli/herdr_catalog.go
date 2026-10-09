@@ -59,7 +59,7 @@ type herdrCatalogPlan struct {
 }
 
 // planHerdrCatalog compares herdr's entries with the account's projects.
-// A running herdr project that is not temporary and has no entry (a
+// A running herdr project, temporary ones too (I-602), with no entry (a
 // disabled one counts as an entry) is added; an entry repose owns whose
 // slug is no live project is removed, and so is each entry past the
 // first for a live slug (the enabled one kept when there is one), left
@@ -94,7 +94,7 @@ func planHerdrCatalog(entries []herdrMachine, projects []Project) herdrCatalogPl
 		}
 	}
 	for _, p := range projects {
-		if p.State == "running" && p.ExpiresAt == nil && multiplexer.Normalize(p.Multiplexer) == multiplexer.Herdr && !has[p.Slug] {
+		if p.State == "running" && multiplexer.Normalize(p.Multiplexer) == multiplexer.Herdr && !has[p.Slug] {
 			plan.Add = append(plan.Add, p.Slug)
 		}
 	}

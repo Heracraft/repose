@@ -231,6 +231,18 @@ func (f *fakePolar) handle(w http.ResponseWriter, r *http.Request) {
 		e["secret"], e["enabled"] = "whsec_made", true
 		f.endpoints = append(f.endpoints, e)
 		f.write(w, 201, e)
+	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/webhooks/endpoints/"):
+		// A rerun brings an endpoint's events and api_version up to date.
+		for _, e := range f.endpoints {
+			if m := e.(map[string]any); m["id"] == strings.TrimPrefix(r.URL.Path, "/webhooks/endpoints/") {
+				for k, v := range body {
+					m[k] = v
+				}
+				f.write(w, 200, m)
+				return
+			}
+		}
+		f.write(w, 404, map[string]any{"error": "ResourceNotFound", "detail": "Not found"})
 	case r.Method == "POST" && r.URL.Path == "/events/ingest":
 		for _, ev := range body["events"].([]any) {
 			e := ev.(map[string]any)

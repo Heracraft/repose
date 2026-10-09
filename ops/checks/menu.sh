@@ -168,7 +168,7 @@ host_sh "journalctl -u hostd --since '$since' --no-pager -o cat | grep '\"event\
 if [ $with_destroy = 1 ]; then
 	tp="m3-throwaway-$(date -u +%H%M%S)"
 	d=$(mktemp -d)
-	(cd "$d" && "$REPOSE" run --name "$tp" --no-attach --no-sync 2>&1 | tail -3) | evidence "repose run --name $tp (throwaway)"
+	(cd "$d" && "$REPOSE" run "$tp" --no-attach --no-sync 2>&1 | tail -3) | evidence "repose run $tp (throwaway)"
 	tpid=$("$REPOSE" status --json --project "$tp" | jsonq 'd["id"]')
 	tgid=$(admin projects show "$tp" | awk '$1=="guest_id"{print $2}')
 	host_sh "ls /nix/var/nix/gcroots/repose/ | grep -E '$tgid|rev-$tpid'; lvs --noheadings -o lv_name vg-guests | grep -c 'g-$tgid' || true" | evidence "before destroy: roots and volume of $tp"

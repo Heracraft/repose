@@ -316,7 +316,7 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   from your laptop instead.`; the run never fails for it. A full fetch,
   never a partial clone: lazily fetched blobs fail later once a token
   expires. Later syncs never clone.
-- A project made with `--name` in a directory with no git remote syncs the
+- A project made with `repose run NAME` in a directory with no git remote syncs the
   same way, without an `origin` or remote-tracking refs: its real commits
   travel, so a file deleted and committed on the laptop is deleted in the
   guest too (DECISIONS I-150, replacing I-138's whole-tree commit).
