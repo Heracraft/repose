@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-624 entries.
+628 entries.
 
 ## Scope
 
@@ -417,7 +417,7 @@ pointer, not a summary.
 - **I-349** Temporary machines in the api: `expires_at` (0010), the plan without a snapshot, and `keep` — 2026-09-29; L8975
 - **I-350** The reaper: once a minute under `LockSweeper`, a row per transaction, with a backoff after a failed destroy — 2026-09-29; L8996
 - **I-351** `--temp` in the CLI: flag, name, cache, lines — 2026-09-29; L9019
-- **I-352** The session end destroys a temporary machine only when tmux says the session is gone — 2026-09-29; amended by I-509; amended by I-602; L9043
+- **I-352** The session end destroys a temporary machine only when tmux says the session is gone — 2026-09-29; amended by I-509; amended by I-602; amended by I-612; L9043
 - **I-353** Every sync refusal of the checkout comes before the create — 2026-09-29; L9056
 - **I-354** What agents on a temporary machine are told: nothing yet — 2026-09-29; L9070
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9079
@@ -656,3 +656,7 @@ pointer, not a summary.
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; L16655
 - **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; L16713
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; L16780
+- **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; L16830
+- **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16864
+- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; L16879
+- **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16909

@@ -1,6 +1,9 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // paymentRequiredMessage is what every command prints for the api's
 // payment_required (exit 7): the api's message verbatim, because since
@@ -12,7 +15,11 @@ import "fmt"
 func paymentRequiredMessage(e *APIError) string {
 	reason, _ := e.Detail["reason"].(string)
 	switch reason {
-	case "subscription_required", "plan_limit", "disk_limit", "egress_limit", "past_due", "suspended":
+	case "plan_limit":
+		if e.Message != "" {
+			return namePlanFix(e)
+		}
+	case "subscription_required", "disk_limit", "egress_limit", "past_due", "suspended":
 		if e.Message != "" {
 			return e.Message
 		}
@@ -52,4 +59,20 @@ func projectLimitOf(e *APIError) (have, limit, requested int, ok bool) {
 		requested = int(r)
 	}
 	return int(p), int(l), requested, true
+}
+
+// namePlanFix puts the command into the gate's plan_limit sentence when
+// one machine is using the memory: "todo-app is using it. `repose stop
+// todo-app` frees it, or upgrade at ..." in place of "Stop it, or
+// upgrade" (I-610). Any other wording is printed as the api sent it.
+func namePlanFix(e *APIError) string {
+	ps, _ := e.Detail["projects"].([]any)
+	if len(ps) != 1 {
+		return e.Message
+	}
+	slug, _ := ps[0].(string)
+	if slug == "" {
+		return e.Message
+	}
+	return strings.Replace(e.Message, slug+" is using it. Stop it, or upgrade", slug+" is using it. `repose stop "+slug+"` frees it, or upgrade", 1)
 }

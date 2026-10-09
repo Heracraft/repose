@@ -392,6 +392,10 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		// project a normal one (DECISIONS I-347). Raw, so an absent field
 		// and an explicit null differ.
 		ExpiresAt json.RawMessage `json:"expires_at"`
+		// ExpiresIn moves a temporary project's expiry to now plus this
+		// many seconds, within create's bounds: `repose keep PROJECT 3h`
+		// (DECISIONS I-612).
+		ExpiresIn *int64 `json:"expires_in_s"`
 		// PersonalOptOut turns the account's machine.nix off (true) or
 		// back on (false) for this machine, with a rebuild (I-490).
 		PersonalOptOut *bool `json:"personal_opt_out"`
@@ -423,6 +427,17 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 			return errf("invalid", "expires_at can only be set to null, which keeps a temporary project")
 		}
 		keep = true
+	}
+	if body.ExpiresIn != nil {
+		if keep {
+			return errf("invalid", "expires_at: null and expires_in_s cannot both be sent")
+		}
+		if d := time.Duration(*body.ExpiresIn) * time.Second; d < temp.MinLifetime || d > temp.MaxLifetime {
+			return errf("invalid", "expires_in_s must be between %d and %d", int64(temp.MinLifetime/time.Second), int64(temp.MaxLifetime/time.Second))
+		}
+		if p.ExpiresAt == nil {
+			return errf("invalid", "expires_in_s applies only to a temporary project")
+		}
 	}
 	if body.TZ != nil {
 		if _, err := time.LoadLocation(*body.TZ); err != nil || *body.TZ == "" || strings.ContainsAny(*body.TZ, "\n\r") {
@@ -495,6 +510,18 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 			return errf("conflict", "%s is already being destroyed", p.Slug)
 		}
 		obs.Logger(ctx, s.d.Log).Info("temporary project kept", "event", "temp_keep", "project_id", p.ID.String())
+	}
+	if body.ExpiresIn != nil {
+		// Under the row's state, as keep: a project the reaper has marked
+		// destroying is past saving.
+		tag, err := s.d.Pool.Exec(ctx, "update projects set expires_at = now() + $2 * interval '1 second' where id = $1 and expires_at is not null and state <> 'destroying' and destroyed_at is null", p.ID, *body.ExpiresIn)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errf("conflict", "%s is already being destroyed", p.Slug)
+		}
+		obs.Logger(ctx, s.d.Log).Info("temporary project extended", "event", "temp_extend", "project_id", p.ID.String(), "expires_in_s", *body.ExpiresIn)
 	}
 	fresh, err := store.GetProject(ctx, s.d.Pool, p.ID)
 	if err != nil {

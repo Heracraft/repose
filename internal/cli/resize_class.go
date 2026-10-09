@@ -24,6 +24,132 @@ var classSpecs = map[string]classSpec{
 	"xl":    {VCPUs: 8, MemGB: 16, Plan: "Plus"},
 }
 
+// planSpecs is each plan's memory for running machines, smallest first,
+// as docs/PRICING.md lists it; TestClassSpecsMatchBillingAndHost pins it
+// to internal/billing's plans.
+var planSpecs = []struct {
+	ID, Name string
+	MemGB    int
+}{{"solo", "Solo", 8}, {"plus", "Plus", 16}, {"pro", "Pro", 32}}
+
+// billingURL is where a plan is changed; the api's gate names the same
+// page in its refusals.
+const billingURL = "https://repose.herakraft.co/billing"
+
+// memoryStates are the project states that hold plan memory, as the
+// api's gate counts them (internal/billing/usage.go memoryStates).
+var memoryStates = map[string]bool{"running": true, "starting": true, "restoring": true, "creating": true, "building": true}
+
+// planName is "Solo" for the plan id "solo"; "" for one the CLI does not
+// know.
+func planName(id string) string {
+	for _, p := range planSpecs {
+		if p.ID == id {
+			return p.Name
+		}
+	}
+	return ""
+}
+
+// smallestPlanFor is the first plan whose memory holds gb.
+func smallestPlanFor(gb int) string {
+	for _, p := range planSpecs {
+		if p.MemGB >= gb {
+			return p.Name
+		}
+	}
+	return planSpecs[len(planSpecs)-1].Name
+}
+
+// planAsk is a start the CLI is about to cause: count machines of class,
+// beside what runs now except the project Except (one being resized, which
+// stops first). Fix is the command that avoids the start, named in the
+// refusal when what runs now is in the way ("" names `repose stop`).
+type planAsk struct {
+	Class  string
+	Count  int
+	Except string
+	Fix    string
+}
+
+// planMemoryRefusal asks the api's memory question from /me and the
+// project list before the CLI stops or snapshots anything (DECISIONS
+// I-610): the gate would refuse the start only after the stop had ended
+// every agent, or after the snapshot. It returns the refusal sentence, or
+// "" when the machines fit or the CLI cannot tell (no plan, an exempt
+// account, /me or the list unreadable): the api's gate stays the
+// authority, and answers again when the start is asked for.
+func planMemoryRefusal(ctx context.Context, e *Env, ask planAsk) string {
+	me, err := e.Client.GetMe(ctx)
+	if err != nil {
+		return ""
+	}
+	return planMemoryRefusalOf(me, func() ([]Project, error) { return e.Client.ListProjects(ctx) }, ask)
+}
+
+// planMemoryRefusalOf is planMemoryRefusal on a /me already read; list
+// reads the projects only when the answer needs them.
+func planMemoryRefusalOf(me *Me, list func() ([]Project, error), ask planAsk) string {
+	if ask.Count < 1 {
+		ask.Count = 1
+	}
+	if me == nil || me.Billing.Plan == nil || me.Billing.Status == "exempt" || me.Limits.MemoryGB <= 0 {
+		return ""
+	}
+	plan := planName(*me.Billing.Plan)
+	if plan == "" {
+		return ""
+	}
+	limit := me.Limits.MemoryGB
+	one := classSpecs[ask.Class].MemGB
+	if one == 0 {
+		one = classSpecs["large"].MemGB // the gate counts an unknown class as large
+	}
+	if one > limit {
+		return fmt.Sprintf("Your %s plan runs %d GB at once and an %s machine needs %d GB. Upgrade to %s at %s.", plan, limit, ask.Class, one, smallestPlanFor(one), billingURL)
+	}
+	projects, err := list()
+	if err != nil {
+		return ""
+	}
+	used := 0
+	var slugs []string
+	for _, p := range projects {
+		if p.ID == ask.Except || !memoryStates[p.State] {
+			continue
+		}
+		used += classSpecs[p.Class].MemGB
+		slugs = append(slugs, p.Slug)
+	}
+	need := one * ask.Count
+	if used+need <= limit {
+		return ""
+	}
+	if ask.Count > 1 {
+		head := fmt.Sprintf("Your %s plan runs %d GB at once and %d %s machines need %d GB", plan, limit, ask.Count, ask.Class, need)
+		if used > 0 {
+			head += fmt.Sprintf(" beside the %d GB %s %s using", used, joinNames(slugs), isAre(len(slugs)))
+		}
+		return fmt.Sprintf("%s. %s, or upgrade at %s.", head, fixOr(ask.Fix, slugs), billingURL)
+	}
+	if len(slugs) == 0 {
+		return fmt.Sprintf("Your %s plan runs %d GB at once. Upgrade at %s.", plan, limit, billingURL)
+	}
+	return fmt.Sprintf("Your %s plan runs %d GB at once and %s %s using it. %s, or upgrade at %s.", plan, limit, joinNames(slugs), isAre(len(slugs)), fixOr(ask.Fix, slugs), billingURL)
+}
+
+// fixOr is the way out a memory refusal names: the caller's own (fork's
+// --no-start), else `repose stop` for the one machine in the way.
+func fixOr(fix string, slugs []string) string {
+	if fix != "" {
+		return fix
+	}
+	if len(slugs) == 1 {
+		return fmt.Sprintf("`repose stop %s` frees it", slugs[0])
+	}
+	return "Stop one"
+}
+
 // classSummary is "4 vCPU, 8 GB memory; fits the Solo plan" or "8 vCPU,
 // 16 GB memory; needs the Plus plan".
 func classSummary(class string) string {
@@ -77,6 +203,14 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 	case "running":
 	default:
 		return exitf(ExitGuestNotRunning, "%s is %s; its size can be changed once it is running or stopped. `repose status %s` shows its state.", s, project.State, s)
+	}
+	// The plan is asked before the prompt: a refusal after the stop would
+	// have ended every agent for nothing (I-610). A smaller size always
+	// fits.
+	if classSpecs[class].MemGB > classSpecs[from].MemGB {
+		if msg := planMemoryRefusal(ctx, e, planAsk{Class: class, Except: project.ID}); msg != "" {
+			return exitf(ExitPaymentRequired, "%s", msg)
+		}
 	}
 	if confirm != nil {
 		if err := confirmOr(confirm, classChangePrompt(s, from, class), fmt.Sprintf("Not changed. %s is still %s.", s, from)); err != nil {

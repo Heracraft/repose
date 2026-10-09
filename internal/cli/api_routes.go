@@ -114,6 +114,16 @@ func (c *Client) KeepProject(ctx context.Context, id string) (*Project, error) {
 	return &p, nil
 }
 
+// ExtendProject gives a temporary project d more from now: PATCH
+// {expires_in_s} (DECISIONS I-612).
+func (c *Client) ExtendProject(ctx context.Context, id string, d time.Duration) (*Project, error) {
+	var p Project
+	if err := c.patch(ctx, "/projects/"+url.PathEscape(id), map[string]any{"expires_in_s": int64(d / time.Second)}, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (c *Client) PatchProject(ctx context.Context, id string, req PatchProjectRequest) (*Project, error) {
 	var p Project
 	if err := c.patch(ctx, "/projects/"+url.PathEscape(id), req, &p); err != nil {

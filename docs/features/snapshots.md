@@ -109,7 +109,7 @@ Restoring:
 Forking (DECISIONS I-254, I-255):
 
 - `repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID]
-  [--prompt TEXT [--agent A]]` takes a manual snapshot of a live project
+  [--prompt TEXT [--agent A]] [--no-start]` takes a manual snapshot of a live project
   (running or stopped; the source keeps running) unless `--snapshot`
   names one of its own, then `POST /projects/:id/fork` restores it into N
   new projects called `<slug>-fork-<k>` (or `NAME-<k>`), `k` the lowest
@@ -131,6 +131,12 @@ Forking (DECISIONS I-254, I-255):
   source's `~/<slug>`, made by guestd's `SetupProject` (I-255).
 - With `--prompt`, the CLI starts the agent with that prompt in each
   running copy, without syncing the laptop into it, and does not attach.
+- Before the snapshot the CLI asks the plan's memory for all N copies
+  beside what runs now, the source included, from `/me` and the project
+  list, and refuses with exit 7 naming `--no-start` when they don't fit
+  (I-610). `--no-start` sends `start: false`: the copies are restored
+  and left `stopped`, and take no memory until started; with `--prompt`
+  it exits 2.
 - Each copy is a project: it counts toward the project limit and the
   plan's disk, and toward the plan's memory while it runs (I-570). There is no fork lineage in the api, no "promote a copy", and no
   dashboard action yet.

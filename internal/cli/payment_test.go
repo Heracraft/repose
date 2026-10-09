@@ -18,6 +18,10 @@ func TestPaymentRequiredMessage(t *testing.T) {
 	}{
 		{"plan_limit verbatim", &APIError{Code: "payment_required", Message: "Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.", Detail: map[string]any{"reason": "plan_limit"}},
 			"Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing."},
+		{"plan_limit names the stop", &APIError{Code: "payment_required", Message: "Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.", Detail: map[string]any{"reason": "plan_limit", "projects": []any{"todo-app"}}},
+			"Your Solo plan runs 8 GB at once and todo-app is using it. `repose stop todo-app` frees it, or upgrade at https://repose.herakraft.co/billing."},
+		{"plan_limit with two machines verbatim", &APIError{Code: "payment_required", Message: "Your Plus plan runs 16 GB at once and a and b are using it. Stop one, or upgrade at https://repose.herakraft.co/billing.", Detail: map[string]any{"reason": "plan_limit", "projects": []any{"a", "b"}}},
+			"Your Plus plan runs 16 GB at once and a and b are using it. Stop one, or upgrade at https://repose.herakraft.co/billing."},
 		{"egress_limit verbatim", &APIError{Code: "payment_required", Message: "Your machines are stopped until 1 November: this period's egress passed 1000 GB.", Detail: map[string]any{"reason": "egress_limit"}},
 			"Your machines are stopped until 1 November: this period's egress passed 1000 GB."},
 		{"subscription_required verbatim", &APIError{Code: "payment_required", Message: fallback, Detail: map[string]any{"reason": "subscription_required", "waitlist": nil}}, fallback},

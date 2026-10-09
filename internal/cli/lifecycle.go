@@ -727,6 +727,17 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 	if err != nil {
 		return err
 	}
+	// The api refuses a shrink with its field name; the CLI knows the
+	// size already (I-613).
+	if cur := project.VolumeBytes; cur > 0 {
+		switch {
+		case bytes == cur:
+			_, _ = fmt.Fprintf(e.Out, "%s's disk is already %s.\n", project.Slug, diskSize(cur))
+			return nil
+		case bytes < cur:
+			return exitf(ExitUsage, "%s's disk is %s and can only grow.", project.Slug, diskSize(cur))
+		}
+	}
 	pr := e.newProgress()
 	defer pr.Fail()
 	var opID string
@@ -747,7 +758,7 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 	if op.State == "error" {
 		return e.opFailed("resize", project.Slug, op.Error, "")
 	}
-	_, _ = fmt.Fprintf(e.Out, "Resized %s to %s.\n", project.Slug, humanBytes(bytes))
+	_, _ = fmt.Fprintf(e.Out, "Resized %s's disk to %s.\n", project.Slug, diskSize(bytes))
 	return nil
 }
 

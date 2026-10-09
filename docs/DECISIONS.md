@@ -16827,3 +16827,94 @@ Docs: cli.md, lifecycle, features/stop-start-destroy, features/snapshots,
 interfaces/cli-config (exit 1). `TestStopSeveral`, `TestStopIdle`,
 `TestDestroySeveral`, `TestStopFetchesFirst`,
 `TestSnapshotsCreateNamesIt`, `TestLsEmptyCountsDestroyed`.
+**I-610. `resize --size` and `fork` ask the plan's memory before they
+stop or snapshot anything; `fork --no-start`; a plan refusal with one
+machine in the way names `repose stop`.** (cli-devx review 5.1, 5.2,
+6.7, 2026-10-08) `repose resize --size xl` on Solo asked y/N about
+ending every agent, stopped the machine, and only then met the gate's
+refusal on the PATCH; `repose fork demo -n 3` took a snapshot and then
+met it on the fork, and the gate asked about one machine of the N. The
+CLI now asks the same question first, from `/me` (`billing.plan`,
+`limits.memory_gb`) and the project list, counting what the gate counts
+(running, starting, restoring, creating, building): `resize --size` to a
+larger size before its prompt, leaving the project itself out since it
+stops first; `fork` for all N, the source included since it keeps
+running, before the snapshot. A refusal exits 7 in the gate's words:
+`Your Solo plan runs 8 GB at once and an xl machine needs 16 GB.
+Upgrade to Plus at https://repose.herakraft.co/billing.`, or, for fork,
+`... and 3 large machines need 24 GB beside the 8 GB demo is using.
+`repose fork demo -n 3 --no-start` creates them stopped, or upgrade at
+...`. The CLI answers only when it can tell: no plan, an exempt account,
+or an unreadable `/me` or list leave it to the api's gate, which still
+decides every start. `fork --no-start` sends the api's existing `start:
+false` (api.md since I-254); the forks end `stopped`, take no memory,
+and the summary lists them so; with `--prompt` it exits 2. The gate's
+`plan_limit` sentence with one machine in the way reads `todo-app is
+using it. `repose stop todo-app` frees it, or upgrade at ...` in every
+command: the CLI swaps `Stop it` for the command when `detail.projects`
+has one slug, and prints any other wording as sent, so the api and the
+dashboard keep their sentence. *Not done:* the api's fork gate still
+asks for one machine; a client other than the CLI meets the rest as
+failed restores. *Rejected:* `Nothing was stopped.` on the refusal: the
+refusal comes before the question, so nothing suggests a stop.
+`TestResizeClassChecksThePlanFirst`, `TestForkChecksThePlanBeforeTheSnapshot`,
+`TestPlanMemoryRefusalLeavesUnknownsToTheAPI`, `TestPaymentRequiredMessage`,
+`TestClassSpecsMatchBillingAndHost`.
+
+**I-611. `run --size` and `sync --size` size a stopped project before
+starting it, and refuse a running one of another size.** (cli-ergonomics
+review B6, 2026-10-08) `--size` was read only on the create path, so
+`repose run --size xl` after an agent ran out of memory attached to the
+same machine and said nothing. Now, on a project that exists with
+another size: stopped, the CLI PATCHes the class (the gate answers a
+size the plan can't run, exit 7) and starts it at the new size, since
+nothing runs on it to lose; running or in any other state, it exits 2
+with `todo-app is large and running; --size sizes a machine this command
+creates or starts. `repose resize todo-app --size xl` changes it, which
+restarts it.`, because the restart ends every agent and `resize` asks
+about that first. An unknown `--size` exits 2 in the CLI. *Rejected:*
+resizing a running project from `run` behind a question: `run` would
+then be the second command that stops agents. `TestRunSizeOnAnExistingProject`.
+
+**I-612. A temporary machine whose checkout has work the laptop lacks
+outlives its session end; `repose keep PROJECT DURATION`.** (cli-ergonomics
+review A2, cli-devx 6.4, 2026-10-08; amends I-352) Exiting the last tmux
+window destroyed a temporary machine at once, and with no `repose`
+remote and no snapshot its commits and files went with it. Before the
+DELETE the CLI now runs one more ssh over the attach's master: in the
+checkout, the changed files beyond the last sync's fingerprint (I-210)
+plus every file `git status` lists in its other worktrees, and the
+commits reachable from a branch or worktree HEAD but from neither a
+remote-tracking branch nor the commits in `.git/repose-synced-key`. Any
+of either, or a check that fails, and there is no DELETE: `tmp-k3f9 has
+2 commits and 1 changed file that your laptop does not, so it stays
+until 14:02. `repose attach tmp-k3f9` goes back to it.` The machine then
+goes at its expiry as any temporary machine does. Files outside the
+checkout are not looked at. `repose keep PROJECT 3h` (10m to 24h, one
+argument that reads as a duration is the duration) keeps it temporary
+and moves the expiry to that long from now: `PATCH /projects/:id
+{expires_in_s}`, added to api.md beside `expires_at: null`, which still
+works; the fake does the same. The `temp_expiring` warning now goes once
+per expiry (no warning since `expires_at` minus an hour), so a machine
+given more time is warned again. *Rejected:* the `repose` remote for a
+temporary machine (the review's third change): the remote names the
+checkout's own project and `run` there would then mean the temporary
+one (I-347); `git fetch tmp-k3f9.repose:~/DIR BRANCH` stays the way back.
+*Not done:* 6.4's status line `C-b d detach · exit destroys`: with this
+check an `exit` no longer loses work, so the line would be a hint on
+every screen. `TestTempSessionEndKeepsUnfetchedWork`,
+`TestTempSessionEndDestroys`, `TestKeepForADuration`, `TestParseTempWork`,
+`TestTempStays`, `TestTempExtendContract`.
+
+**I-613. `repose resize DISK` needs a unit and compares with the disk
+first.** (cli-ergonomics review D6, 2026-10-08) `parseSize` read `80` as
+80 bytes, so `repose resize izma 100` asked the api for a 100-byte
+disk; a shrink came back as `invalid: volume_bytes: volumes only grow`;
+errors quoted the input upper-cased and cut (`"BI"`). Now a bare number
+exits 2 with `"100" needs a unit, like 100G`, one bare-number argument is
+DISK rather than a project called `100`, and errors quote the input as
+typed. Before the POST the CLI compares with `volume_bytes`: the same
+size prints `izma's disk is already 80G.` and exits 0, a smaller one
+exits 2 with `izma's disk is 80G and can only grow.` The success line is
+`Resized izma's disk to 120G.` `TestParseSizeNeedsAUnit`,
+`TestResizeDiskComparesFirst`, `TestParseResizeArgs`.

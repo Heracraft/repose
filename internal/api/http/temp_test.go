@@ -232,3 +232,65 @@ func TestTempDeleteKeepsNoSnapshot(t *testing.T) {
 		t.Fatalf("snapshots %d, temp_destroyed %d", snaps, events)
 	}
 }
+
+// `repose keep NAME 3h` (I-612): PATCH expires_in_s moves a temporary
+// project's expiry to now plus that, within create's bounds, and only on
+// a temporary project; the hour's warning goes again for the new expiry.
+func TestTempExtendContract(t *testing.T) {
+	e, tok, id := tempEnv(t, "tmp-more")
+	ctx := e.h.Ctx
+	path := "/projects/" + id.String()
+	for _, body := range []map[string]any{
+		{"expires_in_s": 60},
+		{"expires_in_s": 86401},
+		{"expires_in_s": 3600, "expires_at": nil},
+	} {
+		if r := e.do(t, tok, "PATCH", path, body); r.status != 400 || errCode(r) != "invalid" {
+			t.Fatalf("patch %v: %d %s", body, r.status, r.raw)
+		}
+	}
+	if p := e.h.Project(id); p.ExpiresAt == nil {
+		t.Fatal("a refused patch kept the project")
+	}
+	r := e.do(t, tok, "PATCH", path, map[string]any{"expires_in_s": 7200})
+	if r.status != 200 || r.body["expires_at"] == nil {
+		t.Fatalf("extend: %d %s", r.status, r.raw)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	got := e.h.Project(id).ExpiresAt
+	if got == nil || got.Before(now.Add(2*time.Hour-time.Minute)) || got.After(now.Add(2*time.Hour+time.Minute)) {
+		t.Fatalf("expires_at %v, want about %v", got, now.Add(2*time.Hour))
+	}
+	// The first warning, for an expiry half an hour away.
+	if _, err := e.h.Pool.Exec(ctx, "update projects set created_at = $2, expires_at = $3 where id = $1", id, now.Add(-23*time.Hour), now.Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	reaper := &temp.Reaper{Pool: e.h.Pool, Engine: e.h.Engine, Events: e.h.Events}
+	if res, err := reaper.Run(ctx, now); err != nil || res.Warned != 1 {
+		t.Fatalf("first warning: %+v %v", res, err)
+	}
+	// Two hours on, a keep gave it half an hour more. The events table
+	// stamps its own time, so the warning is moved back instead.
+	if err := db.EnsurePartitions(ctx, e.h.Pool, now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update events set ts = ts - interval '2 hours', ts_second = ts_second - 7200 where project_id = $1 and kind = $2", id, temp.KindExpiring); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "PATCH", path, map[string]any{"expires_in_s": 1800}); r.status != 200 {
+		t.Fatalf("extend: %d %s", r.status, r.raw)
+	}
+	for i, want := range []int{1, 0} {
+		if res, err := reaper.Run(ctx, now); err != nil || res.Warned != want || res.Destroyed != 0 {
+			t.Fatalf("warning for the new expiry, run %d: %+v %v", i, res, err)
+		}
+	}
+	// A project that is not temporary takes no lifetime.
+	r = e.do(t, tok, "PATCH", path, map[string]any{"expires_at": nil})
+	if r.status != 200 {
+		t.Fatalf("keep: %d %s", r.status, r.raw)
+	}
+	if r := e.do(t, tok, "PATCH", path, map[string]any{"expires_in_s": 3600}); r.status != 400 || errCode(r) != "invalid" {
+		t.Fatalf("extend a normal project: %d %s", r.status, r.raw)
+	}
+}

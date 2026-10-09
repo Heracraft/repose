@@ -90,6 +90,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 			return exitf(ExitUsage, "`repose run` no longer syncs a machine that already has your checkout; `repose sync %s` does.", flag)
 		}
+		if _, ok := classSpecs[opts.Size]; opts.Size != "" && !ok {
+			return exitf(ExitUsage, "--size must be small, large or xl, got %q.", opts.Size)
+		}
 		if opts.Sync && e.inHome() {
 			return errHomeSync()
 		}
@@ -166,6 +169,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	endResolve()
 	if !attachOnly && res.Project != nil && res.Project.State == "destroying" {
 		if err := startOver(ctx, e, res, &opts, pr); err != nil {
+			return err
+		}
+	}
+	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+		if err := sizeExisting(ctx, e, res.Project, opts.Size); err != nil {
 			return err
 		}
 	}
@@ -1548,6 +1556,26 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 // runDestroyWait bounds how long `repose run` waits for the destroy of
 // the project it resolved to before it creates a fresh one (I-301).
 var runDestroyWait = 10 * time.Minute
+
+// sizeExisting is --size on a project that exists (I-611): a stopped one
+// takes the size before this command starts it, as `repose resize --size`
+// would change it, and nothing runs on it to lose. A running one is
+// refused: changing it stops every agent on it, which `repose resize`
+// asks about first.
+func sizeExisting(ctx context.Context, e *Env, p *Project, size string) error {
+	if p.State != "stopped" {
+		return exitf(ExitUsage, "%s is %s and %s; --size sizes a machine this command creates or starts. `repose resize %s --size %s` changes it, which restarts it.", p.Slug, p.Class, stateWords(p.State), p.Slug, size)
+	}
+	np, err := e.Client.PatchProject(ctx, p.ID, PatchProjectRequest{Class: &size})
+	if err != nil {
+		return err
+	}
+	p.Class = size
+	if np != nil && np.Class != "" {
+		p.Class = np.Class
+	}
+	return nil
+}
 
 // startOver is `repose run` on a project being destroyed (DECISIONS I-301):
 // wait for the destroy to end, forget the old project, and leave res and
