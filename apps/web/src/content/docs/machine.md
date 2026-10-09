@@ -172,7 +172,7 @@ This quick tunnel needs no Cloudflare account and prints a random `trycloudflare
 Every agent on the machine has two browser tools registered, `playwright` and `chrome-devtools`: navigate, fill forms, take screenshots, read the console and network. Both drive the same Chromium, which starts the first time an agent uses one of them and keeps its cookies and logins between runs. Ask for them in a prompt:
 
 ```
-repose run "screenshot each signup step with playwright"
+repose run -p "screenshot each signup step with playwright"
 ```
 
 Playwright 1.63's Chromium is installed. For another Playwright release, or for Firefox, run `npx playwright install chromium` or `npx playwright install firefox` once, without `--with-deps`. WebKit doesn't run on the machine.

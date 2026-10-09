@@ -52,6 +52,9 @@ var undocumentedFlags = map[string]string{
 	// they only print where they went.
 	"repose run --stash-remote":   "moved to repose sync --stash-remote",
 	"repose run --discard-remote": "moved to repose sync --discard-remote",
+	// PROJECT's old spelling (I-603): hidden for a release.
+	"repose run --name":  "old spelling of repose run PROJECT",
+	"repose sync --name": "old spelling of repose sync PROJECT",
 }
 
 // internalEnvVars are REPOSE_* names the package reads that no user sets.

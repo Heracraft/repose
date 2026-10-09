@@ -12,7 +12,7 @@ Every machine has one browser for its agents: a real Chromium on a virtual scree
 In a project with a dev server:
 
 ```
-repose run "start the dev server, open the signup page \
+repose run -p "start the dev server, open the signup page \
 with playwright, fill the form with a test address and \
 screenshot the result"
 ```

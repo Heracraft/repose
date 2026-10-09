@@ -16651,3 +16651,38 @@ user (needs a herdr socket call nobody has checked); a hard expiry for
 tmux too. `TestSwitchTemporaryToHerdr`, `TestPickMultiplexerOrder`, `TestRunNewProjectFromHerdrPane`,
 `TestPlanHerdrCatalog`, `TestHerdrAttachPath`,
 `TestTempHerdrExpiryIgnoresSessions`.
+
+**I-603. `repose run [PROJECT]` and `repose sync [PROJECT]`: the
+argument is the machine of that name, created if there is none, and the
+prompt is `-p`/`--prompt`.** (owner, 2026-10-08: "the run \"prompt\" is
+a gimmick"; supersedes R1-4's `run "prompt"`, the run half of I-155's
+exception and I-348's `--name`) `run` was the one project command whose
+argument was not the project (I-155), so starting a named machine from
+the home folder (I-601) took `--name`, and a one-word prompt equal to a
+slug had to be refused. Now:
+- `run PROJECT` and `sync PROJECT` mean what `--name PROJECT` meant
+  (I-348): the project of that name or slug wherever the command runs,
+  created when there is none, a second machine for a checkout whose
+  remote another project has, refused when it is another repository's.
+  An id or `PROJECT:CHECKOUT` (I-480) must exist, as with `--project`.
+  `sync PROJECT` before this had to exist; it now creates, as `run`
+  does, so the two read the same. A sync by name into a project with no
+  remote links an unlinked checkout with no remote, as `--project` did
+  (I-575).
+- `-p`/`--prompt PROMPT` starts the agent; `--agent` and `--worktree`
+  (which needs `-p`) are unchanged. `fork --prompt` already had the name.
+- For one release the old shapes work: `--name` is hidden on both
+  commands, and several words, or one word with a space in it, are the
+  prompt, with ``The prompt goes after -p now: repose run -p 'fix the
+  tests'. This form stops working in the next release.`` on stderr. A
+  single word with no space is a project from now on, so `repose run
+  refactor` makes a machine called `refactor`; the create line says so.
+  A project name with a space needs `--name` during that release.
+- The one-word-prompt refusal (`refusePromptThatIsASlug`) is gone.
+Docs: cli.md, run-and-attach, lifecycle, sync, agents, index, machine,
+troubleshooting, the tutorials; features, 07-cli, guest-conventions,
+DESIGN. Not changed: the guest's wrapper comment in
+`nix/overlay/agents/wrap.nix` (inside the wrapper's text, so editing it
+rebuilds every base's agents). `TestRunArgs`, `TestRunCommandArgs`,
+`TestSyncNameLinksAnUnlinkedCheckout`,
+`TestRunTypesAPromptThatIsAProjectName`, `TestDocsNameEveryCommandAndFlag`.

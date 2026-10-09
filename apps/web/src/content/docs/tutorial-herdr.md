@@ -31,7 +31,7 @@ In the checkout, from a terminal in your laptop's herdr:
 
 ```
 $ cd ~/src/todo-app
-$ repose run "add a dark mode toggle"
+$ repose run -p "add a dark mode toggle"
 ✓ Created todo-app (large, herdr)  0.3s
 ...
 Ready in 38s.
@@ -45,7 +45,7 @@ From a terminal outside herdr, the same command opens herdr's client on the mach
 A second prompt opens another tab, `claude-2`. With `--worktree` the agent gets its own git worktree, which herdr shows under `checkout`:
 
 ```
-repose run --worktree "write the tests for the toggle"
+repose run --worktree -p "write the tests for the toggle"
 ```
 
 `repose ps` lists the agents and their state:

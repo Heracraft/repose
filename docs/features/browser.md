@@ -12,7 +12,7 @@ instead.
 Agents just use it:
 
 ```
-$ repose run "log into the staging site and screenshot the dashboard"
+$ repose run -p "log into the staging site and screenshot the dashboard"
 ```
 
 Watching or taking over is one command:

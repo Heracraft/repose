@@ -97,10 +97,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return exitf(ExitUsage, "--temp always creates a new machine; it cannot be used with --project (%s).", opts.ProjectArg)
 		}
 		if opts.On != "" && (opts.Temp > 0 || opts.Name != "" || opts.ProjectArg != "" || opts.Size != "") {
-			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with --temp, --name, --project or --size.")
+			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with PROJECT, --temp, --project or --size.")
 		}
 		if opts.Name != "" && opts.ProjectArg != "" && opts.Name != opts.ProjectArg {
-			return exitf(ExitUsage, "--name %s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
+			return exitf(ExitUsage, "%s and --project %s name two projects; pass one.", opts.Name, opts.ProjectArg)
 		}
 		if opts.Temp == 0 && opts.Name == "" && opts.On == "" {
 			// A guess from the cache: the checkout's project. --name and
@@ -146,11 +146,6 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	res, err := resolveForRun(ctx, e, opts, attachOnly)
 	if err != nil {
 		return err
-	}
-	if !attachOnly && opts.Agent == "" && opts.Prompt != "" && !strings.ContainsAny(strings.TrimSpace(opts.Prompt), " \t\n") {
-		if err := refusePromptThatIsASlug(ctx, e, opts.Prompt); err != nil {
-			return err
-		}
 	}
 	skipSync := false
 	if err := <-precheck; err != nil {
@@ -575,6 +570,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 // directory (DECISIONS I-575, narrowing I-152 for this case).
 func (e *Env) linkExplicitSync(project *Project, opts RunOptions) {
 	explicit := e.resolveArg(opts.ProjectArg)
+	if explicit == "" {
+		explicit = opts.Name // `repose sync NAME` (I-603)
+	}
 	if explicit == "" || strings.Contains(explicit, ":") || project.RemoteURL != "" || e.extraCheckout() != nil {
 		return
 	}
@@ -713,23 +711,6 @@ func saveProjectTZ(ctx context.Context, e *Env, project *Project, tz string) (wa
 		case <-time.After(2 * time.Second):
 		}
 	}
-}
-
-// refusePromptThatIsASlug catches `repose run izma`: every other command
-// takes the project as its argument (I-155), but `run`'s argument is the
-// prompt, and a one-word prompt that is exactly a project's name is far
-// more likely a slip than an instruction to an agent.
-func refusePromptThatIsASlug(ctx context.Context, e *Env, prompt string) error {
-	projects, err := e.Client.ListProjects(ctx)
-	if err != nil {
-		return nil // the check is a courtesy; the run itself reports a real api failure
-	}
-	for _, p := range projects {
-		if p.Slug == prompt {
-			return exitf(ExitUsage, "%q is one of your projects, but `repose run`'s argument is a prompt for the agent. To work on it: `repose run --project %s` (or `repose attach %s`). To send the word itself as a prompt, name the agent: `repose run --agent claude %s`.", prompt, prompt, prompt, prompt)
-		}
-	}
-	return nil
 }
 
 // connect is steps 3 and 4: the certificate and config, then the first
@@ -1464,7 +1445,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		if remote == "" {
 			name = dirProjectName(name)
 			if name == "" {
-				return nil, exitf(ExitUsage, "This directory's name cannot be a project name. Pass --name NAME.")
+				return nil, exitf(ExitUsage, "This directory's name cannot be a project name. Name one: `repose run NAME`.")
 			}
 		}
 	}
@@ -1557,7 +1538,7 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		}
 		return nil, err
 	}
-	return nil, exitf(ExitGeneric, "Could not find a free project name after 10 attempts; pass --name NAME.")
+	return nil, exitf(ExitGeneric, "Could not find a free project name after 10 attempts. Name one: `repose run NAME`.")
 }
 
 // runDestroyWait bounds how long `repose run` waits for the destroy of
@@ -1800,4 +1781,40 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		}
 	}
 	return checkout
+}
+
+// runArgs reads `repose run`'s words (DECISIONS I-603): one word is the
+// project, as for attach and sync. Before I-603 the words were the
+// prompt; for one release several words, or one with a space in it, still
+// are, with a line saying where the prompt went.
+func runArgs(opts *RunOptions, args []string, errOut io.Writer) error {
+	switch {
+	case len(args) == 0:
+		return nil
+	case len(args) == 1 && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
+		return positionalProject(opts, args[0])
+	}
+	prompt := strings.TrimSpace(strings.Join(args, " "))
+	if opts.Prompt != "" {
+		return cobraUsageError{fmt.Errorf("-p is the prompt; %q is not a project name", prompt)}
+	}
+	opts.Prompt = prompt
+	_, _ = fmt.Fprintf(errOut, "The prompt goes after -p now: repose run -p %s. This form stops working in the next release.\n", shQuote(prompt))
+	return nil
+}
+
+// positionalProject is the PROJECT of run and sync (I-603): the machine
+// of that name, created if there is none, as --name was. An id, or
+// PROJECT:CHECKOUT (I-480), names a project that exists, as --project
+// does.
+func positionalProject(opts *RunOptions, arg string) error {
+	if looksLikeUUID(arg) || strings.Contains(arg, ":") {
+		opts.ProjectArg = arg
+		return nil
+	}
+	if opts.Name != "" && opts.Name != arg {
+		return cobraUsageError{fmt.Errorf("%s and --name %s name two projects; pass one", arg, opts.Name)}
+	}
+	opts.Name = arg
+	return nil
 }

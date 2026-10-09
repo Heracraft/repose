@@ -24,11 +24,11 @@ func TestIsAgent(t *testing.T) {
 	}
 }
 
-// `repose run --agent aider "..."` is a usage error (exit 2) naming the
+// `repose run --agent aider -p "..."` is a usage error (exit 2) naming the
 // five, before anything reaches the api or the guest.
 func TestRunRejectsUnknownAgent(t *testing.T) {
 	root := newRootCmd("test")
-	root.SetArgs([]string{"run", "--agent", "aider", "fix the tests"})
+	root.SetArgs([]string{"run", "--agent", "aider", "-p", "fix the tests"})
 	root.SetOut(&strings.Builder{})
 	root.SetErr(&strings.Builder{})
 	err := root.ExecuteContext(context.Background())

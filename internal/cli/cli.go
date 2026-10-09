@@ -309,25 +309,33 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts RunOptions
 	var tempRaw string
 	cmd := &cobra.Command{
-		Use:   "run [PROMPT]",
-		Short: "Create or start this checkout's machine, sync it and attach; with PROMPT, start an agent on it",
-		Long: "Create/start this checkout's environment, sync it and attach; with PROMPT, start an agent on it.\n\n" +
-			"PROMPT is everything after the flags, so quoting is optional. The project is the one for\n" +
-			"this checkout; name another with --project (`repose attach PROJECT` attaches without syncing).",
-		Args: cobra.ArbitraryArgs,
+		Use:   "run [PROJECT]",
+		Short: "Create or start a machine, sync this checkout into it and attach",
+		Long: "Create or start this checkout's machine, sync the checkout into it and attach.\n\n" +
+			"PROJECT is the machine of that name, created if there is none: a second machine for this\n" +
+			"checkout, or one for a folder with no git remote. -p starts an agent with a prompt.",
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			temp, args, err := resolveTempFlag(tempRaw, args)
 			if err != nil {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
-			opts.Prompt = strings.TrimSpace(strings.Join(args, " "))
-			opts.ProjectArg = g.project
+			if err := runArgs(&opts, args, cmd.ErrOrStderr()); err != nil {
+				return err
+			}
+			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {
+				return cobraUsageError{fmt.Errorf("%s and --project %s name two projects; pass one", opts.ProjectArg, g.project)}
+			}
+			if opts.ProjectArg == "" {
+				opts.ProjectArg = g.project
+			}
 			if opts.Agent != "" && !isAgent(opts.Agent) {
 				return cobraUsageError{fmt.Errorf("--agent must be one of %s, got %q", strings.Join(agentNames, ", "), opts.Agent)}
 			}
 			if opts.Worktree && opts.Prompt == "" {
-				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs a PROMPT")}
+				return cobraUsageError{fmt.Errorf("--worktree starts an agent in its own worktree and needs -p PROMPT")}
 			}
 			if _, err := parseBridgeAllow(opts.BridgeAllow); err != nil {
 				return cobraUsageError{fmt.Errorf("--bridge-allow %w", err)}
@@ -344,7 +352,11 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name, created if there is none (a second machine for a checkout, or one for a directory with no git remote)")
+	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
+	// Before I-603 the name was --name and PROJECT was the prompt; kept
+	// hidden for a release.
+	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose run NAME)")
+	_ = cmd.Flags().MarkHidden("name")
 	cmd.Flags().StringVar(&opts.On, "on", "", "add this folder to PROJECT's machine as another checkout, beside its own")
 	_ = cmd.RegisterFlagCompletionFunc("on", completeProject(env))
 	addTempFlag(cmd, &tempRaw)
@@ -411,9 +423,10 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
-			project, err := projectFrom(args, g)
-			if err != nil {
-				return err
+			if len(args) == 1 {
+				if err := positionalProject(&opts, args[0]); err != nil {
+					return err
+				}
 			}
 			if err := checkMultiplexerFlag(opts.Multiplexer); err != nil {
 				return err
@@ -422,12 +435,21 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts.ProjectArg, opts.NoAttach, opts.Sync = project, true, true
+			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {
+				return cobraUsageError{fmt.Errorf("%s and --project %s name two projects; pass one", opts.ProjectArg, g.project)}
+			}
+			if opts.ProjectArg == "" {
+				opts.ProjectArg = g.project
+			}
+			opts.NoAttach, opts.Sync = true, true
 			return runRun(cmd.Context(), e, opts, false)
 		},
 	}
 	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl, for a machine this creates")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name, created if there is none (a second machine for a checkout, or one for a directory with no git remote)")
+	// Before I-603 PROJECT had to exist and --name created; kept hidden
+	// for a release.
+	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
+	_ = cmd.Flags().MarkHidden("name")
 	addTempFlag(cmd, &tempRaw)
 	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the guest's uncommitted changes before syncing")
 	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "discard the guest's uncommitted changes before syncing")

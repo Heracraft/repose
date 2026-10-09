@@ -28,7 +28,7 @@ $ repose run                       # creates project "todo-app" on first use,
                                     # attaches to tmux inside it
 dev@todo-app:~/todo-app$            # tmux session "todo-app", window "shell"
 ^b d                                # detach; the guest keeps running
-$ repose run "finish the auth flow, run the tests, commit"
+$ repose run -p "finish the auth flow, run the tests, commit"
                                     # opens tmux window "claude", starts Claude
                                     # Code's TUI, types the prompt
 $ repose status

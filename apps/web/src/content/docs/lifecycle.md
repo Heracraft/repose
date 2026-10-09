@@ -135,12 +135,12 @@ The name stays taken until the destroy finishes, so a `repose run` started meanw
 For an experiment that shouldn't touch your main project, create another one by name:
 
 ```
-repose run --name todo-app-experiment
+repose run todo-app-experiment
 ```
 
 It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. This is also how to run several agents on one repository without them sharing a working tree.
 
-`--name` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
+`repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
 
 The second machine has no git remote of its own, and your checkout's `repose` remote stays pointed at the original. To bring its work back, add a remote for it:
 
@@ -150,20 +150,20 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run --name boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
+In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later `repose run` in that directory without `--name` uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
 
 ### From your home folder
 
-Your home folder, and every folder above it, belongs to no machine. There, `repose run --name NAME` creates NAME or uses it, and syncs nothing, so you can start as many machines as you like from a fresh terminal:
+Your home folder, and every folder above it, belongs to no machine. There, `repose run NAME` creates NAME or uses it, and syncs nothing, so you can start as many machines as you like from a fresh terminal:
 
 ```
 $ cd ~
-$ repose run --name scratch "try the new API"
-$ repose run --name notes
+$ repose run scratch -p "try the new API"
+$ repose run notes
 $ repose run --temp
 ```
 
-A plain `repose run` there stops with `Your home folder is not a project. cd into one, or pass --name NAME or --temp.` Commands that act on a machine, such as `repose rm` or `repose stop`, need its name there. `repose sync` and `run --on` stop with an error. A home folder that is a git repository, such as a dotfiles repository, is never synced and gets no `repose` git remote.
+A plain `repose run` there stops with ``Your home folder is not a project. cd into one, or run `repose run NAME` or `repose run --temp`.`` Commands that act on a machine, such as `repose rm` or `repose stop`, need its name there. `repose sync` and `run --on` stop with an error. A home folder that is a git repository, such as a dotfiles repository, is never synced and gets no `repose` git remote.
 
 ## Temporary machines
 
@@ -178,12 +178,12 @@ Ready in 21s.
 tmp-k3f9 is temporary: destroyed in 24h.
 
 $ cd ~/Downloads
-$ repose run --temp --name spike
+$ repose run --temp spike
 ✓ Created spike (large, temporary: destroyed Sep 29 14:05)  4s
 Not a git repository, so nothing was synced.
 ```
 
-- `--temp` always makes a new machine, named `tmp-` and four letters unless you pass `--name`. It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
+- `--temp` always makes a new machine, named `tmp-` and four letters unless you name it (`repose run --temp spike`). It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
 - `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours. It's counted from when the machine was made.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
@@ -218,7 +218,7 @@ from its snapshot of 2026-09-25 14:02 in 48s:
 
 `repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
-`--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run --project todo-app-fork-2 "..."`, which leaves the copy's checkout as it is.
+`--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
 
 The original keeps running and is still the project `repose run` uses in your checkout. Reach the copies by name: `repose attach todo-app-fork-2`. To keep one copy's work, commit it there and fetch it into your checkout with a remote for that copy:
 

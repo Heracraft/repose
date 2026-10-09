@@ -163,7 +163,7 @@ in
       ExecStart = "${tmuxSession}/bin/repose-tmux-session";
       # The tmux server exits with its last session (`exit` in the last
       # window, `tmux kill-server`); the unit then starts it again, so
-      # `repose attach` and `repose run "prompt"` find a session. The path
+      # `repose attach` and `repose run -p PROMPT` find a session. The path
       # unit did this until I-503 removed it (DECISIONS I-551). The 5 s
       # wait lets the CLI's check after an attach on a temporary machine
       # (I-352) see the session gone before it comes back. A server that

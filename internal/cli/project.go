@@ -82,7 +82,7 @@ func resolveForRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool
 		}
 		if p != nil {
 			if p.RemoteURL != "" && remote != "" && p.RemoteURL != remote {
-				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run --name %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another --name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
+				return nil, exitf(ExitUsage, "%s is the project for %s, and this checkout is %s, so `repose run %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", p.Slug, p.RemoteURL, remote, opts.Name, p.Slug)
 			}
 			return &ResolveResult{Project: p, Remote: remote}, nil
 		}

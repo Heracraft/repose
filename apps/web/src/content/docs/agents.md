@@ -15,10 +15,10 @@ Every machine has five coding agents installed, unmodified:
 | Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | When it goes idle     |
 | pi          | `pi`       | A provider's API key as a secret           | When it goes idle     |
 
-`repose run "prompt"` uses Claude Code. To use another agent for one prompt:
+`repose run -p "prompt"` uses Claude Code. To use another agent for one prompt:
 
 ```
-repose run --agent codex "port the build scripts to bun"
+repose run --agent codex -p "port the build scripts to bun"
 ```
 
 All five get new versions with platform updates.

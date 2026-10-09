@@ -77,7 +77,7 @@ func TestRunInTheHomeFolder(t *testing.T) {
 
 	e, _, _ := freshEnv(f.env, home)
 	err := runRun(ctx, e, RunOptions{NoAttach: true}, false)
-	wantExit(t, "plain run", err, ExitUsage, "Your home folder is not a project. cd into one, or pass --name NAME or --temp.")
+	wantExit(t, "plain run", err, ExitUsage, "Your home folder is not a project. cd into one, or run `repose run NAME` or `repose run --temp`.")
 	err = runRun(ctx, e, RunOptions{NoAttach: true, Prompt: "fix the tests"}, false)
 	wantExit(t, "plain run with a prompt", err, ExitUsage, "Your home folder is not a project.")
 	if ps := listed(t, e); len(ps) != 0 {

@@ -14,10 +14,10 @@ Any repository with a commit will do:
 ```
 mkdir hello && cd hello && git init -q
 echo '# hello' > README.md && git add -A && git commit -qm init
-repose run --name hello
+repose run
 ```
 
-`--name` is only needed because this repository has no remote yet. You land in a tmux session in `~/hello` on the machine. Detach with `Ctrl-b` `d`.
+The machine is named `hello`, after the folder, since the repository has no remote yet. You land in a tmux session in `~/hello` on the machine. Detach with `Ctrl-b` `d`.
 
 ## What went up
 
@@ -68,7 +68,7 @@ the machine' (push)
 Give the agent something to commit:
 
 ```
-repose run "add an MIT LICENSE file and commit it"
+repose run -p "add an MIT LICENSE file and commit it"
 ```
 
 Fetch once it's done (you get a notification):
@@ -109,7 +109,7 @@ The exit code is 6, so a script notices. Files the agent changed that your lapto
 `--worktree` gives an agent its own git worktree and branch, next to the checkout on the machine:
 
 ```
-$ repose run --worktree "try the other approach to the parser"
+$ repose run --worktree -p "try the other approach to the parser"
 Worktree: ~/hello-worktree-1 on branch worktree-1
 ```
 
