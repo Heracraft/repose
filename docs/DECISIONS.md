@@ -16714,7 +16714,11 @@ cycle, which repose does not use). Either way no new period is charged.
 (6) *Plan changes, cancellation, portal, invoices.* An upgrade is
 `PATCH /v1/subscriptions/{id}` with the new product and
 `proration_behavior: invoice` (the difference charged at once, as
-Paddle's `prorated_immediately`); a downgrade uses `next_period`, which
+Paddle's `prorated_immediately`). An upgrade from Solo also sends
+`discount_id: null`: Polar carries a subscription's discount onto the new
+product even when the discount names Solo's alone (the sandbox charged a
+Plus upgrade $50 a month), and the introductory offer is Solo's. A
+downgrade uses `next_period`, which
 Polar holds as `pending_update`; undoing it sends `pending_update:
 null`. Cancel and resume set `cancel_at_period_end`. The portal is a
 customer session for the external id; Polar has no payment-method deep
