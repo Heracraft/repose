@@ -124,7 +124,7 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 
 // snapshotTime is how a question or a line names a snapshot: when it
 // was taken, in the laptop's zone, as `repose snapshots list` shows it.
-func snapshotTime(s *Snapshot) string { return s.CreatedAt.Local().Format("2006-01-02 15:04") }
+func snapshotTime(s *Snapshot) string { return tableTime(s.CreatedAt) }
 
 // restoreInPlacePrompt is the question before a snapshot replaces a
 // stopped project's disk (DECISIONS I-614). It names the project and the

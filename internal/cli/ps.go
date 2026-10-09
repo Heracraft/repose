@@ -332,9 +332,14 @@ func psRowsTmux(l psListing, sig *Signals, now time.Time) []PsRow {
 
 // stateCell is the STATE column: "-" for no agent, and for unknown,
 // which says nothing (I-567).
+// It is in the words `ls` and `status` print (I-617): `needs input`,
+// where --json keeps needs_input.
 func stateCell(s string) string {
 	if s == "unknown" {
 		return "-"
+	}
+	if w, ok := agentStateWords[s]; ok {
+		return w
 	}
 	return orDash(s)
 }

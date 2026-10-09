@@ -50,7 +50,7 @@ func withProjectJSON(ctx context.Context, e *Env, projectArg string, fn func() e
 
 // stopWithJSON is `repose stop` with its --json (I-609): the stop lines
 // go to stderr and the projects it acted on, read again, to stdout: one
-// Project for one PROJECT, an array for several or for --idle.
+// Project for one PROJECT, an array for several or for --unused.
 func stopWithJSON(ctx context.Context, e *Env, o StopOptions) error {
 	if !e.JSON {
 		return StopProjectsCmd(ctx, e, o)

@@ -17577,3 +17577,36 @@ devx-status's and devx-agents' (I-606: windows are the noun).
 `TestFindRevision`, `TestConfigRevisionsAndApplyRevision`,
 `TestPersonalSwitch`, `TestNotifyShowAndTest`, `TestSetupLine`,
 `TestForkRemotes`, `TestOutboxTestSaysWhyNtfyFailed`.
+
+**I-629. One vocabulary across the 2026-10-08 CLI packages (cli-devx,
+2026-10-09).** Amends I-606, I-609, I-614, I-615, I-617, I-618.
+*Made during implementation* (cli-devx integration). Eight packages
+(I-606..I-628) changed the same commands from different sides; where
+two said the same thing two ways, one way was kept:
+- `repose stop --idle` (I-615) is `repose stop --unused`. I-617 calls
+  a machine nobody used for a day "unused" and keeps "idle" for an
+  agent between turns; a flag named for the agent word would stop
+  machines whose agents are idle and nothing else. The flag never
+  shipped, so no old name is kept. With none, it prints `No machine is
+  unused.`
+- `ps` prints STATE in the words `ls` and `status` print: `needs input`,
+  and `--json` keeps `needs_input` (I-606 printed the json word in the
+  table).
+- `events` and `status`'s last event line use one word per kind:
+  `completed` prints `done` (I-609 printed `finished`, I-617 `done`),
+  `idle_running` prints `unused` (I-609 printed `idle`).
+- `repose rm` takes several projects (I-615) or one PROJECT:CHECKOUT
+  (I-618). A PROJECT:CHECKOUT among several exits 2: one question
+  covering a checkout removal and machine destroys would hide which
+  is which.
+- `stop --json` (I-609) with several projects or `--unused` prints an
+  array of Projects; with one, the Project object as before.
+- `status -f`/`--follow` (I-609) is devx-status's watch (I-616): it
+  redraws in place on a terminal, prints only changes when piped,
+  rides out failed reads, and with `--json` prints each change as one
+  line. `--watch` stays a hidden old name.
+- The carry line that grammar renamed to `Logins copied:` (I-619) is
+  the one the change-only printer (I-618) records.
+- Usage validators added by the earlier packages keep cobra's forms
+  where they were custom already (stop, rm, attach, keep); the rest go
+  through `argsN` (I-628).

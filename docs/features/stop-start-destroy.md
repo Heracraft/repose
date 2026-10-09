@@ -39,7 +39,7 @@ api has claude (working). Stopping ends it. Stop api? [y/N] y
 Snapshotting and stopping api...
 Stopped api in 12s with a 1.4 GB snapshot.
 
-$ repose stop --idle                    # several stop at once (I-615)
+$ repose stop --unused                  # several stop at once (I-615)
 Stopping web and docs...
 Stopped web in 9.8s with a 0.9 GB snapshot.
 Stopped docs in 11s with a 1.2 GB snapshot.
@@ -109,7 +109,7 @@ Stop:
   `-y`/`--yes`, after which the stop line is followed by `Ended claude
   (working) and claude-2 (needs input).` Idle agents are not named, and no
   line names a command (DECISIONS I-614, revising I-500; I-484).
-- `stop` takes several projects, or `--idle` for every running project
+- `stop` takes several projects, or `--unused` for every running project
   the api reports idle (I-262); they are resolved first, asked about once
   and stopped in parallel, one line each, exit 1 when one failed (I-615).
 - In a checkout whose `repose` remote is a machine being stopped, the CLI

@@ -228,7 +228,7 @@ func TestStopSeveral(t *testing.T) {
 	}
 }
 
-// `repose stop --idle` stops the running projects the api reports idle
+// `repose stop --unused` stops the running projects the api reports idle
 // (I-262, I-615).
 func TestStopIdle(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
@@ -239,7 +239,7 @@ func TestStopIdle(t *testing.T) {
 	b := runningProject(t, fake, e, "web")
 	var out bytes.Buffer
 	e.Out = &out
-	if err := StopProjectsCmd(ctx, e, StopOptions{Idle: true}); err != nil || out.String() != "No machine is idle.\n" {
+	if err := StopProjectsCmd(ctx, e, StopOptions{Idle: true}); err != nil || out.String() != "No machine is unused.\n" {
 		t.Fatalf("none idle: %v %q", err, out.String())
 	}
 	since := time.Now().Add(-31 * time.Hour)

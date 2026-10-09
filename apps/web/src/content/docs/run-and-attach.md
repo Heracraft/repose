@@ -186,7 +186,7 @@ $ repose ps
 WINDOW      COMMAND  STATE        TREE        ACTIVE
 0:shell     bash     -            checkout    3h ago
 1:claude*   claude   working      checkout    now
-2:claude-2  claude   needs_input  worktree-1  12m ago
+2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
 STATE is `working`, `idle` or `needs_input`, the words `repose ls` uses; `-` is a window with no agent, or one that hasn't settled yet. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. COMMAND is the program's name only, never its arguments.

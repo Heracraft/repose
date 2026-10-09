@@ -82,7 +82,7 @@ func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) erro
 	return StopProjectsCmd(ctx, e, StopOptions{Projects: []string{projectArg}, Snapshot: snapshot, Yes: true})
 }
 
-// StopOptions is `repose stop [PROJECT...] [--idle] [--no-snapshot] [--yes]`.
+// StopOptions is `repose stop [PROJECT...] [--unused] [--no-snapshot] [--yes]`.
 type StopOptions struct {
 	Projects []string // as typed; none is this checkout's
 	Idle     bool     // every running project the api reports idle (I-262)
@@ -106,7 +106,7 @@ type stopResult struct {
 // the machine, so when the newest sample shows an agent in the middle of
 // a turn or waiting for an answer it asks first, and without a terminal
 // it refuses unless --yes (DECISIONS I-614, revising I-500). Several
-// projects, or --idle, stop in parallel after one question (I-615). In a
+// projects, or --unused, stop in parallel after one question (I-615). In a
 // checkout whose `repose` remote is one of them, the agent's commits are
 // fetched before the machine stops (I-615).
 func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
@@ -116,7 +116,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	if o.Idle {
 		projects, err = idleProjects(ctx, e)
 		if err == nil && len(projects) == 0 {
-			_, _ = fmt.Fprintln(e.Out, "No machine is idle.")
+			_, _ = fmt.Fprintln(e.Out, "No machine is unused.")
 			return nil
 		}
 	} else {

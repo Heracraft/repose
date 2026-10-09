@@ -637,7 +637,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if idle && (len(args) > 0 || g.project != "") {
-				return cobraUsageError{fmt.Errorf("--idle stops every idle machine; it takes no PROJECT")}
+				return cobraUsageError{fmt.Errorf("--unused stops every unused machine; it takes no PROJECT")}
 			}
 			var projects []string
 			if !idle {
@@ -658,9 +658,9 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
-	cmd.Flags().BoolVar(&idle, "idle", false, "stop every machine running a day with nobody on it and no agent working")
+	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project object as JSON when done (an array for several or --idle)")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project object as JSON when done (an array for several or --unused)")
 	return cmd
 }
 

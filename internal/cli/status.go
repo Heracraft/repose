@@ -454,19 +454,9 @@ func count(n int, noun string) string {
 	return fmt.Sprintf("%d %s", n, plural(n, noun, noun+"s"))
 }
 
-// eventWord is an event's kind in the words the rest of the CLI uses
-// for agents (I-617): `completed` is done, `needs_input` needs input.
-func eventWord(kind string) string {
-	switch kind {
-	case "completed":
-		return "done"
-	case "agent_question":
-		return "asked"
-	case "agent_message":
-		return "says"
-	}
-	return strings.ReplaceAll(kind, "_", " ")
-}
+// eventWord is an event's kind as the status's last event line names
+// it: the word `repose events` prints (I-617).
+func eventWord(kind string) string { return eventVerb(kind) }
 
 // snapshotCell is the newest snapshot's age, from the list or else the
 // project's last_snapshot_at. A fork has none of its own until its first

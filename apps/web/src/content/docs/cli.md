@@ -72,14 +72,14 @@ Copy this checkout's current work to its machine, over the checkout already ther
 
 ### `repose ps [PROJECT] [WINDOW]`
 
-The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle` or `needs_input`, as in `repose ls`, and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
+The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle` or `needs input`, as in `repose ls` (`--json` says `needs_input`), and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
 
 ```
 $ repose ps
 WINDOW      COMMAND  STATE        TREE        ACTIVE
 0:shell     bash     -            checkout    3h ago
 1:claude*   claude   working      checkout    now
-2:claude-2  claude   needs_input  worktree-1  12m ago
+2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
 With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name.
@@ -275,7 +275,7 @@ Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` print
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--idle` stops every machine `repose ls` shows as [idle](/docs/lifecycle#idle-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--idle`.
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--idle`.
 
 ### `repose rm [PROJECT...]`
 
@@ -322,7 +322,7 @@ Grow the project's disk, for example `repose resize 80G`, or `repose resize todo
 Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
 
 ```
-2026-10-08T20:59:04-04:00  claude (1)  finished      Added tests for src/billing.ts; 14 pass
+2026-10-08T20:59:04-04:00  claude (1)  done          Added tests for src/billing.ts; 14 pass
 2026-10-08T21:12:40-04:00  claude (2)  asks          Drop the legacy_users table?
 ```
 

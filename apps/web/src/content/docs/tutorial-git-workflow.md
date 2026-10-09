@@ -43,7 +43,7 @@ $ repose ps
 WINDOW      COMMAND  STATE        TREE        ACTIVE
 0:shell     bash     -            checkout    2h ago
 1:claude    claude   working      worktree-1  now
-2:claude-2  claude   needs_input  worktree-2  4m ago
+2:claude-2  claude   needs input  worktree-2  4m ago
 3:codex     codex    working      worktree-3  now
 ```
 

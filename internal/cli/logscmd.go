@@ -372,16 +372,17 @@ type eventsWidths struct {
 	project int
 }
 
-// eventVerbs are what an event's kind prints as, the words notify.Title
-// uses for the same kinds; --json keeps the kind. A kind not here prints
+// eventVerbs are what an event's kind prints as, in `events` and on
+// `status`'s last event line: the agent words `ls` and `status` use
+// (done, needs input, unused: I-617); --json keeps the kind. A kind not here prints
 // with its separators as spaces.
 var eventVerbs = map[string]string{
-	"completed":            "finished",
+	"completed":            "done",
 	"needs_input":          "needs input",
 	"error":                "hit an error",
 	"agent_message":        "says",
 	"agent_question":       "asks",
-	"idle_running":         "idle",
+	"idle_running":         "unused",
 	"temp_expiring":        "expiring",
 	"temp_destroyed":       "destroyed",
 	"personal_failed":      "machine.nix failed",
