@@ -28,6 +28,7 @@
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
+	import { withoutBillingURL } from '$lib/refusal';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import QuestionsCard from '$lib/components/QuestionsCard.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -573,7 +574,7 @@
 		{/snippet}
 
 		<p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
-			<span class="text-ink"><StateDot state={project.state} /></span>
+			<span class="text-ink" data-testid="project-state"><StateDot state={project.state} /></span>
 			<span class="font-mono">{project.class}</span>
 			{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
 				<!-- The stored choice is the next start's; a running machine may
@@ -607,7 +608,9 @@
 				data-reason={refusal?.reason ?? 'unknown'}
 			>
 				<p>
-					{refusal?.message ?? 'A plan is needed before a machine can start.'}
+					{refusal
+						? withoutBillingURL(refusal.message)
+						: 'A plan is needed before a machine can start.'}
 					<a href={resolve('/billing')} class="link">{refusalLink(refusal?.reason)}</a>
 				</p>
 				{#if refusal && refusal.projects.length > 0}

@@ -57,7 +57,7 @@ test('Start with no plan shows the refusal with a Choose a plan link and the but
 	await startBtn.click();
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'subscription_required');
-	await expect(refusal).toContainText('Choose a plan at https://repose.herakraft.co/billing');
+	await expect(refusal).toContainText('Choose a plan before a machine can start.');
 	await expect(refusal.getByRole('link', { name: 'Choose a plan' })).toHaveAttribute(
 		'href',
 		'/billing'
@@ -113,7 +113,7 @@ test('plan_limit names the machines using the memory, each with a Stop', async (
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'plan_limit');
 	await expect(refusal).toContainText(
-		`would pass the 8 GB of memory Solo gives running machines; ${using.slug} is using it. Stop one or upgrade.`
+		`Your Solo plan runs 8 GB at once and ${using.slug} is using it. Stop it.`
 	);
 	await expect(refusal.getByRole('link', { name: 'Upgrade' })).toHaveAttribute('href', '/billing');
 	await refusal.getByRole('button', { name: `Stop ${using.slug}` }).click();
