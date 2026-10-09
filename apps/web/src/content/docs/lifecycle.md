@@ -150,7 +150,7 @@ git remote add experiment \
 git fetch experiment
 ```
 
-In a directory with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the directory, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later plain `repose run` in that directory uses the machine last made there, and says which: `Using boxd, the machine last made in this directory.` A directory that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every directory that used the machine.
+In a folder with no git remote, such as `~/Downloads/job search`, a plain `repose run` makes a machine named after the folder, and `repose run boxd` makes `boxd` there, or uses it if you have one. A later plain `repose run` in that folder uses the machine last made there, and says which: `Using boxd, the machine last made in this folder.` A folder that has no machine yet takes the one you sync into with `repose sync PROJECT`. `repose rm` forgets every folder that used the machine.
 
 ### From your home folder
 

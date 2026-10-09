@@ -20,7 +20,7 @@ func TestRunArgs(t *testing.T) {
 		name               string
 		args               []string
 		prompt, nameFlag   string
-		named              bool
+		project            string
 		wantName, wantArg  string
 		wantPrompt, wantLn string
 		wantErr            string
@@ -29,7 +29,9 @@ func TestRunArgs(t *testing.T) {
 		{name: "a project", args: []string{"izma"}, wantName: "izma"},
 		{name: "a project and its prompt", args: []string{"izma"}, prompt: "fix it", wantName: "izma", wantPrompt: "fix it"},
 		{name: "a word beside --name is the old prompt", args: []string{"fix"}, nameFlag: "izma", wantName: "izma", wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
-		{name: "a word beside --project is the old prompt", args: []string{"fix"}, named: true, wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
+		{name: "a word beside --project is the old prompt", args: []string{"fix"}, project: "izma", wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
+		{name: "the project --project names", args: []string{"izma"}, project: "izma", wantName: "izma"},
+		{name: "the project --name names", args: []string{"izma"}, nameFlag: "izma", wantName: "izma"},
 		{name: "an id", args: []string{id}, wantArg: id},
 		{name: "a checkout", args: []string{"todo-app:api"}, wantArg: "todo-app:api"},
 		{name: "old prompt, quoted", args: []string{"fix the tests"}, wantPrompt: "fix the tests", wantLn: "The prompt goes after -p: `repose run -p 'fix the tests'`. This form stops working in the next release.\n"},
@@ -40,7 +42,7 @@ func TestRunArgs(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			opts := RunOptions{Prompt: c.prompt, Name: c.nameFlag}
 			var errOut strings.Builder
-			err := runArgs(&opts, c.args, c.named, &errOut)
+			err := runArgs(&opts, c.args, c.project, &errOut)
 			if c.wantErr != "" {
 				var ue cobraUsageError
 				if !errors.As(err, &ue) || !strings.Contains(err.Error(), c.wantErr) {
@@ -90,7 +92,7 @@ func TestRunCommandArgs(t *testing.T) {
 		{[]string{"sync", "izma", "--project", "other"}, "izma and --project other name two projects"},
 		{[]string{"sync", "izma", "--name", "other"}, "izma and --name other name two projects"},
 		{[]string{"run", "-p", "x", "fix", "it"}, "run takes one PROJECT"},
-		{[]string{"run", "izma", "--agent", "codex"}, "--agent picks the agent for -p PROMPT"},
+		{[]string{"run", "izma", "--agent", "codex"}, "--agent needs -p PROMPT"},
 		{[]string{"sync", "a", "b"}, "takes at most one PROJECT"},
 	} {
 		_, err := run(c.args...)
@@ -99,6 +101,16 @@ func TestRunCommandArgs(t *testing.T) {
 		usage := errors.As(err, &ue) || (errors.As(err, &ee) && ee.code == ExitUsage)
 		if !usage || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("repose %s: err = %v, want %q", strings.Join(c.args, " "), err, c.want)
+		}
+	}
+	// Past the argument checks (they stop at the api, not logged in): one
+	// project named two ways, and --agent with the old prompt form.
+	for _, args := range [][]string{{"run", "izma", "--project", "izma"}, {"run", "--agent", "claude", "fix", "the", "tests"}} {
+		_, err := run(args...)
+		var ue cobraUsageError
+		var ee *exitError
+		if err == nil || errors.As(err, &ue) || (errors.As(err, &ee) && ee.code == ExitUsage) {
+			t.Errorf("repose %s: err = %v, want past the argument checks", strings.Join(args, " "), err)
 		}
 	}
 	// `sync --temp 2h spike`: the duration is --temp's, spike is PROJECT;

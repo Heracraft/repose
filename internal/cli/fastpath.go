@@ -325,10 +325,16 @@ func startEarlyProbe(ctx context.Context, e *Env, opts RunOptions) *earlyProbe {
 		return nil
 	}
 	named := e.resolveArg(opts.ProjectArg)
-	if named == "" {
+	byName := named == ""
+	if byName {
 		named = opts.Name // `repose run NAME` (I-603); a name the cache lacks guesses nothing
 	}
 	guess := cachedGuess(e, named, defaultResolveDeps())
+	if byName && guess != nil && guess.RemoteURL != defaultResolveDeps().RemoteFor(e.Cwd) {
+		// Another repository's machine: the run refuses it (resolveForRun),
+		// and the probe would make this checkout's folder there first.
+		return nil
+	}
 	target, covered, master := warmTarget(ctx, e, guess)
 	if !covered {
 		return nil

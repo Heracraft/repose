@@ -94,7 +94,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			return errHomeSync()
 		}
 		if opts.Temp > 0 && opts.ProjectArg != "" {
-			return exitf(ExitUsage, "--temp always creates a new machine; %s names one you have.", opts.ProjectArg)
+			return exitf(ExitUsage, "--temp always creates a new machine; drop %s, or drop --temp to use it.", opts.ProjectArg)
 		}
 		if opts.On != "" && (opts.Temp > 0 || opts.Name != "" || opts.ProjectArg != "" || opts.Size != "") {
 			return exitf(ExitUsage, "--on adds this folder to a machine you have; it cannot be used with PROJECT, --temp, --project or --size.")
@@ -1789,16 +1789,19 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 
 // runArgs reads `repose run`'s words (DECISIONS I-603): one word is the
 // project, as for attach and sync. Before I-603 the words were the
-// prompt; for one release several words, one with a space in it, or any
-// word beside --project or --name (named is set), still are, with a line
-// saying where the prompt went.
-func runArgs(opts *RunOptions, args []string, named bool, errOut io.Writer) error {
-	named = named || opts.Name != ""
+// prompt; for one release several words, one with a space in it, or a
+// word beside --project or --name that is not the project they name
+// (`repose run --project X fix`), still are, with a line saying where
+// the prompt went.
+func runArgs(opts *RunOptions, args []string, project string, errOut io.Writer) error {
 	switch {
 	case len(args) == 0:
 		return nil
-	case len(args) == 1 && !named && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
-		return positionalProject(opts, args[0])
+	case len(args) == 1 && !strings.ContainsAny(strings.TrimSpace(args[0]), " \t\n"):
+		w := args[0]
+		if (project == "" || project == w) && (opts.Name == "" || opts.Name == w) {
+			return positionalProject(opts, w)
+		}
 	}
 	prompt := strings.TrimSpace(strings.Join(args, " "))
 	if opts.Prompt != "" {

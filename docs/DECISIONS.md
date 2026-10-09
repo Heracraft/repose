@@ -16672,7 +16672,11 @@ slug had to be refused. Now:
   did. A temporary machine is never linked (I-351). From a folder `run
   --on` added, the name of its machine means that checkout (I-480), as a
   plain run there does. The early probe (I-223) guesses from the name
-  too, through the cache.
+  too, through the cache, and only when the cached project's remote is
+  this checkout's, so it never makes a folder on another repository's
+  machine. The refusal of another repository's project by name (I-348)
+  does not apply with `--no-sync`, where nothing is synced into it, as
+  `--project` never refused.
 - `-p`/`--prompt PROMPT` starts the agent; `--agent` and `--worktree`
   (which needs `-p`) are unchanged. `fork --prompt` already had the name.
 - For one release the old shapes work: `--name` is hidden on both
@@ -16682,8 +16686,11 @@ slug had to be refused. Now:
   single word with no space is a project from now on, so `repose run
   refactor` makes a machine called `refactor`; the create line says so.
   A project name with a space needs `--name` during that release. A
-  word beside `--project` or `--name` is the old prompt too (`repose
-  run --project X fix`, the form an older `fork` warning printed).
+  word beside `--project` or `--name` that is not the project they name
+  is the old prompt too (`repose run --project X fix`, the form an older
+  `fork` warning printed), so for that release `run Y --project X` types
+  `Y` into X's agent instead of exiting 2; the same name both ways is
+  the project.
 - The one-word-prompt refusal (`refusePromptThatIsASlug`) is gone.
   `--agent` without `-p` exits 2, as `--worktree` does: it used to send
   a one-word prompt (`repose run --agent claude todo-app`), and now

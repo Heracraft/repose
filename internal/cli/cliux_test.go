@@ -482,11 +482,11 @@ func quietStdout(t *testing.T) {
 // the prompt is -p since I-603, and run's argument is the project.
 func TestRunTypesAPromptThatIsAProjectName(t *testing.T) {
 	var opts RunOptions
-	if err := runArgs(&opts, []string{"izma"}, false, &strings.Builder{}); err != nil || opts.Name != "izma" || opts.Prompt != "" {
+	if err := runArgs(&opts, []string{"izma"}, "", &strings.Builder{}); err != nil || opts.Name != "izma" || opts.Prompt != "" {
 		t.Fatalf("run izma: %+v %v", opts, err)
 	}
 	opts = RunOptions{Prompt: "izma"}
-	if err := runArgs(&opts, nil, false, &strings.Builder{}); err != nil || opts.Prompt != "izma" || opts.Name != "" {
+	if err := runArgs(&opts, nil, "", &strings.Builder{}); err != nil || opts.Prompt != "izma" || opts.Name != "" {
 		t.Fatalf("run -p izma: %+v %v", opts, err)
 	}
 }
