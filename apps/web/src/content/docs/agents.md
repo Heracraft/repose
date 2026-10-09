@@ -96,7 +96,7 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. Add a line to the agent's instructions (`CLAUDE.md`, `AGENTS.md`) telling it to use them. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for your answer and prints it. The machine's guide for agents already tells them when to use each; add a rule to `CLAUDE.md` or `AGENTS.md` only to change that. [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions) has where you answer and the options.
 
 ## Log in
 

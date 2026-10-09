@@ -469,6 +469,11 @@ func TestTempFlagParsing(t *testing.T) {
 		{"25h", nil, 0, 0, true},
 		{"soon", nil, 0, 0, true},
 		{tempBare, []string{"48h"}, 0, 0, true},
+		// After the PROJECT, as interleaved flags leave it (review C3).
+		{tempBare, []string{"spike", "3h"}, 3 * time.Hour, 1, false},
+		{tempBare, []string{"1d"}, 24 * time.Hour, 0, false},
+		{tempBare, []string{"2x"}, 0, 0, true},
+		{"1d", nil, 24 * time.Hour, 0, false},
 	} {
 		d, rest, err := resolveTempFlag(c.raw, c.args)
 		if (err != nil) != c.wantErr || (!c.wantErr && (d != c.want || len(rest) != c.rest)) {

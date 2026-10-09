@@ -17610,3 +17610,102 @@ two said the same thing two ways, one way was kept:
 - Usage validators added by the earlier packages keep cobra's forms
   where they were custom already (stop, rm, attach, keep); the rest go
   through `argsN` (I-628).
+
+**I-630. The help teaches in the CLI's own words: grouped root help,
+one-clause Shorts, 80 columns, "machine" everywhere, and every docs
+page held to the real commands (cli-devx, 2026-10-09).** Amends I-276,
+I-351, I-612. *Made during implementation* (cli-devx help and docs
+pass; reviews of 2026-10-08: C1, C3 to C10, D2, G9, 4.2, 6.2, 6.3,
+6.5, 8.1, 8.2, 8.5 to 8.7 and the theme-7 rows on Short lines and
+unknown subcommands).
+- Root help lists the commands in four groups by what you do, in the
+  order you meet them: work on a machine (run, attach, sync, exec,
+  ssh, code, cp, paste, open, browser), follow the agents (ps,
+  events, questions, reply, mcp), manage projects (ls ... logs) and
+  set up (login, logout, config, secrets, notify, scan); help,
+  version and completion stay under cobra's "Additional Commands". It
+  ends with one line, `Docs: https://repose.herakraft.co/docs/cli`.
+  Command sorting is off (`cobra.EnableCommandSorting`), so subcommand
+  lists follow the order they are added too (`mcp`: list, forward,
+  rm). No `help TOPIC` pages were added: cli.md has the environment
+  variables, exit codes and config.toml, and a second copy in the
+  binary would drift.
+- Every Short is one clause that starts with a verb, under 70 columns,
+  with no semicolon (`logs`: "Show a machine's console, build or
+  operation log"; `events`: "Show what agents and repose did on a
+  project"). Every Long starts with the verb as a command (Run, not
+  Runs) and wraps at 80 columns; flag text wraps at 80 through
+  `FlagUsagesWrapped`. Examples are commands that run as written;
+  run, sync, stop, rm, restore, resize, reply, fork, keep, open,
+  events, logs, snapshots restore, config apply, secrets set and mcp
+  forward have them, and cp's moved out of its Long. `completion`
+  prints the line that loads it for bash, zsh and fish, and install.md
+  has a Shell completion section; install.sh writes no shell file
+  (an installer editing rc files nobody asked it to is ceremony).
+  `TestShortLinesAreOneClause`, `TestHelpFitsEightyColumns`,
+  `TestRootHelpIsGrouped`.
+- `run`'s help says what it does after the first time: a new machine
+  gets a copy of the checkout, and `repose sync` sends later work
+  (C1). `sync`'s Long names exit 6, `--stash-remote` and that nothing
+  comes back (8.6). `start` no longer says "without syncing (restarts
+  one in error)" in its Short; that is its Long.
+- `--temp` shows as `--temp[=DURATION]`, not `string[="bare"]` (C3).
+  Its duration, and `keep`'s, is read as `--since` reads one, so `1d`
+  is 24h. After a bare `--temp`, a word shaped like a number and a
+  unit is its duration wherever it stands (`repose run spike --temp
+  3h`, where flags and arguments interleave), and one that is not a
+  duration (`2x`) exits 2 instead of becoming a project's name.
+- One word for the machine (C4): no "guest", "guestd", "environment"
+  or "fragment" in help or in a string the CLI prints.
+  `TestHelpSaysMachine` renders every command's help and
+  `TestMessagesSayMachine` reads every string literal in the package
+  (struct tags, regexps, timing lines and shell comments aside).
+  The api's op messages still say "the environment" and "the
+  environment's agent (guestd)"; the CLI prints them as "the machine"
+  and "repose's service on the machine", the words `status` already
+  used, and leaves the api's text to the api and dashboard, which read
+  it too. The create's build phase prints "Building the
+  configuration".
+- `logs --kind` shows its default, `console`, and the Long says what
+  each kind holds and that a clean boot leaves no console log (C5).
+- `--api-url` is hidden from help (8.7); cli.md's "Other servers"
+  keeps it. `login --browser` says what it does without PKCE or Logto
+  (C8). `--project` reads "act on project NAME or id (or
+  $REPOSE_PROJECT)".
+- Words from other CLIs lead to the repose command (8.5): `up`,
+  `create`, `new`, `init` to run; `shell`, `connect`, `console`, `sh`
+  to ssh; `down`, `halt` to stop; `port`, `forward`, `tunnel`,
+  `expose` to open; `env` to secrets; `undo`, `undelete`, `recover`
+  to restore; `clone`, `copy` to fork. An exact one of these beats an
+  edit-distance guess, so `up` names run alone, not run or cp.
+- A word after a group that takes no words of its own is a mistyped
+  subcommand with or without `--help` (`repose secrets remvoe --help`
+  and `repose notify foo` exit 2 with the suggestion), where cobra
+  printed the group's help with exit 0.
+- `repose code` under WSL, when the editor it finds is a Windows app on
+  a `/mnt` drive, exits 1 and says that app connects with Windows'
+  ssh (C10). The docs drop the sentences about a native Windows CLI,
+  which does not ship (.goreleaser builds darwin and linux).
+- On the machine, typing `repose` answers that the CLI runs on the
+  laptop and names repose-ask, repose-notify and repose-checkout
+  (8.7). The waitlist line names https://repose.herakraft.co/billing
+  instead of "the dashboard's plan page".
+- Docs: `TestEveryDocsPageNamesRealCommands` checks every page under
+  apps/web/src/content/docs, backticks and code blocks both, for a
+  `repose X` that is no command and for a flag X does not take (C7;
+  run-and-attach.md named `repose undo` and `repose destroy`). The
+  quickstart and install.md have a "Choose a plan" step (6.2), and the
+  quickstart and "tmux keys" say Ctrl-b twice reaches the machine's
+  tmux from a laptop tmux (6.3; the CLI prints nothing about it).
+  run-and-attach.md "Several agents, separate trees" opens with one
+  table for the two ways to run agents side by side, `--worktree` on
+  one machine and `fork` on a machine each, with how each one's work
+  comes back and how it is cleaned up (4.2); lifecycle.md points there
+  instead of recommending `run NAME` for the same need. agents.md no
+  longer asks you to add repose-ask instructions the machine's guide
+  already gives.
+- Not done: moving the plumbing `repose-*` helpers off the machine's
+  PATH (G9) changes what the agent guide and guest tests call and can
+  only be proved by booting a guest, which this machine cannot do; it
+  stays for a nix change of its own. No line is printed on a first
+  attach from inside a laptop tmux (6.3): the docs say it once.

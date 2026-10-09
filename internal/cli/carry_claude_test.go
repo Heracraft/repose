@@ -282,7 +282,7 @@ func TestClaudeSettingsMergeLeavesAnInvalidGuestFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runClaudeMerge(t, home, []byte(`{"model":"sonnet"}`), "/Users/lap")
-	if !strings.Contains(out, "#warn The guest's ~/.claude/settings.json is not valid JSON") {
+	if !strings.Contains(out, "#warn The machine's ~/.claude/settings.json is not valid JSON") {
 		t.Errorf("output = %q", out)
 	}
 	if b, _ := os.ReadFile(settings); !bytes.Equal(b, bad) {
@@ -546,7 +546,7 @@ func TestClaudeSettingsFailureAndDroppedHookOncePerChange(t *testing.T) {
 	if len(o.Failed) != 1 || o.Failed[0] != "Claude settings" {
 		t.Fatalf("failed = %v, want [Claude settings]", o.Failed)
 	}
-	if !strings.Contains(strings.Join(o.Lines(), "\n"), "the guest keeps its previous one") {
+	if !strings.Contains(strings.Join(o.Lines(), "\n"), "the machine keeps its previous one") {
 		t.Errorf("lines = %v", o.Lines())
 	}
 	if b, _ := os.ReadFile(guest); string(b) != "[1]\n" {

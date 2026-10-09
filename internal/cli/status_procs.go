@@ -181,7 +181,7 @@ func writeListening(w io.Writer, procs []listeningProc) {
 // guestStatus is what status reads from the guest itself.
 type guestStatus struct {
 	procs []listeningProc
-	mux   string // "herdr", "tmux", or "" when the guest did not answer
+	mux   string // "herdr", "tmux", or "" when the machine did not answer
 	disk  guestDisk
 	git   []gitRow // nil when the machine has no checkout or did not say
 }

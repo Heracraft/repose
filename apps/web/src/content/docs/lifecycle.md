@@ -17,7 +17,8 @@ PROJECT     SIZE   STATE    UP     AGENTS
 todo-app *  large  running  2h14m  claude: working
 api         xl     running  6h40m  2 agents: 1 needs input, 1 working
 web         small  stopped  -      -
-Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month
+Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
+this month
 ```
 
 `*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question). With several agents, it counts them by state. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
@@ -37,7 +38,8 @@ The dashboard's project page shows the state, agents, SSH sessions and usage, pl
 
 ```
 $ repose stop todo-app
-todo-app has claude (working). Stopping ends it. Stop todo-app? [y/N] y
+todo-app has claude (working). Stopping ends it. Stop todo-app?
+[y/N] y
 Fetched 2 commits on repose/main.
 Stopped todo-app in 11s with a 2.1 GB snapshot.
 
@@ -140,7 +142,7 @@ For an experiment that shouldn't touch your main project, create another one by 
 repose run todo-app-experiment
 ```
 
-It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. This is also how to run several agents on one repository without them sharing a working tree.
+It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. [Several agents, separate trees](/docs/run-and-attach#several-agents-separate-trees) compares it with `--worktree` and `fork` for running agents side by side.
 
 `repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
 
@@ -186,12 +188,12 @@ Not a git repository, so nothing was synced.
 ```
 
 - `--temp` always makes a new machine, named `tmp-` and four letters unless you name it (`repose run --temp spike`). It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
-- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours. It's counted from when the machine was made.
+- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours (`1d` is 24 hours). It's counted from when the machine was made. A word after `--temp` that is a number and a unit is its duration wherever it stands, so `repose run spike --temp 3h` works; a word like `2x` exits 2.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
-- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file that your laptop does not, so it stays until 14:02.` and names `repose attach`. If the check can't run, the machine stays too. On Windows, or with `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
+- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file that your laptop does not, so it stays until 14:02.` and names `repose attach`. If the check can't run, the machine stays too. With `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
 - `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
@@ -216,11 +218,13 @@ To have several agents try different approaches from the same starting point, ea
 
 ```
 $ repose fork todo-app -n 3
-Forked todo-app into 3 projects from its snapshot of 2026-09-25 14:02 in 48s:
+Forked todo-app into 3 projects from its snapshot of 2026-09-25 14:02
+in 48s:
   todo-app-fork-1  running (large)
   todo-app-fork-2  running (large)
   todo-app-fork-3  running (large)
-Added the git remotes todo-app-fork-1, todo-app-fork-2 and todo-app-fork-3.
+Added the git remotes todo-app-fork-1, todo-app-fork-2 and
+todo-app-fork-3.
 ```
 
 `repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)

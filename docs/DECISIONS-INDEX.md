@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-646 entries.
+647 entries.
 
 ## Scope
 
@@ -356,7 +356,7 @@ pointer, not a summary.
 - **I-273** `repose ls` and `repose rm` are the names; `projects` and `destroy` are aliases — 2026-09-26; L7075
 - **I-274** `repose ps` lists the tmux windows — 2026-09-26; amended by I-509; amended by I-606; L7102
 - **I-275** `repose exec` runs one command in the checkout; `repose ssh` opens a shell there — 2026-09-26; L7120
-- **I-276** Did-you-mean for commands, `-q` on listings — 2026-09-26; L7168
+- **I-276** Did-you-mean for commands, `-q` on listings — 2026-09-26; amended by I-630; L7168
 - **I-277** `repose secrets import` sets every NAME=VALUE of a .env file — 2026-09-26; L7188
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7215
 - **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; L7278
@@ -416,7 +416,7 @@ pointer, not a summary.
 - **I-348** An explicit `--name` on `run` and `sync` means the project with that name; a new one in a checkout whose remote is taken has no remote — 2026-09-29; L8939
 - **I-349** Temporary machines in the api: `expires_at` (0010), the plan without a snapshot, and `keep` — 2026-09-29; L8975
 - **I-350** The reaper: once a minute under `LockSweeper`, a row per transaction, with a backoff after a failed destroy — 2026-09-29; L8996
-- **I-351** `--temp` in the CLI: flag, name, cache, lines — 2026-09-29; L9019
+- **I-351** `--temp` in the CLI: flag, name, cache, lines — 2026-09-29; amended by I-630; L9019
 - **I-352** The session end destroys a temporary machine only when tmux says the session is gone — 2026-09-29; amended by I-509; amended by I-602; amended by I-612; L9043
 - **I-353** Every sync refusal of the checkout comes before the create — 2026-09-29; L9056
 - **I-354** What agents on a temporary machine are told: nothing yet — 2026-09-29; L9070
@@ -658,7 +658,7 @@ pointer, not a summary.
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; L16780
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; L16830
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16864
-- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; L16879
+- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; L16879
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16909
 - **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; L16921
 - **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; L17003
@@ -678,3 +678,4 @@ pointer, not a summary.
 - **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17508
 - **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; L17527
 - **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — L17581
+- **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — L17614

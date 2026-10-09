@@ -93,7 +93,7 @@ func populatedSubmodules(top string) []gitlink {
 	walk = func(rel string) {
 		dir := filepath.Join(top, filepath.FromSlash(rel))
 		if _, err := os.Lstat(filepath.Join(dir, ".gitmodules")); err != nil {
-			return // as the guest's repose_sublist
+			return // as the machine's repose_sublist
 		}
 		links, err := indexGitlinks(dir)
 		if err != nil {
@@ -290,7 +290,7 @@ fi
 			}
 			_ = os.Remove(bp)
 			if err != nil {
-				return "", stepFailed("pack your submodule "+s.Path+" for the guest (git bundle)", err, "")
+				return "", stepFailed("pack your submodule "+s.Path+" for the machine (git bundle)", err, "")
 			}
 			_, _ = fmt.Fprintf(&b, "git bundle unbundle \"$t/%sbundle\" >/dev/null\n", pre)
 		}

@@ -111,7 +111,7 @@ func syncCredentialsAndCarry(ctx context.Context, t sshTarget, homeDir, repoDir 
 	}
 	out, err := c.p.run(ctx, t)
 	if err != nil {
-		return nil, nil, stepFailed("copy your tool logins to the guest", err, "")
+		return nil, nil, stepFailed("copy your tool logins to the machine", err, "")
 	}
 	copied, outcome := c.finish(string(out))
 	return copied, outcome, nil

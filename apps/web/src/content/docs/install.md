@@ -55,6 +55,25 @@ The first `repose run` on a computer that has never logged in logs in this way f
 
 You stay logged in until you run `repose logout`.
 
+## Choose a plan
+
+A machine starts only on an account with a plan. Choose one at [repose.herakraft.co/billing](https://repose.herakraft.co/billing); the first week is free. Solo runs 8 GB at once: one `large`, or two `small`. [Pricing](/docs/billing) compares the plans.
+
+## Shell completion
+
+`repose completion SHELL` prints a script that completes commands, flags and project names. To load it in every new shell:
+
+```
+# bash
+echo 'source <(repose completion bash)' >> ~/.bashrc
+
+# zsh
+repose completion zsh > "${fpath[1]}/_repose"
+
+# fish
+repose completion fish > ~/.config/fish/completions/repose.fish
+```
+
 ## Update
 
 Run the install command again. It replaces the binary and leaves your login and settings alone. When a newer release is out, the CLI says so once.

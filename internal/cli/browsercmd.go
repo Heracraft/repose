@@ -64,7 +64,7 @@ func BrowserCmd(ctx context.Context, e *Env, projectArg string, opts BrowserOpti
 	// link kept in a tab keeps working (I-292).
 	out, err := runSSH(ctx, target, "repose-guest-profile desktop start", nil)
 	if err != nil {
-		return stepFailed("start the desktop in the guest", err, "")
+		return stepFailed("start the desktop on the machine", err, "")
 	}
 	pw := desktopPassword(out)
 	if pw == "" {
@@ -97,7 +97,7 @@ func stopBrowserCmd(ctx context.Context, e *Env, projectArg string) error {
 			return err
 		}
 		if _, err := runSSH(ctx, target, "repose-guest-profile desktop stop", nil); err != nil {
-			return stepFailed("stop the desktop in the guest", err, "")
+			return stepFailed("stop the desktop on the machine", err, "")
 		}
 	}
 	if err := stopBrowserForward(e, project.Slug); err != nil {

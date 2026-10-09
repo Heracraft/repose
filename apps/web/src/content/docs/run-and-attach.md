@@ -42,6 +42,18 @@ If the agent exits before you're attached, its window closes with it. `run` then
 
 ## Several agents, separate trees
 
+Two agents in one working tree edit the same files. Give each its own tree on the same machine, or a machine of its own:
+
+|                       | `repose run -d --worktree -p "..."`      | `repose fork -n 3 --prompt "..."`                                  |
+| --------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| Runs on               | this project's machine                   | a new machine each, `todo-app-fork-1` and on                       |
+| Starts from           | the checkout's last commit               | a snapshot of the disk: uncommitted work and dependencies included |
+| Memory                | the machine's own                        | each copy's size, toward your plan                                 |
+| Work comes back with  | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`           |
+| Clean up              | `git worktree remove` on the machine     | `repose rm todo-app-fork-1`                                        |
+
+`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back. [Fork a project](/docs/lifecycle#fork-a-project) has the rest of `fork`.
+
 `--worktree` starts the agent in its own git worktree, so it doesn't edit the files another agent is working on:
 
 ```
@@ -86,7 +98,7 @@ The checkouts share one machine, so they share these:
 - Your git identity. If your laptop picks a different email per folder (an `includeIf` for work repositories), the machine has the one from the folder you ran in last.
 - The machine's configuration. A `repose.nix` is applied to the whole machine; a `flake.nix` or `.envrc` dev shell loads per folder, as usual.
 - Ports. Two dev servers on port 3000 collide; give one another port.
-- Disk, snapshots and undo. `repose undo` and a restore roll back every checkout, and `repose destroy` deletes them all.
+- Disk and snapshots. `repose snapshots restore` rolls back every checkout, and `repose rm` destroys them all.
 
 The added checkout's `.env` files travel like the first one's, but the machine keeps one record of the last set it was sent, so running in the two folders by turns sends each set again. `--on` can't be combined with PROJECT, `--temp`, `--project` or `--size`, and a folder that is already the machine's own checkout is refused, with exit code 2 for both. `repose rm todo-app:api` removes the added checkout, with its worktrees, from the machine and from your laptop's list; the machine and its own checkout stay. A name the machine doesn't have is refused everywhere with exit code 2, so a typo never makes an empty checkout.
 
@@ -122,6 +134,8 @@ Each machine has one tmux session. Its first window, `shell`, opens in your chec
 | `[`     | Scroll back. Arrow keys or Page Up; `q` leaves. |
 
 In the status line, a window whose agent waits for your input has `?` after its name, as in `2:claude-2?`.
+
+Inside a tmux on your laptop, `Ctrl-b` goes to that tmux. Press it twice to reach the machine's: `Ctrl-b` `Ctrl-b` `d` detaches from the machine.
 
 Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later. A temporary machine is destroyed instead when you leave its last window from `repose attach` or `repose run`, unless its checkout holds work your laptop doesn't ([Temporary machines](/docs/lifecycle#temporary-machines)); left any other way, it waits for its expiry.
 
@@ -189,7 +203,7 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
-STATE is `working`, `idle` or `needs_input`, the words `repose ls` uses; `-` is a window with no agent, or one that hasn't settled yet. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. COMMAND is the program's name only, never its arguments.
+STATE is `working`, `idle` or `needs input`, the words `repose ls` uses (`--json` says `needs_input`); `-` is a window with no agent, or one that hasn't settled yet. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. COMMAND is the program's name only, never its arguments.
 
 To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach todo-app claude-2` (or `-w claude-2`) opens that window.
 
@@ -230,7 +244,7 @@ On macOS, Cmd+V and Ctrl+V both paste the image. A terminal sends nothing for Cm
 
 Ctrl+V reads the clipboard with `pngpaste` if you have it, otherwise `osascript`. On Linux it uses `wl-paste` (from wl-clipboard) under Wayland and `xclip` under X11. With no image on the clipboard, Ctrl+V is an ordinary Ctrl+V. With one, Ctrl+V pastes the image in every window.
 
-`REPOSE_NO_INPUT_PROXY=1` turns this off: `run` and `attach` then hand your terminal straight to `ssh`, and a drop pastes your laptop's path. On Windows it's always off; copy the file with `repose cp FILE :/tmp/` and type its path.
+`REPOSE_NO_INPUT_PROXY=1` turns this off: `run` and `attach` then hand your terminal straight to `ssh`, and a drop pastes your laptop's path.
 
 ### From a script or another window
 

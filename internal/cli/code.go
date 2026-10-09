@@ -133,11 +133,22 @@ func connectRunning(ctx context.Context, e *Env, projectArg string) (*Project, s
 	return project, target, nil
 }
 
+// windowsEditor is an editor command under WSL that is the Windows
+// app's launcher (on a /mnt drive): the editor then connects with
+// Windows' ssh, which reads neither WSL's ~/.ssh nor runs ssh-prepare
+// (review C10).
+func windowsEditor(bin string) bool {
+	return isWSL() && strings.HasPrefix(bin, "/mnt/")
+}
+
 // CodeCmd is `repose code`.
 func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 	ed, bin, err := pickEditor(editorFlag, e.Cfg.Editor, e.HomeDir)
 	if err != nil {
 		return err
+	}
+	if windowsEditor(bin) {
+		return exitf(ExitGeneric, "%s here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.", ed.Label)
 	}
 	// The certificate and the Host block, proved with an ssh, before the
 	// editor tries its own connection: the editor's errors are far less
@@ -167,8 +178,10 @@ func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var editor string
 	cmd := &cobra.Command{
-		Use:               "code [PROJECT[:CHECKOUT]]",
-		Short:             "Open the project's checkout in VS Code, Cursor or Zed over SSH",
+		Use:   "code [PROJECT[:CHECKOUT]]",
+		Short: "Open the checkout in VS Code, Cursor or Zed over SSH",
+		Long: "Open the project's checkout in VS Code, Cursor or Zed on this laptop, over SSH\n" +
+			"to PROJECT.repose. The machine must be running.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -183,7 +196,7 @@ func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return CodeCmd(cmd.Context(), e, project, editor)
 		},
 	}
-	cmd.Flags().StringVar(&editor, "editor", "", "code, cursor or zed (or $REPOSE_EDITOR); default: the first one installed")
+	cmd.Flags().StringVar(&editor, "editor", "", "code, cursor or zed (default: $REPOSE_EDITOR, editor in config.toml, else the first one installed)")
 	_ = cmd.RegisterFlagCompletionFunc("editor", cobra.FixedCompletions(editorNames(), cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }

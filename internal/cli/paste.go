@@ -188,19 +188,18 @@ func isWSL() bool {
 type PasteOptions struct {
 	ProjectArg string
 	Window     string // "" is the session's current window
-	Print      bool   // only print the guest path; type nothing
+	Print      bool   // only print the machine path; type nothing
 }
 
 func newPasteCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts PasteOptions
 	cmd := &cobra.Command{
 		Use:   "paste [PROJECT]",
-		Short: "Send the image on the clipboard to the machine and paste its path into the agent's prompt",
+		Short: "Paste the clipboard's image into the agent's prompt",
 		Long: `Copy the image on this computer's clipboard to /tmp/repose-paste/ on the
-machine and paste its path into the active pane (tmux) or the focused
-pane (herdr), where Claude Code attaches it. --window NAME pastes into
-that window, or that herdr agent's pane, instead; --print only prints
-the path.
+machine and paste its path into the active pane (tmux) or the focused pane
+(herdr), where Claude Code attaches it. --window NAME pastes into that window,
+or that herdr agent's pane, instead; --print only prints the path.
 
 The clipboard is read with pngpaste or osascript on macOS, wl-paste on
 Wayland and xclip on X11.`,
@@ -222,7 +221,7 @@ Wayland and xclip on X11.`,
 			return PasteCmd(cmd.Context(), e, opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Window, "window", "", "paste into this tmux window (name or index), or this herdr agent's pane, instead of the current one")
+	cmd.Flags().StringVar(&opts.Window, "window", "", "paste into this tmux window (name or number), or this herdr agent's pane")
 	cmd.Flags().BoolVar(&opts.Print, "print", false, "copy the image and print its path on the machine; paste nothing")
 	return cmd
 }

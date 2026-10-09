@@ -185,13 +185,15 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 	var opts SecretsImportOptions
 	cmd := &cobra.Command{
 		Use:   "import [FILE]",
-		Short: "Set a secret for every NAME=VALUE in a .env file (default ./.env; - reads stdin)",
-		Long: "Reads FILE (./.env by default, - for stdin) in the dotenv format and sets each NAME=VALUE\n" +
-			"in it as a secret of the project, replacing one of the same name. Names are checked before\n" +
-			"anything is sent; values are never printed. --dry-run lists what would be set.\n\n" +
-			"With --mcp it sets the secrets your carried MCP servers need instead, from the tokens in\n" +
-			"your laptop's Claude Code config, for this folder's project. It asks once before replacing\n" +
-			"secrets the project already has; --yes replaces them without asking.",
+		Short: "Set a secret for each NAME=VALUE in a .env file",
+		Long: "Read FILE (./.env by default, - for stdin) in the dotenv format and set each\n" +
+			"NAME=VALUE in it as a secret of the project, replacing one of the same name.\n" +
+			"Names are checked before anything is sent; values are never printed. --dry-run\n" +
+			"lists what would be set.\n\n" +
+			"With --mcp, set the secrets your carried MCP servers need instead, from the\n" +
+			"tokens in your laptop's Claude Code config, for this folder's project. It asks\n" +
+			"once before replacing secrets the project already has; -y replaces them\n" +
+			"without asking.",
 		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp",
 		Args:    argsN(0, 1, "at most one FILE"),
 		RunE: func(cmd *cobra.Command, args []string) error {

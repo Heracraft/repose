@@ -366,15 +366,16 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 	var opts PsOptions
 	cmd := &cobra.Command{
 		Use:   "ps [PROJECT] [WINDOW]",
-		Short: "List the project's agent windows, or print a window's last lines",
-		Long: "Lists the tmux windows of PROJECT (this checkout's, by default): each window's number and\n" +
-			"name, the program in its active pane (its name only), the agent's state, the folder it works\n" +
-			"in (checkout, worktree-N, ~/path) and when it last printed something. The current window,\n" +
-			"the one `repose attach` opens on, is marked with *.\n\n" +
-			"With WINDOW (or -w), it prints that window's last 20 lines instead, or -n N of them; -n alone\n" +
-			"prints the last N lines of every window.\n\n" +
-			"On a machine that runs herdr it lists herdr's agents instead: the workspace, the agent,\n" +
-			"its name and its state, with the focused one marked *. WINDOW is an agent's name.",
+		Short: "List a project's agent windows, or print a window's last lines",
+		Long: "List the tmux windows of PROJECT (this checkout's, by default): each window's\n" +
+			"number and name, the program in its active pane (its name only), the agent's\n" +
+			"state, the folder it works in (checkout, worktree-N, ~/path) and when it last\n" +
+			"printed something. * marks the window repose attach opens on.\n\n" +
+			"With WINDOW (or -w), print that window's last 20 lines instead, or -n N of them;\n" +
+			"-n alone prints the last N lines of every window.\n\n" +
+			"On a machine that runs herdr, list herdr's agents instead: the workspace, the\n" +
+			"agent, its name and its state, with * on the focused one. WINDOW is an agent's\n" +
+			"name.",
 		Example: "  repose ps\n  repose ps todo-app claude-2\n  repose ps -w 2 -n 50",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 2 {
@@ -414,7 +415,7 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 	}
 	cmd.Flags().Bool("json", false, "print the windows (or herdr agents) as JSON")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the window (or herdr agent) names, one per line")
-	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "print the last lines of window `NAME` (a tmux name or number, or a herdr agent's name)")
+	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "print the last lines of window `NAME` (a name or number, or a herdr agent)")
 	cmd.Flags().IntVarP(&opts.Lines, "tail", "n", 0, "print the last `N` lines: of WINDOW (default 20), or of every window")
 	return cmd
 }

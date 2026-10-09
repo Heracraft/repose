@@ -145,9 +145,13 @@ func newRootCmd(version string) *cobra.Command {
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return cobraUsageError{fmt.Errorf("%v (`%s --help` lists its flags)", err, cmd.CommandPath())}
 	})
-	root.PersistentFlags().StringVar(&g.project, "project", "", "project name or id (or $REPOSE_PROJECT); a command whose usage shows [PROJECT] also takes it there")
+	root.PersistentFlags().StringVar(&g.project, "project", "", "act on project `NAME` or id (or $REPOSE_PROJECT)")
 	root.PersistentFlags().StringVar(&g.apiURL, "api-url", "", "api base url (or $REPOSE_API_URL)")
+	// For a test or self-hosted server; cli.md's "Other servers" has it
+	// (review 8.7).
+	_ = root.PersistentFlags().MarkHidden("api-url")
 	root.PersistentFlags().BoolVarP(&g.verbose, "verbose", "v", false, "log each api request (status, time, request id) and each ssh to stderr")
+	root.SetUsageTemplate(usageTemplate)
 
 	env := func() (*Env, error) {
 		e, err := newEnv(g.apiURL, g.json, g.verbose)
@@ -213,6 +217,7 @@ func newRootCmd(version string) *cobra.Command {
 		newSSHPrepareCmd(env),
 		newCodeCmd(env, g),
 	)
+	groupCommands(root)
 	return root
 }
 
@@ -335,10 +340,10 @@ func newLoginCmd(env func() (*Env, error)) *cobra.Command {
 	var noBrowser, browser, status bool
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in to repose, or show the account you are logged in as",
-		Long: "Log in with a code: the CLI prints a link with the code in it and opens it in this computer's\n" +
-			"browser when it has one. --status prints the account this laptop is logged in as, its server\n" +
-			"and its plan, and exits 3 when there is none.",
+		Short: "Log in, or show the account you are logged in as",
+		Long: "Log in with a code: print a link with the code in it, and open it in this\n" +
+			"computer's browser when it has one. --status prints the account this laptop is\n" +
+			"logged in as, its server and its plan, and exits 3 when there is none.",
 		SuggestFor: []string{"whoami", "auth", "signin"},
 		Args:       noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -353,7 +358,7 @@ func newLoginCmd(env func() (*Env, error)) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&status, "status", false, "print the account you are logged in as; exit 3 when logged out")
-	cmd.Flags().BoolVar(&browser, "browser", false, "use the loopback browser flow (PKCE) instead of the device code; needs a Logto application with loopback redirect URIs")
+	cmd.Flags().BoolVar(&browser, "browser", false, "log in through a browser on this computer, where the server allows it")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the link and open no browser")
 	return cmd
 }
@@ -413,9 +418,16 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run [PROJECT]",
 		Short: "Create or start this checkout's machine and attach",
-		Long: "Create or start this checkout's machine and attach. A new machine gets a copy of the checkout first.\n\n" +
-			"PROJECT is the machine of that name, created if there is none: a second machine for this\n" +
-			"checkout, or one for a folder with no git remote.",
+		Long: "Create or start this checkout's machine and attach. A new machine gets a copy\n" +
+			"of the checkout; after that, repose sync sends new work. Your tool logins and\n" +
+			"settings are copied each time.\n\n" +
+			"PROJECT is the machine of that name, created if there is none: a second\n" +
+			"machine for this checkout, or one for a folder with no git remote.",
+		Example: "  repose run\n" +
+			"  repose run -p \"fix the flaky login test\"\n" +
+			"  repose run -d --worktree --agent codex -p \"try approach B\"\n" +
+			"  repose run spike --temp 3h",
+		SuggestFor:        []string{"up", "create", "new", "init"},
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -465,8 +477,8 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return runRun(cmd.Context(), e, opts, false)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi (default: the project's agent; a new project's is config.toml's default_agent, else claude)")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a machine this creates or starts (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi (default: the project's agent)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a new or stopped machine (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
@@ -483,11 +495,11 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVarP(&opts.NoAttach, "no-attach", "d", false, "do not attach; with -p, print the window the agent is in")
-	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix (repose config --global) off this machine, from now on")
+	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix off this machine from now on")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
-	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, ~/<slug>-worktree-<N> on branch worktree-<N>")
-	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
-	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
+	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, on branch worktree-N")
+	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
+	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -499,10 +511,11 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var window string
 	cmd := &cobra.Command{
 		Use:   "attach [PROJECT[:CHECKOUT]] [WINDOW]",
-		Short: "Attach to a project's tmux session (this checkout's, or PROJECT), or one of its windows",
-		Long: "Attaches to PROJECT's tmux session (this checkout's, by default), on its current window.\n" +
-			"With WINDOW (or -w), on that window: a tmux window's name or number as `repose ps` shows\n" +
-			"it, or on herdr an agent's name.",
+		Short: "Attach to a project's session, or to one of its windows",
+		Long: "Attach to PROJECT's session (this checkout's, by default) on its current window,\n" +
+			"without syncing. With WINDOW (or -w), open on that window: a tmux window's name\n" +
+			"or number as repose ps shows it, or on herdr an agent's name. The machine must\n" +
+			"be running.",
 		Example: "  repose attach\n  repose attach todo-app claude-2\n  repose attach -w 2",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 2 {
@@ -532,9 +545,9 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
 		},
 	}
-	cmd.Flags().StringVarP(&window, "window", "w", "", "open on window `NAME` (a tmux name or number, or a herdr agent's name)")
-	cmd.Flags().BoolVar(&bridge, "bridge", false, "also bridge this laptop's Chrome to the machine while attached (repose browser bridge)")
-	cmd.Flags().StringArrayVar(&bridgeAllow, "bridge-allow", nil, "with --bridge: the agents may open only this host in your Chrome (repeatable; *.example.com for subdomains); implies --bridge")
+	cmd.Flags().StringVarP(&window, "window", "w", "", "open on window `NAME` (a name or number, or a herdr agent)")
+	cmd.Flags().BoolVar(&bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
+	cmd.Flags().StringArrayVar(&bridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
 	return cmd
 }
 
@@ -546,10 +559,13 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var tempRaw string
 	cmd := &cobra.Command{
 		Use:   "sync [PROJECT]",
-		Short: "Send this checkout's changes to its machine (one way), creating or starting it if needed",
-		Long: "Send this checkout's changes to its machine (one way), creating or starting it if needed,\n" +
-			"without attaching.\n\n" +
-			"sync.exclude in ~/.config/repose/config.toml leaves out files that .gitignore does not.",
+		Short: "Send this checkout's changes to its machine",
+		Long: "Copy your uncommitted changes and unpushed commits over the machine's checkout,\n" +
+			"creating or starting the machine if needed, without attaching. When the machine\n" +
+			"changed the same files, stop with exit 6 and name them; --stash-remote clears\n" +
+			"the way. Nothing comes back: git fetch repose does that.\n\n" +
+			"sync.exclude in config.toml leaves out files that .gitignore does not.",
+		Example:           "  repose sync\n  repose sync --stash-remote",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -589,14 +605,14 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a machine this creates or starts (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a new or stopped machine (default: config.toml's default_size, else large)")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
 	_ = cmd.Flags().MarkHidden("name")
 	addTempFlag(cmd, &tempRaw)
-	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "move the machine's uncommitted changes to its git stash before syncing")
-	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "as --stash-remote, and also end a merge, rebase or other git operation in progress there")
+	cmd.Flags().BoolVar(&opts.StashRemote, "stash-remote", false, "stash the machine's uncommitted changes there before syncing")
+	cmd.Flags().BoolVar(&opts.DiscardRemote, "discard-remote", false, "as --stash-remote, and also end a merge or rebase in progress there")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -605,7 +621,8 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "start [PROJECT]",
-		Short:             "Start a project without syncing (restarts one in error)",
+		Short:             "Start a project's machine, or restart one in error",
+		Long:              "Start a stopped machine, or restart one in error. Nothing is synced.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -629,10 +646,13 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop [PROJECT...]",
 		Short: "Snapshot and stop projects",
-		Long: "Snapshots and stops each PROJECT's machine (this checkout's, by default), several at once.\n" +
-			"When an agent is in the middle of a turn or waiting for an answer, it asks first; -y/--yes\n" +
-			"skips the question, and without a terminal it is required. In a checkout whose machine is\n" +
-			"stopping, it fetches the agent's commits first, as `git fetch repose` does.",
+		Long: "Snapshot and stop each PROJECT's machine (this checkout's, by default),\n" +
+			"several at once. Every process on it ends. When an agent is in the middle of a\n" +
+			"turn or waiting for an answer, ask first; -y skips the question, and without a\n" +
+			"terminal it is required. In the checkout of a machine it stops, fetch the\n" +
+			"agent's commits first, as git fetch repose does.",
+		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused",
+		SuggestFor:        []string{"down", "halt"},
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -660,7 +680,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
 	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project object as JSON when done (an array for several or --unused)")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project as JSON when done (an array for several)")
 	return cmd
 }
 
@@ -670,7 +690,7 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:               "status [PROJECT]",
-		Short:             "Show a project's status",
+		Short:             "Show a project's machine, agents and git state",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -699,13 +719,13 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 			return StatusCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the Project object, with its checkout's git state, as JSON")
+	cmd.Flags().Bool("json", false, "print the Project, with its checkout's git state, as JSON")
 	cmd.Flags().BoolVarP(&watch, "follow", "f", false, "refresh every 5 seconds until Ctrl-C")
 	// --watch was the name until I-609; -f is what logs and events take.
 	cmd.Flags().BoolVar(&watch, "watch", false, "refresh every 5 seconds until Ctrl-C")
 	_ = cmd.Flags().MarkHidden("watch")
 	cmd.Flags().StringVar(&wait, "wait", "", "wait until the machine is in `STATE` (running, stopped, ...), then print the status")
-	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long --wait waits, as a `DURATION` (30s, 5m), before exiting 1")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long --wait waits before exiting 1, a `DURATION` such as 5m")
 	_ = cmd.RegisterFlagCompletionFunc("wait", cobra.FixedCompletions(projectStates, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
@@ -719,7 +739,7 @@ func newLsCmd(envJSON func(*cobra.Command) (*Env, error)) *cobra.Command {
 		Use:        "ls",
 		Aliases:    []string{"projects"},
 		SuggestFor: []string{"list", "project"},
-		Short:      "List every project",
+		Short:      "List your projects",
 		Args:       noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := envJSON(cmd)
@@ -741,7 +761,7 @@ func newLsCmd(envJSON func(*cobra.Command) (*Env, error)) *cobra.Command {
 	}
 	cmd.Flags().Bool("json", false, "print as JSON")
 	cmd.Flags().BoolVar(&destroyed, "destroyed", false, "list destroyed projects that can still be restored, and until when")
-	cmd.Flags().BoolVar(&all, "all", false, "with --destroyed: every destroyed project, not only the one repose restore NAME picks per name")
+	cmd.Flags().BoolVar(&all, "all", false, "with --destroyed: every one, not only the newest per name")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the project names, one per line")
 	return cmd
 }
@@ -752,9 +772,12 @@ func newOpenCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "open [LOCAL:]PORT",
 		Short: "Forward a port on the machine to the laptop",
-		Long: "Forward PORT on the machine to the same port on the laptop, or to LOCAL, and open it in the\n" +
-			"browser, until Ctrl-C. Database ports (5432, 3306, 6379, 27017) open no browser.",
-		Args: argsN(0, 1, "at most one [LOCAL:]PORT"),
+		Long: "Forward PORT on the machine to the same port on the laptop, or to LOCAL, and\n" +
+			"open it in the browser, until Ctrl-C. Database ports (5432, 3306, 6379, 27017)\n" +
+			"open no browser. The project is the folder's, or --project's.",
+		Example:    "  repose open 3000\n  repose open 8080:3000\n  repose open 5432 --project todo-app",
+		SuggestFor: []string{"port", "forward", "tunnel", "expose"},
+		Args:       argsN(0, 1, "at most one [LOCAL:]PORT"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if stop && !desktop {
 				return cobraUsageError{fmt.Errorf("--stop goes with --desktop: repose open --desktop --stop (or repose browser stop)")}
@@ -826,12 +849,14 @@ func newBrowserCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var stop, noOpen bool
 	root := &cobra.Command{
 		Use:   "browser [PROJECT]",
-		Short: "Watch the agent's browser on the machine and take it over; bridge: your Chrome for the agents",
-		Long: `Starts the machine's desktop viewer if needed, forwards it to the laptop
-in the background (port 6080, or the next free one) and opens the viewer
-page. The page shows the browser the agent drives, sized to your tab; click
-and type in it to log in, solve a captcha or approve a passkey. The
-password is in the link after the #. The view sleeps after 30 idle minutes; opening the page wakes it.`,
+		Short: "Watch and drive the agents' browser on the machine",
+		Long: `Start the machine's desktop viewer if needed, forward it to the laptop in the
+background (port 6080, or the next free one) and open the viewer page. The page
+shows the browser the agent drives, sized to your tab; click and type in it to
+log in, solve a captcha or approve a passkey. The password is in the link after
+the #. The view sleeps after 30 idle minutes; opening the page wakes it.
+
+repose browser bridge goes the other way: the agents use your Chrome.`,
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -855,7 +880,7 @@ password is in the link after the #. The view sleeps after 30 idle minutes; open
 	_ = root.Flags().MarkHidden("no-open")
 	root.AddCommand(&cobra.Command{
 		Use:               "stop [PROJECT]",
-		Short:             "Stop the browser view on the machine and its forward on this laptop",
+		Short:             "Stop the browser view and its forward to this laptop",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -875,12 +900,15 @@ password is in the link after the #. The view sleeps after 30 idle minutes; open
 	var opts BridgeOptions
 	bridge := &cobra.Command{
 		Use:   "bridge [PROJECT]",
-		Short: "Let the agents on a machine browse in this laptop's Chrome, until Ctrl-C",
-		Long: "Let the agents on a machine browse in this laptop's Chrome, with your logins and extensions, until Ctrl-C.\n\n" +
-			"Chrome 144 or newer with remote debugging turned on at chrome://inspect/#remote-debugging; the command\n" +
-			"opens that page and waits when it is off. Chrome asks you to allow each connection. Nothing on the\n" +
-			"machine changes: its browser tools reach your Chrome through the SSH connection for as long as this runs.\n" +
-			"Needs the machine running. --allow HOST keeps the agents to those hosts; each page they open is listed here.",
+		Short: "Let the machine's agents browse in this laptop's Chrome",
+		Long: "Let the agents on a machine browse in this laptop's Chrome, with your logins\n" +
+			"and extensions, until Ctrl-C.\n\n" +
+			"Needs Chrome 144 or newer with remote debugging turned on at\n" +
+			"chrome://inspect/#remote-debugging; when it is off, the command opens that page\n" +
+			"and waits. Chrome asks you to allow each connection. Nothing on the machine\n" +
+			"changes: its browser tools reach your Chrome through the SSH connection for as\n" +
+			"long as this runs. Needs the machine running. --allow HOST keeps the agents to\n" +
+			"those hosts; each page they open is listed here.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -901,26 +929,37 @@ password is in the link after the #. The view sleeps after 30 idle minutes; open
 			return BrowserBridgeCmd(cmd.Context(), e, project, opts)
 		},
 	}
-	bridge.Flags().StringVar(&opts.CDP, "cdp", "", "bridge this DevTools server instead (a browser started with --remote-debugging-port), e.g. http://127.0.0.1:9222")
+	bridge.Flags().StringVar(&opts.CDP, "cdp", "", "bridge this DevTools server instead, such as http://127.0.0.1:9222")
 	bridge.Flags().StringVar(&opts.UserDataDir, "user-data-dir", "", "the profile directory of a Chrome that is not Google Chrome's default one")
 	bridge.Flags().BoolVar(&opts.NoBrowser, "no-inspect", false, "don't open chrome://inspect when remote debugging is off")
 	// --no-browser said "print the link" on open and browser and
 	// something else here (I-619); hidden for a release.
 	bridge.Flags().BoolVar(&opts.NoBrowser, "no-browser", false, "the old name of --no-inspect")
 	_ = bridge.Flags().MarkHidden("no-browser")
-	bridge.Flags().StringArrayVar(&opts.Allow, "allow", nil, "the agents may open only this host in your Chrome (repeatable; *.example.com is example.com and its subdomains)")
+	bridge.Flags().StringArrayVar(&opts.Allow, "allow", nil, "let the agents open only this host (repeatable; *.example.com for subdomains)")
 	root.AddCommand(bridge)
 	return root
 }
 
 func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's secrets"}
+	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's secrets",
+		Long: "Set, list or remove a project's secrets. Agents on the machine see each one\n" +
+			"as an environment variable and as a file under /run/repose/secrets. Alone,\n" +
+			"list them.",
+		SuggestFor: []string{"env", "secret"}}
 	var fromFile string
 	var fromEnv bool
 	set := &cobra.Command{
 		Use:   "set NAME",
-		Short: "Set a secret; the value is typed, piped, or read with --from-file or --from-env",
-		Args:  argsN(1, 1, "one NAME"),
+		Short: "Set a secret from a prompt, a pipe, a file or a variable",
+		Long: "Set NAME on the project, the folder's or --project's. The value is asked for,\n" +
+			"or read from a pipe (one trailing newline dropped), --from-file or --from-env;\n" +
+			"it is never an argument, so it stays out of your shell history. A running\n" +
+			"machine has it within seconds.",
+		Example: "  repose secrets set STRIPE_KEY\n" +
+			"  op read op://dev/stripe/key | repose secrets set STRIPE_KEY\n" +
+			"  repose secrets set DATABASE_URL --from-env --project todo-app",
+		Args: argsN(1, 1, "one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The name is checked before any value is asked for.
 			if err := checkSecretName(args[0]); err != nil {
@@ -937,13 +976,13 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SecretsSetCmd(cmd.Context(), e, g.project, args[0], value)
 		},
 	}
-	set.Flags().StringVar(&fromFile, "from-file", "", "read the value from a file")
+	set.Flags().StringVar(&fromFile, "from-file", "", "read the value from the file at `PATH`")
 	set.Flags().BoolVar(&fromEnv, "from-env", false, "read the value from $NAME")
 
 	list := &cobra.Command{
 		Use:               "list [PROJECT]",
 		Aliases:           []string{"ls"},
-		Short:             "List secret names",
+		Short:             "List a project's secret names",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -963,7 +1002,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:        "rm NAME",
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete", "unset"},
-		Short:      "Remove a secret",
+		Short:      "Remove a secret from a project",
 		Args:       argsN(1, 1, "one NAME"),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {
@@ -982,11 +1021,12 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var chooseOn, chooseOff, chooseReset bool
 	choose := &cobra.Command{
 		Use:   "choose [NAME...]",
-		Short: "Choose which of your laptop's logins and .env files repose run copies to the machine",
-		Long: "Choose which of your laptop's logins and files repose run copies to the machine: " +
-			strings.Join(loginNames(), ", ") + ". With no flags it shows a list to toggle in a terminal " +
-			"and prints the list otherwise. --off NAME... leaves them on your laptop, --on NAME... copies " +
-			"them again, --reset drops the list. Without --project the list is for every project; with " +
+		Short: "Choose which laptop logins and files repose run copies",
+		Long: "Choose which of your laptop's logins and files repose run copies to the\n" +
+			"machine: " + strings.Join(loginNames(), ", ") + ".\n\n" +
+			"With no flags, show a list to toggle in a terminal, or print it otherwise.\n" +
+			"--off NAME... leaves them on your laptop, --on NAME... copies them again, and\n" +
+			"--reset drops the list. Without --project the list is for every project; with\n" +
 			"--project NAME it is that project's own.",
 		ValidArgs: loginNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -998,8 +1038,8 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	choose.Flags().BoolVar(&chooseOn, "on", false, "copy the NAMEs at each repose run")
-	choose.Flags().BoolVar(&chooseOff, "off", false, "leave the NAMEs on your laptop, and remove the copies an earlier run left on the machine")
-	choose.Flags().BoolVar(&chooseReset, "reset", false, "drop the list: a project follows the list for every project; without --project every login is copied")
+	choose.Flags().BoolVar(&chooseOff, "off", false, "leave the NAMEs on your laptop, and remove the machine's copies")
+	choose.Flags().BoolVar(&chooseReset, "reset", false, "drop the list (a project's: it follows the shared one)")
 	root.AddCommand(set, list, rm, newSecretsImportCmd(env, g), choose)
 	bareRuns(root, list)
 	return root
@@ -1036,14 +1076,14 @@ func readSecretValue(name, fromFile string, fromEnv bool) ([]byte, error) {
 }
 
 func newConfigCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "config", Short: "Add packages and services to the machine (repose.nix, or --global machine.nix)",
-		Long: `Add packages and services to the machine, through the project's repose.nix.
+	root := &cobra.Command{Use: "config", Short: "Add packages and services to the machine",
+		Long: `Add packages and services to the machine through the project's repose.nix.
+Alone, print it.
 
-Without --global, each command acts on the project's repose.nix. With
---global, it acts on your machine.nix instead: a home-manager module every
-machine of your account gets, kept at ~/.config/repose/machine.nix and on
-your account. ` + "`repose run`" + ` pushes that file when it changed;
-` + "`repose config --global off PROJECT`" + ` keeps it off one machine.
+With --global, each command acts on your machine.nix instead: a home-manager
+module every machine of your account gets, kept at ~/.config/repose/machine.nix
+and on your account. repose run pushes that file when it changed; repose config
+off PROJECT keeps it off one machine.
 
 The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 		Example: "  repose config add gcc air\n  repose config --global add ripgrep fd\n  repose config --global edit"}
@@ -1072,7 +1112,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	var showRevisions bool
 	show := &cobra.Command{
 		Use:               "show [PROJECT]",
-		Short:             "Print the project's repose.nix (with --global, your machine.nix)",
+		Short:             "Print the project's repose.nix",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1093,7 +1133,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	var revQuiet bool
 	revisions := &cobra.Command{
 		Use:               "revisions [PROJECT]",
-		Short:             "List configuration revisions, newest first (--global: machine.nix's saves)",
+		Short:             "List the configuration's revisions, newest first",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1116,7 +1156,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 
 	edit := &cobra.Command{
 		Use:               "edit [PROJECT]",
-		Short:             "Edit the project's repose.nix in $EDITOR (with --global, ~/.config/repose/machine.nix)",
+		Short:             "Edit the project's repose.nix in $EDITOR and apply it",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1133,11 +1173,13 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	var revision string
 	apply := &cobra.Command{
 		Use:   "apply [PATH]",
-		Short: "Apply a repose.nix file (default ./repose.nix) or an earlier --revision",
-		Long: "Apply a repose.nix file (default ./repose.nix), or with neither, the current configuration again.\n" +
-			"--revision ID switches the running machine back to an earlier revision that built. With --global,\n" +
-			"push PATH (default ~/.config/repose/machine.nix) to your account.",
-		Args: argsN(0, 1, "at most one PATH"),
+		Short: "Apply a repose.nix file or an earlier revision",
+		Long: "Apply PATH (default ./repose.nix) to the machine, or with neither, the current\n" +
+			"configuration again. --revision ID switches the running machine back to an\n" +
+			"earlier revision that built. With --global, push PATH (default\n" +
+			"~/.config/repose/machine.nix) to your account.",
+		Example: "  repose config apply\n  repose config apply --revision 3f2a9c1e\n  repose config --global apply",
+		Args:    argsN(0, 1, "at most one PATH"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if revision != "" && (len(args) > 0 || global) {
 				return cobraUsageError{fmt.Errorf("--revision applies one of the project's revisions; it takes no PATH and no --global")}
@@ -1159,14 +1201,14 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 			return ConfigApplyCmd(cmd.Context(), e, g.project, path)
 		},
 	}
-	apply.Flags().StringVar(&revision, "revision", "", "switch the machine to this earlier revision that built (an id from repose config revisions, or its start)")
+	apply.Flags().StringVar(&revision, "revision", "", "switch the machine to this earlier revision (an `ID` that revisions shows)")
 	_ = apply.RegisterFlagCompletionFunc("revision", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return revisionIDsForCompletion(env, g.project), cobra.ShellCompDirectiveNoFileComp
 	})
 	add := &cobra.Command{
-		Use:   "add <package>...",
-		Short: "Add menu entries or any nixpkgs package to the machine",
-		Long: `Add packages to the project's menu and rebuild the machine.
+		Use:   "add PACKAGE...",
+		Short: "Add menu entries or nixpkgs packages to the machine",
+		Long: `Add packages to the project's repose.nix and rebuild the machine.
 
 A name the dashboard's menu has (bun, postgresql, portless, ...) adds that
 menu entry, services included. Any other name is a nixpkgs attribute: gcc,
@@ -1174,7 +1216,7 @@ air, nodejs_22, python312Packages.black, nodePackages.typescript. Find names
 at https://search.nixos.org/packages.
 
 A project whose repose.nix was edited by hand has no menu; add packages there
-with ` + "`repose config edit`" + `.
+with repose config edit.
 
 With --global, the names go into the home.packages list of your
 machine.nix, every machine of your account gets them, and the menu's
@@ -1193,7 +1235,7 @@ services are not available.`,
 		},
 	}
 	remove := &cobra.Command{
-		Use:        "remove <package>...",
+		Use:        "remove PACKAGE...",
 		Aliases:    []string{"rm"},
 		SuggestFor: []string{"delete"},
 		Short:      "Remove packages added with config add",
@@ -1213,7 +1255,7 @@ services are not available.`,
 	// `repose config --global on|off [PROJECT]` (I-622): machine.nix on or
 	// off for one machine; `repose run --no-personal` is off's shortcut.
 	switchCmd := func(on bool) *cobra.Command {
-		use, short := "off [PROJECT]", "Keep your machine.nix off the project's machine (as repose run --no-personal does)"
+		use, short := "off [PROJECT]", "Keep your machine.nix off the project's machine"
 		if on {
 			use, short = "on [PROJECT]", "Give the project's machine your machine.nix again"
 		}
@@ -1270,14 +1312,15 @@ func openInEditor(path string) error {
 }
 
 func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "snapshots", Short: "List, take or restore a project's snapshots"}
+	root := &cobra.Command{Use: "snapshots", Short: "List, take or restore a project's snapshots",
+		Long: "List, take or restore a project's snapshots. Alone, list them."}
 	var as string
 	var yes bool
 	var quiet bool
 	list := &cobra.Command{
 		Use:               "list [PROJECT]",
 		Aliases:           []string{"ls"},
-		Short:             "List snapshots",
+		Short:             "List a project's snapshots",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1300,7 +1343,7 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	list.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the snapshot ids, one per line")
 	create := &cobra.Command{
 		Use:               "create [PROJECT]",
-		Short:             "Take a manual snapshot",
+		Short:             "Take a snapshot now",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1318,10 +1361,12 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	create.Flags().BoolVar(&g.json, "json", false, "print the Snapshot object as JSON when done")
 	restore := &cobra.Command{
 		Use:   "restore [PROJECT] SNAPSHOT_ID",
-		Short: "Restore a snapshot over a stopped project, or into a new one with --as",
-		Long: "Replace a stopped project's disk with one of its snapshots, or with --as NAME restore the\n" +
-			"snapshot into a new project called NAME, which starts. SNAPSHOT_ID is an id from\n" +
-			"`repose snapshots list`, or enough of its start to name one.",
+		Short: "Restore a snapshot over a stopped project, or into a new one",
+		Long: "Replace a stopped project's disk with one of its snapshots, after a question.\n" +
+			"With --as NAME, restore the snapshot into a new project called NAME, which\n" +
+			"starts. SNAPSHOT_ID is an id as repose snapshots list shows it, or 4 or more of\n" +
+			"its first or last characters.",
+		Example:           "  repose snapshots restore todo-app 9c1e04ab\n  repose snapshots restore todo-app 9c1e04ab --as todo-app-old",
 		Args:              snapshotRestoreArgs,
 		ValidArgsFunction: completeSnapshotRestore(env, g),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1375,7 +1420,7 @@ func snapshotRestoreArgs(cmd *cobra.Command, args []string) error {
 // Bare, it is 24h; `--temp 3h` takes the argument after it when that
 // reads as a duration, `--temp=3h` always does.
 func addTempFlag(cmd *cobra.Command, raw *string) {
-	cmd.Flags().StringVar(raw, "temp", "", "a new temporary machine, destroyed with no snapshot after DURATION (10m to 24h, default 24h)")
+	cmd.Flags().StringVar(raw, "temp", "", "a new machine, destroyed with no snapshot after DURATION (10m to 24h, default 24h)")
 	cmd.Flags().Lookup("temp").NoOptDefVal = tempBare
 	_ = cmd.RegisterFlagCompletionFunc("temp", cobra.FixedCompletions(tempDurations, cobra.ShellCompDirectiveNoFileComp))
 }
@@ -1385,10 +1430,11 @@ func addTempFlag(cmd *cobra.Command, raw *string) {
 func newKeepCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "keep [PROJECT] [DURATION]",
-		Short: "Keep a temporary machine for good, or for DURATION (e.g. 3h) from now",
-		Long: "With no DURATION, a temporary machine becomes a normal one and is no longer destroyed.\n" +
-			"With DURATION (10m to 24h), it stays temporary and is destroyed that long from now.\n" +
-			"One argument that reads as a duration is DURATION.",
+		Short: "Keep a temporary machine for good, or for DURATION from now",
+		Long: "Make a temporary machine a normal one, which is no longer destroyed. With\n" +
+			"DURATION (10m to 24h), keep it temporary and destroy it that long from now\n" +
+			"instead. One argument that reads as a duration is DURATION.",
+		Example:           "  repose keep\n  repose keep tmp-k3f9 3h",
 		Args:              keepArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1429,11 +1475,14 @@ func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:        "rm [PROJECT...]",
 		Aliases:    []string{"destroy"},
 		SuggestFor: []string{"delete", "remove"},
-		Short:      "Destroy projects (a final snapshot of each is kept for 30 days)",
-		Long: "Destroys each PROJECT (this checkout's, by default). A final snapshot is kept for 30 days,\n" +
-			"except for a temporary project.\n\n" +
-			"With PROJECT:CHECKOUT it removes only that checkout, one `repose run --on` added, with its\n" +
-			"worktrees, from the running machine. The machine and its own checkout stay.",
+		Short:      "Destroy projects, keeping a final snapshot for 30 days",
+		Long: "Destroy each PROJECT (this checkout's, by default), after one question. A final\n" +
+			"snapshot of each is kept for 30 days, and repose restore brings it back; a\n" +
+			"temporary project gets none.\n\n" +
+			"With PROJECT:CHECKOUT, remove only that checkout, one repose run --on added,\n" +
+			"with its worktrees, from the running machine. The machine and its own checkout\n" +
+			"stay.",
+		Example:           "  repose rm todo-app-fork-1 todo-app-fork-2\n  repose rm -y tmp-k3f9\n  repose rm todo-app:api",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1492,12 +1541,14 @@ func newRestoreCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var as, snapshot string
 	cmd := &cobra.Command{
 		Use:   "restore [NAME]",
-		Short: "Bring back a destroyed project from its newest snapshot (kept 30 days)",
-		Long: "Restores NAME, a project you destroyed in the last 30 days (or one that still exists), from its\n" +
-			"newest snapshot into a new project called NAME, or --as NEW-NAME when that name is in use.\n" +
-			"Without NAME, inside a checkout, it restores the destroyed project with this checkout's remote.\n" +
-			"`repose ls --destroyed` lists what can be restored. `repose snapshots restore` restores a\n" +
-			"snapshot over a stopped project in place.",
+		Short: "Bring back a destroyed project from a snapshot",
+		Long: "Restore NAME, a project destroyed in the last 30 days (or one that still\n" +
+			"exists), from its newest snapshot into a new project called NAME, or --as\n" +
+			"NEW-NAME when that name is in use. Without NAME, inside a checkout, restore the\n" +
+			"destroyed project with this checkout's remote. repose ls --destroyed lists what\n" +
+			"can be restored; repose snapshots restore restores over a project in place.",
+		Example:    "  repose restore todo-app\n  repose restore todo-app --as todo-app-2\n  repose ls --destroyed",
+		SuggestFor: []string{"undo", "undelete", "recover"},
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return cobraUsageError{fmt.Errorf("%s takes one NAME, got %d arguments: %s", cmd.CommandPath(), len(args), strings.Join(args, " "))}
@@ -1528,7 +1579,7 @@ func newRestoreCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return RestoreCmd(cmd.Context(), e, name, as, snapshot, ask)
 		},
 	}
-	cmd.Flags().StringVar(&as, "as", "", "name for the restored project (default: its old name)")
+	cmd.Flags().StringVar(&as, "as", "", "name the restored project `NEW-NAME` (default: its old name)")
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "`ID` of the snapshot to restore (default: the newest)")
 	_ = cmd.RegisterFlagCompletionFunc("snapshot", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -1543,15 +1594,18 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 	opts := ForkOptions{Count: 1}
 	cmd := &cobra.Command{
 		Use:   "fork [PROJECT]",
-		Short: "Snapshot a project and start copies of it as new projects, one machine each",
-		Long: "Snapshots PROJECT (this checkout's, by default) and restores the snapshot into --count new\n" +
-			"projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each running on its own machine\n" +
-			"with the same files, configuration and secrets. PROJECT keeps running and stays the project\n" +
-			"`repose run` uses in its checkout. With --prompt, the agent starts in every fork with that prompt;\n" +
-			"with --no-start, the forks are created stopped.\n" +
-			"Each fork is a project: it counts toward the 100 projects an account can have, toward your\n" +
-			"plan's disk by what it holds (at first what PROJECT holds), and toward the plan's memory while\n" +
-			"it runs.",
+		Short: "Copy a project into new projects, each on its own machine",
+		Long: "Snapshot PROJECT (this checkout's, by default) and restore the snapshot into\n" +
+			"--count new projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each\n" +
+			"running on its own machine with the same files, configuration and secrets.\n" +
+			"PROJECT keeps running. In its checkout, each fork gets a git remote of its\n" +
+			"name, so git fetch NAME-1 brings its commits back.\n\n" +
+			"Each fork counts toward your plan's disk by what it holds, and toward its memory\n" +
+			"while it runs; --no-start creates them stopped.",
+		Example: "  repose fork -n 3 --prompt \"try a different approach to the cache\"\n" +
+			"  git fetch todo-app-fork-2\n" +
+			"  repose rm todo-app-fork-1 todo-app-fork-3",
+		SuggestFor:        []string{"clone", "copy"},
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1577,7 +1631,7 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 		},
 	}
 	cmd.Flags().IntVarP(&opts.Count, "count", "n", 1, "how many forks (1 to 10)")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "name the forks NAME-1, NAME-2, ... (default: PROJECT-fork)")
+	cmd.Flags().StringVar(&opts.Name, "name", "", "prefix for the forks' names (default: PROJECT-fork)")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for the forks (default: PROJECT's)")
 	cmd.Flags().StringVar(&opts.SnapshotID, "snapshot", "", "fork from this snapshot of PROJECT instead of taking one now")
 	cmd.Flags().StringVar(&opts.Prompt, "prompt", "", "start the agent in every fork with this prompt")
@@ -1593,13 +1647,14 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var size string
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "resize [PROJECT] [DISK] [--size small|large|xl]",
-		Short: "Grow the project's disk (e.g. 80G), or change its size with --size",
-		Long: "With DISK, grows the project's disk (e.g. 80G); disks can't shrink.\n" +
-			"With --size, changes the project's size: small, large or xl. A stopped project starts at the\n" +
-			"new size; a running one is stopped, changed and started again, after a\n" +
-			"confirmation that --yes skips.\n" +
-			"PROJECT defaults to this checkout's project; one argument that reads as a size is DISK.",
+		Use:   "resize [PROJECT] [DISK]",
+		Short: "Grow a project's disk, or change its size",
+		Long: "With DISK (80G, 1T), grow the project's disk; disks can't shrink. With --size,\n" +
+			"change the project's size: small, large or xl. A stopped project starts at the\n" +
+			"new size; a running one is stopped, changed and started again, which ends every\n" +
+			"process on it, after a question that -y skips. PROJECT defaults to this\n" +
+			"checkout's project; one argument that reads as a size is DISK.",
+		Example:           "  repose resize 80G\n  repose resize todo-app --size xl\n  repose resize todo-app 160G --size xl -y",
 		Args:              resizeArgs,
 		ValidArgsFunction: completeResize(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1639,8 +1694,8 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&size, "size", "", "small|large|xl: change the project's size")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project: stop and start it without asking")
+	cmd.Flags().StringVar(&size, "size", "", "change the project's size: small|large|xl")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project, restart it without asking")
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
@@ -1702,8 +1757,14 @@ func newLogsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 	var follow bool
 	var tail int
 	cmd := &cobra.Command{
-		Use:               "logs [PROJECT]",
-		Short:             "Show a project's logs",
+		Use:   "logs [PROJECT]",
+		Short: "Show a machine's console, build or operation log",
+		Long: "Show one of the machine's logs (--kind):\n" +
+			"  console  what it printed during a boot that failed; a clean boot leaves none\n" +
+			"  build    the last configuration build's log\n" +
+			"  ops      one line per operation: kind, how it ended, how long it took\n\n" +
+			"repose events shows what the agents did.",
+		Example:           "  repose logs --kind ops --since 2d\n  repose logs --kind build -f",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1724,7 +1785,7 @@ func newLogsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 		},
 	}
 	cmd.Flags().Bool("json", false, "print each line as JSON, one per line")
-	cmd.Flags().StringVar(&kind, "kind", "", "console|build|ops")
+	cmd.Flags().StringVar(&kind, "kind", "console", "console|build|ops")
 	cmd.Flags().StringVar(&since, "since", "", "only lines after this: 90m, 2d, 1w, 2026-10-01 or an RFC 3339 time")
 	cmd.Flags().IntVarP(&tail, "tail", "n", 0, "only the last N lines (then new ones with -f)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll for new lines every 2s")
@@ -1736,8 +1797,12 @@ func newEventsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 	var since string
 	var follow bool
 	cmd := &cobra.Command{
-		Use:               "events [PROJECT]",
-		Short:             "Show a project's events",
+		Use:   "events [PROJECT]",
+		Short: "Show what agents and repose did on a project",
+		Long: "Show a project's events, oldest first: what its agents finished, asked, said or\n" +
+			"hit, and what happened to its machine. Outside a checkout, with no PROJECT, show\n" +
+			"every project's.",
+		Example:           "  repose events\n  repose events todo-app --since 3d\n  repose events -f",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1756,7 +1821,7 @@ func newEventsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 		},
 	}
 	cmd.Flags().Bool("json", false, "print each event as JSON, one per line")
-	cmd.Flags().StringVar(&since, "since", "24h", "90m, 2d, 1w, 2026-10-01 or an RFC 3339 time")
+	cmd.Flags().StringVar(&since, "since", "24h", "only events after this: 90m, 2d, 1w, 2026-10-01 or an RFC 3339 time")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll for new events every 10s")
 	return cmd
 }
@@ -1764,8 +1829,11 @@ func newEventsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var quiet bool
 	cmd := &cobra.Command{
-		Use:               "questions [PROJECT]",
-		Short:             "List the questions agents are waiting on you to answer",
+		Use:   "questions [PROJECT]",
+		Short: "List the questions agents are waiting on you to answer",
+		Long: "List the questions agents on any of your projects, or on PROJECT, are waiting on\n" +
+			"you to answer with repose reply, then the agents waiting at a prompt in their\n" +
+			"terminal, which only attaching answers.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1794,8 +1862,11 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 	cmd := &cobra.Command{
 		Use:   "reply [PROJECT] [--] [ANSWER...]",
 		Short: "Answer a question an agent asked with repose-ask",
-		Long: "Answers a waiting question. A first word that names one of your projects is PROJECT; put --\n" +
-			"before an answer that starts with a project's name.",
+		Long: "Answer a waiting question. A first word that names one of your projects is\n" +
+			"PROJECT; otherwise every word is the answer, which works while one question is\n" +
+			"waiting. Put -- before an answer that starts with a project's name. With no\n" +
+			"answer, ask for one. When the question has options, the answer is one of them.",
+		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := envJSON(cmd)
 			if err != nil {
@@ -1819,7 +1890,7 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
-	cmd.Flags().StringVar(&question, "question", "", "`ID` of the question, or its last characters as repose questions shows them")
+	cmd.Flags().StringVar(&question, "question", "", "the question's `ID`, or its last characters, as questions shows it")
 	_ = cmd.RegisterFlagCompletionFunc("question", completeQuestionID(func() (*Env, error) { return envJSON(cmd) }))
 	return cmd
 }
@@ -1829,8 +1900,9 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "notify",
 		Short: "Show or change where agent notifications go",
-		Long:  "Show where notifications go: email and ntfy. Agents on a machine send their own with\nrepose-notify and repose-ask.",
-		Args:  noArgs,
+		Long: "Show where notifications go: email and ntfy. Agents on a machine send their own\n" +
+			"with repose-notify and repose-ask.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g.json = showJSON
 			e, err := env()
@@ -1866,8 +1938,8 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return NotifySetCmd(cmd.Context(), e, email, ntfy)
 		},
 	}
-	set.Flags().StringVar(&emailFlag, "email", "", "on|off")
-	set.Flags().StringVar(&ntfyFlag, "ntfy", "", "a topic URL, or off")
+	set.Flags().StringVar(&emailFlag, "email", "", "`on|off`: notify by email, to your account's address")
+	set.Flags().StringVar(&ntfyFlag, "ntfy", "", "`URL|off`: notify on this ntfy topic")
 	_ = set.RegisterFlagCompletionFunc("email", cobra.FixedCompletions([]string{"on", "off"}, cobra.ShellCompDirectiveNoFileComp))
 	test := &cobra.Command{
 		Use:   "test",
@@ -1891,7 +1963,7 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 func newVersionCmd(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the version",
+		Short: "Print the CLI's version",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Printf("repose %s (herakraft)\n", version)
@@ -1902,15 +1974,18 @@ func newVersionCmd(version string) *cobra.Command {
 
 // newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.
 func newMCPCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "mcp", Short: "List, forward or remove the MCP servers of the agents on a machine"}
+	root := &cobra.Command{Use: "mcp", Short: "List, forward or remove the agents' MCP servers",
+		Long: "List, forward or remove the MCP servers of the agents on a machine. Alone, list\n" +
+			"them."}
 	// `repose mcp forward` (DECISIONS I-557). Names only: the project comes
 	// from the folder or --project, since names and a PROJECT cannot share
 	// positions without a guess (an exception to I-155).
 	var remove bool
 	forward := &cobra.Command{
 		Use:   "forward NAME... [-- COMMAND [ARG...]]",
-		Short: "Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C",
-		Long: `Let the agents on a machine use MCP servers that run on this laptop, until Ctrl-C.
+		Short: "Let the machine's agents use MCP servers on this laptop",
+		Long: `Let the agents on a machine use MCP servers that run on this laptop, until
+Ctrl-C.
 
 NAME is a server in your Claude Code, Claude Desktop, Codex or Gemini CLI config
 on this laptop, or the command after --. It runs here, with your apps, files and
@@ -1919,6 +1994,9 @@ started after the first forward list NAME; while nothing forwards it, its tools
 answer that your laptop isn't connected. To forward whenever you're attached,
 add NAME to [mcp] forward in config.toml. The project is the folder's, or
 --project's. Needs the machine running.`,
+		Example: "  repose mcp forward apple-notes\n" +
+			"  repose mcp forward notes -- node ~/mcp/notes.js\n" +
+			"  repose mcp forward figma --project todo-app",
 		Args: func(cmd *cobra.Command, args []string) error {
 			names := args
 			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
@@ -1961,7 +2039,8 @@ add NAME to [mcp] forward in config.toml. The project is the folder's, or
 		SuggestFor: []string{"delete"},
 		Short:      "Take forwarded MCP servers off the machine's agents",
 		Long: `Take forwarded MCP servers off the machine's agents; they drop them at their
-next start. The project is the folder's, or --project's. Needs the machine running.`,
+next start. The project is the folder's, or --project's. Needs the machine
+running.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cobraUsageError{fmt.Errorf("%s needs a server NAME, got %s", cmd.CommandPath(), gotArgs(args))}
@@ -1981,13 +2060,12 @@ next start. The project is the folder's, or --project's. Needs the machine runni
 			return MCPForwardCmd(cmd.Context(), e, g.project, MCPForwardOptions{Names: args, Remove: true})
 		},
 	}
-	root.AddCommand(forward, rm)
 	// `repose mcp list` (DECISIONS I-558): what each agent on the machine
 	// has, read from its configs over SSH; starts no server.
 	list := &cobra.Command{
 		Use:     "list [PROJECT]",
 		Aliases: []string{"ls"},
-		Short:   "List the MCP servers the agents on a machine have, and those your laptop kept",
+		Short:   "List the machine's MCP servers, and those your laptop kept",
 		Long: `List the MCP servers the agents on a machine have, and those your laptop kept.
 
 FROM is repose (the browser tools), laptop (copied from your laptop's Claude
@@ -2011,7 +2089,7 @@ with no header. Needs the machine running.`,
 		},
 	}
 	list.Flags().BoolVar(&g.json, "json", false, "print JSON")
-	root.AddCommand(list)
+	root.AddCommand(list, forward, rm)
 	bareRuns(root, list)
 	return root
 }

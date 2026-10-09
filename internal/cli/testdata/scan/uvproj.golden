@@ -2,11 +2,11 @@ Your laptop's tools (0):
   none found
 
 This project (uvproj):
-  pre-commit           nixpkgs, looked up in the guest; from Makefile lint
-  node 20.11.1 (.tool-versions): nodejs_20 goes into the guest's nix profile when its node is another major
+  pre-commit           nixpkgs, looked up on the machine; from Makefile lint
+  node 20.11.1 (.tool-versions): nodejs_20 goes into the machine's nix profile when its node is another major
   python 3.12.4 (.tool-versions): uv fetches it itself
   python 3.12 (.python-version): uv fetches it itself
   not installed: celery (a Python dependency), gunicorn (a Python dependency), mypy (a Python dependency), ruff (a Python dependency), svc (the project's own command)
 
-1 to check in the guest; each one it lacks is installed in the background after `repose run`.
-Made the guest's default the same way when it has another version: node 20.
+1 to check on the machine; each one it lacks is installed in the background after `repose run`.
+Made the machine's default the same way when it has another version: node 20.

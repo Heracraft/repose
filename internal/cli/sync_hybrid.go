@@ -83,7 +83,7 @@ done
 `, homeShell(dir), shQuote(url))
 	out, err := runSSH(ctx, t, script, strings.NewReader(strings.Join(bases, "\n")+"\n"))
 	if err != nil {
-		return nil, false, "", stepFailed("clone your repository in the guest", err, "")
+		return nil, false, "", stepFailed("clone your repository on the machine", err, "")
 	}
 	section := ""
 	seen := map[string]bool{}

@@ -82,16 +82,15 @@ func newCpCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var recursive bool
 	cmd := &cobra.Command{
 		Use:   "cp [-r] SRC... DST",
-		Short: "Copy files to or from a project's machine (PROJECT:PATH, or :PATH for this checkout's)",
+		Short: "Copy files to or from a machine",
 		Long: `Copy files between the laptop and a machine with scp. One side names the
 machine: PROJECT:PATH for a project's, :PATH for this checkout's. A relative
 path on the machine starts in its checkout. Several sources copy into the
-destination directory, so a glob such as ./logs/* works.
-
-  repose cp :logs/x.log .
-  repose cp izma:/tmp/trace.json .
-  repose cp ./report-*.pdf izma:/tmp/
-  repose cp -r ./fixtures :test/fixtures`,
+destination directory, so a glob such as ./logs/* works.`,
+		Example: "  repose cp :logs/x.log .\n" +
+			"  repose cp todo-app:/tmp/trace.json .\n" +
+			"  repose cp ./report-*.pdf todo-app:/tmp/\n" +
+			"  repose cp -r ./fixtures :test/fixtures",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 2 {
 				return cobraUsageError{fmt.Errorf("repose cp takes SRC... DST, one side PROJECT:PATH or :PATH; got %s", gotArgs(args))}

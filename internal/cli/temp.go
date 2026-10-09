@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,12 +32,12 @@ const (
 // a duration, so `--temp 3h` works as well as `--temp=3h`.
 const tempBare = "bare"
 
-// parseTempDuration reads --temp's value: a Go duration (90m, 3h,
-// 1h30m) from 10 minutes to 24 hours.
+// parseTempDuration reads --temp's value: a duration as --since reads
+// one (90m, 3h, 1h30m, 1d) from 10 minutes to 24 hours.
 func parseTempDuration(s string) (time.Duration, error) {
-	d, err := time.ParseDuration(strings.TrimSpace(s))
-	if err != nil {
-		return 0, fmt.Errorf("--temp takes a duration such as 3h or 90m, got %q", s)
+	d, ok := sinceDuration(strings.TrimSpace(s))
+	if !ok {
+		return 0, fmt.Errorf("--temp takes a duration from 10m to 24h, such as 3h or 90m, got %q", s)
 	}
 	if d < tempMin || d > tempMax {
 		return 0, fmt.Errorf("--temp must be from 10m to 24h, got %s", s)
@@ -43,12 +45,16 @@ func parseTempDuration(s string) (time.Duration, error) {
 	return d, nil
 }
 
+// durationShape is a number and a unit, repeated: 3h, 90m, 1h30m, 1d,
+// and also 2x, which is then refused as a duration rather than taken
+// for a project.
+var durationShape = regexp.MustCompile(`^[0-9]+[a-z]+([0-9]+[a-z]+)*$`)
+
 // looksLikeDuration is whether an argument after a bare --temp is its
-// value rather than the prompt (run) or the PROJECT (sync): a number
-// followed by a unit, as time.ParseDuration reads it.
+// value rather than the PROJECT, and whether keep's one argument is
+// DURATION (review C3).
 func looksLikeDuration(s string) bool {
-	_, err := time.ParseDuration(s)
-	return err == nil
+	return durationShape.MatchString(s)
 }
 
 // resolveTempFlag turns the --temp flag's raw value and the command's
@@ -59,9 +65,13 @@ func resolveTempFlag(raw string, args []string) (time.Duration, []string, error)
 	case "":
 		return 0, args, nil
 	case tempBare:
-		if len(args) > 0 && looksLikeDuration(args[0]) {
-			d, err := parseTempDuration(args[0])
-			return d, args[1:], err
+		// Flags and arguments interleave, so `run spike --temp 3h` has
+		// the duration after the PROJECT.
+		for i, a := range args {
+			if looksLikeDuration(a) {
+				d, err := parseTempDuration(a)
+				return d, append(slices.Clone(args[:i]), args[i+1:]...), err
+			}
 		}
 		return tempDefault, args, nil
 	}
@@ -154,8 +164,8 @@ func createdLabel(p *Project, class string) string {
 // parseKeepDuration reads `repose keep PROJECT DURATION`: a Go duration
 // within --temp's bounds, counted from now (I-612).
 func parseKeepDuration(s string) (time.Duration, error) {
-	d, err := time.ParseDuration(strings.TrimSpace(s))
-	if err != nil || d < tempMin || d > tempMax {
+	d, ok := sinceDuration(strings.TrimSpace(s))
+	if !ok || d < tempMin || d > tempMax {
 		return 0, fmt.Errorf("keep takes a duration from 10m to 24h, such as 3h, got %q", s)
 	}
 	return d, nil

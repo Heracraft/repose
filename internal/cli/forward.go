@@ -129,7 +129,7 @@ func parseListenerLine(line string) (guestListener, bool) {
 type forwarder struct {
 	t    sshTarget
 	slug string
-	id   string // this helper's entry in the guest's forward list
+	id   string // this helper's entry on the machine's forward list
 
 	fwd map[int]forwardEntry // guest port -> the laptop's side
 	// failed holds guest ports no laptop port could be forwarded to, and
@@ -196,7 +196,7 @@ func masterPID(ctx context.Context, t sshTarget) string {
 
 type forwardEntry struct {
 	Local int
-	Host  string // the guest address the forward reaches
+	Host  string // the machine address the forward reaches
 }
 
 // laptopPortFree tries to bind the port on every address a laptop server

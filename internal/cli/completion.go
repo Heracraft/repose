@@ -12,8 +12,12 @@ import (
 
 func newCompletionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:       "completion bash|zsh|fish|powershell",
-		Short:     "Generate shell completion",
+		Use:   "completion bash|zsh|fish|powershell",
+		Short: "Print a shell completion script",
+		Long: "Print a completion script for your shell. To load it in every new shell:\n\n" +
+			"  bash  echo 'source <(repose completion bash)' >> ~/.bashrc\n" +
+			"  zsh   repose completion zsh > \"${fpath[1]}/_repose\"\n" +
+			"  fish  repose completion fish > ~/.config/fish/completions/repose.fish",
 		Args:      cobra.MatchAll(argsN(1, 1, "one of bash, zsh, fish or powershell"), cobra.OnlyValidArgs),
 		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
 		RunE: func(cmd *cobra.Command, args []string) error {

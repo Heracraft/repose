@@ -17,7 +17,7 @@ on a terminal; this is what stays on screen, DECISIONS I-154):
 $ repose run
 ✓ Created todo-app (large)  0.3s
 nix › building '/nix/store/…-repose-guest.drv'...
-✓ Built the environment  41s
+✓ Built the configuration  41s
 ✓ Booted todo-app  6.2s
 Connected to todo-app (large)
 Synced: 3 modified, 1 untracked (12 new commits)
@@ -27,7 +27,7 @@ dev@todo-app:~/todo-app$
 ```
 
 Without a terminal on stderr (CI, a pipe) the phases are plain lines,
-`Creating todo-app...`, `Building the environment...`, `Booting
+`Creating todo-app...`, `Building the configuration...`, `Booting
 todo-app...`, `Connecting to todo-app...`, `Syncing...`. One `repose run`
 makes one SSH connection and asks for nothing: the CLI's own key has no
 passphrase (I-149).

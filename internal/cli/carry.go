@@ -101,7 +101,7 @@ func (o *carryOutcome) Lines() []string {
 		out = append(out, "Kept the machine's "+k+": it is newer than the laptop's.")
 	}
 	if len(o.Dropped) > 0 {
-		out = append(out, "Not carried (would not work in the guest): "+strings.Join(o.Dropped, ", ")+".")
+		out = append(out, "Not carried (would not work on the machine): "+strings.Join(o.Dropped, ", ")+".")
 	}
 	if n := len(o.Installing); n > 0 {
 		what := "tool"
@@ -113,7 +113,7 @@ func (o *carryOutcome) Lines() []string {
 	out = append(out, o.mcpLines()...)
 	out = append(out, o.Warnings...)
 	for _, f := range o.Failed {
-		out = append(out, "Could not carry your "+f+" config; the guest keeps its previous one.")
+		out = append(out, "Could not carry your "+f+" config; the machine keeps its previous one.")
 	}
 	return out
 }

@@ -57,7 +57,7 @@ air: command not found
 Other packages with air: air-formatter
 ```
 
-The last line only appears when other packages have a command by that name. Installs made on the machine are not part of the project's configuration. To have a package on every rebuild, or a database set up as a service, add it with `repose config add`; see [Installing software](/docs/config).
+The last line only appears when other packages have a command by that name. `repose` itself answers that the CLI runs on your laptop and names the commands the machine has: `repose-ask`, `repose-notify` and `repose-checkout`. Installs made on the machine are not part of the project's configuration. To have a package on every rebuild, or a database set up as a service, add it with `repose config add`; see [Installing software](/docs/config).
 
 ## Your laptop's tools come along
 

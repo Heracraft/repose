@@ -131,7 +131,7 @@ func TestSyncCarryInTheApplyFailureStopsBeforeTheCheckout(t *testing.T) {
 			return buildCredentialsAndCarry(home, f.local, credSyncOptions{}, carryOptions{Markers: markers})
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "Could not copy your tool logins to the guest") {
+	if err == nil || !strings.Contains(err.Error(), "Could not copy your tool logins to the machine") {
 		t.Fatalf("err = %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "hello\n" {

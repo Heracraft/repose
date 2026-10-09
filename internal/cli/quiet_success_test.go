@@ -40,7 +40,7 @@ var quietAllowed = map[string]string{
 	"logins.go:loginsHeader: at each repose run (the shared list)":                "names when, not what to type",
 	"logins.go:saveLoginSkip:Saved: %s %s on your laptop, for %s. The":            "names when, not what to type",
 	"secrets.go:SecretsListCmd:Copied from this laptop at each repose r":          "names when, not what to type",
-	"scan.go:printScan:\n%d to check in the guest; each one it l":                 "names when, not what to type",
+	"scan.go:printScan:\n%d to check on the machine; each one it":                 "names when, not what to type",
 	"questions.go:QuestionsCmd:Waiting at a prompt in their terminal, w":          "says what reply can't do",
 	"cert.go:refreshSSHAccess:Could not renew your SSH certificate for":           "a failure",
 	"fork.go:ForkCmd:Could not start the agent in %s: %s. `re":                    "a failure",

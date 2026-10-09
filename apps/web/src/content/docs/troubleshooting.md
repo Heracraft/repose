@@ -39,13 +39,13 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
 
-**`Guest is running but SSH did not answer in 60s.`** `repose stop` and then `repose start` restart it.
+**`todo-app is running but did not answer ssh in 60 s.`** `repose stop` and then `repose start` restart it.
 
 ## Machine state
 
 **``todo-app is stopped. Start it with `repose start todo-app` ...``** `attach`, `ssh`, `exec`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`. Run `repose start todo-app`, or `repose run` in the checkout.
 
-**`todo-app is in an error state`** or **`guestd stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
+**`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason. That system isn't tried again on its own; the next base update, or a change to the configuration, builds a new one. `repose logs todo-app --kind console` shows what the failed boot printed.
 
@@ -104,7 +104,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 **An image you dropped or pasted didn't attach.** See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
 - Cmd+V did nothing on a Mac: you started with `REPOSE_NO_CLIPBOARD_PATH=1`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
-- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_NO_INPUT_PROXY=1` and Windows paste the laptop's path too.
+- Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_NO_INPUT_PROXY=1` pastes the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
 

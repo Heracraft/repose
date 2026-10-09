@@ -339,9 +339,9 @@ func (s *scanner) versions(rootPkg *scanPackage) {
 			v.Major = nodeMajor(version)
 			switch {
 			case v.Major == "":
-				v.Note = "pins no one major; the guest's node is kept"
+				v.Note = "pins no one major; the machine's node is kept"
 			case s.res.Node == nil:
-				v.Note = "nodejs_" + v.Major + " goes into the guest's nix profile when its node is another major"
+				v.Note = "nodejs_" + v.Major + " goes into the machine's nix profile when its node is another major"
 				n := v
 				s.res.Node = &n
 			default:
@@ -356,7 +356,7 @@ func (s *scanner) versions(rootPkg *scanPackage) {
 		case "python":
 			v.Note = "uv fetches it itself"
 		case "packageManager":
-			v.Note = "pnpm/npm in the guest are the base's"
+			v.Note = "pnpm/npm on the machine are the base's"
 		}
 		s.res.Versions = append(s.res.Versions, v)
 	}
@@ -539,7 +539,7 @@ func (s *scanner) note(w scanWorkspace, cmd, why string) {
 func (s *scanner) provided(w scanWorkspace, cmd string) string {
 	switch {
 	case baseCommands[cmd]:
-		return "in the guest base"
+		return "in the machine's base"
 	case s.res.Ruby != nil && rubyBins[cmd]:
 		return "comes with " + runtimeAttr("ruby", s.res.Ruby.Major)
 	case s.res.Java != nil && javaBins[cmd]:
@@ -1005,7 +1005,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 		p("  no commands to install\n")
 	}
 	for _, c := range sc.Candidates {
-		how := "nixpkgs, looked up in the guest"
+		how := "nixpkgs, looked up on the machine"
 		if c.Manager == "npm" {
 			how = "nixpkgs, else npm " + c.Pkg
 		}
@@ -1021,7 +1021,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 	if len(sc.Skipped) > 0 {
 		var parts []string
 		for _, s := range sc.Skipped {
-			if s.Why == "in the guest base" {
+			if s.Why == "in the machine's base" {
 				continue
 			}
 			parts = append(parts, s.Name+" ("+s.Why+")")
@@ -1044,7 +1044,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 	if tc != nil {
 		n = len(tc.Wanted.Items)
 	}
-	p("\n%d to check in the guest; each one it lacks is installed in the background after `repose run`.\n", n)
+	p("\n%d to check on the machine; each one it lacks is installed in the background after `repose run`.\n", n)
 	if tc != nil {
 		var pins []string
 		for _, r := range []struct{ tool, v string }{{"node", tc.Wanted.Node}, {"ruby", tc.Wanted.Ruby}, {"java", tc.Wanted.Java}} {
@@ -1053,7 +1053,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 			}
 		}
 		if len(pins) > 0 {
-			p("Made the guest's default the same way when it has another version: %s.\n", strings.Join(pins, ", "))
+			p("Made the machine's default the same way when it has another version: %s.\n", strings.Join(pins, ", "))
 		}
 	}
 }
@@ -1100,19 +1100,18 @@ func newScanCmd(env func() (*Env, error)) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "scan [DIR]",
-		Short: "Show which of your tools and which project commands `repose run` installs on a machine (dry run)",
-		Long: `List what the next ` + "`repose run`" + ` sends to the guest's tool installer, and why:
-the tools this laptop installed globally (npm, pnpm, bun, go, cargo, uv,
-pipx), and the commands the checkout's scripts run that neither the guest
-base nor the project's own dependencies provide, and the node, ruby and
-java versions the checkout pins with the version the guest gets (the
-closest nixpkgs has when it lacks the pinned one). Nothing is installed and
-nothing leaves the laptop. DIR defaults to the current checkout.
+		Short: "List the tools repose run would install on the machine",
+		Long: `List what the next repose run sends to the machine's tool installer, and why:
+the tools this laptop installed globally (npm, pnpm, bun, go, cargo, uv, pipx),
+the commands the checkout's scripts run that neither the machine's base nor the
+project's own dependencies provide, and the node, ruby and java versions the
+checkout pins, with the version the machine gets (the closest nixpkgs has when
+it lacks the pinned one). Nothing is installed and nothing leaves the laptop.
+DIR defaults to the current checkout.
 
-A .nix file takes precedence over the scan: with a machine.nix on your
-account (` + "`repose config --global`" + `) the laptop's tools are skipped, and with
-a repose.nix at the checkout root the scripts' commands are. The listing
-says which half was skipped and why.`,
+A .nix file takes precedence over the scan: with a machine.nix on your account
+the laptop's tools are skipped, and with a repose.nix at the checkout root the
+scripts' commands are. The listing says which half was skipped and why.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return cobraUsageError{fmt.Errorf("repose scan takes at most one DIR, got %s", gotArgs(args))}

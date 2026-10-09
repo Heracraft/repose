@@ -47,9 +47,9 @@ func (e *sshError) Error() string {
 	case e.ExitCode == 255 && strings.Contains(detail, "Permission denied"):
 		return withDetail("the gateway refused the SSH certificate", detail)
 	case e.ExitCode == 255:
-		return withDetail("the SSH connection to the guest failed", detail)
+		return withDetail("the SSH connection to the machine failed", detail)
 	default:
-		return withDetail(fmt.Sprintf("the command in the guest exited with status %d", e.ExitCode), detail)
+		return withDetail(fmt.Sprintf("the command on the machine exited with status %d", e.ExitCode), detail)
 	}
 }
 

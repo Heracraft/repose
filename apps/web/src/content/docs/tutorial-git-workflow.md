@@ -20,9 +20,9 @@ Your `main` goes up. From here on the machine's `main` is a base for branches.
 ## 2. One agent per task, each in a worktree
 
 ```
-repose run -d --worktree -p "add rate limiting to the public API"
-repose run -d --worktree -p "parse dates with date-fns, keep tests green"
-repose run -d --worktree --agent codex -p "write the audit_log migration"
+repose run -d --worktree -p "rate-limit the public API"
+repose run -d --worktree -p "parse dates with date-fns"
+repose run -d --worktree --agent codex -p "audit_log migration"
 ```
 
 `-d` keeps your shell. Each command prints where the agent works and its window:

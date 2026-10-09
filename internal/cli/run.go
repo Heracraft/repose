@@ -504,7 +504,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		} else {
 			n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
 			if err != nil {
-				return stepFailed("list the guest's "+mux.Name()+" "+mux.Unit()+"s", err, "")
+				return stepFailed("list the machine's "+mux.Name()+" "+mux.Unit()+"s", err, "")
 			}
 			name = n
 			if othersOpen {
@@ -544,7 +544,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
 		} else if err != nil {
-			return stepFailed("start "+agent+" in the guest", err, "")
+			return stepFailed("start "+agent+" on the machine", err, "")
 		}
 		pr.End()
 		if attachInstead {
@@ -1842,7 +1842,7 @@ func tzFromLocaltime(path string) string {
 func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Project, repoDir, tz string) *string {
 	out, err := runSSH(ctx, t, checkoutVar(project.Slug, t.Checkout)+checkoutReport+markerScript()+credsMissingScript(), nil)
 	if err != nil {
-		e.warn("Could not copy your tool logins to the guest (%s).", oneLine(err.Error()))
+		e.warn("Could not copy your tool logins to the machine (%s).", oneLine(err.Error()))
 		return nil
 	}
 	var checkout *string

@@ -86,10 +86,10 @@ func (s *scanner) runtimePin(v *scanVersion) {
 	v.Major = got
 	attr := runtimeAttr(v.Tool, got)
 	if got == want {
-		v.Note = attr + " goes into the guest's nix profile when its " + v.Tool + " is another version"
+		v.Note = attr + " goes into the machine's nix profile when its " + v.Tool + " is another version"
 	} else {
-		v.Note = v.Tool + " " + want + " is not in the guest's nixpkgs (it has " + strings.Join(avail, ", ") +
-			"); " + attr + ", the closest, goes into the guest's nix profile instead"
+		v.Note = v.Tool + " " + want + " is not in the machine's nixpkgs (it has " + strings.Join(avail, ", ") +
+			"); " + attr + ", the closest, goes into the machine's nix profile instead"
 	}
 	n := *v
 	*cur = &n

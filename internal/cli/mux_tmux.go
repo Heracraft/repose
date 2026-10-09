@@ -490,7 +490,7 @@ func shQuote(s string) string {
 type agentWorktree struct {
 	Window string // tmux window or herdr agent name, "<agent>" or "<agent>-N"
 	N      int    // the worktree's number, 1 and up
-	Dir    string // "~/<checkout>-worktree-<N>", as the guest's shell spells it
+	Dir    string // "~/<checkout>-worktree-<N>", as the machine's shell spells it
 	// Checkout is the checkout's name under the home (I-368).
 	Checkout string
 	Branch   string // "worktree-<N>"
@@ -557,7 +557,7 @@ func prepareWorktree(ctx context.Context, t sshTarget, slug, agent string) (*age
 func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m muxer) (*agentWorktree, error) {
 	out, err := runSSH(ctx, t, worktreeProbeScript(slug, t.Checkout, m.NamesScript(slug)), nil)
 	if err != nil {
-		step := "list the guest's tmux windows"
+		step := "list the machine's tmux windows"
 		if m.Name() == multiplexer.Herdr {
 			step = "list herdr's agents on the machine"
 		}
@@ -599,7 +599,7 @@ func prepareWorktreeWith(ctx context.Context, t sshTarget, slug, agent string, m
 	wt.Branch = worktreeBranch(wt.N)
 	out, err = runSSH(ctx, t, worktreeAddScript(wt), nil)
 	if err != nil {
-		return nil, stepFailed("create the worktree "+wt.Dir+" in the guest", err, "")
+		return nil, stepFailed("create the worktree "+wt.Dir+" on the machine", err, "")
 	}
 	for _, l := range nonEmptyLines(string(out)) {
 		if l == "#env" {

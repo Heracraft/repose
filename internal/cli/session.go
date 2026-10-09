@@ -208,7 +208,7 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 	if opts.RepoDir != "" {
 		gc, err := buildGitCarry(opts.RepoDir, opts.HomeDir)
 		if err != nil {
-			warnings = append(warnings, "Could not read your git config ("+oneLine(err.Error())+"); the guest keeps its own.")
+			warnings = append(warnings, "Could not read your git config ("+oneLine(err.Error())+"); the machine keeps its own.")
 		}
 		co.Git = gc
 		if gc != nil {

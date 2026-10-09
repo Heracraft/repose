@@ -2,8 +2,8 @@ Your laptop's tools (0):
   none found
 
 This project (rustproj):
-  wasm-opt             nixpkgs, looked up in the guest; from justfile wasm
-  wasm-pack            nixpkgs, looked up in the guest; from justfile wasm
+  wasm-opt             nixpkgs, looked up on the machine; from justfile wasm
+  wasm-pack            nixpkgs, looked up on the machine; from justfile wasm
   rust 1.80.0 (rust-toolchain.toml): rustup installs it at the first cargo
 
-2 to check in the guest; each one it lacks is installed in the background after `repose run`.
+2 to check on the machine; each one it lacks is installed in the background after `repose run`.

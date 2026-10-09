@@ -53,7 +53,7 @@ func TestDestroyReportsAFailedOp(t *testing.T) {
 		wants []string
 	}{
 		{"older api: the host's wording", map[string]any{"code": "guest_unresponsive", "message": rawGuestdError},
-			[]string{"Could not destroy todo-app", "stopped responding", "(guest_unresponsive)", "`repose rm todo-app` tries again", "still there"}},
+			[]string{"Could not destroy todo-app", "stopped answering", "(guest_unresponsive)", "`repose rm todo-app` tries again", "still there"}},
 		{"api with I-159 sentences", map[string]any{"code": "internal", "message": "the host could not remove the volume", "detail": "lvremove: exit 5"},
 			[]string{"Could not destroy todo-app: the host could not remove the volume (internal).", "`repose rm todo-app` tries again"}},
 	} {
@@ -143,7 +143,7 @@ func TestNotRunningMessagesSayTheTruth(t *testing.T) {
 	le := "guest_unresponsive: " + rawGuestdError
 	errProject := &Project{Slug: "age-calculator", State: "error", LastError: &le}
 	msg := notRunningMessage(errProject)
-	for _, w := range []string{"age-calculator is in an error state", "stopped responding", "`repose start age-calculator`"} {
+	for _, w := range []string{"age-calculator is in an error state", "stopped answering", "`repose start age-calculator`"} {
 		if !strings.Contains(msg, w) {
 			t.Errorf("error-state message lacks %q: %s", w, msg)
 		}
@@ -496,11 +496,12 @@ func TestRunTypesAPromptThatIsAProjectName(t *testing.T) {
 }
 
 func TestReasonFor(t *testing.T) {
-	if got := reasonFor("guest_unresponsive", rawGuestdError); strings.Contains(got, "01a0") || !strings.Contains(got, "stopped responding") {
+	if got := reasonFor("guest_unresponsive", rawGuestdError); strings.Contains(got, "01a0") || !strings.Contains(got, "stopped answering") {
 		t.Errorf("raw host wording: %q", got)
 	}
 	s := "the environment's agent (guestd) stopped answering; `repose start` restarts it"
-	if got := reasonFor("guest_unresponsive", s+"."); got != s {
+	// The api's sentence, in the CLI's word for the machine (I-630).
+	if got := reasonFor("guest_unresponsive", s+"."); got != "repose's service on the machine stopped answering; `repose start` restarts it" {
 		t.Errorf("api sentence: %q", got)
 	}
 	if got := reasonFor("", ""); got != "" {
@@ -518,7 +519,7 @@ func TestReasonFor(t *testing.T) {
 func TestSSHErrorsAreSentences(t *testing.T) {
 	err := stepFailed("read the guest's checkout", &sshError{ExitCode: 255, Stderr: "Connection closed by 20.102.98.254 port 22\r\n"}, "")
 	msg := err.Error()
-	if msg != "Could not read the guest's checkout: the SSH connection to the guest failed (Connection closed by 20.102.98.254 port 22)." {
+	if msg != "Could not read the guest's checkout: the SSH connection to the machine failed (Connection closed by 20.102.98.254 port 22)." {
 		t.Fatalf("msg = %q", msg)
 	}
 	msg = stepFailed("sync your checkout to the guest", &sshError{ExitCode: 128, Stderr: "fatal: bad object\n"}, "").Error()

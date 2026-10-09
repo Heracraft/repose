@@ -80,9 +80,9 @@ func (o SyncOptions) envFiles() []envFile {
 type SyncSummary struct {
 	Modified  int
 	Untracked int
-	Commits   int // commits the laptop sent that the guest did not have
+	Commits   int // commits the laptop sent that the machine did not have
 	Detached  bool
-	Diverged  bool // the guest's branch has commits the laptop does not and they could not be merged; left alone
+	Diverged  bool // the machine's branch has commits the laptop does not and they could not be merged; left alone
 	// Merged: the guest's branch had commits the laptop does not, and the
 	// laptop's commit was merged into it (I-574).
 	Merged bool
@@ -198,7 +198,7 @@ func skipCheckout(ctx context.Context, t sshTarget, localRepoDir string, opts Sy
 	}
 	out, err := carry.p.run(ctx, t)
 	if err != nil {
-		return nil, stepFailed("copy your tool logins to the guest", err, "")
+		return nil, stepFailed("copy your tool logins to the machine", err, "")
 	}
 	for _, l := range strings.Split(string(out), "\n") {
 		l = strings.TrimSpace(l)
@@ -288,7 +288,7 @@ type guestProbe struct {
 	// envCarried: an earlier carry wrote .env files here (its marker, or
 	// #envmissing for a set the probe no longer trusts).
 	envCarried bool
-	tips       []string // every commit a ref (or HEAD) in the guest points at
+	tips       []string // every commit a ref (or HEAD) on the machine points at
 	hasOrigin  bool
 	// subTips are the commits every ref (or HEAD) of each checked-out
 	// submodule in the guest points at, by path (I-263).
@@ -711,7 +711,7 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		} else if cloneURL != "" {
 			out, err := carry.p.run(ctx, t)
 			if err != nil {
-				return nil, stepFailed("copy your tool logins to the guest", err, "")
+				return nil, stepFailed("copy your tool logins to the machine", err, "")
 			}
 			copied, carried = carry.finish(string(out))
 			carry = nil
@@ -762,7 +762,7 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		_ = bundle.Close()
 		defer func() { _ = os.Remove(bundlePath) }()
 		if _, err := gitCmdStdin(localRepoDir, strings.Join(revs, "\n")+"\n", "bundle", "create", "-q", bundlePath, "--stdin"); err != nil {
-			return nil, stepFailed("pack your commits for the guest (git bundle)", err, "")
+			return nil, stepFailed("pack your commits for the machine (git bundle)", err, "")
 		}
 		// A ref whose commit the guest already has is left out of the
 		// bundle; fetch exactly the ones it carries.
@@ -934,7 +934,7 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 	res, err := runSSH(ctx, t, script, payload)
 	if err != nil {
 		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, carryFailed) {
-			return nil, stepFailed("copy your tool logins to the guest", err, "")
+			return nil, stepFailed("copy your tool logins to the machine", err, "")
 		}
 		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncBusy) {
 			return nil, busyError(se.Stderr, opts)
@@ -945,9 +945,9 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 			return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: overlapFiles(se.Stderr)}).Error()}
 		}
 		if se, ok := err.(*sshError); ok && (strings.Contains(se.Stderr, "patch does not apply") || strings.Contains(se.Stderr, "patch failed")) {
-			return nil, stepFailed("apply your uncommitted changes in the guest", err, "Commit or stash them on the laptop and run again.")
+			return nil, stepFailed("apply your uncommitted changes on the machine", err, "Commit or stash them on the laptop and run again.")
 		}
-		return nil, stepFailed("sync your checkout to the guest", err, "")
+		return nil, stepFailed("sync your checkout to the machine", err, "")
 	}
 	var carryOut strings.Builder
 	for _, l := range strings.Split(string(res), "\n") {
@@ -999,7 +999,7 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 func revsToSend(localRepoDir string, wantRefs, tips []string) ([]string, error) {
 	known, err := commitsKnownLocally(localRepoDir, tips)
 	if err != nil {
-		return nil, stepFailed("compare commits with the guest", err, "")
+		return nil, stepFailed("compare commits with the machine", err, "")
 	}
 	revs := append([]string(nil), wantRefs...)
 	for _, k := range known {
@@ -1827,7 +1827,7 @@ func (s *SyncSummary) Warnings() []string {
 		w = append(w, fmt.Sprintf("Your changes inside submodule %s were not sent: it is a shallow clone on your laptop. Run `git -C %s fetch --unshallow` to send them next time.", p, p))
 	}
 	if s.CloneFailed != "" {
-		w = append(w, fmt.Sprintf("The guest could not clone from GitHub (%s), so the history was sent from your laptop instead.", s.CloneFailed))
+		w = append(w, fmt.Sprintf("The machine could not clone from GitHub (%s), so the history was sent from your laptop instead.", s.CloneFailed))
 	}
 	for _, k := range s.EnvKept {
 		w = append(w, fmt.Sprintf("Kept the machine's %s: it is newer than the laptop's.", k))

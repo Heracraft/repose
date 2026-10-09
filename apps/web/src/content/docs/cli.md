@@ -14,11 +14,13 @@ Did you mean `repose ls`?
 Run `repose --help` for the commands.
 ```
 
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it.
+
 ## Which project
 
 Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count; see [From your home folder](/docs/lifecycle#from-your-home-folder). `PROJECT:CHECKOUT` names a checkout that `run --on` added to the machine; `run`, `attach`, `sync`, `exec`, `ssh`, `code` and `rm` take it, and the other commands exit 2.
 
-Global flags: `--project NAME`, `-v`/`--verbose` (one line on stderr for each API request, with its status, time and request ID and the body of a refusal, and one for each `ssh` the command runs; never a token), `--version`, and `--api-url URL` (see [Other servers](#other-servers)).
+Global flags: `--project NAME`, `-v`/`--verbose` (one line on stderr for each API request, with its status, time and request ID and the body of a refusal, and one for each `ssh` the command runs; never a token), `--version`, and `--api-url URL`, which `--help` leaves out (see [Other servers](#other-servers)).
 
 When a newer release of the CLI is out, the next command says so once on stderr, with the install command that updates it. It says it again only for a later release.
 
@@ -41,7 +43,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                                                                                                                   |
 | `--size small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: `default_size`, else `large`. On a running project of another size it exits 2 and names `repose resize`. |
 | `--on PROJECT`            | Add this folder to PROJECT's machine as another checkout, beside its own. See [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine).                                                                                                                                                                                                                          |
-| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, default `24h`). See [Temporary machines](/docs/lifecycle#temporary-machines).                                                                                                                                                                                                                                       |
+| `--temp [DURATION]`       | A new temporary machine, destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments. See [Temporary machines](/docs/lifecycle#temporary-machines).                                                                                                                                                                                                                                       |
 | `--bridge`                | Also bridge your Chrome to the machine while attached, see [`repose browser bridge`](#repose-browser-bridge-project).                                                                                                                                                                                                                                                                                   |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                                                                     |
 | `--no-personal`           | Keep your machine.nix off this machine from now on: a new one is created without it, and one that has it switches without it in the background. See [Your machine.nix](/docs/config#your-machine-nix).                                                                                                                                                                                                  |
@@ -55,7 +57,7 @@ Attach to the project's tmux session without syncing, on its current window, or 
 
 While you're attached, a file you drop on the terminal, or an image you paste with `Cmd+V` or `Ctrl+V`, is copied to the machine and its path there is pasted. See [Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image).
 
-If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. On Windows, or with `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead. See [Detach and come back](/docs/run-and-attach#detach-and-come-back).
+If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. With `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead. See [Detach and come back](/docs/run-and-attach#detach-and-come-back).
 
 ### `repose sync [PROJECT]`
 
@@ -88,7 +90,7 @@ With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines ins
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with the environment an agent there has: your secrets and the project's dev shell. Output streams back and the exit code is the command's. The command is passed word for word, its own flags included, and no shell reads it; for a pipeline, run a shell yourself, as in the last example. If the first word names one of your projects, it is PROJECT. To run a command that has a project's name, put `--` before it. Put `-i` and `-t` before the command.
+Run one command in the checkout on the machine, with your secrets and the project's dev shell, as an agent there has them. Output streams back and the exit code is the command's. The command is passed word for word, its own flags included, and no shell reads it; for a pipeline, run a shell yourself, as in the last example. If the first word names one of your projects, it is PROJECT. To run a command that has a project's name, put `--` before it. Put `-i` and `-t` before the command.
 
 ```
 $ repose exec npm test
@@ -107,11 +109,11 @@ $ repose exec --workdir worktree-1 npm test
 
 ### `repose ssh [PROJECT[:CHECKOUT]]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it.
+Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A command after PROJECT exits 2 and names `repose exec`, which runs one.
 
 ### `repose code [PROJECT[:CHECKOUT]]`
 
-Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over SSH to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. The machine must be running.
+Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over SSH to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. The machine must be running. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
 
 ```
 $ repose code todo-app
@@ -188,7 +190,7 @@ claude called apple-notes.search_notes
 $ repose mcp forward notes -- node ~/mcp/notes.js
 ```
 
-The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached, except on Windows, where it does nothing and `attach` says so.
+The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that sleeps shows that way within about 20 seconds. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
 
 `repose mcp rm NAME` takes it off again; `--remove` is the old form of that.
 
@@ -219,7 +221,7 @@ FROM is `repose` for the browser tools, `laptop` for a server copied from your l
 
 ### `repose cp [-r] SRC... DST`
 
-Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. One letter before the colon is a Windows drive (`C:\notes.txt`), never a project. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
+Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
 
 ### `repose paste [PROJECT]`
 
@@ -289,7 +291,7 @@ On a temporary machine the question starts by saying that no snapshot is kept, a
 
 ### `repose keep [PROJECT] [DURATION]`
 
-Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary: destroyed Sep 29 17:02.` One argument that reads as a duration is DURATION. It keeps no git remote; reach it by name as before. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
+Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary: destroyed Sep 29 17:02.` One argument that reads as a duration is DURATION. It keeps no git remote; reach it by name as before. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
 
 ### `repose restore [NAME]`
 
@@ -321,9 +323,9 @@ Grow the project's disk, for example `repose resize 80G`, or `repose resize todo
 
 Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
 
-```
-2026-10-08T20:59:04-04:00  claude (1)  done          Added tests for src/billing.ts; 14 pass
-2026-10-08T21:12:40-04:00  claude (2)  asks          Drop the legacy_users table?
+```text
+2026-10-08T20:59:04-04:00  claude (1)  done          Added tests
+2026-10-08T21:12:40-04:00  claude (2)  asks          Drop old table?
 ```
 
 ### `repose questions [PROJECT]`
@@ -383,7 +385,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`). Prints the settings.                                                                                                              |
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason ntfy gave (`failed: the server answered 403`). Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version.                                                                                                                                                                                |
-| `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script.                                                                                                                                                                  |
+| `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. `--help` has the line that loads it for each shell; so does [Install](/docs/install#shell-completion).                                                                                                                                                                  |
 | `repose help [COMMAND]`                         | Print help for a command.                                                                                                                                                                         |
 
 ## config.toml
@@ -421,7 +423,7 @@ forward = ["figma"]
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
-| `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends. Does nothing on Windows.                             |
+| `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
 | `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |

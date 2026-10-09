@@ -3,10 +3,10 @@ Your laptop's tools (0):
 
 This project (railsproj):
   no commands to install
-  java temurin-21.0.4+7.0.LTS (.tool-versions): jdk21_headless goes into the guest's nix profile when its java is another version
-  ruby 3.2.2 (.ruby-version): ruby 3.2 is not in the guest's nixpkgs (it has 3.3, 3.4, 4.0); ruby_3_3, the closest, goes into the guest's nix profile instead
+  java temurin-21.0.4+7.0.LTS (.tool-versions): jdk21_headless goes into the machine's nix profile when its java is another version
+  ruby 3.2.2 (.ruby-version): ruby 3.2 is not in the machine's nixpkgs (it has 3.3, 3.4, 4.0); ruby_3_3, the closest, goes into the machine's nix profile instead
   ruby 3.2.2 (Gemfile ruby): the first pin (.ruby-version) wins
   not installed: bundle (comes with ruby_3_3), java (comes with jdk21_headless)
 
-0 to check in the guest; each one it lacks is installed in the background after `repose run`.
-Made the guest's default the same way when it has another version: ruby 3.3, java 21.
+0 to check on the machine; each one it lacks is installed in the background after `repose run`.
+Made the machine's default the same way when it has another version: ruby 3.3, java 21.

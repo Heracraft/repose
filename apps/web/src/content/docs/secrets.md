@@ -18,7 +18,8 @@ Each character you type or paste shows as `*`.
 Or pipe the value in, or read it from a file or from your laptop's environment:
 
 ```
-op read op://dev/stripe/secret-key | repose secrets set STRIPE_SECRET_KEY
+op read op://dev/stripe/secret-key \
+  | repose secrets set STRIPE_SECRET_KEY
 repose secrets set GOOGLE_CREDENTIALS --from-file ./sa.json
 repose secrets set OPENAI_API_KEY --from-env
 ```

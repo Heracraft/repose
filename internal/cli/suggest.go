@@ -33,7 +33,11 @@ func unknownCommand(root *cobra.Command, args []string) string {
 		}
 		return ""
 	}
-	if err != nil || cmd == nil || (cmd.Runnable() && cmd.Annotations[bareRunsKey] == "") || !cmd.HasSubCommands() {
+	// A group takes no words of its own (`repose notify`, `repose
+	// secrets`), so a word after it is a mistyped subcommand, --help or
+	// not (review theme 7); a runnable group whose usage takes words
+	// (`repose browser [PROJECT]`) reads it as one of those.
+	if err != nil || cmd == nil || !cmd.HasSubCommands() || (cmd.Runnable() && cmd.Annotations[bareRunsKey] == "" && takesWords(cmd)) {
 		return ""
 	}
 	typed := firstPositional(cmd, rest)
@@ -47,6 +51,7 @@ func unknownCommand(root *cobra.Command, args []string) string {
 // value, as cmd would parse args; "" when there is none or the flags do
 // not parse.
 func firstPositional(cmd *cobra.Command, args []string) string {
+	cmd.InitDefaultHelpFlag() // so `secrets remvoe --help` parses
 	fs := cmd.Flags()
 	if err := fs.Parse(args); err != nil {
 		return ""
@@ -127,7 +132,9 @@ func suggestCommands(parent *cobra.Command, typed string) []string {
 	})
 	var out []string
 	for _, h := range hits {
-		if len(out) == 3 {
+		// An exact alias or SuggestFor word (`up` for run) beats a guess
+		// at a typo (`up` one edit from cp).
+		if len(out) == 3 || (len(out) > 0 && hits[0].dist == 0 && h.dist > 0) {
 			break
 		}
 		out = append(out, h.name)
@@ -160,4 +167,9 @@ func editDistance(a, b string) int {
 		}
 	}
 	return d[len(ra)][len(rb)]
+}
+
+// takesWords is whether cmd's usage line has arguments of its own.
+func takesWords(cmd *cobra.Command) bool {
+	return len(strings.Fields(cmd.Use)) > 1
 }

@@ -159,15 +159,15 @@ func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]",
 		Short: "Run one command in the checkout on the machine",
-		Long: "Runs COMMAND in the checkout on PROJECT's machine (this checkout's project, by default), with\n" +
-			"the environment an agent there has: the project's secrets and its dev shell. Output streams\n" +
-			"back; the exit code is the command's. The words are passed through as they are; for a\n" +
-			"pipeline use sh -c '...'. A first word that names one of your projects is PROJECT; put --\n" +
-			"before COMMAND to run a command that has a project's name. exec's own flags go before\n" +
-			"COMMAND.\n\n" +
-			"Without -i the command gets no input, and without -t no terminal; -it gives both, for\n" +
-			"something interactive such as a REPL.",
-		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql",
+		Long: "Run COMMAND in the checkout on PROJECT's machine (this checkout's project, by\n" +
+			"default), with the project's secrets and dev shell, as an agent there has them.\n" +
+			"Output streams back, and the exit code is the command's. The words pass through\n" +
+			"as they are; for a pipeline, use sh -c '...'. A first word that names one of\n" +
+			"your projects is PROJECT; put -- before a command that has a project's name.\n" +
+			"exec's own flags go before COMMAND.\n\n" +
+			"Without -i the command gets no input, and without -t no terminal; -it gives\n" +
+			"both, for something interactive such as a REPL.",
+		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec --workdir worktree-1 npm test",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 || cmd.ArgsLenAtDash() == len(args) {
 				return cobraUsageError{fmt.Errorf("no command: repose exec [PROJECT] [--] COMMAND")}
@@ -206,7 +206,7 @@ func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().BoolVarP(&opts.Interactive, "interactive", "i", false, "pass this terminal's input to the command")
 	cmd.Flags().BoolVarP(&opts.TTY, "tty", "t", false, "give the command a terminal (with -i, for interactive programs)")
-	cmd.Flags().StringVar(&opts.Workdir, "workdir", "", "run in folder `DIR`: worktree-N, checkout, ~/PATH, /PATH, or a path inside the checkout")
+	cmd.Flags().StringVar(&opts.Workdir, "workdir", "", "run in `DIR`: worktree-N, checkout, ~/PATH, /PATH, or a path in the checkout")
 	return cmd
 }
 
@@ -281,10 +281,11 @@ func sshShellScript(slug, extra string) string {
 func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ssh [PROJECT[:CHECKOUT]]",
-		Short: "Open a shell on the machine, in the checkout (outside tmux)",
-		Long: "Opens an interactive login shell in the checkout on PROJECT's machine (this checkout's\n" +
-			"project, by default), outside the tmux session: exit ends it. `repose attach` opens the tmux\n" +
-			"session instead, and `repose exec PROJECT COMMAND` runs one command.",
+		Short: "Open a shell in the checkout on the machine",
+		Long: "Open a login shell in the checkout on PROJECT's machine (this checkout's\n" +
+			"project, by default), outside the session that attach opens: exit ends it.\n" +
+			"repose exec runs one command instead.",
+		SuggestFor:        []string{"shell", "connect", "console", "sh"},
 		Args:              sshArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

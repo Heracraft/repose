@@ -259,7 +259,7 @@ func phaseForState(slug, state string) (label, done string) {
 	case "creating":
 		return "Creating " + slug, "Created " + slug
 	case "building":
-		return "Building the environment", "Built the environment"
+		return "Building the configuration", "Built the configuration"
 	case "starting":
 		return "Booting " + slug, "Booted " + slug
 	case "stopping":
