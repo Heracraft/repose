@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -201,6 +202,11 @@ func tempDestroyPrompt(slug string) string {
 // DELETE answers 202 {op_id}, I-156); a failed op is reported with the
 // project's actual state and the command to try again.
 func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, confirm func(prompt string) (bool, error)) error {
+	if strings.Contains(e.resolveArg(projectArg), ":") {
+		// PROJECT:CHECKOUT removes that checkout, never the machine
+		// (DECISIONS I-618).
+		return RemoveCheckoutCmd(ctx, e, projectArg, yes, confirm)
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -398,6 +404,9 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 // requireProject resolves the current project and reports the exact
 // not-found/no-remote errors of §5.3 for every command that is not `run`.
 func requireProject(ctx context.Context, e *Env, projectArg string) (*Project, error) {
+	if err := wholeMachineOnly(e, projectArg); err != nil {
+		return nil, err
+	}
 	res, err := requireProjectRes(ctx, e, projectArg)
 	if err != nil {
 		return nil, err

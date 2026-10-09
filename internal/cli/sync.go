@@ -94,9 +94,14 @@ type SyncSummary struct {
 	// and nothing else, and they were stashed ("repose run: last sync")
 	// before this sync's were laid down (I-210).
 	StashedLastSync bool
-	Branch          string
-	Head            string
-	SkippedBig      []string
+	// StashedFiles and StashRef: --stash-remote or --discard-remote moved
+	// the machine's changes to that many files to its git stash, as the
+	// stash commit StashRef (DECISIONS I-618).
+	StashedFiles int
+	StashRef     string
+	Branch       string
+	Head         string
+	SkippedBig   []string
 	// SkippedDirs are dependency and cache directories left behind
 	// (defaultSkipDirs); SkippedCap counts files past maxUntrackedBytes.
 	SkippedDirs []string
@@ -125,6 +130,11 @@ type SyncSummary struct {
 	// GuestCommits: with GuestAhead, the guest's HEAD is not the commit
 	// and branch the last sync left (commits, or another branch).
 	GuestCommits bool
+	// GuestCommitCount is how many commits the guest's HEAD has that the
+	// laptop lacks, -1 when the probe could not count them; GuestBranch
+	// is the guest's branch, "" when detached (DECISIONS I-618).
+	GuestCommitCount int
+	GuestBranch      string
 	// Copied and Carried are the outcome of SyncOptions.Carry: the logins
 	// copied, as syncCredentialsAndCarry returns them.
 	Copied  []string
@@ -255,7 +265,7 @@ func (e *dirtyTreeError) Error() string {
 		}
 		_, _ = fmt.Fprintf(&b, "  %s\n", f)
 	}
-	b.WriteString("`repose sync --stash-remote` stashes the machine's changes first; `--discard-remote` throws them away.")
+	b.WriteString("`repose sync --stash-remote` moves the machine's changes to its git stash first.")
 	return b.String()
 }
 
@@ -294,6 +304,11 @@ type guestProbe struct {
 	// a laptop with the same key has none to send, even when no guest ref
 	// points at a commit the laptop knows (I-284).
 	syncHas bool
+	// ahead counts the commits on the guest's HEAD that neither the
+	// laptop's HEAD nor its origin/<branch> had at the last completed
+	// sync; hasAhead when the probe could count them (DECISIONS I-618).
+	ahead    int
+	hasAhead bool
 	// checkout is the checkout's directory under the home (I-368), and
 	// created says this probe made it: the machine's first sync.
 	checkout string
@@ -392,6 +407,7 @@ echo '#head'
 git rev-parse -q --verify HEAD || true
 [ -f .git/HEAD ] && IFS= read -r repose_h < .git/HEAD && printf '#headref %%s\n' "$repose_h"
 [ -f "$repose_synced-key" ] && IFS= read -r repose_k < "$repose_synced-key" && printf '#synckey %%s\n' "$repose_k"
+[ -f "$repose_synced-key" ] && git rev-parse -q --verify HEAD >/dev/null && printf '#ahead %%s\n' "$(tail -n +2 "$repose_synced-key" | while IFS=' ' read -r c p; do [ -n "$p" ] || printf '^%%s\n' "$c"; done | git rev-list --count --stdin HEAD 2>/dev/null || true)"
 [ -f "$repose_synced-key" ] && tail -n +2 "$repose_synced-key" | { repose_n=0; while IFS=' ' read -r c p; do repose_n=1; if [ -n "$p" ]; then git -C "$p" cat-file -e "$c^{commit}" 2>/dev/null || exit 1; else git cat-file -e "$c^{commit}" 2>/dev/null || exit 1; fi; done; [ "$repose_n" = 1 ]; } && echo '#synchas'
 echo '#origin'
 git remote get-url origin >/dev/null 2>&1 && echo yes || true
@@ -435,6 +451,12 @@ func parseProbe(out string) guestProbe {
 		if rest, ok := strings.CutPrefix(l, "#guestfiles "); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil {
 				p.guestFiles, p.hasGuestFiles = n, true
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(l, "#ahead "); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil {
+				p.ahead, p.hasAhead = n, true
 			}
 			continue
 		}
@@ -547,7 +569,10 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		out, err = runSSH(ctx, t, probeScript(slug, checkoutName(localRepoDir), t.Checkout), nil)
 	}
 	if err != nil {
-		return nil, stepFailed("read the guest's checkout", err, "")
+		if nc := noCheckoutError(err); nc != nil {
+			return nil, nc
+		}
+		return nil, stepFailed("read the machine's checkout", err, "")
 	}
 	probe := parseProbe(string(out))
 
@@ -860,6 +885,19 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 			}
 		}
 		summary.GuestCommits = probe.head != head || probe.headRef != wantHeadRef(head, branch)
+		summary.GuestCommitCount = -1
+		if summary.GuestCommits {
+			summary.GuestBranch = strings.TrimPrefix(probe.headRef, "ref: refs/heads/")
+			if summary.GuestBranch == probe.headRef {
+				summary.GuestBranch = "" // detached
+			}
+			if known, err := commitsKnownLocally(localRepoDir, []string{probe.head}); err == nil && len(known) == 1 {
+				// The laptop fetched the guest's HEAD already.
+				summary.GuestCommitCount = 0
+			} else if probe.hasAhead {
+				summary.GuestCommitCount = probe.ahead
+			}
+		}
 	}
 	var script string
 	if summary.Unchanged || summary.GuestAhead {
@@ -916,6 +954,9 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 			summary.Merged = true
 		case "#stashedsync":
 			summary.StashedLastSync = true
+		}
+		if rest, ok := strings.CutPrefix(l, "#stashed "); ok {
+			_, _ = fmt.Sscanf(rest, "%d %s", &summary.StashedFiles, &summary.StashRef)
 		}
 		if rest, ok := strings.CutPrefix(l, "#guestkept "); ok {
 			_, _ = fmt.Sscanf(rest, "%d", &summary.GuestKept)
@@ -1132,12 +1173,18 @@ fi
 	b.WriteString(applyCarryHere)
 	switch {
 	case opts.DiscardRemote:
-		b.WriteString(inEverySub("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi; repose_git clean -fdq"))
-		b.WriteString("if [ -n \"$repose_wasbusy\" ]; then repose_unbusy; fi\n")
+		// The git operation in progress ends where HEAD is, and every
+		// change goes to the stash before the tree is cleared, so nothing
+		// the agent wrote is lost (DECISIONS I-618). A merge's unmerged
+		// index entries would refuse the stash: a mixed reset clears them
+		// and leaves the files as they are.
+		b.WriteString("if [ -n \"$repose_wasbusy\" ]; then repose_unbusy; git merge --quit >/dev/null 2>&1 || true; if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q; fi; fi\n")
+		b.WriteString(inEverySub(stashAllScript(stashDiscardMsg, false) + "if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi; repose_git clean -fdq"))
+		b.WriteString(stashAllScript(stashDiscardMsg, true))
 		b.WriteString("if git rev-parse -q --verify HEAD >/dev/null; then repose_git reset -q --hard; fi\nrepose_git clean -fdq\n")
 	case opts.StashRemote:
-		b.WriteString(inEverySub("repose_git stash push -q -u -m 'repose run'"))
-		b.WriteString("repose_git stash push -q -u -m 'repose run'\n")
+		b.WriteString(inEverySub(stashAllScript(stashRemoteMsg, false)))
+		b.WriteString(stashAllScript(stashRemoteMsg, true))
 	case whole:
 		// The last sync's own changes and nothing else, which the laptop
 		// still has (or has replaced): stashed whole, not thrown away, so
@@ -1199,6 +1246,29 @@ fi
 	return b.String()
 }
 
+// stashRemoteMsg and stashDiscardMsg name the stash --stash-remote and
+// --discard-remote make of the machine's changes (DECISIONS I-618).
+const (
+	stashRemoteMsg  = "repose sync --stash-remote"
+	stashDiscardMsg = "repose sync --discard-remote"
+)
+
+// stashAllScript stashes every change in the checkout, untracked files
+// included, under msg, when it has a commit to stash against and
+// anything to stash. report prints "#stashed <files> <stash commit>" for
+// the summary: the superproject's count, every untracked file on its own.
+func stashAllScript(msg string, report bool) string {
+	s := fmt.Sprintf(`if git rev-parse -q --verify HEAD >/dev/null; then
+  repose_sn=$(repose_git status --porcelain -uall --ignore-submodules=none | grep -c '' || true)
+  if [ "$repose_sn" -gt 0 ]; then
+    repose_git stash push -q -u -m %s
+`, shQuote(msg))
+	if report {
+		s += "    printf '#stashed %s %s\\n' \"$repose_sn\" \"$(git rev-parse --short 'stash@{0}')\"\n"
+	}
+	return s + "  fi\nfi\n"
+}
+
 // mergeMessage is the subject of the merge commit a sync makes on the
 // guest's branch (I-574).
 func mergeMessage(branch string) string {
@@ -1226,7 +1296,7 @@ func busyError(stderr string, opts SyncOptions) error {
 	if opts.StashRemote {
 		stash = ", which `--stash-remote` can't keep"
 	}
-	return exitf(ExitDirtyRemoteTree, "Not synced: the machine's checkout is in the middle of a %s%s. Finish or abort it there, or run `repose sync --discard-remote` to throw it away with the machine's other changes.", state, stash)
+	return exitf(ExitDirtyRemoteTree, "Not synced: the machine's checkout is in the middle of a %s%s. Finish or abort it there, or run `repose sync --discard-remote` to end it and move the machine's changes to its git stash.", state, stash)
 }
 
 // syncOverlap is the apply's stderr when the guest changed paths this
@@ -1414,7 +1484,7 @@ const syncStashKeep = 10
 // newest syncStashKeep, oldest first so the indices of the ones still to
 // drop do not move. It matches the whole subject git records for
 // `stash push -m` ("On <branch>: <message>", a branch name has no colon),
-// so the user's stashes and --stash-remote's "repose run" are never
+// so the user's stashes and --stash-remote's and --discard-remote's are never
 // touched. Each is dropped only while its index still names the commit
 // listed: a stash an agent pushes meanwhile shifts every index, and then
 // nothing more is dropped this time.
@@ -1688,22 +1758,7 @@ func tarAddFile(tw *tar.Writer, name, path string) error {
 
 func (s *SyncSummary) String() string {
 	if s.GuestAhead {
-		what := "commits your laptop doesn't have"
-		switch {
-		case s.GuestFiles == 1:
-			what = "1 file"
-		case s.GuestFiles > 1:
-			what = fmt.Sprintf("%d files", s.GuestFiles)
-		}
-		if s.GuestFiles > 0 {
-			return fmt.Sprintf("Nothing new to sync. The machine has changes your laptop doesn't have (%s).", what)
-		}
-		if !s.GuestCommits {
-			// Only the last sync's own changes are left (the guest's
-			// others are gone): nothing the laptop lacks.
-			return nothingNewLine
-		}
-		return fmt.Sprintf("Nothing new to sync. The machine has %s.", what)
+		return guestAheadLine(s)
 	}
 	line := fmt.Sprintf("Synced: %d modified, %d untracked", s.Modified, s.Untracked)
 	switch {
@@ -1730,11 +1785,14 @@ func (s *SyncSummary) String() string {
 	case s.GuestKept > 1:
 		line += fmt.Sprintf("; kept the machine's changes to %d files", s.GuestKept)
 	}
+	if s.StashedFiles > 0 {
+		line += fmt.Sprintf("; stashed the machine's changes to %s (git stash %s)", plural(s.StashedFiles, "1 file", fmt.Sprintf("%d files", s.StashedFiles)), s.StashRef)
+	}
 	if s.StashedLastSync {
-		line += "; the last sync's changes stashed in the guest"
+		line += "; the last sync's changes stashed on the machine"
 	}
 	if s.Unchanged {
-		line += "; the guest already had them"
+		line += "; the machine already had them"
 	}
 	return line
 }
@@ -1757,7 +1815,7 @@ func (s *SyncSummary) Warnings() []string {
 		w = append(w, fmt.Sprintf("The guest could not clone from GitHub (%s), so the history was sent from your laptop instead.", s.CloneFailed))
 	}
 	for _, k := range s.EnvKept {
-		w = append(w, fmt.Sprintf("Kept the guest's %s: it is newer than the laptop's.", k))
+		w = append(w, fmt.Sprintf("Kept the machine's %s: it is newer than the laptop's.", k))
 	}
 	switch {
 	case s.EnvRemoved == 1:
@@ -1781,6 +1839,37 @@ func (s *SyncSummary) Warnings() []string {
 		w = append(w, fmt.Sprintf("Skipped %d untracked files past the 500 MB limit for one sync. Commit what matters, or add large directories to .gitignore or `sync.exclude`.", s.SkippedCap))
 	}
 	return w
+}
+
+// guestAheadLine is a sync's whole report when the laptop had nothing
+// new and the machine moved on since the last sync (I-248): its commits
+// the laptop lacks and its uncommitted files, each counted on its own
+// (DECISIONS I-618).
+func guestAheadLine(s *SyncSummary) string {
+	var parts []string
+	switch n := s.GuestCommitCount; {
+	case !s.GuestCommits || n == 0:
+	case n < 0:
+		parts = append(parts, "commits"+onBranch(s.GuestBranch)+" your laptop doesn't have")
+	default:
+		parts = append(parts, plural(n, "1 commit", fmt.Sprintf("%d commits", n))+onBranch(s.GuestBranch)+" your laptop doesn't have")
+	}
+	if s.GuestFiles > 0 {
+		parts = append(parts, "uncommitted changes to "+plural(s.GuestFiles, "1 file", fmt.Sprintf("%d files", s.GuestFiles)))
+	}
+	if len(parts) == 0 {
+		// Only the last sync's own changes are left, or commits the
+		// laptop fetched already: nothing the laptop lacks.
+		return nothingNewLine
+	}
+	return "Nothing new to sync. The machine has " + strings.Join(parts, ", and ") + "."
+}
+
+func onBranch(b string) string {
+	if b == "" {
+		return ""
+	}
+	return " on " + b
 }
 
 // nothingNewLine is a sync's whole report when the machine already has

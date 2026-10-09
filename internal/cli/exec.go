@@ -100,7 +100,7 @@ func execSeparated(args []string, opts *ExecOptions) (project string, command []
 func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts ExecOptions
 	cmd := &cobra.Command{
-		Use:   "exec [PROJECT] [--] COMMAND [ARG...]",
+		Use:   "exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]",
 		Short: "Run one command in the checkout on the machine",
 		Long: "Runs COMMAND in the checkout on PROJECT's machine (this checkout's project, by default), with\n" +
 			"the environment an agent there has: the project's secrets and its dev shell. Output streams\n" +
@@ -164,14 +164,17 @@ func execProjectWord(ctx context.Context, e *Env, opts *ExecOptions) error {
 	if err != nil {
 		return nil // a real api failure is reported by the connect that follows
 	}
+	// PROJECT:CHECKOUT names one of its checkouts (I-480).
+	word := opts.Command[0]
+	slug, _, _ := strings.Cut(word, ":")
 	for _, p := range projects {
-		if p.Slug != opts.Command[0] {
+		if p.Slug != slug {
 			continue
 		}
 		if len(opts.Command) == 1 {
-			return exitf(ExitUsage, "%q is one of your projects. Give the command after it: `repose exec %s COMMAND`, or `repose exec -- %s` to run a command of that name.", p.Slug, p.Slug, p.Slug)
+			return exitf(ExitUsage, "%q is one of your projects. Give the command after it: `repose exec %s COMMAND`, or `repose exec -- %s` to run a command of that name.", word, word, word)
 		}
-		opts.ProjectArg, opts.Command = p.Slug, opts.Command[1:]
+		opts.ProjectArg, opts.Command = word, opts.Command[1:]
 		return nil
 	}
 	return nil
@@ -219,7 +222,7 @@ func sshShellScript(slug, extra string) string {
 
 func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ssh [PROJECT]",
+		Use:   "ssh [PROJECT[:CHECKOUT]]",
 		Short: "Open a shell on the machine, in the checkout (outside tmux)",
 		Long: "Opens an interactive login shell in the checkout on PROJECT's machine (this checkout's\n" +
 			"project, by default), outside the tmux session: exit ends it. `repose attach` opens the tmux\n" +

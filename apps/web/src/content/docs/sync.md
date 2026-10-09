@@ -42,7 +42,7 @@ Synced: 4 modified, 2 untracked, 2 env files (3 new commits)
 
 ## Sending later work
 
-When the machine already has your checkout and your laptop has work it doesn't, `repose run` attaches without copying it and tells you:
+When the machine already has your checkout and your laptop has work it doesn't, `repose run` attaches without copying it and tells you, in the terminal and on the machine's tmux status line (a herdr notification on herdr) once attached:
 
 ```text
 Not synced: your laptop has work the machine doesn't (3 modified,
@@ -53,7 +53,7 @@ With nothing new on your laptop, `repose run` says nothing about syncing.
 
 `repose sync` (or `repose sync PROJECT`) copies your laptop's current work over the machine's checkout and returns without attaching. It creates or starts the machine if needed. With nothing new it says `Nothing new to sync: the machine already has this checkout.`
 
-Your tool logins, git identity and Claude Code settings are copied at every `repose run` whether or not the checkout is, so a rotated token reaches the machine on your next run.
+Your tool logins, git identity and Claude Code settings are copied at every `repose run` whether or not the checkout is, so a rotated token reaches the machine on your next run. The lines about them, such as `Credentials: gh, codex`, print when they change, not on every run of the same project.
 
 ## What doesn't
 
@@ -83,9 +83,11 @@ Git LFS files arrive as their small pointer files. Run `git lfs pull` on the mac
 If the machine changed since your last sync (usually an agent's edits or commits) and your laptop has nothing new since then, there is nothing to copy, and the checkout is left as it is:
 
 ```text
-Nothing new to sync. The machine has changes your laptop doesn't
-have (27 files).
+Nothing new to sync. The machine has 3 commits on main your laptop
+doesn't have, and uncommitted changes to 2 files.
 ```
+
+Commits count from the last sync and stop counting once your laptop has fetched them with `git fetch repose`. Uncommitted files never travel back.
 
 When your laptop has new work, the sync writes only the files that work touches: the ones your new commits change, your uncommitted changes and your untracked files. The machine's changes to any other file stay where they are, and the summary counts them:
 
@@ -101,11 +103,18 @@ Not synced: the machine changed 2 files that your laptop changed
 too:
   src/session.ts
   notes.md
-`repose sync --stash-remote` stashes the machine's changes first;
-`--discard-remote` throws them away.
+`repose sync --stash-remote` moves the machine's changes to its git
+stash first.
 ```
 
-`--stash-remote` keeps all of the machine's uncommitted changes in `git stash` there, named `repose run`. `--discard-remote` throws them all away.
+`--stash-remote` moves all of the machine's uncommitted changes, untracked files included, to `git stash` there, named `repose sync --stash-remote`, and the summary says how many files went and the stash commit:
+
+```text
+Synced: 1 modified, 0 untracked; stashed the machine's changes to 3
+files (git stash 1a2b3c4)
+```
+
+`git stash apply 1a2b3c4` on the machine brings them back.
 
 A file the agent creates while the sync runs, at a path where your laptop sends an untracked file, is overwritten.
 
@@ -113,11 +122,11 @@ If the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect 
 
 ```text
 Not synced: the machine's checkout is in the middle of a git rebase.
-Finish or abort it there, or run `repose sync --discard-remote` to
-throw it away with the machine's other changes.
+Finish or abort it there, or run `repose sync --discard-remote` to end
+it and move the machine's changes to its git stash.
 ```
 
-`--stash-remote` stops there too: a stash can't hold a merge or rebase in progress.
+`--stash-remote` stops there too: a stash can't hold a merge or rebase in progress. `--discard-remote` ends the operation where it stands, then stashes as `--stash-remote` does, under the name `repose sync --discard-remote`. Commits a rebase had made stay in the machine's `git reflog`.
 
 Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
 

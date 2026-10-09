@@ -364,8 +364,8 @@ and no name gives a project named after the folder (I-358).
    never fetches from origin, nothing is pushed), the laptop's `HEAD` is
    checked out, and staged and unstaged changes follow as two diffs, with
    untracked files as a tar. If the guest changed files the sync would
-   write, refuse, name them and offer `--stash-remote` or
-   `--discard-remote`; its changes elsewhere stay (DECISIONS I-573,
+   write, refuse, name them and offer `--stash-remote`, which moves
+   them to a git stash (I-618); its changes elsewhere stay (DECISIONS I-573,
    `features/sync-at-launch.md`). A guest branch with commits the laptop
    lacks takes a merge of the laptop's commit when git can make it
    cleanly (I-574). Since DECISIONS I-367 `run` does this

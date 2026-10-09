@@ -184,12 +184,12 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if !ok || ee.code != ExitDirtyRemoteTree {
 		t.Fatalf("err = %v, want exit %d", err, ExitDirtyRemoteTree)
 	}
-	for _, want := range []string{"  README.md\n", "repose sync --stash-remote", "--discard-remote"} {
+	for _, want := range []string{"  README.md\n", "repose sync --stash-remote"} {
 		if !strings.Contains(ee.msg, want) {
 			t.Errorf("refusal = %q, want %q", ee.msg, want)
 		}
 	}
-	for _, not := range []string{"repose run", "timing.txt"} {
+	for _, not := range []string{"repose run", "timing.txt", "--discard-remote"} {
 		if strings.Contains(ee.msg, not) {
 			t.Errorf("refusal = %q, names %q", ee.msg, not)
 		}
