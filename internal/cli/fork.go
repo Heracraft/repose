@@ -109,7 +109,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				}
 			}
 			if have+opts.Count > me.Limits.Projects {
-				return exitf(ExitGeneric, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
+				return exitf(ExitPaymentRequired, "%s", projectLimitMessage(have, me.Limits.Projects, opts.Count))
 			}
 		}
 	}
@@ -162,7 +162,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		// above, or /me unreadable) in the words every command uses.
 		if errors.As(err, &apiErr) {
 			if have, limit, n, ok := projectLimitOf(apiErr); ok {
-				return exitf(ExitGeneric, "%s", projectLimitMessage(have, limit, n))
+				return exitf(ExitPaymentRequired, "%s", projectLimitMessage(have, limit, n))
 			}
 		}
 		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {

@@ -334,7 +334,7 @@ func TestPlainSSHUnknownProject(t *testing.T) {
 	f := newPlainSSHFixture(t)
 	out, err := f.run(t, "", nil, "ssh", "-F", f.top, "nosuch.repose", "true")
 	t.Logf("$ ssh nosuch.repose true\n%s", out)
-	if err == nil || !strings.Contains(out, "you have no project called nosuch") {
+	if err == nil || !strings.Contains(out, "No repose project is called nosuch.") {
 		t.Fatalf("err = %v\n%s", err, out)
 	}
 }

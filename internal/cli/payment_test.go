@@ -59,29 +59,31 @@ func TestStatusShowsHours(t *testing.T) {
 // The project cap refusal reads the same from every command (I-569):
 // run, restore and the rest print the CLI's sentence for the api's 400,
 // not "invalid: ..."; an api from before I-569 (no detail.reason) is
-// recognised by its numbers; another invalid stays as the api said it.
+// recognised by its numbers; another invalid is the api's sentence with
+// its code after it. The cap exits 7, as the other plan limits (I-623).
 func TestProjectLimitMessage(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		err  *APIError
 		want string
+		code int
 	}{
 		{"one", &APIError{Code: "invalid", Message: "you have 100 of the 100 projects an account can have, running or stopped; destroy one first",
 			Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(100)}},
-			"You have 100 of the 100 projects an account can have, running or stopped. Destroy one first.\n"},
+			"You have 100 of the 100 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.\n", ExitPaymentRequired},
 		{"several", &APIError{Code: "invalid", Message: "…",
 			Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(98), "requested": float64(5)}},
-			"You have 98 of the 100 projects an account can have, running or stopped, and 5 more would make 103. Destroy some first.\n"},
+			"You have 98 of the 100 projects an account can have, running or stopped, and 5 more would make 103. Destroy some first with `repose rm PROJECT`.\n", ExitPaymentRequired},
 		{"older api", &APIError{Code: "invalid", Message: "you have 6 of 6 projects; destroy one, or upgrade your plan at https://repose.herakraft.co/billing",
 			Detail: map[string]any{"limit": float64(6), "projects": float64(6)}},
-			"You have 6 of the 6 projects an account can have, running or stopped. Destroy one first.\n"},
+			"You have 6 of the 6 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.\n", ExitPaymentRequired},
 		{"other invalid", &APIError{Code: "invalid", Message: "name must match [A-Za-z0-9._-]{1,64}"},
-			"invalid: name must match [A-Za-z0-9._-]{1,64}\n"},
+			"Name must match [A-Za-z0-9._-]{1,64} (invalid).\n", ExitGeneric},
 		{"other reason", &APIError{Code: "invalid", Message: "something else", Detail: map[string]any{"reason": "other", "limit": float64(1), "projects": float64(1)}},
-			"invalid: something else\n"},
+			"Something else (invalid).\n", ExitGeneric},
 	} {
 		var buf bytes.Buffer
-		if code := exitCodeFor(c.err, &buf); code != ExitGeneric || buf.String() != c.want {
+		if code := exitCodeFor(c.err, &buf); code != c.code || buf.String() != c.want {
 			t.Errorf("%s: exit %d, printed %q, want %q", c.name, code, buf.String(), c.want)
 		}
 	}

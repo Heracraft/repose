@@ -503,21 +503,32 @@ func syncRoot(cwd string) string {
 // sync call it before they create or start anything (DECISIONS I-353),
 // so the refusal no longer comes after a machine has booted for nothing;
 // syncGuest calls it again for its other callers.
-func syncPrecheck(localRepoDir string) error {
+//
+// offerNoSync is a `repose run`, which has --no-sync; `repose sync` has
+// not, so its refusals do not name it (DECISIONS I-628).
+func syncPrecheck(localRepoDir string, offerNoSync bool) error {
+	or := ""
+	if offerNoSync {
+		or = ", or pass --no-sync"
+	}
 	if gitRepoRoot(localRepoDir) == "" {
-		return exitf(ExitUsage, "repose syncs your work through git, and %s is not a git checkout. Run `git init && git add -A && git commit -m init` there first, or pass --no-sync.", localRepoDir)
+		return exitf(ExitUsage, "repose syncs your work through git, and %s is not a git checkout. Run `git init && git add -A && git commit -m init` there first%s.", localRepoDir, or)
 	}
 	if _, err := gitHeadCommit(localRepoDir); err != nil {
-		return errNoCommits()
+		return errNoCommits(offerNoSync)
 	}
 	if shallow, _ := gitCmd(localRepoDir, "rev-parse", "--is-shallow-repository"); shallow == "true" {
-		return exitf(ExitUsage, "Your checkout is a shallow clone, so repose cannot send its history to the guest. Run `git fetch --unshallow` and try again, or pass --no-sync.")
+		return exitf(ExitUsage, "Your checkout is a shallow clone, so repose cannot send its history to the machine. Run `git fetch --unshallow` and try again%s.", or)
 	}
 	return nil
 }
 
-func errNoCommits() error {
-	return exitf(ExitUsage, "Your checkout has no commits yet, so there is nothing to sync. Commit once (`git add -A && git commit -m init`) and run again, or pass --no-sync.")
+func errNoCommits(offerNoSync bool) error {
+	or := ""
+	if offerNoSync {
+		or = ", or pass --no-sync"
+	}
+	return exitf(ExitUsage, "Your checkout has no commits yet, so there is nothing to sync. Commit once (`git add -A && git commit -m init`) and run again%s.", or)
 }
 
 // syncGuest runs the whole sync step against localRepoDir's git state
@@ -526,12 +537,12 @@ func errNoCommits() error {
 // ssh round trips: a probe, then one payload (bundle, diff, untracked
 // tar) and one script that applies it.
 func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts SyncOptions) (*SyncSummary, error) {
-	if err := syncPrecheck(localRepoDir); err != nil {
+	if err := syncPrecheck(localRepoDir, false); err != nil {
 		return nil, err
 	}
 	head, err := gitHeadCommit(localRepoDir)
 	if err != nil {
-		return nil, errNoCommits()
+		return nil, errNoCommits(false)
 	}
 	branch, err := gitCurrentBranch(localRepoDir)
 	if err != nil {

@@ -193,7 +193,7 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 			"your laptop's Claude Code config, for this folder's project. It asks once before replacing\n" +
 			"secrets the project already has; --yes replaces them without asking.",
 		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp",
-		Args:    cobra.MaximumNArgs(1),
+		Args:    argsN(0, 1, "at most one FILE"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ProjectArg = g.project
 			opts.File = ".env"

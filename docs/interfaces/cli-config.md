@@ -102,9 +102,13 @@ checkout's commands, with where each was found and why the rest were
 left out. It reads files only: no api, no guest, no package manager.
 `DIR` defaults to the current checkout's root.
 
-Exit codes: 0 ok; 1 generic; 2 usage; 3 not logged in; 4 project not found;
-5 guest not running; 6 dirty remote tree (sync refused); 7 payment required;
-8 capacity (also `waitlisted`: a checkout refused for want of a free seat, I-269/I-290); 10 build failed (Nix error printed); 130 interrupted (Ctrl-C).
+Exit codes: 0 ok; 1 generic (also the network: the api or the login
+server out of reach, I-623); 2 usage; 3 not logged in or the login
+expired; 4 project not found;
+5 guest not running; 6 dirty remote tree (sync refused); 7 payment required
+or a plan limit, the project cap included (I-623);
+8 capacity, from the api or from a create or start op that failed with
+`insufficient_capacity` (I-623) (also `waitlisted`: a checkout refused for want of a free seat, I-269/I-290); 10 build failed (Nix error printed); 130 interrupted (Ctrl-C).
 Usage covers cobra's own refusals too: an unknown command or flag, a
 wrong number of arguments, and two different projects named at once
 (DECISIONS I-155), and an unknown subcommand under a group (`repose

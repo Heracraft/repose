@@ -5,11 +5,17 @@ section: Reference
 order: 41
 ---
 
-For more detail on any command, add `-v`. `REPOSE_TIMING=1` shows where the time in `run` and `attach` went, and `repose logs --kind ops` lists every operation on the project with its result.
+For more detail on any command, add `-v`: each API request with its status and request ID, which support can look up, and each `ssh` it runs. `REPOSE_TIMING=1` shows where the time in `run` and `attach` went, and `repose logs --kind ops` lists every operation on the project with its result.
 
 ## Logging in and connecting
 
 **``Not logged in. Run `repose login`.``** Your login expired or you logged out.
+
+**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`** Your laptop is offline, or the server is down. Your login is still there; run the command again once you're connected.
+
+**`The repose api answered 502`** The API is restarting, usually for a release. A read is tried once more by itself; run the command again in a minute.
+
+**`ssh on this laptop failed before it reached todo-app`** Something in your laptop's ssh setup refused before the connection: a line in `~/.ssh/config`, a `ControlPath` too long for a socket, or `~/.ssh/repose/known_hosts`. The message quotes ssh and names the fix.
 
 **`No repose project for github.com/you/app`** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 

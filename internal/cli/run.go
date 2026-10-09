@@ -139,7 +139,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// reads run beside the api's.
 	precheck := make(chan error, 1)
 	if !attachOnly && !opts.NoSync && !e.inHome() {
-		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd)) }()
+		go func() { precheck <- syncPrecheck(syncRoot(e.Cwd), !opts.Sync) }()
 	} else {
 		precheck <- nil
 	}
@@ -537,7 +537,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 	}
 
-	_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
+	if !opts.Sync {
+		// `repose sync` ends on its sync line (DECISIONS I-628).
+		_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
+	}
 	if l := tempLine(project, time.Now()); l != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, l)
 	}
@@ -960,7 +963,8 @@ exec tmux attach -t %[1]s:"$repose_w" -c "$repose_co"`, shQuote(slug), shQuote(w
 // waitForSSH is step 4: `ssh <target> true` until it answers, for up to
 // sshWaitTimeout. onRefused is offered each ssh failure and returns true
 // when it changed something worth an immediate retry (a re-issued
-// certificate).
+// certificate). A failure on the laptop's side, which waiting does not
+// clear, ends the wait at once (DECISIONS I-625).
 func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (bool, error)) error {
 	deadline := time.Now().Add(sshWaitTimeout)
 	for {
@@ -972,6 +976,11 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		if errors.As(err, &se) && se.ExitCode == -1 {
 			return exitf(ExitGeneric, "Could not run ssh: %v. repose needs the OpenSSH client (`ssh`) on your PATH.", se.Err)
 		}
+		if se != nil {
+			if fix, ok := laptopSSHFault(se); ok {
+				return exitf(ExitGeneric, "ssh on this laptop failed before it reached %s: %s. %s", targetName(t), sshStderrDetail(se.Stderr), fix)
+			}
+		}
 		if se != nil && onRefused != nil {
 			retry, err := onRefused(se)
 			if err != nil {
@@ -982,13 +991,11 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 			}
 		}
 		if time.Now().After(deadline) {
-			detail := ""
+			msg := fmt.Sprintf("%s is running but did not answer ssh in %d s.", targetName(t), int(sshWaitTimeout.Seconds()))
 			if se != nil {
-				detail = sshStderrDetail(se.Stderr)
-			}
-			msg := "Guest is running but SSH did not answer in 60s. `repose stop` and then `repose start` restart it."
-			if detail != "" {
-				msg += "\nLast error from ssh: " + detail
+				if detail := sshStderrDetail(se.Stderr); detail != "" {
+					msg += " Last error from ssh: " + detail
+				}
 			}
 			return exitf(ExitGeneric, "%s", msg)
 		}
@@ -998,6 +1005,57 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		case <-time.After(sshRetryInterval):
 		}
 	}
+}
+
+// targetName is the machine an ssh target reaches, for a message.
+func targetName(t sshTarget) string {
+	if n := len(t.Args); n > 0 && strings.HasSuffix(t.Args[n-1], ".repose") {
+		return strings.TrimSuffix(t.Args[n-1], ".repose")
+	}
+	return "The machine"
+}
+
+// laptopSSHFaults are ssh failures of the laptop's own: its config, its
+// name lookup, its known_hosts. Each is the same a minute later, and the
+// sentence names what fixes it. The first that matches ssh's stderr,
+// lowercased, wins.
+var laptopSSHFaults = []struct {
+	match []string // all of these
+	fix   string
+}{
+	{[]string{"too long for unix domain socket"}, controlPathFix},
+	{[]string{"controlpath too long"}, controlPathFix},
+	{[]string{"bad configuration option"}, "Fix the line ssh names in that file."},
+	{[]string{"garbage at end of line"}, "Fix the line ssh names in that file."},
+	{[]string{"bad owner or permissions on"}, "ssh refuses a config file that others can write; `chmod 600` the file it names."},
+	// NAME.repose is a name only repose's ssh config gives; an ssh that
+	// has not read it looks the name up in DNS.
+	{[]string{"could not resolve hostname", ".repose:"}, "Your ~/.ssh/config does not include ~/.ssh/repose/config, which defines that name; add `Include ~/.ssh/repose/config` at its top."},
+	{[]string{"could not resolve hostname"}, "The name did not resolve; check your connection."},
+	{[]string{"host key verification failed"}, "~/.ssh/repose/known_hosts does not match the gateway; delete it, and the next repose command writes it again."},
+}
+
+// controlPathFix: the socket path comes from repose's own ssh config
+// (~/.ssh/repose/cm-%C, too long under a long home folder) or the user's.
+const controlPathFix = "The ControlPath ssh uses is longer than a socket path may be; set a shorter one for Host *.repose in ~/.ssh/config, above its Include line."
+
+// laptopSSHFault reports whether ssh failed on the laptop's side, and
+// the fix.
+func laptopSSHFault(se *sshError) (string, bool) {
+	if se.ExitCode != 255 {
+		return "", false
+	}
+	s := strings.ToLower(se.Stderr)
+	for _, f := range laptopSSHFaults {
+		all := true
+		for _, m := range f.match {
+			all = all && strings.Contains(s, m)
+		}
+		if all {
+			return f.fix, true
+		}
+	}
+	return "", false
 }
 
 // keepTokenFresh keeps the access token fresh while an attach runs
@@ -1116,7 +1174,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
 		}
 		if errors.As(err, &apiErr) && apiErr.Code == "capacity" {
-			return exitf(ExitCapacity, "No capacity right now; try again in a few minutes. (We have been alerted.)")
+			return exitf(ExitCapacity, "repose has no room for this machine right now. Try again in a few minutes.")
 		}
 		return err
 	}

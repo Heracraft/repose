@@ -11,7 +11,7 @@ func newCompletionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "completion bash|zsh|fish",
 		Short:     "Generate shell completion",
-		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		Args:      cobra.MatchAll(argsN(1, 1, "one of bash, zsh or fish"), cobra.OnlyValidArgs),
 		ValidArgs: []string{"bash", "zsh", "fish"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := cmd.Root()

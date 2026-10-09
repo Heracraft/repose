@@ -48,6 +48,9 @@ type Options struct {
 	// (DECISIONS I-575); other requests are served meanwhile.
 	CreateHold       time.Duration
 	CreateReplyDelay time.Duration
+	// CLILatest, when set, is sent as every answer's X-Repose-CLI-Latest
+	// header, the newest CLI release (DECISIONS I-626).
+	CLILatest string
 	// StartDelay makes POST /projects/:id/start on a stopped project leave
 	// the project "starting" and its op "running" (phase start_guest) for
 	// the delay, then running and done. Zero keeps the instant start.
@@ -391,6 +394,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.reqSeq++
 	w.Header().Set("X-Request-Id", fmt.Sprintf("req-%06d", f.reqSeq))
+	if f.opts.CLILatest != "" {
+		w.Header().Set("X-Repose-CLI-Latest", f.opts.CLILatest)
+	}
 	_, pattern := f.mux.Handler(r)
 	if pattern == "" {
 		f.mu.Unlock()

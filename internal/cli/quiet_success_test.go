@@ -70,6 +70,9 @@ var quietFailureFuncs = map[string]bool{
 	"waitForSSH": true, "briefErr": true, "Error": true, "ReadPNG": true,
 	"exitCodeFor": true, // the login and rate-limit refusals
 	"applyScript": true, // a shell script run on the guest, not output
+	// The api's refusals as sentences, the unknown project, the project
+	// cap and a failed revoke (I-623, I-627).
+	"apiErrorExit": true, "noSuchProjectMessage": true, "projectLimitMessage": true,
 }
 
 // reposeCommand finds "repose NAME" past the string's start; at its start

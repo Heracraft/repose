@@ -93,7 +93,7 @@ func TestFork(t *testing.T) {
 	fake.SetBilling(fakeapi.BillingActive)
 	fake.SetPlan("solo")
 	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1})
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != "You have 100 of the 100 projects an account can have, running or stopped. Destroy one first." {
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitPaymentRequired || ee.msg != "You have 100 of the 100 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`." {
 		t.Fatalf("fork at the limit: %v", err)
 	}
 	fake.SetBilling(fakeapi.BillingExempt)

@@ -46,7 +46,11 @@ type Config struct {
 	NotifyFrom      string
 	DashboardURL    string
 	BaseRef         string
-	ReplicaID       string
+	// CLIReleasesURL is CLI_RELEASES_URL: the redirect naming the newest
+	// CLI release (DECISIONS I-626). Empty means GitHub's releases/latest,
+	// except with REPOSE_DEV=1; "off" reads none.
+	CLIReleasesURL string
+	ReplicaID      string
 	// SeatsTotal is SEATS_TOTAL: the fleet's seats when the operator sets
 	// it (DECISIONS I-290); 0 derives the count from the ready hosts. There
 	// is no off switch: a fleet that must never waitlist sets it very high.
@@ -91,6 +95,7 @@ func FromEnv() (Config, error) {
 		NotifyFrom:      env("NOTIFY_FROM", "repose <notify@repose.herakraft.co>"),
 		DashboardURL:    env("DASHBOARD_URL", "https://repose.herakraft.co"),
 		BaseRef:         os.Getenv("BASE_REF"),
+		CLIReleasesURL:  os.Getenv("CLI_RELEASES_URL"),
 		ReplicaID:       env("REPLICA_ID", ""),
 		Dev:             os.Getenv("REPOSE_DEV") == "1",
 		// On by default: a Coolify pre-deployment command runs in the

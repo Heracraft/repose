@@ -350,7 +350,7 @@ func GlobalApplyCmd(ctx context.Context, e *Env, path string) error {
 			}
 			return exitf(ExitUsage, "No %s yet. `repose config --global edit` starts one, or `repose config --global add ripgrep`.", e.displayPath(path))
 		}
-		return exitf(ExitUsage, "reading %s: %v", path, err)
+		return fileReadError(path, err)
 	}
 	return pushPersonal(ctx, e, string(b), nil, path)
 }

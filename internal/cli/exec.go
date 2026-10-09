@@ -224,7 +224,7 @@ func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "Opens an interactive login shell in the checkout on PROJECT's machine (this checkout's\n" +
 			"project, by default), outside the tmux session: exit ends it. `repose attach` opens the tmux\n" +
 			"session instead, and `repose exec PROJECT COMMAND` runs one command.",
-		Args:              projectArgs,
+		Args:              sshArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project, err := projectFrom(args, g)
@@ -238,6 +238,16 @@ func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SSHCmd(cmd.Context(), e, project)
 		},
 	}
+}
+
+// sshArgs is projectArgs for `repose ssh`, whose second word is a
+// command a peer's ssh would run: the refusal names exec, which runs it
+// (DECISIONS I-275 keeps ssh a shell; I-628).
+func sshArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 1 {
+		return cobraUsageError{fmt.Errorf("%s takes at most one PROJECT and no command, got %s. To run a command: repose exec %s", cmd.CommandPath(), gotArgs(args), strings.Join(args, " "))}
+	}
+	return nil
 }
 
 // SSHCmd implements `repose ssh`: the certificate and config as for

@@ -293,7 +293,8 @@ func prepareFiles(ctx context.Context, e *Env, slug string) error {
 		}
 	}
 	if !found {
-		return exitf(ExitProjectNotFound, "repose: you have no project called %s (`repose ls` lists them).", slug)
+		// ssh prints this under its own lines, so it names repose.
+		return exitf(ExitProjectNotFound, "repose: %s", noSuchProjectMessage(slug))
 	}
 	_, err = ensureCert(ctx, e.Client, certParams{Handle: me.Handle, Projects: projects}, nil)
 	return err
