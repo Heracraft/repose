@@ -211,6 +211,9 @@ func TestPlanLineAndWarnings(t *testing.T) {
 	if len(got) != 2 || !strings.HasPrefix(got[0], "egress: 260 GB this month, past the plan's 250 GB") || !strings.Contains(got[0], "stop at 1000 GB") || !strings.HasPrefix(got[1], "payment failed: starting a machine is refused") {
 		t.Errorf("warnings %q", got)
 	}
+	if got := planWarningsAfter(b, true); len(got) != 2 || got[0] != "egress past the plan: each GB past 250 GB adds $0.05, and your machines stop at 1000 GB" {
+		t.Errorf("warnings under the plan line %q", got)
+	}
 }
 
 // `repose ls` against the fake: the plan line under the table.

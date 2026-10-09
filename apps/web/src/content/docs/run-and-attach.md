@@ -117,7 +117,7 @@ repose attach
 repose attach todo-app
 ```
 
-`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. It doesn't start a stopped machine either; it tells you to run `repose start`.
+`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. A stopped machine starts first, as with `run`. In the checkout, one word that names none of your projects is a window: `repose attach claude-2`.
 
 Several terminals can be attached at once, from one computer or several. They see the same windows.
 
@@ -219,7 +219,7 @@ A first word that names one of your projects picks that project; otherwise it is
 
 `repose ssh` opens a plain shell in the checkout instead of the tmux session, and `exit` closes it. Start long jobs in tmux (`repose attach`), where they outlive the connection.
 
-Like `attach`, these start no machine: a stopped one gets you exit code 5 and the command to start it.
+Unlike `attach`, these start no machine: a stopped one gets you exit code 5 and the command to start it.
 
 ## Drop a file or paste an image
 

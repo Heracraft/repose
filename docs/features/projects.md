@@ -56,7 +56,13 @@ Identity:
   or by the slug NAME gets) wherever the command runs, and creates it when
   there is none; it never lands on a project of another name (DECISIONS
   I-348). A NAME that is another repository's project exits 2 instead of
-  syncing one repository into the other's machine. A new NAME takes the
+  syncing one repository into the other's machine: by its remote, or,
+  when either side has none, by history (I-631). When the laptop knows
+  none of the commits the machine's checkout has refs to, one more ssh
+  asks the checkout for the laptop's root commits; a checkout with none
+  of them is another repository's (`job's checkout shares no commit with
+  this one, so ...`), and nothing is written. A shallow repository on
+  either side is not checked. A new NAME takes the
   checkout's remote only when no project has that remote yet; otherwise
   it is a second project for the repository, with no remote (as a fork's
   copies, I-254), reached by name, and the checkout's own project is still

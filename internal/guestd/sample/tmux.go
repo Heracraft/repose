@@ -291,8 +291,18 @@ const StateOption = "@repose-state"
 // setWindowState sets StateOption on window of session; best effort. The
 // window is named exactly, so a prefix never hits another window.
 func (t tmuxClient) setWindowState(ctx context.Context, session, window, state string) error {
+	return t.windowOption(ctx, []string{"tmux", "set-option", "-w", "-t", "=" + session + ":=" + window, StateOption, state})
+}
+
+// unsetWindowState removes StateOption from window of session: the
+// window no longer runs an agent (I-631). Best effort.
+func (t tmuxClient) unsetWindowState(ctx context.Context, session, window string) error {
+	return t.windowOption(ctx, []string{"tmux", "set-option", "-wu", "-t", "=" + session + ":=" + window, StateOption})
+}
+
+func (t tmuxClient) windowOption(ctx context.Context, argv []string) error {
 	res, err := t.run.Run(ctx, sysdep.RunSpec{
-		Argv:      []string{"tmux", "set-option", "-w", "-t", "=" + session + ":=" + window, StateOption, state},
+		Argv:      argv,
 		User:      "dev",
 		Env:       sysdep.DevEnv(t.paths, "dev"),
 		MaxOutput: 4 << 10,

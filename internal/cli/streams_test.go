@@ -139,14 +139,25 @@ func TestEventLine(t *testing.T) {
 		w    eventsWidths
 		want string
 	}{
-		{Event{TS: ts, Kind: "completed", Agent: "claude", Window: "2", Summary: "Added tests\nfor billing"}, eventsWidths{},
-			tm + "  claude (2)  done          Added tests for billing"},
-		{Event{TS: ts, Kind: "guest_state_changed", Summary: "running"}, eventsWidths{},
-			tm + "  -           machine       running"},
-		{Event{TS: ts, Kind: "snapshot.created", Summary: "snapshot taken"}, eventsWidths{},
-			tm + "  -           snapshot created  snapshot taken"},
-		{Event{TS: ts, Kind: "agent_question", Agent: "codex", Summary: "Drop it?", Project: "api"}, eventsWidths{all: true, project: 8},
-			tm + "  api       codex       asks          Drop it?"},
+		{Event{TS: ts, Kind: "completed", Agent: "claude", Window: "2", Summary: "Added tests\nfor billing"}, eventsWidths{agent: 10, verb: 8},
+			tm + "  claude (2)  done      Added tests for billing"},
+		{Event{TS: ts, Kind: "guest_state_changed", Summary: "running"}, eventsWidths{agent: 10, verb: 8},
+			tm + "  -           machine   running"},
+		// The noun is said once (I-631).
+		{Event{TS: ts, Kind: "snapshot.created", Summary: "snapshot taken (stop)"}, eventsWidths{agent: 10, verb: 8},
+			tm + "  -           snapshot  taken (stop)"},
+		{Event{TS: ts, Kind: "project.created", Summary: "project created as large"}, eventsWidths{agent: 1, verb: 7},
+			tm + "  -  project  created as large"},
+		{Event{TS: ts, Kind: "config.applied", Summary: "revision 3"}, eventsWidths{agent: 1, verb: 14},
+			tm + "  -  config applied  revision 3"},
+		{Event{TS: ts, Kind: "agent_question", Agent: "codex", Summary: "Drop it?", Project: "api"}, eventsWidths{all: true, project: 8, agent: 5, verb: 4},
+			tm + "  api       codex  asks  Drop it?"},
+	}
+	// The columns fit the longest cell of the batch.
+	var fw eventsWidths
+	fw.fit([]Event{{Kind: "volume.resized", Summary: "40 GB"}, {Kind: "completed", Agent: "claude", Window: "claude-2"}})
+	if fw.verb != len("volume resized") || fw.agent != len("claude (claude-2)") {
+		t.Errorf("fit: %+v", fw)
 	}
 	for _, c := range cases {
 		if got := eventLine(c.ev, c.w); got != c.want {
@@ -237,9 +248,10 @@ func TestProgressOffTerminal(t *testing.T) {
 // questions -q prints the ids; --json carries the terminal waits as kind
 // "terminal" beside the questions (kind "question").
 func TestQuestionsQuietAndTerminalJSON(t *testing.T) {
+	// The Question array as before I-609, so `jq -r '.[].id'` gives ids
+	// to `reply --question` (I-631).
 	qs := []Question{{ID: "q-1", Project: "api", Agent: "claude", Text: "Drop it?"}}
-	projects := []Project{{ID: "p-2", Slug: "web", State: "running", Signals: &Signals{Agents: []AgentSignal{{Agent: "codex", Window: "1", State: "needs_input"}, {Agent: "claude", State: "working"}}}}}
-	b, err := json.Marshal(questionsJSON(qs, projects))
+	b, err := json.Marshal(questionsJSON(qs))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,10 +259,10 @@ func TestQuestionsQuietAndTerminalJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0]["kind"] != "question" || got[0]["id"] != "q-1" || got[1]["kind"] != "terminal" || got[1]["project"] != "web" || got[1]["agent"] != "codex" {
+	if len(got) != 1 || got[0]["id"] != "q-1" || got[0]["kind"] != nil {
 		t.Fatalf("%s", b)
 	}
-	if b, _ := json.Marshal(questionsJSON(nil, nil)); string(b) != "[]" {
+	if b, _ := json.Marshal(questionsJSON(nil)); string(b) != "[]" {
 		t.Fatalf("none: %s", b)
 	}
 }

@@ -370,3 +370,21 @@ func TestForkRemotes(t *testing.T) {
 		t.Fatal("forgetForkRemote touched the repose remote")
 	}
 }
+
+// A command that refuses --project does not list it under Global Flags
+// (I-631); one that takes it does.
+func TestHelpHidesProjectWhereRefused(t *testing.T) {
+	for args, want := range map[string]bool{"ls": false, "login": false, "notify set": false, "stop": true, "ps": true} {
+		root := newRootCmd("test")
+		var out strings.Builder
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs(append(strings.Fields(args), "--help"))
+		if err := root.Execute(); err != nil {
+			t.Fatalf("%s --help: %v", args, err)
+		}
+		if got := strings.Contains(out.String(), "--project NAME"); got != want {
+			t.Errorf("repose %s --help lists --project: %v, want %v\n%s", args, got, want, out.String())
+		}
+	}
+}

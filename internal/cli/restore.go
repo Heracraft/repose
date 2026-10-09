@@ -129,6 +129,60 @@ func nothingRestored(err error) error {
 	return exitf(ExitGeneric, "Nothing restored.")
 }
 
+// resolveRestoreSnapshot is the full id of the snapshot that the end
+// or start of an id names (I-619), among the snapshots of the destroyed
+// projects NAME means: each destroy of that name, the one with that id,
+// or with no NAME the ones whose remote is this checkout's. With none
+// to look in, the fragment goes to the api as it is, which refuses it.
+func resolveRestoreSnapshot(ctx context.Context, e *Env, name, part string) (string, error) {
+	var ids []string
+	if looksLikeUUID(name) {
+		ids = []string{name}
+	} else {
+		list, err := e.Client.ListDestroyed(ctx)
+		if err != nil {
+			return "", err
+		}
+		remote := ""
+		if name == "" {
+			remote = gitRemoteOrigin(e.Cwd)
+		}
+		for _, d := range list {
+			if (name != "" && d.Slug == name) || (remote != "" && d.RemoteURL != "" && normalizeRemote(d.RemoteURL) == remote) {
+				ids = append(ids, d.ID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return part, nil
+	}
+	var all []string
+	for _, id := range ids {
+		snaps, err := e.Client.ListSnapshots(ctx, id)
+		if err != nil {
+			if isNotFound(err) {
+				continue
+			}
+			return "", err
+		}
+		for _, s := range snaps {
+			all = append(all, s.ID)
+		}
+	}
+	of := name
+	if of == "" {
+		of = "the destroyed project"
+	}
+	switch hits := matchID(all, part); len(hits) {
+	case 1:
+		return hits[0], nil
+	case 0:
+		return "", exitf(ExitUsage, "%s has no snapshot %s. `repose snapshots list %s` lists them.", of, part, ids[0])
+	default:
+		return "", exitf(ExitUsage, "%s names %d snapshots of %s; give more of the id.", part, len(hits), of)
+	}
+}
+
 // restoreHint is the line a destroy ends with.
 func restoreHint(slug string) string { return "repose restore " + slug }
 
@@ -140,6 +194,13 @@ func restoreHint(slug string) string { return "repose restore " + slug }
 // (askName) and anything else is told to pass --as.
 func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askName func(prompt string) (string, error)) error {
 	name = strings.TrimSpace(name)
+	if snapshotID != "" && !looksLikeUUID(snapshotID) {
+		id, err := resolveRestoreSnapshot(ctx, e, name, snapshotID)
+		if err != nil {
+			return err
+		}
+		snapshotID = id
+	}
 	req := RestoreRequest{SnapshotID: snapshotID, Name: as}
 	switch {
 	case name == "" && snapshotID == "":

@@ -34,6 +34,7 @@ func init() {
 	// commandGroups' order, not the alphabet's.
 	cobra.EnableCommandSorting = false
 	cobra.AddTemplateFunc("flagUsages", flagUsages)
+	cobra.AddTemplateFunc("globalFlagUsages", globalFlagUsages)
 	cobra.AddTemplateFunc("docsURL", func() string { return docsURL })
 }
 
@@ -77,6 +78,22 @@ func flagUsages(fs *pflag.FlagSet) string {
 	return strings.ReplaceAll(s, ` string[="`+tempBare+`"]`, `[=DURATION]     `)
 }
 
+// globalFlagUsages is the Global Flags section: the inherited flags,
+// without --project on a command that refuses it (I-631).
+func globalFlagUsages(cmd *cobra.Command) string {
+	fs := cmd.InheritedFlags()
+	if !accountCommands[cmd.CommandPath()] {
+		return flagUsages(fs)
+	}
+	kept := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Name != "project" {
+			kept.AddFlag(f)
+		}
+	})
+	return flagUsages(kept)
+}
+
 // usageTemplate is cobra's, with flagUsages for the flags and, on root
 // only, the docs' address at the end.
 const usageTemplate = `Usage:{{if .Runnable}}
@@ -102,7 +119,7 @@ Flags:
 {{flagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 Global Flags:
-{{flagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
+{{globalFlagUsages . | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{if not .HasParent}}
 Docs: {{docsURL}}{{end}}

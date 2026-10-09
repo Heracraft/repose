@@ -233,7 +233,20 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			*project = *p
 		}
 		if project.State != "running" {
-			return notRunningError(project)
+			// A stopped machine starts, as with run, and is not synced; a
+			// start in progress is waited for (I-631, review G7). The
+			// other states, and a machine stopped for abuse, cannot.
+			switch project.State {
+			case "stopped", "creating", "building", "starting", "stopping":
+				if abuseStopReason(project) != "" {
+					return notRunningError(project)
+				}
+				if err := ensureRunningFrom(ctx, e, project, pr, true); err != nil {
+					return err
+				}
+			default:
+				return notRunningError(project)
+			}
 		}
 	} else if err := ensureRunningFrom(ctx, e, project, pr, fresh); err != nil {
 		return err
@@ -442,7 +455,13 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if !summary.Skipped && target.Checkout == "" {
 			e.linkExplicitSync(project, opts)
 		}
-		if l := syncResultLine(summary, opts.NoAttach); l != "" {
+		// A project named on the command line is named in the line's
+		// command too: a bare `repose sync` here may mean another (I-631).
+		named := ""
+		if opts.Name != "" || opts.ProjectArg != "" {
+			named = project.Slug
+		}
+		if l := syncResultLine(summary, opts.NoAttach, named); l != "" {
 			_, _ = fmt.Fprintln(e.Out, l)
 			if summary.Skipped && !opts.NoAttach {
 				// The attach covers the terminal: the multiplexer shows
@@ -691,10 +710,10 @@ func justCreated(p *Project) bool {
 // the laptop (the apply skipped, I-224, I-248) a run that attaches says
 // nothing (I-303); `repose sync` and --no-attach have nothing else to
 // say, so they say that.
-func syncResultLine(s *SyncSummary, noAttach bool) string {
+func syncResultLine(s *SyncSummary, noAttach bool, named string) string {
 	switch {
 	case s.Skipped && s.LaptopAhead:
-		return laptopAheadLine(s)
+		return laptopAheadLine(s, named)
 	case s.Skipped:
 		return ""
 	case !s.Unchanged:
@@ -707,7 +726,7 @@ func syncResultLine(s *SyncSummary, noAttach bool) string {
 
 // laptopAheadLine is what a run that left the machine's checkout alone
 // says when the laptop has work the machine never took (I-367).
-func laptopAheadLine(s *SyncSummary) string {
+func laptopAheadLine(s *SyncSummary, named string) string {
 	var parts []string
 	if s.Modified > 0 {
 		parts = append(parts, fmt.Sprintf("%d modified", s.Modified))
@@ -721,7 +740,11 @@ func laptopAheadLine(s *SyncSummary) string {
 	case s.Commits > 1:
 		parts = append(parts, fmt.Sprintf("%d commits", s.Commits))
 	}
-	return fmt.Sprintf("Not synced: your laptop has work the machine doesn't (%s). `repose sync` sends it.", strings.Join(parts, ", "))
+	cmd := "repose sync"
+	if named != "" {
+		cmd += " " + named
+	}
+	return fmt.Sprintf("Not synced: your laptop has work the machine doesn't (%s). `%s` sends it.", strings.Join(parts, ", "), cmd)
 }
 
 // saveProjectTZ moves the project's stored zone to the laptop's when they
@@ -1016,7 +1039,7 @@ func waitForSSH(ctx context.Context, t sshTarget, onRefused func(*sshError) (boo
 		}
 		if se != nil {
 			if fix, ok := laptopSSHFault(se); ok {
-				return exitf(ExitGeneric, "ssh on this laptop failed before it reached %s: %s. %s", targetName(t), sshStderrDetail(se.Stderr), fix)
+				return exitf(ExitGeneric, "%s", strings.TrimSpace(fmt.Sprintf("ssh on this laptop failed before it reached %s: %s. %s", targetName(t), sshStderrDetail(se.Stderr), fix)))
 			}
 		}
 		if se != nil && onRefused != nil {
@@ -1069,7 +1092,8 @@ var laptopSSHFaults = []struct {
 	// NAME.repose is a name only repose's ssh config gives; an ssh that
 	// has not read it looks the name up in DNS.
 	{[]string{"could not resolve hostname", ".repose:"}, "Your ~/.ssh/config does not include ~/.ssh/repose/config, which defines that name; add `Include ~/.ssh/repose/config` at its top."},
-	{[]string{"could not resolve hostname"}, "The name did not resolve; check your connection."},
+	// ssh's own line names the host that did not resolve (I-631).
+	{[]string{"could not resolve hostname"}, ""},
 	{[]string{"host key verification failed"}, "~/.ssh/repose/known_hosts does not match the gateway; delete it, and the next repose command writes it again."},
 }
 

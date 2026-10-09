@@ -87,7 +87,7 @@ func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Clie
 	}
 	_, _ = fmt.Fprintf(stdout, "Logged in as %s (%s)\n", me.Handle, me.Email)
 	if me.Billing.Status == "none" || (me.Billing.Status == "" && !me.Billing.HasCard) {
-		_, _ = fmt.Fprintf(stdout, "No plan yet. Choose one at https://repose.herakraft.co/billing before the first `repose run`; the first week is free.\n")
+		_, _ = fmt.Fprintf(stdout, "No plan yet: https://repose.herakraft.co/billing\n")
 	}
 	if !opts.GuestEnv {
 		setUpPlainSSH()

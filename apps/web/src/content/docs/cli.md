@@ -11,7 +11,7 @@ order: 40
 $ repose lss
 unknown command "lss" for "repose"
 Did you mean `repose ls`?
-Run `repose --help` for the commands.
+`repose --help` shows its usage.
 ```
 
 Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it.
@@ -51,7 +51,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 
 ### `repose attach [PROJECT[:CHECKOUT]] [WINDOW]`
 
-Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A window the session doesn't have exits 2; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
+Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A stopped machine starts first; a machine in another state that isn't running exits 5. Where a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2; on a herdr project, see [herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux) for the three ways it attaches. In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows, see [Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine). `--bridge` also bridges your Chrome to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist, see [`repose browser bridge`](#repose-browser-bridge-project).
 
 `run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
 
@@ -70,11 +70,11 @@ Copy this checkout's current work to its machine, over the checkout already ther
 | `--size small\|large\|xl` | Size of a new or stopped project, as on `run`.                     |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
-| `--json`                  | Print the Project object as JSON when done; the text goes to stderr. |
+| `--json`                  | Print the project as JSON when done; the text goes to stderr. |
 
 ### `repose ps [PROJECT] [WINDOW]`
 
-The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle` or `needs input`, as in `repose ls` (`--json` says `needs_input`), and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
+The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle` or `needs input`, as in `repose ls` (`--json` has it as `agent_state`, with `needs_input`), and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one; in `--json`, `state` there is herdr's own (`blocked`, `done`) until the next release.
 
 ```
 $ repose ps
@@ -84,7 +84,7 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
-With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name.
+With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
 
 `--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `state` for a window with no agent). For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
 
@@ -273,11 +273,11 @@ todo-app  running 2h14m  large
 
 ### `repose start [PROJECT]`
 
-Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` prints the Project object when done.
+Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` prints the project as JSON when done.
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the Project object when done, or an array of them for several projects or `--unused`.
+Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). When an agent is in the middle of a turn or waiting for an answer, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ended claude (working).` In a checkout whose machine is stopping, it runs `git fetch repose` first and prints what came, as `Fetched 3 commits on repose/main.` `--json` prints the project as JSON when done, or an array of them for several projects or `--unused`.
 
 ### `repose rm [PROJECT...]`
 
@@ -291,7 +291,7 @@ On a temporary machine the question starts by saying that no snapshot is kept, a
 
 ### `repose keep [PROJECT] [DURATION]`
 
-Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary: destroyed Sep 29 17:02.` One argument that reads as a duration is DURATION. It keeps no git remote; reach it by name as before. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
+Make a temporary machine a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary until Sep 29 17:02.` One argument that is a number and a unit (`s`, `m`, `h`, `d` or `w`) is DURATION, so a project called `2fa` is a project. It keeps no git remote; reach it by name as before. On a project that isn't temporary it says so and does nothing. See [Temporary machines](/docs/lifecycle#temporary-machines).
 
 ### `repose restore [NAME]`
 
@@ -305,7 +305,7 @@ Snapshot the project now and start copies of it as new projects, each on its own
 
 Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T` (`80G`, `80GB` and `80GiB` are the same); a bare number exits 2. Disks can't shrink: a smaller size exits 2 with the disk's size, and the size it already has does nothing. A larger disk adds nothing to your plan's disk total, which counts what your projects hold, and one disk can be at most the plan's whole disk. A single argument that reads as a size is the disk; anything else is the project.
 
-`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. A larger size your plan can't run beside what runs now is refused before the question, with exit code 7, and nothing is stopped. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size). `--json` prints the Project object when done.
+`--size small|large|xl` changes the project's size, for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. A larger size your plan can't run beside what runs now is refused before the question, with exit code 7, and nothing is stopped. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. See [Changing the size](/docs/machine#changing-the-size). `--json` prints the project as JSON when done.
 
 ### `repose logs [PROJECT]`
 
@@ -324,13 +324,14 @@ Grow the project's disk, for example `repose resize 80G`, or `repose resize todo
 Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
 
 ```text
-2026-10-08T20:59:04-04:00  claude (1)  done          Added tests
-2026-10-08T21:12:40-04:00  claude (2)  asks          Drop old table?
+2026-10-08T20:58:30-04:00  -           snapshot  taken (stop)
+2026-10-08T20:59:04-04:00  claude (1)  done      Added tests
+2026-10-08T21:12:40-04:00  claude (2)  asks      Drop old table?
 ```
 
 ### `repose questions [PROJECT]`
 
-The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: `claude-2 on todo-app` is `repose attach todo-app -w claude-2`. `-q`/`--quiet` prints only the question ids. `--json` prints both: each question with `kind` `question`, and each agent at a terminal prompt with `kind` `terminal`, its `project` and `agent`. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
+The questions agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: `claude-2 on todo-app` is `repose attach todo-app -w claude-2`. `-q`/`--quiet` prints only the question ids. `--json` prints the questions; the agents at a terminal prompt are in `repose ls --json`, as each project's `signals.agents` with `state` `needs_input`. See [Notifications](/docs/notifications#agents-can-message-you-and-ask-questions).
 
 ### `repose reply [PROJECT] [--] [ANSWER...]`
 

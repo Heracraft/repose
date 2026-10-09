@@ -17709,3 +17709,138 @@ unknown subcommands).
   only be proved by booting a guest, which this machine cannot do; it
   stays for a nix change of its own. No line is printed on a first
   attach from inside a laptop tmux (6.3): the docs say it once.
+
+**I-631. The cli-devx follow-ups: ids the tables print work
+everywhere, rm takes each fork's remote, attach starts a stopped
+machine, a word that names no project is a window, and a sync into
+another repository's history is refused (cli-devx, 2026-10-09).**
+Amends I-603, I-606, I-609, I-612, I-619, I-622, I-626, I-630. *Made
+during implementation* (review of the cli-devx branch against
+reviews/2026-10-08-cli-devx.md and -cli-ergonomics-critique.md; G7).
+- `fork --snapshot` and `restore --snapshot` take the end or start of
+  an id, as `snapshots restore` does (I-619): the table prints the last
+  8 characters, and the api refused those. `restore` looks among the
+  snapshots of every destroy of NAME, the destroyed project with that
+  id, or with no NAME the ones whose remote is this checkout's; with
+  none to look in, the fragment goes to the api, which answers.
+  `TestFork`, `TestRestoreTakesAShortSnapshotID`.
+- `rm` of several fork copies removed one remote at most: the
+  destroys run at once and git refuses a second writer of .git/config.
+  The fork remote is now removed under the lock that already held the
+  `repose` remote's removal, and its line prints in order with the
+  others. `TestRmOfSeveralForksRemovesEachRemote`.
+- guestd unsets `@repose-state` on a tmux window whose agent exited
+  and whose shell keeps the window open (`tmux set-option -wu`); the
+  status line showed `claude?` and `ps` said `needs input` for a
+  shell. `ps` also gives no state to an agent-named window with a
+  shell (`bash`, `zsh`, `fish`, `sh`, `dash`) in front, for a base
+  before this guestd. guest-conventions.md "tmux" says both; the old
+  option value is still read. `TestWatcherMarksTheTmuxWindowState`,
+  `TestPsRows`.
+- The once-per-release older-CLI notice (I-626) does not print after
+  tab completion (`__complete`, `__completeNoDesc`) or a hidden
+  command (`ssh-prepare`, the session helper), whose stderr the shell
+  or ssh throws away; it used up the notice unseen.
+  `TestNoticeAfterSkipsCompletion`.
+- A duration after a bare `--temp`, and `keep`'s one argument, is a
+  number and a unit from s, m, h, d or w (I-630 took any letters), so
+  `repose keep 2fa` keeps the project 2fa and `run 1password --temp`
+  runs 1password. `2x` is then a project's name, which the api answers
+  for. `TestTempFlagParsing`.
+- `keep DURATION` against an api that ignores `expires_in_s` answers
+  with the old expiry; the CLI compared it with nil and reported the
+  extension as taken. It now exits 1 unless the expiry moved, or the
+  old one is within a minute of what was asked. The success line is
+  `tmp-k3f9 is temporary until Oct 9 11:43.`, and the create line
+  `(large, temporary until Sep 29 14:02)`: "destroyed Oct 9" read as
+  done. `TestKeepForADuration`.
+- `questions --json` is again the Question array it was before I-609,
+  so `jq -r '.[].id'` feeds `reply --question`; agents at a terminal
+  prompt have no id and are in `ls --json` (`signals.agents`, state
+  `needs_input`). `ps --json` rows gain `agent_state` (working, idle,
+  needs_input, unknown) on tmux and herdr; on herdr `state` stays
+  herdr's own value (`blocked`, `done`) until the next release, as
+  before I-606, and then becomes `agent_state`'s. The table reads
+  `agent_state`. `TestQuestionsQuietAndTerminalJSON`, `TestPsJSONOneShape`.
+- `repose ls` under its plan line, which has the figures, says only
+  what follows: `egress past the plan: each GB past 100 GB adds $0.05,
+  and your machines stop at 400 GB` and `disk past the plan: creating,
+  restoring, forking and growing a disk are refused until your
+  projects hold less`. `status` has no plan line and keeps the figures.
+  `TestDiskOverPlanLine`, `TestPlanLineAndWarnings`.
+- A sync into a machine whose checkout shares no history with the
+  laptop's is refused with exit 2 before anything is written (I-603
+  refused only by remote, so two repositories without one were
+  merged: the machine's checkout ended detached on the other root).
+  When the laptop knows none of the commits the machine's checkout
+  has refs to, one more ssh asks the checkout for the laptop's root
+  commits (at most 50); none present is `job's checkout shares no
+  commit with this one, so `repose sync job` here would sync one
+  repository into the other's machine.` Unknown tips alone are an
+  agent's commits on a project with no remote, so they only lead to
+  the question; a shallow repository on either side, or a machine
+  that does not answer, is not refused. The run's `Not synced` line
+  names the project when the command named it (`repose sync
+  todo-app`). `TestSyncRefusesAnUnrelatedCheckout`,
+  `TestLaptopAheadLineNamesTheProject`.
+- `ps WORD` and `attach WORD`, where WORD names none of the account's
+  projects and this folder resolves to one (no `--project`, no `-w`),
+  take WORD as that project's window, as `exec` reads its first word
+  (I-411). The project is tried first, so `attach todo-app` costs no
+  extra call. `TestOneWordIsAWindowWhereAProjectResolves`.
+- `attach` starts a stopped machine, as `run` does, without a sync,
+  and waits for one already starting (review G7). A machine stopped
+  for abuse, in `error`, `restoring` or `destroying` still exits 5.
+  `ps`, `exec`, `ssh`, `code`, `open` and `cp` do not start one: a read
+  or a one-off command should not take the plan's memory unasked, and
+  `ps` of a stopped machine has no windows to show. The stopped
+  refusal reads `todo-app is stopped. `repose start todo-app` starts
+  it.`; it named `repose run` "in its checkout" to a user already
+  there. `TestAttachStartsAStoppedMachine`.
+- `events` sizes its agent and verb columns to the widest cell printed
+  so far (a `%-12s` cut `snapshot created` and `config applied`), and
+  a summary that starts with the noun of a two-word verb says it once:
+  `snapshot  taken (stop)`, `project  created as large`, the way
+  `machine  stopped` reads. `status`'s last event row uses the same
+  cells. `TestEventLine`.
+- `ls --help`, and the help of the other commands that refuse
+  `--project` (login, logout, version, completion, notify), no longer
+  list it under Global Flags. `TestHelpHidesProjectWhereRefused`.
+
+**I-632. A copy pass over the cli-devx lines: facts once, no
+reassurance, one pointer to help (cli-devx, 2026-10-09).** Amends
+I-272, I-612, I-622, I-623, I-627, I-628, I-629. *Made during
+implementation* (owner's rule I-484, I-485 applied to lines the branch
+added or touched).
+- A usage error's pointer to help is one line in one wording on every
+  path: `` `repose stop --help` shows its usage.`` after an unknown
+  flag (was `(... lists its flags)`), an unknown subcommand (was `Run
+  ... for its commands.`) and cobra's refusals.
+- `rm` prints `Removed the git remote repose.` and `Removed the git
+  remote todo-app-fork-1.`; the clause that fetched branches stay is
+  in the docs, which say it once.
+- A temporary machine kept for its work: `tmp-k3f9 has 2 commits and 1
+  changed file your laptop does not; it stays until 14:02.` The
+  `repose attach` clause after it is gone.
+- The unused-machine email ends at `` `repose stop todo-app`.``; "repose
+  never stops a machine for being unused" repeated "until you stop it".
+- `Could not reach the login server (auth.example): connection
+  refused.` and ssh's unresolved-name failure end with the reason ssh
+  or the network gave; "Check your connection" was wrong for a server
+  that is down.
+- `login` with no plan prints `No plan yet:
+  https://repose.herakraft.co/billing`; the first free week is on the
+  billing page and in the docs.
+- `stop --help` says what stop does (`It asks first when an agent is
+  mid-turn ...; Run in the machine's checkout, it runs git fetch repose
+  first.`) instead of reading as orders.
+- `--json` help says "print the project as JSON when done" on start,
+  stop, sync, resize and status, and "the snapshot" on snapshots
+  create. `--size` shows as `--size SIZE` and `--multiplexer` as
+  `--multiplexer NAME`.
+- The billing-stopped email says "Your machines were stopped for
+  non-payment" (it said guests), and notifications.md quotes the abuse
+  email as it is sent ("Your machine was stopped").
+- troubleshooting.md drops "Your login is still there"; agents.md says
+  the machine's guide covers repose-ask and a rule in CLAUDE.md or
+  AGENTS.md overrides it.

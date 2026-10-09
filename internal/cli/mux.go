@@ -211,7 +211,7 @@ func checkMultiplexerFlag(v string) error {
 }
 
 // multiplexerFlagHelp is --multiplexer's help line (features/run-and-attach.md).
-const multiplexerFlagHelp = "tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
+const multiplexerFlagHelp = "the multiplexer `NAME`, tmux or herdr, that runs this machine's terminals from its next start (default: config.toml's default_multiplexer, else herdr from a herdr pane, else tmux)"
 
 // addMultiplexerFlag adds --multiplexer to run and sync.
 func addMultiplexerFlag(cmd *cobra.Command, v *string) {

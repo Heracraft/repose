@@ -153,6 +153,15 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	pr := e.newProgress()
 	defer pr.Fail()
 	snapID := opts.SnapshotID
+	if snapID != "" {
+		// The id `repose snapshots list` prints is the end of the
+		// whole one (I-619).
+		id, err := resolveSnapshotID(ctx, e, src.ID, snapID)
+		if err != nil {
+			return err
+		}
+		snapID = id
+	}
 	if snapID == "" {
 		if src.State != "running" && src.State != "stopped" {
 			return notRunningError(src)

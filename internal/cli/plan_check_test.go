@@ -239,13 +239,26 @@ func TestKeepForADuration(t *testing.T) {
 	if got.ExpiresAt == nil || !got.ExpiresAt.After(p.ExpiresAt.Add(2*time.Hour)) {
 		t.Fatalf("expiry %v, was %v", got.ExpiresAt, p.ExpiresAt)
 	}
-	if want := "tmp-abcd is temporary: destroyed " + got.ExpiresAt.Local().Format("Jan 2 15:04") + ".\n"; out.String() != want {
+	if want := "tmp-abcd is temporary until " + got.ExpiresAt.Local().Format("Jan 2 15:04") + ".\n"; out.String() != want {
 		t.Fatalf("stdout %q, want %q", out.String(), want)
 	}
 	for _, s := range []string{"5m", "25h", "soon"} {
 		if _, err := parseKeepDuration(s); err == nil {
 			t.Errorf("keep %s accepted", s)
 		}
+	}
+	// An api before I-612 answers with the expiry it had (I-631).
+	old := *p.ExpiresAt
+	now := time.Now()
+	if extensionTaken(&old, &Project{ExpiresAt: &old}, now.Add(3*time.Hour)) {
+		t.Error("an unchanged expiry counted as taken")
+	}
+	if !extensionTaken(&old, &Project{ExpiresAt: &old}, old.Add(20*time.Second)) {
+		t.Error("asking for the expiry it has did not count as taken")
+	}
+	later := old.Add(time.Hour)
+	if !extensionTaken(&old, &Project{ExpiresAt: &later}, now.Add(3*time.Hour)) || extensionTaken(&old, nil, now) {
+		t.Error("extensionTaken")
 	}
 	normal, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "normal", Class: "large"})
 	if err != nil {

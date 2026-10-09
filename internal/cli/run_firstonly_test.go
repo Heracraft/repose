@@ -55,7 +55,7 @@ func TestRunLeavesAnExistingCheckoutAlone(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.guestRepo(), "notes.txt")); err == nil {
 		t.Fatal("the laptop's untracked file reached the machine")
 	}
-	want := "Not synced: your laptop has work the machine doesn't (1 modified, 1 untracked). `repose sync` sends it."
+	want := "Not synced: your laptop has work the machine doesn't (1 modified, 1 untracked). `repose sync " + testSlug + "` sends it."
 	if !strings.Contains(out.buf.String(), want) {
 		t.Fatalf("output = %q, want %q", out.buf.String(), want)
 	}

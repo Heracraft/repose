@@ -472,7 +472,11 @@ func TestTempFlagParsing(t *testing.T) {
 		// After the PROJECT, as interleaved flags leave it (review C3).
 		{tempBare, []string{"spike", "3h"}, 3 * time.Hour, 1, false},
 		{tempBare, []string{"1d"}, 24 * time.Hour, 0, false},
-		{tempBare, []string{"2x"}, 0, 0, true},
+		// A project whose name starts with digits is the PROJECT (I-631).
+		{tempBare, []string{"2fa"}, 24 * time.Hour, 1, false},
+		{tempBare, []string{"1password", "fix"}, 24 * time.Hour, 2, false},
+		{tempBare, []string{"3dprint"}, 24 * time.Hour, 1, false},
+		{tempBare, []string{"2d"}, 0, 0, true},
 		{"1d", nil, 24 * time.Hour, 0, false},
 	} {
 		d, rest, err := resolveTempFlag(c.raw, c.args)
@@ -518,7 +522,7 @@ func TestTempSessionEndKeepsUnfetchedWork(t *testing.T) {
 	if bySlug(listed(t, e), testSlug) == nil {
 		t.Fatal("destroyed with two commits only on it")
 	}
-	want := testSlug + " has 2 commits that your laptop does not, so " + tempStays(p, time.Now()) + ". `repose attach " + testSlug + "` goes back to it.\n"
+	want := testSlug + " has 2 commits your laptop does not; " + tempStays(p, time.Now()) + ".\n"
 	if errOut.buf.String() != want {
 		t.Fatalf("stderr %q, want %q", errOut.buf.String(), want)
 	}
@@ -526,7 +530,7 @@ func TestTempSessionEndKeepsUnfetchedWork(t *testing.T) {
 	sh("git push -q origin main side && echo x > notes.txt")
 	errOut.buf.Reset()
 	tempSessionEnded(ctx, e, f.target, p)
-	if bySlug(listed(t, e), testSlug) == nil || !strings.Contains(errOut.buf.String(), "has 1 changed file that your laptop") {
+	if bySlug(listed(t, e), testSlug) == nil || !strings.Contains(errOut.buf.String(), "has 1 changed file your laptop does not;") {
 		t.Fatalf("stderr %q", errOut.buf.String())
 	}
 	sh("rm notes.txt")

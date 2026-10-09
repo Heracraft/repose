@@ -599,4 +599,18 @@ func TestWatcherMarksTheTmuxWindowState(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("%d set-option calls after a refresh with no change", n)
 	}
+	// The agent exits and its shell keeps the window: the option goes,
+	// so the window does not keep the agent's last state (I-631).
+	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "bash"}})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	var last string
+	for _, c := range run.Calls() {
+		if len(c.Argv) > 1 && c.Argv[1] == "set-option" {
+			last = strings.Join(c.Argv, " ")
+		}
+	}
+	if want := "tmux set-option -wu -t =todo-app:=claude-2 " + StateOption; last != want {
+		t.Fatalf("last set-option %q, want %q", last, want)
+	}
 }

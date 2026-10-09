@@ -112,7 +112,7 @@ func TestFork(t *testing.T) {
 	out.Reset()
 	e.JSON = true
 	agents = nil
-	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1, SnapshotID: snaps[0].ID, Name: "try", Size: "small"}); err != nil {
+	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1, SnapshotID: shortID(snaps[0].ID), Name: "try", Size: "small"}); err != nil {
 		t.Fatalf("fork --snapshot --json: %v", err)
 	}
 	var res ForkResult

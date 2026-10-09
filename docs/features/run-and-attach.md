@@ -97,9 +97,15 @@ repose/claude-2`, documented in /docs/run-and-attach).
 
 Running against a stopped project starts it first (the `Starting
 todo-app` phase on stderr) before the usual `Connected to todo-app
-(large)` line — there is no separate "stopped" message for `run` (only
-`attach` and `open` refuse a guest that is not running, exit 5, since
-starting one is not their job). A project in `error` is restarted by the
+(large)` line — there is no separate "stopped" message for `run`.
+`attach` starts a stopped machine the same way, without a sync, and waits
+for one already starting (I-631, review G7); a machine in `error`,
+`restoring` or `destroying`, or stopped for abuse, still exits 5 for
+attach. `open`, `ps`, `exec`, `ssh`, `code` and `cp` refuse a machine that
+is not running, exit 5: a read or a command does not start a machine and
+take the plan's memory unasked. With one operand that names no project,
+`attach` and `ps` resolve this folder's project and take the operand as
+WINDOW (I-631), as `exec` reads its first word. A project in `error` is restarted by the
 api on the same start (`Restarting todo-app (its agent stopped
 answering)`, I-157).
 
@@ -342,7 +348,7 @@ is not a terminal: the CLI execs ssh as before. Nothing is logged.
 ```
 $ repose run --help
 ...
-      --multiplexer string   tmux|herdr: what runs this machine's terminals, from its next start (default: config.toml's default_multiplexer, else tmux)
+      --multiplexer NAME     the multiplexer NAME, tmux or herdr, that runs this machine's terminals from its next start (default: config.toml's default_multiplexer, else tmux)
 ```
 
 ```toml
@@ -544,7 +550,8 @@ it (I-542). The api cannot tell an old CLI apart.
   `pane_current_path`. Idle time is the guest's clock minus the activity
   time, so a skewed laptop clock does not matter. STATE is
   `@repose-state`, else the api's sample for the window when under two
-  minutes old (I-606). TREE is the pane's folder as `checkout`,
+  minutes old (I-606); a window named after an agent with a shell in
+  front has none, since its agent exited (I-631). TREE is the pane's folder as `checkout`,
   `worktree-N` or `~/PATH`, worked out on the laptop. `-q` prints names,
   `--json` the records, one shape on tmux and herdr (I-606). With a
   WINDOW (or `-w`), or `-n N`, it prints the window's last lines from

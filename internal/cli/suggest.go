@@ -71,10 +71,8 @@ func unknownCommandMessage(parent *cobra.Command, typed string) string {
 		}
 		msg += "\nDid you mean " + strings.Join(quoted, " or ") + "?"
 	}
-	if parent.HasParent() {
-		return msg + fmt.Sprintf("\nRun `%s --help` for its commands.", parent.CommandPath())
-	}
-	return msg + "\nRun `repose --help` for the commands."
+	// One wording for every usage error's pointer to help (I-631).
+	return msg + fmt.Sprintf("\n`%s --help` shows its usage.", parent.CommandPath())
 }
 
 // suggestCommands names parent's visible subcommands that typed could

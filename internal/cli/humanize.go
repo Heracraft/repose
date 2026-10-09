@@ -173,7 +173,7 @@ func notRunningMessage(p *Project) string {
 		if r := abuseStopReason(p); r != "" {
 			return fmt.Sprintf("%s is %s", s, strings.TrimSuffix(r, ".")+".")
 		}
-		return fmt.Sprintf("%s is stopped. Start it with `repose start %s`, or `repose run` in its checkout to start, sync and attach.", s, s)
+		return fmt.Sprintf("%s is stopped. `repose start %s` starts it.", s, s)
 	case "creating", "building", "starting":
 		return fmt.Sprintf("%s is still %s. `repose run` in its checkout waits for it and attaches; `repose status %s` shows progress.", s, p.State, s)
 	case "stopping":

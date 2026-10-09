@@ -41,25 +41,25 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 
 ## What you'll get
 
-| Title                                           | When                                                                                                                                                                                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                          |
-| `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                    |
-| `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                |
-| `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                               |
-| `todo-app: base update failed`                  | A platform update didn't build with your configuration.                                                                                                                                     |
-| `todo-app: base updated`                        | A platform update was switched into the machine.                                                                                                                                            |
-| `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                  |
-| `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                          |
-| `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                 |
-| `todo-app: host moved`                          | The project was restored onto another server from its latest snapshot.                                                                                                                      |
-| `todo-app: abuse stopped`                       | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your guest was stopped: a cryptocurrency miner was running`.                     |
-| `todo-app: unused for 24h, holding plan memory` | The machine has run 24 hours with nobody on it and no agent working, and its memory counts against your plan. Once per unused stretch ([Unused machines](/docs/lifecycle#unused-machines)). |
-| `tmp-k3f9: destroyed in an hour`                | A temporary machine has an hour left; `repose keep tmp-k3f9` keeps it. Only for one made with more than an hour ([Temporary machines](/docs/lifecycle#temporary-machines)).                 |
-| `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                  |
-| `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                              |
-| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                                        |
-| `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                             |
+| Title                                           | When                                                                                                                                                                                          |
+|-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                            |
+| `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                      |
+| `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                  |
+| `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                                 |
+| `todo-app: base update failed`                  | A platform update didn't build with your configuration.                                                                                                                                       |
+| `todo-app: base updated`                        | A platform update was switched into the machine.                                                                                                                                              |
+| `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                    |
+| `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                            |
+| `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                   |
+| `todo-app: host moved`                          | The project was restored onto another server from its latest snapshot.                                                                                                                        |
+| `todo-app: abuse stopped`                       | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your machine was stopped: a cryptocurrency miner was running`.                     |
+| `todo-app: unused for 24h, holding plan memory` | The machine has run 24 hours with nobody on it and no agent working, and its memory counts against your plan. Once per unused stretch ([Unused machines](/docs/lifecycle#unused-machines)).   |
+| `tmp-k3f9: destroyed in an hour`                | A temporary machine has an hour left; `repose keep tmp-k3f9` keeps it. Only for one made with more than an hour ([Temporary machines](/docs/lifecycle#temporary-machines)).                   |
+| `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
+| `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
+| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer. See below.                                                                                                                          |
+| `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                               |
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
 
@@ -71,19 +71,19 @@ Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within ab
 
 Some emails are about your account rather than a machine. They are sent even when you have turned notification emails off, and they have no unsubscribe link. Paddle, which handles the payments, sends its own receipts and its own note when a card is declined; ours are about your machines.
 
-| Subject                                    | When                                                                                                                                                                 |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Welcome to repose`                        | You signed in for the first time. Install, `repose run`, choose a plan.                                                                                              |
-| `You're on the waitlist`                   | Every seat was taken when you tried to choose a plan. Your place, and what happens next ([When repose is full](/docs/limits#when-repose-is-full)).                   |
-| `A seat is yours for 72 hours`             | It's your turn. Choose a plan within 72 hours; after that the seat goes to the next person.                                                                          |
-| `Your seat hold ran out`                   | You didn't choose a plan in time. You're back on the list, at the back, and get another email at your next turn.                                                     |
-| `Your free week ends soon`                 | Two days before the first charge: the plan, the amount, the date. Cancel before then and nothing is charged.                                                         |
-| `Your payment failed`                      | A charge didn't go through. Update your card in the billing portal; your machines keep running for three days, then stop until a payment arrives.                    |
-| `Your guests were stopped for non-payment` | Three days after a failed payment your machines were snapshotted and stopped.                                                                                        |
-| `Your plan is ending`                      | You cancelled. The plan runs until the end of the period; your machines stop then and their snapshots are kept 30 days.                                              |
-| `Your plan has ended`                      | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
-| `Your plan changed`                        | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
-| `Your machines were stopped: egress limit` | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
+| Subject                                      | When                                                                                                                                                                 |
+|----------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Welcome to repose`                          | You signed in for the first time. Install, `repose run`, choose a plan.                                                                                              |
+| `You're on the waitlist`                     | Every seat was taken when you tried to choose a plan. Your place, and what happens next ([When repose is full](/docs/limits#when-repose-is-full)).                   |
+| `A seat is yours for 72 hours`               | It's your turn. Choose a plan within 72 hours; after that the seat goes to the next person.                                                                          |
+| `Your seat hold ran out`                     | You didn't choose a plan in time. You're back on the list, at the back, and get another email at your next turn.                                                     |
+| `Your free week ends soon`                   | Two days before the first charge: the plan, the amount, the date. Cancel before then and nothing is charged.                                                         |
+| `Your payment failed`                        | A charge didn't go through. Update your card in the billing portal; your machines keep running for three days, then stop until a payment arrives.                    |
+| `Your machines were stopped for non-payment` | Three days after a failed payment your machines were snapshotted and stopped.                                                                                        |
+| `Your plan is ending`                        | You cancelled. The plan runs until the end of the period; your machines stop then and their snapshots are kept 30 days.                                              |
+| `Your plan has ended`                        | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
+| `Your plan changed`                          | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
+| `Your machines were stopped: egress limit`   | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
 
 ## Agents can message you and ask questions
 

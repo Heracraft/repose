@@ -181,3 +181,47 @@ func TestSyncNameLinksAnUnlinkedCheckout(t *testing.T) {
 		t.Fatalf("by_dir %v, want the checkout linked to job", disk.ByDir)
 	}
 }
+
+// `repose sync NAME` from a repository that shares no commit with the
+// machine's checkout, neither with an origin to compare, is refused
+// before anything is written (I-631); the same repository syncs.
+func TestSyncRefusesAnUnrelatedCheckout(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if _, err := f.env.Client.CreateProject(ctx, CreateProjectRequest{Name: "job", Class: "large"}); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(t.TempDir(), "job")
+	mustRun(t, filepath.Dir(repo), "git", "clone", "-q", "file://"+f.bare, filepath.Base(repo))
+	mustRun(t, repo, "git", "remote", "remove", "origin")
+	e, _, _ := freshEnv(f.env, repo)
+	if err := runRun(ctx, e, RunOptions{Name: "job", Sync: true, NoAttach: true}, false); err != nil {
+		t.Fatalf("sync job: %v", err)
+	}
+
+	other := filepath.Join(t.TempDir(), "api")
+	mustRun(t, filepath.Dir(other), "git", "init", "-q", filepath.Base(other))
+	mustRun(t, other, "git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "i")
+	e2, _, _ := freshEnv(f.env, other)
+	err := runRun(ctx, e2, RunOptions{Name: "job", Sync: true, NoAttach: true}, false)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "job's checkout shares no commit with this one") {
+		t.Fatalf("sync job from an unrelated repository: %v", err)
+	}
+	if got := remoteURLOf(other, "repose"); got != "" {
+		t.Fatalf("the refused sync added the repose remote: %q", got)
+	}
+	// An agent's commit on the machine leaves the laptop knowing none of
+	// its tips; the roots still match, so the same repository syncs.
+	if out, err := runSSH(ctx, f.target, checkoutVar("job", "")+`cd "$repose_co" && git -c user.name=a -c user.email=a@example.com commit -q --allow-empty -m agent && git for-each-ref --format='%(refname)'`, nil); err != nil {
+		t.Fatalf("agent commit: %v %s", err, out)
+	}
+	if err := refuseUnrelated(ctx, f.target, repo, "job", guestProbe{tips: []string{"0123456789012345678901234567890123456789"}}, false); err != nil {
+		t.Fatalf("a related checkout with unknown tips was refused: %v", err)
+	}
+	mustRun(t, repo, "git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "more")
+	if err := runRun(ctx, e, RunOptions{Name: "job", Sync: true, NoAttach: true}, false); err != nil {
+		t.Fatalf("second sync job: %v", err)
+	}
+}

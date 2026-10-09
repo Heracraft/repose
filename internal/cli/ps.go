@@ -38,8 +38,12 @@ type PsRow struct {
 	Agent *string `json:"agent"`
 	// Command is tmux's pane_current_command; null on herdr.
 	Command *string `json:"command"`
-	// State is working, idle, needs_input or unknown, as `ls` and
+	// AgentState is working, idle, needs_input or unknown, as `ls` and
 	// `status` say it; null for a window that runs no agent.
+	AgentState *string `json:"agent_state"`
+	// State is AgentState, except on herdr, where it stays herdr's own
+	// agent_status (working, blocked, idle, done) for one release, as
+	// `ps --json` printed it before I-606 (I-631).
 	State *string `json:"state"`
 	// Tree is where the window works: checkout, worktree-N, another
 	// folder as ~/path; on herdr the workspace's label.
@@ -96,8 +100,8 @@ func herdrAgentState(status string) string {
 func psRowsHerdr(agents []PsAgent) []PsRow {
 	rows := []PsRow{}
 	for _, a := range agents {
-		agent, state, ws := a.Agent, herdrAgentState(a.State), a.Workspace
-		rows = append(rows, PsRow{Name: a.Name, Agent: &agent, State: &state, Tree: a.Workspace, Focused: a.Focused, Workspace: &ws})
+		agent, state, raw, ws := a.Agent, herdrAgentState(a.State), a.State, a.Workspace
+		rows = append(rows, PsRow{Name: a.Name, Agent: &agent, AgentState: &state, State: &raw, Tree: a.Workspace, Focused: a.Focused, Workspace: &ws})
 	}
 	return rows
 }
@@ -236,6 +240,10 @@ func windowAgent(name, command string) string {
 	return ""
 }
 
+// loginShells are the commands a window shows when its agent exited
+// and the shell it ran in is in front again.
+var loginShells = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true, "dash": true}
+
 // signalFresh is how old the api's sample may be for ps to take a state
 // from it: hosts sample every minute.
 const signalFresh = 2 * time.Minute
@@ -246,6 +254,11 @@ const signalFresh = 2 * time.Minute
 func windowState(w PsWindow, agent string, sig *Signals, now time.Time) string {
 	if agent == "" {
 		return ""
+	}
+	if loginShells[w.Command] {
+		// A shell in front: the agent the window is named after exited,
+		// and what guestd set for it last is stale (I-631).
+		return "unknown"
 	}
 	if w.State != "" {
 		return w.State
@@ -323,7 +336,7 @@ func psRowsTmux(l psListing, sig *Signals, now time.Time) []PsRow {
 			Index: &w.Index, Current: &w.Current, Activity: &w.Activity}
 		if a := windowAgent(w.Name, w.Command); a != "" {
 			st := windowState(w, a, sig, now)
-			r.Agent, r.State = &a, &st
+			r.Agent, r.AgentState, r.State = &a, &st, &st
 		}
 		rows = append(rows, r)
 	}
@@ -391,8 +404,7 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 				}
 				opts.Window, args = args[1], args[:1]
 			}
-			project, err := projectFrom(args, g)
-			if err != nil {
+			if _, err := projectFrom(args, g); err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("tail") && (opts.Lines < 1 || opts.Lines > psMaxLines) {
@@ -409,8 +421,11 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 				return cobraUsageError{fmt.Errorf("-q and --json go with the listing; a window's lines are text")}
 			}
 			e.Quiet = quiet
-			opts.ProjectArg = project
-			return PsCmdWith(cmd.Context(), e, opts)
+			return orWindow(cmd.Context(), e, args, opts.Window, g.project, func(project, window string) error {
+				o := opts
+				o.ProjectArg, o.Window = project, window
+				return PsCmdWith(cmd.Context(), e, o)
+			})
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the windows (or herdr agents) as JSON")
@@ -418,6 +433,32 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "print the last lines of window `NAME` (a name or number, or a herdr agent)")
 	cmd.Flags().IntVarP(&opts.Lines, "tail", "n", 0, "print the last `N` lines: of WINDOW (default 20), or of every window")
 	return cmd
+}
+
+// orWindow runs fn on PROJECT and WINDOW for ps and attach (I-606). One
+// word that names none of the account's projects, run where a project
+// resolves with no --project and no -w, is a WINDOW of that project
+// (I-631), as exec reads its first word: `repose ps claude-2` in the
+// checkout. The project is looked up first, so the usual case costs no
+// extra call.
+func orWindow(ctx context.Context, e *Env, args []string, window, projectFlag string, fn func(project, window string) error) error {
+	project := projectFlag
+	if len(args) > 0 {
+		project = args[0]
+	}
+	err := fn(project, window)
+	if len(args) != 1 || window != "" || projectFlag != "" {
+		return err
+	}
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != ExitProjectNotFound || ee.msg != noSuchProjectMessage(args[0]) {
+		return err
+	}
+	res, rerr := resolveProject(ctx, e.Client, e.Dir, e.Cwd, e.resolveArg(""), &e.Cache, defaultResolveDeps())
+	if rerr != nil || res.Project == nil {
+		return err
+	}
+	return fn("", args[0])
 }
 
 // Exit status of psScript's tmux when the session does not exist.
@@ -484,8 +525,8 @@ func PsCmdWith(ctx context.Context, e *Env, opts PsOptions) error {
 			mark = "*"
 		}
 		state := ""
-		if r.State != nil {
-			state = *r.State
+		if r.AgentState != nil {
+			state = *r.AgentState
 		}
 		_, _ = fmt.Fprintf(tw, "%d:%s%s\t%s\t%s\t%s\t%s\n", *r.Index, r.Name, mark, *r.Command, stateCell(state), orDash(r.Tree), idleAgo(*r.IdleSecs))
 	}

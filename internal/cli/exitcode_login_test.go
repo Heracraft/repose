@@ -27,7 +27,7 @@ func TestExitCodeForLoginFailures(t *testing.T) {
 		{&notLoggedInError{cause: errors.New("not logged in")}, ExitNotLoggedIn, "Not logged in. Run `repose login`."},
 		{&notLoggedInError{cause: fmt.Errorf("refreshing session: %w", errors.New("invalid_grant: grant request is invalid"))}, ExitNotLoggedIn, "Your login has expired."},
 		{&notLoggedInError{cause: fmt.Errorf("refreshing session: %w", errors.New("invalid_client: no such client"))}, ExitNotLoggedIn, "The login server refused to renew your login (invalid_client: no such client). Run `repose login`."},
-		{&loginUnreachableError{host: "auth.example", cause: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}}, ExitGeneric, "Could not reach the login server (auth.example): connection refused. Check your connection."},
+		{&loginUnreachableError{host: "auth.example", cause: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}}, ExitGeneric, "Could not reach the login server (auth.example): connection refused."},
 		{&loginUnreachableError{host: "auth.example", cause: &net.DNSError{Name: "auth.example", IsNotFound: true}}, ExitGeneric, "the name auth.example does not resolve"},
 		{&loginUnreachableError{host: "auth.example", cause: &statusError{status: 502}}, ExitGeneric, "(auth.example): it answered 502."},
 		{&unreachableError{host: "api.example", cause: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}}, ExitGeneric, "Could not reach api.example: connection refused."},

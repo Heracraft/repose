@@ -456,10 +456,11 @@ func DestroyCmd(ctx context.Context, e *Env, projectArg string, yes, wait bool, 
 var laptopFiles sync.Mutex
 
 // forgetDestroyedOnLaptop drops what the laptop keeps for a machine being
-// destroyed, and reports whether that took the checkout's `repose`
-// remote. Several destroys run at once, so the files are edited one at a
-// time.
-func forgetDestroyedOnLaptop(ctx context.Context, e *Env, project *Project) bool {
+// destroyed, and returns the checkout's git remotes that went with it:
+// its `repose` remote, and the one `repose fork` added for a copy
+// (I-622). Several destroys run at once and git refuses a second writer
+// of .git/config, so the files are edited one at a time (I-631).
+func forgetDestroyedOnLaptop(ctx context.Context, e *Env, project *Project) []string {
 	laptopFiles.Lock()
 	defer laptopFiles.Unlock()
 	// Folders linked to the machine forget it, so a plain run there makes
@@ -467,7 +468,15 @@ func forgetDestroyedOnLaptop(ctx context.Context, e *Env, project *Project) bool
 	e.forgetProjectOnDisk(project.ID)
 	// The laptop herdr's entry for the machine goes with it (I-510).
 	forgetHerdrMachine(ctx, project.Slug)
-	return forgetReposeRemote(gitRepoRoot(e.Cwd), project.Slug)
+	root := gitRepoRoot(e.Cwd)
+	var removed []string
+	if forgetReposeRemote(root, project.Slug) {
+		removed = append(removed, "repose")
+	}
+	if forgetForkRemote(root, project.Slug) {
+		removed = append(removed, project.Slug)
+	}
+	return removed
 }
 
 // destroyResult is how one project's destroy ended.
@@ -597,14 +606,9 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 	}
 	r.accepted = true
 	closeMaster(ctx, e, project.Slug)
-	if forgetDestroyedOnLaptop(ctx, e, project) {
-		// The machine this checkout's `repose` remote pointed at is going
-		// away (I-272); what was fetched from it stays.
-		r.errOut = append(r.errOut, "Removed the git remote repose; branches already fetched from it stay as repose/*.")
-	}
-	if forgetForkRemote(gitRepoRoot(e.Cwd), project.Slug) {
-		// The remote `repose fork` added for this copy (I-622).
-		_, _ = fmt.Fprintf(e.ErrOut, "Removed the git remote %s; branches already fetched from it stay as %s/*.\n", project.Slug, project.Slug)
+	// What was fetched from a removed remote stays (I-272).
+	for _, remote := range forgetDestroyedOnLaptop(ctx, e, project) {
+		r.errOut = append(r.errOut, "Removed the git remote "+remote+".")
 	}
 	temporary := project.ExpiresAt != nil
 	if !wait {

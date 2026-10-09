@@ -11,7 +11,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **``Not logged in. Run `repose login`.``** Your login expired or you logged out.
 
-**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`** Your laptop is offline, or the server is down. Your login is still there; run the command again once you're connected.
+**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`** Your laptop is offline, or the server is down; run the command again once you're connected.
 
 **`The repose api answered 502`** The API is restarting, usually for a release. A read is tried once more by itself; run the command again in a minute.
 
@@ -43,7 +43,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 ## Machine state
 
-**``todo-app is stopped. Start it with `repose start todo-app` ...``** `attach`, `ssh`, `exec`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`. Run `repose start todo-app`, or `repose run` in the checkout.
+**``todo-app is stopped. `repose start todo-app` starts it.``** `ssh`, `exec`, `ps`, `code`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach` and `repose run` do.
 
 **`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 

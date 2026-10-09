@@ -142,9 +142,12 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   the state it last announced (`working`, `idle`, `needs_input`,
   `unknown`) each time that changes (DECISIONS I-606). `repose ps` reads
   it as STATE, and `/etc/tmux.conf`'s window formats put `?` after the
-  name of a window at `needs_input`. A window with no value is a base
-  before I-606 or a window with no agent; the CLI then takes the api's
-  sample when it is under two minutes old.
+  name of a window at `needs_input`. When the agent exits and its shell
+  keeps the window, guestd unsets the option (I-631). A window with no
+  value is a base before I-606 or a window with no agent; the CLI then
+  takes the api's sample when it is under two minutes old. A window whose
+  `pane_current_command` is a shell has no state, whatever the option
+  says.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names

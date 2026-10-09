@@ -58,7 +58,7 @@ func TestLaptopSSHFaults(t *testing.T) {
 		{"unix_listener: path \"/Users/someone/.ssh/x\" too long for Unix domain socket", true, "ControlPath"},
 		{"/Users/a/.ssh/config: line 4: Bad configuration option: usekeychainx\n/Users/a/.ssh/config: terminating, 1 bad configuration options", true, "Fix the line"},
 		{"ssh: Could not resolve hostname todo-app.repose: nodename nor servname provided, or not known", true, "Include ~/.ssh/repose/config"},
-		{"ssh: Could not resolve hostname ssh.repose.herakraft.co: Name or service not known", true, "check your connection"},
+		{"ssh: Could not resolve hostname ssh.repose.herakraft.co: Name or service not known", true, ""},
 		{"Host key verification failed.", true, "known_hosts"},
 		{"Bad owner or permissions on /home/a/.ssh/config", true, "chmod 600"},
 		{"ssh: connect to host 10.64.0.2 port 22: Connection refused", false, ""},
@@ -245,4 +245,33 @@ func TestLogoutSaysWhatItRevoked(t *testing.T) {
 		t.Error("credentials kept after a logout whose revoke failed")
 	}
 	_ = os.Remove(dir)
+}
+
+// Tab completion and the hidden helpers that ssh and the session run
+// throw their stderr away, so the once-per-release notice waits for a
+// command the user typed (I-631).
+func TestNoticeAfterSkipsCompletion(t *testing.T) {
+	root := newRootCmd("v0.0.1")
+	// cobra adds these two while it executes.
+	root.AddCommand(&cobra.Command{Use: cobra.ShellCompRequestCmd}, &cobra.Command{Use: cobra.ShellCompNoDescRequestCmd})
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"ls"}, true},
+		{[]string{"__complete", "attach", ""}, false},
+		{[]string{"__completeNoDesc", "ls", ""}, false},
+		{[]string{"ssh-prepare", "x"}, false},
+	} {
+		cmd, _, err := root.Find(tc.args)
+		if err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if got := noticeAfter(cmd); got != tc.want {
+			t.Errorf("noticeAfter(%s) = %v, want %v", cmd.CommandPath(), got, tc.want)
+		}
+	}
+	if !noticeAfter(nil) {
+		t.Error("noticeAfter(nil)")
+	}
 }

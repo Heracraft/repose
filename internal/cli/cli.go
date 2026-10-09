@@ -24,6 +24,22 @@ import (
 // Execute is cmd/repose's entry point. version is the build's -ldflags
 // value ("dev" outside a release build). It returns the process exit code
 // per docs/interfaces/cli-config.md.
+// noticeAfter reports whether the older-CLI notice may print after cmd:
+// not after tab completion or a hidden command, whose stderr the shell
+// or a script throws away, which would use up the once-per-release
+// notice unseen (I-631).
+func noticeAfter(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return true
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Hidden || c.Name() == cobra.ShellCompRequestCmd || c.Name() == cobra.ShellCompNoDescRequestCmd {
+			return false
+		}
+	}
+	return true
+}
+
 func Execute(version string) int {
 	markSSHPrepared() // before any child starts (I-281)
 	cliVersion = version
@@ -48,7 +64,12 @@ func Execute(version string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	go func() { <-ctx.Done(); stop() }()
-	defer noteNewerCLI()
+	var cmd *cobra.Command
+	defer func() {
+		if noticeAfter(cmd) {
+			noteNewerCLI()
+		}
+	}()
 	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return ExitOK
@@ -143,7 +164,7 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.SetVersionTemplate("repose {{.Version}} (herakraft)\n")
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return cobraUsageError{fmt.Errorf("%v (`%s --help` lists its flags)", err, cmd.CommandPath())}
+		return cobraUsageError{fmt.Errorf("%v\n`%s --help` shows its usage.", err, cmd.CommandPath())}
 	})
 	root.PersistentFlags().StringVar(&g.project, "project", "", "act on project `NAME` or id (or $REPOSE_PROJECT)")
 	root.PersistentFlags().StringVar(&g.apiURL, "api-url", "", "api base url (or $REPOSE_API_URL)")
@@ -478,7 +499,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "claude|opencode|codex|gemini|pi (default: the project's agent)")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a new or stopped machine (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
@@ -514,8 +535,8 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Attach to a project's session, or to one of its windows",
 		Long: "Attach to PROJECT's session (this checkout's, by default) on its current window,\n" +
 			"without syncing. With WINDOW (or -w), open on that window: a tmux window's name\n" +
-			"or number as repose ps shows it, or on herdr an agent's name. The machine must\n" +
-			"be running.",
+			"or number as repose ps shows it, or on herdr an agent's name. A stopped machine\n" +
+			"starts first. One word that names no project is WINDOW of this checkout's.",
 		Example: "  repose attach\n  repose attach todo-app claude-2\n  repose attach -w 2",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 2 {
@@ -531,8 +552,7 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				}
 				window, args = args[1], args[:1]
 			}
-			project, err := projectFrom(args, g)
-			if err != nil {
+			if _, err := projectFrom(args, g); err != nil {
 				return err
 			}
 			if _, err := parseBridgeAllow(bridgeAllow); err != nil {
@@ -542,7 +562,9 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
+			return orWindow(cmd.Context(), e, args, window, g.project, func(project, window string) error {
+				return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
+			})
 		},
 	}
 	cmd.Flags().StringVarP(&window, "window", "w", "", "open on window `NAME` (a name or number, or a herdr agent)")
@@ -605,7 +627,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for a new or stopped machine (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
@@ -647,10 +669,10 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "stop [PROJECT...]",
 		Short: "Snapshot and stop projects",
 		Long: "Snapshot and stop each PROJECT's machine (this checkout's, by default),\n" +
-			"several at once. Every process on it ends. When an agent is in the middle of a\n" +
-			"turn or waiting for an answer, ask first; -y skips the question, and without a\n" +
-			"terminal it is required. In the checkout of a machine it stops, fetch the\n" +
-			"agent's commits first, as git fetch repose does.",
+			"several at once. Every process on it ends. It asks first when an agent is\n" +
+			"mid-turn or waiting for an answer; -y skips the question and is required\n" +
+			"without a terminal. Run in the machine's checkout, it runs git fetch repose\n" +
+			"first.",
 		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused",
 		SuggestFor:        []string{"down", "halt"},
 		Args:              cobra.ArbitraryArgs,
@@ -680,7 +702,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
 	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project as JSON when done (an array for several)")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON when done (an array for several)")
 	return cmd
 }
 
@@ -719,7 +741,7 @@ func newStatusCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, 
 			return StatusCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the Project, with its checkout's git state, as JSON")
+	cmd.Flags().Bool("json", false, "print the project, with its checkout's git state, as JSON")
 	cmd.Flags().BoolVarP(&watch, "follow", "f", false, "refresh every 5 seconds until Ctrl-C")
 	// --watch was the name until I-609; -f is what logs and events take.
 	cmd.Flags().BoolVar(&watch, "watch", false, "refresh every 5 seconds until Ctrl-C")
@@ -1358,7 +1380,7 @@ func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return SnapshotsCreateCmd(cmd.Context(), e, project)
 		},
 	}
-	create.Flags().BoolVar(&g.json, "json", false, "print the Snapshot object as JSON when done")
+	create.Flags().BoolVar(&g.json, "json", false, "print the snapshot as JSON when done")
 	restore := &cobra.Command{
 		Use:   "restore [PROJECT] SNAPSHOT_ID",
 		Short: "Restore a snapshot over a stopped project, or into a new one",
@@ -1433,7 +1455,8 @@ func newKeepCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Keep a temporary machine for good, or for DURATION from now",
 		Long: "Make a temporary machine a normal one, which is no longer destroyed. With\n" +
 			"DURATION (10m to 24h), keep it temporary and destroy it that long from now\n" +
-			"instead. One argument that reads as a duration is DURATION.",
+			"instead. One argument that is a number and a unit (s, m, h, d or w) is\n" +
+			"DURATION.",
 		Example:           "  repose keep\n  repose keep tmp-k3f9 3h",
 		Args:              keepArgs,
 		ValidArgsFunction: completeProject(env),
@@ -1632,7 +1655,7 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 	}
 	cmd.Flags().IntVarP(&opts.Count, "count", "n", 1, "how many forks (1 to 10)")
 	cmd.Flags().StringVar(&opts.Name, "name", "", "prefix for the forks' names (default: PROJECT-fork)")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "small|large|xl for the forks (default: PROJECT's)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of the forks: small, large or xl (default: PROJECT's)")
 	cmd.Flags().StringVar(&opts.SnapshotID, "snapshot", "", "fork from this snapshot of PROJECT instead of taking one now")
 	cmd.Flags().StringVar(&opts.Prompt, "prompt", "", "start the agent in every fork with this prompt")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "with --prompt: claude|opencode|codex|gemini|pi (default: PROJECT's)")
@@ -1694,7 +1717,7 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&size, "size", "", "change the project's size: small|large|xl")
+	cmd.Flags().StringVar(&size, "size", "", "change the project's `SIZE`: small, large or xl")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project, restart it without asking")
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -1852,7 +1875,7 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 			return QuestionsCmd(cmd.Context(), e, project)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the questions and terminal waits as JSON")
+	cmd.Flags().Bool("json", false, "print the questions as JSON")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the question ids, one per line")
 	return cmd
 }

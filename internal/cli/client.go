@@ -281,7 +281,7 @@ type loginUnreachableError struct {
 }
 
 func (e *loginUnreachableError) Error() string {
-	return fmt.Sprintf("Could not reach the login server (%s): %s. Check your connection.", e.host, netReason(e.cause))
+	return fmt.Sprintf("Could not reach the login server (%s): %s.", e.host, netReason(e.cause))
 }
 func (e *loginUnreachableError) Unwrap() error { return e.cause }
 

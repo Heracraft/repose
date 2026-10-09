@@ -106,7 +106,7 @@ func Project(ctx context.Context, q store.Querier, p *store.Project, now time.Ti
 // that may run at once, so an idle machine costs its share of the plan,
 // not a rate.
 func Summary(slug, class string, idleFor time.Duration) string {
-	return fmt.Sprintf("%s has had no SSH session and no agent working for %dh, and is holding %d GB of your plan's memory (%s) until you stop it: `repose stop %s`. repose never stops a machine for being unused.",
+	return fmt.Sprintf("%s has had no SSH session and no agent working for %dh, and holds %d GB of your plan's memory (%s) until you stop it: `repose stop %s`.",
 		slug, int(idleFor/time.Hour), billing.ClassMemoryGB(class), class, slug)
 }
 

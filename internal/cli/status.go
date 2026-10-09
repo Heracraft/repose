@@ -106,10 +106,13 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 	}
 	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects))
 	b := <-bill
-	if l := planLine(b); l != "" {
-		_, _ = fmt.Fprintln(e.Out, l)
+	pl := planLine(b)
+	if pl != "" {
+		_, _ = fmt.Fprintln(e.Out, pl)
 	}
-	for _, l := range planWarnings(b) {
+	// Under the plan line, which has the figures, a warning says only
+	// what happens (I-631).
+	for _, l := range planWarningsAfter(b, pl != "") {
 		_, _ = fmt.Fprintln(e.Out, l)
 	}
 	return nil
@@ -208,17 +211,28 @@ func gbFigure(f float64) string {
 // a limit that refuses or stops something or adds a charge (I-585,
 // I-616): the disk past the plan, egress past the allowance, a failed
 // payment. Each names what happens.
-func planWarnings(b *Billing) []string {
+func planWarnings(b *Billing) []string { return planWarningsAfter(b, false) }
+
+// planWarningsAfter is planWarnings, without the figures the plan line
+// above already printed when figures is true.
+func planWarningsAfter(b *Billing, figures bool) []string {
 	var out []string
 	if l := diskOverPlanLine(b); l != "" {
+		if figures {
+			l = "disk past the plan: creating, restoring, forking and growing a disk are refused until your projects hold less"
+		}
 		out = append(out, l)
 	}
 	if b == nil || b.Subscription == nil {
 		return out
 	}
 	if inc := b.Usage.EgressIncludedGB; inc > 0 && b.Usage.EgressGB > float64(inc) {
-		out = append(out, fmt.Sprintf("egress: %s GB this month, past the plan's %d GB: each GB past it adds $0.05, and your machines stop at %d GB",
-			gbFigure(b.Usage.EgressGB), inc, 4*inc))
+		if figures {
+			out = append(out, fmt.Sprintf("egress past the plan: each GB past %d GB adds $0.05, and your machines stop at %d GB", inc, 4*inc))
+		} else {
+			out = append(out, fmt.Sprintf("egress: %s GB this month, past the plan's %d GB: each GB past it adds $0.05, and your machines stop at %d GB",
+				gbFigure(b.Usage.EgressGB), inc, 4*inc))
+		}
 	}
 	if b.Subscription.Status == "past_due" {
 		out = append(out, "payment failed: starting a machine is refused, and running machines stop on the third day; update your card at https://repose.herakraft.co/billing")
@@ -420,7 +434,8 @@ func writeStatus(w io.Writer, v statusView) {
 		if agent != "" {
 			agent += " "
 		}
-		statusRow(w, "last event", fmt.Sprintf("%s, %s%s %q", humanAge(last.TS), agent, eventWord(last.Kind), last.Summary))
+		verb, summary := eventCells(*last)
+		statusRow(w, "last event", fmt.Sprintf("%s, %s%s %q", humanAge(last.TS), agent, verb, summary))
 	}
 	if v.route != nil {
 		host := v.route.HostName
@@ -453,10 +468,6 @@ func attachedCell(s *Signals, mux string) string {
 func count(n int, noun string) string {
 	return fmt.Sprintf("%d %s", n, plural(n, noun, noun+"s"))
 }
-
-// eventWord is an event's kind as the status's last event line names
-// it: the word `repose events` prints (I-617).
-func eventWord(kind string) string { return eventVerb(kind) }
 
 // snapshotCell is the newest snapshot's age, from the list or else the
 // project's last_snapshot_at. A fork has none of its own until its first

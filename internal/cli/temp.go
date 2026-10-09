@@ -45,10 +45,10 @@ func parseTempDuration(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// durationShape is a number and a unit, repeated: 3h, 90m, 1h30m, 1d,
-// and also 2x, which is then refused as a duration rather than taken
-// for a project.
-var durationShape = regexp.MustCompile(`^[0-9]+[a-z]+([0-9]+[a-z]+)*$`)
+// durationShape is a number and a unit, repeated: 3h, 90m, 1h30m, 1d.
+// The units are the ones --temp and keep take (s, m, h, d, w), so a
+// project named 2fa or 1password is a project (I-631); 1d is a duration.
+var durationShape = regexp.MustCompile(`^[0-9]+[smhdw]([0-9]+[smhdw])*$`)
 
 // looksLikeDuration is whether an argument after a bare --temp is its
 // value rather than the PROJECT, and whether keep's one argument is
@@ -158,7 +158,7 @@ func createdLabel(p *Project, class string) string {
 	if p.ExpiresAt == nil {
 		return fmt.Sprintf("Created %s (%s)", p.Slug, class)
 	}
-	return fmt.Sprintf("Created %s (%s, temporary: destroyed %s)", p.Slug, class, p.ExpiresAt.Local().Format("Jan 2 15:04"))
+	return fmt.Sprintf("Created %s (%s, temporary until %s)", p.Slug, class, p.ExpiresAt.Local().Format("Jan 2 15:04"))
 }
 
 // parseKeepDuration reads `repose keep PROJECT DURATION`: a Go duration
@@ -169,6 +169,20 @@ func parseKeepDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("keep takes a duration from 10m to 24h, such as 3h, got %q", s)
 	}
 	return d, nil
+}
+
+// extensionTaken reports whether the api's answer to a keep DURATION
+// moved the expiry: an api that ignores expires_in_s answers with the
+// old one. Asking for about the time it already has counts as taken.
+func extensionTaken(old *time.Time, p *Project, want time.Time) bool {
+	if p == nil || p.ExpiresAt == nil {
+		return false
+	}
+	if old == nil || !p.ExpiresAt.Equal(*old) {
+		return true
+	}
+	diff := want.Sub(*old)
+	return diff < time.Minute && diff > -time.Minute
 }
 
 // KeepCmd implements `repose keep [PROJECT] [DURATION]`: with no
@@ -198,11 +212,12 @@ func KeepCmd(ctx context.Context, e *Env, projectArg string, d time.Duration) er
 		return err
 	}
 	if d > 0 {
-		if p == nil || p.ExpiresAt == nil {
-			// An api from before I-612 ignores expires_in_s.
+		if !extensionTaken(project.ExpiresAt, p, time.Now().Add(d)) {
+			// An api from before I-612 ignores expires_in_s and answers
+			// with the project as it was (I-631).
 			return exitf(ExitGeneric, "The api did not take the new time for %s; it goes as before. `repose keep %s` keeps it for good.", project.Slug, project.Slug)
 		}
-		_, _ = fmt.Fprintf(e.Out, "%s is temporary: destroyed %s.\n", project.Slug, p.ExpiresAt.Local().Format("Jan 2 15:04"))
+		_, _ = fmt.Fprintf(e.Out, "%s is temporary until %s.\n", project.Slug, p.ExpiresAt.Local().Format("Jan 2 15:04"))
 		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "%s is no longer temporary.\n", project.Slug)
@@ -242,7 +257,7 @@ func tempSessionEndedWith(ctx context.Context, e *Env, t sshTarget, p *Project, 
 		return
 	}
 	if w.Commits > 0 || w.Files > 0 {
-		_, _ = fmt.Fprintf(e.ErrOut, "%s has %s that your laptop does not, so %s. `repose attach %s` goes back to it.\n", p.Slug, w, tempStays(p, time.Now()), p.Slug)
+		_, _ = fmt.Fprintf(e.ErrOut, "%s has %s your laptop does not; %s.\n", p.Slug, w, tempStays(p, time.Now()))
 		return
 	}
 	_, _ = fmt.Fprintf(e.ErrOut, "%s is temporary and its session has ended; destroying it.\n", p.Slug)

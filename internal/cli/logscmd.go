@@ -297,6 +297,7 @@ func EventsCmd(ctx context.Context, e *Env, projectArg, since string, follow boo
 		first = false
 		sort.SliceStable(batch, func(i, j int) bool { return batch[i].TS.Before(batch[j].TS) })
 		printed += len(batch)
+		w.fit(batch)
 		for _, ev := range batch {
 			if e.JSON {
 				ev.TS = ev.TS.UTC()
@@ -370,6 +371,18 @@ func emptyEventsLine(projects []Project, all bool, since string) string {
 type eventsWidths struct {
 	all     bool
 	project int
+	// agent and verb are the widest agent and verb cells printed so far
+	// (I-631): a fixed width cut `snapshot created` short of its column.
+	agent, verb int
+}
+
+// fit widens w for the cells of evs, before they print.
+func (w *eventsWidths) fit(evs []Event) {
+	for _, ev := range evs {
+		verb, _ := eventCells(ev)
+		w.agent = max(w.agent, len(eventAgent(ev)))
+		w.verb = max(w.verb, len(verb))
+	}
 }
 
 // eventVerbs are what an event's kind prints as, in `events` and on
@@ -398,9 +411,8 @@ func eventVerb(kind string) string {
 	return strings.NewReplacer("_", " ", ".", " ").Replace(kind)
 }
 
-// eventLine is one row: local time, the project (when the list covers
-// every project), the agent and its window, what happened, the summary.
-func eventLine(ev Event, w eventsWidths) string {
+// eventAgent is the agent cell: the agent and its window, "-" for none.
+func eventAgent(ev Event) string {
 	agent := ev.Agent
 	if agent == "" {
 		agent = "-"
@@ -408,12 +420,32 @@ func eventLine(ev Event, w eventsWidths) string {
 	if ev.Window != "" {
 		agent += " (" + ev.Window + ")"
 	}
+	return agent
+}
+
+// eventCells are an event's verb and summary. A summary that starts
+// with the noun of a two-word verb says that noun once: `project
+// created as large`, not `project created  project created as large`
+// (I-631), the way `machine  stopped` reads.
+func eventCells(ev Event) (verb, summary string) {
+	verb, summary = eventVerb(ev.Kind), flatSummary(ev.Summary)
+	noun, _, two := strings.Cut(verb, " ")
+	if two && strings.HasPrefix(strings.ToLower(summary), strings.ToLower(noun)+" ") {
+		return noun, summary[len(noun)+1:]
+	}
+	return verb, summary
+}
+
+// eventLine is one row: local time, the project (when the list covers
+// every project), the agent and its window, what happened, the summary.
+func eventLine(ev Event, w eventsWidths) string {
+	verb, summary := eventCells(ev)
 	var b strings.Builder
 	b.WriteString(streamTime(ev.TS))
 	if w.all {
 		fmt.Fprintf(&b, "  %-*s", w.project, ev.Project)
 	}
-	fmt.Fprintf(&b, "  %-10s  %-12s  %s", agent, eventVerb(ev.Kind), flatSummary(ev.Summary))
+	fmt.Fprintf(&b, "  %-*s  %-*s  %s", w.agent, eventAgent(ev), w.verb, verb, summary)
 	return strings.TrimRight(b.String(), " ")
 }
 

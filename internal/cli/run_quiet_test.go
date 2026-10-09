@@ -13,13 +13,13 @@ import (
 // it now says nothing about the sync, and `repose sync` says there was
 // nothing to send (I-303).
 func TestSecondRunIsQuietAboutAnUnchangedSync(t *testing.T) {
-	if got := syncResultLine(&SyncSummary{Modified: 3, Unchanged: true}, false); got != "" {
+	if got := syncResultLine(&SyncSummary{Modified: 3, Unchanged: true}, false, ""); got != "" {
 		t.Fatalf("attaching run, unchanged: %q", got)
 	}
-	if got := syncResultLine(&SyncSummary{Modified: 3}, false); got != "Synced: 3 modified, 0 untracked" {
+	if got := syncResultLine(&SyncSummary{Modified: 3}, false, ""); got != "Synced: 3 modified, 0 untracked" {
 		t.Fatalf("attaching run, sent: %q", got)
 	}
-	if got := syncResultLine(&SyncSummary{Unchanged: true}, true); !strings.HasPrefix(got, "Nothing new to sync") {
+	if got := syncResultLine(&SyncSummary{Unchanged: true}, true, ""); !strings.HasPrefix(got, "Nothing new to sync") {
 		t.Fatalf("sync, unchanged: %q", got)
 	}
 
@@ -41,5 +41,17 @@ func TestSecondRunIsQuietAboutAnUnchangedSync(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "Synced: ") || !strings.Contains(out.String(), "Nothing new to sync: the machine already has this checkout.") {
 		t.Fatalf("second run: %q", out.String())
+	}
+}
+
+// A run that named its project names it in the sync line's command
+// (I-631).
+func TestLaptopAheadLineNamesTheProject(t *testing.T) {
+	s := &SyncSummary{Skipped: true, LaptopAhead: true, Commits: 1}
+	if got := syncResultLine(s, false, ""); !strings.HasSuffix(got, "`repose sync` sends it.") {
+		t.Errorf("unnamed: %q", got)
+	}
+	if got := syncResultLine(s, false, "todo-app"); !strings.HasSuffix(got, "`repose sync todo-app` sends it.") {
+		t.Errorf("named: %q", got)
 	}
 }

@@ -354,6 +354,7 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	}
 	var states []emission
 	var events []emission
+	var unset []string // tmux windows whose StateOption goes
 
 	w.mu.Lock()
 	if tmuxErr == nil {
@@ -473,6 +474,12 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		if ws.announced != StateUnknown {
 			states = append(states, emission{agent: ws.agent, window: name, state: StateUnknown})
 		}
+		if ws.source == multiplexer.Tmux && ws.announced != "" && ws.announced != StateUnknown {
+			// The agent exited and its shell may keep the window open:
+			// the window's StateOption goes, so neither the status line
+			// nor `repose ps` shows the agent's last state (I-631).
+			unset = append(unset, name)
+		}
 		delete(w.windows, name)
 		delete(w.hooks, name)
 	}
@@ -509,6 +516,14 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 				w.log.Debug("could not mark the tmux window's state",
 					"event", "agent_state", "error_code", sysdep.CodeOf(err))
 			}
+		}
+	}
+	for _, window := range unset {
+		// A window that closed altogether has nothing to unset; tmux
+		// says so, and that is not worth more than a debug line.
+		if err := w.tmux.client.unsetWindowState(ctx, slug, window); err != nil {
+			w.log.Debug("could not clear the tmux window's state",
+				"event", "agent_state", "error_code", sysdep.CodeOf(err))
 		}
 	}
 	for _, e := range events {

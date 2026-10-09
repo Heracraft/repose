@@ -15,7 +15,7 @@ import (
 // addProjectJSONFlag is the --json flag of a command that prints the
 // Project when it finishes.
 func addProjectJSONFlag(cmd *cobra.Command, g *globalFlags) {
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the Project object as JSON when done")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON when done")
 }
 
 // withProjectJSON runs fn; under --json its text goes to stderr, and the

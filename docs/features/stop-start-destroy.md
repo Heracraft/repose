@@ -269,17 +269,17 @@ creation and is destroyed with no snapshot. The public docs are
 ```
 $ cd ~/code/todo-app
 $ repose run --temp                          # this checkout, on a throwaway machine
-✓ Created tmp-k3f9 (large, temporary: destroyed Sep 29 14:02)  4s
+✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  4s
 ✓ Synced main (full history)
 [tmux]
 
 $ cd ~/Downloads
 $ repose run --temp spike             # no git here: an empty machine
-✓ Created spike (large, temporary: destroyed Sep 29 14:05)  4s
+✓ Created spike (large, temporary until Sep 29 14:05)  4s
 Not a git repository, so nothing was synced.
 
 $ repose run --temp 3h --no-sync             # a shorter life
-✓ Created tmp-q7wd (large, temporary: destroyed Sep 28 17:10)  4s
+✓ Created tmp-q7wd (large, temporary until Sep 28 17:10)  4s
 
 $ repose ls
 PROJECT   CLASS  STATE    UP  AGENTS  TODAY  MONTH  LEFT
@@ -350,10 +350,14 @@ Lifetime:
   project that is not temporary prints `NAME is not temporary.` and
   exits 0. Setting `expires_at` to anything but null answers `400
   invalid`.
-- `repose keep NAME 3h` (10m to 24h; one argument that reads as a
-  duration is the duration) sends `PATCH /projects/:id {expires_in_s}`,
-  and the api sets `expires_at = now() + expires_in_s` under the same
-  state guard as keep (I-612). Outside 600..86400, on a project that is
+- `repose keep NAME 3h` (10m to 24h; one argument that is a number and
+  a unit, `s`, `m`, `h`, `d` or `w`, is the duration, so `keep 2fa`
+  keeps the project 2fa, I-631) sends `PATCH /projects/:id
+  {expires_in_s}`, and the api sets `expires_at = now() + expires_in_s`
+  under the same state guard as keep (I-612). It prints `NAME is
+  temporary until Sep 29 17:02.`; an answer whose `expires_at` did not
+  move (an api before I-612 ignores the field) exits 1 with `The api did
+  not take the new time for NAME; it goes as before.` Outside 600..86400, on a project that is
   not temporary, or beside `expires_at: null`, it is `400 invalid`.
 - An hour before `expires_at` a `temp_expiring` notification goes out,
   once per expiry (read from the events table: none since `expires_at`
@@ -402,8 +406,8 @@ Ending the session:
   branch nor the commits `.git/repose-synced-key` lists (I-612). Both
   zero: it prints the line above and sends the DELETE without asking.
   Either one above zero, or a check that fails: no DELETE, one line
-  (`tmp-q7wd has 2 commits and 1 changed file that your laptop does not,
-  so it stays until 17:10. `repose attach tmp-q7wd` goes back to it.`),
+  (`tmp-q7wd has 2 commits and 1 changed file your laptop does not; it
+  stays until 17:10.`),
   and the machine goes at its expiry. A detach leaves the session,
   so it never destroys. An agent window still open keeps the session, so
   an agent working never loses its machine this way.

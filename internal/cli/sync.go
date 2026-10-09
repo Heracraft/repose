@@ -586,6 +586,11 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		return nil, stepFailed("read the machine's checkout", err, "")
 	}
 	probe := parseProbe(string(out))
+	// Before anything is written: a machine whose checkout holds another
+	// repository is not synced into (I-631).
+	if err := refuseUnrelated(ctx, t, localRepoDir, slug, probe, opts.FirstOnly); err != nil {
+		return nil, err
+	}
 
 	// What the laptop would send, and its key, before anything is sent:
 	// all of it is local, and whether the laptop has anything new since
@@ -1562,6 +1567,58 @@ func originURLFor(remote string) string {
 		return ""
 	}
 	return "git@" + host + ":" + strings.TrimSuffix(path, ".git") + ".git"
+}
+
+// maxRootsChecked bounds the root commits refuseUnrelated asks about.
+const maxRootsChecked = 50
+
+// refuseUnrelated is the cross-repository refusal (I-603) for checkouts
+// that have no origin to compare (I-631): when the laptop knows none of
+// the machine's commits, it asks the machine for the laptop's root
+// commits, and a checkout that has none of them is another repository's.
+// Unknown tips alone are the usual case of an agent's new commits on a
+// project with no remote, so they only lead to the question. A shallow
+// repository on either side has no true roots and is not refused, nor
+// is a machine that does not answer: the sync goes on as before.
+func refuseUnrelated(ctx context.Context, t sshTarget, localRepoDir, slug string, probe guestProbe, firstOnly bool) error {
+	if len(probe.tips) == 0 {
+		return nil
+	}
+	if known, err := commitsKnownLocally(localRepoDir, probe.tips); err != nil || len(known) > 0 {
+		return nil
+	}
+	if s, err := gitCmd(localRepoDir, "rev-parse", "--is-shallow-repository"); err != nil || strings.TrimSpace(s) != "false" {
+		return nil
+	}
+	out, err := gitCmd(localRepoDir, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return nil
+	}
+	roots := strings.Fields(out)
+	if len(roots) == 0 {
+		return nil
+	}
+	if len(roots) > maxRootsChecked {
+		roots = roots[:maxRootsChecked]
+	}
+	quoted := make([]string, len(roots))
+	for i, r := range roots {
+		quoted[i] = shQuote(r)
+	}
+	script := checkoutVar(slug, t.Checkout) + `cd "$repose_co" || exit 0
+[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ] || { echo '#related'; exit 0; }
+for r in ` + strings.Join(quoted, " ") + `; do git cat-file -e "$r^{commit}" 2>/dev/null && { echo '#related'; exit 0; }; done
+echo '#unrelated'
+`
+	reply, err := runSSH(ctx, t, script, nil)
+	if err != nil || !strings.Contains(string(reply), "#unrelated") {
+		return nil
+	}
+	verb := "sync"
+	if firstOnly {
+		verb = "run"
+	}
+	return exitf(ExitUsage, "%s's checkout shares no commit with this one, so `repose %s %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", slug, verb, slug, slug)
 }
 
 // commitsKnownLocally filters the guest's tips to the ones this checkout

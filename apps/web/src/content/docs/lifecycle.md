@@ -144,7 +144,7 @@ repose run todo-app-experiment
 
 It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name. [Several agents, separate trees](/docs/run-and-attach#several-agents-separate-trees) compares it with `--worktree` and `fork` for running agents side by side.
 
-`repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
+`repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine: the CLI compares the remotes, or, when either side has none, whether the two share a commit.
 
 The second machine has no git remote of its own, and your checkout's `repose` remote stays pointed at the original. To bring its work back, add a remote for it:
 
@@ -176,14 +176,14 @@ A plain `repose run` there stops with ``Your home folder is not a project. cd in
 ```
 $ cd ~/code/todo-app
 $ repose run --temp
-✓ Created tmp-k3f9 (large, temporary: destroyed Sep 29 14:02)  4s
+✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  4s
 Synced: 2 modified, 1 untracked (48 new commits)
 Ready in 21s.
 tmp-k3f9 is temporary: destroyed in 24h.
 
 $ cd ~/Downloads
 $ repose run --temp spike
-✓ Created spike (large, temporary: destroyed Sep 29 14:05)  4s
+✓ Created spike (large, temporary until Sep 29 14:05)  4s
 Not a git repository, so nothing was synced.
 ```
 
@@ -193,7 +193,7 @@ Not a git repository, so nothing was synced.
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
 - You get a notification an hour before the end (for a machine made with more than an hour), and another when it's destroyed. See [Notifications](/docs/notifications).
-- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file that your laptop does not, so it stays until 14:02.` and names `repose attach`. If the check can't run, the machine stays too. With `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
+- On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file your laptop does not; it stays until 14:02.` If the check can't run, the machine stays too. With `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
 - `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
 - A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
@@ -209,7 +209,7 @@ It's then a normal project, still reached by name, and gets snapshots like any o
 
 ```
 $ repose keep tmp-k3f9 3h
-tmp-k3f9 is temporary: destroyed Sep 29 17:02.
+tmp-k3f9 is temporary until Sep 29 17:02.
 ```
 
 ## Fork a project

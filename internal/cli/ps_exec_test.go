@@ -183,7 +183,8 @@ func TestPsRows(t *testing.T) {
 		"0\tshell\tbash\t999990\t0\t\t/home/dev/todo-app\n" +
 		"1\tclaude\tclaude\t999990\t1\tworking\t/home/dev/todo-app\n" +
 		"2\tclaude-2\tclaude\t999000\t0\t\t/home/dev/todo-app-worktree-1\n" +
-		"3\tapi/codex\tcodex\t999000\t0\t\t/home/dev/api\n")
+		"3\tapi/codex\tcodex\t999000\t0\t\t/home/dev/api\n" +
+		"4\tclaude-3\tbash\t999000\t0\tneeds_input\t/home/dev/todo-app\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,13 +196,16 @@ func TestPsRows(t *testing.T) {
 		if r.Agent != nil {
 			x.agent = *r.Agent
 		}
-		if r.State != nil {
-			x.state = *r.State
+		if r.AgentState != nil {
+			x.state = *r.AgentState
+			if r.State == nil || *r.State != x.state {
+				t.Errorf("tmux row %s: state differs from agent_state", r.Name)
+			}
 		}
 		x.tree = r.Tree
 		return x
 	}
-	want := []row{{"", "", "checkout"}, {"claude", "working", "checkout"}, {"claude", "needs_input", "worktree-1"}, {"codex", "unknown", "~/api"}}
+	want := []row{{"", "", "checkout"}, {"claude", "working", "checkout"}, {"claude", "needs_input", "worktree-1"}, {"codex", "unknown", "~/api"}, {"claude", "unknown", "checkout"}}
 	for i, w := range want {
 		if got := get(rows[i]); got != w {
 			t.Errorf("row %d = %+v, want %+v", i, got, w)
@@ -230,13 +234,14 @@ func TestPsJSONOneShape(t *testing.T) {
 	l, _ := parsePs("1\n0\tshell\tbash\t1\t1\t\t/x\n")
 	tm := keys(psRowsTmux(l, nil, time.Unix(1, 0)))
 	hd := keys(psRowsHerdr([]PsAgent{{Workspace: "checkout", Agent: "claude", Name: "claude", State: "blocked"}}))
-	for _, k := range []string{"name", "agent", "command", "state", "tree", "focused", "idle_seconds"} {
+	for _, k := range []string{"name", "agent", "command", "agent_state", "state", "tree", "focused", "idle_seconds"} {
 		if !slices.Contains(tm, k) || !slices.Contains(hd, k) {
 			t.Errorf("%q: tmux %v herdr %v", k, tm, hd)
 		}
 	}
 	b, _ := json.Marshal(psRowsHerdr([]PsAgent{{Workspace: "checkout", Agent: "claude", Name: "claude", State: "blocked"}}))
-	if !strings.Contains(string(b), `"state":"needs_input"`) || !strings.Contains(string(b), `"command":null`) || !strings.Contains(string(b), `"workspace":"checkout"`) {
+	// herdr's own value stays in state for one release (I-631).
+	if !strings.Contains(string(b), `"agent_state":"needs_input"`) || !strings.Contains(string(b), `"state":"blocked"`) || !strings.Contains(string(b), `"command":null`) || !strings.Contains(string(b), `"workspace":"checkout"`) {
 		t.Fatalf("herdr row %s", b)
 	}
 }
@@ -424,5 +429,44 @@ func TestExecWorkdir(t *testing.T) {
 	err := ExecCmd(ctx, f.env, ExecOptions{ProjectArg: testSlug, Workdir: "worktree-9", Command: []string{"echo", "ran"}}, nil)
 	if exitCodeOf(err) != ExitUsage || !strings.Contains(errOut.buf.String(), testSlug+" has no folder worktree-9.") || strings.Contains(out.buf.String(), "ran") {
 		t.Fatalf("a missing worktree: %v %q %q", err, errOut.buf.String(), out.buf.String())
+	}
+}
+
+// `repose ps claude-2` and `repose attach claude-2` in a checkout: a word
+// that names no project is a window of the folder's project (I-631).
+func TestOneWordIsAWindowWhereAProjectResolves(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	t.Cleanup(fake.Close)
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	type call struct{ project, window string }
+	var calls []call
+	fn := func(project, window string) error {
+		calls = append(calls, call{project, window})
+		if project != "" && project != testSlug {
+			return errNoSuchProject(project)
+		}
+		return nil
+	}
+	if err := orWindow(ctx, f.env, []string{"claude-2"}, "", "", fn); err != nil || len(calls) != 2 || calls[1] != (call{"", "claude-2"}) {
+		t.Fatalf("in the checkout: %v %+v", err, calls)
+	}
+	calls = nil
+	if err := orWindow(ctx, f.env, []string{testSlug}, "", "", fn); err != nil || len(calls) != 1 {
+		t.Fatalf("a project's name: %v %+v", err, calls)
+	}
+	// With -w the word is the project, and stays one.
+	calls = nil
+	if err := orWindow(ctx, f.env, []string{"nope"}, "2", "", fn); exitCode(err) != ExitProjectNotFound || len(calls) != 1 {
+		t.Fatalf("-w: %v %+v", err, calls)
+	}
+	// Where no project resolves, the word is still a project nobody has.
+	e, _, _ := freshEnv(f.env, t.TempDir())
+	calls = nil
+	if err := orWindow(ctx, e, []string{"claude-2"}, "", "", fn); exitCode(err) != ExitProjectNotFound || len(calls) != 1 {
+		t.Fatalf("outside a checkout: %v %+v", err, calls)
 	}
 }

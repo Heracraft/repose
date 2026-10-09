@@ -76,7 +76,9 @@ func TestDestroyRequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestAttachToStoppedGuestExitsFive(t *testing.T) {
+// `repose attach` starts a stopped machine, as run does, without a sync
+// (I-631, review G7); a destroyed one still exits 5.
+func TestAttachStartsAStoppedMachine(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	e := newLifecycleEnv(t, fake)
@@ -93,10 +95,16 @@ func TestAttachToStoppedGuestExitsFive(t *testing.T) {
 	}
 	e.Cache.ByDir[e.Cwd] = p.ID
 
+	// The attach itself needs ssh, which this env has not; the start is
+	// what this test is about.
+	_ = runRun(ctx, e, RunOptions{}, true)
+	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
+		t.Fatalf("after attach: %+v %v", got, err)
+	}
+	fake.SetState(p.ID, "restoring")
 	err = runRun(ctx, e, RunOptions{}, true)
-	ee, ok := err.(*exitError)
-	if !ok || ee.code != ExitGuestNotRunning {
-		t.Fatalf("err = %v, want a guest-not-running exitError", err)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
+		t.Fatalf("attach while restoring: %v, want exit 5", err)
 	}
 }
 
