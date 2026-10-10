@@ -18413,3 +18413,20 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+
+**I-647. Bring your own host starts as shape A: the hosted control plane
+with hosts the user owns (byo-host-shape-a, 2026-10-10).** *Made during
+implementation* (owner, 2026-10-10, choosing between the two shapes in
+`proposals/2026-10-10-bring-your-own-host.md`).
+- Users add their own x86_64 KVM boxes to their repose.herakraft.co
+  account; the api, dashboard, gateway and WireGuard hub stay hosted.
+  A fully self-hosted install (shape B) waits until A has users.
+- Reason: every hosted seat loses money (I-642), and owned hosts grow
+  reach without growing the hosting bill, while keeping users in the
+  account, `repose ls` and the dashboard.
+- Still open, each its own entry when settled: free or a price per host;
+  where the install command goes in the CLI; whether a host may hold the
+  user's snapshot bucket keys.
+- Order of work is the proposal's: a `metal` provider and installer on
+  the operator's own hardware first; host ownership and the hub's rules
+  for a stranger's host before any public host joins.

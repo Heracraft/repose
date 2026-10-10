@@ -1,6 +1,6 @@
 # Bring your own host (proposal, 2026-10-10)
 
-**Status: analysis only. Nothing here is decided.** The owner asked for a
+**Status: shape A chosen (DECISIONS I-647); the rest is analysis.** The owner asked for a
 sketch of how users could run repose on their own hardware, the way
 Coolify does, after I-642 showed every hosted seat loses money on Azure
 and on Hetzner. Any of it becomes real only through `DECISIONS.md`
