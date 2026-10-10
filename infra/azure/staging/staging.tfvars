@@ -5,10 +5,10 @@ subscription_id     = "5f27aace-dd8c-4dc0-95bf-b59ee8de7d70"
 resource_group_name = "repose-staging"
 zone                = "1"
 
-# Smallest size that still satisfies the Intel Dsv5 rule, because staging
-# exists to rehearse the shape of an apply, not its capacity.
+# Smallest Intel size that still nests KVM, because staging exists to
+# rehearse the shape of an apply, not its capacity.
 host_size           = "Standard_D2s_v7"
-host_class          = "azure-d2s-v5"
+host_class          = "azure-d2s-v7"
 host_data_disk_gb   = 64
 host_data_disk_iops = 3000
 host_data_disk_mbps = 125
