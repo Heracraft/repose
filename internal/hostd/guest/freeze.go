@@ -380,10 +380,14 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		return fail("pause failed", err)
 	}
 	pausedAt := m.d.Now()
-	if err := fz.Snapshot(ctx, sock, m.snapDir(id)); err != nil {
-		if rerr := m.d.CH.Resume(context.WithoutCancel(ctx), sock); rerr != nil {
-			m.log(g).Error("guest left paused after a failed snapshot", "event", "guest_freeze", "err", rerr.Error())
-		}
+	// The hypervisor cannot be interrupted mid-snapshot, so the call is not
+	// tied to the freeze's deadline: giving up on it early only leaves the
+	// hypervisor busy and the guest paused. It has its own, generous bound.
+	sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), snapshotTimeout)
+	err = fz.Snapshot(sctx, sock, m.snapDir(id))
+	scancel()
+	if err != nil {
+		m.resumeAfterFailedSnapshot(context.WithoutCancel(ctx), g, sock)
 		return fail("snapshot failed", err)
 	}
 	snapMs := m.d.Now().Sub(pausedAt).Milliseconds()
@@ -401,7 +405,10 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		stopConsole = mon.stopKeepConsole()
 	}
 	_ = m.d.CH.Shutdown(ctx, sock) // the wait below kills the unit if this did nothing
-	wctx, wcancel := context.WithTimeout(ctx, 15*time.Second)
+	// A paused VM's hypervisor need not exit on vmm.shutdown; its memory is
+	// in the image and its disk untouched since the pause, so it is killed
+	// after a short wait instead of the stop path's 15 s.
+	wctx, wcancel := context.WithTimeout(ctx, 3*time.Second)
 	if err := m.d.Systemd.WaitInactive(wctx, GuestUnit(id)); err != nil {
 		_ = m.d.Systemd.Kill(ctx, GuestUnit(id)) // the VM is paused and its snapshot written; nothing is lost
 	}
@@ -436,6 +443,39 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	m.log(g).Info("guest frozen", "event", "guest_freeze", "reason", reason, "class", g.Class,
 		"snapshot_ms", snapMs, "duration_ms", res.Ms, "image_bytes", rec.ImageBytes)
 	return res
+}
+
+// snapshotTimeout bounds one vm.snapshot: an xl guest's 16 GiB at 100 MB/s
+// is under 3 minutes.
+const snapshotTimeout = 10 * time.Minute
+
+// resumeAfterFailedSnapshot brings a guest back from the pause of a freeze
+// that failed. The hypervisor may still be busy with the snapshot (its
+// API answers nothing until it is done), so the resume is retried until
+// vm.info says Running, for up to two minutes.
+func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest, sock string) {
+	deadline := m.d.Now().Add(2 * time.Minute)
+	var last error
+	for m.d.Now().Before(deadline) {
+		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		last = m.d.CH.Resume(rctx, sock)
+		info, ierr := m.d.CH.Info(rctx, sock)
+		cancel()
+		if ierr == nil && strings.Contains(string(info), `"Running"`) {
+			m.log(g).Info("guest resumed after a failed snapshot", "event", "guest_freeze")
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	msg := "no answer"
+	if last != nil {
+		msg = last.Error()
+	}
+	m.log(g).Error("guest left paused after a failed snapshot", "event", "guest_freeze", "err", msg)
 }
 
 // argsHaveAuthShare reports whether the guest's hypervisor was started

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 )
 
 // Freezer is the API-socket side of a guest freeze (DECISIONS I-652):
@@ -25,8 +26,15 @@ func FileURL(dir string) string {
 }
 
 // Snapshot implements Freezer.
+// The call returns when the image is written, which takes as long as the
+// guest's memory takes to write: seconds per GB. The client's own timeout
+// (10 s by default) would give up while the hypervisor goes on writing, and
+// a resume sent then is refused, which left a guest paused on staging
+// (docs/research/guest-freeze.md); only ctx bounds it.
 func (h *HTTP) Snapshot(ctx context.Context, sock, dir string) error {
-	return h.putJSON(ctx, sock, "vm.snapshot", map[string]any{"destination_url": FileURL(dir)})
+	long := *h
+	long.Timeout = 24 * time.Hour
+	return long.putJSON(ctx, sock, "vm.snapshot", map[string]any{"destination_url": FileURL(dir)})
 }
 
 // Snapshot implements Freezer.

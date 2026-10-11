@@ -115,6 +115,15 @@ in-guest drop that waited no time).
   as they are, less after the drop with reporting. A 64 GiB host with every
   guest's memory dirty would need under 2 minutes.
 
+Two guests at once (as hostd freezes them, two at a time): a large guest
+holding 4.7 GB after the build runs below and a small idle one froze
+together in 10.9 s (5.5 GB of images, about 500 MB/s to local NVMe through
+dm-crypt) and restored together in 6.2 s. After a cache drop and 5 s, the
+large guest's image was still 3.9 GB: free page reporting hands back only
+free blocks of 2 MiB and more, and a guest whose memory is fragmented by
+builds keeps much of it. The image sizes in the table are the better
+case; the deadline must be set from a host's real guests.
+
 ## What survives a freeze
 
 Every probe ran through every cycle of every row above and through the 60
@@ -219,6 +228,12 @@ cycles ([guest-freeze-data/loop-60.txt](guest-freeze-data/loop-60.txt)):
   (7.1 to 11.1 GB, ending higher than it started); the guest's resident
   memory on the host followed its use (1.9 to 3.0 GB), never the class's
   8 GiB.
+
+A real build: `go build -a -v std cmd` from an empty cache in a large
+guest, frozen and restored three times while it ran, finished with exit 0
+in 143 s of guest wall time against 113 s for the same build with no
+freeze; the 30 s difference is the time the guest spent frozen (the clock
+is set forward at each restore).
 
 Host-side peers: with the echo server killed while the guest was frozen
 (as a host reboot kills every host-side end), the guest's first send after

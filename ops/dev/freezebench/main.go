@@ -146,7 +146,6 @@ func run(ctx context.Context, cmd, dir string, args []string) error {
 			return fmt.Errorf("date -s: exit %d: %s", r.ExitCode, r.Stderr)
 		}
 		return nil
-	}
 	case "hostd-freeze":
 		if len(args) < 4 {
 			return fmt.Errorf("hostd-freeze DIR CLASS KEYPEM RECDIR VG")

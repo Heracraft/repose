@@ -101,7 +101,10 @@ enc_open() { # enc_open ID new|old
     head -c 64 /dev/urandom > "/dev/shm/gf$id.key"
   fi
   losetup -f --show "$d/frz.img" > "$d/frz.loop"
-  cryptsetup open --type plain --cipher aes-xts-plain64 --key-size 512 --key-file "/dev/shm/gf$id.key" "$(cat "$d/frz.loop")" "gffrz$id"
+  if ! cryptsetup open --type plain --cipher aes-xts-plain64 --key-size 512 --key-file "/dev/shm/gf$id.key" "$(cat "$d/frz.loop")" "gffrz$id"; then
+    losetup -d "$(cat "$d/frz.loop")"
+    return 1
+  fi
   if [ "$2" = new ]; then
     mkfs.ext4 -q -E nodiscard,lazy_itable_init=1,lazy_journal_init=1 -m 0 "/dev/mapper/gffrz$id"
   fi
