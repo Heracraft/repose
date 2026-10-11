@@ -107,7 +107,8 @@ in
       };
     };
 
-    systemd.services."guest@" = guestUnitOrder;
+    # guest@ gets the same Before= from hostd.nix's drop-in, which holds
+    # the clean stop (I-650); a second text for that unit would clash.
     systemd.services."virtiofsd@" = guestUnitOrder;
     systemd.services."virtiofsd-auth@" = guestUnitOrder;
   };

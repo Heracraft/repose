@@ -89,12 +89,18 @@ in
 {
   # The clean stop above, for every guest@ unit. After= on the guest's
   # virtiofsd units makes a shutdown stop the guest first: it needs its
-  # store share to power off.
+  # store share to power off. With the guest freeze on (freeze.nix,
+  # I-652), the same drop-in orders each guest before the freeze unit, so
+  # a shutdown freezes guests before it stops them: a unit takes one text
+  # drop-in, so freeze.nix cannot add its own for guest@.
   systemd.units."guest@.service" = {
     overrideStrategy = "asDropin";
     text = ''
       [Unit]
       After=virtiofsd@%i.service virtiofsd-auth@%i.service
+    '' + lib.optionalString cfg.freeze.enable ''
+      Before=repose-guest-freeze.service
+    '' + ''
 
       [Service]
       ExecStop=${guestCleanStop}/bin/repose-guest-clean-stop %i
