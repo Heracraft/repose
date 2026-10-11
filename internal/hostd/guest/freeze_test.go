@@ -471,7 +471,7 @@ func TestFreezeLogsCarryNoTenantData(t *testing.T) {
 			t.Fatalf("log carries %q", bad)
 		}
 	}
-	if !bytes.Contains([]byte(logs), []byte(`"event":"freeze"`)) || !bytes.Contains([]byte(logs), []byte(`"event":"thaw"`)) {
+	if !bytes.Contains([]byte(logs), []byte(`"event":"guest_freeze"`)) || !bytes.Contains([]byte(logs), []byte(`"event":"guest_thaw"`)) {
 		t.Fatal("freeze and thaw not logged")
 	}
 }

@@ -72,7 +72,7 @@ pkgs.testers.runNixOSTest {
         print(host.succeed("hostd freeze"))
         print(host.succeed("hostd thaw"))
         host.succeed(
-            "journalctl -u hostd --no-pager -o cat | grep '\"event\":\"freeze\"'"
+            "journalctl -u hostd --no-pager -o cat | grep '\"event\":\"guest_freeze\"'"
             " | grep 'guests frozen' | tail -1 | jq -e '.reason == \"operator\"' >/dev/null")
 
     with subtest("a graceful reboot runs the freeze before any guest unit stops"):

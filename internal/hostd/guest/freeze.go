@@ -170,12 +170,12 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	ctx, cancel := context.WithTimeout(ctx, fc.Deadline)
 	defer cancel()
 	if err := m.d.Freeze.Sealer.Ready(); err != nil {
-		m.d.Log.Warn("freeze skipped: no image key", "event", "freeze", "reason", reason, "err", err.Error())
+		m.d.Log.Warn("freeze skipped: no image key", "event", "guest_freeze", "reason", reason, "err", err.Error())
 		return nil
 	}
 	gs, err := m.d.State.ListGuests()
 	if err != nil {
-		m.d.Log.Warn("freeze skipped: list guests", "event", "freeze", "err", err.Error())
+		m.d.Log.Warn("freeze skipped: list guests", "event", "guest_freeze", "err", err.Error())
 		return nil
 	}
 	var run []*state.Guest
@@ -189,7 +189,7 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 		run = append(run, g)
 	}
 	sort.SliceStable(run, func(i, j int) bool { return Classes[run[i].Class].MemMiB < Classes[run[j].Class].MemMiB })
-	m.d.Log.Info("freezing guests", "event", "freeze", "reason", reason, "guests", len(run))
+	m.d.Log.Info("freezing guests", "event", "guest_freeze", "reason", reason, "guests", len(run))
 
 	// Ask each guest to write back and drop its page cache, all at once:
 	// with free page reporting the dropped pages go back to the host and
@@ -209,7 +209,7 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 			dctx, dcancel := context.WithTimeout(ctx, 10*time.Second)
 			defer dcancel()
 			if r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"}, 10, ""); err != nil || r.ExitCode != 0 {
-				m.log(g).Warn("guest cache drop failed before freeze", "event", "freeze")
+				m.log(g).Warn("guest cache drop failed before freeze", "event", "guest_freeze")
 			}
 		}(g)
 	}
@@ -279,7 +279,7 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 			n++
 		}
 	}
-	m.d.Log.Info("guests frozen", "event", "freeze", "reason", reason, "frozen", n, "guests", len(run),
+	m.d.Log.Info("guests frozen", "event", "guest_freeze", "reason", reason, "frozen", n, "guests", len(run),
 		"duration_ms", m.d.Now().Sub(start).Milliseconds())
 	return results
 }
@@ -330,7 +330,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	wrapped, keyID, err := m.d.Freeze.Sealer.Wrap(key)
 	if err != nil {
 		res.Reason = "image key could not be wrapped"
-		m.log(g).Warn("freeze failed", "event", "freeze", "reason", res.Reason, "err", err.Error())
+		m.log(g).Warn("freeze failed", "event", "guest_freeze", "reason", res.Reason, "err", err.Error())
 		return res
 	}
 	chv, _ := m.d.CH.Version(ctx) // empty is recorded as unknown and compared as such
@@ -341,14 +341,14 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	}
 	if err := recs.Put(rec); err != nil {
 		res.Reason = "record not written"
-		m.log(g).Warn("freeze failed", "event", "freeze", "reason", res.Reason, "err", err.Error())
+		m.log(g).Warn("freeze failed", "event", "guest_freeze", "reason", res.Reason, "err", err.Error())
 		return res
 	}
 	fail := func(why string, err error) FreezeResult {
 		m.discardImage(context.WithoutCancel(ctx), id, why)
 		res.Reason = why
 		res.Ms = m.d.Now().Sub(start).Milliseconds()
-		attrs := []any{"event", "freeze", "reason", why}
+		attrs := []any{"event", "guest_freeze", "reason", why}
 		if err != nil {
 			attrs = append(attrs, "err", err.Error())
 		}
@@ -382,7 +382,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	pausedAt := m.d.Now()
 	if err := fz.Snapshot(ctx, sock, m.snapDir(id)); err != nil {
 		if rerr := m.d.CH.Resume(context.WithoutCancel(ctx), sock); rerr != nil {
-			m.log(g).Error("guest left paused after a failed snapshot", "event", "freeze", "err", rerr.Error())
+			m.log(g).Error("guest left paused after a failed snapshot", "event", "guest_freeze", "err", rerr.Error())
 		}
 		return fail("snapshot failed", err)
 	}
@@ -416,14 +416,14 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		if err != nil {
 			// The image stays, but without a fingerprint it is never restored;
 			// the guest is down now either way and starts cold.
-			m.log(g).Warn("volume fingerprint not read; the image will not be restored", "event", "freeze", "err", err.Error())
+			m.log(g).Warn("volume fingerprint not read; the image will not be restored", "event", "guest_freeze", "err", err.Error())
 		}
 		rec.Fingerprint = fp
 	}
 	rec.ImageBytes = m.imageBytes(m.snapDir(id))
 	// Close flushes the image (umount) and drops its key from the kernel.
 	if err := m.d.Freeze.Image.Close(ctx, id, m.imageMount(id)); err != nil {
-		m.log(g).Warn("image not closed", "event", "freeze", "err", err.Error())
+		m.log(g).Warn("image not closed", "event", "guest_freeze", "err", err.Error())
 		return fail("image not closed", err)
 	}
 	rec.State, rec.DoneAt = freeze.StateComplete, m.d.Now().UTC()
@@ -433,7 +433,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	res.OK, res.Outcome, res.Reason = true, "frozen", ""
 	res.ImageBytes = rec.ImageBytes
 	res.Ms = m.d.Now().Sub(start).Milliseconds()
-	m.log(g).Info("guest frozen", "event", "freeze", "reason", reason, "class", g.Class,
+	m.log(g).Info("guest frozen", "event", "guest_freeze", "reason", reason, "class", g.Class,
 		"snapshot_ms", snapMs, "duration_ms", res.Ms, "image_bytes", rec.ImageBytes)
 	return res
 }
@@ -493,7 +493,7 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 	recs := m.records()
 	ids, err := recs.List()
 	if err != nil {
-		m.d.Log.Warn("freeze records not listed", "event", "thaw", "err", err.Error())
+		m.d.Log.Warn("freeze records not listed", "event", "guest_thaw", "err", err.Error())
 		return nil
 	}
 	m.sweepImageVolumes(ctx, ids)
@@ -519,7 +519,7 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 			n++
 		}
 	}
-	m.d.Log.Info("frozen guests restored", "event", "thaw", "restored", n, "images", len(ids))
+	m.d.Log.Info("frozen guests restored", "event", "guest_thaw", "restored", n, "images", len(ids))
 	return results
 }
 
@@ -612,7 +612,7 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 	key, err := m.unwrapWithRetry(uctx, rec)
 	ucancel()
 	if err != nil {
-		m.log(g).Warn("image key not unwrapped", "event", "thaw", "err", err.Error())
+		m.log(g).Warn("image key not unwrapped", "event", "guest_thaw", "err", err.Error())
 		return discard("image key unavailable")
 	}
 	defer freeze.Wipe(key)
@@ -620,18 +620,18 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 		return discard("image key does not match")
 	}
 	if err := m.d.Freeze.Image.Open(ctx, id, key, m.imageMount(id)); err != nil {
-		m.log(g).Warn("image not opened", "event", "thaw", "err", err.Error())
+		m.log(g).Warn("image not opened", "event", "guest_thaw", "err", err.Error())
 		return discard("image volume not opened")
 	}
 	if err := m.restoreGuest(ctx, g, rec); err != nil {
-		m.log(g).Warn("restore failed; the guest starts cold", "event", "thaw", "err", err.Error())
+		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_thaw", "err", err.Error())
 		m.teardown(context.WithoutCancel(ctx), g)
 		return discard("restore failed")
 	}
 	m.discardImage(ctx, id, "restored")
 	res.OK, res.Outcome, res.Reason = true, "thawed", ""
 	res.Ms = m.d.Now().Sub(start).Milliseconds()
-	m.log(g).Info("guest restored from its frozen image", "event", "thaw", "class", g.Class,
+	m.log(g).Info("guest restored from its frozen image", "event", "guest_thaw", "class", g.Class,
 		"duration_ms", res.Ms, "frozen_s", int64(m.d.Now().Sub(rec.DoneAt).Seconds()), "image_bytes", rec.ImageBytes)
 	return res
 }
@@ -711,7 +711,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	// The image has been read into the guest's memory: close it now, so
 	// its key leaves the kernel before the guest runs again.
 	if err := m.d.Freeze.Image.Close(ctx, g.GuestID, m.imageMount(g.GuestID)); err != nil {
-		m.log(g).Warn("image not closed after the restore", "event", "thaw", "err", err.Error())
+		m.log(g).Warn("image not closed after the restore", "event", "guest_thaw", "err", err.Error())
 	}
 	if err := m.d.CH.Resume(ctx, sock); err != nil {
 		return fmt.Errorf("resume: %w", err)
@@ -728,7 +728,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	now := m.d.Now()
 	sec := strconv.FormatFloat(float64(now.UnixNano())/1e9, 'f', 6, 64)
 	if r, err := sess.Exec(ctx, []string{"date", "-u", "-s", "@" + sec}, 10, ""); err != nil || r.ExitCode != 0 {
-		m.log(g).Warn("guest clock not set after the restore", "event", "thaw")
+		m.log(g).Warn("guest clock not set after the restore", "event", "guest_thaw")
 	}
 	m.markGood(g, g.SystemClosure)
 	return m.setState(g, StateRunning, "restored from a frozen image")

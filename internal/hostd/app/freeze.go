@@ -57,13 +57,13 @@ func freezeSetup(o Options, r shell.Runner, l lvm.LVM, log *slog.Logger) (guest.
 	case o.Freeze.KeyVaultURL != "" && o.Freeze.KeyName != "":
 		kv, err := freeze.NewKeyVault(o.Freeze.KeyVaultURL, o.Freeze.KeyName, o.BlobIdentity)
 		if err != nil {
-			log.Error("guest freeze off: key vault", "event", "freeze", "err", err.Error())
+			log.Error("guest freeze off: key vault", "event", "guest_freeze", "err", err.Error())
 			cfg.Enabled = false
 			return cfg, deps
 		}
 		deps.Sealer = kv
 	default:
-		log.Error("guest freeze off: no image key (--freeze-key-vault and --freeze-key-name, or --freeze-key-file)", "event", "freeze")
+		log.Error("guest freeze off: no image key (--freeze-key-vault and --freeze-key-name, or --freeze-key-file)", "event", "guest_freeze")
 		cfg.Enabled = false
 	}
 	return cfg, deps
@@ -89,14 +89,14 @@ func freezeKeyLoop(ctx context.Context, s freeze.Sealer, log *slog.Logger) {
 		cancel()
 		switch {
 		case err != nil && !ok:
-			log.Warn("image key not fetched; guests cannot be frozen yet", "event", "freeze", "err", err.Error())
+			log.Warn("image key not fetched; guests cannot be frozen yet", "event", "guest_freeze", "err", err.Error())
 			wait = time.Minute
 		case err != nil:
-			log.Warn("image key not refreshed; using the one fetched before", "event", "freeze", "err", err.Error())
+			log.Warn("image key not refreshed; using the one fetched before", "event", "guest_freeze", "err", err.Error())
 			wait = time.Hour
 		default:
 			if !ok {
-				log.Info("image key fetched; guests can be frozen", "event", "freeze")
+				log.Info("image key fetched; guests can be frozen", "event", "guest_freeze")
 			}
 			ok = true
 			wait = time.Hour

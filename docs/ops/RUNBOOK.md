@@ -1025,7 +1025,7 @@ Turning it on for a host:
 2. The host's nix config: `repose.host.freeze.enable = true;`
    `repose.host.freeze.keyVaultUrl = "<vault_uri>";` (keyName defaults to
    `freeze-wrap`). Switch (RUNBOOK "Switch a host to main"). The journal
-   shows `image key fetched; guests can be frozen` (event `freeze`); until
+   shows `image key fetched; guests can be frozen` (event `guest_freeze`); until
    it does, a shutdown freezes nothing.
 3. Guests get free page reporting at their next start; running ones are
    frozen without it (bigger images).
@@ -1035,14 +1035,14 @@ Checks:
 - `hostd freeze` freezes every running guest now and prints each one's
   outcome, time and image size; `hostd thaw` brings them back. Use it on a
   canary before trusting a reboot, or before a planned window.
-- After a reboot: `journalctl -u hostd -b | grep -E '"event":"(thaw|freeze_discard)"'`.
+- After a reboot: `journalctl -u hostd -b | grep -E '"event":"(guest_thaw|freeze_discard)"'`.
   `guest restored from its frozen image` with `duration_ms` and
   `frozen_s` per guest; `frozen image discarded` with a fixed `reason`
   for each one that started cold instead (closure changed, volume changed,
   key unavailable, restore failed, ...). Those go on as after any reboot
   ("Host rebooted").
 - Shutdown side: `journalctl -b -1 -u repose-guest-freeze -u hostd | grep
-  '"event":"freeze"'`: `guests frozen` with `frozen`, `guests` and
+  '"event":"guest_freeze"'`: `guests frozen` with `frozen`, `guests` and
   `duration_ms`. A guest left out (`skipped`: deadline passed, or the pool
   had no room) was stopped by the shutdown as before.
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
