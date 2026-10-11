@@ -437,6 +437,48 @@ project's prefix. hostd sends neither.
    (`repose-admin hosts drain`) and look at, starting with its hostd
    version and `journalctl -u hostd`.
 
+## ResumeStalled
+
+Machines a host restart stopped have waited 20 minutes without the api
+starting them or closing their row (DECISIONS I-645). Their owners'
+machines are down.
+
+1. `psql`: `select p.slug, g.outcome, g.reason, g.attempts, g.created_at
+   from guest_resumes g join projects p on p.id = g.project_id where
+   g.decided_at is null order by g.created_at;`. `pending` rows are
+   waiting for something; `starting` rows have a start op (`op_id`) that
+   has not finished.
+2. Loki `{component="api"} | json | event="guest_resume"` shows each tick.
+   No lines at all: the tick is not running. It runs in the `api-grpc`
+   app; check that app is up, and that its `REPOSE_RESUME` is not `off`
+   (the app logs `REPOSE_RESUME=off` at start).
+3. What a pending row can wait on: an open op on the project (`repose-admin
+   ops list --project <id>`), the host `unreachable` or its pool down
+   (`hosts.pool_unavailable`, the PoolUnavailable alert), a start that
+   failed on capacity (the host's free memory), or the 3-starts-per-tick
+   pace on a host with many guests (it clears in a few minutes).
+4. After 6 hours from the restart the rows close as `window_passed`,
+   their owners are told, and the alert clears; nothing starts them then.
+   `repose-admin projects start <id>` starts one now.
+
+## ResumeNotStarted
+
+hostd has guests a host restart interrupted, under 6 hours old and not
+running, for 30 minutes (DECISIONS I-645). It catches the api never
+having written their rows: an api down since the reboot, or one older
+than I-645. It is a warning because a machine its owner stopped
+meanwhile, or one the rules refused, keeps its mark until the 6 hours
+pass.
+
+1. On the host: `hostd guests --json | jq '.[] |
+   select(.interrupted_boot_id) | {guest_id, state, interrupted_boot_id}'`.
+2. `psql`: `select g.guest_id, g.outcome from guest_resumes g where
+   g.boot_id = '<interrupted_boot_id>';`. A guest with a closed row
+   (`user_stopped`, `refused`, `failed`) is accounted for; the user was
+   told. A guest with no row means the api has not seen this boot's
+   Hello: check the api-grpc app and the host's stream (`hostd status`
+   shows `connected`).
+
 ## MinerStopped
 
 The api stopped a guest because its process sample named a cryptocurrency
@@ -1093,12 +1135,13 @@ NIC, so the api still sees the host as `ready`.
 
 ## Host rebooted
 
-`Hello` after boot reports every guest `stopped`. Nothing starts them
-again yet: until resume after a reboot ships (DECISIONS I-645), a user's
-machine stays stopped until they run `repose start`, or an operator runs
-`repose-admin projects start <id>`. Kernel panics are not auto-rebooted
-(`panic=` is unset on purpose); a stuck host is restarted from the Azure
-portal.
+Every guest on the host stopped with it. hostd's first start in the new
+boot marks each guest that was running or starting (`guest_interrupted`,
+with the new `boot_id`), and the api starts those again from the
+`Hello`, three per host per minute, within 6 hours of the restart, and
+tells each user once (DECISIONS I-645). Kernel panics are not
+auto-rebooted (`panic=` is unset on purpose); a stuck host is restarted
+from the Azure portal.
 
 A graceful shutdown (Azure's heal, `systemctl reboot`) presses each
 running guest's ACPI power button and gives it 20 seconds to power off,
@@ -1120,8 +1163,21 @@ clean stop.
    with `event=pool_monitored`; `lvs -o+seg_monitor vg-guests` shows the
    pool and every `g-*` volume active and the pool `monitored`;
    `curl -s 10.255.0.2:9101/metrics | grep repose_host_pool_available` is
-   1. If not, `PoolUnavailable`.
-4. If the reboot was for a kernel update it should have been a drain
+   1. If not, `PoolUnavailable`: nothing is resumed while the pool is
+   down.
+4. hostd logged `host_boot` with the previous `prev_boot_id`, and a
+   `guest_interrupted` line per guest it marked. `hostd guests --json`
+   shows each mark until the guest runs again.
+5. The api: Loki `{component="api"} | json | event="guest_resume"` shows
+   each machine's row and outcome; `select outcome, count(*) from
+   guest_resumes where boot_id = '<boot id>' group by 1` sums them. The
+   ResumeStalled and ResumeNotStarted alerts cover what is left.
+6. **To hold the resumes** (a guest that crashes its host on every boot,
+   a reboot loop, a wave you want to stagger by hand), set
+   `REPOSE_RESUME=off` on the `api-grpc` Coolify app, which runs the
+   tick; setting it restarts that app. Rows then stay `pending` and are
+   decided once it is unset again, inside the 6 hours.
+7. If the reboot was for a kernel update it should have been a drain
    (`repose-admin hosts drain`, `nixos-rebuild boot`, reboot, undrain);
    an unplanned reboot with tenants on the host is an incident line in
    `docs/incidents/`.

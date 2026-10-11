@@ -352,6 +352,11 @@ type Deps struct {
 	// SystemStopping reports a host shutdown in progress (systemd says
 	// "stopping"). Nil means never (tests set it). DECISIONS I-650.
 	SystemStopping func(ctx context.Context) bool
+	// BootID returns the host's current boot id and BootTime when that
+	// boot began (DECISIONS I-645). A nil BootID marks no guest as
+	// interrupted (tests that do not exercise it).
+	BootID   func() (string, error)
+	BootTime func() (time.Time, error)
 }
 
 type job struct {
@@ -558,6 +563,12 @@ func (m *Manager) log(g *state.Guest) *slog.Logger {
 func (m *Manager) setState(g *state.Guest, st, reason string) error {
 	prev := g.State
 	g.State, g.Reason = st, reason
+	// A guest that runs again, or that its owner stops, destroys or
+	// restores, is no longer one a host restart interrupted (I-645).
+	switch st {
+	case StateRunning, StateStopping, StateDestroying, StateRestoring:
+		g.Interrupted = nil
+	}
 	if err := m.d.State.PutGuest(g); err != nil {
 		return fmt.Errorf("state write: %w", err)
 	}
@@ -599,9 +610,14 @@ func (m *Manager) refreshGuestGauge() {
 			m.d.Metrics.Guests.WithLabelValues(st, class).Set(0)
 		}
 	}
+	interrupted := 0
 	for _, g := range gs {
 		m.d.Metrics.Guests.WithLabelValues(g.State, g.Class).Inc()
+		if g.Interrupted != nil && g.State != StateRunning && m.d.Now().Sub(g.Interrupted.At) < InterruptedRecent {
+			interrupted++
+		}
 	}
+	m.d.Metrics.GuestsInterrupted.Set(float64(interrupted))
 }
 
 // GuestStates is the guest state enum of docs/interfaces/README.md, the
@@ -732,17 +748,43 @@ func (m *Manager) poolUsedPct() (float64, error) {
 	return max(pct, meta), nil
 }
 
-// Hello builds the reconciliation message for the stream.
+// Hello builds the reconciliation message for the stream. It carries the
+// host's boot and each guest a host restart interrupted (I-645); both come
+// from bbolt and the kernel, so a hostd or api restart loses neither.
 func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
 	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable()}
+	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
-		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure})
+		gst := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure}
+		if g.Interrupted != nil {
+			gst.InterruptedBootId, gst.InterruptedAt = g.Interrupted.BootID, g.Interrupted.At.Unix()
+		}
+		h.Guests = append(h.Guests, gst)
 	}
 	return h
+}
+
+// hostBootInfo is the host's boot id and its start in unix seconds; "" and 0 when
+// either is unknown.
+func (m *Manager) hostBootInfo() (string, int64) {
+	if m.d.BootID == nil {
+		return "", 0
+	}
+	id, err := m.d.BootID()
+	if err != nil {
+		return "", 0
+	}
+	var at int64
+	if m.d.BootTime != nil {
+		if t, err := m.d.BootTime(); err == nil {
+			at = t.Unix()
+		}
+	}
+	return id, at
 }
 
 // Heartbeat builds the periodic heartbeat.

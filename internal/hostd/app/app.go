@@ -264,6 +264,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 		SystemStopping: systemStopping(r),
+		BootID: hostinfo.BootID, BootTime: hostinfo.BootTime,
 	})
 	if err != nil {
 		return err
@@ -273,6 +274,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
+	// Deferred first, so it runs after Close: a guest exit the monitors
+	// saw while the host shut down comes before it (DECISIONS I-645).
+	defer mgr.RecordStop()
 	mgr.Run()
 	defer mgr.Close()
 

@@ -17,5 +17,5 @@
 {{end}}
 --
 repose. Open the dashboard: {{.Dashboard}}
-{{if .Unsubscribe}}You get these because an agent on your machine reported something. Stop these emails: {{.Unsubscribe}}
+{{if .Unsubscribe}}{{.Why}} Stop these emails: {{.Unsubscribe}}
 {{end}}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,6 +82,47 @@ func fixtures() map[string]notify.Message {
 		"plan_changed":           account("plan_changed", map[string]any{"from_plan": "solo", "to_plan": "pro", "effective_at": "2026-09-27T15:04:00Z"}),
 		"egress_stopped":         account("egress_stopped", map[string]any{"plan": "solo", "egress_gb": 1002.4, "limit_gb": 250, "until": "2026-10-27T14:00:00Z"}),
 		"disk_over_plan":         account("disk_over_plan", map[string]any{"plan": "solo", "held_gb": 112.4, "limit_gb": 100}),
+		"machines_restarted":     machinesRestarted(),
+	}
+}
+
+// machinesRestarted is the user notice of DECISIONS I-645, as the resume
+// tick writes it: no project, the whole text in the summary.
+func machinesRestarted() notify.Message {
+	return notify.Message{Kind: "machines_restarted", Summary: "The server running your machines restarted; it was back at 05:46 UTC.\n" +
+		"api: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.\n" +
+		"todo-app: running again; its last agent turn was interrupted.",
+		Email: "u@example.com", Dashboard: dash, Unsubscribe: unsubTo}
+}
+
+// TestNtfyGolden pins the ntfy push of the user notices: title, priority,
+// tags, click and body (DECISIONS I-645).
+func TestNtfyGolden(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = "Title: " + r.Header.Get("Title") + "\nPriority: " + r.Header.Get("Priority") + "\nTags: " + r.Header.Get("Tags") + "\nClick: " + r.Header.Get("Click") + "\n\n" + string(b) + "\n"
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	m := machinesRestarted()
+	m.NtfyURL = srv.URL + "/topic"
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), m); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "machines_restarted.ntfy")
+	if *updateGolden {
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run with -update)", err)
+	}
+	if string(want) != got {
+		t.Fatalf("ntfy differs from the golden file\n--- got ---\n%s", got)
 	}
 }
 

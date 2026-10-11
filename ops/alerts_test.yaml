@@ -669,6 +669,60 @@ tests:
               description: "1 report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
               runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
 
+  # --- ResumeStalled ------------------------------------------------------
+  - interval: 1m
+    name: ResumeStalled pages after 20 minutes of rows nobody decided
+    input_series:
+      - series: 'repose_api_guest_resumes_pending{job="api-grpc",instance="10.255.0.9:9104"}'
+        values: "2+0x30"
+      # The replica not running the tick exports 0.
+      - series: 'repose_api_guest_resumes_pending{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ResumeStalled
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ResumeStalled
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "2 machine(s) stopped by a host restart are still not started"
+              description: "`select p.slug, g.outcome, g.reason, g.created_at from guest_resumes g join projects p on p.id = g.project_id where g.decided_at is null` lists them; Loki `{component=\"api\"} | json | event=\"guest_resume\"` says what each tick did."
+              runbook: "docs/ops/RUNBOOK.md#resumestalled"
+
+  - interval: 1m
+    name: ResumeStalled stays quiet when the rows are decided in time
+    input_series:
+      - series: 'repose_api_guest_resumes_pending{job="api-grpc",instance="10.255.0.9:9104"}'
+        values: "3 3 2 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ResumeStalled
+        exp_alerts: []
+
+  # --- ResumeNotStarted ---------------------------------------------------
+  - interval: 1m
+    name: ResumeNotStarted warns after 30 minutes of marks per host
+    input_series:
+      - series: 'repose_host_guests_interrupted{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "1+0x40"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ResumeNotStarted
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ResumeNotStarted
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+            exp_annotations:
+              summary: "1 guest(s) on host-01 were interrupted by a host restart and have not run since"
+              description: "`hostd guests --json | jq '.[] | select(.interrupted_boot_id)'` on the host lists them; compare with guest_resumes for that boot."
+              runbook: "docs/ops/RUNBOOK.md#resumenotstarted"
+
   # --- MinerStopped -------------------------------------------------------
   - interval: 1m
     name: MinerStopped fires on the first automatic stop, summed over replicas

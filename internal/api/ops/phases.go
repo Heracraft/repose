@@ -897,9 +897,9 @@ const pendingRevisionSQL = `select id from config_revisions
 	order by created_at desc limit 1`
 
 // PendingRevision reports whether a start of p would apply a revision.
-func PendingRevision(ctx context.Context, pool *db.Pool, p *store.Project) (bool, error) {
+func PendingRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
 	var rid uuid.UUID
-	err := pool.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
+	err := q.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return false, nil

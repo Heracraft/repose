@@ -22,7 +22,8 @@
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
 #                  (idempotent), sshd on wg0 with a CA certificate and the
-#                  PAM audit hook
+#                  PAM audit hook, and a host restart (graceful and a
+#                  crash) marking the guests that were running (I-645)
 { pkgs, nixpkgs, disko, hostModules, hostdev }:
 let
   lib = pkgs.lib;
@@ -1041,6 +1042,8 @@ in
       };
     };
     testScript = ''
+      import json
+
       api.start()
       host.start()
       api.wait_for_unit("hostdev.service")
@@ -1346,6 +1349,79 @@ in
           # record the next boot's resume reads (I-645).
           host.wait_until_succeeds(f"journalctl -u hostd -b 0 -o cat | grep {gid} | grep -F '\"prev\":\"running\"'", timeout=60)
           print(host.succeed(f"journalctl -u hostd -b 0 -o cat | grep {gid}"))
+      with subtest("a host restart marks the guests that were running, and Hello carries it (I-645)"):
+          # A guest bbolt says is running, seeded with hostd stopped (no
+          # guest boots inside a host VM test). A hostd restart in the same
+          # boot settles it with no mark; a graceful power-off and a crash
+          # each mark it with the new boot id, which the next Hello takes to
+          # hostdev. The host has no vg-guests, so reconcile settles the
+          # guest as `error` (volume missing); the mark does not depend on it.
+          gid = "0192f0a1-1111-7000-8000-000000000001"
+          guest = (
+              '{"guest_id":"' + gid + '","project_id":"0192f0a1-0000-7000-8000-00000000000a","class":"small",'
+              '"volume_bytes":0,"system_closure":"","state":"running","ip":"10.64.4.2","mac":"52:54:00:00:00:01",'
+              '"tap":"tap-0000000a","vsock_cid":1000,"ip_index":0,'
+              '"created_at":"2026-10-10T00:00:00Z","updated_at":"2026-10-10T00:00:00Z"}'
+          )
+
+          def seed():
+              host.succeed("systemctl stop hostd.service")
+              host.succeed("hostd state export > /root/state.json")
+              host.succeed(f"jq --argjson g '{guest}' '.guests = [$g]' /root/state.json > /root/seeded.json")
+              host.succeed("hostd state import /root/seeded.json")
+
+          def guests():
+              host.wait_for_unit("hostd.service")
+              host.wait_until_succeeds("hostd guests --json >/dev/null", timeout=120)
+              out = host.succeed("hostd guests --json")
+              print(out)
+              return [g for g in json.loads(out) if g["guest_id"] == gid][0]
+
+          def boot_id():
+              return host.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+
+          def hello_reached(boot):
+              api.wait_until_succeeds(
+                  "jq -e --arg b " + boot + " '.host.last_hello.host_boot_id == $b and "
+                  "([.host.last_hello.guests[] | select(.guest_id == \"" + gid + "\" and .interrupted_boot_id == $b)] | length) == 1' "
+                  "${hostdevDir}/state.json",
+                  timeout=120,
+              )
+
+          host.succeed("journalctl -u hostd --no-pager -o cat | grep '\"event\":\"host_boot\"' | jq -e '.boot_id' >/dev/null")
+          seed()
+          host.succeed("systemctl start hostd.service")
+          g = guests()
+          assert not g.get("interrupted_boot_id"), f"a hostd restart in the same boot marked the guest: {g}"
+          assert g["state"] in ("stopped", "error"), g
+
+          # A graceful power-off and boot, as Azure's heal was on 2026-10-10.
+          seed()
+          before = boot_id()
+          host.shutdown()
+          host.start()
+          after = boot_id()
+          assert after != before
+          g = guests()
+          assert g.get("interrupted_boot_id") == after, f"graceful restart: {g}"
+          host.succeed("journalctl -b -u hostd --no-pager -o cat | grep '\"event\":\"guest_interrupted\"' | grep -c " + gid + " >/dev/null")
+          host.succeed("journalctl -b -u hostd --no-pager -o cat | grep '\"event\":\"host_boot\"' | jq -e '.prev_boot_id == \"" + before + "\"' >/dev/null")
+          hello_reached(after)
+          # A hostd restart now keeps the mark and marks nothing new.
+          host.succeed("systemctl restart hostd.service")
+          g = guests()
+          assert g.get("interrupted_boot_id") == after, f"after a hostd restart: {g}"
+
+          # A crash: the VM is killed with no shutdown at all.
+          seed()
+          before = boot_id()
+          host.crash()
+          host.start()
+          after = boot_id()
+          assert after != before
+          g = guests()
+          assert g.get("interrupted_boot_id") == after, f"crash: {g}"
+          hello_reached(after)
     '';
   };
 }

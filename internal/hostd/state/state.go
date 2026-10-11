@@ -27,6 +27,14 @@ var (
 	bucketCommands = []byte("commands")
 	keySchema      = []byte("schema_version")
 	keyDraining    = []byte("draining")
+	// keyHostBootID is the host boot id the last Reconcile ran under
+	// (DECISIONS I-645): a different one at the next start means the host
+	// restarted, and guests found running with no hypervisor are marked.
+	keyHostBootID = []byte("host_boot_id")
+	// keyHostdStoppedAt is when hostd last stopped gracefully, read and
+	// cleared by the next Reconcile: a guest its monitor saw exit just
+	// before is one a host shutdown stopped (DECISIONS I-645).
+	keyHostdStoppedAt = []byte("hostd_stopped_at")
 )
 
 // ErrNotFound is returned for a missing guest or command.
@@ -58,24 +66,30 @@ type Guest struct {
 	LastGoodClosure string `json:"last_good_closure,omitempty"`
 	// BootFallback is the last boot that fell back to LastGoodClosure,
 	// kept so a command resent with the same id answers the same way.
-	BootFallback *BootFallback     `json:"boot_fallback,omitempty"`
-	State        string            `json:"state"`
-	Reason       string            `json:"reason,omitempty"`
-	IP           string            `json:"ip"`
-	MAC          string            `json:"mac"`
-	Tap          string            `json:"tap"`
-	CID          uint32            `json:"vsock_cid"`
-	IPIndex      uint32            `json:"ip_index"`
-	Env          map[string]string `json:"env,omitempty"`
-	Principals   []string          `json:"principals,omitempty"`
-	SSHCAPub     string            `json:"ssh_ca_pub,omitempty"`
-	HooksConfig  []byte            `json:"hooks_config,omitempty"`
-	ProjectJSON  []byte            `json:"project_json,omitempty"`
-	Kernel       string            `json:"kernel,omitempty"`
-	Initrd       string            `json:"initrd,omitempty"`
-	BootID       string            `json:"boot_id,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	BootFallback *BootFallback `json:"boot_fallback,omitempty"`
+	// Interrupted is set when a host restart took the guest down while it
+	// ran: hostd's first start in the new boot found it running or
+	// starting with no hypervisor (DECISIONS I-645). It is cleared when
+	// the guest next reaches running, and by a stop, a destroy or a
+	// restore. Hello carries it, so the api restarts the guest once.
+	Interrupted *Interrupted      `json:"interrupted,omitempty"`
+	State       string            `json:"state"`
+	Reason      string            `json:"reason,omitempty"`
+	IP          string            `json:"ip"`
+	MAC         string            `json:"mac"`
+	Tap         string            `json:"tap"`
+	CID         uint32            `json:"vsock_cid"`
+	IPIndex     uint32            `json:"ip_index"`
+	Env         map[string]string `json:"env,omitempty"`
+	Principals  []string          `json:"principals,omitempty"`
+	SSHCAPub    string            `json:"ssh_ca_pub,omitempty"`
+	HooksConfig []byte            `json:"hooks_config,omitempty"`
+	ProjectJSON []byte            `json:"project_json,omitempty"`
+	Kernel      string            `json:"kernel,omitempty"`
+	Initrd      string            `json:"initrd,omitempty"`
+	BootID      string            `json:"boot_id,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // BootFallback records a boot of Failed that never reached Ready and was
@@ -87,6 +101,15 @@ type BootFallback struct {
 	Code      string    `json:"code"`
 	Message   string    `json:"message"`
 	At        time.Time `json:"at"`
+}
+
+// Interrupted records a guest a host restart took down (DECISIONS I-645).
+// BootID is the boot whose first reconcile found it; PrevState is the
+// state it had then (running or starting).
+type Interrupted struct {
+	BootID    string    `json:"boot_id"`
+	At        time.Time `json:"at"`
+	PrevState string    `json:"prev_state"`
 }
 
 // MaxPastClosures bounds Guest.PastClosures.
@@ -426,6 +449,52 @@ func (d *DB) SetDraining(on bool) error {
 			v = "1"
 		}
 		return tx.Bucket(bucketMeta).Put(keyDraining, []byte(v))
+	})
+}
+
+// HostBootID is the boot id the last Reconcile recorded, "" before the
+// first (DECISIONS I-645).
+func (d *DB) HostBootID() (string, error) {
+	var v string
+	err := d.db.View(func(tx *bolt.Tx) error {
+		v = string(tx.Bucket(bucketMeta).Get(keyHostBootID))
+		return nil
+	})
+	return v, err
+}
+
+// SetHostBootID records the boot id Reconcile ran under.
+func (d *DB) SetHostBootID(id string) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketMeta).Put(keyHostBootID, []byte(id))
+	})
+}
+
+// HostdStoppedAt is when hostd last stopped gracefully, zero when it has
+// not since the last Reconcile cleared it.
+func (d *DB) HostdStoppedAt() (time.Time, error) {
+	var t time.Time
+	err := d.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bucketMeta).Get(keyHostdStoppedAt)
+		if len(v) == 0 {
+			return nil
+		}
+		return t.UnmarshalText(v)
+	})
+	return t, err
+}
+
+// SetHostdStoppedAt records when hostd stopped; the zero time clears it.
+func (d *DB) SetHostdStoppedAt(t time.Time) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		if t.IsZero() {
+			return tx.Bucket(bucketMeta).Delete(keyHostdStoppedAt)
+		}
+		v, err := t.UTC().MarshalText()
+		if err != nil {
+			return err
+		}
+		return tx.Bucket(bucketMeta).Put(keyHostdStoppedAt, v)
 	})
 }
 

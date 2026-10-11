@@ -16,7 +16,9 @@ closes. By creating an account you agree to them.
 Each project gets one environment: a virtual machine of the size class you
 choose, a disk of the size you choose, a network connection to the
 internet, and the tools and agents we ship. Environments run until you
-stop them. We build the environment's configuration from the description
+stop them or the server they run on restarts; after a restart we start
+again, within six hours, those that were running and that you did not
+stop meanwhile. We build the environment's configuration from the description
 you give us and apply it in place; when a change needs a reboot we ask
 first. We snapshot every environment nightly and when you stop it, and you
 can restore any snapshot we still hold.
@@ -134,8 +136,10 @@ all data after thirty days.
 ## Availability and liability
 
 We aim for the service to be available and we tell you when it is not, but
-we make no guarantee of uptime, and an agent that was running when a
-server failed may need to be started again from a snapshot. To the extent
+we make no guarantee of uptime. A server restart ends what was running in
+the environments on it, including an agent's turn, and keeps their disks.
+If a server's disk is lost, an environment comes back from its latest
+snapshot, which can be up to a day old. To the extent
 the law allows, our liability to you is limited to the fees you paid us in
 the three months before the claim, and we are not liable for indirect or
 consequential loss, including work an agent did not finish. Nothing here

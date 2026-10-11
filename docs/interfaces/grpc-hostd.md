@@ -73,6 +73,27 @@ volumes (inactive after a reboot, its VG missing, or its health `failed` or
 api older than the field also places nothing there. Absent from a hostd
 older than I-644, which reads as false.
 
+Resume after a host restart (DECISIONS I-645), all additive:
+
+- `Hello.host_boot_id` (field 7) is the host's current
+  `/proc/sys/kernel/random/boot_id`, and `Hello.host_boot_at` (field 8)
+  when that boot began, unix seconds (`btime` of `/proc/stat`).
+- `GuestStatus.interrupted_boot_id` (field 6) and `interrupted_at` (field
+  7, unix seconds) mark a guest that hostd's first start in a new boot
+  found `running` or `starting` with no `guest@` unit: the host restarted
+  under it. hostd sends the guest as `stopped` (or `error`) with the mark
+  until the guest next reaches `running`, or a `StopGuest`, `DestroyGuest`
+  or `Restore` clears it, and drops a mark nothing cleared after 7 days.
+  The mark lives in bbolt (host-conventions.md), so every Hello after a
+  hostd or api restart carries it again.
+- The api writes one resume row per (project, boot id) from these, and
+  only for a guest whose project is placed on that host (I-447). If it
+  cannot write the row it refuses the Hello: the stream closes with
+  `UNAVAILABLE` and hostd sends Hello again when it reconnects.
+- A hostd older than I-645 sends none of the three; the api then starts
+  nothing on its own, which is the behaviour before. An api older than
+  I-645 ignores them.
+
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
 places nothing on a draining host), `pool_bytes` (field 6, I-586) and

@@ -3,6 +3,7 @@ package hostmgr_test
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -12,7 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	"github.com/heracraft/repose/internal/api/metrics"
@@ -47,7 +50,12 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{pool: pool, ca: ca}
 	h.srv = hostmgr.New(pool, ca, "replica-1", metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.srv.SetHandlers(hostmgr.Handlers{
-		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) { h.mu.Lock(); h.hello++; h.mu.Unlock() },
+		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
+			h.mu.Lock()
+			h.hello++
+			h.mu.Unlock()
+			return nil
+		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
 			h.mu.Lock()
 			h.result = append(h.result, r)
@@ -226,4 +234,68 @@ func TestRegisterSessionSendSweep(t *testing.T) {
 		defer h.mu.Unlock()
 		return h.hello == 2
 	})
+}
+
+// A Hello the api could not record (the resume rows, DECISIONS I-645) is
+// refused: the stream closes, and the host sends Hello again when it
+// reconnects, so what it carried is not lost.
+func TestHelloRefusedClosesTheStream(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	token, err := hostmgr.MintJoinToken(ctx, h.pool, "host-01", "", "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := hostdv1.NewHostServiceClient(h.dial(t, nil)).Register(ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: &hostdv1.HostInfo{Hostname: "host-01"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostID := uuid.MustParse(resp.HostId)
+	cert, err := tls.X509KeyPair(resp.ClientCert, resp.ClientKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The api last heard from the host 20 minutes ago, before an outage.
+	before := time.Now().Add(-20 * time.Minute).UTC().Truncate(time.Second)
+	if _, err := h.pool.Exec(ctx, "update hosts set last_heartbeat_at = $2 where id = $1", hostID, before); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	refuse, hellos := true, 0
+	var lastHeard []*time.Time
+	h.srv.SetHandlers(hostmgr.Handlers{Hello: func(ctx context.Context, _ uuid.UUID, _ *hostdv1.Hello) error {
+		mu.Lock()
+		defer mu.Unlock()
+		hellos++
+		lastHeard = append(lastHeard, hostmgr.LastHeardBefore(ctx))
+		if refuse {
+			return errors.New("insert failed")
+		}
+		return nil
+	}})
+	fake := fakehostd.New(fakehostd.Options{HostID: resp.HostId, Heartbeat: 50 * time.Millisecond, SampleInterval: time.Hour})
+	err = fake.Run(ctx, h.dial(t, &cert))
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("a refused Hello ended the stream with %v, want Unavailable", err)
+	}
+	mu.Lock()
+	refuse = false
+	mu.Unlock()
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() { _ = fake.Run(sctx, h.dial(t, &cert)) }()
+	waitFor(t, "connected after the second Hello", func() bool { return h.srv.Connected(hostID) })
+	mu.Lock()
+	defer mu.Unlock()
+	if hellos != 2 {
+		t.Fatalf("%d Hellos, want 2", hellos)
+	}
+	// The handler sees when the api last heard from the host before the
+	// outage, for both Hellos: the refused one does not stand in for it,
+	// or a stop the owner asked for during the outage would not count.
+	for i, lh := range lastHeard {
+		if lh == nil || !lh.Equal(before) {
+			t.Fatalf("last heard before Hello %d: %v, want %v", i+1, lh, before)
+		}
+	}
 }

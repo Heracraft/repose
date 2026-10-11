@@ -334,6 +334,36 @@ groups:
           description: "{{ $value }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
           runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
 
+      - alert: ResumeStalled
+        # Machines a host restart stopped that the api has neither started
+        # nor closed for 20 minutes (DECISIONS I-645): the tick is not
+        # running, REPOSE_RESUME=off was left on, the host's pool is down,
+        # or starts keep failing on capacity. Their owners are waiting. Only
+        # the replica running the tick sets the gauge; max covers both.
+        expr: max(repose_api_guest_resumes_pending) > 0
+        for: 20m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $value }} machine(s) stopped by a host restart are still not started"
+          description: "`select p.slug, g.outcome, g.reason, g.created_at from guest_resumes g join projects p on p.id = g.project_id where g.decided_at is null` lists them; Loki `{component=\"api\"} | json | event=\"guest_resume\"` says what each tick did."
+          runbook: "docs/ops/RUNBOOK.md#resumestalled"
+
+      - alert: ResumeNotStarted
+        # hostd has guests a host restart interrupted, under 6 h old and not
+        # running, for 30 minutes (DECISIONS I-645). This catches rows the
+        # api never wrote (an api down since the reboot, an old api). Not a
+        # page: a machine its owner stopped meanwhile, or one the rules
+        # refused, keeps its mark until the 6 h pass.
+        expr: max by (host_id) (repose_host_guests_interrupted) > 0
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} guest(s) on {{ $labels.host_id }} were interrupted by a host restart and have not run since"
+          description: "`hostd guests --json | jq '.[] | select(.interrupted_boot_id)'` on the host lists them; compare with guest_resumes for that boot."
+          runbook: "docs/ops/RUNBOOK.md#resumenotstarted"
+
   # Anti-abuse (DECISIONS I-238..I-240). Nothing here pages: the guest is
   # already blocked or stopped when these fire, and what remains is a
   # human decision about the account (`repose-admin users suspend`).

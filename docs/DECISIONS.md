@@ -18680,3 +18680,107 @@ handoff).
   root and logs in once on the serial console; the host and the edge get
   different passwords. Nothing secret is in the repo or the store. RUNBOOK
   "Console access (host and edge)".
+
+**I-645. Running machines start again after a host reboot (host-resume,
+2026-10-11).** Amends I-147 (for the resume only). *Made during
+implementation* (L6 of the host-restart plan after the 2026-10-10
+host-01 reboot left guests down for 9 hours; the owner said yes to D4,
+D5 and D6 as recommended).
+- hostd records the boot id each Reconcile runs under (bbolt `meta`
+  `host_boot_id`). When the next start finds a different one, every
+  guest bbolt says was `running` or `starting` with no `guest@` unit is
+  marked `Interrupted{boot_id, at, prev_state}` before its state is
+  settled, and the boot id is written after the guests, so a Reconcile
+  cut short marks the same guests again. The first start that records a
+  boot id marks nothing; a hostd restart in the same boot marks nothing.
+  `creating`, `restoring` and `stopping` guests are not marked: their
+  op resends its command, or their owner was stopping them.
+- The mark is cleared when the guest next reaches `running` (setState,
+  which covers reconcile's found-running path), and by a stop (also of a
+  guest already stopped), a destroy and a restore; marks nothing cleared
+  are dropped after 7 days. `Hello` carries `host_boot_id` (7),
+  `host_boot_at` (8) and per guest `interrupted_boot_id` (6) and
+  `interrupted_at` (7), all built from bbolt, so neither a hostd nor an
+  api restart loses one. Gauge `repose_host_guests_interrupted`: marks
+  under 6 h whose guest is not running. Logs `host_boot` and
+  `guest_interrupted`, ids only.
+- The api writes a `guest_resumes` row per (project, boot id) from the
+  Hello (0022), only for a guest placed on that host (I-447), with the
+  host's last heartbeat before the Hello as `host_lost_at` (read in the
+  statement that overwrites it). A failed insert refuses the Hello: the
+  stream closes with UNAVAILABLE, `last_heartbeat_at` is put back, so the
+  resent Hello reads the same `host_lost_at`, and hostd sends it again.
+- A tick (60 s plus kicks, on the replica holding `LockResume`, in
+  api-grpc) decides each open row in its own transaction with the start
+  it enqueues: a failure anywhere rolls both back and the row is decided
+  again. Closed: `started`; `already_running` (a start of the owner's
+  that finished after the row was written, also one asked for before the
+  host went down); `user_stopped` (any stop, destroy, restore or resize
+  created after `host_lost_at`, by the owner or the platform, whatever
+  its result, or the newest op is a destroy); `destroyed`;
+  `temp_expired`; `window_passed` (6 h after `interrupted_at`); `refused`
+  (lifecycle.Start refused: suspended, plan memory, abuse hold, restore
+  unfinished, a retired or lost host); `failed` (the start failed, after
+  one more try when the machine did not answer in time; only such
+  timeouts use up that try, counted in `guest_resumes.timeouts`, so a
+  start that first found the host full keeps it). Left pending
+  and not counted: an open op, an unreachable host or
+  `hosts.pool_unavailable` (I-644, read where the column exists), a start
+  that failed on capacity or `volume_unavailable`, `REPOSE_RESUME=off`,
+  and past the 3 starts per host per tick. A machine counts as down from
+  hostd's word, whatever `projects.state` says, and a project left
+  `running` by an op that was open at the Hello takes the Hello's state
+  when that op ends, unless its owner started it since.
+- The start is `lifecycle.Start`, extracted from the HTTP route, which
+  both use: it takes the project's row lock first, and `Engine.Enqueue`
+  now takes the same lock before counting open ops, so a resume and a
+  user's start or rm can never both enqueue (`TestResumeRacesHTTPRm`
+  fails without that lock). The billing gate reads on the same
+  transaction (`Gate.CheckIn`), so a start holds one pool connection,
+  not two. The resume lets `past_due` through
+  (billing.md day 0: machines keep running) and boots what was running
+  with `PlanStart(false)`: a built revision waits for the next start,
+  because terms.md says a reboot for a change is asked for first (this
+  amends I-147 for the resume only).
+- One `machines_restarted` notice per (user, host, boot), when all the
+  user's rows are closed or 10 minutes after the first, listing open
+  ones as waiting; never a second (`resume_notices`). It names no
+  project, follows `notify_email` (with the unsubscribe link) and the
+  ntfy URL, and lists only machines started or not started, with the
+  refusal sentence and `repose start <slug>`; a herdr machine's line
+  names no agent turn. Each machine gets a `host_restarted` project
+  event that notifies nobody.
+- `REPOSE_RESUME=off` on api-grpc holds every resume (rows stay
+  pending); it takes the app's restart.
+- `repose start`, `ssh` and `code` on a project whose host is
+  `unreachable` say the machine starts again by itself when the server
+  is back; the restore advice stays for `retired` and `lost`.
+- terms.md: "Environments run until you stop them" became true again
+  with the restart clause, and the availability paragraph says what a
+  restart ends and keeps (D6, owner approved).
+- Alerts: `ResumeStalled` (page, `repose_api_guest_resumes_pending > 0`
+  for 20 m) and `ResumeNotStarted` (warn, the hostd gauge above 0 for
+  30 m, which catches rows never written; not a page, since
+  `user_stopped` and `refused` leave the mark for up to 6 h).
+- A graceful host shutdown stops the guest units while hostd still
+  runs, and hostd's monitor records each exit as `error`. The shutdown
+  flag that keeps such a guest `running` is L5 (I-650). Until it lands,
+  and as a fallback after: hostd records `hostd_stopped_at` in bbolt
+  when it stops gracefully, and the first Reconcile of a new boot also
+  marks an `error` guest whose reason is the monitor's ("hypervisor
+  exited", "virtiofsd exited") and which went to error at most 2 min
+  before that stop, with `prev_state` running. The key is cleared by
+  every Reconcile, so a hostd restart in the same boot leaves nothing
+  for the next. A guest that crashed earlier, or any guest in error
+  after a host crash (no graceful stop recorded), is not marked.
+  Queue host-resume with or after L5: the L8 reboot should show a
+  `guest_interrupted` for every running guest either way.
+- `TestReconcileAfterHostReboot*`,
+  `TestReconcileAfterGracefulShutdownMarksGuestTheMonitorSawExit`,
+  `TestReconcileAfterRebootLeavesEarlierCrashUnmarked`,
+  `TestSetStateRunningClearsMark`,
+  `TestStopDestroyRestoreClearMark`, `TestHelloCarriesInterrupted`,
+  `TestOldMarkPruned`, the `internal/api/resume` tests,
+  `TestStartUnreachableText`, `TestHelloRefusedClosesTheStream`, the
+  machines_restarted html, txt and ntfy goldens, and the host-services
+  VM subtest.

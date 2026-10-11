@@ -19,6 +19,7 @@ import (
 
 	"github.com/heracraft/repose/internal/hostd/app"
 	"github.com/heracraft/repose/internal/hostd/control"
+	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/register"
@@ -35,7 +36,7 @@ commands:
   run            run the daemon (default)
   register       register with the join token and exit
   status         daemon status
-  guests         list guests with unit states
+  guests         list guests with unit states (--json for every field)
   snapshot-all   snapshot every running guest locally (--reason scheduled|manual)
   snapshot       alias: snapshot --all --reason <reason>
   drain          stop accepting placements
@@ -185,9 +186,20 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 		}
 		return printJSON(s)
 	case "guests":
+		gfs := flag.NewFlagSet(cmd, flag.ExitOnError)
+		asJSON := gfs.Bool("json", false, "print the guests as JSON, with each one's interrupted mark (DECISIONS I-645)")
+		if err := gfs.Parse(args); err != nil {
+			return 2
+		}
 		gs, err := cc.Guests(ctx)
 		if err != nil {
 			return fail(err)
+		}
+		if *asJSON {
+			if gs == nil {
+				gs = []guest.Status{}
+			}
+			return printJSON(gs)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 		_, _ = fmt.Fprintln(tw, "GUEST\tPROJECT\tCLASS\tSTATE\tIP\tUNIT\tVIRTIOFSD\tSTORE\tGUESTD\tREASON")

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/storeview"
@@ -19,11 +20,21 @@ import (
 // and leftovers of stopped guests are torn down. Units for guests bbolt
 // does not know are logged as orphans and adopted from guest.json when
 // one exists.
+//
+// When the host's boot id differs from the one the last Reconcile
+// recorded, the host restarted in between: a guest bbolt says was running
+// or starting, with no unit now, is marked Interrupted, which Hello
+// carries so the api starts it again (DECISIONS I-645). The boot id is
+// written after the guests, so a Reconcile cut short marks the same
+// guests when it runs again; the first Reconcile that records one marks
+// nothing.
 func (m *Manager) Reconcile(ctx context.Context) error {
 	units, err := m.d.Systemd.ListUnits(ctx, "guest@*")
 	if err != nil {
 		return err
 	}
+	bootID, rebooted := m.hostBoot()
+	stoppedAt, _ := m.d.State.HostdStoppedAt() // unreadable reads as no graceful stop: nothing extra is marked
 	active := map[string]bool{}
 	for _, u := range units {
 		id := strings.TrimSuffix(strings.TrimPrefix(u, "guest@"), ".service")
@@ -44,6 +55,9 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	known := map[string]bool{}
 	for _, g := range gs {
 		known[g.GuestID] = true
+		if rebooted && !active[g.GuestID] {
+			m.markInterrupted(g, bootID, stoppedAt)
+		}
 		m.reconcileGuest(ctx, g, active[g.GuestID], poolUp)
 	}
 	for id := range active {
@@ -58,6 +72,11 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			}
 		}
 	}
+	m.recordBoot(bootID)
+	if !stoppedAt.IsZero() {
+		_ = m.d.State.SetHostdStoppedAt(time.Time{}) // read once; a failed clear only widens the next reboot's look back
+	}
+	m.pruneInterrupted()
 	m.flagWholeStore(ctx)
 	// A down pool has no snapshot volumes to remove, and removing would
 	// only fail; the next reconcile with the pool up sweeps them.
@@ -67,6 +86,131 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	m.SweepAuthShares(ctx)
 	m.refreshGuestGauge()
 	return nil
+}
+
+// InterruptedRecent is how long after a host restart an interrupted guest
+// counts in repose_host_guests_interrupted: the api's window for starting
+// it again (DECISIONS I-645).
+const InterruptedRecent = 6 * time.Hour
+
+// InterruptedKeep is how long a mark nothing cleared is kept.
+const InterruptedKeep = 7 * 24 * time.Hour
+
+// hostBoot reads the current boot id and whether it differs from the one
+// recorded: "" and false when either is unknown or none was recorded.
+func (m *Manager) hostBoot() (string, bool) {
+	if m.d.BootID == nil {
+		return "", false
+	}
+	cur, err := m.d.BootID()
+	if err != nil {
+		m.d.Log.Warn("host boot id unreadable; no guest is marked interrupted", "event", "host_boot", "err", err.Error())
+		return "", false
+	}
+	prev, err := m.d.State.HostBootID()
+	if err != nil {
+		m.d.Log.Warn("recorded host boot id unreadable; no guest is marked interrupted", "event", "host_boot", "err", err.Error())
+		return cur, false
+	}
+	return cur, prev != "" && prev != cur
+}
+
+// markInterrupted records that a host restart took g down, before
+// reconcileGuest settles its state, so both are written together. Only a
+// guest that was running or starting is marked: one creating or restoring
+// has an open op whose command the api resends, and one stopping was
+// being stopped by its owner. A guest in `error` is marked too when
+// hostd's monitor saw it exit at most ShutdownRace before hostd itself
+// stopped gracefully (stoppedAt): the host's shutdown stopped its unit
+// while hostd still ran. That guest was running; the L5 shutdown flag
+// (I-650) keeps such a guest `running` instead, and this is the fallback.
+func (m *Manager) markInterrupted(g *state.Guest, bootID string, stoppedAt time.Time) {
+	prev := g.State
+	switch {
+	case g.State == StateRunning, g.State == StateStarting:
+	case g.State == StateError && exitedAtShutdown(g, stoppedAt):
+		prev = StateRunning
+	default:
+		return
+	}
+	if g.Interrupted != nil && g.Interrupted.BootID == bootID {
+		return
+	}
+	g.Interrupted = &state.Interrupted{BootID: bootID, At: m.d.Now().UTC(), PrevState: prev}
+	m.log(g).Warn("guest interrupted by a host restart", "event", "guest_interrupted", "boot_id", bootID, "prev", prev)
+	if g.State == StateError {
+		// reconcileGuest writes nothing for a guest in error.
+		if err := m.d.State.PutGuest(g); err != nil {
+			m.log(g).Warn("interrupted mark not written", "event", "guest_interrupted", "err", err.Error())
+			return
+		}
+		m.writeGuestJSON(g)
+	}
+}
+
+// ShutdownRace is how long before hostd's graceful stop a guest's exit
+// counts as the host shutdown's: guest@ units get 90 s to stop.
+const ShutdownRace = 2 * time.Minute
+
+// The reasons unexpectedExit (create.go) records.
+const (
+	ReasonHypervisorExited = "hypervisor exited"
+	ReasonVirtiofsdExited  = "virtiofsd exited"
+)
+
+// exitedAtShutdown reports whether g went to error because hostd's
+// monitor saw its hypervisor or virtiofsd exit (unexpectedExit's
+// reasons) within ShutdownRace before hostd stopped at stoppedAt.
+func exitedAtShutdown(g *state.Guest, stoppedAt time.Time) bool {
+	if stoppedAt.IsZero() || !(strings.HasPrefix(g.Reason, ReasonHypervisorExited) || g.Reason == ReasonVirtiofsdExited) {
+		return false
+	}
+	return !g.UpdatedAt.Before(stoppedAt.Add(-ShutdownRace)) && !g.UpdatedAt.After(stoppedAt)
+}
+
+// RecordStop records that hostd is stopping gracefully, after Close, so
+// the next Reconcile can tell a guest exit during a host shutdown from a
+// crash before it.
+func (m *Manager) RecordStop() {
+	if err := m.d.State.SetHostdStoppedAt(time.Now().UTC()); err != nil {
+		m.d.Log.Warn("hostd stop time not recorded", "event", "host_boot", "err", err.Error())
+	}
+}
+
+// recordBoot writes the boot id this Reconcile ran under, once per boot.
+func (m *Manager) recordBoot(bootID string) {
+	if bootID == "" {
+		return
+	}
+	prev, err := m.d.State.HostBootID()
+	if err != nil || prev == bootID {
+		return
+	}
+	if err := m.d.State.SetHostBootID(bootID); err != nil {
+		m.d.Log.Warn("host boot id not recorded", "event", "host_boot", "err", err.Error())
+		return
+	}
+	m.d.Log.Info("host boot recorded", "event", "host_boot", "boot_id", bootID, "prev_boot_id", prev)
+}
+
+// pruneInterrupted drops marks older than InterruptedKeep that nothing
+// cleared: the api's window has long passed.
+func (m *Manager) pruneInterrupted() {
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return
+	}
+	for _, g := range gs {
+		if g.Interrupted == nil || m.d.Now().Sub(g.Interrupted.At) < InterruptedKeep {
+			continue
+		}
+		g.Interrupted = nil
+		if err := m.d.State.PutGuest(g); err != nil {
+			m.log(g).Warn("old interrupted mark not pruned", "event", "guest_interrupted", "err", err.Error())
+			continue
+		}
+		m.writeGuestJSON(g)
+	}
 }
 
 // flagWholeStore logs every running guest whose virtiofsd still shares the

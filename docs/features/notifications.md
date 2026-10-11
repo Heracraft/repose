@@ -62,7 +62,13 @@ Events (see agents.md for how each agent produces them):
   I-617, never a stop),
   `temp_expiring` and `temp_destroyed` (DECISIONS I-347: a temporary
   machine an hour before its end, titled `<project>: destroyed in an
-  hour`, and its end, `<project>: temporary machine destroyed`), and
+  hour`, and its end, `<project>: temporary machine destroyed`),
+  `machines_restarted` (DECISIONS I-645: one per user per host restart,
+  naming no project, titled `The server running your machines
+  restarted`, with a line per machine started again or not and why; it
+  follows `notify_email` and the ntfy URL like any machine notification,
+  and is never sent twice for one restart; the per-machine
+  `host_restarted` project event notifies nobody), and
   the agent-sent `agent_message` and `agent_question` (DECISIONS I-244,
   below). Each carries the agent name (agent kinds only), the
   tmux window or herdr agent key (I-504), a summary of at most 1 KB, and

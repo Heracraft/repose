@@ -14,6 +14,7 @@ import (
 
 	"github.com/heracraft/repose/internal/api/abuse"
 	"github.com/heracraft/repose/internal/api/idle"
+	"github.com/heracraft/repose/internal/api/lifecycle"
 	"github.com/heracraft/repose/internal/api/meter"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/scheduler"
@@ -594,114 +595,32 @@ func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	u := userFrom(r.Context())
-	if err := s.gate(r, u, billing.Request{Class: p.Class, Project: p.ID}); err != nil {
-		return err
-	}
-	if err := s.abuseGate(r.Context(), p); err != nil {
-		return err
-	}
-	// A project in error, or one running whose guestd stopped answering,
-	// is restarted rather than started: stop the unit, boot it again on its
-	// newest built revision (I-157). `repose start` is the user's recovery.
-	restart := false
-	switch p.State {
-	case "running":
-		dead, err := s.guestdDead(r.Context(), p)
-		if err != nil {
-			return err
-		}
-		if !dead {
-			return errf("conflict", "%s is already %s", p.Slug, p.State)
-		}
-		restart = true
-	case "starting":
-		return errf("conflict", "%s is already %s", p.Slug, p.State)
-	case "error":
-		restart = true
-	case "stopped":
-	default:
-		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
-	}
-	// A restore that failed in its build or restore phase leaves the
-	// project with no usable volume: the old one was destroyed first, the
-	// new one is incomplete (one that failed in destroy_guest left the old
-	// guest as it was and is not refused). A start would boot an empty or half-written volume,
-	// so the way back is another restore (DECISIONS I-461).
-	if p.State == "error" {
-		unfinished, err := ops.UnfinishedRestore(r.Context(), s.d.Pool, p.ID)
-		if err != nil {
-			return err
-		}
-		if unfinished {
-			return withDetail(errf("conflict", "%s has no usable volume because the restore into it did not finish; restore a snapshot into it again, or remove it with `repose rm %s`", p.Slug, p.Slug), map[string]any{"reason": "restore_unfinished"})
-		}
-	}
-	if p.GuestID == nil {
-		// A create that failed before CreateGuest (no host with capacity,
-		// a failed build) left the project in error with no guest; a
-		// restart has nothing to stop or boot, and nothing else could
-		// create it, so `repose start`, `repose run` and the dashboard
-		// went on answering "create it first" (dogfood 2026-10-01,
-		// I-406). The create runs again; the placement is redone when
-		// the host it had cannot take it.
-		replace := false
-		if p.HostID != nil {
-			h, err := store.GetHost(r.Context(), s.d.Pool, *p.HostID)
-			replace = err != nil || h.State != "ready" || h.Draining
-		}
-		pid := p.ID
-		var id uuid.UUID
-		err := db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
-			var err error
-			if id, err = s.d.Engine.Enqueue(r.Context(), tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}, false); err != nil {
-				return err
-			}
-			// "creating", as a fresh create reads, so every list stops
-			// showing the old error the moment the create is accepted.
-			_, err = tx.Exec(r.Context(), "update projects set state = 'creating', host_id = case when $2 then null else host_id end where id = $1 and guest_id is null", pid, replace)
-			return err
-		})
-		if err != nil {
-			return err
-		}
-		s.d.Engine.Kick()
-		writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "restart": false, "create": true})
-		return nil
-	}
-	if p.HostID != nil {
-		h, err := store.GetHost(r.Context(), s.d.Pool, *p.HostID)
-		if err == nil && (h.State == "unreachable" || h.State == "retired" || h.State == "lost") {
-			return withDetail(errf("conflict", "%s's host is %s; restore its latest snapshot onto another host", p.Slug, h.State), map[string]any{"host_state": h.State})
-		}
-	}
-	pending, err := ops.PendingRevision(r.Context(), s.d.Pool, p)
-	if err != nil {
-		return err
-	}
-	pid := p.ID
-	n := ops.NewOp{Kind: ops.KindStart, ProjectID: &pid, Phases: ops.PlanStart(pending)}
-	if restart {
-		n.Phases, n.Params = ops.PlanRestart(pending), ops.RestartParams()
-	}
-	var id uuid.UUID
+	// The checks and the op are lifecycle.Start's, which the resume after
+	// a host reboot shares (DECISIONS I-645); it takes the project's row
+	// lock before it counts the open ops.
+	var res *lifecycle.Result
 	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
-		// A personal change queued a build for this stopped machine
-		// (I-490): the start goes first, on what the machine has, and the
-		// build follows it and switches in place.
-		yielded, _, ok, err := s.d.Engine.YieldPersonalBuilds(r.Context(), tx, pid, "start")
-		if err != nil {
-			return err
-		}
-		if id, err = s.d.Engine.Enqueue(r.Context(), tx, n, ok); err != nil {
-			return err
-		}
-		return s.d.Engine.RequeuePersonalBuilds(r.Context(), tx, pid, yielded)
+		var err error
+		res, err = lifecycle.Start(r.Context(), tx, lifecycle.Deps{Pool: s.d.Pool, Engine: s.d.Engine, Gate: s.d.Gate}, u, p.ID, lifecycle.Options{GuestdDead: s.guestdDead})
+		return err
 	})
+	var ref *lifecycle.Refusal
+	if errors.As(err, &ref) {
+		e := errf(ref.Code, "%s", ref.Message)
+		if ref.Detail != nil {
+			e = withDetail(e, ref.Detail)
+		}
+		return e
+	}
 	if err != nil {
 		return err
 	}
 	s.d.Engine.Kick()
-	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "restart": restart})
+	if res.Create {
+		writeJSON(w, http.StatusAccepted, map[string]any{"op_id": res.OpID, "restart": false, "create": true})
+		return nil
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": res.OpID, "restart": res.Restart})
 	return nil
 }
 
