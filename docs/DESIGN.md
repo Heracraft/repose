@@ -106,8 +106,9 @@ from `nix/hosts/`. The host configuration declares:
 **Capacity.** Memory is the binding constraint and is never oversubscribed.
 The host reserve is 8 GB below 128 GB of RAM and 16 GB above. A `D64s_v7`
 fits 30 large guests, 55 small, or 15 XL, in any mix; a `D16s_v7` fits 7
-large or 14 small. v7 sizes expose disks over NVMe only: OS at
-`/dev/nvme0n1`, the data disk resolved at install time (DECISIONS I-41). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added manually:
+large or 14 small. v7 sizes expose disks over NVMe only, and both
+disks are resolved at install time from their namespace ids, because which
+controller enumerates first is not fixed (DECISIONS I-41, I-647). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added manually:
 an alert fires at 80 percent reserved memory and a human runs the OpenTofu
 apply for the next host.
 

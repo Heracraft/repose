@@ -18370,3 +18370,91 @@ allowance (the allowance changes with the introductory offer and the
 hard stop needs repose's own count anyway); hourly overage events
 (PRICING.md promises one line a period); keeping both providers behind
 a switch (nothing on either side would exercise the Paddle path again).
+
+**I-642. The staging host registers with `hostdev` on the staging edge, not
+with production's api (staging-host, 2026-10-11).** *Made during
+implementation.*
+- Staging exists so that a host-level change is proven on a machine whose
+  guests nobody paid for. It has no control plane of its own
+  (`coolify_count = 0`), and the obvious shortcut — register the staging host
+  with production's api and drain it at once — does not work. The api's gRPC
+  listener is `10.200.3.4:8443`, a private address in production's VNet;
+  `nsg-control` opens 80, 443 and 22, and no 8443; and both environments take
+  the module default `10.200.0.0/16`, so the two VNets cannot be peered. What
+  is left is a rule on production's control plane opening the api to
+  staging's NAT address — and `Register`'s reply would then make a throwaway
+  machine a WireGuard peer on production's edge with a route for its guest
+  CIDR. Draining stops the scheduler; it does not undo that.
+- So the api side of `grpc-hostd.md` is played by `hostdev` (I-17) on the
+  staging edge: `hostdev init --listen 10.200.2.4:8444`, its CA in
+  `nix/hosts/host-stg-01.nix`, and the host reaching it privately inside
+  staging's own VNet. 8444 because the edge's gateway holds 8443 for hook
+  ingest. Two steps are by hand and stay by hand, both in `infra/README.md`:
+  the binary is copied over and kept out of the edge's configuration
+  (`docs/SECURITY.md` M-4 took it out of there for holding key material), and
+  one nft rule accepts 8444 from the hosts subnet, because the edge's input
+  chain drops by default.
+- What this buys: every host-side claim provable on a disposable machine —
+  whether the pool comes back, the activation unit's ordering, LVM leftovers,
+  a genuine `thin_check` failure left alone rather than repaired, guests
+  restarting, agent windows surviving a reboot.
+- What it does not: hostdev speaks the protocol and holds none of the api's
+  logic, so the user-visible halves — the `volume_unavailable` refusal
+  (I-644) and the api restarting what was running with one notification
+  (I-645) — stay proven by their Go tests and by the one planned host-01
+  reboot.
+- *Rejected:* a second Coolify environment on `coolify-01` (the api still
+  listens in production's VNet, so the NSG rule comes back, and a staging
+  container shares the production control plane); staging's own control VM
+  managed by the owner's Coolify instance, which is the designed shape (I-83)
+  and would prove the api halves too, but costs $4.6 a day and is a second
+  control plane for a product that is not yet validated (owner's call,
+  2026-10-11).
+
+**I-647. The OS disk is resolved at install time too, by NVMe namespace id
+(staging-host, 2026-10-11).** Amends I-39, extends I-41. *Made during
+implementation.*
+- I-41 resolved the data disk at install time and left
+  `repose.host.osDevice` fixed at `/dev/nvme0n1`, the name I-39 recorded.
+  Installing host-stg-01 showed why that is not safe. On its `D2s_v7` the
+  data disk's controller enumerated first, so `/dev/nvme0n1` was the 64 GB
+  **data** disk and the 256 GB OS disk was `/dev/nvme1n1`. disko wrote the
+  ESP and the ext4 root onto the data disk, renamed the Ubuntu root
+  partition `disk-data-pv`, and stopped only because `vgcreate` found an
+  ext4 signature on it and would not wipe one unasked. With LVM rather than
+  ext4 on that partition — a re-install of a host that already carries
+  guests, which the runbook offers as a recovery — nothing would have asked.
+- Azure's mapping is by namespace, not by name: the OS disk is nsid 1, and a
+  data disk at LUN n is nsid n+2. Both sightings fit that and neither fits a
+  fixed name: I-39's `nvme0n1`/`nvme0n2` pair is nsid 1 and LUN 0 + 2 on one
+  controller, and host-stg-01 is the same mapping spread across two
+  (`nvme0n1` 64G nsid 12 for LUN 10, `nvme1n1` 256G nsid 1, both controllers
+  reporting `MSFT NVMe Accelerator v1.0`).
+- So the layout's Azure hook resolves `/dev/disk/repose/os` from the one
+  namespace whose nsid is 1, and fails with the list of disks it saw when
+  there is not exactly one — the shape I-41 gave the data disk.
+  `repose.host.osDevice` defaults to that symlink; any real path (a SCSI
+  size, a test's virtual disk) is used as it stands and the hook is a no-op.
+  It runs from both disks' `preCreateHook`, because attribute order makes
+  disko create `data` before `os` and the data hook needs to know which disk
+  is not the OS disk.
+- Both hooks delete their own symlink before resolving. `/dev` is tmpfs,
+  but an install that failed and is retried has not rebooted, so the
+  previous run's answer is still there, and a wrong one stays wrong: on the
+  second attempt `/dev/disk/repose/data` still held run one's answer, both
+  names resolved to the same disk, and disko partitioned it twice — a
+  238 GB thin pool, then an "ESP" that was the PV. A path the operator
+  named, a real node or a by-LUN symlink, is never touched.
+- The edge keeps `/dev/nvme0n1`: it has one disk and `nix/edge/disko.nix`
+  calls the layout without the Azure hook. A second edge disk would need
+  this treatment.
+- Not changed, but worth knowing on any re-install: disko runs mkfs only
+  when `blkid` finds nothing, so a stale superblock inside a new partition's
+  range makes it skip the format and fail on the mount instead
+  (`fsconfig() failed: Can't open blockdev` for a vfat mount of an ext4
+  signature). Zero the first 16 MiB of both disks before a re-install.
+- *Rejected:* the Ubuntu image's `cloudimg-rootfs` filesystem label (ties
+  the installer to a marketplace image, and a failed run leaves it on the
+  wrong disk); disk size (a staging host and a production host differ, and
+  both disks can be the same size); `azure-nvme-id`, which is what Azure
+  ships for this and is not in nixos-anywhere's kexec image.

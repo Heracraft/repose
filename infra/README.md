@@ -79,6 +79,207 @@ them is a deliberate decision, not a step in this list.
 State locking is a blob lease. Versioning is on, so a corrupted state file is
 restored from the previous blob version.
 
+## Staging
+
+`repose-staging` is a throwaway copy of this environment in the same
+subscription: its own VNet, NAT gateway, snapshot account, Key Vault, edge
+and host, no DNS, no tenant data, nothing shared with `repose-prod` but the
+state storage account. It is where a change to a host is proven, because the
+alternative is host-01, which carries paying users and the conductor's own
+machine. Its resting state is `hosts = []` in `staging.tfvars`, which costs
+nothing to plan, so CI plans the root on every change to `infra/`.
+
+**It has no api and it does not borrow production's** (DECISIONS I-642).
+Production's api listens on `10.200.3.4:8443` inside production's VNet,
+`nsg-control` opens no 8443, and both environments take the module default
+`10.200.0.0/16`, so the two VNets cannot be peered. The api side of
+`docs/interfaces/grpc-hostd.md` is played by `hostdev` (I-17) on the staging
+edge. That is the whole shape of what staging is good for:
+
+| Proven here | Not proven here |
+|---|---|
+| Anything on a host: LVM pool activation and unit ordering, leftover device maps, a real `thin_check` failure, guest units, kernel parameters, a clean reboot or a hard power-cycle | Anything in the api: what a user is told, placement, resume after a reboot, notifications, migrations, the dashboard |
+| A host install from a branch, end to end, timed | The gateway, DNS, certificates, or any `repose` CLI flow — there is no api to hold the records |
+| Guests created, started, stopped and snapshotted through `hostdev` | A tenant's own path through any of it |
+
+### Bringing it up
+
+1. `make bootstrap ENV=staging` creates the resource group. **Run it at a
+   terminal**: `tofu apply` takes its approval from a tty, and `-input=false`
+   turns a missing one into `error asking for approval: EOF`, so it fails in
+   a pipe or from an agent's shell without one. 22 s.
+2. `infra/azure/staging/staging.local.tfvars` (git-ignored; five values have
+   no default). Copy `operator_cidrs`, `control_web_cidrs`,
+   `operator_authorized_keys` and `ssh_private_key_path` from
+   `prod.local.tfvars` — the same dev box and laptop reach both — and set
+   `flake_path` to the checkout's `nix/`. Leave `manage_dns = false`: staging
+   needs no DNS record, and false is what keeps `CLOUDFLARE_API_TOKEN` out of
+   the loop. The plan then warns `dns_is_managed_or_manual`, which is the
+   expected state, not a problem to fix.
+3. `make plan ENV=staging`, read it, `make apply ENV=staging` with no host:
+   28 resources. The edge comes up `degraded`, and that is expected too — it
+   is installed from `nixosConfigurations.edge`, which carries production's
+   `edge/edge-01.nix`, so three `wireguard-wg0-peer-*` units fail for peers
+   that are not in this environment and the gateway stays inactive. Nothing
+   here needs either.
+4. `hostdev` on the edge, by hand and staying by hand, because it holds a CA
+   key and `docs/SECURITY.md` M-4 took it out of the edge's configuration for
+   that reason:
+
+   ```bash
+   nix develop ./nix --command env CGO_ENABLED=0 go build -o /tmp/hostdev ./cmd/hostdev
+   scp -P 2222 /tmp/hostdev root@<edge ip>:/var/lib/hostdev/hostdev
+   ssh -p 2222 root@<edge ip>
+     hostdev --state-dir /var/lib/hostdev init --listen 10.200.2.4:8444 --names 10.200.2.4
+     nft insert rule inet repose-edge input ip saddr 10.200.1.0/24 tcp dport 8444 accept
+     systemd-run --unit=hostdev-serve --collect --property=Restart=always \
+       /var/lib/hostdev/hostdev --state-dir /var/lib/hostdev serve
+   ```
+
+   `CGO_ENABLED=0` because the edge is NixOS and a dynamically linked build
+   from the dev box finds no loader there. 8444 rather than 8443 because the
+   edge's gateway holds 8443 for hook ingest. The nft rule is needed because
+   the edge's input chain drops by default and accepts 8443 on `wg0` alone;
+   it and the unit are lost on an edge reboot, which this exercise never does.
+   The CA lives in `~/repose-ws/staging-hostdev` on the dev box so a
+   re-created environment reuses it and the `apiCA` in
+   `nix/hosts/host-stg-01.nix` stays true; lose it and the repair is
+   `hostdev init` again and a new PEM in that file.
+5. The host. `hosts`, `host_flake_attrs` and `join_tokens` go in
+   `staging.local.tfvars`, **not** in `staging.tfvars` as they do for
+   production, so that CI keeps planning this root with no host and no plan
+   ever asks for a token it cannot have:
+
+   ```hcl
+   hosts            = ["host-stg-01"]
+   host_flake_attrs = { host-stg-01 = "host-stg-01" }
+   join_tokens      = { host-stg-01 = "<the token hostdev init printed>" }
+   ```
+
+   Then `make apply ENV=staging` again. `nix/hosts/host-stg-01.nix` is the
+   host-01 configuration pointed at hostdev, with staging's own snapshot
+   account and identity.
+
+### Using it
+
+`hostdev --state-dir /var/lib/hostdev status`, `create`, `start`, `stop`,
+`snapshot`, `events` on the edge drive the host; `hostd status`, `hostd
+guests` and `hostd reconcile` on the host read the daemon over its control
+socket.
+
+The host has no public IP, so every connection jumps through the edge.
+`~/repose-ws/staging-ssh-config` on the dev box holds both hops as
+`stg-edge` and `stg-host`:
+
+```bash
+ssh -F ~/repose-ws/staging-ssh-config stg-host 'hostd status'
+```
+
+It keeps its own `known_hosts`, and so should anything else that connects:
+the staging host is **10.200.1.4**, the address production's host-01 has in
+production's identical `10.200.0.0/16`, so a shared `known_hosts` makes each
+host look like an attack on the other.
+
+`ops/dev/staging-pool-repro.sh` is the pool evidence, for before and after a
+fix: `state` makes a guest-shaped thin volume with a file in it, `show`
+prints the pool, the device maps, the dependent units and the boot's LVM
+journal, and `leftover` leaves the pool inactive with its components active,
+which is the shape the 2026-10-10 incident left behind. It refuses to run
+anywhere but a `host-stg-*` machine, because `leftover` deactivates the
+volume group every guest volume lives on.
+
+### Taking it down
+
+There is no `make destroy`, and shrinking `hosts` will not remove the host:
+its data disk and the attachment carry `prevent_destroy`, which is friction
+for production's tenant volumes and cannot be made conditional. For a
+throwaway environment the answer is not to edit that module but to delete the
+group:
+
+```bash
+az group delete --name repose-staging --yes --no-wait     # everything
+az storage blob delete --account-name reposetfstate3912 \
+  --container-name tfstate --name staging.tfstate --auth-mode login
+rm -f infra/bootstrap/terraform.tfstate*                  # bootstrap's local state
+```
+
+To pause instead of destroy, `az vm deallocate -g repose-staging -n
+host-stg-01` (and the edge) stops the compute charge and keeps the disks.
+
+### The first run, 2026-10-11
+
+Workstream 11 §7 asks this exercise for times and manual steps. Measured on
+`woker-1`, with the OpenTofu state empty and nothing in `repose-staging`:
+
+| Step | Time |
+|---|---|
+| `make bootstrap ENV=staging` (the resource group) | 22 s |
+| `make apply ENV=staging`, `hosts = []` — 28 resources | 3 m 22 s |
+| of which Key Vault | 2 m 24 s |
+| of which the edge's nixos-anywhere install | 1 m 37 s |
+| of which the storage account | 1 m 17 s |
+| of which the edge VM | 49 s |
+| `hostdev init` and `serve` on the edge, by hand | under a minute |
+| the host: disk, NIC, VM, attachment | 1 m 11 s |
+| its nixos-anywhere install, closure built on the dev box | 1 m 17 s |
+| the post-install checks and the join token | 23 s |
+| hostd registering with hostdev after the token landed | same second |
+| a clean `systemctl reboot` to ssh answering again | 21 s |
+| the pool active, measured inside that boot | 2.9 s |
+
+**It took 20 minutes of wall clock, not 10**, because the first host install
+had never been run on a size whose NVMe controllers enumerate the other way
+round. That is now DECISIONS I-647, and with it the install is the 1 m 17 s
+above. Two other things the run found, both fixed in the same branch:
+
+- The post-install check tested `/dev/vg-guests/thin`, which LVM never
+  creates — the volume-group symlink exists only for volumes something can
+  open, and a thin pool is not one. The gate that is supposed to catch "the
+  disko layout never ran" failed every install instead. It now tests
+  `/dev/mapper/vg--guests-thin`.
+- A test volume must not be named `auth-*`: hostd's login-share sweep
+  removes an `auth-` volume that has no user directory as an orphan, by
+  design and without a line on success
+  (`internal/hostd/guest/claudeauth.go`, DECISIONS I-278). One vanished
+  mid-exercise.
+
+The device names are not stable across boots of one machine either: at
+install the data disk was `nvme0n1` and the OS disk `nvme1n1`; after the
+first reboot the pool's PV was `nvme1n1p1`. Nothing depends on the names
+once the system is installed — mounts are by UUID and LVM scans — but it is
+why I-647 keys on the namespace id.
+
+### The pool evidence this host was built for, 2026-10-11
+
+With today's main — no pool unit yet — run from
+`ops/dev/staging-pool-repro.sh`, full output in `~/repose-ws/logs/stg-case*`
+on the dev box:
+
+| Case | What happened |
+|---|---|
+| Clean `systemctl reboot`, pool and volumes in place | Comes back. ssh answers 21 s after the reboot; `vgchange -aay` activates 4 volumes 2.9 s into the boot; the file written before the reboot reads back. |
+| Azure hard restart (`az vm restart --force`) from a left-behind state | Comes back. The reset clears the device maps, so the leftovers are gone and everything activates. The call itself took 126 s. |
+| Pool inactive with a component active (`vgchange -an`, then `lvchange -ay --yes vg-guests/thin_tmeta`) | `Activation of logical volume vg-guests/thin is prohibited while logical volume vg-guests/thin_tmeta is active`, every volume stays inactive, the caches and the registry stay down, and **nothing on the host retries**. A reboot clears it, because the leftover is device-mapper state. |
+| Damaged pool metadata, then a clean reboot | **The host comes up without its pool and stays that way.** `Check of pool vg-guests/thin failed (status:64). Manual repair required!` at 2.3 s, `0 logical volume(s) ... now active`, `lvm-activate-vg-guests.service: Failed with result 'exit-code'`, and at 6.3 s `The caches' thin volume ... skipped, unmet condition check ConditionPathExists=/dev/vg-guests`. hostd stays up with no pool, the failed unit sits there unread, and `repose_lvm_pool_present` still reports **1**. |
+
+The last row is the 2026-10-10 chain, verbatim error included, on a machine
+nobody paid for. It is the row a fix has to change.
+
+What staging **cannot** show is the incident's trigger: thin_check still
+running when the initrd hands over. That needs a pool whose metadata takes
+long enough to check, and 64 GB of thin pool checks in milliseconds. The
+damaged-metadata case above produces the same end state by a different
+route, and the initrd change itself is proven by the `host-reboot` VM test
+and by the planned host-01 window.
+
+### What it costs
+
+Per day, at the rates in "Cost" below: edge `D2s_v7` $3.17, its OS disk
+$0.35, NAT gateway $1.08 plus egress, two static IPs $0.24 — **about $4.90
+with no host** — and a `D2s_v7` host $3.17, its 256 GB OS disk $1.31, its
+64 GB Premium SSD v2 data disk at the free performance tier $0.17, so
+**about $9.50 with one**.
+
 ## Order of the first apply
 
 The pieces depend on each other in one direction only:
