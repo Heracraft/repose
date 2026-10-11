@@ -76,18 +76,22 @@ pkgs.testers.runNixOSTest {
             " | grep 'guests frozen' | tail -1 | jq -e '.reason == \"operator\"' >/dev/null")
 
     with subtest("a graceful reboot runs the freeze before any guest unit stops"):
-        host.reboot()
+        # A graceful shutdown through systemd, then a new boot on the same
+        # disk (the driver's reboot() loses the shell across the restart).
+        host.shutdown()
+        host.start()
         host.wait_for_unit("multi-user.target")
         prev = host.succeed("journalctl -b -1 --no-pager -o short-monotonic")
         lines = prev.splitlines()
-        def first(pattern):
-            for i, l in enumerate(lines):
-                if pattern in l:
+        def last(pattern):
+            for i in range(len(lines) - 1, -1, -1):
+                if pattern in lines[i]:
                     return i
             raise AssertionError(f"no line with {pattern!r} in the previous boot")
-        froze = first("guests frozen")
-        stopped_freeze = first("Stopped repose-guest-freeze")
-        stopping_guest = first("Stopping guest@t1")
+        # The last of each: the earlier subtests froze and restarted too.
+        froze = last("guests frozen")
+        stopped_freeze = last("repose-guest-freeze.service: Deactivated")
+        stopping_guest = last("guest@t1.service: Deactivated")
         assert froze < stopped_freeze < stopping_guest, (froze, stopped_freeze, stopping_guest)
         assert '"reason":"shutdown"' in lines[froze], lines[froze]
         print("\n".join(lines[froze - 2:stopping_guest + 2]))

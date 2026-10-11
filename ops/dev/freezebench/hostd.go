@@ -126,7 +126,7 @@ func hostdThaw(ctx context.Context, dir, keyPEM, recDir, vg string) error {
 	if err != nil {
 		return err
 	}
-	_ = os.Remove(ch.APISocket(dir))  // stale socket; absent is fine
+	_ = os.Remove(ch.APISocket(dir))   // stale socket; absent is fine
 	_ = os.Remove(ch.VsockSocket(dir)) // same
 	cmd := exec.Command(chBin, argv[1:]...)
 	cmd.Stdout, cmd.Stderr = logf, logf

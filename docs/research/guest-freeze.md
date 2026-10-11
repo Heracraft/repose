@@ -313,3 +313,44 @@ probes from `ops/dev/freeze-bench.sh` (`start-probes`), in order:
    guest starts cold (L6), the other restores.
 7. A Key Vault outage at start: deny the host's network to the vault;
    after 90 s each guest starts cold; nothing is left in `lvs | grep frz-`.
+
+## Staging, first runs (read from host-stg-01's journal, 2026-10-11 20:30Z)
+
+host-stg-01 (D16s_v7, Premium SSD v2 at 3000 IOPS and 125 MB/s) ran this
+branch's hostd with `--freeze --freeze-key-file` and two e2e guests (one
+large, one small) through `hostdev`. What its journal shows:
+
+- `az vm restart` at 19:55:47Z: `hv_utils: Shutdown request received -
+  graceful shutdown initiated` at 19:56:14.73, systemd-shutdown at
+  19:56:15.20 (that boot ran the plain staging build, so nothing held the
+  shutdown and the half second says nothing about how long Azure would
+  wait); the next boot started 20:06:27Z, ten minutes after the request.
+- The first operator freeze with the real hostd (20:08:19Z, two guests):
+  the small guest froze (snapshot 250 ms, 0.76 GB image, 22.4 s from start
+  to record, most of it making the volume and flushing at 125 MB/s while
+  the large guest's image wrote beside it) and was restored at the next
+  reconcile in 6.1 s after 26 s frozen. The large guest's `vm.snapshot`
+  outlived the HTTP client's 10 s timeout: hostd took it for a failure,
+  its resume was refused while the hypervisor was still writing, and the
+  guest was left paused; the image could not be unmounted (busy). Fixed in
+  68361da4: the snapshot call is bounded only by its own 10 min, and a
+  resume after a failed snapshot is retried until `vm.info` says Running.
+  At the next start the half-written image was discarded ("image
+  incomplete") as designed.
+- Raw evidence: `journalctl -u hostd` on host-stg-01 (boots from 20:06Z);
+  the staging run's own scripts are in `/root` there (`stg-probes.sh`,
+  `freezebench`).
+
+## hostd's own code against a real hypervisor (woker-1)
+
+`freeze-bench.sh hfreeze` and `hthaw` drive a bench guest through the
+packages hostd uses: `freeze.Image` on a thin volume of a loop-backed VG
+(`vg-gftest`), dm-crypt plain, ext4, `FileKey` RSA wrapping, the record
+store, `Fingerprint`, `ch.Freezer` and `ch.RestoreArgs`. 25 cycles of a
+large guest with a balloon and the probes
+([guest-freeze-data/hostd-path-25.txt](guest-freeze-data/hostd-path-25.txt)):
+freeze 3.2 to 3.4 s (volume made in about 0.2 s, snapshot 0.4 s, 1.0 GB
+image), restore 1.15 to 1.5 s; the writer's 953 lines with no gap; the
+store reader never wrong; one TCP connection throughout; after each cycle
+no image volume, no dm mapping and no record left, and the pool back to
+0.00 percent (the thin volume's blocks discarded on removal).

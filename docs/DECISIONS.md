@@ -18539,7 +18539,13 @@ do not feel it"); off until the owner turns it on per host
   `TestThawSweepsImageVolumesWithoutRecord`,
   `TestFreezeLogsCarryNoTenantData`), internal/hostd/freeze and
   internal/hostd/schedev tests, and the experiments' 60-cycle loop on
-  woker-1. *Proof still owed:* a staging host: a graceful `systemctl
+  woker-1; the host VM test `host-freeze` (the drop-ins, the shutdown
+  ordering, a switch freezing nothing, `hostd freeze`/`thaw`). On
+  host-stg-01 with the real hostd: a small guest frozen and restored (6.1 s
+  after 26 s frozen); a large guest's `vm.snapshot` outlived the HTTP
+  client's 10 s timeout and was left paused, so the snapshot call is now
+  bounded only by its own 10 minutes and a resume after a failed snapshot
+  is retried until the VM runs. *Proof still owed:* a staging host: a graceful `systemctl
   reboot`, an `az vm restart`, and a Scheduled Events Reboot with running
   guests, each restored with the probes intact; Azure's graceful-shutdown
   wait; freeze and restore times on Intel and Premium SSD v2. Host VM tests
