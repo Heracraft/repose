@@ -30,12 +30,25 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0020 (Polar, I-604) is the newest: its names go back to Paddle's,
+	// 0021 (hosts.pool_unavailable, I-644) is the newest.
+	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'pool_unavailable'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("hosts.pool_unavailable is still there after down 1 (0021)")
+	}
+	if down, err = db.MigrateDown(ctx, pool, 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-2] {
+		t.Fatalf("down 2 reverted %v", down)
+	}
+	// 0020 (Polar, I-604) is next: its names go back to Paddle's,
 	// and 0019 (projects.disk_held_bytes, I-585), 0018 (meter_samples root
 	// filesystem, I-567), 0017 (projects.multiplexer, I-502), 0015 (the
 	// personal layer, I-490), 0014 (CPU pressure, I-493), 0013
 	// (snapshots.sha256) and 0012 (hosts.prev_cert_serial) stay.
-	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'paddle_events'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +143,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(up) != 1 {
+	if len(up) != 2 { // 0020 and 0021, both taken down above
 		t.Fatalf("up reapplied %v", up)
 	}
 	type row struct{ status, reason, customer, sub, provider string }

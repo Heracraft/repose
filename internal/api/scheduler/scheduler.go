@@ -112,7 +112,9 @@ type Pick struct {
 
 // PickHost chooses a host inside tx and takes the placement lock; the
 // caller must record the placement (projects.host_id) in the same
-// transaction so the next placement sees it. holdBytes is what the new
+// transaction so the next placement sees it. A host whose thin pool is
+// unavailable (hosts.pool_unavailable, DECISIONS I-644) is never chosen:
+// a create there could only fail. holdBytes is what the new
 // volume holds at first (store.Project.HeldBytes: a new project's
 // estimate, or a restore's source figure), volumeBytes its size.
 func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeBytes int64, now time.Time) (Pick, error) {
@@ -128,6 +130,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 		  left join host_reservations r on r.host_id = h.id
 		 where h.state = 'ready'
 		   and not h.draining
+		   and not h.pool_unavailable
 		   and h.last_heartbeat_at is not null
 		   and h.last_heartbeat_at > $1
 		   and `+poolRoomSQL+`
@@ -167,6 +170,7 @@ func Freeing(ctx context.Context, q interface {
 		         where p.host_id = h.id and p.state in ('stopping', 'destroying')) g on true
 		 where h.state = 'ready'
 		   and not h.draining
+		   and not h.pool_unavailable
 		   and h.last_heartbeat_at is not null
 		   and h.last_heartbeat_at > $1
 		   and `+poolRoomSQL+`

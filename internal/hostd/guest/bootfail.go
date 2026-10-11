@@ -181,7 +181,9 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID 
 	if err == nil {
 		return nil, "", nil
 	}
-	if !err.NoReady || ctx.Err() != nil {
+	// A boot cut off by a shutdown is not a closure that fails to boot:
+	// no fallback, and no BootFallback recorded (I-650).
+	if !err.NoReady || ctx.Err() != nil || err.interrupted || m.Stopping(ctx) {
 		return nil, "", err
 	}
 	target := m.fallbackTarget(ctx, g)

@@ -91,6 +91,58 @@ tests:
               description: "81 percent of vg-guests/thin's metadata is used. hostd refuses creates at 85 and starts at 95."
               runbook: "docs/ops/RUNBOOK.md#poolmetadatahigh"
 
+  # --- PoolUnavailable ----------------------------------------------------
+  - interval: 1m
+    name: PoolUnavailable pages after 5 minutes down
+    input_series:
+      - series: 'repose_host_pool_available{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "1+0x10 0+0x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PoolUnavailable
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: PoolUnavailable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: PoolUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "the guest pool on host-01 is unavailable"
+              description: "vg-guests/thin cannot serve volumes; no machine on this host can start. journalctl -u repose-guest-pool -b says why."
+              runbook: "docs/ops/RUNBOOK.md#poolunavailable"
+
+  # --- PoolUnmonitored ----------------------------------------------------
+  - interval: 1m
+    name: PoolUnmonitored warns after 30 minutes unmonitored
+    input_series:
+      - series: 'repose_lvm_pool_monitored{job="hosts",instance="10.255.0.7:9100",host_id="host-01"}'
+        values: "1+0x10 0+0x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PoolUnmonitored
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PoolUnmonitored
+        exp_alerts: []
+      - eval_time: 42m
+        alertname: PoolUnmonitored
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hosts
+              instance: 10.255.0.7:9100
+              host_id: host-01
+            exp_annotations:
+              summary: "dmeventd does not monitor the guest pool on host-01"
+              description: "vg-guests/thin is not monitored, so it will not autoextend at 80 percent."
+              runbook: "docs/ops/RUNBOOK.md#poolunmonitored"
+
   # --- PoolFull -----------------------------------------------------------
   - interval: 1m
     name: PoolFull pages under 10 percent free

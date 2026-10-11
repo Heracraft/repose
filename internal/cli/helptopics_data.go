@@ -37,7 +37,7 @@ var envTopic = []topicRow{
 // exitTopic is cli.md's "Exit codes" table.
 var exitTopic = []topicRow{
 	{[]string{"0"}, "Worked."},
-	{[]string{"1"}, "Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too."},
+	{[]string{"1"}, "Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too, and so does a start while the server's machine disks are unavailable (the machine's disk is intact)."},
 	{[]string{"2"}, "Wrong usage."},
 	{[]string{"3"}, "Not logged in, or the login expired."},
 	{[]string{"4"}, "No such project."},

@@ -763,3 +763,32 @@ the substitution of what is new, and the CLI's `Building ... 38s` in
 a fresh host also pulls the base closure's build-time dependencies that
 the guest itself never needs (home-manager's activation scripts and the
 like), which is what the platform cache (DECISIONS I-46) removes.
+
+## 16. Host shutdown and guests: what Cloud Hypervisor 53 does (dev box, 2026-10-11)
+
+Measured on the dev box (AMD, so the seconds are not a host's) for
+DECISIONS I-650, with `nix build ./nix#guest-runner` (base 71f429d, 2
+vCPU, 2 GiB, an 8 GiB raw volume opened `direct=on`, `repose-paths`
+masked since no hostd registers paths). guestd's Exec started a writer
+that appends a counter to `/var/lib/hp/log` every 0.2 s without fsync and
+prints it on the serial console. At count 50 the stop below was sent;
+the volume was then loop-mounted on the host (journal replayed) and its
+last line read.
+
+| Stop | CH exits after | CH exit | Last count on disk | Lost |
+|---|---|---|---|---|
+| SIGTERM to CH (what systemd sends at a host shutdown), 3 runs | 0.16 s | 0 | 24, 18, 20 | 26 to 32 writes, with 78 to 96 NUL bytes at the file's end |
+| SIGKILL | 0.11 s | 137 | 17 | 33, NULs |
+| `PUT /api/v1/vm.power-button`, 3 runs | 7.1 to 7.3 s | 0 | 50 | none |
+| guestd `Shutdown(20)` | 7.6 s | 0 | 52 | none |
+
+Reading: CH 53 handles SIGTERM by exiting at once without telling the
+guest, so the guest loses its dirty page cache: with ext4's 5 s commit
+that is the last 5 to 6 s of writes, and a file the guest was extending
+ends in NULs. The power button makes the guest's systemd power off in
+order (the console shows the normal shutdown to `reboot: Power down`); the
+7 s are the guest's own stop jobs. A template drop-in under
+`/run/systemd/system/<name>@.service.d/` reached a transient unit started
+before it existed once `systemctl daemon-reload` ran (systemd 255), and its
+`ExecStop` ran at the stop; host-services checks the same on the host's
+systemd.

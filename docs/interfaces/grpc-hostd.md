@@ -65,12 +65,19 @@ HostMessage = oneof { Hello hello; Heartbeat hb; Result result; Samples samples;
 ```
 
 **Hello** (first message): `host_id`, current guest states (so the api can
-reconcile after a hostd restart), free memory, pool free bytes, and
-`pool_bytes` (field 5, I-586), the thin pool's data size.
+reconcile after a hostd restart), free memory, pool free bytes,
+`pool_bytes` (field 5, I-586), the thin pool's data size, and
+`pool_unavailable` (field 6, I-644): the thin pool cannot serve guest
+volumes (inactive after a reboot, its VG missing, or its health `failed` or
+`metadata_read_only`). While it is set both pool byte fields are 0, so an
+api older than the field also places nothing there. Absent from a hostd
+older than I-644, which reads as false.
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
-places nothing on a draining host), and `pool_bytes` (field 6, I-586). The
+places nothing on a draining host), `pool_bytes` (field 6, I-586) and
+`pool_unavailable` (field 7, I-644, as in Hello: the api keeps
+`hosts.pool_unavailable` from it and places nothing on such a host). The
 api keeps `hosts.pool_bytes` from the newest non-zero `pool_bytes`, since
 autoextend grows the pool after registration, and places a new project
 only where the pool stays at most 70 percent used with the new volume's
@@ -124,7 +131,15 @@ snapshot from before I-462, or an api older than it. A value that is not
 64 hex digits is `invalid_argument`. Error codes:
 `invalid_argument`, `not_found`, `already_exists`, `insufficient_capacity`,
 `build_failed`, `build_timeout`, `eval_failed`, `closure_too_large`,
-`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row. `boot_failed` (I-592) is
+`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row.
+`volume_unavailable` (I-644; an api older than it shows it as it is) is any
+command that needs the thin pool while it is unavailable (as Hello's
+`pool_unavailable`), and a `StartGuest` whose `g-` or `auth-` volume did
+not activate on hostd's one try. A start answers it before anything
+boots, so the guest stays `stopped` and never falls back (I-590); the
+api leaves the project `stopped`. `CreateGuest`, `Restore`,
+`ResizeVolume`, `Snapshot` and `DestroyGuest` answer it too; a destroy
+then keeps the volume. `boot_failed` (I-592) is
 a boot that never reached Ready whose console shows it stopped before
 the system started (stage 2 missing, a kernel panic, a failed fsck,
 stage 1's error); `message` is a fixed sentence, and `console_tail`
@@ -271,7 +286,10 @@ same command_id and hostd returns the stored result, re-executes a command
 that had started but not finished (every command except `Exec` is written
 to be safe to re-run; `Exec` returns `internal: command interrupted`), and
 ignores a command_id that is still executing (its result follows).
-hostd keeps results for 7 days.
+hostd keeps results for 7 days. A command cut off because hostd or the
+host is going down (a boot that fails while systemd says `stopping`) is
+neither stored nor sent, so its resend runs it again; the guest keeps its
+record as it was (I-650).
 
 ## Fake
 

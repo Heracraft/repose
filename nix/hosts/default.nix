@@ -25,6 +25,7 @@ in
     ./hardening.nix
     ./azure.nix
     ./caches.nix
+    ./vm-hardening.nix
   ];
 
   options.repose.host = {
@@ -264,7 +265,6 @@ in
     boot.loader.systemd-boot.enable = true;
     boot.loader.systemd-boot.configurationLimit = 5;
     boot.loader.efi.canTouchEfiVariables = true;
-    boot.loader.timeout = 2;
 
     # The operator toolbox named in docs/ops/RUNBOOK.md and the checklists.
     environment.systemPackages = with pkgs; [

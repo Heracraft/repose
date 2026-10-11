@@ -476,7 +476,7 @@ Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` 
 | Code | Meaning                                                                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
+| 1    | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too, and so does a start while the server's machine disks are unavailable (the machine's disk is intact). |
 | 2    | Wrong usage.                                                                                                                                                                                |
 | 3    | Not logged in, or the login expired.                                                                                                                                                        |
 | 4    | No such project.                                                                                                                                                                            |

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,7 +68,8 @@ const (
 	// CodeStorePathHidden is guestd's Switch refusal of a closure an
 	// overlayfs whiteout in the guest's store hides (DECISIONS I-589).
 	CodeStorePathHidden = "store_path_hidden"
-	// CodeBootFailed (bootfail.go) is the eleventh, since I-592.
+	// CodeBootFailed (bootfail.go) is the eleventh, since I-592, and
+	// CodeVolumeUnavailable (pool.go) the twelfth, since I-644.
 )
 
 // Reserved secret names (DECISIONS I-10).
@@ -127,6 +129,9 @@ type Error struct {
 	// console was classified as.
 	NoReady bool
 	Reason  string
+	// interrupted marks a failure caused by the host shutting down
+	// (I-650): run neither stores nor sends it.
+	interrupted bool
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -344,6 +349,9 @@ type Deps struct {
 	// func stops it. Nil disables capture (tests).
 	ConsoleStart func(guestID, dir string) (stop func())
 	Now          func() time.Time
+	// SystemStopping reports a host shutdown in progress (systemd says
+	// "stopping"). Nil means never (tests set it). DECISIONS I-650.
+	SystemStopping func(ctx context.Context) bool
 }
 
 type job struct {
@@ -389,10 +397,17 @@ type Manager struct {
 	maxIndex    uint32
 	poolWarned  time.Time
 	storeWarned time.Time
+	// poolDownLogged paces the pool_unavailable log line (I-644).
+	poolDownLogged time.Time
 
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// shuttingDown is set once hostd or the host is going down (I-650):
+	// from then on a guest that exits, or a boot that fails, leaves its
+	// record as it is.
+	shuttingDown atomic.Bool
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
@@ -717,7 +732,10 @@ func (m *Manager) poolUsedPct() (float64, error) {
 
 // Hello builds the reconciliation message for the stream.
 func (m *Manager) Hello() *hostdv1.Hello {
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes()}
+	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
+	// (an lvs error), so an api older than pool_unavailable keeps new
+	// machines off the host too (DECISIONS I-644).
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable()}
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
 		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure})
@@ -727,7 +745,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 
 // Heartbeat builds the periodic heartbeat.
 func (m *Manager) Heartbeat() *hostdv1.Heartbeat {
-	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), Draining: m.Draining()}
+	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), Draining: m.Draining(), PoolUnavailable: m.PoolUnavailable()}
 	if m.d.Load1 != nil {
 		hb.Load1 = m.d.Load1()
 	}
@@ -1022,8 +1040,9 @@ func (m *Manager) runJob(j job) {
 		j.internal(m.ctx)
 		return
 	}
-	res := m.run(m.ctx, j.cmd)
-	m.d.Emit.Result(res)
+	if res := m.run(m.ctx, j.cmd); res != nil {
+		m.d.Emit.Result(res)
+	}
 }
 
 // Execute admits and runs a command to completion, returning its result
@@ -1047,6 +1066,11 @@ func (m *Manager) run(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Result
 	kind := Kind(cmd)
 	m.d.Log.Info("command start", "event", "command_start", "command_id", cmd.CommandId, "kind", kind, "guest_id", Target(cmd))
 	res := m.execute(ctx, cmd)
+	if wasInterrupted(res) && m.shuttingDown.Load() {
+		// Not stored: a resend after the restart runs the command again.
+		m.d.Log.Warn("command interrupted by the shutdown", "event", "command_result", "command_id", cmd.CommandId, "kind", kind, "result", "interrupted", "guest_id", Target(cmd))
+		return nil
+	}
 	m.finish(cmd, res, start)
 	return res
 }

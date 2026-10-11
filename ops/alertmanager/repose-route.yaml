@@ -47,6 +47,11 @@ inhibit_rules:
   - source_matchers: [alertname = "HostScrapeDown"]
     target_matchers: [severity =~ "warn|page"]
     equal: [host_id]
+  # A guest pool that is down sets off every pool alert of its host
+  # (DECISIONS I-644); PoolUnavailable is the one that says what happened.
+  - source_matchers: [alertname = "PoolUnavailable"]
+    target_matchers: [alertname =~ "PoolHigh|PoolFull|PoolMetadataHigh|PoolUnmonitored"]
+    equal: [host_id]
   # An unreachable host is the api's view of the same thing.
   - source_matchers: [alertname = "HostUnreachable"]
     target_matchers: [alertname = "GuestdLost"]

@@ -159,7 +159,7 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	}
 	if !c.KeepVolume {
 		if err := m.d.LVM.RemoveVolume(ctx, VolumeName(g.GuestID)); err != nil {
-			return errf(CodeInternal, "lvremove: %v", err)
+			return lvmErr("lvremove", err)
 		}
 	}
 	if err := m.d.Roots.Remove(g.GuestID); err != nil {
@@ -210,7 +210,7 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 			return err
 		}
 		if err := m.d.LVM.ExtendVolume(ctx, VolumeName(g.GuestID), c.NewBytes); err != nil {
-			return errf(CodeInternal, "lvextend: %v", err)
+			return lvmErr("lvextend", err)
 		}
 		g.VolumeBytes = c.NewBytes
 		if err := m.d.State.PutGuest(g); err != nil {
