@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-660 entries.
+662 entries.
 
 ## Scope
 
@@ -124,7 +124,7 @@ pointer, not a summary.
 - **I-35** sshd material: reserved secrets at `/run/repose/`, symlinked into `/etc/ssh/`, a throwaway key until delivery, reload re-reads — L680
 - **I-37** Two vsock RPC implementations exist for one release — 2026-09-19; L695
 - **I-38** Generated protobuf code is tracked and also regenerated in the Nix sandbox — 2026-09-19; L704
-- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; L711
+- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; amended by I-647; L711
 - **I-40** A production host is a named configuration; the api CA and the snapshot target are host module options; a host registered by `hostdev` comes up without WireGuard or a Host CA — 2026-09-20; L730
 - **I-41** The data disk is found at install time, not named in advance — 2026-09-20; L766
 - **I-42** The api's implementation shape: phased ops driven by one replica, /internal on the gRPC app, CA material in the secrets table, guest host certificates re-signed once the address is known — 2026-09-20; L784
@@ -692,3 +692,5 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
+- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18416
+- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18456

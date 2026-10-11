@@ -115,7 +115,11 @@ after the first apply failed with `SkuNotAvailable` on the edge:
 - Dsv7 feature table: nested virtualization **Supported**, Premium SSD v2
   supported, no local temp disk, NVMe-only (the OS disk is `nvme0n1` on the
   cached controller; uncached data disks are on a second controller,
-  `nvme1n1` first). Retail prices, `eastus`, Linux, on-demand
+  `nvme1n1` first). **That order is not guaranteed and was the other way
+  round on the first `D2s_v7` we installed** (host-stg-01, 2026-10-11): the
+  data disk's controller came first, so the 64 GB data disk was `nvme0n1`
+  (nsid 12, LUN 10 + 2) and the 256 GB OS disk `nvme1n1` (nsid 1). The
+  namespace id is the stable key, not the name (DECISIONS I-647). Retail prices, `eastus`, Linux, on-demand
   (2026-09-20): `Standard_D16s_v7` $1.058/h (about $772/month against
   $561 for `D16s_v5`), `Standard_D2s_v7` $0.132/h (about $96 against $70).
   https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv7-series

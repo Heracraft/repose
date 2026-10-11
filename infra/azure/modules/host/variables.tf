@@ -107,9 +107,14 @@ variable "data_disk_device" {
     as hostd's pool_missing. The default is the thin pool disko creates on
     the data disk, which is the same on SCSI and NVMe sizes; the device the
     disk appears at is resolved by the host's disko hook (DECISIONS I-41).
+
+    It is the device-mapper name, not /dev/vg-guests/thin: LVM creates the
+    volume-group symlink only for volumes something can open, and a thin
+    pool is not one of them, so the old default failed every install it was
+    meant to guard (host-stg-01, 2026-10-11).
   EOT
   type        = string
-  default     = "/dev/vg-guests/thin"
+  default     = "/dev/mapper/vg--guests-thin"
 }
 
 variable "os_disk_gb" {
