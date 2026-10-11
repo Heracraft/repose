@@ -104,10 +104,12 @@ edge. That is the whole shape of what staging is good for:
 
 ### Bringing it up
 
-1. `make bootstrap ENV=staging` creates the resource group. **Run it at a
-   terminal**: `tofu apply` takes its approval from a tty, and `-input=false`
-   turns a missing one into `error asking for approval: EOF`, so it fails in
-   a pipe or from an agent's shell without one. 22 s.
+1. `make bootstrap ENV=staging` creates the resource group. **It needs a
+   tty**: `tofu apply` takes its approval from one, and `-input=false` turns
+   a missing one into `error asking for approval: EOF`, so it fails in a pipe
+   or from an agent's shell. Where there is no terminal,
+   `printf 'yes\n' | script -qec 'make -C infra bootstrap ENV=staging' /dev/null`
+   gives it one; the same goes for every `make apply`. 22 s.
 2. `infra/azure/staging/staging.local.tfvars` (git-ignored; five values have
    no default). Copy `operator_cidrs`, `control_web_cidrs`,
    `operator_authorized_keys` and `ssh_private_key_path` from
@@ -128,6 +130,7 @@ edge. That is the whole shape of what staging is good for:
 
    ```bash
    nix develop ./nix --command env CGO_ENABLED=0 go build -o /tmp/hostdev ./cmd/hostdev
+   ssh -p 2222 root@<edge ip> mkdir -p /var/lib/hostdev
    scp -P 2222 /tmp/hostdev root@<edge ip>:/var/lib/hostdev/hostdev
    ssh -p 2222 root@<edge ip>
      hostdev --state-dir /var/lib/hostdev init --listen 10.200.2.4:8444 --names 10.200.2.4
@@ -188,6 +191,35 @@ which is the shape the 2026-10-10 incident left behind. It refuses to run
 anywhere but a `host-stg-*` machine, because `leftover` deactivates the
 volume group every guest volume lives on.
 
+### Resizing the host
+
+The pool and reboot work runs on the small host; Cloud Hypervisor memory
+snapshots of large guests under load do not. Both sizes are overrides in
+`staging.local.tfvars`, so `staging.tfvars` stays small and sizing down is
+deleting three lines:
+
+```hcl
+host_size         = "Standard_D16s_v7"
+host_class        = "azure-d16s-v7"
+host_data_disk_gb = 512
+```
+
+`make plan ENV=staging` shows three in-place changes and no replacement
+(the VM's size, the disk's size, the class on its NIC tags); `make apply`
+does them. Then two steps by hand, because disko runs only at install and a
+bigger disk grows neither the partition nor the pool:
+
+```bash
+ssh -F ~/repose-ws/staging-ssh-config stg-host
+  /root/staging-pool-repro.sh grow      # partition 1 to the end of the disk, then pvresize
+  /root/staging-pool-repro.sh rebuild   # an empty pool, metadata sized as disko would
+```
+
+`rebuild` destroys what the pool holds, so do it before there are guests
+worth keeping. The larger shape is about **$33 a day** against $9.50, and it
+is the exception: it went on for the freeze tests (owner's call,
+2026-10-11) and comes back off after them.
+
 ### Taking it down
 
 There is no `make destroy`, and shrinking `hosts` will not remove the host:
@@ -226,6 +258,10 @@ Workstream 11 §7 asks this exercise for times and manual steps. Measured on
 | hostd registering with hostdev after the token landed | same second |
 | a clean `systemctl reboot` to ssh answering again | 21 s |
 | the pool active, measured inside that boot | 2.9 s |
+| the resize to `D16s_v7` and 512 GB — 3 in-place changes | 1 m 53 s |
+| of which the VM, which Azure restarts | 52 s |
+| the host answering ssh after that apply returned | 1 s |
+| `staging-pool-repro.sh grow` then `rebuild` | under a minute |
 
 **It took 20 minutes of wall clock, not 10**, because the first host install
 had never been run on a size whose NVMe controllers enumerate the other way
@@ -265,10 +301,14 @@ on the dev box:
 The last row is the 2026-10-10 chain, verbatim error included, on a machine
 nobody paid for. It is the row a fix has to change.
 
-What staging **cannot** show is the incident's trigger: thin_check still
-running when the initrd hands over. That needs a pool whose metadata takes
-long enough to check, and 64 GB of thin pool checks in milliseconds. The
-damaged-metadata case above produces the same end state by a different
+Those four cases ran on the 64 GB pool of the small host, where thin_check
+finishes in milliseconds, so none of them is the incident's **trigger** —
+thin_check still running when the initrd hands over. Since the resize the
+pool is 476.15 GiB with 5.12 GiB of metadata, host-01's geometry to the
+decimal, so the timing is comparable at last; but thin_check's cost tracks
+the metadata actually in use, and an empty pool's is 0.35 percent. A
+reproduction of the trigger needs guests and snapshots in the pool first.
+Until then the damaged-metadata case reaches the same end state by another
 route, and the initrd change itself is proven by the `host-reboot` VM test
 and by the planned host-01 window.
 
@@ -278,7 +318,9 @@ Per day, at the rates in "Cost" below: edge `D2s_v7` $3.17, its OS disk
 $0.35, NAT gateway $1.08 plus egress, two static IPs $0.24 — **about $4.90
 with no host** — and a `D2s_v7` host $3.17, its 256 GB OS disk $1.31, its
 64 GB Premium SSD v2 data disk at the free performance tier $0.17, so
-**about $9.50 with one**.
+**about $9.50 with one**. On the `D16s_v7` shape of "Resizing the host" it
+is **about $33** ($25.39 for the VM, $1.35 for the 512 GB disk), which is
+why that shape goes off again when the tests that need it are done.
 
 ## Order of the first apply
 

@@ -10,6 +10,7 @@
 #   show      what the pool, the device maps and the dependent units are
 #   leftover  the incident's shape: pool inactive, its components active
 #   corrupt   damaged pool metadata, so thin_check fails for real
+#   grow      after the data disk grows: partition 1, then the PV
 #   rebuild   an empty healthy pool again, the way disko makes it
 #
 # Reboots are not in here: `az vm restart`, `systemctl reboot` or a
@@ -84,15 +85,39 @@ corrupt)
   lvchange -ay "$vg/thin" || echo "expected: thin_check refused the pool"
   ;;
 
+grow)
+  # After the data disk grows in Azure. disko only runs at install, so the
+  # partition, the PV and the pool stay the old size until someone does
+  # this: extend partition 1 to the end of the disk, then the PV. `rebuild`
+  # afterwards gives the pool the metadata size disko would have chosen for
+  # the new size.
+  set -x
+  pv=$(pvs --noheadings -o pv_name --select "vg_name=$vg" | tr -d ' ')
+  # -d, or lsblk prints a line per holder of the PV as well and the name
+  # becomes a list.
+  disk=/dev/$(lsblk -ndo pkname "$pv")
+  echo ',+' | sfdisk -N 1 --force "$disk"
+  partx -u "$disk"
+  udevadm settle
+  pvresize "$pv"
+  vgs "$vg"
+  ;;
+
 rebuild)
-  # Back to a healthy empty pool, the way disko makes it.
+  # Back to a healthy empty pool, the way disko makes it: metadata is one
+  # percent of the PV clamped to 1 to 16 GiB, in whole MiB, which is the
+  # arithmetic in nix/hosts/disko-layout.nix.
   set -x
   systemctl stop docker-registry repose-npm-cache repose-cache-volume
   umount /var/cache/repose 2>/dev/null || true
   vgchange -an "$vg" || true
   lvremove -y "$vg" || true
+  pv=$(pvs --noheadings -o pv_name --select "vg_name=$vg" | tr -d ' ')
+  m=$(( $(blockdev --getsize64 "$pv") / 100 ))
+  [ "$m" -lt 1073741824 ] && m=1073741824
+  [ "$m" -gt 17179869184 ] && m=17179869184
   lvcreate --yes -l 95%FREE -n thin --type=thin-pool \
-    --poolmetadatasize 1024m --discards passdown --zero y "$vg"
+    --poolmetadatasize "$(( m / 1048576 ))m" --discards passdown --zero y "$vg"
   systemctl start repose-cache-volume
   lvs "$vg"
   ;;
@@ -128,7 +153,7 @@ show)
   ;;
 
 *)
-  echo "usage: staging-pool-repro.sh [state|show|leftover|corrupt|rebuild]" >&2
+  echo "usage: staging-pool-repro.sh [state|show|leftover|corrupt|grow|rebuild]" >&2
   exit 2
   ;;
 esac
