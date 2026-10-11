@@ -104,7 +104,11 @@ Stop:
   conversation id), and the next start opens those windows again under
   the same names, each agent on its conversation (`claude --resume ID`,
   I-636), so `repose ps` and `attach -w` find them; on a herdr project
-  herdr resumes agents with an integration by itself (I-501). When the project's newest sample shows agents working or
+  herdr resumes agents with an integration by itself (I-501). A machine
+  that ends without a stop (its host crashed or restarted) reopens the
+  windows of the minute record a timer keeps, from at most a minute
+  before; herdr puts back what it saved a few seconds before (I-646).
+  When the project's newest sample shows agents working or
   waiting for an answer, the CLI asks before stopping (`api has claude
   (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
   nothing, and without a terminal it refuses with exit 2 unless

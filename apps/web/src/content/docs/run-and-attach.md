@@ -300,6 +300,19 @@ A stop ends every process, agents included. At the next start each agent's windo
 
 On a herdr project, herdr puts its workspaces and tabs back at the start and resumes each agent that has herdr's integration (Claude Code, Codex, opencode and pi) in the conversation it was in.
 
+### When the machine ends without a stop
+
+If the server a machine runs on crashes or restarts, the machine ends without a stop. The machine records its agent windows every minute, and its next start opens the windows of that record the same way. What is lost:
+
+- each agent's turn in progress: the agent continues its conversation as its own files last recorded it, and doesn't redo the interrupted work;
+- a window opened in the minute before the crash;
+- every other process, and what the panes showed;
+- the last few seconds of writes to the disk.
+
+An agent that can't continue its conversation leaves a shell in its window with a line saying so.
+
+On a herdr project, herdr saves its workspaces and tabs a few seconds after each change and puts back what it last saved; it resumes the agents with herdr's integration as after a stop. Other tabs open as shells in their folders.
+
 ## Timing
 
 `REPOSE_TIMING=1 repose run` prints how long each step took. A `run` into a running machine that already has your checkout usually takes about a second; starting a stopped one, about 10.

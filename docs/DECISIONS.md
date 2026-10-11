@@ -19027,3 +19027,129 @@ features/secrets.md) for this one case.
 - *Azure.* A Key Vault and an RSA 3072 key per environment, an access
   policy for the host identity; tofu has them behind
   `freeze_keyvault_name` (null: none). Not applied by the builder.
+
+**I-646. Agent windows are recorded every minute, and a machine that
+ended without a stop reopens them (agent-windows, 2026-10-11).** Amends
+I-636. *Made during implementation* (host-restart plan L7, after host-01's
+reboot on 2026-10-10 left every tmux machine with a `shell` window alone:
+I-636 records only at a stop, and a host crash is not one).
+- `repose-tmux-save --periodic`, from a system timer pair
+  (`repose-tmux-save.timer`, `OnBootSec=60`, `OnUnitActiveSec=60`; the
+  service runs as dev at nice 10 and idle I/O, behind `ExecCondition=
+  repose-multiplexer-is tmux`), writes `~/.repose/agent-windows.live`: a
+  `#boot <boot id>` line, then I-636's rows with a fifth field, the
+  window's `@repose-state`. Temp file, `sync`, rename, `sync` of
+  `~/.repose`, and only when the content changed, so a crash leaves the
+  old record or the new one and an idle machine writes nothing. A tmux
+  that does not answer changes nothing (the record survives tmux being
+  down); no agent window writes the header alone. System units, not
+  user units: a switch starts a new system timer without a reboot, and
+  the timer has no ConditionPathExists, because a start skipped by a
+  condition never leaves `inactive` and `OnUnitActiveSec` counts from
+  that. The service has no start limit (`StartLimitIntervalSec=0`): the
+  VM test's burst of starts hit the default one (5 in 10 s) and a start
+  failed. The timer alone never comes near it; a burst of starts beside
+  it should not fail either.
+- The stop's file, `agent-windows`, keeps I-636's 4 fields, so the
+  restore script of an older base (the I-590 fallback closure) reads it;
+  its first line, `#project <project id>`, has no folder, which that
+  script skips. The stop's save now also removes the minute record. A
+  tmux that does not answer at the stop removes both: its agents ended
+  with the server, as I-636 had it, and a minute record the user may
+  have closed on purpose must not come back. Only a save cut short (the
+  5 s limit, the machine killed) leaves the minute record.
+- guestd writes `~/.repose/stopped` (the boot id, fsynced with its
+  folder) before it runs the stop's save. The restore takes, only in a
+  session it created: `agent-windows` first; else a minute record of
+  another boot, with or without a stop marker for that boot; never a
+  minute record of this boot (tmux exited and the unit restarted it:
+  I-551, I-636). The marker only labels the journal line ("from the
+  stop-unsaved record") today; it is there for the re-prompt setting
+  the plan deferred, which must not prompt after a stop.
+- The restore writes the windows it reopened as this boot's minute
+  record (`#boot`, rows with an empty fifth field; temp file, sync,
+  rename, sync of the folder, under the lock) before it removes the
+  record it read. Without that, nothing names the agents until the
+  timer's first run 60 s after boot, and a second crash in that minute
+  (a host that fails twice running) reopens nothing; the review
+  reproduced that in the VM.
+- A record names its project: `#boot <boot id> <project id>` and the
+  stop's `#project <project id>`. A fork or `snapshots restore --as`
+  copies a running source's minute record (another boot, no stop
+  marker), and each copy's first start would take it for a crash and
+  resume every agent, N idle agents for `fork -n N`. The restore skips
+  and removes a record whose project id is not project.json's (a record
+  with none, from this branch's first builds, is taken). That applies to
+  the stop's record too, so a copy of a stopped source no longer reopens
+  the source's agents, which I-636 did: a copy starts with `shell`, as
+  the fork docs say ("each copy boots fresh"). An in-place restore keeps
+  the id and reopens them.
+- The race: the timer could fire between the unit's `new-session` and
+  the restore. All three scripts hold `flock ~/.repose/agent-windows.lock`,
+  and the minute save leaves a record of another boot alone while the
+  session is under two minutes old. The plan said "never replaces one";
+  that would leave a machine whose session a hand-started tmux took
+  (I-560, the unit exits 3 before any restore) with no minute record
+  for the whole boot, and a crash would then reopen a boot-old record.
+- A reopened window runs the resume form under `set -m` and closes when
+  the agent exits, as one `repose run` opened does. An agent that exits
+  non-zero within 15 s could not resume (a conversation the crash cut
+  mid-line, one that is gone): the window keeps a login shell under
+  `<agent> could not continue its conversation (exit N).` instead of
+  vanishing. `set -m` is needed: without it the pane's foreground
+  process group is the wrapping bash, tmux reports `bash` as the pane's
+  command, and the next save would drop a stateless agent's window
+  (checked with tmux 3.7c: `opencode sleep` with it, `plain bash`
+  without). `set -m` also turns a Ctrl-Z (Claude Code's own suspend, a
+  terminal SIGTSTP) into a stopped job and exit 148 for the wrapper,
+  which closed the window after 15 s and printed the refusal line before
+  (review, tmux 3.7c). The wrapper puts a stopped job (147 to 150) back
+  in the foreground with `fg` at once. It does so from a function that
+  calls itself, not a loop: bash breaks out of a loop whose foreground
+  job stops, so the second Ctrl-Z escaped a `while` (checked by hand).
+  `fg`'s stderr must stay on the terminal; with it on /dev/null bash
+  cannot hand the terminal back and the job runs in the background. Exit
+  130 and 143 (Ctrl-C, TERM) are not counted as a refusal.
+- What a crash loses: the turn in progress, a window opened in the last
+  minute, every other process and the panes' contents, and the disk's
+  last seconds. No re-prompt (deferred in the plan until a user asks).
+- herdr, checked on woker-1 with herdr 0.9.3 (`herdr server` with a
+  scratch HOME, a workspace, a tab, a stand-in `claude` with a resume
+  argv reported through `pane report-agent`, then `kill -9` of the
+  server and a new `herdr server`): the workspace, both tabs and their
+  folders came back, and the stand-in was started again as `claude
+  --resume 0b1c2d3e`. A plain process in another tab (`sleep`) and the
+  tab's scrollback were gone; the tab was a new shell in its folder.
+  herdr saves `session.json` a few seconds after a change (2 s for a new
+  tab, 10 s for the resume argv in the log) by `session.json.tmp` and a
+  rename, with no fsync (strace: `open`, `write`, `close`, `rename`).
+  On ext4 a rename over an existing file flushes the data first
+  (`auto_da_alloc`), so a guest crash should leave the old file or the
+  new one, a few seconds behind; not tested with a VM crash. The docs
+  say only what was seen. No code change for herdr.
+- Proof: the VM test `guest-agent-windows` (its own test, since its
+  last subtest crashes the VM): the timer writes the record within a
+  minute and again a minute later, by boot, and an unchanged record is
+  not rewritten; the record survives tmux being down, and a tmux exit
+  in the same boot reopens nothing; sixty starts of the save during the
+  session's creation lose nothing; a stop's record wins and a 4-field
+  one restores; the stop's save writes 4 fields and removes the minute
+  record; a stop with tmux down removes both and reopens nothing; a
+  record of another project reopens nothing, and the restored windows
+  are this boot's record at once; Ctrl-Z three times in a reopened
+  window leaves the window and the agent running; a killed save's temp
+  files are removed; a stop marker for the record's boot labels the
+  restore "stop-unsaved" and reopens the windows (the subtest writes
+  `stopped` and the record by hand: guestd's shutdown with tmux failing
+  is not run there; `TestShutdownWritesTheStopMarkerBeforeTheSave` checks
+  only that the marker precedes the save); an agent that refuses to
+  resume leaves its line and a shell; `switch-to-configuration test` of
+  the same configuration starts a timer that was stopped (not a switch
+  from a base without the units, which is L8's canary step); a crash
+  right after the save (no `sync` after it) reopens both agents, and a
+  second crash at under 60 s of uptime, before the timer's first run,
+  reopens them again. After the crash guestd was active 4.9 s after
+  the kernel started (9.7 s at the first boot; hostd waits 60 s for
+  Ready), and the windows reopened 0.4 s after the session unit's
+  start. Those times are QEMU's in the test driver, not
+  cloud-hypervisor's; staging measures the real ones.
