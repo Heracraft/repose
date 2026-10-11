@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-660 entries.
+661 entries.
 
 ## Scope
 
@@ -231,7 +231,7 @@ pointer, not a summary.
 - **I-144** One clone per base ref — 2026-09-21; L3171
 - **I-145** A bump that built but could not switch says so — 2026-09-21; L3181
 - **I-146** A bump that failed against an older base is tried again on the next — 2026-09-21; L3189
-- **I-147** A start applies only a built revision newer than the one the guest runs — 2026-09-21; L3201
+- **I-147** A start applies only a built revision newer than the one the guest runs — 2026-09-21; amended by I-645; L3201
 - **I-148** The activation's output goes to a file, and hostd asks again once when guestd went away mid-switch — 2026-09-21; L3214
 - **I-156** A destroy the user asked for always finishes; DELETE answers with the op to wait on — 2026-09-23; L3230
 - **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; partly amended by I-593; L3262
@@ -692,3 +692,4 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
+- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L18417

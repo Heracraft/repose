@@ -29,7 +29,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there. `run` and `attach` do this for you.
 
-**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. The machine is still running. `run` and `attach` attach again as soon as it answers.
+**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. `run` and `attach` attach again as soon as the machine answers. If it was the machine's server that restarted, the machine stopped with it and repose starts it again, usually within a few minutes ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
 
 **`attach` takes more than a few seconds to come back.** After the laptop slept or changed networks, `attach` needs up to 2 seconds to find that the old connection is dead, then a normal connect. If it takes longer, run `REPOSE_TIMING=1 repose attach`; it prints how long each step took.
 
@@ -44,6 +44,10 @@ For more detail on any command, add `-v`: each API request with its status and r
 ## Machine state
 
 **``todo-app is stopped. `repose start todo-app` starts it.``** `exec`, `ps`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach`, `repose ssh`, `repose code` and `repose run` do.
+
+**A machine that was running is stopped, and you didn't stop it.** Its server restarted. repose starts such machines again by itself, and the notification it sends says which it didn't and why; `repose events todo-app` shows `server restarted`. `repose start todo-app` starts it ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
+
+**``todo-app's server is not answering; machines that were running on it start again by themselves when it is back``.** The server under the machine is down or unreachable, and the machine's disk is on it, so nothing can start it elsewhere without losing work since its last snapshot. Wait for the server: a machine that was running starts again by itself, and `repose start todo-app` works once the server is back.
 
 **`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 

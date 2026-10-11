@@ -44,6 +44,11 @@ type Guest struct {
 	// LastGood is the closure the guest last reached Ready on, which a
 	// boot of a bad closure falls back to (DECISIONS I-590).
 	LastGood string
+	// InterruptedBoot and InterruptedAt are hostd's mark on a guest a
+	// host restart took down (DECISIONS I-645), cleared as hostd clears
+	// it: running again, a stop, a destroy or a restore.
+	InterruptedBoot string
+	InterruptedAt   time.Time
 }
 
 // Options tune the fake.
@@ -78,6 +83,38 @@ type Fake struct {
 	// bad are closures that never reach Ready, with what their boot
 	// prints (I-590, I-592).
 	bad map[string]string
+	// bootID and bootAt are the host's boot, which Hello carries (I-645).
+	bootID string
+	bootAt time.Time
+}
+
+// Reboot models a host restart under hostd (DECISIONS I-645): the boot id
+// changes, and every guest that was running or starting is stopped and
+// marked with the new boot, as hostd's first Reconcile in it does. The
+// next Hello (ReconnectHost) carries the marks. It returns the guests
+// marked.
+func (f *Fake) Reboot(bootID string, bootAt time.Time) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bootID, f.bootAt = bootID, bootAt
+	var marked []string
+	for _, g := range f.guests {
+		if g.State == "running" || g.State == "starting" {
+			g.State = "stopped"
+			g.InterruptedBoot, g.InterruptedAt = bootID, time.Now()
+			marked = append(marked, g.GuestID)
+		}
+	}
+	return marked
+}
+
+// SetInterrupted sets or clears one guest's mark without a reboot.
+func (f *Fake) SetInterrupted(guestID, bootID string, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if g, ok := f.guests[guestID]; ok {
+		g.InterruptedBoot, g.InterruptedAt = bootID, at
+	}
 }
 
 // BadBootMessage is the fake's classification of a bad closure's boot,
@@ -250,9 +287,16 @@ func unresponsive(id string, g *Guest) *hostdv1.Result {
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40}
+	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID}
+	if !f.bootAt.IsZero() {
+		h.HostBootAt = f.bootAt.Unix()
+	}
 	for _, g := range f.guests {
-		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure})
+		gs := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure}
+		if g.InterruptedBoot != "" {
+			gs.InterruptedBootId, gs.InterruptedAt = g.InterruptedBoot, g.InterruptedAt.Unix()
+		}
+		h.Guests = append(h.Guests, gs)
 	}
 	return h
 }
@@ -355,6 +399,10 @@ func (f *Fake) setState(g *Guest, st, reason string) {
 	// 2026-09-20).
 	f.mu.Lock()
 	g.State = st
+	switch st {
+	case "running", "stopping", "destroying", "restoring":
+		g.InterruptedBoot, g.InterruptedAt = "", time.Time{}
+	}
 	f.mu.Unlock()
 	f.event(&hostdv1.Event{Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: g.GuestID, State: st, Reason: reason}}})
 }

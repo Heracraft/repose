@@ -239,7 +239,19 @@ rate and `repose stop <slug>`) was added by DECISIONS I-262.
 its `expires_at`, only when it was made with more than an hour; the
 summary names the time left and `repose keep <slug>`) and
 `temp_destroyed` (source `api`, when a destroy the api started at the
-expiry finishes) were added by DECISIONS I-347.
+expiry finishes) were added by DECISIONS I-347. `host_restarted` (source
+`api`, notifying nobody; the summary says when the server was back) is
+written on each machine a host restart stopped, and
+`machines_restarted` is the user's one notice per host restart, an event
+with no project that `GET /projects/:id/events` never lists: its summary
+is the notice's text, a line per machine (DECISIONS I-645).
+
+`POST /projects/:id/start` on a project whose host is `unreachable`
+answers `409 conflict` with `detail: {host_state: "unreachable"}` and the
+message ``<slug>'s server is not answering; machines that were running on
+it start again by themselves when it is back, and `repose start <slug>`
+works then`` (I-645; before, it told the user to restore a snapshot onto
+another host, which `retired` and `lost` still say).
 
 ### Build log lines (DECISIONS I-320)
 

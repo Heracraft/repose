@@ -627,6 +627,13 @@ type GuestStatus struct {
 	Ip            string                 `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
 	VsockCid      uint32                 `protobuf:"varint,4,opt,name=vsock_cid,json=vsockCid,proto3" json:"vsock_cid,omitempty"`
 	SystemClosure string                 `protobuf:"bytes,5,opt,name=system_closure,json=systemClosure,proto3" json:"system_closure,omitempty"`
+	// The host boot id whose start found this guest running (or starting)
+	// with no hypervisor: the host restarted under it. Empty when the guest
+	// was not interrupted, or has started, stopped, been destroyed or been
+	// restored since (DECISIONS I-645).
+	InterruptedBootId string `protobuf:"bytes,6,opt,name=interrupted_boot_id,json=interruptedBootId,proto3" json:"interrupted_boot_id,omitempty"`
+	// When hostd recorded the interruption, unix seconds; 0 with no mark.
+	InterruptedAt int64 `protobuf:"varint,7,opt,name=interrupted_at,json=interruptedAt,proto3" json:"interrupted_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -696,6 +703,20 @@ func (x *GuestStatus) GetSystemClosure() string {
 	return ""
 }
 
+func (x *GuestStatus) GetInterruptedBootId() string {
+	if x != nil {
+		return x.InterruptedBootId
+	}
+	return ""
+}
+
+func (x *GuestStatus) GetInterruptedAt() int64 {
+	if x != nil {
+		return x.InterruptedAt
+	}
+	return 0
+}
+
 type Hello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	HostId        string                 `protobuf:"bytes,1,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
@@ -704,7 +725,12 @@ type Hello struct {
 	PoolFreeBytes uint64                 `protobuf:"varint,4,opt,name=pool_free_bytes,json=poolFreeBytes,proto3" json:"pool_free_bytes,omitempty"`
 	// The thin pool's data size, which autoextend grows; 0 from a hostd
 	// older than I-586, which the api reads as "unknown" (DECISIONS I-586).
-	PoolBytes     uint64 `protobuf:"varint,5,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	PoolBytes uint64 `protobuf:"varint,5,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	// The host's current boot id (/proc/sys/kernel/random/boot_id) and when
+	// that boot began, unix seconds. Empty and 0 from a hostd older than
+	// I-645, which the api reads as "no resume information".
+	HostBootId    string `protobuf:"bytes,7,opt,name=host_boot_id,json=hostBootId,proto3" json:"host_boot_id,omitempty"`
+	HostBootAt    int64  `protobuf:"varint,8,opt,name=host_boot_at,json=hostBootAt,proto3" json:"host_boot_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +796,20 @@ func (x *Hello) GetPoolFreeBytes() uint64 {
 func (x *Hello) GetPoolBytes() uint64 {
 	if x != nil {
 		return x.PoolBytes
+	}
+	return 0
+}
+
+func (x *Hello) GetHostBootId() string {
+	if x != nil {
+		return x.HostBootId
+	}
+	return ""
+}
+
+func (x *Hello) GetHostBootAt() int64 {
+	if x != nil {
+		return x.HostBootAt
 	}
 	return 0
 }
@@ -4310,20 +4350,26 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x03log\x18\x06 \x01(\v2\x19.repose.hostd.v1.BuildLogH\x00R\x03logB\x05\n" +
 	"\x03msg\" \n" +
 	"\x03Ack\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\tR\aeventId\"\x92\x01\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\"\xe9\x01\n" +
 	"\vGuestStatus\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x0e\n" +
 	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x1b\n" +
 	"\tvsock_cid\x18\x04 \x01(\rR\bvsockCid\x12%\n" +
-	"\x0esystem_closure\x18\x05 \x01(\tR\rsystemClosure\"\xc3\x01\n" +
+	"\x0esystem_closure\x18\x05 \x01(\tR\rsystemClosure\x12.\n" +
+	"\x13interrupted_boot_id\x18\x06 \x01(\tR\x11interruptedBootId\x12%\n" +
+	"\x0einterrupted_at\x18\a \x01(\x03R\rinterruptedAt\"\x87\x02\n" +
 	"\x05Hello\x12\x17\n" +
 	"\ahost_id\x18\x01 \x01(\tR\x06hostId\x124\n" +
 	"\x06guests\x18\x02 \x03(\v2\x1c.repose.hostd.v1.GuestStatusR\x06guests\x12$\n" +
 	"\x0efree_mem_bytes\x18\x03 \x01(\x04R\ffreeMemBytes\x12&\n" +
 	"\x0fpool_free_bytes\x18\x04 \x01(\x04R\rpoolFreeBytes\x12\x1d\n" +
 	"\n" +
-	"pool_bytes\x18\x05 \x01(\x04R\tpoolBytes\"\xd1\x01\n" +
+	"pool_bytes\x18\x05 \x01(\x04R\tpoolBytes\x12 \n" +
+	"\fhost_boot_id\x18\a \x01(\tR\n" +
+	"hostBootId\x12 \n" +
+	"\fhost_boot_at\x18\b \x01(\x03R\n" +
+	"hostBootAt\"\xd1\x01\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efree_mem_bytes\x18\x01 \x01(\x04R\ffreeMemBytes\x12&\n" +
 	"\x0fpool_free_bytes\x18\x02 \x01(\x04R\rpoolFreeBytes\x12\x14\n" +

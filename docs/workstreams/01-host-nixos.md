@@ -221,7 +221,7 @@ by drain, `nixos-rebuild boot`, reboot, undrain. `system.autoUpgrade` is off.
 | Store at 80 percent | `host_warning{store_80}`; `nix.settings.min-free` triggers GC of unrooted paths; builds fail with `closure_too_large` before touching the last 50 GB. |
 | WireGuard handshake fails | `wg show wg0` shows no handshake; hostd's gRPC still works (it goes over the Azure NIC), so the api sees the host but the gateway cannot reach guests; alert `host_wg_down` from the edge side. |
 | hostd crashes | Restarts in 2 s; guests are untouched (transient units, `KillMode=process`); hostd reconciles from `state.db` and `systemctl list-units 'guest@*'`. |
-| Kernel panic or host reboot | Every guest is down; `Hello` after boot reports all guests `stopped`; the api restarts those that were `running` (03) and notifies users. |
+| Kernel panic or host reboot | Every guest is down; `Hello` after boot reports each guest that was `running` as `stopped` with the new boot id as its interrupted mark; the api starts those again within 6 h and tells each user once (DECISIONS I-645). |
 
 ## 7. Testing
 

@@ -54,12 +54,18 @@ func (r *Refusal) Error() string { return "payment_required: " + r.Message }
 // for growing a volume, which raises only the ceiling. VolumeBytes is
 // the disk size asked for, new or grown: one project's disk may be at
 // most the plan's whole disk.
+//
+// Resume is the api starting a machine a host restart stopped (DECISIONS
+// I-645): it was running when the host went down, and a past_due account's
+// machines keep running (billing.md, day 0), so past_due lets it through.
+// Every other refusal still applies.
 type Request struct {
 	Class        string
 	Disk         bool
 	AddHeldBytes int64
 	VolumeBytes  int64
 	Project      uuid.UUID
+	Resume       bool
 }
 
 // Gate decides.
@@ -135,7 +141,7 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 	}
 	period := sub.Period(g.Now())
 	plan := sub.PlanFor(period.Start)
-	if sub.Status == StatusPastDue || u.BillingStatus == "past_due" {
+	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
 	egress, err := PeriodEgress(ctx, g.pool, u.ID, period)

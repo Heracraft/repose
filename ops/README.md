@@ -11,7 +11,7 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 21 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The 26 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
 | `alertmanager/repose-route.yaml` | Route and inhibitions for the owner's ntfy topics; `page` has its own receiver. |
 | `prometheus/prometheus.yml` | Scrape config: hosts (`:9100`, `:9101`, Fluent Bit `:2021`), edge (`:9102`), api (`:9103`), all over WireGuard. |

@@ -263,6 +263,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
+		BootID: hostinfo.BootID, BootTime: hostinfo.BootTime,
 	})
 	if err != nil {
 		return err

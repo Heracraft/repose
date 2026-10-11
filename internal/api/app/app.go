@@ -31,8 +31,10 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/resume"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/snapshots"
+	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/billing"
@@ -63,6 +65,7 @@ type App struct {
 	meterIn   *meter.Ingest
 	abuse     *abuse.Guard
 	questions *questions.Service
+	resume    *resume.Resumer
 	outbox    *notify.Outbox
 	polar     *billing.Polar
 	billing   *billing.Service
@@ -158,7 +161,15 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
 	a.events.SetQuestions(a.questions)
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
-		Hello: a.engine.OnHello,
+		// The resume rows first (DECISIONS I-645): an error refuses the
+		// Hello, the stream closes and the host sends it again.
+		Hello: func(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello) error {
+			if err := a.resume.OnHello(ctx, hostID, h); err != nil {
+				return err
+			}
+			a.engine.OnHello(ctx, hostID, h)
+			return nil
+		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
 			if a.questions.OnResult(ctx, hostID, r) { // an AnswerQuestion delivery (I-245)
 				return
@@ -198,6 +209,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	}
 	a.bcfg = bcfg
 	a.gate = billing.NewGate(a.pool, bcfg, a.m, log)
+	a.resume = resume.New(a.pool, a.engine, a.gate, a.m, log)
 	// The seat count (I-290): live subscriptions and unexpired invitations
 	// against the hosts' 8 GB blocks or SEATS_TOTAL; checkout asks it, the
 	// webhook tells it, /public/seats reads it.
@@ -438,8 +450,17 @@ func (a *App) loops(ctx context.Context) {
 	idleWarn := &idle.Warner{Pool: a.pool, Events: a.events}
 	reaper := &temp.Reaper{Pool: a.pool, Engine: a.engine, Events: a.events, Log: a.log}
 	inviter := &waitlist.Inviter{Pool: a.pool, Total: a.cfg.SeatsTotal, M: a.m, Log: a.log}
-	a.engine.SetOnFinished(bump.OnOpFinished)
+	a.engine.SetOnFinished(func(ctx context.Context, op *store.Op) {
+		bump.OnOpFinished(ctx, op)
+		a.resume.OnOpFinished(ctx, op)
+	})
 	go bump.Run(ctx)
+	// Machines a host restart stopped start again (DECISIONS I-645), on
+	// the replica that holds the resume lock. REPOSE_RESUME=off holds them.
+	if !a.resume.Enabled() {
+		a.log.Warn("REPOSE_RESUME=off: machines a host restart stops are not started again", "event", "guest_resume")
+	}
+	go a.resume.Run(ctx)
 	// The abuse gauges (BusyUnattended, EgressHigh, held projects) are
 	// read-only aggregates; every replica exports them and the alerts take
 	// the max (DECISIONS I-239).

@@ -329,6 +329,10 @@ type Status struct {
 	Store    string `json:"store,omitempty"`
 	GuestdOK bool   `json:"guestd_ok"`
 	Closure  string `json:"system_closure"`
+	// InterruptedBootID and InterruptedAt are the guest's mark when a host
+	// restart took it down and nothing has cleared it (DECISIONS I-645).
+	InterruptedBootID string     `json:"interrupted_boot_id,omitempty"`
+	InterruptedAt     *time.Time `json:"interrupted_at,omitempty"`
 }
 
 // Guests lists every guest with its live unit states.
@@ -340,6 +344,10 @@ func (m *Manager) Guests(ctx context.Context) ([]Status, error) {
 	var out []Status
 	for _, g := range gs {
 		st := Status{GuestID: g.GuestID, ProjectID: g.ProjectID, Class: g.Class, State: g.State, Reason: g.Reason, IP: g.IP, CID: g.CID, Closure: g.SystemClosure, Unit: "inactive", Virtiofsd: "inactive"}
+		if g.Interrupted != nil {
+			at := g.Interrupted.At
+			st.InterruptedBootID, st.InterruptedAt = g.Interrupted.BootID, &at
+		}
 		if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(g.GuestID)); a {
 			st.Unit = "active"
 		}

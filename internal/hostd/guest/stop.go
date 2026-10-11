@@ -18,6 +18,16 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 	res := &hostdv1.StopResult{}
 	switch g.State {
 	case StateStopped:
+		// A stop of a guest a host restart interrupted says its owner
+		// wants it down: the mark goes, so nothing starts it (I-645).
+		if g.Interrupted != nil {
+			g.Interrupted = nil
+			if err := m.d.State.PutGuest(g); err != nil {
+				return nil, errf(CodeInternal, "state write: %v", err)
+			}
+			m.writeGuestJSON(g)
+			m.refreshGuestGauge()
+		}
 		return res, nil
 	case StateRunning, StateStarting, StateError, StateStopping:
 	default:

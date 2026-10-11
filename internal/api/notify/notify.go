@@ -301,6 +301,10 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
+	// A user notice names no project: its subject is its title (I-645).
+	if events.UserNoticeKinds[m.Kind] {
+		return Subject(m)
+	}
 	// The CLI's `repose events` says the same words (I-634).
 	verb := eventverbs.Verb(m.Kind)
 	if m.Agent != "" {
@@ -327,6 +331,7 @@ var platformSubjects = map[string]string{
 	"plan_changed":           "Your plan changed",
 	"egress_stopped":         "Your machines were stopped: egress limit",
 	"disk_over_plan":         "Your projects hold more than your plan's disk",
+	"machines_restarted":     "The server running your machines restarted",
 }
 
 // Subject is the email subject line: Title for agent events, the
@@ -426,6 +431,8 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		prio, tag = "3", "speech_balloon"
 	case "agent_question":
 		prio, tag = "5", "question"
+	case "machines_restarted":
+		prio, tag = "4", "arrows_counterclockwise"
 	}
 	req.Header.Set("Priority", prio)
 	req.Header.Set("Tags", tag)

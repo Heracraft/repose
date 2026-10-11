@@ -52,6 +52,10 @@ type M struct {
 	// never a label.
 	EgressBlockedTotal  *prometheus.CounterVec
 	EgressBlockedGuests *prometheus.GaugeVec
+	// GuestsInterrupted is the guests a host restart took down in the last
+	// 6 h and not running since (DECISIONS I-645): above 0 for long, the
+	// api has not started them (ResumeNotStarted).
+	GuestsInterrupted prometheus.Gauge
 }
 
 // BlockedReasons is the `reason` enum of the two series above.
@@ -91,6 +95,7 @@ func NewVersion(version string) *M {
 		MemFreeBytes:          f.gauge("mem_free_bytes", "Host free memory after the reserve."),
 		MemReservedBytes:      f.gauge("mem_reserved_bytes", "Memory reserved by running guests."),
 		GuestdLost:            f.gauge("guestd_lost", "Count of guests with guestd_ok=false."),
+		GuestsInterrupted:     f.gauge("guests_interrupted", "Guests a host restart took down in the last 6 h that have not run since (I-645)."),
 		GuestCPUSecondsTotal:  f.counterVec("guest_cpu_seconds_total", "Guest CPU time summed by class.", "class"),
 		GuestNetBytesTotal:    f.counterVec("guest_net_bytes_total", "Guest network bytes by direction.", "direction"),
 		EventsPending:         f.gauge("events_pending", "Events awaiting an api ack."),
