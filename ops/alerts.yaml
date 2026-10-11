@@ -6,7 +6,8 @@
 #
 # Every alert name is a heading in docs/ops/RUNBOOK.md, and `promtool test
 # rules ops/alerts_test.yaml` has a case per rule. Alertmanager routes them to
-# the owner's ntfy topic (ops/alertmanager/repose-route.yaml).
+# the owner's Google Chat space through calert, and Watchdog to an Uptime Kuma
+# push monitor (ops/alertmanager/repose-route.yaml, DECISIONS I-648).
 #
 # Severity: `page` wakes someone (tenants are down or data is at risk),
 # `warn` is a notification that can wait for the morning.
@@ -146,6 +147,37 @@ groups:
           description: "Both build slots are busy and no build has finished. A build past its 30-minute cap is not being killed."
           runbook: "docs/ops/RUNBOOK.md#buildqueuestuck"
 
+      - alert: HostdDown
+        # Prometheus cannot scrape hostd over the edge's WireGuard: the host
+        # is down, its network is dead, or hostd is. HostUnreachable cannot
+        # see the second of those (it only counts host-to-api heartbeats
+        # over the VNet) and fires late or never for the others; on
+        # 2026-10-10 it never fired. This is the page for a host; the
+        # inhibitions in repose-route.yaml keep it to one (DECISIONS I-648).
+        expr: up{job="hostd"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus cannot reach hostd on {{ $labels.host_id }}"
+          description: "No scrape of :9101 over WireGuard for 3 minutes. The host, its network or hostd is down; its guests may be down with it."
+          runbook: "docs/ops/RUNBOOK.md#hostddown"
+
+      - alert: HostServiceDown
+        # A unit a host needs is not active. After the 2026-10-10 reboot
+        # docker-registry was skipped on its mount condition and stayed
+        # inactive for 36 hours with nothing saying so. A missing unit has
+        # no series and does not fire (repose-guest-pool before I-643).
+        expr: |
+          node_systemd_unit_state{job="hosts",state="active",name=~"hostd\\.service|repose-guest-pool\\.service|repose-cache-volume\\.service|repose-npm-cache\\.service|docker-registry\\.service"} == 0
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.name }} is not active on {{ $labels.host_id }}"
+          description: "systemd says {{ $labels.name }} has not been active for 15 minutes. Guests fall back to the public registries while a cache is down; hostd or the pool down means no guest starts."
+          runbook: "docs/ops/RUNBOOK.md#hostservicedown"
+
       - alert: HostScrapeDown
         # docs/workstreams/10-observability.md §6: hostd keeps sampling into
         # Postgres over the gRPC stream, so billing data is not lost; what is
@@ -204,6 +236,61 @@ groups:
           summary: "{{ $value }} host(s) are unreachable from the api"
           description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
           runbook: "docs/ops/RUNBOOK.md#hostunreachable"
+
+      - alert: ApiDown
+        # Either api process stops answering its scrape. A dead api-grpc
+        # also silences HostUnreachable, which is computed from its gauge
+        # (DECISIONS I-648).
+        expr: up{job=~"api|api-grpc"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }}"
+          description: "No scrape for 3 minutes. If it is api, users cannot log in, create or start; if api-grpc, hosts have no stream and nothing is placed, started or stopped."
+          runbook: "docs/ops/RUNBOOK.md#apidown"
+
+      - alert: GatewayDown
+        # The edge's gateway stops answering its scrape: nobody can SSH to
+        # a machine. The edge VM's network function has been revoked three
+        # times (Sep 26, Sep 27, Oct 3).
+        expr: up{job="gateway"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus cannot scrape the gateway on the edge"
+          description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
+          runbook: "docs/ops/RUNBOOK.md#gatewaydown"
+
+      - alert: MonitoringPathDown
+        # Prometheus reaches the gateway, every hostd and both api
+        # processes through the edge's WireGuard, so a dead edge, a dead
+        # edge network function (revoked Sep 26, Sep 27, Oct 3) or a dead
+        # tunnel fails them all at once. This is the one page for that; it
+        # fires a minute before GatewayDown, HostdDown and ApiDown so its
+        # inhibition in repose-route.yaml holds them back (DECISIONS I-648).
+        expr: sum(up{job=~"gateway|hostd|api|api-grpc"}) == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus cannot scrape anything through the edge"
+          description: "The gateway, every hostd and both api processes have failed their scrapes for 2 minutes. The edge VM, its network or the WireGuard tunnel to this server is down; GatewayDown, HostdDown and ApiDown are held back behind this page."
+          runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
+
+      - alert: ApiHostsAbsent
+        # HostUnreachable reads repose_api_hosts. When the series is gone
+        # (api-grpc down, or its scrape broken) the host alert is silent,
+        # not quiet; this says so.
+        expr: absent(repose_api_hosts)
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "repose_api_hosts is missing, so HostUnreachable cannot fire"
+          description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
+          runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
       - alert: SnapshotStale
         # Nightly at 03:00 plus one on every stop (DESIGN §6), so 36 hours
@@ -415,3 +502,20 @@ groups:
           summary: "{{ $value }} project(s) at full CPU for six hours with nobody attached"
           description: "The Abuse dashboard's full-CPU panel names them; `repose-admin exec <id> -- ps -o comm,pcpu --sort -pcpu` (audited) shows what runs."
           runbook: "docs/ops/RUNBOOK.md#busyunattended"
+
+  # The alerting path's own heartbeat (DECISIONS I-648). Watchdog always
+  # fires; Alertmanager sends it to an Uptime Kuma push monitor every
+  # minute, and Kuma posts to Google Chat when the pushes stop. That is the
+  # only way to hear that Prometheus, Alertmanager, calert or the personal
+  # server itself has died: every other alert dies with them.
+  - name: repose-meta
+    interval: 1m
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: heartbeat
+        annotations:
+          summary: "the alerting path is working"
+          description: "Always firing. Routed only to the Uptime Kuma push monitor, never to Chat."
+          runbook: "docs/ops/RUNBOOK.md#watchdog"

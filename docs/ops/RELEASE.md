@@ -68,7 +68,8 @@ Releasing pushes main and ships it, when the owner asks. Nobody pushes
 main between releases, the conductor included: GitHub's `main` is what
 Coolify deploys, so any push ships every integrated change at once.
 GitHub CI runs only on that push, so the verification below is the only
-gate until then.
+gate until then. Integrated main is also pushed to GitHub's `integrated`
+branch, which deploys nothing ("The integrated branch" below).
 
 Integrate whenever branches are queued; it needs no owner approval.
 
@@ -121,7 +122,8 @@ Integrate whenever branches are queued; it needs no owner approval.
 5. **Move main, locally.** `git -C ~/kanali merge --ff-only
    release/<batch>` (the main checkout must be clean), then
    `ops/dev/release-queue done <batch>`, which removes the batch
-   worktree. Do not push. `ls` now lists those branches as `on-main` and
+   worktree and pushes main to `origin integrated` (and nothing else). Do
+   not push `main`. `ls` now lists those branches as `on-main` and
    ends with what the next release ships as. Tell each agent its branch
    is on main, so it merges main before its next `add`.
 
@@ -157,6 +159,46 @@ else integrated with it.
    anything not done. It goes into main with the next batch, not as a
    push of its own. Tell each agent whose branch shipped; it may then
    delete its worktree, or the owner does.
+
+## The integrated branch
+
+DECISIONS I-651. kanali, where integrated main lives, is a guest on
+host-01, so without a copy elsewhere the only integrated main stops with
+the host the conductor most needs to fix. `release-queue done` therefore
+pushes main to the GitHub branch `integrated` after every integrate, as a
+fast-forward; a refusal is printed and means someone moved the branch by
+hand.
+
+Nothing deploys from it:
+
+- `ci.yml` and `infra.yml` run on pushes to `main` and on pull requests;
+  `release.yml` on `v*` tags; `bump-agents.yml` on its schedule. A push to
+  `integrated` starts none of them.
+- Coolify's `api`, `api-grpc` and `web` deploy pushes to `main` only
+  (`coolify.md` fact 16).
+
+Keep it that way: a workflow with an unfiltered `on: push`, a Coolify
+application pointed at `integrated`, or a pull request opened from it
+would make it something other than a copy. A release still pushes `main`;
+after it `integrated` and `main` are the same commit until the next
+integrate.
+
+**`integrated` is public.** The GitHub repository is public, so every
+integrated commit is readable there before it is deployed, often for days
+(I-424). A fix for a vulnerability (the gateway, api auth, tenant
+isolation, a host or guest escape) must not sit on `integrated` while prod
+runs the vulnerable code. Queue such a branch only for the release that
+ships it: when the owner has asked for that release, integrate it with
+`REPOSE_INTEGRATED_REMOTE=none ops/dev/release-queue done <batch>` and ship
+at once. Until main is pushed, every later `done` also runs with
+`REPOSE_INTEGRATED_REMOTE=none`, and the copy off host-01 is a `git fetch`
+of kanali's main from woker-1 instead.
+
+To work from it on another machine (woker-1 while host-01 is down, RUNBOOK
+"Operating while host-01 is down"): `git fetch origin integrated` and
+`git worktree add ../<checkout>-<slug> -b <slug> origin/integrated`. If
+kanali is gone, the conductor's queue state in `.git/release-queue/` is
+gone with it; the branches and their merges on `integrated` are not.
 
 ## The release signing key
 

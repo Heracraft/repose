@@ -770,3 +770,196 @@ tests:
               summary: "1 project(s) at full CPU for six hours with nobody attached"
               description: "The Abuse dashboard's full-CPU panel names them; `repose-admin exec <id> -- ps -o comm,pcpu --sort -pcpu` (audited) shows what runs."
               runbook: "docs/ops/RUNBOOK.md#busyunattended"
+
+  # --- HostdDown (I-648) --------------------------------------------------
+  - interval: 1m
+    name: HostdDown pages after three minutes of no hostd scrape, and not for node_exporter
+    input_series:
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 1 0 0 0 0 0 0"
+      - series: 'up{job="hostd",instance="10.255.0.3:9101",host_id="host-02"}'
+        values: "1 1 1 1 1 1 1 1"
+      - series: 'up{job="hosts",instance="10.255.0.3:9100",host_id="host-02"}'
+        values: "0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HostdDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: HostdDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: hostd
+              instance: 10.255.0.2:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "Prometheus cannot reach hostd on host-01"
+              description: "No scrape of :9101 over WireGuard for 3 minutes. The host, its network or hostd is down; its guests may be down with it."
+              runbook: "docs/ops/RUNBOOK.md#hostddown"
+
+  # --- HostServiceDown (I-648) --------------------------------------------
+  - interval: 1m
+    name: HostServiceDown warns for a named unit inactive for 15 minutes, not for others
+    input_series:
+      - series: 'node_systemd_unit_state{job="hosts",instance="10.255.0.2:9100",host_id="host-01",name="docker-registry.service",state="active",type="simple"}'
+        values: "0+0x20"
+      - series: 'node_systemd_unit_state{job="hosts",instance="10.255.0.2:9100",host_id="host-01",name="hostd.service",state="active",type="simple"}'
+        values: "1+0x20"
+      - series: 'node_systemd_unit_state{job="hosts",instance="10.255.0.2:9100",host_id="host-01",name="docker-registry.service",state="inactive",type="simple"}'
+        values: "1+0x20"
+      - series: 'node_systemd_unit_state{job="hosts",instance="10.255.0.2:9100",host_id="host-01",name="some-other.service",state="active",type="simple"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: HostServiceDown
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: HostServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hosts
+              instance: 10.255.0.2:9100
+              host_id: host-01
+              name: docker-registry.service
+              state: active
+              type: simple
+            exp_annotations:
+              summary: "docker-registry.service is not active on host-01"
+              description: "systemd says docker-registry.service has not been active for 15 minutes. Guests fall back to the public registries while a cache is down; hostd or the pool down means no guest starts."
+              runbook: "docs/ops/RUNBOOK.md#hostservicedown"
+
+  # --- ApiDown (I-648) ----------------------------------------------------
+  - interval: 1m
+    name: ApiDown pages for either api process after three minutes
+    input_series:
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104",role="control-plane",app="api-grpc"}'
+        values: "1 0 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "1 1 1 1 1 1 1"
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ApiDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: api-grpc
+              instance: 10.255.255.1:9104
+              role: control-plane
+              app: api-grpc
+            exp_annotations:
+              summary: "Prometheus cannot scrape api-grpc"
+              description: "No scrape for 3 minutes. If it is api, users cannot log in, create or start; if api-grpc, hosts have no stream and nothing is placed, started or stopped."
+              runbook: "docs/ops/RUNBOOK.md#apidown"
+
+  # --- GatewayDown (I-648) ------------------------------------------------
+  - interval: 1m
+    name: GatewayDown pages after three minutes
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 1 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GatewayDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: GatewayDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: gateway
+              instance: 10.255.0.1:9102
+              role: edge
+            exp_annotations:
+              summary: "Prometheus cannot scrape the gateway on the edge"
+              description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
+              runbook: "docs/ops/RUNBOOK.md#gatewaydown"
+
+  # --- ApiHostsAbsent (I-648) ---------------------------------------------
+  - interval: 1m
+    name: ApiHostsAbsent pages when the host gauge disappears, and not while it exists
+    input_series:
+      - series: 'repose_api_hosts{job="api-grpc",instance="10.255.255.1:9104",state="ready"}'
+        values: "1 1 1 _ _ _ _ _ _ _ _ _ _ _ _"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ApiHostsAbsent
+        exp_alerts: []
+      # Prometheus treats a series as present for 5 minutes after its last
+      # sample, so the 5 minutes of `for` start at about 7m.
+      - eval_time: 11m
+        alertname: ApiHostsAbsent
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: ApiHostsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "repose_api_hosts is missing, so HostUnreachable cannot fire"
+              description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
+              runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
+
+  # --- Watchdog (I-648) ---------------------------------------------------
+  - interval: 1m
+    name: Watchdog always fires
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: heartbeat
+            exp_annotations:
+              summary: "the alerting path is working"
+              description: "Always firing. Routed only to the Uptime Kuma push monitor, never to Chat."
+              runbook: "docs/ops/RUNBOOK.md#watchdog"
+
+  # --- MonitoringPathDown (I-648) -----------------------------------------
+  - interval: 1m
+    name: MonitoringPathDown pages after two minutes when every scrape through the edge fails
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104",role="control-plane",app="api-grpc"}'
+        values: "1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MonitoringPathDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MonitoringPathDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "Prometheus cannot scrape anything through the edge"
+              description: "The gateway, every hostd and both api processes have failed their scrapes for 2 minutes. The edge VM, its network or the WireGuard tunnel to this server is down; GatewayDown, HostdDown and ApiDown are held back behind this page."
+              runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
+
+  - interval: 1m
+    name: MonitoringPathDown stays quiet while any scrape through the edge succeeds
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104",role="control-plane",app="api-grpc"}'
+        values: "1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MonitoringPathDown
+        exp_alerts: []

@@ -1,0 +1,9 @@
+{{- if eq .Status "firing" -}}
+*{{ .Labels.severity | toUpper }}* {{ .Labels.alertname }}{{ with .Labels.host_id }} on {{ . }}{{ end }}
+{{ .Annotations.summary }}
+{{ .Annotations.description }}
+https://github.com/Heracraft/repose/blob/main/{{ .Annotations.runbook }}
+{{- else -}}
+*RESOLVED* {{ .Labels.alertname }}{{ with .Labels.host_id }} on {{ . }}{{ end }}
+{{ .Annotations.summary }}
+{{- end -}}

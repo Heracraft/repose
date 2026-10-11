@@ -1,16 +1,25 @@
 # The Alertmanager route for repose, to merge into the personal server's
-# alertmanager.yml. Everything goes to the owner's ntfy topic; `page` gets its
-# own receiver so the phone can be allowed to make a sound for those and stay
-# quiet for the rest (docs/workstreams/10-observability.md §2).
+# alertmanager.yml (DECISIONS I-648). Alerts go to the owner's Google Chat
+# space through calert (ops/alertmanager/calert/), which turns Alertmanager's
+# webhook JSON into the `{"text": ...}` message Google Chat accepts.
 #
-# ntfy is reached with a webhook, so the JSON Alertmanager posts arrives as the
-# message body. The ntfy server turns the `X-Title` and `X-Priority` headers
-# into the notification's title and urgency; Alertmanager cannot set headers
-# per alert, so the two receivers differ by topic instead and the phone
-# subscribes to both.
+# Both Chat receivers post to the same calert room, `repose`, so the same
+# space; they differ only in timing. A page is sent after 20 s and repeated
+# hourly, everything else waits 30 s for its group and repeats every 12 h.
+# calert's message names the severity first, so a page reads as one.
+#
+# Watchdog always fires and goes to an Uptime Kuma push monitor every minute
+# (repeat_interval is under group_interval, so no tick is skipped).
+# When the pushes stop (Prometheus, Alertmanager or the whole server down),
+# Kuma posts to the same Chat space itself. The push URL is read from a file,
+# because a URL anyone can push to is a way to hide an outage.
+#
+# Nothing secret is in this file. The Chat webhook URL lives only in calert's
+# environment, the Kuma push URL only in the url_file below
+# (ops/README.md, install step 3, has the commands).
 
 route:
-  receiver: repose-ntfy
+  receiver: repose-chat
   group_by: [alertname, host_id]
   group_wait: 30s
   group_interval: 5m
@@ -18,24 +27,40 @@ route:
   routes:
     - matchers:
         - stack = "repose"
-        - severity = "page"
-      receiver: repose-ntfy-page
+        - alertname = "Watchdog"
+      receiver: repose-watchdog
       group_wait: 0s
+      group_interval: 1m
+      # Below group_interval: at 1m, a flush a few milliseconds short of
+      # repeat_interval was skipped, so pushes came 2 minutes apart.
+      repeat_interval: 30s
+    - matchers:
+        - stack = "repose"
+        - severity = "page"
+      receiver: repose-chat-page
+      # Long enough for an inhibition to settle when two page alerts for one
+      # outage start in the same minute (HostdDown and HostUnreachable).
+      group_wait: 20s
       repeat_interval: 1h
     - matchers:
         - stack = "repose"
-      receiver: repose-ntfy
+      receiver: repose-chat
 
 receivers:
-  - name: repose-ntfy
+  - name: repose-chat
     webhook_configs:
-      - url: https://ntfy.herakraft.co/repose-alerts
+      - url: http://127.0.0.1:6000/dispatch?room_name=repose
         send_resolved: true
 
-  - name: repose-ntfy-page
+  - name: repose-chat-page
     webhook_configs:
-      - url: https://ntfy.herakraft.co/repose-page
+      - url: http://127.0.0.1:6000/dispatch?room_name=repose
         send_resolved: true
+
+  - name: repose-watchdog
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/repose-watchdog-url
+        send_resolved: false
 
 # Silences: `amtool silence add alertname=SnapshotStale --duration 2h
 # --comment "why"`. A silence with no comment is deleted by a nightly job
@@ -43,9 +68,13 @@ receivers:
 # the reason for it.
 inhibit_rules:
   # A host Prometheus cannot reach produces every host alert at once as its
-  # series go stale; the scrape failure is the one worth reading.
+  # series go stale; the scrape failure is the one worth reading. HostdDown
+  # is the page for that same failure, so it is never the one held back.
   - source_matchers: [alertname = "HostScrapeDown"]
-    target_matchers: [severity =~ "warn|page"]
+    target_matchers: [severity =~ "warn|page", alertname != "HostdDown"]
+    equal: [host_id]
+  - source_matchers: [alertname = "HostdDown"]
+    target_matchers: [severity = "warn"]
     equal: [host_id]
   # A guest pool that is down sets off every pool alert of its host
   # (DECISIONS I-644); PoolUnavailable is the one that says what happened.
@@ -55,3 +84,18 @@ inhibit_rules:
   # An unreachable host is the api's view of the same thing.
   - source_matchers: [alertname = "HostUnreachable"]
     target_matchers: [alertname = "GuestdLost"]
+  # One page for a host that is gone: HostdDown names the host, and
+  # HostUnreachable (an api-wide count with no host_id) does not. With one
+  # host this is exact; with two, a scrape failure on one hides the other's
+  # HostUnreachable page, which HostdDown for that host still sends.
+  - source_matchers: [alertname = "HostdDown"]
+    target_matchers: [alertname = "HostUnreachable"]
+  # Prometheus reaches every target through the edge's WireGuard, so a dead
+  # edge or tunnel fails gateway, hostd and both api scrapes at once.
+  # MonitoringPathDown is the one page for that; it fires a minute before
+  # the others so this holds them back before their group_wait ends.
+  - source_matchers: [alertname = "MonitoringPathDown"]
+    target_matchers: [alertname =~ "GatewayDown|HostdDown|ApiDown|ApiHostsAbsent"]
+  # api-grpc down takes repose_api_hosts with it; ApiDown is the cause.
+  - source_matchers: [alertname = "ApiDown"]
+    target_matchers: [alertname = "ApiHostsAbsent"]

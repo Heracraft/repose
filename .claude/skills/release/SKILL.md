@@ -16,13 +16,14 @@ Two jobs; `$ARGUMENTS` says which (`integrate`, the default, or `ship`).
 3. Run every check RELEASE.md "integrating" step 4 names for the batch's
    targets, in the batch worktree. "Tests pass" closes nothing.
 4. `git -C ~/kanali merge --ff-only release/<batch>`, then
-   `ops/dev/release-queue done <batch>`. Do not push. Tell each agent.
+   `ops/dev/release-queue done <batch>`, which also pushes main to the non-deploying `integrated` branch (I-651). Do not push `main`. Tell each agent.
 
 **ship** (only when the owner asked for a release):
 1. `ops/dev/release-queue ls` for what main holds unreleased; ask the owner
    once with that summary. Stop on no or on no answer.
 2. Push main, watch CI, then publish the base and tag the CLI as needed.
-   Host and edge switches only with the owner's word for that switch.
+   Host and edge switches only with the owner's word for that switch, run
+   from woker-1 (RUNBOOK "Switch a host to main"), never from kanali.
 3. Run each released branch's `--live` check on throwaway `e2e-*`
    projects, record the release in STATUS (it lands with the next batch),
    and tell each agent.

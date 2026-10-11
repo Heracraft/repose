@@ -348,3 +348,21 @@ variable "tags" {
   description = "Extra tags merged into every resource."
   default     = {}
 }
+
+# --- Alerts (DECISIONS I-648) ------------------------------------------------
+
+variable "alerts_enabled" {
+  type        = bool
+  description = <<-EOT
+    Create the Azure Monitor action group and alerts in alerts.tf. True in
+    prod. False by default, so staging, whose VMs come and go, never emails
+    the owner.
+  EOT
+  default     = false
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Where the Azure alerts are emailed. Required when alerts_enabled is true. It is a personal address in a public repository, so it goes in the environment's local tfvars."
+  default     = ""
+}

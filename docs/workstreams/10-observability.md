@@ -30,7 +30,8 @@ policy designed without a month of data is a guess.
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
 - Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, routed to the existing Alertmanager (ntfy to the owner).
+  `../CHECKLIST.md`, routed by the existing Alertmanager to the owner's
+  Google Chat space through calert (DECISIONS I-648).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
   Postgres (partition drops, see `interfaces/db-schema.md`).
@@ -225,6 +226,13 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `HostReportsRefused` | `sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest\|bad_snapshot"}[15m])) > 0` (I-447) | warn |
 | `MinerStopped` | `sum by (kind) (increase(repose_api_abuse_stops_total[15m])) > 0` (I-239) | warn |
 | `BusyUnattended` | `max(repose_api_abuse_busy_unattended_projects) > 0` for 15m (I-239) | warn |
+| `HostdDown` | `up{job="hostd"} == 0` for 3m (I-648) | page |
+| `HostServiceDown` | `node_systemd_unit_state{state="active"} == 0` for hostd, repose-guest-pool, repose-cache-volume, repose-npm-cache, docker-registry, for 15m (I-648) | warn |
+| `ApiDown` | `up{job=~"api\|api-grpc"} == 0` for 3m (I-648) | page |
+| `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
+| `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
+| `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
+| `Watchdog` | `vector(1)`, always firing, routed only to an Uptime Kuma push monitor (I-648) | heartbeat |
 
 ### Traces
 

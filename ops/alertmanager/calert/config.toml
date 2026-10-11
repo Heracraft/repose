@@ -1,0 +1,34 @@
+# calert: Alertmanager webhooks to the owner's Google Chat space
+# (DECISIONS I-648). Alertmanager posts to /dispatch?room_name=repose
+# (ops/alertmanager/repose-route.yaml).
+#
+# The space's incoming-webhook URL is a secret and is not in this file or
+# anywhere in the repository. calert reads it from the environment:
+#
+#   CALERT_PROVIDERS__REPOSE__ENDPOINT=https://chat.googleapis.com/v1/spaces/...
+#
+# which docker-compose.yml loads from /etc/calert/calert.env (0600, root).
+# Without it calert refuses to start. calert v2.4.0 does not log the
+# endpoint (its HTTP client's request logging is off for that reason), and
+# `log = "info"` keeps the payloads out of the log too.
+
+[app]
+address = "0.0.0.0:6000"
+server_timeout = "60s"
+enable_request_logs = true
+log = "info"
+
+[providers.repose]
+type = "google_chat"
+timeout = "30s"
+max_idle_conns = 10
+template = "/etc/calert/message.tmpl"
+# One Chat thread per alert, from firing to resolved, so a resolve lands
+# under the page it ends.
+threading_mode = "alert"
+threaded_replies = true
+thread_ttl = "12h"
+dry_run = false
+retry_max = 5
+retry_wait_min = "2s"
+retry_wait_max = "30s"
