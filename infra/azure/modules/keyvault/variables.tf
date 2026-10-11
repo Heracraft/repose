@@ -57,6 +57,12 @@ variable "api_identity_object_id" {
   default     = null
 }
 
+variable "api_key_permissions" {
+  description = "Key permissions for api_identity_object_id. The api wraps and unwraps users' DEKs; the guest freeze's hosts only read the public half and unwrap (I-653)."
+  type        = list(string)
+  default     = ["Get", "WrapKey", "UnwrapKey"]
+}
+
 variable "key_name" {
   type        = string
   description = "Name of the wrapping key."

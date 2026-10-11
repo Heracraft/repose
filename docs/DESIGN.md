@@ -576,8 +576,12 @@ when it becomes in scope.
 - Nested virtualization on Azure is officially unsupported by Microsoft even
   though Microsoft ships it in AKS. The benchmark gate (deferred, I-12)
   exists for this.
-- Cloud Hypervisor's virtio-fs snapshot/restore matured only in v52. We do not
-  use CH snapshot/restore; we stop and start guests and snapshot the volume.
+- Cloud Hypervisor's virtio-fs snapshot/restore matured only in v52. Stops,
+  starts and backups do not use it: we stop and start guests and snapshot
+  the volume. The one use is the guest freeze across a host restart
+  (DECISIONS I-652, I-653, off until turned on per host): an encrypted
+  memory image per guest, restored at hostd's next start and removed, with
+  a cold start whenever the restore cannot happen.
 - microvm.nix's shared-store model means a guest cannot outlive a host
   garbage-collecting its closure. hostd registers every running and stopped
   guest's system closure as a GC root and unregisters on destroy.

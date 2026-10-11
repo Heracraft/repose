@@ -212,6 +212,13 @@ type Config struct {
 	UnitPoll        time.Duration
 	// FailAtStep injects a failure into CreateGuest at that step (tests).
 	FailAtStep int
+	// Freeze turns on freezing guests across host restarts (I-652).
+	Freeze FreezeConfig
+	// FreePageReporting starts guests with a balloon that hands the pages
+	// they free back to the host (I-652): smaller frozen images, and the
+	// unit holds what the guest uses. Guests started before keep their
+	// devices until their next start.
+	FreePageReporting bool
 }
 
 // Defaults fills documented values into zero fields.
@@ -357,6 +364,9 @@ type Deps struct {
 	// interrupted (tests that do not exercise it).
 	BootID   func() (string, error)
 	BootTime func() (time.Time, error)
+	// Freeze is the guest freeze's key, image volume and fingerprint
+	// (I-652, I-653); empty when the freeze is off.
+	Freeze FreezeDeps
 }
 
 type job struct {
@@ -415,6 +425,10 @@ type Manager struct {
 	shuttingDown atomic.Bool
 	// hostDown is set once systemd says the host is stopping (HostStopping).
 	hostDown atomic.Bool
+	// freezeMu (a one-slot semaphore, so a wait can end with its context)
+	// lets one FreezeAll, ThawAll or SyncClocks run at a time (freeze.go,
+	// I-652).
+	freezeMu chan struct{}
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
@@ -437,7 +451,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, d: d,
-		workers: map[string]*worker{}, inflight: map[string]bool{},
+		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
 		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{},
 		last:     map[string]sampleCursor{},
 		buildSeq: map[string]uint64{},

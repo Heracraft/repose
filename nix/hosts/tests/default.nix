@@ -18,6 +18,8 @@
 #                  console password file (I-643, I-644, I-649, I-654)
 #   host-storage   the disko data-disk layout on a virtual disk: PV, VG,
 #                  thin pool with autoextend, a thin volume, the pool monitor
+#   host-freeze    the guest freeze's shutdown ordering and hostd's freeze
+#                  and thaw commands, with the real hostd (freeze.nix)
 #   host-services  the real hostd, guests.slice, transient guest survives a
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
@@ -841,6 +843,8 @@ in
           host.succeed("grep -q '^PasswordAuthentication no' /etc/ssh/sshd_config || sshd -T 2>/dev/null | grep -qi '^passwordauthentication no'")
     '';
   };
+  # The guest freeze's host side (DECISIONS I-652): freeze.nix.
+  host-freeze = import ./freeze.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
 
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";

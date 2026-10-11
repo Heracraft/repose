@@ -29,6 +29,9 @@ import (
 // guests when it runs again; the first Reconcile that records one marks
 // nothing.
 func (m *Manager) Reconcile(ctx context.Context) error {
+	// Frozen guests come back first, so the units listed below include
+	// them and the Hello after this says they run (I-652).
+	m.ThawAll(ctx)
 	units, err := m.d.Systemd.ListUnits(ctx, "guest@*")
 	if err != nil {
 		return err

@@ -109,6 +109,7 @@ func Serve(ctx context.Context, path string, b Backend) error {
 		}
 		writeJSON(w, "ok", b.OperatorLogin(rep))
 	})
+	registerFreeze(mux, b, writeJSON)
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := b.ExportState(w); err != nil {

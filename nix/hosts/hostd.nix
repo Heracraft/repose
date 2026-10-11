@@ -22,6 +22,13 @@ let
     + lib.optionalString (cfg.baseRepo.sshKeyFile != "") " --base-repo-ssh-key ${lib.escapeShellArg cfg.baseRepo.sshKeyFile}"
     + lib.optionalString (cfg.overlayCache.url != "") " --substituters ${lib.escapeShellArg "https://cache.nixos.org ${cfg.overlayCache.url}"}";
   stateDir = "/var/lib/repose/hostd";
+  # The guest freeze (freeze.nix, DECISIONS I-652); nothing when it is off.
+  freezeFlags = lib.optionalString cfg.freeze.enable (
+    "--freeze --freeze-deadline ${toString cfg.freeze.deadline}s"
+    + (if cfg.freeze.keyFile != "" then " --freeze-key-file ${lib.escapeShellArg cfg.freeze.keyFile}"
+       else " --freeze-key-vault ${lib.escapeShellArg cfg.freeze.keyVaultUrl} --freeze-key-name ${lib.escapeShellArg cfg.freeze.keyName}")
+    + lib.optionalString cfg.freeze.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")
+    + lib.optionalString cfg.freeze.freePageReporting " --free-page-reporting";
 
   # guests.slice gets everything but the host reserve: 8 GiB below 128 GiB
   # of RAM, 16 GiB above (DESIGN §4). Computed at boot; the slice cap is the
@@ -154,7 +161,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${freezeFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).
