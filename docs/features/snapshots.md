@@ -129,6 +129,10 @@ Forking (DECISIONS I-254, I-255):
   path, since `~/.repose/checkout` comes with the volume (I-368); for a
   source set up before I-368 the copy's `~/<slug>` is a symlink to the
   source's `~/<slug>`, made by guestd's `SetupProject` (I-255).
+- A copy (a fork, or `snapshots restore --as`) reopens none of the
+  source's agent windows: the records in `~/.repose` name the source's
+  project id, and the restore skips a record of another project (I-646).
+  An in-place restore keeps the project id and reopens them.
 - With `--prompt`, the CLI starts the agent with that prompt in each
   running copy, without syncing the laptop into it, and does not attach.
 - Before the snapshot the CLI asks the plan's memory for all N copies

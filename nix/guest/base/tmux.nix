@@ -85,27 +85,35 @@ let
       #   2. agent-windows.live, the minute record of an earlier boot,
       #      with no stop marker for that boot: the machine ended without
       #      a stop (a host crash or restart);
-      #   3. the same with a stop marker: the stop's save failed or the
-      #      machine was killed after it began; the windows reopen as in 2;
+      #   3. the same with a stop marker: the stop's save was cut short or
+      #      the machine was killed after it began; the windows reopen as
+      #      in 2;
       #   4. a minute record of this boot: tmux exited and the unit
       #      started it again, which reopens nothing (I-551).
-      # The record is renamed before it is read, so a server that exits
-      # later in the boot starts with `shell` alone. The lock keeps the
-      # minute save from writing while this runs (repose-tmux-save).
+      # A record that names another project (`#project <id>`) was copied
+      # by a fork or a snapshot restore into a new project, and reopens
+      # nothing there. The record is renamed before it is read, so a
+      # server that exits later in the boot starts with `shell` alone. The
+      # windows reopened become this boot's minute record at once, so a
+      # second crash before the timer's first run reopens them again. The
+      # lock keeps the minute save from writing while this runs
+      # (repose-tmux-save).
       if [ -n "$created" ]; then
-        exec 9>>"$HOME/.repose/agent-windows.lock"
+        dot="$HOME/.repose"
+        exec 9>>"$dot/agent-windows.lock"
         flock -w 10 9 || true
-        saved="$HOME/.repose/agent-windows"
+        saved="$dot/agent-windows"
         live="$saved.live"
         boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+        project_id=$(jq -r '.project_id // empty' "$project" 2>/dev/null || true)
         from=""
         if [ -s "$saved" ] && mv -f "$saved" "$saved.restoring"; then
           from=stop
           rm -f "$live"
         elif [ -s "$live" ]; then
-          live_boot=$(sed -n '1s/^#boot //p' "$live")
+          live_boot=$(sed -n '1s/^#boot \([^ ]*\).*/\1/p' "$live")
           if [ -n "$live_boot" ] && [ "$live_boot" != "$boot" ] && mv -f "$live" "$saved.restoring"; then
-            stopped=$(cat "$HOME/.repose/stopped" 2>/dev/null || true)
+            stopped=$(cat "$dot/stopped" 2>/dev/null || true)
             if [ "$stopped" = "$live_boot" ]; then
               from=stop-unsaved
             else
@@ -114,13 +122,24 @@ let
           fi
         fi
         if [ -n "$from" ]; then
+          rec_project=$(sed -n 's/^#project //p; s/^#boot [^ ]* //p' "$saved.restoring" | head -n 1)
+          if [ -n "$rec_project" ] && [ -n "$project_id" ] && [ "$rec_project" != "$project_id" ]; then
+            echo "repose-tmux-session: the $from record belongs to another project (a copy); reopening nothing" >&2
+            from=""
+            rm -f "$saved.restoring"
+          fi
+        fi
+        if [ -n "$from" ]; then
           echo "repose-tmux-session: reopening agent windows from the $from record" >&2
           tmux_bin=$(command -v tmux)
           window_path=''${login_path:-/run/current-system/sw/bin:$PATH}
           seen=" "
+          us=$(printf '\037')
+          reopened=""
           # The stop record has 4 fields, the minute record 5 (the
-          # agent's state, unused here) after a `#boot` line.
-          while IFS="$(printf '\037')" read -r name agent cwd sid _; do
+          # agent's state, unused here) after a `#boot` line. `#` lines
+          # are headers.
+          while IFS="$us" read -r name agent cwd sid _; do
             case "$name" in "#"*) continue ;; esac
             [ -n "$name" ] && [ -d "$cwd" ] || continue
             case "$sid" in *[!A-Za-z0-9_-]*) sid="" ;; esac
@@ -144,16 +163,34 @@ let
             # opened does, except when the agent refuses to resume (a
             # conversation the crash cut mid-line, one that is gone): it
             # exits non-zero within seconds, and the window keeps a login
-            # shell under a line that says so instead of vanishing.
+            # shell under a line that says so instead of vanishing. Ctrl-C
+            # (130) and a TERM (143) are the user's, not a refusal.
             # `set -m` gives the agent its own process group, the
             # terminal's foreground one, so tmux names the agent as the
-            # pane's command, which the save reads.
-            wrapped="set -m; s=\$SECONDS; $cmd; rc=\$?; set +m; if [ \$rc -ne 0 ] && [ \$((SECONDS - s)) -lt 15 ]; then echo \"$agent could not continue its conversation (exit \$rc).\"; exec bash -l; fi; exit \$rc"
+            # pane's command, which the save reads. It also makes a
+            # Ctrl-Z (the agent's own suspend, or the terminal's) stop the
+            # job and return 147 to 150 here: the job is put back in the
+            # foreground at once, so the window and the agent stay. A
+            # function, not a loop: bash leaves a loop whose foreground
+            # job stops, so a second Ctrl-Z would end it. `fg`'s stderr
+            # stays on the terminal, or it cannot hand the terminal over.
+            wrapped="set -m; s=\$SECONDS; r() { if [ \$rc -ge 147 ] && [ \$rc -le 150 ]; then fg >/dev/null; rc=\$?; r; fi; }; $cmd; rc=\$?; r; set +m; if [ \$rc -ne 0 ] && [ \$rc -ne 130 ] && [ \$rc -ne 143 ] && [ \$((SECONDS - s)) -lt 15 ]; then echo \"$agent could not continue its conversation (exit \$rc).\"; exec bash -l; fi; exit \$rc"
             # A client that is not attached gives the new window its own
             # PATH, not the server's: this unit's PATH has no agent on it
             # (the restored window exited 127, I-640). The login PATH it is.
-            PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$wrapped" || true
+            if PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$wrapped"; then
+              reopened+=$(printf '%s\037%s\037%s\037%s\037' "$name" "$agent" "$cwd" "$sid")$'\n'
+            fi
           done < "$saved.restoring"
+          if [ -n "$boot" ]; then
+            body="#boot $boot''${project_id:+ $project_id}"$'\n'"$reopened"
+            tmp=$(mktemp "$live.XXXXXX")
+            if printf '%s' "$body" > "$tmp" && sync "$tmp" && mv -f "$tmp" "$live"; then
+              sync "$dot" || true
+            else
+              rm -f "$tmp"
+            fi
+          fi
           rm -f "$saved.restoring"
         fi
         flock -u 9 || true
@@ -169,14 +206,15 @@ let
   # With no argument it is the stop's save: guestd runs it as dev when
   # hostd asks for the shutdown, while every agent still runs, after it
   # wrote ~/.repose/stopped with this boot's id. It writes agent-windows
-  # (4 fields, which a restore script from before I-646 reads) and removes
-  # the minute record. No agent window removes agent-windows; a tmux that
-  # does not answer removes agent-windows and leaves the minute record,
-  # which the next start then reopens.
+  # (4 fields after a `#project <id>` line, both of which a restore script
+  # from before I-646 reads) and removes the minute record. No agent
+  # window, or a tmux that does not answer (its agents died with it),
+  # removes both: the next start reopens nothing. A save cut short
+  # leaves the minute record, which the next start reopens.
   #
   # With --periodic it is the minute save (repose-tmux-save.timer):
-  # agent-windows.live, a `#boot <boot id>` line, then a 5th field per
-  # row, the window's @repose-state. Written only when it changed, by
+  # agent-windows.live, a `#boot <boot id> <project id>` line, then a 5th
+  # field per row, the window's @repose-state. Written only when it changed, by
   # temp file, sync, rename and a sync of the folder, so a host crash
   # leaves the old record or the new one. A tmux that does not answer
   # changes nothing; no agent window writes the header alone. A record
@@ -200,10 +238,16 @@ let
       live="$out.live"
       slug=$(jq -r '.slug // empty' "$dir/project.json" 2>/dev/null || true)
       [ -n "$slug" ] || exit 0
+      project_id=$(jq -r '.project_id // empty' "$dir/project.json" 2>/dev/null || true)
+      tmp=""
+      trap '[ -z "''${tmp:-}" ] || rm -f "$tmp"' EXIT
       exec 9>>"$dir/agent-windows.lock"
       if [ -n "$periodic" ]; then
         # The restore or the stop's save has it: this minute is skipped.
         flock -n 9 || exit 0
+        # A run killed mid-write (TimeoutStartSec, a full disk) leaves its
+        # temp file; with the lock held no other writer has one open.
+        rm -f -- "$dir"/agent-windows.?????? "$dir"/agent-windows.live.??????
       else
         flock -w 3 9 || true
       fi
@@ -211,13 +255,19 @@ let
       # \037, not a tab: read collapses empty fields between tabs.
       us=$(printf '\037')
       if ! rows=$(tmux list-windows -t "=$slug" -F "#{window_name}$us#{pane_current_command}$us#{@repose-state}$us#{pane_current_path}$us#{@repose-session}" 2>/dev/null); then
-        [ -n "$periodic" ] || rm -f "$out"
+        # At a stop, no tmux means no agent runs (they die with the
+        # server): nothing is to reopen, as before I-646. The minute
+        # record goes too; only a save cut short leaves it.
+        if [ -z "$periodic" ]; then
+          rm -f "$out" "$live"
+          sync "$dir" || true
+        fi
         exit 0
       fi
       if [ -n "$periodic" ]; then
         [ -n "$boot" ] || exit 0
         if [ -e "$live" ]; then
-          live_boot=$(sed -n '1s/^#boot //p' "$live" 2>/dev/null || true)
+          live_boot=$(sed -n '1s/^#boot \([^ ]*\).*/\1/p' "$live" 2>/dev/null || true)
           if [ "$live_boot" != "$boot" ]; then
             # Another boot's record is the restore's to consume. A session
             # that has lived two minutes without consuming it was not
@@ -246,7 +296,7 @@ let
       done <<< "$rows"
       if [ -n "$periodic" ]; then
         target="$live"
-        body="#boot $boot"$'\n'"$body"
+        body="#boot $boot''${project_id:+ $project_id}"$'\n'"$body"
         if [ -e "$live" ] && [ "$(cat "$live")"$'\n' = "$body" ]; then
           exit 0
         fi
@@ -257,11 +307,15 @@ let
           sync "$dir" || true
           exit 0
         fi
+        # The restore of an older base skips this line (no folder); this
+        # one skips a record of another project.
+        [ -z "$project_id" ] || body="#project $project_id"$'\n'"$body"
       fi
       tmp=$(mktemp "$target.XXXXXX")
       printf '%s' "$body" > "$tmp"
       sync "$tmp"
       mv -f "$tmp" "$target"
+      tmp=""
       [ -n "$periodic" ] || rm -f "$live"
       sync "$dir"
     '';
