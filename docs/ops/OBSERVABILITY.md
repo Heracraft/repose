@@ -183,7 +183,7 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 
 The rules in `ops/alerts.yaml`, routed by Alertmanager
 (`ops/alertmanager/repose-route.yaml`) through calert to the owner's Google
-Chat space. A `page` goes out at once and repeats hourly; the rest wait for
+Chat space. A `page` goes out after 20 s and repeats hourly; the rest wait for
 their group and repeat every 12 hours. The always-firing `Watchdog` goes
 only to an Uptime Kuma push monitor, which posts to the same space when the
 pushes stop, so a dead Prometheus or Alertmanager is heard too, and a

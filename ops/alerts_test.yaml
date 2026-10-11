@@ -815,3 +815,45 @@ tests:
               summary: "the alerting path is working"
               description: "Always firing. Routed only to the Uptime Kuma push monitor, never to Chat."
               runbook: "docs/ops/RUNBOOK.md#watchdog"
+
+  # --- MonitoringPathDown (I-648) -----------------------------------------
+  - interval: 1m
+    name: MonitoringPathDown pages after two minutes when every scrape through the edge fails
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104",role="control-plane",app="api-grpc"}'
+        values: "1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MonitoringPathDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MonitoringPathDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "Prometheus cannot scrape anything through the edge"
+              description: "The gateway, every hostd and both api processes have failed their scrapes for 2 minutes. The edge VM, its network or the WireGuard tunnel to this server is down; GatewayDown, HostdDown and ApiDown are held back behind this page."
+              runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
+
+  - interval: 1m
+    name: MonitoringPathDown stays quiet while any scrape through the edge succeeds
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api",instance="api.repose.herakraft.co:443",role="control-plane",app="api"}'
+        values: "1 0 0 0 0 0"
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104",role="control-plane",app="api-grpc"}'
+        values: "1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MonitoringPathDown
+        exp_alerts: []

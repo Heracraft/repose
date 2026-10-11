@@ -11,7 +11,7 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 30 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The 31 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
 | `alertmanager/repose-route.yaml` | Route and inhibitions: everything to Google Chat through calert, `page` on a faster timer, `Watchdog` only to the Uptime Kuma push monitor (DECISIONS I-648). |
 | `alertmanager/calert/` | calert, the Alertmanager-to-Google-Chat adapter: its config, the message template and a compose file. |
@@ -36,7 +36,12 @@ other end of those.
 2. **Prometheus.** Copy `prometheus/prometheus.yml` to
    `/etc/prometheus/prometheus.yml`, `alerts.yaml` and `prometheus/targets/`
    to `/etc/prometheus/repose/`, and run it with
-   `--storage.tsdb.retention.time=90d`. Check `up{job=~"hosts|hostd"}`.
+   `--storage.tsdb.retention.time=90d`. Before `alerts.yaml` is loaded,
+   `up{job=~"hosts|hostd|api|api-grpc|gateway"}` must be 1 for every
+   target: HostdDown, ApiDown and GatewayDown page on any that is 0 and
+   repeat hourly. `api` passes through Traefik's allow-list
+   (`coolify/README.md` "The api's metrics"). After loading it,
+   `curl -s localhost:9090/api/v1/alerts` lists only `Watchdog` firing.
 3. **Alertmanager, calert and the heartbeat** (DECISIONS I-648).
    - calert: copy `alertmanager/calert/config.toml` and `message.tmpl` to
      `/etc/calert/`, then write the Google Chat space's webhook URL into

@@ -11,6 +11,7 @@
 #   release-queue resume RELEASE                   release session: after a conflict
 #   release-queue done RELEASE                     after main holds it: on main, unreleased,
 #                                                  and pushed to origin's `integrated` branch
+#                                                  (REPOSE_INTEGRATED_REMOTE=none: not pushed)
 #   release-queue abandon RELEASE                  release session: undo a cut, requeue
 #
 # State is not on any branch: it lives in the repository's common git dir,
@@ -316,8 +317,14 @@ cmd_done() {
 # fast-forward is pushed: a refusal means someone moved it by hand, which
 # a human should look at rather than this script overwrite. The queue
 # state is already recorded, so a failed push is a warning, not a failure.
+# The GitHub repository is public: REPOSE_INTEGRATED_REMOTE=none skips the
+# push for a batch holding an unreleased security fix (RELEASE.md).
 push_integrated() {
   local remote=${REPOSE_INTEGRATED_REMOTE:-origin}
+  if [ "$remote" = none ]; then
+    echo "main was not pushed to integrated (REPOSE_INTEGRATED_REMOTE=none)"
+    return 0
+  fi
   if git push -q "$remote" "main:refs/heads/integrated"; then
     echo "main is on $remote as integrated ($(git rev-parse --short main))"
   else

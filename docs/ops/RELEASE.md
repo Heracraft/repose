@@ -183,6 +183,17 @@ would make it something other than a copy. A release still pushes `main`;
 after it `integrated` and `main` are the same commit until the next
 integrate.
 
+**`integrated` is public.** The GitHub repository is public, so every
+integrated commit is readable there before it is deployed, often for days
+(I-424). A fix for a vulnerability (the gateway, api auth, tenant
+isolation, a host or guest escape) must not sit on `integrated` while prod
+runs the vulnerable code. Queue such a branch only for the release that
+ships it: when the owner has asked for that release, integrate it with
+`REPOSE_INTEGRATED_REMOTE=none ops/dev/release-queue done <batch>` and ship
+at once. Until main is pushed, every later `done` also runs with
+`REPOSE_INTEGRATED_REMOTE=none`, and the copy off host-01 is a `git fetch`
+of kanali's main from woker-1 instead.
+
 To work from it on another machine (woker-1 while host-01 is down, RUNBOOK
 "Operating while host-01 is down"): `git fetch origin integrated` and
 `git worktree add ../<checkout>-<slug> -b <slug> origin/integrated`. If

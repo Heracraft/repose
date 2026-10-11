@@ -2,8 +2,8 @@
 
 Symptom-titled. Each alert in `../CHECKLIST.md` and `../workstreams/10-observability.md`
 has an entry with the same name. Commands assume an operator certificate
-(`repose-admin operator-cert`) and the edge WireGuard up on the operator's
-machine.
+(`repose-admin operator-cert`) and, on the operator machine, either the
+edge WireGuard up or the `host-01` ssh block below.
 
 ## First-time setup
 
@@ -18,6 +18,25 @@ nix develop                                  # go, tofu, az, wg, promtool, grafa
 az login
 ops/dev/operator-cert.sh <control>           # 8h Host-CA cert next to ~/.ssh/id_ed25519
 ```
+
+woker-1 has no WireGuard interface and no route to 10.255.0.0/16, so it
+reaches a host through the edge's sshd. This block in `~/.ssh/config` is
+what makes `ssh host-01` and `ssh-ng://host-01` ("Switch a host to main")
+work there; `HostKeyAlias` is the host's VNet address, under which its key
+is known:
+
+```
+Host host-01
+  HostName 10.255.0.2
+  User root
+  ProxyJump root@<edge ip>:2222
+  HostKeyAlias 10.200.1.4
+```
+
+Check it before any host window: `ssh host-01 true` and `nix store info
+--store ssh-ng://host-01` (it prints `Trusted: 1`). For a WireGuard
+address from woker-1, ask the edge: `ssh -p 2222 root@<edge ip> ping -c3
+10.255.0.<host>`.
 
 Postgres publishes no port: it is on the control VM's `coolify` Docker
 network only (`ops/coolify/postgres/docker-compose.yml`). `repose-admin`
@@ -250,14 +269,16 @@ logged. The gauge is computed by api-grpc, so a dead api silences it
 (ApiHostsAbsent). While HostdDown fires, this alert is held back:
 HostdDown names the host.
 
-1. From woker-1: `ping 10.255.0.<host>` over WireGuard, and
+1. From woker-1: `ssh -p 2222 root@<edge ip> ping -c3 10.255.0.<host>`
+   (woker-1 has no WireGuard of its own), and
    `az vm get-instance-view -g repose-prod -n <host> --query
    "instanceView.statuses[].displayStatus"`. A platform repair shows there,
    in the Azure alert email, and under Resource health in the portal. If
    the VM is not running: "Operating while host-01 is down".
 2. If the VM runs but neither path answers, its network may be dead
    behind a working VM: "Host network dead after a live migration" below.
-3. If the VM is up and reachable: `ssh root@10.255.0.<host>`, `systemctl status hostd`,
+3. If the VM is up and reachable: `ssh host-01` (the block in "Operator
+   machine"), `systemctl status hostd`,
    `journalctl -u hostd -n 200`. A `stream_disconnect` loop with TLS errors
    means the host cert expired: `repose-admin hosts rotate-cert` from the
    api side writes a new one via the edge jump. `PermissionDenied` with
@@ -302,13 +323,15 @@ page for a host: the host, its network, the edge's WireGuard or hostd is
 down. While it fires, HostUnreachable and the host's warnings are held
 back. "HostUnreachable" explains the two paths.
 
-1. Is it only this host? If GatewayDown or every target is down too, it
-   is the edge or the monitoring peer: "GatewayDown", then "Every
-   Prometheus target is down and WireGuard looks fine".
+1. Is it only this host? If every target is down too, MonitoringPathDown
+   fires instead of this page; if GatewayDown fires beside it, it is the
+   edge: "GatewayDown", then "Every Prometheus target is down and
+   WireGuard looks fine".
 2. Is the VM running? From woker-1, `az vm get-instance-view -g
    repose-prod -n <host> --query "instanceView.statuses[].displayStatus"`.
    Not running: "Operating while host-01 is down".
-3. Running: `ssh -J root@<edge>:2222 root@10.255.0.<host>` with a timeout.
+3. Running: `ssh -o ConnectTimeout=15 host-01` ("Operator machine"), which
+   is `ssh -J root@<edge>:2222 root@10.255.0.<host>`.
    No answer: "Host network dead after a live migration".
 4. Reachable: `systemctl status hostd`, `journalctl -u hostd -n 200`,
    `ss -tlnp | grep 9101`, then "HostScrapeDown" step 3.
@@ -359,6 +382,27 @@ Prometheus has not scraped the gateway on the edge for 3 minutes. Users'
    `ip -br link` on the edge); otherwise `az vm restart -g repose-prod -n
    edge-01`.
 
+## MonitoringPathDown
+
+Every scrape that goes through the edge (the gateway, every hostd, `api`
+and `api-grpc`) has failed for 2 minutes. That is the edge VM, its network
+function or the WireGuard tunnel between the edge and the monitoring
+server, not four separate failures, so this one page holds back
+GatewayDown, HostdDown, ApiDown and ApiHostsAbsent.
+
+1. Do users notice? `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from
+   woker-1. `certificate required`: the edge serves users and only the
+   monitoring tunnel is broken ("Every Prometheus target is down and
+   WireGuard looks fine"). No answer: users cannot reach their machines;
+   continue.
+2. `ssh -p 2222 root@<edge ip>` from woker-1. It answers: `wg show wg0`
+   (is the monitoring peer's handshake recent?) and `systemctl status
+   wireguard-wg0 gateway`.
+3. Neither port answers: "GatewayDown" step 3 (the edge VM and its
+   network function).
+4. Hosts and the api are probably fine: HostUnreachable, which travels the
+   VNet and not the edge, still pages if a host is lost.
+
 ## ApiHostsAbsent
 
 `repose_api_hosts` has had no series for 5 minutes, so HostUnreachable
@@ -401,8 +445,10 @@ down.
 - **`repose-prod-service-health`**: an Azure incident, planned maintenance
   or advisory for East US. A maintenance notice names the VMs and the
   window; plan a drain around it.
-- **`repose-prod-<vm>-availability`**: `VmAvailabilityMetric` below 1 for
-  5 minutes; the VM is not running as far as Azure can tell.
+- **`repose-prod-<vm>-availability`**: `VmAvailabilityMetric` was 0 for
+  every minute of the last 5 (its Maximum is below 1); the VM is not
+  running as far as Azure can tell. A shorter outage, such as a planned
+  reboot, does not send it.
   "Operating while host-01 is down".
 
 The alerts are in `infra/azure/modules/environment/alerts.tf`, created
@@ -895,8 +941,10 @@ Done from woker-1, in a clean checkout of the main commit being shipped
 (the pushed `main`, or `integrated` for a host fix ahead of a release,
 `docs/ops/RELEASE.md`), with the owner's word for this switch. Never from
 kanali: it is a guest on the host being switched, and an ssh session that
-dies mid-switch leaves the activation half done. The host only trusts
-signed paths, so the derivation is copied and built there:
+dies mid-switch leaves the activation half done. `host-01` below is the
+ssh block in "Operator machine"; check it first with `ssh host-01 true`.
+The host only trusts signed paths, so the derivation is copied and built
+there:
 
 1. `drv=$(nix eval --raw ./nix#nixosConfigurations.host-01.config.system.build.toplevel.drvPath)`
 2. `nix copy --derivation --to ssh-ng://host-01 "$drv"`
@@ -1610,7 +1658,8 @@ edge, no Hello in the api log, and the boot log stops early or loops.
 2. **The previous generation.** Open the serial console and restart the VM
    from it (portal, Serial console, the power button, Restart VM), so the
    console sees the boot from the start. systemd-boot shows its menu for
-   10 seconds (I-649); pick the generation above the newest one. When the
+   10 seconds (I-649). The newest generation is listed first; pick the
+   entry below it. When the
    host is up on it, make it the default, so the next boot does not
    return to the broken one: `nix-env -p /nix/var/nix/profiles/system
    --rollback && /nix/var/nix/profiles/system/bin/switch-to-configuration
@@ -1659,7 +1708,8 @@ drain).
 The people told, the evidence captured and the tenant notice (workstream
 14 §5):
 
-- **Told, in this order:** the owner (ntfy, then the incident file); the
+- **Told, in this order:** the owner (Google Chat through calert, then
+  the incident file); the
   affected tenants; a third party only if their credentials inside the
   guest could have been read (GitHub, OpenAI, Anthropic) so they can
   rotate on their side. Nobody else until the timeline is written.

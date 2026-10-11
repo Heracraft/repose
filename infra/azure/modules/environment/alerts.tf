@@ -125,10 +125,13 @@ resource "azurerm_monitor_metric_alert" "vm_availability" {
   window_size         = "PT5M"
   tags                = local.tags
 
+  # Maximum below 1: every one-minute sample in the 5-minute window was 0,
+  # which is what the description says. Average would fire on a single
+  # minute, including the minute or two of a planned reboot.
   criteria {
     metric_namespace = "Microsoft.Compute/virtualMachines"
     metric_name      = "VmAvailabilityMetric"
-    aggregation      = "Average"
+    aggregation      = "Maximum"
     operator         = "LessThan"
     threshold        = 1
   }

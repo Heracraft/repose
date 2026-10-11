@@ -4,18 +4,19 @@
 # webhook JSON into the `{"text": ...}` message Google Chat accepts.
 #
 # Both Chat receivers post to the same calert room, `repose`, so the same
-# space; they differ only in timing. A page is sent at once and repeated
+# space; they differ only in timing. A page is sent after 20 s and repeated
 # hourly, everything else waits 30 s for its group and repeats every 12 h.
 # calert's message names the severity first, so a page reads as one.
 #
-# Watchdog always fires and goes to an Uptime Kuma push monitor every minute.
+# Watchdog always fires and goes to an Uptime Kuma push monitor every minute
+# (repeat_interval is under group_interval, so no tick is skipped).
 # When the pushes stop (Prometheus, Alertmanager or the whole server down),
 # Kuma posts to the same Chat space itself. The push URL is read from a file,
 # because a URL anyone can push to is a way to hide an outage.
 #
 # Nothing secret is in this file. The Chat webhook URL lives only in calert's
 # environment, the Kuma push URL only in the url_file below
-# (ops/alertmanager/README.md has the commands).
+# (ops/README.md, install step 3, has the commands).
 
 route:
   receiver: repose-chat
@@ -30,7 +31,9 @@ route:
       receiver: repose-watchdog
       group_wait: 0s
       group_interval: 1m
-      repeat_interval: 1m
+      # Below group_interval: at 1m, a flush a few milliseconds short of
+      # repeat_interval was skipped, so pushes came 2 minutes apart.
+      repeat_interval: 30s
     - matchers:
         - stack = "repose"
         - severity = "page"
@@ -82,6 +85,12 @@ inhibit_rules:
   # HostUnreachable page, which HostdDown for that host still sends.
   - source_matchers: [alertname = "HostdDown"]
     target_matchers: [alertname = "HostUnreachable"]
+  # Prometheus reaches every target through the edge's WireGuard, so a dead
+  # edge or tunnel fails gateway, hostd and both api scrapes at once.
+  # MonitoringPathDown is the one page for that; it fires a minute before
+  # the others so this holds them back before their group_wait ends.
+  - source_matchers: [alertname = "MonitoringPathDown"]
+    target_matchers: [alertname =~ "GatewayDown|HostdDown|ApiDown|ApiHostsAbsent"]
   # api-grpc down takes repose_api_hosts with it; ApiDown is the cause.
   - source_matchers: [alertname = "ApiDown"]
     target_matchers: [alertname = "ApiHostsAbsent"]

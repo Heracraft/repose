@@ -234,6 +234,22 @@ groups:
           description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
           runbook: "docs/ops/RUNBOOK.md#gatewaydown"
 
+      - alert: MonitoringPathDown
+        # Prometheus reaches the gateway, every hostd and both api
+        # processes through the edge's WireGuard, so a dead edge, a dead
+        # edge network function (revoked Sep 26, Sep 27, Oct 3) or a dead
+        # tunnel fails them all at once. This is the one page for that; it
+        # fires a minute before GatewayDown, HostdDown and ApiDown so its
+        # inhibition in repose-route.yaml holds them back (DECISIONS I-648).
+        expr: sum(up{job=~"gateway|hostd|api|api-grpc"}) == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus cannot scrape anything through the edge"
+          description: "The gateway, every hostd and both api processes have failed their scrapes for 2 minutes. The edge VM, its network or the WireGuard tunnel to this server is down; GatewayDown, HostdDown and ApiDown are held back behind this page."
+          runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
+
       - alert: ApiHostsAbsent
         # HostUnreachable reads repose_api_hosts. When the series is gone
         # (api-grpc down, or its scrape broken) the host alert is silent,

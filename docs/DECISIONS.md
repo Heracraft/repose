@@ -18426,15 +18426,19 @@ whose network died, of a dead api, or of the alerting path itself.
 - **Chat.** Alertmanager posts to calert v2.4.0 next to it on the personal
   server, which turns the webhook into Google Chat's `{"text": ...}`, one
   thread per alert from firing to resolved. Both receivers use the same
-  room (one space); a page goes at once and repeats hourly, the rest wait
-  30 s and repeat every 12 hours. The space's webhook URL is a secret: it
+  room (one space); a page goes after 20 s (so an inhibition between two
+  pages for one outage can settle) and repeats hourly, the rest wait 30 s
+  and repeat every 12 hours. The space's webhook URL is a secret: it
   is only in calert's environment (`CALERT_PROVIDERS__REPOSE__ENDPOINT`,
   from a 0600 env file or Coolify's Environment tab), never in the
   repository or a log; calert refuses to start without it and does not log
   it. ntfy for users (`repose notify`) is unchanged.
 - **Heartbeat.** `Watchdog` always fires and is routed only to an Uptime
   Kuma push monitor (Kuma 2.0 or later, which accepts POST), whose URL
-  Alertmanager reads from a file. Kuma posts to the same space when the
+  Alertmanager reads from a file. Its route repeats every 30 s under a
+  1-minute group interval: with both at 1 minute, a flush a few
+  milliseconds short of the repeat was skipped and pushes came 2 minutes
+  apart. Kuma posts to the same space when the
   pushes stop. Kuma replaces healthchecks.io because the owner already
   runs it; it catches a dead server only if it runs elsewhere.
 - **Rules.** `HostdDown` (`up{job="hostd"} == 0` for 3m, page) is the
@@ -18447,18 +18451,24 @@ whose network died, of a dead api, or of the alerting path itself.
   holds back HostUnreachable (which has no host_id, so with two hosts a
   scrape failure on one also holds back the other's; HostdDown still
   pages for it) and the host's warnings, ApiDown holds back
-  ApiHostsAbsent. `ops/check.sh` now checks the route with amtool.
+  ApiHostsAbsent. Prometheus reaches every target through the edge's
+  WireGuard, so a dead edge or tunnel failed gateway, hostd and both api
+  scrapes together and sent three pages; `MonitoringPathDown` (the sum of
+  those `up` series is 0 for 2m, page) fires a minute earlier and holds
+  back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent. `ops/check.sh`
+  now checks the route with amtool.
 - **Azure.** `infra/azure/modules/environment/alerts.tf`, behind
   `alerts_enabled` (true in prod, false by default so staging never
   emails): action group `repose-<env>` emailing `alert_email`, a Resource
   Health alert for platform-initiated VM events, a Service Health alert
   (incident, maintenance, advisories, East US and Global), and
-  `VmAvailabilityMetric < 1` over 5 minutes for each VM (host-01, edge-01,
-  coolify-01). Email only: Azure's webhook body is not what Google Chat
+  `VmAvailabilityMetric` with a 5-minute Maximum below 1 for each VM
+  (host-01, edge-01, coolify-01): every minute of the five was 0, so a
+  planned reboot's minute or two does not email. Email only: Azure's webhook body is not what Google Chat
   accepts, and the email arrives when everything of the owner's is down.
   `alert_email` is in `prod.local.tfvars`, because the repository is
   public.
-- Evidence: `promtool test rules` (30 rules), the end-to-end run in the
+- Evidence: `promtool test rules` (31 rules), the end-to-end run in the
   commit message, and `make plan ENV=prod` adding six `azurerm_monitor_*`
   resources and nothing else.
 
@@ -18475,11 +18485,19 @@ kanali's main was 7 commits ahead of GitHub.
   workflow here is filtered to `main`, pull requests, `v*` tags or a
   schedule, so a push to it runs nothing; Coolify deploys `main` only.
   RELEASE.md "The integrated branch" lists what would break that.
+- The repository is public, so `integrated` publishes every integrated
+  commit before it is deployed. Owner decision D8 chose GitHub for its
+  survival off host-01; the cost is that a security fix must not be
+  integrated until the release that ships it. `REPOSE_INTEGRATED_REMOTE=none`
+  skips the push for such a batch (RELEASE.md "The integrated branch").
 - woker-1 is the operator box: laptop, Tailscale, woker-1, with az under
   the owner's own login and tofu with `prod.local.tfvars`. RUNBOOK
   "Operating while host-01 is down" and "Host does not boot" are written
   for it; the serial console is reached from the portal or Cloud Shell,
-  because the az extension does not install on its nix az.
+  because the az extension does not install on its nix az. woker-1 has no
+  WireGuard, so it reaches a host through the edge's sshd with a `host-01`
+  ssh block (`ProxyJump root@<edge>:2222`, `HostKeyAlias` the VNet
+  address), which RUNBOOK "Operator machine" gives.
 - A host switch runs from woker-1 as `systemd-run --unit=repose-switch
   --wait --collect ... switch-to-configuration switch` and is read back
   from the unit's journal: the switch completes on the host even if the
