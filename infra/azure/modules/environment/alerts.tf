@@ -6,7 +6,7 @@
 #
 # Email only. Azure's webhook body is its common alert schema, which Google
 # Chat (the owner's paging channel) does not accept, so the Chat page for the
-# same outage comes from Prometheus (HostScrapeDown, HostUnreachable).
+# same outage comes from Prometheus (HostdDown, GatewayDown, ApiDown).
 #
 # Off unless alerts_enabled: staging's VMs come and go, and every one would
 # email the owner. RUNBOOK "Azure alert" says what each of these means.
