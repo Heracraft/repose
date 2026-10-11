@@ -47,6 +47,9 @@ type Spec struct {
 	// when the guest has none (no user id recorded), and then no second
 	// --fs is rendered.
 	AuthTag string // claude-auth
+	// FreePageReporting adds the balloon that hands freed guest pages
+	// back to the host (Balloon, DECISIONS I-652).
+	FreePageReporting bool
 }
 
 // Paths under the guest directory.
@@ -143,6 +146,9 @@ func (s Spec) Args() []string {
 	}
 	if s.AuthTag != "" {
 		args = append(args, "--fs", fmt.Sprintf("tag=%s,socket=%s", s.AuthTag, AuthSocket(s.GuestDir)))
+	}
+	if s.FreePageReporting {
+		args = append(args, "--balloon", Balloon)
 	}
 	return args
 }

@@ -1,0 +1,86 @@
+# matrix 2026-10-11T18:20:50Z
+small idle drop=0 | prep_ms=2762 drop_ms=4 pause_ms=7 snapshot_ms=352 total_ms=7947 image_apparent=4295599781 image_disk=820023296 | decrypt_ms=23 restore_ms=642 resume_ms=7 guestd_ms=17 total_ms=693 clock_behind_ms=8094
+small idle drop=1 | prep_ms=44 drop_ms=323 pause_ms=7 snapshot_ms=261 total_ms=2579 image_apparent=4295101573 image_disk=820326400 | decrypt_ms=24 restore_ms=592 resume_ms=7 guestd_ms=12 total_ms=641 clock_behind_ms=4811
+small mem drop=0 | prep_ms=52 drop_ms=4 pause_ms=7 snapshot_ms=920 total_ms=4303 image_apparent=4295127944 image_disk=2061406208 | decrypt_ms=23 restore_ms=1366 resume_ms=7 guestd_ms=12 total_ms=1413 clock_behind_ms=7612
+small mem drop=1 | prep_ms=42 drop_ms=176 pause_ms=7 snapshot_ms=896 total_ms=4497 image_apparent=4295107576 image_disk=2061627392 | decrypt_ms=25 restore_ms=1372 resume_ms=7 guestd_ms=17 total_ms=1427 clock_behind_ms=7686
+small build drop=0 | prep_ms=41 drop_ms=4 pause_ms=7 snapshot_ms=889 total_ms=4377 image_apparent=4295117527 image_disk=2073092096 | decrypt_ms=24 restore_ms=1389 resume_ms=6 guestd_ms=24 total_ms=1450 clock_behind_ms=7740
+small build drop=1 | prep_ms=48 drop_ms=1156 pause_ms=7 snapshot_ms=931 total_ms=5507 image_apparent=4295108128 image_disk=2073137152 | decrypt_ms=22 restore_ms=1356 resume_ms=7 guestd_ms=20 total_ms=1409 clock_behind_ms=7685
+small cache drop=0 | prep_ms=37 drop_ms=4 pause_ms=5 snapshot_ms=2976 total_ms=6798 image_apparent=4295111726 image_disk=3519979520 | decrypt_ms=23 restore_ms=2305 resume_ms=6 guestd_ms=12 total_ms=2351 clock_behind_ms=11098
+small cache drop=1 | prep_ms=36 drop_ms=1012 pause_ms=7 snapshot_ms=3024 total_ms=7831 image_apparent=4295102962 image_disk=3520020480 | decrypt_ms=23 restore_ms=2282 resume_ms=9 guestd_ms=20 total_ms=2339 clock_behind_ms=11082
+seq_last=494 lines=495
+1791742865.726 connected 1
+pass 6 ok=True errs=0 t=1791742945.043185
+pass 7 ok=True errs=0 t=1791742969.0614767
+pid=1276 n=69 t=1791742988
+18:23:19.669991015
+# matrix run 2 2026-10-11T18:26:53Z
+small balloon=1 idle drop=0 | prep_ms=38 drop_ms=3 pause_ms=7 snapshot_ms=347 total_ms=2592 image_apparent=4295581741 image_disk=814694400 | decrypt_ms=26 restore_ms=667 resume_ms=7 guestd_ms=19 total_ms=725 clock_behind_ms=5204
+small balloon=1 idle drop=1 | prep_ms=36 drop_ms=3 pause_ms=7 snapshot_ms=239 total_ms=2073 image_apparent=4295123891 image_disk=772571136 | decrypt_ms=28 restore_ms=606 resume_ms=7 guestd_ms=12 total_ms=658 clock_behind_ms=4653
+small balloon=1 mem drop=0 | prep_ms=93 drop_ms=5 pause_ms=9 snapshot_ms=1250 total_ms=4289 image_apparent=4295134794 image_disk=2064003072 | decrypt_ms=23 restore_ms=1398 resume_ms=7 guestd_ms=26 total_ms=1459 clock_behind_ms=7597
+small balloon=1 mem drop=1 | prep_ms=52 drop_ms=3 pause_ms=7 snapshot_ms=1259 total_ms=4380 image_apparent=4295116785 image_disk=1974079488 | decrypt_ms=23 restore_ms=1328 resume_ms=7 guestd_ms=23 total_ms=1386 clock_behind_ms=7686
+small balloon=1 build drop=0 | prep_ms=432 drop_ms=6 pause_ms=8 snapshot_ms=410 total_ms=3638 image_apparent=4295124127 image_disk=1310617600 | decrypt_ms=24 restore_ms=911 resume_ms=7 guestd_ms=15 total_ms=962 clock_behind_ms=6182
+small balloon=1 build drop=1 | prep_ms=142 drop_ms=3 pause_ms=45 snapshot_ms=431 total_ms=3298 image_apparent=4295117059 image_disk=1315639296 | decrypt_ms=22 restore_ms=919 resume_ms=7 guestd_ms=26 total_ms=978 clock_behind_ms=6048
+small balloon=1 cache drop=0 | prep_ms=38 drop_ms=3 pause_ms=7 snapshot_ms=2628 total_ms=6882 image_apparent=4295117721 image_disk=3562254336 | decrypt_ms=24 restore_ms=2635 resume_ms=8 guestd_ms=18 total_ms=2690 clock_behind_ms=11482
+small balloon=1 cache drop=1 | prep_ms=38 drop_ms=3 pause_ms=7 snapshot_ms=513 total_ms=4028 image_apparent=4295109781 image_disk=1606651904 | decrypt_ms=23 restore_ms=1124 resume_ms=6 guestd_ms=9 total_ms=1168 clock_behind_ms=7118
+seq_last=805 lines=806
+1791743226.999 connected 1
+pass 11 ok=True errs=0 t=1791743369.129076
+pass 12 ok=True errs=0 t=1791743377.6855521
+pid=1288 n=104 t=1791743379
+18:29:46.238335245
+large balloon=1 idle drop=0 | prep_ms=40 drop_ms=4 pause_ms=7 snapshot_ms=409 total_ms=2875 image_apparent=8590588177 image_disk=1009840128 | decrypt_ms=22 restore_ms=762 resume_ms=8 guestd_ms=5 total_ms=806 clock_behind_ms=5591
+large balloon=1 idle drop=1 | prep_ms=44 drop_ms=4 pause_ms=8 snapshot_ms=299 total_ms=2540 image_apparent=8590130724 image_disk=951492608 | decrypt_ms=23 restore_ms=681 resume_ms=8 guestd_ms=9 total_ms=726 clock_behind_ms=5172
+large balloon=1 mem drop=0 | prep_ms=51 drop_ms=4 pause_ms=8 snapshot_ms=4984 total_ms=9184 image_apparent=8590141651 image_disk=3490525184 | decrypt_ms=23 restore_ms=2357 resume_ms=8 guestd_ms=13 total_ms=2409 clock_behind_ms=13481
+large balloon=1 mem drop=1 | prep_ms=46 drop_ms=3 pause_ms=8 snapshot_ms=2724 total_ms=6829 image_apparent=8590124060 image_disk=3495518208 | decrypt_ms=22 restore_ms=2308 resume_ms=8 guestd_ms=16 total_ms=2362 clock_behind_ms=11086
+large balloon=1 build drop=0 | prep_ms=496 drop_ms=4 pause_ms=96 snapshot_ms=475 total_ms=4233 image_apparent=8590131512 image_disk=1473933312 | decrypt_ms=25 restore_ms=1042 resume_ms=7 guestd_ms=13 total_ms=1092 clock_behind_ms=6689
+large balloon=1 build drop=1 | prep_ms=60 drop_ms=4 pause_ms=7 snapshot_ms=462 total_ms=3746 image_apparent=8590125543 image_disk=1459412992 | decrypt_ms=23 restore_ms=1006 resume_ms=7 guestd_ms=14 total_ms=1055 clock_behind_ms=6698
+large balloon=1 cache drop=0 | prep_ms=48 drop_ms=3 pause_ms=7 snapshot_ms=3030 total_ms=7094 image_apparent=8590124805 image_disk=3645038592 | decrypt_ms=23 restore_ms=2400 resume_ms=9 guestd_ms=8 total_ms=2445 clock_behind_ms=11464
+large balloon=1 cache drop=1 | prep_ms=40 drop_ms=3 pause_ms=7 snapshot_ms=447 total_ms=3806 image_apparent=8590116028 image_disk=1507229696 | decrypt_ms=23 restore_ms=1037 resume_ms=7 guestd_ms=9 total_ms=1080 clock_behind_ms=6813
+seq_last=806 lines=807
+1791743397.844 connected 1
+pass 11 ok=True errs=0 t=1791743552.1040435
+pass 12 ok=True errs=0 t=1791743567.4812224
+pid=1428 n=103 t=1791743560
+18:32:47.736927030
+xl balloon=1 idle drop=0 | prep_ms=44 drop_ms=5 pause_ms=7 snapshot_ms=524 total_ms=3376 image_apparent=17180609806 image_disk=1209856000 | decrypt_ms=25 restore_ms=990 resume_ms=8 guestd_ms=13 total_ms=1044 clock_behind_ms=6314
+xl balloon=1 idle drop=1 | prep_ms=51 drop_ms=3 pause_ms=7 snapshot_ms=354 total_ms=3269 image_apparent=17180143517 image_disk=1165590528 | decrypt_ms=29 restore_ms=883 resume_ms=7 guestd_ms=15 total_ms=940 clock_behind_ms=6104
+xl balloon=1 mem drop=0 | prep_ms=80 drop_ms=8 pause_ms=10 snapshot_ms=12974 total_ms=20324 image_apparent=17180155204 image_disk=6617919488 | decrypt_ms=30 restore_ms=5534 resume_ms=1127 guestd_ms=3 total_ms=7194 clock_behind_ms=28722
+xl balloon=1 mem drop=1 | prep_ms=5416 drop_ms=3 pause_ms=9 snapshot_ms=13834 total_ms=22989 image_apparent=17180141257 image_disk=6622416896 | decrypt_ms=26 restore_ms=5749 resume_ms=10 guestd_ms=9 total_ms=5812 clock_behind_ms=25321
+xl balloon=1 build drop=0 | prep_ms=493 drop_ms=15 pause_ms=22 snapshot_ms=600 total_ms=4329 image_apparent=17180145845 image_disk=1702547456 | decrypt_ms=109 restore_ms=1310 resume_ms=47 guestd_ms=13 total_ms=1521 clock_behind_ms=7239
+xl balloon=1 build drop=1 | prep_ms=579 drop_ms=9 pause_ms=15 snapshot_ms=772 total_ms=4331 image_apparent=17180137236 image_disk=1694248960 | decrypt_ms=27 restore_ms=1463 resume_ms=21 guestd_ms=41 total_ms=1582 clock_behind_ms=7219
+xl balloon=1 cache drop=0 | prep_ms=42 drop_ms=4 pause_ms=7 snapshot_ms=5258 total_ms=7708 image_apparent=17180135510 image_disk=3880472576 | decrypt_ms=22 restore_ms=2736 resume_ms=12 guestd_ms=8 total_ms=2790 clock_behind_ms=12375
+xl balloon=1 cache drop=1 | prep_ms=77 drop_ms=4 pause_ms=7 snapshot_ms=406 total_ms=3403 image_apparent=17180133550 image_disk=1241288704 | decrypt_ms=23 restore_ms=901 resume_ms=7 guestd_ms=7 total_ms=945 clock_behind_ms=6226
+seq_last=939 lines=940
+1791743581.008 connected 1
+pass 12 ok=True errs=0 t=1791743778.9126492
+pass 13 ok=True errs=0 t=1791743787.4745643
+pid=1701 n=117 t=1791743790
+18:36:37.384098280
+large balloon=0 idle drop=0 | prep_ms=43 drop_ms=3 pause_ms=7 snapshot_ms=417 total_ms=2791 image_apparent=8590615341 image_disk=990449664 | decrypt_ms=23 restore_ms=735 resume_ms=7 guestd_ms=9 total_ms=781 clock_behind_ms=5477
+large balloon=0 idle drop=1 | prep_ms=40 drop_ms=3 pause_ms=7 snapshot_ms=315 total_ms=2608 image_apparent=8590123993 image_disk=990130176 | decrypt_ms=23 restore_ms=701 resume_ms=7 guestd_ms=8 total_ms=744 clock_behind_ms=5276
+large balloon=0 mem drop=0 | prep_ms=47 drop_ms=3 pause_ms=7 snapshot_ms=3435 total_ms=6994 image_apparent=8590135245 image_disk=3504517120 | decrypt_ms=23 restore_ms=2319 resume_ms=7 guestd_ms=16 total_ms=2371 clock_behind_ms=11265
+large balloon=0 mem drop=1 | prep_ms=66 drop_ms=4 pause_ms=11 snapshot_ms=3260 total_ms=6897 image_apparent=8590117244 image_disk=3509121024 | decrypt_ms=25 restore_ms=2324 resume_ms=8 guestd_ms=11 total_ms=2377 clock_behind_ms=11161
+large balloon=0 build drop=0 | prep_ms=409 drop_ms=3 pause_ms=8 snapshot_ms=3296 total_ms=7217 image_apparent=8590125032 image_disk=3519627264 | decrypt_ms=23 restore_ms=2307 resume_ms=7 guestd_ms=15 total_ms=2357 clock_behind_ms=11115
+large balloon=0 build drop=1 | prep_ms=716 drop_ms=3 pause_ms=54 snapshot_ms=3373 total_ms=7619 image_apparent=8590116470 image_disk=3519770624 | decrypt_ms=23 restore_ms=2355 resume_ms=7 guestd_ms=12 total_ms=2402 clock_behind_ms=11222
+large balloon=0 cache drop=0 | prep_ms=40 drop_ms=3 pause_ms=7 snapshot_ms=4074 total_ms=7207 image_apparent=8590117605 image_disk=3658022912 | decrypt_ms=23 restore_ms=2397 resume_ms=7 guestd_ms=7 total_ms=2454 clock_behind_ms=11574
+large balloon=0 cache drop=1 | prep_ms=41 drop_ms=3 pause_ms=7 snapshot_ms=3698 total_ms=7041 image_apparent=8590109752 image_disk=3658047488 | decrypt_ms=23 restore_ms=2370 resume_ms=6 guestd_ms=8 total_ms=2412 clock_behind_ms=11377
+seq_last=789 lines=790
+1791743809.358 connected 1
+pass 11 ok=True errs=0 t=1791743970.460613
+pass 12 ok=True errs=0 t=1791743990.4088116
+pid=1428 n=103 t=1791743978
+18:39:50.635112233
+xl balloon=0 idle drop=0 | prep_ms=45 drop_ms=5 pause_ms=8 snapshot_ms=506 total_ms=3427 image_apparent=17180619924 image_disk=1237819392 | decrypt_ms=23 restore_ms=919 resume_ms=10 guestd_ms=6 total_ms=967 clock_behind_ms=6304
+xl balloon=0 idle drop=1 | prep_ms=42 drop_ms=6 pause_ms=8 snapshot_ms=421 total_ms=3243 image_apparent=17180136757 image_disk=1237614592 | decrypt_ms=23 restore_ms=871 resume_ms=9 guestd_ms=6 total_ms=915 clock_behind_ms=6073
+xl balloon=0 mem drop=0 | prep_ms=48 drop_ms=4 pause_ms=7 snapshot_ms=11584 total_ms=15358 image_apparent=17180148991 image_disk=6635921408 | decrypt_ms=30 restore_ms=6349 resume_ms=3022 guestd_ms=5 total_ms=9463 clock_behind_ms=23356
+xl balloon=0 mem drop=1 | prep_ms=61 drop_ms=5 pause_ms=9 snapshot_ms=9325 total_ms=12471 image_apparent=17180134148 image_disk=6646628352 | decrypt_ms=27 restore_ms=6292 resume_ms=9 guestd_ms=12 total_ms=6349 clock_behind_ms=20713
+xl balloon=0 build drop=0 | prep_ms=482 drop_ms=21 pause_ms=17 snapshot_ms=9893 total_ms=13202 image_apparent=17180139563 image_disk=6657945600 | decrypt_ms=24 restore_ms=5800 resume_ms=15 guestd_ms=9 total_ms=5859 clock_behind_ms=20490
+xl balloon=0 build drop=1 | prep_ms=303 drop_ms=4 pause_ms=10 snapshot_ms=9750 total_ms=12761 image_apparent=17180127689 image_disk=6658498560 | decrypt_ms=24 restore_ms=5852 resume_ms=10 guestd_ms=12 total_ms=5904 clock_behind_ms=20302
+xl balloon=0 cache drop=0 | prep_ms=271 drop_ms=3 pause_ms=7 snapshot_ms=12158 total_ms=14978 image_apparent=17180129198 image_disk=6661865472 | decrypt_ms=22 restore_ms=5840 resume_ms=9 guestd_ms=6 total_ms=5882 clock_behind_ms=22546
+xl balloon=0 cache drop=1 | prep_ms=44 drop_ms=3 pause_ms=7 snapshot_ms=14635 total_ms=17753 image_apparent=17180126876 image_disk=6661865472 | decrypt_ms=24 restore_ms=6212 resume_ms=9 guestd_ms=6 total_ms=6300 clock_behind_ms=25919
+seq_last=838 lines=839
+1791744004.921 connected 1
+pass 11 ok=True errs=0 t=1791744222.4573095
+pass 12 ok=True errs=0 t=1791744231.1243424
+pid=1704 n=108 t=1791744235
+18:44:21.284569780

@@ -18413,3 +18413,193 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+
+**I-652. Guests are frozen across a host restart and restored where they
+were (guest-freeze, 2026-10-11).** Amends I-233 and DESIGN.md §19 ("we
+do not use CH snapshot/restore"). *Made during implementation*, the
+owner's ask of 2026-10-11 ("freeze, restart, unfreeze, so overnight runs
+do not feel it"); off until the owner turns it on per host
+(`repose.host.freeze.enable`). Measured in docs/research/guest-freeze.md.
+- *What a freeze is.* hostd asks the guest to write back and drop its page
+  cache, waits 5 s, pauses it (`vm.pause`), has Cloud Hypervisor write its
+  memory and device state into an encrypted image of its own
+  (`vm.snapshot`, I-653), and ends the hypervisor with the VM still
+  paused; the tap, virtiofsd and the login share go as at a stop. The
+  guest's disk then holds exactly what its memory expects. Its bbolt state
+  stays `running`: the state enum is fixed, and a frozen guest is a running
+  guest whose hypervisor is between hosts. Smallest guests first, two
+  snapshots at a time (they share the data disk), within a deadline
+  (`--freeze-deadline`, 120 s); a guest the pool has no room for, or one
+  the deadline leaves, is left running for whatever the shutdown does next.
+- *What a restore is.* At hostd's start, inside Reconcile and before the
+  stream sends Hello, every complete image is checked, its key unwrapped,
+  the tap, rules, shape, store view, virtiofsd and login share brought back
+  as a boot does, the hypervisor started with `--restore` (copy mode),
+  the image closed (its key leaves the kernel), the VM resumed, guestd's
+  answer awaited, and the guest's clock set to the host's through guestd's
+  Exec (`date -u -s`): it resumes at the snapshot's time otherwise. The
+  image is then removed. Processes, tmux, agents and open files carry on;
+  connections that went through the host (SSH through the gateway, the
+  agents' HTTPS) end and are made again. Hello then reports the guest
+  running, so the api sees no stop.
+- *Restored only when nothing changed.* The record must be `complete`,
+  under 6 h old (I-645's window), and name the guest's current closure,
+  class and volume size and this hypervisor version; the guest must still
+  be `running` in bbolt with no unit; the volume's fingerprint (its first
+  4 KiB read with O_DIRECT: ext4's superblock, which any mount or fsck
+  changes) must match the one taken after the hypervisor exited; the key
+  must unwrap within 90 s and match its check. Anything else discards the
+  image and the guest goes on through reconcile as after any restart. A
+  CH 53 image refused CH 45 cleanly (CPUID check), and a store share
+  missing a path the guest held open refused the restore cleanly
+  (virtiofsd's saved state names it); both leave the image intact, and
+  hostd discards it rather than retry.
+- *Fallback.* A failed freeze resumes the guest (it never notices) and
+  leaves it to the shutdown: I-650's clean stop when that lands, the kill
+  until then. A failed restore stops what it started and discards the
+  image; reconcile then finds the guest `running` with no unit and settles
+  it as before (stopped; I-645 marks it interrupted and the api starts it
+  cold).
+- *Triggers.* (1) The host shutting down: `repose-guest-freeze.service`
+  (wanted by multi-user.target, after hostd and the pool unit) runs `hostd
+  freeze --shutdown` as its ExecStop. A drop-in on the template names
+  `guest@`, `virtiofsd@` and `virtiofsd-auth@` gives every guest unit,
+  transient ones and those already running after the switch's reload
+  included, `Before=repose-guest-freeze.service`, so systemd waits for the
+  freeze before it stops any guest, and stops hostd and the pool after it.
+  This covers `systemctl reboot` in a planned window, a switch that needs
+  a reboot, and Azure's graceful shutdown request (hv_utils, as on
+  2026-10-10). `--shutdown` freezes only when `systemctl
+  is-system-running` says `stopping`, so a switch that restarts or removes
+  the unit freezes nothing. (2) `hostd freeze` and `hostd thaw` for an
+  operator: freeze before a window, thaw if the window is called off.
+  (3) Azure Scheduled Events, in hostd behind `--scheduled-events`
+  (`repose.host.freeze.scheduledEvents`, off): a Reboot, Redeploy, Preempt
+  or Terminate notice for this VM freezes the guests and then approves the
+  event so Azure need not wait out NotBefore (15 min for a Reboot); a
+  Freeze notice (a pause of seconds for memory-preserving maintenance or a
+  live migration) freezes nothing and sets the guests' clocks once it is
+  over; an event that leaves the list while the host is still up (called
+  off) thaws the guests. Turning the listener on turns Scheduled Events on
+  for the VM: Azure then holds every reboot, the operator's own `az vm
+  restart` included, until approved or NotBefore passes. That is why it
+  is a separate switch (owner decision 20 deferred the listener for this
+  reason; the freeze is what makes it worth having).
+- *Time budget.* Azure documents no limit for a guest OS's graceful
+  shutdown (`skipShutdown` exists to skip it); Scheduled Events give at
+  least 15 min for a Reboot and 10 for a Redeploy. A freeze costs about
+  1.7 s per GB of image at host-01's 600 MB/s data disk; images measured
+  0.8 to 1.2 GB for idle guests of any class and up to 6.6 GB for an xl
+  guest with 5.6 GB of anonymous memory. host-01's two running guests on
+  2026-10-11 held 17.8 GB resident: about 30 s, less after the cache drop.
+  The staging host measures Azure's real graceful-shutdown wait before the
+  owner turns this on (staging needs, below).
+- *Free page reporting.* Without it a guest's memory on the host only
+  grows (freed pages stay in the memfd), so its image does too: 6.6 GB
+  for an xl guest long after the load that touched it ended. Guests
+  started with `--free-page-reporting` (on with the freeze) get a balloon
+  of size 0 with `free_page_reporting=on`; the guest kernel hands freed
+  pages back and images follow use (3.6 GB to 1.5 GB for the cached case;
+  0.75 GB resident 40 s after a 3.4 GB cache was dropped). It also makes
+  the guest@ unit hold what the guest uses. Guests already running keep
+  their devices until their next start; the restore itself takes the
+  devices from the image.
+- *Not adopted:* `memory_restore_mode=ondemand` (0.11 s against 0.75 s,
+  but the image must stay readable for the guest's life and the next
+  image was the whole class, 8 GiB); freezing on a hostd stop (hostd
+  restarts do not touch guests); a new guest state (`frozen`); keeping the
+  image to retry a failed restore.
+- *L4, L5, L6, L7.* L4: Reconcile runs after the pool unit (hostd
+  `wants`/`after` it); an image on a pool that is down cannot be opened or
+  removed, so its record stays and the next start tries again, while the
+  guest itself is settled as L4 says. L5 (I-650): with the freeze on, the
+  clean stop becomes the freeze; guests the freeze did not take get the
+  clean stop; frozen guests' monitors are removed before their hypervisor
+  exits, so the shutdown flag never sees them. L6 (I-645): ThawAll runs
+  first in Reconcile, so a restored guest has a unit when the marks are
+  computed and is not marked; a guest whose image was discarded is marked
+  as any other and started cold by the api. L7 (I-646): the minute record
+  is still written and is what a cold start reopens.
+- *Interfaces.* No proto change: Hello says `running` for a restored
+  guest, as for one that never stopped. host-conventions.md lists the
+  image volume, its mount, the record, the unit and the flags.
+- *User docs.* Nothing user-visible ships while it is off. The commit that
+  turns it on for a host adds to lifecycle.md's "When a machine's server
+  restarts" (I-645): a machine that was running when its server restarted
+  comes back as it was, programs, tmux windows and agents included; SSH
+  sessions and other open connections drop and need reconnecting; the
+  machine's clock is set when it comes back; if that cannot happen it
+  starts again as described there. Recorded so the flip is one commit.
+- *Proof here:* Go tests in internal/hostd/guest/freeze_test.go
+  (`TestFreezeThenThawRestoresTheGuest`, `TestThawDiscardsAStaleImage`
+  with nine cases, `TestFreezeFailureResumesTheGuest`,
+  `TestThawFallsBackWhenTheRestoreFails`,
+  `TestFreezeOffRestoresNothingAndCleansUp`,
+  `TestFreezeWithoutKeyFreezesNothing`, `TestFreezeStopsAtThePoolLimit`,
+  `TestThawSweepsImageVolumesWithoutRecord`,
+  `TestFreezeLogsCarryNoTenantData`), internal/hostd/freeze and
+  internal/hostd/schedev tests, and the experiments' 60-cycle loop on
+  woker-1. *Proof still owed:* a staging host: a graceful `systemctl
+  reboot`, an `az vm restart`, and a Scheduled Events Reboot with running
+  guests, each restored with the probes intact; Azure's graceful-shutdown
+  wait; freeze and restore times on Intel and Premium SSD v2. Host VM tests
+  cannot run a guest (no third level of virtualisation).
+
+**I-653. A frozen guest's memory image: encrypted on a volume of its own,
+the key wrapped by Key Vault, removed once read (guest-freeze,
+2026-10-11).** Amends I-235 (option 2, with the key in Key Vault instead
+of the api) and the "three homes for secrets" rule (CLAUDE.md,
+features/secrets.md) for this one case.
+- *What the image holds.* All of the guest's RAM: named secrets on
+  `/run/repose/secrets`, tool logins, whatever agents and programs hold.
+  I-233 and I-235 left freezing out until it could not be a fourth home
+  for secrets in the clear.
+- *Where.* A thin volume per guest, `vg-guests/frz-<guest_id>`, sized
+  the class's memory plus 256 MiB (thin: it takes what is written, the
+  guest's touched memory); dm-crypt in plain mode (aes-xts-plain64, a
+  512-bit key from the kernel's random source, new for every image, no
+  header on disk) as `/dev/mapper/repose-frz-<guest_id>`; ext4; mounted on
+  `<guest dir>/freeze`, owned by the hypervisor's user, mode 0700. That
+  mount point is the only place the hypervisor's sandbox can write (I-51);
+  a mount made there after the unit started reaches it by propagation.
+  The image never leaves the host and is never uploaded.
+- *The key.* The image key is wrapped with RSA-OAEP-256 by the public half
+  of the `freeze-wrap` key in a Key Vault of its own (`freeze_keyvault_name`
+  in tofu; a separate vault because access policies are vault-wide, and the
+  hosts get nothing on the vault that wraps users' DEKs). hostd fetches the
+  public half at start and hourly, so wrapping at shutdown needs no
+  network; only the host's managed identity can unwrap (Get and UnwrapKey,
+  nothing else), and only at Key Vault. The wrapped key, its version and a
+  check (sha256 of the key under a fixed label, so a wrong key is caught
+  before anything mounts what it decrypts to) sit in the record,
+  `/var/lib/repose/hostd/freeze/<guest_id>.json` (root, 0700, written
+  atomically with fsyncs). The plain key lives in hostd's memory and the
+  kernel's dm table only while the image is open, and is zeroed after use.
+  `--freeze-key-file` (an RSA PEM) replaces Key Vault for staging and
+  tests; on a host it must sit off the host's disks.
+- *What it defends.* The image at rest: a stolen disk, a disk snapshot or
+  backup, a host decommissioned with its disk. Not a compromised running
+  host, which can read live guest RAM anyway (I-235) and can unwrap as the
+  host identity while it is compromised. Key Vault's audit log records
+  each unwrap.
+- *Lifecycle.* Made at the freeze; closed (unmounted, key out of the
+  kernel) as soon as the snapshot is written; opened at the restore and
+  closed as soon as the hypervisor has read it; removed (`lvremove`, which
+  discards the blocks back to the pool) right after a restore, on any
+  check that fails, on a failed freeze or restore, when the freeze is off,
+  and at every hostd start for a volume with no record. A destroy, volume
+  restore, resize, class change or closure change while a guest is frozen
+  is caught at the next start by the record checks (state, size, class,
+  closure, fingerprint) and the image removed then. Older than 6 h:
+  removed.
+- *Size budget.* An image takes at most the class's memory from the guest
+  pool; a freeze adds guests smallest first only while the pool stays
+  under the refuse threshold (85 percent, I-586). host-01's 476 GiB pool
+  at 28.6 percent takes every image a 64 GiB host can hold (at most 13
+  percent of it).
+- *Cost.* Making, mounting and flushing the encrypted volume added about
+  0.5 s to a freeze and nothing measurable to a restore (docs/research/
+  guest-freeze.md). One Key Vault unwrap per guest per restore.
+- *Azure.* A Key Vault and an RSA 3072 key per environment, an access
+  policy for the host identity; tofu has them behind
+  `freeze_keyvault_name` (null: none). Not applied by the builder.

@@ -20,6 +20,9 @@ import (
 // does not know are logged as orphans and adopted from guest.json when
 // one exists.
 func (m *Manager) Reconcile(ctx context.Context) error {
+	// Frozen guests come back first, so the units listed below include
+	// them and the Hello after this says they run (I-652).
+	m.ThawAll(ctx)
 	units, err := m.d.Systemd.ListUnits(ctx, "guest@*")
 	if err != nil {
 		return err

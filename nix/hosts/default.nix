@@ -25,6 +25,7 @@ in
     ./hardening.nix
     ./azure.nix
     ./caches.nix
+    ./freeze.nix
   ];
 
   options.repose.host = {

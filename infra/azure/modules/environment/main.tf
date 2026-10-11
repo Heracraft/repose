@@ -126,6 +126,26 @@ module "keyvault" {
   tags = local.tags
 }
 
+# The guest freeze's wrapping key (DECISIONS I-653): RSA, the hosts' identity
+# may read its public half and unwrap with it. Hosts wrap image keys with the
+# public half they fetched ahead of time, so a freeze at shutdown needs no
+# network; a restore needs the vault.
+module "freeze_keyvault" {
+  source = "../keyvault"
+  count  = var.freeze_keyvault_name == null ? 0 : 1
+
+  name                = var.freeze_keyvault_name
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = local.location
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+
+  operator_object_id     = coalesce(var.operator_object_id, data.azurerm_client_config.current.object_id)
+  api_identity_object_id = module.storage.host_identity_principal_id
+  key_name               = "freeze-wrap"
+
+  tags = local.tags
+}
+
 module "edge" {
   source = "../edge"
 

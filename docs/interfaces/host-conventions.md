@@ -8,7 +8,7 @@ change to either happens in the same commit.
 
 | Path | What |
 |---|---|
-| `/var/lib/repose/hostd/` | `cert.pem`, `key.pem` (mTLS to api), `host.json` (see below), `state.db` (bbolt: guest table for reconciliation). Mode 0700, written by `hostd register`. |
+| `/var/lib/repose/hostd/` | `cert.pem`, `key.pem` (mTLS to api), `host.json` (see below), `state.db` (bbolt: guest table for reconciliation). Mode 0700, written by `hostd register`. `freeze/<guest_id>.json`: a frozen guest's record (DECISIONS I-652, I-653): state `writing` or `complete`, the closure, class, volume size and Cloud Hypervisor version it was frozen with, the guest volume's fingerprint, and the image key wrapped by Key Vault with its check; written atomically with fsyncs, removed with the image. |
 | `/var/lib/repose/guests/<guest_id>/` | `ch.args` (the rendered cloud-hypervisor argv, one argument per line; DECISIONS I-27), `guest.json` (non-secret copy of the guest record for `hostd reconcile --rebuild`), `ch.sock` (Cloud Hypervisor API), `vsock.sock` (host side of the guest's vsock, `CONNECT 5000` reaches guestd), `console.sock` (serial; hostd copies it into `console.log`, rotated at 64 MB keeping 3, at most 2 KiB a second with a 1 MiB burst; output over that is read and dropped, and the log gets one `[repose: N bytes of console output dropped, ...]` line, DECISIONS I-452), `virtiofsd/virtiofsd.sock`, `virtiofsd-auth/virtiofsd.sock` (the login share, I-278). The parent is `0711 root`; the directory is `1770 root:hostd` so the unprivileged `guest@<id>` (I-51) can create its sockets but not remove hostd's files; `virtiofsd/` is `0750 virtiofsd:hostd` and the socket in it is group `hostd` (`--socket-group`); `virtiofsd-auth/` is the same with owner `repose-auth`. hostd creates each of these without following a link and replaces anything at that name that is not a directory it or the intended owner owns, since the hypervisor's user can create entries in the guest directory (DECISIONS I-466). Secrets are never written here: they are delivered to the guest's tmpfs over vsock. |
 | `/var/lib/repose/users/<user_id>/` | The Claude login share (DECISIONS I-278). `0711 root` like its parent; `claude-auth/` is `0700 repose-auth` and holds only the `.credentials.json` Claude Code writes from inside the user's guests. `claude-auth/` is the mount point of the user's own 16 MiB ext4 volume `vg-guests/auth-<user_id>` (256 inodes, mounted `nosuid,nodev,noexec`), so what a guest writes there cannot fill the host's root filesystem (DECISIONS I-464); a pre-I-464 share directory found at the first mount is renamed `claude-auth.legacy/` and removed by the sweep once no guest of the user runs. hostd creates both, never opens anything inside `claude-auth/`, and stamps `last-guest` (root) when a guest of that user boots and at each sweep while one exists; the sweep (hostd start, daily) unmounts and removes the volume and the whole directory 30 days after the stamp. Not on any guest volume, so in no snapshot. |
 | `/var/lib/repose/builds/<revision_id>/` | `fragment.nix` for a `Build`; see `nix-build-contract.md` |
@@ -20,7 +20,7 @@ change to either happens in the same commit.
 | `/run/repose/store-view/` | Mount point of each guest's store view (DECISIONS I-463); empty on the host. `virtiofsd@<id>` runs with `PrivateMounts=yes` and `TemporaryFileSystem=/run/repose/store-view:mode=0755,nosuid,nodev,size=16m`, shares this path, and pivots into it; hostd then bind-mounts every path of the guest's closure, and of the closures it ran before (up to 16 recorded, plus the project's `rev-*` roots, those still on the host) (`nix-store -qR`) into that namespace, read-only, `nosuid,nodev`, private propagation (a symlink store path is recreated as a symlink). An in-place apply adds the new closure's paths before the switch; nothing is removed until the guest's next start. Nothing is mounted in the host namespace. |
 | `/run/repose/store-export/` | Kept for one release (I-463): read-only bind of `/nix/store` with an empty tmpfs over `.links`, the whole store. Guests running when the host switches to I-463 are restarted at the switch (`hostd guests` shows them as `whole-store`); `hostd --store-export /run/repose/store-export` is the rollback that shares it again for every new start. Removed the release after. |
 | `/nix/var/nix/gcroots/repose/<guest_id>` | GC root for the guest's system closure; removed on destroy. `rev-<project_id>-<revision_id>` roots keep the last 3 built revisions per project and are all removed when the project's guest is destroyed (DECISIONS I-115; a later restore rebuilds). `good-<guest_id>` keeps the guest's last good closure, the one a boot that never reaches Ready falls back to; removed on destroy (I-590). |
-| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464). The pool is overcommitted by design: the plan's disk counts what volumes hold, not their sizes (DECISIONS I-585), so I-449's bound on the sum of the sizes is gone. Guarded by real use, data or metadata whichever is fuller (I-586): at 70 percent the api places no new project there and hostd sends `pool_high`; lvm autoextends at 80; hostd refuses (`insufficient_capacity`) a create, restore or resize at 85 and a start at 95; `PoolFull` pages at 90 and `PoolMetadataHigh` at 80 percent metadata. A running guest is never stopped for the pool |
+| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464), frozen guests' memory images `frz-<guest_id>` (class RAM + 256 MiB, dm-crypt plain aes-xts-plain64 as `/dev/mapper/repose-frz-<guest_id>`, ext4, mounted on `<guest dir>/freeze` only while written or read; DECISIONS I-653). The pool is overcommitted by design: the plan's disk counts what volumes hold, not their sizes (DECISIONS I-585), so I-449's bound on the sum of the sizes is gone. Guarded by real use, data or metadata whichever is fuller (I-586): at 70 percent the api places no new project there and hostd sends `pool_high`; lvm autoextends at 80; hostd refuses (`insufficient_capacity`) a create, restore or resize at 85 and a start at 95; `PoolFull` pages at 90 and `PoolMetadataHigh` at 80 percent metadata. A running guest is never stopped for the pool |
 | `/var/log/repose/` | hostd log (journald is primary), build logs per op |
 | `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`) |
 
@@ -72,6 +72,7 @@ rotates keys does the same restart itself.
 | `hostd register --state <dir> --join-token /run/repose/join-token` | `repose-register.service`, once, before hostd | exit 0 with `host.json`, `cert.pem`, `key.pem` written and the token deleted; exit 0 doing nothing if `host.json` exists; exit 3 on a rejected token; any other non-zero is retried after 30 s. |
 | `hostd audit-login` | PAM session hook on every sshd login | environment `PAM_TYPE`, `PAM_USER` and sshd's `SSH_AUTH_INFO_0`; writes the journal line `operator_login` with the certificate's `key_id` and `cert_serial` (or a plain key's `key_fp`), never a key body, and on `open_session` hands the same identifiers to the running daemon over `/run/repose/hostd.sock` (`POST /operator-login`), which sends them to the api as the `operator_login` host event for the `audit_log` row (DECISIONS I-140). Must be quick and never block a login: a 2 s timeout, and without a daemon the journal line is the record. `PAM_RHOST` is never recorded. |
 | `hostd snapshot-all` | `repose-snapshot.timer` at 03:00 local | snapshots every running guest without the api. |
+| `hostd freeze --shutdown` | `repose-guest-freeze.service` ExecStop (only with `repose.host.freeze.enable`) | freezes every running guest to its encrypted image within `--freeze-deadline` (120 s), smallest first (DECISIONS I-652); does nothing unless `systemctl is-system-running` says `stopping`, or when the freeze is off. hostd restores each complete image at its next start, before Hello. `hostd freeze` (no flag) and `hostd thaw` are the operator's. The daemon flags: `--freeze`, `--freeze-key-vault <url> --freeze-key-name <name>` or `--freeze-key-file <pem>`, `--freeze-deadline`, `--free-page-reporting`, `--scheduled-events --vm-name <name>`. |
 
 ## Network
 
@@ -218,6 +219,12 @@ so that a host which has stopped shipping is visible),
 `<wg0>:9100`), `sshd.service` (on `<wg0>:22`), `repose-snapshot.timer`
 (nightly 03:00 local), `repose-pool-monitor.timer` (every 5 minutes),
 `nix-gc.timer` (weekly, `--delete-older-than 14d`), `fstrim.timer`.
+With `repose.host.freeze.enable`: `repose-guest-freeze.service` (oneshot,
+RemainAfterExit, after hostd and the pool unit; its ExecStop is `hostd
+freeze --shutdown`, TimeoutStopSec the deadline plus 30 s, never restarted
+by a switch) and a drop-in on `guest@`, `virtiofsd@` and `virtiofsd-auth@`
+with `Before=repose-guest-freeze.service`, so at shutdown no guest unit
+stops until the freeze is done (DECISIONS I-652).
 
 `guests.slice` has `CPUWeight=100`; `nix-daemon.service` (tenant builds)
 has `CPUWeight=50`. Nix: `max-jobs 2`, `cores 8`, `min-free 50G`,
@@ -281,9 +288,15 @@ and 150, taken at the guest's next start),
 `--net tap=tap-<8hex>,mac=52:54:<4 bytes of the id's sha256>`, `--fs tag=ro-store,socket=
 virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,
 `--serial socket=console.sock`, `--console off`, `--memory
-size=<RAM>M,shared=on`, `--seccomp true` (the default, written out). The CH
+size=<RAM>M,shared=on`, `--seccomp true` (the default, written out), and
+with `--free-page-reporting` `--balloon size=0,free_page_reporting=on`
+(DECISIONS I-652; from the guest's next start). A frozen guest is
+restored with `cloud-hypervisor --api-socket ch.sock --restore
+source_url=file://<guest dir>/freeze/snap,memory_restore_mode=copy
+--seccomp true` in the same unit and sandbox; every device comes from the
+image. The CH
 API socket is used for `shutdown` (after guestd's Shutdown timed out),
-`pause`, `resume`, `resize-disk` (after `lvextend`, before guestd's
+`pause`, `resume`, `snapshot` (the freeze), `resize-disk` (after `lvextend`, before guestd's
 `GrowFs`; I-66) and stats; hostd connects to the guest's sockets as root.
 virtiofsd runs as `virtiofsd:virtiofsd` with `--sandbox namespace` (a
 user and mount namespace with the export pivot_rooted in; `chroot` is

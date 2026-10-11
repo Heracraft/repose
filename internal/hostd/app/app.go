@@ -78,6 +78,8 @@ type Options struct {
 	NoWG             bool
 	Substituters     string
 	LogLevel         string
+	// Freeze is the guest freeze across host restarts (freeze.go, I-652).
+	Freeze FreezeOptions
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -250,7 +252,10 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		VirtiofsSocketWait: 10 * time.Second,
 		GuestUser:          o.GuestUser,
 		NoAuthShare:        !o.ClaudeLoginShare,
+		FreePageReporting:  o.Freeze.FreePageReporting,
 	}
+	fcfg, fdeps := freezeSetup(o, r, l, log)
+	cfg.Freeze = fcfg
 	if os.Getenv("REPOSE_HOSTD_TESTING") == "1" {
 		cfg.FailAtStep = o.FailAtStep
 		// The hostd and virtiofsd accounts exist on hosts only; under the
@@ -263,12 +268,22 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
+		Freeze: fdeps,
 	})
 	if err != nil {
 		return err
 	}
 	lh.m = mgr
 	d.mgr = mgr
+	if fdeps.Sealer != nil {
+		// The restore below needs Unwrap only; fetching the public half
+		// first lets a freeze work from the first minute.
+		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := fdeps.Sealer.Refresh(rctx); err != nil {
+			log.Warn("image key not fetched at start", "event", "freeze", "err", err.Error())
+		}
+		cancel()
+	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
@@ -289,6 +304,12 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("rotation", func() { d.rotationLoop(ctx, roots) })
 	run("prune", func() { d.pruneLoop(ctx) })
 	run("metrics", func() { d.serveMetrics(ctx) })
+	if fdeps.Sealer != nil && fcfg.Enabled {
+		run("freeze-key", func() { freezeKeyLoop(ctx, fdeps.Sealer, log) })
+	}
+	if se := scheduledEvents(o, mgr, log); se != nil {
+		run("scheduled-events", func() { se.Run(ctx) })
+	}
 	run("control", func() {
 		if err := control.Serve(ctx, o.ControlSock, d); err != nil {
 			log.Error("control socket failed", "event", "control", "err", err.Error())

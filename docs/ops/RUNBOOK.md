@@ -1012,6 +1012,58 @@ is restarted from the Azure portal.
    an unplanned reboot with tenants on the host is an incident line in
    `docs/incidents/`.
 
+## Guest freeze
+
+With `repose.host.freeze.enable` a host freezes its running guests to an
+encrypted memory image when it shuts down and restores them at hostd's
+next start (DECISIONS I-652, I-653). Off by default.
+
+Turning it on for a host:
+1. tofu: set `freeze_keyvault_name` for the environment and apply (a Key
+   Vault with the `freeze-wrap` key; the host identity gets Get and
+   UnwrapKey). `tofu output freeze_keyvault` gives the URL.
+2. The host's nix config: `repose.host.freeze.enable = true;`
+   `repose.host.freeze.keyVaultUrl = "<vault_uri>";` (keyName defaults to
+   `freeze-wrap`). Switch (RUNBOOK "Switch a host to main"). The journal
+   shows `image key fetched; guests can be frozen` (event `freeze`); until
+   it does, a shutdown freezes nothing.
+3. Guests get free page reporting at their next start; running ones are
+   frozen without it (bigger images).
+4. Add the user docs the I-652 entry lists in the same commit.
+
+Checks:
+- `hostd freeze` freezes every running guest now and prints each one's
+  outcome, time and image size; `hostd thaw` brings them back. Use it on a
+  canary before trusting a reboot, or before a planned window.
+- After a reboot: `journalctl -u hostd -b | grep -E '"event":"(thaw|freeze_discard)"'`.
+  `guest restored from its frozen image` with `duration_ms` and
+  `frozen_s` per guest; `frozen image discarded` with a fixed `reason`
+  for each one that started cold instead (closure changed, volume changed,
+  key unavailable, restore failed, ...). Those go on as after any reboot
+  ("Host rebooted").
+- Shutdown side: `journalctl -b -1 -u repose-guest-freeze -u hostd | grep
+  '"event":"freeze"'`: `guests frozen` with `frozen`, `guests` and
+  `duration_ms`. A guest left out (`skipped`: deadline passed, or the pool
+  had no room) was stopped by the shutdown as before.
+- Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
+  are empty once hostd has started; it removes any image it cannot
+  restore. `dmsetup ls | grep repose-frz` is empty except during a freeze
+  or restore.
+
+Key Vault unreachable at start: each restore waits up to 90 s for the key,
+then the guest starts cold. Nothing to do but find out why the host cannot
+reach the vault (`curl -sS -H Metadata:true
+'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net'`
+should return a token).
+
+Scheduled Events (`repose.host.freeze.scheduledEvents`): while it is on,
+Azure holds every reboot of the VM, an operator's `az vm restart`
+included, until hostd approves it (it freezes first, then approves) or 15
+minutes pass. If hostd or the network is down, the wait is the full 15
+minutes: use `az vm deallocate` then `az vm start`, which the listener
+does not hold, or turn the option off and wait 24 h for Azure to stop
+holding events.
+
 ## Browser tools on a machine refuse every connection
 
 A tenant reports that `playwright` and `chrome-devtools` fail with a

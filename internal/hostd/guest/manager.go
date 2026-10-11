@@ -207,6 +207,13 @@ type Config struct {
 	UnitPoll        time.Duration
 	// FailAtStep injects a failure into CreateGuest at that step (tests).
 	FailAtStep int
+	// Freeze turns on freezing guests across host restarts (I-652).
+	Freeze FreezeConfig
+	// FreePageReporting starts guests with a balloon that hands the pages
+	// they free back to the host (I-652): smaller frozen images, and the
+	// unit holds what the guest uses. Guests started before keep their
+	// devices until their next start.
+	FreePageReporting bool
 }
 
 // Defaults fills documented values into zero fields.
@@ -344,6 +351,9 @@ type Deps struct {
 	// func stops it. Nil disables capture (tests).
 	ConsoleStart func(guestID, dir string) (stop func())
 	Now          func() time.Time
+	// Freeze is the guest freeze's key, image volume and fingerprint
+	// (I-652, I-653); empty when the freeze is off.
+	Freeze FreezeDeps
 }
 
 type job struct {
@@ -393,6 +403,9 @@ type Manager struct {
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// thawMu serialises ThawAll (freeze.go, I-652).
+	thawMu sync.Mutex
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.

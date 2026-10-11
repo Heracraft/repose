@@ -13,6 +13,8 @@
 #                  (hostd's tc commands, measured), Fluent Bit to a real Loki
 #   host-storage   the disko data-disk layout on a virtual disk: PV, VG,
 #                  thin pool with autoextend, a thin volume, the pool monitor
+#   host-freeze    the guest freeze's shutdown ordering and hostd's freeze
+#                  and thaw commands, with the real hostd (freeze.nix)
 #   host-services  the real hostd, guests.slice, transient guest survives a
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
@@ -533,6 +535,9 @@ in
   # check builds the script; run ./result/bin/repose-guest-memory-repro DIR
   # on a KVM machine (a VM test would nest the guest three levels deep).
   host-guest-memory = import ./guest-memory.nix { inherit pkgs; };
+
+  # The guest freeze's host side (DECISIONS I-652): freeze.nix.
+  host-freeze = import ./freeze.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
 
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";
