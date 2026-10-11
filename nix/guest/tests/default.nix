@@ -850,7 +850,10 @@ in
           # laptop's ssh carries in production (no -R; the gateway relays
           # forwarded-tcpip only, I-296).
           # setsid: sudo's pty would otherwise wait for the background child.
-          guest.succeed("sudo -u dev setsid -f sh -c 'cd /home/dev && exec python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe < /dev/null > /tmp/fake-laptop.log 2>&1'")
+          # nohup: sudo closes its pty as soon as setsid's parent exits, and
+          # the hangup killed the child before its setsid() on a loaded
+          # builder (no log file at all, twice in a row on woker-1).
+          guest.succeed("sudo -u dev nohup setsid -f sh -c 'cd /home/dev && exec python3 ${./mcp-fake-laptop.py} -- repose-mcp hold fwprobe < /dev/null > /tmp/fake-laptop.log 2>&1' > /dev/null 2>&1")
           ready = guest.wait_until_succeeds("grep '^ready ' /tmp/fake-laptop.log", timeout=60)
           r = json.loads(ready.split(" ", 1)[1])
           assert r == {"name": "fwprobe", "tools": 1, "new": True}, r
