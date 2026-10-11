@@ -14,8 +14,8 @@ test('add via text, list, and delete; the value never reaches the DOM', async ({
 	});
 	await page.goto(`/projects/${p.id}/secrets`);
 
-	await page.getByPlaceholder('NAME').fill('DATABASE_URL');
-	await page.getByPlaceholder('Value').fill('postgres://user:hunter2@db/app');
+	await page.getByLabel('Name', { exact: true }).fill('DATABASE_URL');
+	await page.getByLabel('Value', { exact: true }).fill('postgres://user:hunter2@db/app');
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
 	const secretRow = page.getByText('DATABASE_URL', { exact: true });
@@ -48,8 +48,10 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 	});
 	await page.goto(`/projects/${p.id}/secrets`);
 
-	await page.getByPlaceholder('NAME').fill('lowercase_name');
-	await page.getByPlaceholder('Value').fill('x');
+	// The field shows and sends capitals, so a lowercase name is no longer
+	// a mismatch; a hyphen still is.
+	await page.getByLabel('Name', { exact: true }).fill('MY-KEY');
+	await page.getByLabel('Value', { exact: true }).fill('x');
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
 	await expect(page.getByText(/\[A-Z\]\[A-Z0-9_\]/)).toBeVisible();
@@ -62,8 +64,8 @@ test('a value over 64 KB is rejected client-side before it reaches the api', asy
 	});
 	await page.goto(`/projects/${p.id}/secrets`);
 
-	await page.getByPlaceholder('NAME').fill('BIG_VALUE');
-	await page.getByPlaceholder('Value').fill('x'.repeat(70_000));
+	await page.getByLabel('Name', { exact: true }).fill('BIG_VALUE');
+	await page.getByLabel('Value', { exact: true }).fill('x'.repeat(70_000));
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
@@ -84,7 +86,7 @@ test('add via file stores the bytes, and they never reach the DOM', async ({ pag
 	// A byte sequence that is deliberately not valid UTF-8, so a path that
 	// round-tripped through a string would corrupt it.
 	const bytes = Buffer.from([0x00, 0xff, 0xfe, 0x41, 0x42, 0x43, 0x80, 0x0a]);
-	await page.getByPlaceholder('NAME').fill('SERVICE_ACCOUNT_KEY');
+	await page.getByLabel('Name', { exact: true }).fill('SERVICE_ACCOUNT_KEY');
 	await page.setInputFiles('input[type=file]', {
 		name: 'key.bin',
 		mimeType: 'application/octet-stream',
@@ -118,7 +120,7 @@ test('a file over 64 KB is rejected client-side', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}/secrets`);
 
-	await page.getByPlaceholder('NAME').fill('BIG_FILE');
+	await page.getByLabel('Name', { exact: true }).fill('BIG_FILE');
 	await page.setInputFiles('input[type=file]', {
 		name: 'big.bin',
 		mimeType: 'application/octet-stream',
@@ -142,4 +144,49 @@ test('a failed first load shows the error and Retry loads the list', async ({ pa
 	await failed.getByRole('button', { name: 'Retry' }).click();
 	await expect(page.getByRole('heading', { level: 2, name: 'No secrets yet' })).toBeVisible();
 	await expect(failed).toHaveCount(0);
+});
+
+// The native file widget is replaced by a ghost button (I-664): it opens
+// the same picker, the picked file shows by name, and its bytes are what
+// the api receives.
+test('Load from file reads the value from the picked file', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'secrets-picker-app',
+		remote_url: 'github.com/heracraft/secrets-picker-app'
+	});
+	await page.goto(`/projects/${p.id}/secrets`);
+	await page.getByLabel('Name', { exact: true }).fill('deploy_key');
+
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('button', { name: 'Load from file' }).click();
+	const bytes = Buffer.from('ssh-ed25519 AAAA picked\n');
+	await (await chooser).setFiles({ name: 'id_deploy', mimeType: 'text/plain', buffer: bytes });
+	await expect(page.getByTestId('secret-file-name')).toHaveText('id_deploy');
+	await expect(page.getByLabel('Value', { exact: true })).toBeDisabled();
+
+	const put = page.waitForRequest(
+		(r) => r.method() === 'PUT' && r.url().endsWith(`/projects/${p.id}/secrets/DEPLOY_KEY`)
+	);
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	const body = (await put).postDataJSON() as { value: string };
+	expect(body.value).toBe(bytes.toString('base64'));
+	await expect(page.getByText('DEPLOY_KEY', { exact: true })).toBeVisible();
+	// The form is clear for the next one.
+	await expect(page.getByTestId('secret-file-name')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Load from file' })).toBeVisible();
+});
+
+// I-664: the list and the form fill the frame side by side at 1440.
+test('secrets spans the frame at 1440', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'secrets-wide-app',
+		remote_url: 'github.com/heracraft/secrets-wide-app'
+	});
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}/secrets`);
+	const card = page.locator('form', { has: page.getByRole('heading', { name: 'Add a secret' }) });
+	const box = await card.boundingBox();
+	expect(box!.x + box!.width).toBeGreaterThanOrEqual(1200);
+	const empty = await page.getByRole('heading', { name: 'No secrets yet' }).boundingBox();
+	expect(empty!.y).toBeLessThan(box!.y + box!.height);
 });

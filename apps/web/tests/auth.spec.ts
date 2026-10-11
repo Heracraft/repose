@@ -7,8 +7,13 @@ test('sign-in, callback and sign-out round trip', async ({ page }) => {
 
 	await signIn(page);
 	await expect(page).toHaveURL(/\/projects/);
-	await expect(page.getByRole('link', { name: 'repose' })).toBeVisible();
+	// The logo goes home from the dashboard too (I-655).
+	const logo = page.getByRole('link', { name: 'repose, home' });
+	await expect(logo).toBeVisible();
+	await expect(logo).toHaveAttribute('href', '/');
 
+	// Sign out is in the Account menu (I-655).
+	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL('/');
 	await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible();
@@ -21,7 +26,7 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 }) => {
 	await signIn(page);
 	await page.goto('/');
-	const nav = page.getByRole('navigation', { name: 'Main' });
+	const nav = page.getByRole('navigation', { name: 'Site' });
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Get started' })).toHaveCount(0);
@@ -33,14 +38,13 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await expect(page).toHaveURL('/projects');
 });
 
-// DECISIONS I-568: the dashboard's header links to the docs, where a
-// signed-in visitor lands after sign-in; at every width since I-578
-// (design.spec.ts checks 390 and 360).
+// DECISIONS I-568, I-655: the dashboard's header is the site header, which
+// links to the docs at every width (design.spec.ts checks the phones).
 test('the dashboard header links to the docs', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await signIn(page);
 	await page.goto('/projects');
-	const docs = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Docs' });
+	const docs = page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Docs' });
 	await expect(docs).toBeVisible();
 	await expect(docs).toHaveAttribute('href', '/docs');
 });
@@ -59,6 +63,7 @@ test('sign-out does not flash the landing page before leaving for Logto', async 
 			}
 		}).observe(document.body, { childList: true, subtree: true });
 	});
+	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL('/');
 	await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible();

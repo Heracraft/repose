@@ -65,6 +65,13 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
 //	POST /question   {"project_id","agent","text","options","timeout_s"} -> f.AddQuestion
+//	POST /events     {"project_id","count","kinds","agents","windows","summaries","spacing_minutes"}: count events
+//	                 spacing_minutes apart (default 1) ending now, oldest first. kinds, agents, windows and
+//	                 summaries are cycled when given; by default every event is an agent_message with no
+//	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
+//	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
+//	POST /agents     {"project_id","agents": [{agent, window, state}],"ssh_sessions","tmux_clients"}
+//	                 -> f.SetAgents, and f.SetSessions when either count is given
 //
 // Every answer carries permissive CORS headers, so a Playwright test can
 // call the switch from the page itself.
@@ -126,20 +133,55 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(q)
 	})
-	// count events on a project, one minute apart ending now, summaries
-	// e000.. oldest first (I-414's Show older).
+	// count events on a project, spacing_minutes apart ending now, oldest
+	// first; the lists are cycled (see the routes above).
 	mux.HandleFunc("POST /events", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			ProjectID string `json:"project_id"`
-			Count     int    `json:"count"`
+			ProjectID      string   `json:"project_id"`
+			Count          int      `json:"count"`
+			Kinds          []string `json:"kinds"`
+			Agents         []string `json:"agents"`
+			Windows        []string `json:"windows"`
+			Summaries      []string `json:"summaries"`
+			SpacingMinutes int      `json:"spacing_minutes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		spacing := time.Duration(max(body.SpacingMinutes, 1)) * time.Minute
+		pick := func(list []string, i int, def string) string {
+			if len(list) == 0 {
+				return def
+			}
+			return list[i%len(list)]
+		}
 		now := time.Now()
+		f.BackdateCreation(body.ProjectID, now.Add(time.Duration(-body.Count-1)*spacing).Truncate(time.Second))
 		for i := 0; i < body.Count; i++ {
-			f.AddEvent(body.ProjectID, now.Add(time.Duration(i-body.Count)*time.Minute), "agent_message", fmt.Sprintf("e%03d", i))
+			f.AddEventAs(body.ProjectID, now.Add(time.Duration(i-body.Count)*spacing),
+				pick(body.Kinds, i, "agent_message"), pick(body.Agents, i, ""), pick(body.Windows, i, ""),
+				pick(body.Summaries, i, fmt.Sprintf("e%03d", i)))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /agents", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID   string            `json:"project_id"`
+			Agents      []api.AgentSignal `json:"agents"`
+			SSHSessions *int              `json:"ssh_sessions"`
+			TmuxClients *int              `json:"tmux_clients"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Agents == nil {
+			body.Agents = []api.AgentSignal{}
+		}
+		f.SetAgents(body.ProjectID, body.Agents)
+		if body.SSHSessions != nil || body.TmuxClients != nil {
+			f.SetSessions(body.ProjectID, deref(body.SSHSessions), deref(body.TmuxClients))
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -161,6 +203,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "Repose-Event-Count, X-Request-Id")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -172,4 +215,11 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	url := "http://" + ln.Addr().String()
 	f.SetCheckoutBase(url + "/polar/checkout/")
 	return &adminServer{Server: srv, URL: url}, nil
+}
+
+func deref(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

@@ -29,6 +29,7 @@
 		onretry,
 		label = 'Loading…',
 		error,
+		shape = 'content',
 		children
 	}: {
 		status: 'loading' | 'failed' | 'ready';
@@ -37,6 +38,12 @@
 		label?: string;
 		/** The reason the load failed, as the api or network put it. */
 		error?: string;
+		/**
+		 * The skeleton drawn while it loads: 'page' adds the title's bar
+		 * (the root layout, before PageShell exists), 'content' is what
+		 * sits under PageShell's title, and 'rows' is a section's rows.
+		 */
+		shape?: 'page' | 'content' | 'rows';
 		children?: Snippet;
 	} = $props();
 
@@ -75,6 +82,23 @@
 	</div>
 {:else}
 	<!-- role=status is polite: the word is read once, and the content that
-	     replaces it is not interrupted. -->
-	<p class="text-sm text-ink-muted" role="status">{label}</p>
+	     replaces it is not interrupted. The eye gets the page's shape
+	     instead (I-659): a title, a strip of figures and four rows, in
+	     still --sunken blocks, so the page that arrives fills a shape
+	     already drawn rather than replacing a lone word. No shimmer: motion
+	     is for state, and a load is not one you can act on. -->
+	<p class="sr-only" role="status">{label}</p>
+	<div aria-hidden="true" data-testid="skeleton" class="flex flex-col gap-8">
+		{#if shape === 'page'}
+			<div class="h-9 w-2/5 rounded-xs bg-sunken"></div>
+		{/if}
+		{#if shape !== 'rows'}
+			<div class="h-18 rounded-xs bg-sunken"></div>
+		{/if}
+		<div class="space-y-2">
+			{#each [0, 1, 2, 3] as row (row)}
+				<div class="h-11 rounded-xs bg-sunken"></div>
+			{/each}
+		</div>
+	</div>
 {/if}

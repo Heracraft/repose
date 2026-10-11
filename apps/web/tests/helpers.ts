@@ -123,14 +123,49 @@ export async function addQuestion(
 	return res.json();
 }
 
-/** count events on a project, one minute apart, e000 oldest (cmd/fakeapi POST /events). */
-export async function addEvents(projectId: string, count: number): Promise<void> {
-	const adminURL = process.env.FAKEAPI_ADMIN_URL;
-	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');
-	const res = await fetch(`${adminURL}/events`, {
+/**
+ * count events on a project, spacingMinutes apart (default 1) ending now,
+ * e000 oldest (cmd/fakeapi POST /events). kinds, agents, windows and
+ * summaries are cycled when given; the project's creation moves to before
+ * the first of them, so it stays the oldest event.
+ */
+export async function addEvents(
+	projectId: string,
+	count: number,
+	opts: {
+		kinds?: string[];
+		agents?: string[];
+		windows?: string[];
+		summaries?: string[];
+		spacingMinutes?: number;
+	} = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/events`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ project_id: projectId, count })
+		body: JSON.stringify({
+			project_id: projectId,
+			count,
+			kinds: opts.kinds,
+			agents: opts.agents,
+			windows: opts.windows,
+			summaries: opts.summaries,
+			spacing_minutes: opts.spacingMinutes
+		})
 	});
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);
+}
+
+/** Sets the agents a running project's signals report, and its sessions (cmd/fakeapi POST /agents). */
+export async function setAgents(
+	projectId: string,
+	agents: { agent: string; window: string; state: string }[],
+	sessions: { ssh_sessions?: number; tmux_clients?: number } = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/agents`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectId, agents, ...sessions })
+	});
+	if (!res.ok) throw new Error(`/agents: ${res.status} ${await res.text()}`);
 }

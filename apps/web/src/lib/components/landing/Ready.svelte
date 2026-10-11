@@ -145,10 +145,12 @@
 	.am {
 		color: var(--ink);
 	}
+	/* No side inset: the tool list starts and the terminal ends on the
+	   divider's own edges, the stage's padding is the margin. */
 	.below {
 		display: grid;
 		gap: 24px;
-		padding: 16px;
+		padding: 16px 0;
 		align-items: start;
 		border-top: 1px solid var(--rule);
 	}
@@ -177,7 +179,7 @@
 			padding: 40px 32px;
 		}
 		.below {
-			padding: 32px;
+			padding: 32px 0 0;
 		}
 	}
 	@media (min-width: 768px) {

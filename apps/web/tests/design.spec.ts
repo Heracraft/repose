@@ -110,30 +110,110 @@ test.describe('signed in', () => {
 	});
 });
 
-// DECISIONS I-578: the dashboard header has Projects, Billing, Settings,
-// Docs and Sign out at every width, and fits a 360px phone.
-for (const width of [390, 360]) {
-	test(`the dashboard header shows Docs and fits at ${width}`, async ({ page }) => {
+// DECISIONS I-655, I-656: one header on every kind of page, the same
+// items in the same order, its logo at the same x and going home, and a
+// Feedback link in the header and the footer of every page.
+const FRAME_PAGES = ['/', '/docs/cli', '/terms', '/projects'];
+
+for (const width of [320, 360, 390, 1440]) {
+	test(`the header row fits at ${width} on every kind of page`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 800 });
 		await signIn(page);
-		for (const path of ['/projects', '/settings']) {
+		for (const path of FRAME_PAGES) {
 			await page.goto(path);
-			const nav = page.getByRole('navigation', { name: 'Main' });
-			for (const name of ['Projects', 'Billing', 'Settings', 'Docs']) {
-				await expect(nav.getByRole('link', { name, exact: true })).toBeInViewport({ ratio: 1 });
+			const nav = page.getByRole('navigation', { name: 'Site' });
+			await expect(nav.getByRole('link', { name: 'Docs' })).toBeVisible();
+			const items = nav.locator(':scope > a:visible, :scope > div > :visible');
+			const count = await items.count();
+			// Docs, Feedback and the account slot at every width; Pricing
+			// from 400px and GitHub from sm.
+			expect(count, path).toBe(width >= 640 ? 5 : width >= 400 ? 4 : 3);
+			for (let i = 0; i < count; i++) {
+				await expect(items.nth(i), `${path} item ${i}`).toBeInViewport({ ratio: 1 });
 			}
-			await expect(nav.getByRole('button', { name: 'Sign out' })).toBeInViewport({ ratio: 1 });
-			await expect(nav.getByRole('link', { name: 'Account' })).toHaveCount(0);
-			const wide = await page.evaluate(() => document.documentElement.scrollWidth);
-			expect(wide, path).toBeLessThanOrEqual(width);
+			await expect(page.getByRole('link', { name: 'repose, home' })).toBeInViewport({
+				ratio: 1
+			});
 		}
+	});
+}
+
+for (const width of [1440, 390]) {
+	test(`the logo stands at the frame's edge on every page at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await signIn(page);
+		const xs: number[] = [];
+		for (const path of FRAME_PAGES) {
+			await page.goto(path);
+			const logo = page
+				.getByRole('link', { name: 'repose, home' })
+				.locator('svg')
+				.filter({ visible: true });
+			await expect(logo).toBeVisible();
+			const { x, cw } = await logo.evaluate((el) => ({
+				x: el.getBoundingClientRect().x,
+				// The header is full-bleed: its width is the page's.
+				cw: document.querySelector('header')!.getBoundingClientRect().width
+			}));
+			// The 1200px frame, centred in the page's width (less a classic
+			// scrollbar's gutter, which an overlay scrollbar does not take),
+			// and its 20 to 40px gutter: x=160 at 1440 and x=20 at 390.
+			const gutter = Math.min(40, Math.max(20, 0.03 * width));
+			expect(x, path).toBeCloseTo((cw - Math.min(cw, 1200)) / 2 + gutter, 0);
+			xs.push(Math.round(x));
+		}
+		expect(new Set(xs).size, xs.join(',')).toBe(1);
+	});
+}
+
+test('the logo goes home from the dashboard', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/projects');
+	await expect(page.getByRole('link', { name: 'repose, home' })).toHaveAttribute('href', '/');
+});
+
+test('every page links to the feedback board in its header and its footer', async ({ page }) => {
+	await signIn(page);
+	for (const path of FRAME_PAGES) {
+		await page.goto(path);
+		for (const where of [
+			page.getByRole('navigation', { name: 'Site' }),
+			page.getByRole('navigation', { name: 'Footer' })
+		]) {
+			await expect(where.getByRole('link', { name: 'Feedback' }), path).toHaveAttribute(
+				'href',
+				'https://repose.fider.io'
+			);
+		}
+	}
+});
+
+test('the header stays at the top of a long page', async ({ page }) => {
+	await page.goto('/terms');
+	await page.evaluate(() => scrollTo(0, 1500));
+	await expect
+		.poll(() =>
+			page
+				.locator('header')
+				.first()
+				.evaluate((el) => el.getBoundingClientRect().top)
+		)
+		.toBe(0);
+});
+
+for (const width of [768, 1024, 1120]) {
+	test(`the landing does not scroll sideways at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+		expect(wide).toBeLessThanOrEqual(0);
 	});
 }
 
 test.describe('public pages', () => {
 	test('the docs fold chevron turns only when motion is allowed', async ({ page }) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		const chevron = page.locator('details summary svg');
+		const chevron = page.locator('main details summary svg');
 		await page.goto('/docs/cli');
 		await expect(chevron).toBeAttached();
 		expect(await chevron.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain(

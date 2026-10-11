@@ -92,77 +92,102 @@
 	}
 </script>
 
-<div class="form-section" id="machine-nix">
-	<h2 class="text-xl font-semibold">machine.nix</h2>
-	<p class="mt-1 text-sm text-ink-muted">
-		A home-manager module every machine of your account gets, beside each project's own
-		configuration: packages, shell aliases, prompt, dotfiles. Your laptop keeps a copy at
-		<code class="font-mono">~/.config/repose/machine.nix</code>.
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-		<a class="link" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
-			>How it works</a
+<!-- One of Settings' two-track rows (its h2 and fact on the left, the
+     control on the right from lg), drawn here with the same classes. The
+     editor takes the whole right track: it holds code, and a long line
+     wraps less in 790px than in 560. -->
+<section
+	class="form-section lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-x-12"
+	id="machine-nix"
+>
+	<div>
+		<h2 class="text-xl font-semibold">machine.nix</h2>
+		<p class="mt-1 text-sm text-ink-muted">
+			A home-manager module every machine of your account gets. Your laptop keeps it at
+			<code class="font-mono text-compact whitespace-nowrap">~/.config/repose/machine.nix</code>.
+		</p>
+		<p class="mt-2 text-sm">
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
+			<a class="link" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
+				>How it works</a
+			>
+		</p>
+	</div>
+	<div class="mt-4 min-w-0 lg:mt-0">
+		<LoadState
+			status={personal ? 'ready' : loadError ? 'failed' : 'loading'}
+			error={loadError}
+			onretry={load}
+			shape="rows"
 		>
-	</p>
-	<LoadState
-		status={personal ? 'ready' : loadError ? 'failed' : 'loading'}
-		error={loadError}
-		onretry={load}
-	>
-		{#if personal}
-			{#if personal.created_at}
-				<p class="mt-2 text-sm text-ink-muted">
-					Saved {dateTime(personal.created_at)}
-					{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}.
-				</p>
-			{:else}
-				<p class="mt-2 text-sm text-ink-muted">You have none yet.</p>
-			{/if}
-			{#if personal.opted_out && personal.opted_out.length > 0}
-				<p class="mt-1 text-sm text-ink-muted">Off on {personal.opted_out.join(', ')}.</p>
-			{/if}
-			<div class="mt-3">
-				<NixEditor bind:value={text} {errorLine} label="machine.nix" />
-			</div>
-			{#if conflict}
-				<div class="banner banner--warn mt-3" role="alert">
-					<p>
-						machine.nix on your account changed after this page loaded, probably pushed from your
-						laptop. Load that copy to edit it; your changes here are dropped.
-					</p>
-					<button type="button" class="btn-ghost mt-2 -ml-2" onclick={load}
-						>Load the account's copy</button
-					>
-				</div>
-			{/if}
-			{#if error}
-				<div class="banner banner--error mt-3" role="alert">
-					<p class="font-mono text-compact whitespace-pre-wrap">{error}</p>
-				</div>
-			{/if}
-			{#if heldNavigation}
-				<div class="banner banner--warn mt-3" role="alert">
-					<p>machine.nix is not saved.</p>
-					<div class="mt-2 flex gap-2">
-						<button
-							type="button"
-							class="btn-ghost -ml-2"
-							bind:this={stayButton}
-							onclick={() => (heldNavigation = undefined)}>Stay</button
-						>
-						<button type="button" class="btn-ghost" onclick={leave}>Leave anyway</button>
-					</div>
-				</div>
-			{/if}
-			<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-				<button type="button" class="btn" disabled={saving || !dirty || conflict} onclick={save}>
-					{saving ? 'Saving…' : 'Save'}
-				</button>
-				{#if dirty}
-					<span class="text-sm text-ink-muted">Not saved yet.</span>
-				{:else if saved}
-					<span class="text-sm text-ink-muted" role="status">{saved}</span>
+			{#if personal}
+				{#if personal.opted_out && personal.opted_out.length > 0}
+					<p class="mb-3 text-sm text-ink-muted">Off on {personal.opted_out.join(', ')}.</p>
 				{/if}
-			</div>
-		{/if}
-	</LoadState>
-</div>
+				<NixEditor bind:value={text} {errorLine} label="machine.nix">
+					{#snippet footer()}
+						<!-- The state on the left, said once as it changes; the
+						     revision the account holds and Save on the right. -->
+						<span role="status">
+							{#if dirty}
+								<span class="text-ink">Unsaved changes</span>
+							{:else if saved}
+								{saved}
+							{:else if personal?.created_at}
+								Saved
+							{:else}
+								You have none yet.
+							{/if}
+						</span>
+						<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+							{#if personal?.created_at}
+								<span class="tabular-nums">
+									{dateTime(personal.created_at)}
+									{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
+								</span>
+							{/if}
+							<button
+								type="button"
+								class="btn-quiet btn--sm"
+								disabled={saving || !dirty || conflict}
+								onclick={save}
+							>
+								{saving ? 'Saving…' : 'Save'}
+							</button>
+						</span>
+					{/snippet}
+				</NixEditor>
+				{#if conflict}
+					<div class="banner banner--warn mt-3 mb-0" role="alert">
+						<p>
+							machine.nix on your account changed after this page loaded, probably pushed from your
+							laptop. Load that copy to edit it; your changes here are dropped.
+						</p>
+						<button type="button" class="btn-ghost mt-2 -ml-2" onclick={load}
+							>Load the account's copy</button
+						>
+					</div>
+				{/if}
+				{#if error}
+					<div class="banner banner--error mt-3 mb-0" role="alert">
+						<p class="font-mono text-compact whitespace-pre-wrap">{error}</p>
+					</div>
+				{/if}
+				{#if heldNavigation}
+					<div class="banner banner--warn mt-3 mb-0" role="alert">
+						<p>machine.nix is not saved.</p>
+						<div class="mt-2 flex gap-2">
+							<button
+								type="button"
+								class="btn-ghost -ml-2"
+								bind:this={stayButton}
+								onclick={() => (heldNavigation = undefined)}>Stay</button
+							>
+							<button type="button" class="btn-ghost" onclick={leave}>Leave anyway</button>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		</LoadState>
+	</div>
+</section>

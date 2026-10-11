@@ -377,7 +377,15 @@ export interface ProjectEvent {
 	ts: string;
 	kind: string;
 	agent?: string;
+	/** The tmux window the agent ran in, when the event names one. */
+	window?: string;
 	summary: string;
+}
+
+/** One page of events and, from an api with I-662, how many match in all. */
+export interface EventsPage {
+	events: ProjectEvent[];
+	total?: number;
 }
 
 /** A repose-ask question (docs/interfaces/api.md "Questions", I-245). */

@@ -14,6 +14,12 @@ export interface DocHeading {
 	depth: number;
 	text: string;
 	id: string;
+	/**
+	 * The heading as the page's "On this page" rail shows it: the text, or
+	 * for a command heading (### `repose run [PROJECT]`) the command's words
+	 * without its arguments, "repose run", so a 180px rail lists one per row.
+	 */
+	label: string;
 }
 
 export interface Doc {
@@ -139,14 +145,53 @@ export function renderShell(code: string): { html: string; copy: string } {
 	return { html, copy };
 }
 
-/** A code block with a copy button over its top right corner; ```text has none. */
+/**
+ * A code block with a copy button over its top right corner; ```text has
+ * none. The first line is its own span: on a phone the button sits over the
+ * block's corner, and the span's end padding lets that line scroll clear of
+ * it (DocPage). No highlight span crosses a line break, so the first
+ * newline is always between spans.
+ */
 function codeBlock(lang: string, code: string): string {
 	if (lang === 'text') {
 		return `<pre><code class="language-text">${escapeHTML(code)}</code></pre>\n`;
 	}
 	const { html, copy } =
 		lang === 'shell' ? renderShell(code) : { html: highlight(code, lang), copy: code };
-	return `<div class="code"><pre><code class="language-${lang}">${html}</code></pre><button type="button" class="copy" data-copy="${escapeHTML(copy).replace(/"/g, '&quot;')}">Copy</button></div>\n`;
+	const nl = html.indexOf('\n');
+	const lines =
+		nl === -1
+			? `<span class="l1">${html}</span>`
+			: `<span class="l1">${html.slice(0, nl)}</span>${html.slice(nl)}`;
+	return `<div class="code"><pre><code class="language-${lang}">${lines}</code></pre><button type="button" class="copy" data-copy="${escapeHTML(copy).replace(/"/g, '&quot;')}">Copy</button></div>\n`;
+}
+
+/**
+ * A table cell that is a figure: a number with its unit, a price, a
+ * percentage ("100 GB", "$29*", "4 vCPUs"). It gets class `num`, which
+ * keeps it on one line in tabular figures, so "100" never ends a line with
+ * "GB" on the next.
+ */
+export const FIGURE = /^\$?[\d.,]+\s?(GB|TB|MB|KB|vCPUs?|%|ms|s|h)?\*?$/;
+
+function markFigures(html: string): string {
+	return html.replace(
+		/<(td|th)((?: align="[a-z]+")?)>([^<]*)<\/\1>/g,
+		(cell, tag: string, attrs: string, text: string) =>
+			FIGURE.test(text.trim()) ? `<${tag}${attrs} class="num">${text}</${tag}>` : cell
+	);
+}
+
+/** A command heading's words before its first argument: "repose mcp forward". */
+function railLabel(inner: string, text: string): string {
+	const html = inner.trim();
+	if (!/^<code[ >][\s\S]*<\/code>$/.test(html) || html.split('<code').length !== 2) return text;
+	const words: string[] = [];
+	for (const w of text.trim().split(/\s+/)) {
+		if (!/^[a-z][a-z0-9-]*$/.test(w)) break;
+		words.push(w);
+	}
+	return words.length ? words.join(' ') : text;
 }
 
 /** Heading text for the page's own list: tags dropped, entities decoded. */
@@ -177,7 +222,8 @@ function render(body: string): { html: string; headings: DocHeading[] } {
 				seen.set(id, n + 1);
 				if (n) id = `${id}-${n}`;
 				if (token.depth === 2 || token.depth === 3) {
-					headings.push({ depth: token.depth, text: headingText(inner), id });
+					const text = headingText(inner);
+					headings.push({ depth: token.depth, text, id, label: railLabel(inner, text) });
 				}
 				return `<h${token.depth} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true" tabindex="-1">#</a>${inner}</h${token.depth}>\n`;
 			},
@@ -197,9 +243,11 @@ function render(body: string): { html: string; headings: DocHeading[] } {
 	});
 	let html = marked.parse(body) as string;
 	// Wide tables scroll inside their own box, never the page.
-	html = html
-		.replace(/<table>/g, '<div class="table-wrap"><table>')
-		.replace(/<\/table>/g, '</table></div>');
+	html = markFigures(
+		html
+			.replace(/<table>/g, '<div class="table-wrap"><table>')
+			.replace(/<\/table>/g, '</table></div>')
+	);
 	return { html, headings };
 }
 
@@ -234,9 +282,14 @@ export function docBySlug(slug: string): Doc | undefined {
 	return DOCS.find((d) => d.slug === slug);
 }
 
-/** Pages that moved, old slug to new, so links already shared keep working. */
+/**
+ * Pages that moved, old slug to new, so links already shared keep working.
+ * 'index' is the overview at /docs.
+ */
 export const MOVED: Record<string, string> = {
-	'tutorial-your-chrome': 'your-chrome' // DECISIONS I-316
+	'tutorial-your-chrome': 'your-chrome', // DECISIONS I-316
+	quickstart: 'index', // the overview is the Quickstart
+	pricing: 'billing' // plans and prices are on Plans and billing
 };
 
 export function movedDoc(slug: string): string | undefined {

@@ -4,7 +4,8 @@
  * The pictures on the landing draw a machine as a panel with hairline
  * edges, and the hero shows those edges as a wall the attack stops at. The
  * page takes that drawing as its grammar: the content stands between two
- * rails (the walls) that run from the header to the footer; every rule
+ * rails (the walls) that run from the site header's rule to the footer,
+ * on the edges of the frame every page shares (I-656); every rule
  * runs wall to wall and is ticked with a small cross where it meets a
  * rail, the way a technical drawing marks an intersection; each section
  * is a head on paper (the bold serif title), then its picture on a sunken
@@ -18,20 +19,22 @@
  */
 
 :root {
-	--land-w: 1120px;
-	/* The inset from a rail to the text, and the stage's own padding. */
-	--land-x: clamp(1.25rem, 4.2vw, 3.5rem);
+	/* The inset from a rail to the text, and the stage's own padding: the
+	   frame's gutter, so the headline starts under the header's logo
+	   (x=160 at 1440, 20 at 390). */
+	--land-x: var(--frame-x);
 	--land-y: clamp(3rem, 6.5vw, 5.25rem);
 	--land-ease: cubic-bezier(0.65, 0, 0.35, 1);
 	/* --ink, --ink-muted and --ink-faint live in layout.css, which is on
 	   the page before this file is (DECISIONS I-331). */
 }
 
-/* The walls. A pseudo-element each, so they can be drawn in on load. */
+/* The walls: the frame's box edges (120 and 1320 at 1440), a
+   pseudo-element each, so they can be drawn in on load. */
 .rails {
 	visibility: visible;
 	position: relative;
-	max-width: var(--land-w);
+	max-width: var(--frame-w);
 	margin-inline: auto;
 }
 .rails::before,
@@ -50,7 +53,10 @@
 .rails::after {
 	right: 0;
 }
-@media (max-width: 767px) {
+/* Only where the frame stands clear of the window's edges (1200px and a
+   tick's width each side): below that a rail would sit on the screen's
+   edge, and a tick past it pushed the page 5px sideways. */
+@media (max-width: 1239px) {
 	.rails::before,
 	.rails::after {
 		display: none;
@@ -62,9 +68,7 @@
 		animation: raise 1.1s var(--land-ease) both;
 	}
 	.sec::before,
-	.sec::after,
-	.topbar::before,
-	.topbar::after {
+	.sec::after {
 		animation: tick 0.4s ease-out 0.9s both;
 	}
 }
@@ -83,34 +87,18 @@
 	padding-inline: var(--land-x);
 }
 
-/* The top bar is the house header (HeaderFrame, width="landing": 56px
-   over its --rule hairline); this wrapper only carries the ticks where
-   that rule meets the rails. Its links are the muted ink and turn to ink
-   under the pointer over 150ms, as a button's colours do. */
-.topbar {
-	position: relative;
-}
-.navlink,
-.foot a {
-	transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.navlink {
-	color: var(--ink-muted);
-	font-size: 0.875rem;
-}
-.navlink:hover {
-	color: var(--ink);
-}
-
-/* A section: a rule wall to wall, ticked at each rail. */
+/* A section: a rule wall to wall, ticked at each rail. The first one
+   draws no rule: the site header's hairline is that rule, and its ticks
+   mark where the header meets the rails. */
 .sec {
 	position: relative;
 	border-top: 1px solid var(--rule);
 }
+main > .sec:first-child {
+	border-top: 0;
+}
 .sec::before,
-.sec::after,
-.topbar::before,
-.topbar::after {
+.sec::after {
 	content: '';
 	position: absolute;
 	width: 9px;
@@ -124,27 +112,28 @@
 .sec::after {
 	top: -5px;
 }
-.topbar::before,
-.topbar::after {
-	bottom: -5px;
-}
-.sec::before,
-.topbar::before {
+.sec::before {
 	left: -5px;
 }
-.sec::after,
-.topbar::after {
+.sec::after {
 	right: -5px;
 }
-@media (max-width: 767px) {
+@media (max-width: 1239px) {
 	.sec::before,
-	.sec::after,
-	.topbar::before,
-	.topbar::after {
+	.sec::after {
 		display: none;
 	}
 }
 
+/* The title and, at its right, a reading (pricing's seats left); under
+   it once the line is too short for both. */
+.sec-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem 1.5rem;
+}
 /* A section's head: the serif title and one sentence. From lg the
    padding is less below than above, so the title sits nearer the stage it
    names than the rule it follows: at --land-y both ways (84px) it floated
@@ -207,11 +196,11 @@
    then the button and the install command on one row. Nothing is pushed
    to the right; the picture below is what fills the width. */
 .hero-grid {
-	padding-block: clamp(2.75rem, 5.5vw, 4.5rem) clamp(2.5rem, 5vw, 4rem);
+	padding-block: clamp(2rem, 3vw, 2.5rem) clamp(1.75rem, 2.4vw, 2.25rem);
 }
 /* Who the page is for, above the headline: the page's label style. */
 .eyebrow {
-	margin-bottom: 1.25rem;
+	margin-bottom: 0.875rem;
 	font-family: var(--font-mono);
 	font-size: 0.6875rem;
 	letter-spacing: 0.12em;
@@ -234,6 +223,13 @@
 .hero-h .line {
 	display: block;
 }
+/* On a short window (1280x800, 1440x900) the headline steps down, so the
+   machine's panel shows above the fold. */
+@media (max-height: 860px) {
+	.hero-h {
+		font-size: clamp(2.75rem, 5.4vw, 4.5rem);
+	}
+}
 /* Three sentences, each kept whole, so a line breaks between sentences
    and never ends on the next one's first word: balance alone left a lone
    "A", then a lone "The", at the end of line 1. Balanced, the three break
@@ -245,7 +241,7 @@
 .hero-grid .lead {
 	max-width: 34rem;
 	text-wrap: balance;
-	margin-top: 1.75rem;
+	margin-top: 1.375rem;
 }
 .hero-grid .lead > span {
 	display: inline-block;
@@ -257,7 +253,7 @@
 	align-items: center;
 	gap: 0.75rem;
 	min-width: 0;
-	margin-top: 1.75rem;
+	margin-top: 1.5rem;
 }
 
 /* A command to copy: the way a picture shows a row of a terminal. */
@@ -436,126 +432,64 @@
 	padding: 0.625rem 0.875rem;
 }
 
-/* Sizes: three columns cut by hairlines, the price on its blue rule. */
-.tiers {
-	display: grid;
-	list-style: none;
+/* Pricing. The plans are PlanCells (I-663); the seats left stand level
+   with the title as a mono reading, the launch's gauge (I-290). */
+.seats {
 	margin: 0;
-	padding: 0;
-}
-@media (min-width: 768px) {
-	.tiers {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-}
-.tier {
-	position: relative;
-	padding: 1.75rem var(--land-x) 2rem;
-	border-top: 1px solid var(--rule);
-}
-@media (min-width: 768px) {
-	.tier + .tier {
-		border-left: 1px solid var(--rule);
-	}
-}
-/* The units sit on the name's baseline and grow upward, a row per 8 GB:
-   Solo one row, Plus two, Pro four, so each plan reads as a stack of
-   Solos. The grid has no text, so its last baseline is its bottom edge,
-   and last-baseline alignment puts that edge on the letters, not on the
-   name's line box 5px below them. */
-.tier-top {
-	display: flex;
-	align-items: last baseline;
-	justify-content: space-between;
-	gap: 0.75rem;
-}
-/* Side by side, 50px holds Pro's four rows (45px) plus the 5px of the
-   name's line box under its baseline, so the names and the spec lines of
-   the three cards sit on one line across. */
-@media (min-width: 768px) {
-	.tier-top {
-		min-height: 50px;
-	}
-}
-.tier-name {
-	font-family: var(--font-display);
-	font-size: 2.25rem;
-	line-height: 1;
-	font-weight: 700;
-	letter-spacing: -0.01em;
-	text-transform: uppercase;
-	color: var(--ink);
-}
-/* A flex box, so the grid inside is a block whose last baseline is its
-   bottom row: an inline grid would lend the line its first row instead. */
-.tier-units {
-	display: flex;
-	flex: none;
-	line-height: 0;
-}
-/* The plan's memory gets its own line in ink: it is what the plan sells,
-   and it runs at the same time across the projects (I-402). */
-.tier-run {
-	margin-top: 0.625rem;
-	font-size: 0.9375rem;
-	color: var(--ink);
-}
-.tier-spec {
-	margin-top: 0.125rem;
-	font-size: 0.875rem;
+	font-family: var(--font-mono);
+	font-size: var(--text-compact);
+	font-variant-numeric: tabular-nums;
 	color: var(--ink-muted);
 }
-/* A fact stays on one line with the dot after it, so the line breaks
-   after a dot and never starts with one: at 1440 the bare dots between
-   spans fell to the head of line 2 on two cards and not the third. */
-.tier-spec span {
-	white-space: nowrap;
+/* What every plan has, said once under the three: a label cell, then
+   four facts, cut by the same hairlines as the plans. */
+.every {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	border-top: 1px solid var(--rule);
 }
-.tier-price {
-	display: flex;
-	align-items: baseline;
-	gap: 0.6rem;
-	margin-top: 1.5rem;
-	padding-top: 1.125rem;
-	background: linear-gradient(var(--sh-accent), var(--sh-accent)) no-repeat 0 0 / 100% 3px;
-}
-.tier-price .n {
-	font-family: var(--font-display);
-	font-size: 2.75rem;
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	line-height: 1;
-	color: var(--ink);
-}
-.tier-price .per {
+.every-h {
+	grid-column: 1 / -1;
+	padding: 1.25rem var(--land-x) 0;
 	font-family: var(--font-mono);
 	font-size: 0.6875rem;
+	font-weight: 400;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--ink-faint);
 }
-/* The price a plan becomes after its introductory months (I-497), under
-   the price in the muted ink of the spec line. */
-.tier-then {
-	margin-top: 0.5rem;
-	font-size: 0.875rem;
-	color: var(--ink-muted);
-	text-wrap: balance;
+.every ul {
+	display: contents;
+	list-style: none;
 }
-.cta-row {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 1rem 1.5rem;
-	padding: 2rem var(--land-x) var(--land-y);
+.every li {
+	padding: 0.75rem var(--land-x) 1.5rem;
+	font-size: 0.9375rem;
+	line-height: 1.45;
+	text-wrap: pretty;
+	color: var(--ink-muted);
+}
+.every li:nth-child(even) {
+	border-left: 1px solid var(--rule);
+}
+.every li:nth-child(n + 3) {
+	padding-top: 1.25rem;
 	border-top: 1px solid var(--rule);
 }
-/* The seats left, live from the api (I-290): one line beside the button,
-   in the muted ink, the reading of the launch's gauge. */
-.cta-row .seats {
-	margin: 0;
-	font-size: 1rem;
-	color: var(--ink-muted);
+@media (min-width: 1024px) {
+	.every {
+		grid-template-columns: minmax(0, 0.8fr) repeat(4, minmax(0, 1fr));
+	}
+	.every-h {
+		grid-column: auto;
+		padding: 1.75rem var(--land-x);
+	}
+	.every li,
+	.every li:nth-child(n + 3) {
+		padding: 1.625rem 1.5rem 1.75rem;
+		border-top: 0;
+		border-left: 1px solid var(--rule);
+	}
 }
 
 /* The sign-off: the page's shapes, one to a cell between the rails. */
@@ -574,41 +508,21 @@
 .frieze li:first-child {
 	border-left: 0;
 }
-/* Without the rails (below md) the row stands in the page's 20px gutter
-   like the text above it; edge to edge it read as cut off by the screen. */
-@media (max-width: 767px) {
+/* Without the rails (below 1240) the row stands in the page's 20px gutter
+   like the text above it; edge to edge it read as cut off by the screen.
+   The site footer (SiteFooter) follows it, under the rails. */
+@media (max-width: 1239px) {
 	.frieze {
-		margin-inline: 1.25rem;
+		margin-inline: var(--frame-x);
 	}
 }
-.foot {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1rem;
-	padding-block: 1.75rem;
-	border-top: 1px solid var(--rule);
-	font-size: 0.875rem;
-	color: var(--ink-muted);
-}
-/* The links wrap at 320px (and with WCAG 1.4.12's text spacing) rather
-   than push the page sideways. Below md seven links do not fit one line,
-   and a free wrap left one link alone on the second; there the four
-   product links stand over the three legal ones. Below 360px the grid
-   gives way to the free wrap: four links take 275px, which fits at 320
-   but not with 1.4.12's spacing. */
-.foot nav {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 1.5rem;
-}
-@media (min-width: 360px) and (max-width: 767px) {
-	.foot nav {
-		display: grid;
-		grid-template-columns: repeat(4, max-content);
+/* In the dark the light tone and the ink detail go up a step here, so
+   the pinwheel's grey quarter and the arch's door read on the page.
+   Both come from the tokens (CHECKLIST.md, "The landing"): the grey
+   shape's zinc-500 and the pictures' ink. */
+@media (prefers-color-scheme: dark) {
+	.frieze {
+		--sh-light: var(--sh-grey);
+		--sh-ink: var(--pic-ink);
 	}
-}
-.foot a:hover {
-	color: var(--ink);
 }

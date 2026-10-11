@@ -1,7 +1,7 @@
 // DECISIONS I-502, I-509: the stored multiplexer is the next start's, so
 // a project page names herdr beside the size only while the machine is
 // stopped (a running one may still run tmux until it stops), and the
-// tmux clients row is always there. The fake api refuses herdr until its
+// tmux clients count is always there. The fake api refuses herdr until its
 // base gate opens, so the project's answer is rewritten on its way to the
 // page.
 import { test, expect, type Page } from '@playwright/test';
@@ -50,13 +50,13 @@ for (const { m, state, label } of cases) {
 		});
 		await asHerdr(page, p.id, m, state);
 		await page.goto(`/projects/${p.id}`);
-		await expect(page.getByText('SSH sessions')).toBeVisible();
+		await expect(page.getByTestId('agents-card')).toContainText('1 SSH session, 0 tmux clients');
 		if (label) {
 			await expect(page.getByText('herdr', { exact: true })).toBeVisible();
 		} else {
 			await expect(page.getByText('herdr', { exact: true })).toHaveCount(0);
 		}
-		await expect(page.getByText('tmux clients')).toBeVisible();
+		await expect(page.getByTestId('agents-card')).toContainText('working');
 		const dir = process.env.REPOSE_SHOTS_DIR;
 		if (label && dir) {
 			for (const width of [1440, 390]) {

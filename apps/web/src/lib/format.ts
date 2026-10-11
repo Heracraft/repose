@@ -113,3 +113,54 @@ export function tempLeft(expiresAt: string, now = new Date()): string {
 	if (ms < 3_600_000) return `destroyed in ${Math.max(1, Math.ceil(ms / 60_000))}m`;
 	return `destroyed in ${Math.ceil(ms / 3_600_000)}h`;
 }
+
+/** "1 TB" for a whole number of thousands of GB, "N GB" otherwise: a plan's egress or disk. */
+export function sizeGB(gb: number): string {
+	if (gb >= 1000 && gb % 1000 === 0) return `${gb / 1000} TB`;
+	return `${gb} GB`;
+}
+
+/** An agent's state as words: "needs_input" is "needs input"; unknown or empty is "". */
+export function agentStateLabel(state?: string | null): string {
+	if (!state || state === 'unknown') return '';
+	return state.replace(/_/g, ' ');
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** "14:02", 24-hour, in the browser's local time: an event's time within its day. */
+export function clockTime(iso: string): string {
+	const d = new Date(iso);
+	return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS_SHORT = [
+	'Jan',
+	'Feb',
+	'Mar',
+	'Apr',
+	'May',
+	'Jun',
+	'Jul',
+	'Aug',
+	'Sep',
+	'Oct',
+	'Nov',
+	'Dec'
+];
+
+/** "Today", "Yesterday" or "Thu 9 Oct" in local time: the heading over a day's events. */
+export function dayLabel(iso: string, now = new Date()): string {
+	const d = new Date(iso);
+	const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+	const diff = Math.round((day(now) - day(d)) / 86_400_000);
+	if (diff === 0) return 'Today';
+	if (diff === 1) return 'Yesterday';
+	return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+}
+
+/** A size class's memory in GB (PRICING.md: small 4, large 8, xl 16); 0 for an unknown class. */
+export function classMemoryGB(size: string): number {
+	return ({ small: 4, large: 8, xl: 16 } as Record<string, number>)[size] ?? 0;
+}

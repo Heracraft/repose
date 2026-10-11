@@ -1,19 +1,25 @@
 <script lang="ts">
 	// Questions an agent asked with repose-ask and is waiting on (I-245):
-	// answered here with a button per option or a text box, or dismissed.
+	// answered here with a button per option or a text box, or cancelled.
 	import { onMount } from 'svelte';
 	import { listProjectQuestions, answerQuestion, cancelQuestion } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
+	import { pendingQuestions } from '$lib/questions.svelte';
 	import { relativeTime } from '$lib/format';
 	import type { Question } from '$lib/api/types';
 
 	// pollFailures is the page's group, so this poll and the page's share
-	// one toast (I-395).
-	let { projectId, pollFailures }: { projectId: string; pollFailures?: PollGroup } = $props();
+	// one toast (I-395). questions comes from the page's first load, so the
+	// card is in the first paint and nothing lands above painted content
+	// later; the page reads it back to point an agent's row here.
+	let {
+		projectId,
+		pollFailures,
+		questions = $bindable([])
+	}: { projectId: string; pollFailures?: PollGroup; questions?: Question[] } = $props();
 
-	let questions = $state<Question[]>([]);
 	let drafts = $state<Record<string, string>>({});
 	let notes = $state<Record<string, string>>({});
 	let busy = $state<string | undefined>(undefined);
@@ -32,7 +38,17 @@
 		}
 	}
 
-	onMount(() => pollWhileVisible(refresh));
+	// The first load already has them; the poll's first tick waits its turn.
+	onMount(() => {
+		let first = true;
+		return pollWhileVisible(() => {
+			if (first) {
+				first = false;
+				return;
+			}
+			return refresh();
+		});
+	});
 
 	function expiresIn(iso: string): string {
 		const minutes = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60_000));
@@ -48,19 +64,22 @@
 		try {
 			if (answer === undefined) {
 				await cancelQuestion(projectId, q.id);
-				answered = `Dismissed: ${q.text.split('\n')[0]}`;
+				answered = `Cancelled: ${q.text.split('\n')[0]}`;
 			} else {
 				const res = await answerQuestion(projectId, q.id, answer);
 				answered = `Answered: ${res.answer ?? answer}`;
 			}
 			setTimeout(() => (answered = undefined), 8_000);
 			await refresh();
+			// The dashboard nav's count drops with it (lib/questions.svelte.ts).
+			void pendingQuestions.refresh();
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				// Answered elsewhere first (ntfy, email, the CLI): the list
 				// drops it, so the reason goes in the status line.
 				answered = `Not sent: ${err.message}.`;
 				await refresh();
+				void pendingQuestions.refresh();
 			} else if (err instanceof ApiError && err.code === 'invalid') {
 				const opts = (err.detail?.options as string[] | undefined) ?? q.options;
 				notes = {
@@ -77,21 +96,26 @@
 </script>
 
 {#if questions.length > 0 || answered}
-	<div class="card mt-6" data-testid="questions">
-		<h2 class="text-xl font-semibold">Questions</h2>
+	<section class="card" id="questions" data-testid="questions" aria-labelledby="questions-title">
+		<h2 id="questions-title" class="text-xl font-semibold">Questions</h2>
 		<!-- The live region is always in the page, so the line that appears
 		     inside it is announced; a region inserted with its text already
 		     in it is often read by no screen reader. -->
 		<p class="text-sm text-ink-muted" class:mt-2={answered} role="status">{answered ?? ''}</p>
-		<ul class="mt-2">
+		<ul class="mt-4 space-y-4">
 			{#each questions as q (q.id)}
-				<li class="row text-sm" data-testid="question">
-					<p class="font-medium">{q.agent} asks</p>
-					<p class="mt-1 whitespace-pre-wrap">{q.text}</p>
-					<p class="mt-1 text-xs text-ink-faint tabular-nums">
-						asked {relativeTime(q.created_at)}, expires in {expiresIn(q.expires_at)}
+				<!-- A callout: the accent's rule says "this is yours to answer";
+				     the question is the largest text on the card. -->
+				<li class="question py-1 pl-4" data-testid="question">
+					<p class="font-mono text-compact text-ink-muted">
+						<span class="text-ink">{q.agent} asks</span>{#if q.window && q.window !== q.agent}<span
+								>&nbsp;in {q.window}</span
+							>{/if}<span title={`asked ${relativeTime(q.created_at)}`}
+							>&nbsp;· expires in {expiresIn(q.expires_at)}</span
+						>
 					</p>
-					<div class="mt-2 flex flex-wrap items-center gap-2">
+					<p class="mt-1.5 text-lg whitespace-pre-wrap text-ink">{q.text}</p>
+					<div class="mt-3 flex flex-wrap items-center gap-3">
 						{#if q.options.length > 0}
 							<!-- The options are equals, so none is the primary: a row
 							     of solid buttons broke "one .btn per view" and gave
@@ -99,7 +123,7 @@
 							{#each q.options as o (o)}
 								<button
 									type="button"
-									class="btn-quiet btn--sm"
+									class="btn-quiet h-10 min-w-16"
 									disabled={busy === q.id}
 									onclick={() => act(q, o)}>{o}</button
 								>
@@ -108,7 +132,7 @@
 							<label class="sr-only" for={`answer-${q.id}`}>Your answer</label>
 							<input
 								id={`answer-${q.id}`}
-								class="field w-full py-1 sm:w-72"
+								class="field h-10 w-full sm:w-80"
 								placeholder="Your answer"
 								bind:value={drafts[q.id]}
 								aria-invalid={notes[q.id] ? 'true' : undefined}
@@ -119,17 +143,18 @@
 							/>
 							<button
 								type="button"
-								class="btn btn--sm"
+								class="btn-quiet h-10 min-w-16"
 								disabled={busy === q.id || !drafts[q.id]?.trim()}
 								onclick={() => act(q, drafts[q.id])}>Answer</button
 							>
 						{/if}
 						<button
 							type="button"
-							class="btn-ghost"
+							class="btn-ghost-danger"
 							disabled={busy === q.id}
-							aria-label={`Dismiss the question from ${q.agent}`}
-							onclick={() => act(q)}>Dismiss</button
+							title="The agent stops waiting"
+							aria-label={`Cancel question from ${q.agent}`}
+							onclick={() => act(q)}>Cancel question</button
 						>
 					</div>
 					{#if notes[q.id]}
@@ -138,5 +163,16 @@
 				</li>
 			{/each}
 		</ul>
-	</div>
+	</section>
 {/if}
+
+<style>
+	.question {
+		border-left: 3px solid var(--accent);
+	}
+	@media (forced-colors: active) {
+		.question {
+			border-left-color: Highlight;
+		}
+	}
+</style>

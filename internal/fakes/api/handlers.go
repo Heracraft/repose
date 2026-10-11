@@ -1657,42 +1657,82 @@ func (f *Fake) restoreByName(w http.ResponseWriter, r *http.Request) *apiError {
 
 // Events and logs.
 
+// eventKindRe is one kind in kind= on events, as on the api (I-662).
+var eventKindRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
+
 func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.projectAny(userFrom(r), r.PathValue("id"))
 	if e != nil {
 		return e
 	}
-	out := []Event{}
+	q := r.URL.Query()
 	// since is RFC 3339 or absent, as on the api; anything else is
 	// invalid (DECISIONS I-609).
 	var sinceTS time.Time
-	if s := r.URL.Query().Get("since"); s != "" {
+	if s := q.Get("since"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			return invalid("since must be an RFC 3339 time, such as 2026-10-01T00:00:00Z")
 		}
 		sinceTS = t
 	}
+	limit := 50
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 200 {
+			return invalid("limit must be 1 to 200")
+		}
+		limit = n
+	}
+	var kinds []string
+	if v := q.Get("kind"); v != "" {
+		for _, k := range strings.Split(v, ",") {
+			if !eventKindRe.MatchString(k) {
+				return invalid("kind must be event kinds separated by commas, such as error,needs_input")
+			}
+			kinds = append(kinds, k)
+		}
+	}
+	before, after := q.Get("before"), q.Get("after")
+	if before != "" && after != "" {
+		return invalid("before and after cannot be used together")
+	}
+	// Every event of the kinds asked for, newest first by (ts, id), as
+	// the api orders them; the count header is their number (I-662).
+	all := []Event{}
 	for _, ev := range p.events {
-		if !sinceTS.IsZero() && !ev.TS.After(sinceTS) {
+		if len(kinds) > 0 && !slices.Contains(kinds, ev.Kind) {
 			continue
 		}
-		out = append(out, *ev)
+		all = append(all, *ev)
 	}
-	// Newest first, at most limit (50), and before pages back, as the api
-	// answers (I-414).
-	sort.SliceStable(out, func(i, j int) bool { return out[i].TS.After(out[j].TS) })
-	if b := r.URL.Query().Get("before"); b != "" {
-		i := slices.IndexFunc(out, func(ev Event) bool { return ev.ID == b })
-		if i < 0 {
-			out = nil
-		} else {
-			out = out[i+1:]
+	sort.SliceStable(all, func(i, j int) bool {
+		if !all[i].TS.Equal(all[j].TS) {
+			return all[i].TS.After(all[j].TS)
 		}
-	}
-	limit := 50
-	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n >= 1 && n <= 200 {
-		limit = n
+		return all[i].ID > all[j].ID
+	})
+	var out []Event
+	switch {
+	case before != "":
+		// The page older than before, ignoring since (I-414). An id that
+		// is not one of these events gives nothing.
+		if i := slices.IndexFunc(all, func(ev Event) bool { return ev.ID == before }); i >= 0 {
+			out = all[i+1:]
+		}
+	case after != "":
+		// The limit events newer than after and nearest to it, still
+		// newest first (I-662).
+		if i := slices.IndexFunc(all, func(ev Event) bool { return ev.ID == after }); i >= 0 {
+			out = all[max(0, i-limit):i]
+		}
+	default:
+		for _, ev := range all {
+			if !sinceTS.IsZero() && !ev.TS.After(sinceTS) {
+				continue
+			}
+			out = append(out, ev)
+		}
 	}
 	if len(out) > limit {
 		out = out[:limit]
@@ -1700,6 +1740,7 @@ func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 	if out == nil {
 		out = []Event{}
 	}
+	w.Header().Set("Repose-Event-Count", strconv.Itoa(len(all)))
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

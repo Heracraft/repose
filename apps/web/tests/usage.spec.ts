@@ -14,13 +14,17 @@ test('the machine card says what the size gives', async ({ page }) => {
 		class: 'small'
 	});
 	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByTestId('project-class')).toHaveText('small');
 	const card = page.getByTestId('machine-card');
-	await expect(card.getByText('small', { exact: true })).toBeVisible();
 	await expect(card.locator('dt', { hasText: 'vCPUs' }).locator('+ dd')).toHaveText('2');
 	await expect(card.locator('dt', { hasText: /^Memory$/ }).locator('+ dd')).toHaveText('4 GB');
-	await expect(card.locator('dt', { hasText: 'Plan memory' }).locator('+ dd')).toContainText(
-		'4 GB'
+	// The newest sample's memory, of the size's 4 GB.
+	await expect(card.getByRole('meter', { name: 'Memory in use' })).toHaveAttribute(
+		'aria-valuetext',
+		/ of 4 GB$/
 	);
+	await expect(card.getByRole('meter', { name: 'Disk' })).toBeVisible();
+	await expect(card.getByTestId('plan-memory')).toHaveText(/^small uses 4 of \d+ GB plan memory$/);
 });
 
 test('usage draws the samples and switches window', async ({ page }) => {

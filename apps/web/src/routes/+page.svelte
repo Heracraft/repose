@@ -6,11 +6,10 @@
 	import { authState, signIn } from '$lib/auth.svelte';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
-	import Logo from '$lib/components/Logo.svelte';
-	import HeaderFrame from '$lib/components/HeaderFrame.svelte';
+	import PlanCells from '$lib/components/PlanCells.svelte';
+	import { PLANS, type PlanFigures } from '$lib/plans';
 	import Hero from '$lib/components/landing/Hero.svelte';
 	import Gauge from '$lib/components/landing/Gauge.svelte';
-	import Units from '$lib/components/landing/Units.svelte';
 	import Shape, { type Kind, type Tone } from '$lib/components/landing/Shape.svelte';
 	import SectionHead from '$lib/components/landing/SectionHead.svelte';
 	import { landOnView } from '$lib/components/landing/inview';
@@ -22,8 +21,6 @@
 	import Editor from '$lib/components/landing/Editor.svelte';
 
 	const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
-	const SOURCE_URL = 'https://github.com/Heracraft/repose';
-	const FEEDBACK_URL = 'https://repose.fider.io';
 
 	let signingIn = $state(false);
 	/** The command whose Copy was pressed last, for 1.5s; null otherwise. */
@@ -34,6 +31,8 @@
 	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 	/** GET /public/seats (I-290): the launch's gauge; undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
+	/** Every seat is held: a plan's button joins the waitlist instead (I-290). */
+	let full = $derived(seats !== undefined && seats.free === 0);
 
 	onMount(() => {
 		publicSeats()
@@ -95,45 +94,19 @@
 			what: 'repose run, to run in your checkout'
 		}
 	];
-	// docs/PRICING.md's three plans, with internal/billing/plans.go's
-	// figures. The Units count is the plan's memory, one square per GB, so
-	// the plans compare at a glance. The cards say "running at once" in words and
-	// count no agents or machines: a count reads as a ceiling on what the
-	// product does, and the memory is shared by whatever is running
-	// (I-402). Solo shows its introductory price, then the price it
-	// becomes (I-497).
-	const plans: {
-		name: string;
-		price: string;
-		then?: string;
-		memory: number;
-		disk: string;
-		egress: string;
-	}[] = [
-		{
-			name: 'Solo',
-			price: '$20',
-			then: 'First 3 months for new subscribers, then $29 and 250 GB egress',
-			memory: 8,
-			disk: '100 GB',
-			egress: '100 GB'
-		},
-		{
-			name: 'Plus',
-			price: '$59',
-			memory: 16,
-			disk: '250 GB',
-			egress: '500 GB'
-		},
-		{
-			name: 'Pro',
-			price: '$99',
-			memory: 32,
-			disk: '500 GB',
-			egress: '1 TB'
-		}
+	// The plans come from lib/plans.ts, the figures plans.go holds
+	// (I-663). The cells say "running at once" in words and count no agents
+	// or machines: a count reads as a ceiling on what the product does, and
+	// the memory is shared by whatever is running (I-402). Solo shows its
+	// introductory price, then the price it becomes (I-497). What holds for
+	// every plan is said once, under the three.
+	const everyPlan = [
+		'Memory runs at once, around the clock',
+		'Up to 100 projects; a stopped one uses no memory',
+		'Snapshots kept 7 days',
+		'$0.05 a GB past the egress allowance'
 	];
-	// The footer's row: every shape the page used, in the order it used
+	// The sign-off row: every shape the page used, in the order it used
 	// them, so the row reads as the page's own symbols and none appears
 	// from nowhere. Mostly grey, a spot of blue, as the pictures are.
 	const frieze: [Kind, Tone][] = [
@@ -178,6 +151,21 @@
 	{/if}
 {/snippet}
 
+<!-- A plan's own button: signed out it signs in (the dashboard's Billing
+     page then sells the plan); signed in it opens that page on the plan.
+     The label is the same either way, so the auth check moves nothing.
+     While every seat is held, each one joins the waitlist (I-290). -->
+{#snippet planAction(p: PlanFigures)}
+	{@const label = full ? 'Join the waitlist' : `Start ${p.name}`}
+	{#if authState.authenticated}
+		<a href="{resolve('/billing')}?plan={p.id}" class="btn-quiet btn--sm">{label}</a>
+	{:else}
+		<button type="button" class="btn-quiet btn--sm" disabled={signingIn} onclick={onSignIn}
+			>{label}</button
+		>
+	{/if}
+{/snippet}
+
 <!-- A command row with its Copy button: the hero's install command and
      each step's. Below md the command wraps instead of being cut off, so
      the whole of it can be read at 320px (WCAG 1.4.10), at a space or
@@ -209,21 +197,6 @@
 {/snippet}
 
 <div class="rails">
-	<!-- The house header (HeaderFrame), on the landing's 1120px measure
-	     with the logo over the headline; the wrapper carries the ticks
-	     where its rule meets the rails. -->
-	<div class="topbar">
-		<HeaderFrame home={resolve('/')} label="repose, home" width="landing">
-			<nav class="flex items-center gap-4 sm:gap-6" aria-label="Main">
-				<a href={resolve('/docs')} class="navlink">Docs</a>
-				<a href="#pricing" class="navlink">Pricing</a>
-				<a href={SOURCE_URL} class="navlink hidden sm:inline">GitHub</a>
-				<a href={FEEDBACK_URL} class="navlink">Feedback</a>
-				{@render authAction('btn-quiet btn--sm', 'Sign in', 'Dashboard')}
-			</nav>
-		</HeaderFrame>
-	</div>
-
 	<main id="main">
 		<section class="sec">
 			<div class="hero-grid inset">
@@ -323,52 +296,39 @@
 
 		<section class="sec">
 			<SectionHead id="pricing" title="Pricing">
-				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs
-				at the same time, around the clock, across up to 100 projects; a stopped project uses none.
-				A plan's disk counts the data your projects hold.
-			</SectionHead>
-			<ul class="tiers" use:landOnView>
-				{#each plans as t, i (t.name)}
-					<li class="tier">
-						<div class="tier-top">
-							<h3 class="tier-name">{t.name}</h3>
-							<span class="tier-units land" style="--d: {i * 110}ms"
-								><Units count={t.memory} /></span
-							>
-						</div>
-						<p class="tier-run">{t.memory} GB running at once</p>
-						<p class="tier-spec">
-							<span>{t.disk} disk ·</span> <span>{t.egress} egress</span>
-						</p>
-						<p class="tier-price">
-							<span class="n">{t.price}</span>
-							<span class="per">a month</span>
-						</p>
-						{#if t.then}
-							<p class="tier-then">{t.then}</p>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			<div class="cta-row">
-				{@render authAction('btn btn--lg', 'Start a free week', 'Open the dashboard')}
-				{#if !authState.authenticated}
-					{#if seats}
+				Seven days free, card at checkout. Prices in USD, before tax.
+				{#snippet aside()}
+					<!-- The launch's gauge (I-290), as a reading beside the title.
+					     Signed in, the dashboard's Billing page has it. -->
+					{#if seats && !authState.authenticated}
 						<p class="seats" data-testid="seats-line">
 							{#if seats.free > 0}
 								{seats.free} {seats.free === 1 ? 'seat' : 'seats'} left
 							{:else}
-								Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
+								{seats.waiting} waiting. You're emailed when a seat frees.
 							{/if}
 						</p>
 					{/if}
-				{/if}
+				{/snippet}
+			</SectionHead>
+			<div use:landOnView>
+				<PlanCells plans={PLANS} variant="landing" level={3} introEligible action={planAction} />
+			</div>
+			<div class="every">
+				<h3 class="every-h">Every plan</h3>
+				<ul>
+					{#each everyPlan as fact (fact)}
+						<li>{fact}</li>
+					{/each}
+				</ul>
 			</div>
 		</section>
 	</main>
 
-	<footer class="sec">
-		<ul class="frieze" aria-hidden="true" use:landOnView>
+	<!-- The sign-off: the page's shapes, one to a cell between the rails.
+	     The site footer follows, under the rails. -->
+	<div class="sec" aria-hidden="true">
+		<ul class="frieze" use:landOnView>
 			{#each frieze as [k, tone], i (i)}
 				<li>
 					<span class="land block h-full w-full" style="--d: {i * 60}ms"
@@ -377,21 +337,7 @@
 				</li>
 			{/each}
 		</ul>
-		<div class="foot inset">
-			<!-- The mark's cross is drawn in currentColor; the footer's text is
-			     muted, and the logo is the same on every page (ink). -->
-			<span class="text-ink"><Logo size="sm" mark /></span>
-			<nav aria-label="Footer">
-				<a href={resolve('/docs')}>Docs</a>
-				<a href="#pricing">Pricing</a>
-				<a href={SOURCE_URL}>GitHub</a>
-				<a href={FEEDBACK_URL}>Feedback</a>
-				<a href={resolve('/terms')}>Terms</a>
-				<a href={resolve('/privacy')}>Privacy</a>
-				<a href={resolve('/refunds')}>Refunds</a>
-			</nav>
-		</div>
-	</footer>
+	</div>
 </div>
 
 <!-- The copy buttons' result, for a screen reader; drawn nowhere. -->

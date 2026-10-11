@@ -136,7 +136,7 @@
 		};
 		const win = pic.querySelector('.mwin .win')!;
 		const W = r(win);
-		const wide = window.matchMedia('(min-width: 768px)').matches;
+		const wide = window.matchMedia('(min-width: 1024px)').matches;
 		mini = { w: W.w, h: W.h, s: (wide ? 84 : 72) / W.w };
 
 		const globe = r(pic.querySelector('.net .globe')!);
@@ -289,7 +289,7 @@
 						// the restored machine until it scrolled into view.
 						pre();
 						pic.classList.add('live');
-						const wide = window.matchMedia('(min-width: 768px)').matches;
+						const wide = window.matchMedia('(min-width: 1024px)').matches;
 
 						const box = pic.getBoundingClientRect();
 						const rel = (el: Element) => {
@@ -934,8 +934,10 @@
 		display: flex;
 		align-items: center;
 		gap: 7px;
+		min-width: 0;
 		height: 28px;
 		padding: 0 14px 0 26px;
+		overflow: hidden;
 		white-space: nowrap;
 	}
 	.fr.head {
@@ -956,9 +958,13 @@
 		position: relative;
 		flex: none;
 	}
+	/* A name too long for its row ends in an ellipsis inside the panel. */
 	.fname {
 		position: relative;
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		font-family: var(--font-mono);
 		font-size: 12.5px;
 	}
@@ -1510,7 +1516,9 @@
 		top: -9px;
 		translate: none;
 	}
-	@media (min-width: 768px) {
+	/* Side by side from 1024: at 768 the five columns squeezed the
+	   machine's rows until file names crossed its wall. */
+	@media (min-width: 1024px) {
 		.net {
 			justify-content: center;
 			padding-top: 14px;

@@ -9,27 +9,31 @@
 	let {
 		title,
 		crumbs = [],
-		width = 'list',
+		width = 'full',
 		lede,
 		action,
+		tabs,
 		children
 	}: {
 		title: string;
 		crumbs?: Crumb[];
-		width?: 'form' | 'list';
+		/** 'full' spans the frame; 'form' holds the content to max-w-2xl, flush left. 'list' is 'full', kept so older callers compile. */
+		width?: 'full' | 'form' | 'list';
 		lede?: string;
 		action?: Snippet;
+		/** Links under the title, on its rule (ProjectTabs): the current one's edge lies on the rule. */
+		tabs?: Snippet;
 		children: Snippet;
 	} = $props();
 </script>
 
 <!-- A <main> landmark rather than a <div>: it was the one audit every
      signed-in page failed (Lighthouse landmark-one-main, 98/100), and it is
-     what a screen reader's "skip to main content" jumps to. The main always
-     spans the header's max-w-5xl column; a form page narrows only its
-     content to max-w-2xl, flush left, so its title starts under the logo
-     instead of 176px to the right of it at 1440. -->
-<main id="main" class="mx-auto max-w-5xl px-5 pt-10 pb-24">
+     what a screen reader's "skip to main content" jumps to. The main is the
+     shared .frame, the header's column, so the title starts under the logo
+     on every page (I-656); a form page narrows only its content to
+     max-w-2xl, flush left. -->
+<main id="main" class="frame pt-10 pb-24">
 	<div class={width === 'form' ? 'max-w-2xl' : undefined}>
 		{#if crumbs.length}
 			<!-- The separator is a middle dot, as DESIGN-LANGUAGE.md "Page frame" says.
@@ -49,12 +53,18 @@
 				{/each}
 			</p>
 		{/if}
-		<div class="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-5">
-			<div class="min-w-0">
-				<h1 class="text-3xl font-semibold">{title}</h1>
-				{#if lede}<p class="mt-1.5 text-sm text-ink-muted">{lede}</p>{/if}
+		<!-- The title is the page title's step everywhere, 36px serif at
+		     -0.01em (I-660). The action sits under it on a phone and level
+		     with its last line from sm up. -->
+		<div class="border-b border-rule {tabs ? '' : 'pb-5'}">
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+				<div class="min-w-0">
+					<h1 class="text-4xl font-semibold tracking-[-0.01em]">{title}</h1>
+					{#if lede}<p class="mt-2 text-sm text-ink-muted">{lede}</p>{/if}
+				</div>
+				{#if action}<div class="flex flex-wrap items-center gap-2">{@render action()}</div>{/if}
 			</div>
-			{#if action}<div class="flex items-center gap-2">{@render action()}</div>{/if}
+			{#if tabs}{@render tabs()}{/if}
 		</div>
 		<div class="mt-8">
 			{@render children()}

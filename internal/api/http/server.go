@@ -322,6 +322,11 @@ func (w *statusWriter) Flush() {
 const corsAllowedHeaders = "Authorization, Content-Type"
 const corsAllowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 
+// corsExposedHeaders are the answer headers the dashboard reads: the events
+// count (I-662) and the request id its error lines quote. Without this a
+// cross-origin fetch sees neither.
+const corsExposedHeaders = "Repose-Event-Count, X-Request-Id"
+
 func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if component == "http" {
@@ -334,6 +339,7 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", corsAllowedMethods)
 			w.Header().Set("Access-Control-Allow-Headers", corsAllowedHeaders)
+			w.Header().Set("Access-Control-Expose-Headers", corsExposedHeaders)
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return

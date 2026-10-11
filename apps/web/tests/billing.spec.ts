@@ -49,8 +49,13 @@ test('with billing off the page says so and sells nothing', async ({ page }) => 
 
 test('a failed first load says so and Retry loads the page', async ({ page }) => {
 	await setBilling({ mode: 'none' });
-	await failNext('GET', '/billing', 'internal');
+	// Loaded once first: the projects page that signIn lands on reads
+	// GET /billing for its plan strip (I-664) and could take the one
+	// failure; after this the reload is the only request for it.
 	await page.goto('/billing');
+	await expect(page.getByRole('heading', { level: 2, name: 'Solo' })).toBeVisible();
+	await failNext('GET', '/billing', 'internal');
+	await page.reload();
 	const failed = page.getByRole('alert');
 	await expect(failed).toBeVisible();
 	await failed.getByRole('button', { name: 'Retry' }).click();
@@ -58,38 +63,37 @@ test('a failed first load says so and Retry loads the page', async ({ page }) =>
 	await expect(failed).toHaveCount(0);
 });
 
-test('with no plan and seats free, the three plan cards are shown from GET /billing', async ({
+test('with no plan and seats free, the three plans are shown from GET /billing', async ({
 	page
 }) => {
 	await setBilling({ mode: 'none' });
 	await page.goto('/billing');
-	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left.');
+	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
+	await expect(page.getByText('7 days free, card at checkout, cancel any time.')).toBeVisible();
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
-	await expect(solo.getByText('$20')).toBeVisible();
-	await expect(solo.getByTestId('intro-solo')).toHaveText(
-		'For 3 months, then $29 and 250 GB egress'
-	);
+	await expect(solo.getByText('$20', { exact: true })).toBeVisible();
+	await expect(solo.getByTestId('intro-solo')).toHaveText('$20 for 3 months');
+	await expect(solo.getByText('then $29 and 250 GB egress from month 4')).toBeVisible();
 	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
-	await expect(solo.getByText('8 GB: one large, or two small')).toBeVisible();
-	// The introductory offer's egress allowance (I-497).
+	await expect(solo.getByText('8 GB running at once')).toBeVisible();
+	// The introductory offer's egress allowance (I-497), and the disk.
 	await expect(solo.getByText('100 GB', { exact: true })).toHaveCount(2);
-	await expect(solo.getByText('7 days free, card at checkout, cancel any time.')).toBeVisible();
 	const plus = page.getByTestId('plan-plus');
 	await expect(plus.getByRole('heading', { name: 'Plus' })).toBeVisible();
-	await expect(plus.getByText('$59')).toBeVisible();
-	await expect(plus.getByText('16 GB: one xl, two large, or any mix')).toBeVisible();
+	await expect(plus.getByText('$59', { exact: true })).toBeVisible();
+	await expect(plus.getByText('16 GB running at once')).toBeVisible();
 	const pro = page.getByTestId('plan-pro');
 	await expect(pro.getByRole('heading', { name: 'Pro' })).toBeVisible();
-	await expect(pro.getByText('$99')).toBeVisible();
-	await expect(pro.getByText('32 GB: two xl, four large, or any mix')).toBeVisible();
+	await expect(pro.getByText('$99', { exact: true })).toBeVisible();
+	await expect(pro.getByText('32 GB running at once')).toBeVisible();
 	await expect(pro.getByText('500 GB', { exact: true })).toBeVisible();
 	await expect(pro.getByText('1 TB', { exact: true })).toBeVisible();
 	// No project count: plans sell memory, disk and egress (I-569).
 	await expect(
 		page.getByRole('list', { name: 'Plans' }).locator('dt', { hasText: /^Projects$/ })
 	).toHaveCount(0);
-	// h2 under the page's h1: the cards are the page's sections, and an h3
+	// h2 under the page's h1: the cells are the page's sections, and an h3
 	// here skipped a level.
 	await expect(page.getByRole('list', { name: 'Plans' }).locator('h2')).toHaveText([
 		'Solo',
@@ -99,7 +103,21 @@ test('with no plan and seats free, the three plan cards are shown from GET /bill
 	await expect(page.getByRole('button', { name: 'Choose Solo' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeEnabled();
-	await expect(page.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/refunds');
+	// With no plan asked for, no button is the solid one.
+	await expect(page.locator('[data-testid^="plan-"] .btn')).toHaveCount(0);
+	await expect(page.getByRole('main').getByRole('link', { name: 'Refunds' })).toHaveAttribute(
+		'href',
+		'/refunds'
+	);
+});
+
+test('?plan=plus makes Plus the solid button and gives it the focus', async ({ page }) => {
+	await setBilling({ mode: 'none' });
+	await page.goto('/billing?plan=plus');
+	const plus = page.getByRole('button', { name: 'Choose Plus' });
+	await expect(plus).toBeFocused();
+	await expect(plus).toHaveClass(/\bbtn\b/);
+	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(/btn-quiet/);
 });
 
 test('Solo costs $20 for three months on a first subscription, then $29; a returning account pays $29', async ({
@@ -107,13 +125,14 @@ test('Solo costs $20 for three months on a first subscription, then $29; a retur
 }) => {
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.goto('/billing');
-	await expect(page.getByTestId('plan-status')).toContainText(
-		/Active\. Renews .+ at \$20; \$29 a month from /
-	);
+	const card = page.getByTestId('plan');
+	await expect(card.locator('.plan-price .n')).toHaveText('$20');
+	await expect(page.getByTestId('intro-until')).toContainText(/^then \$29 a month from \d{4}-/);
+	await expect(page.getByTestId('next-charge')).toHaveText('$20.00');
 	await setBilling({ mode: 'none', intro_used: true });
 	await page.goto('/billing');
 	const solo = page.getByTestId('plan-solo');
-	await expect(solo.getByText('$29')).toBeVisible();
+	await expect(solo.getByText('$29', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('intro-solo')).toHaveCount(0);
 	await setBilling({ intro_used: false });
 });
@@ -122,8 +141,8 @@ test('one seat free: Solo can be chosen, Plus and Pro say why not', async ({ pag
 	await setBilling({ mode: 'none', seats: { total: 30, held: 29, waiting: 0 } });
 	await page.goto('/billing');
 	await expect(page.getByRole('button', { name: 'Choose Solo' })).toBeEnabled();
-	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeDisabled();
-	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Choose Plus' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Choose Pro' })).toHaveCount(0);
 	await expect(page.getByTestId('plan-plus')).toContainText('Needs 2 seats; 1 free.');
 	await expect(page.getByTestId('plan-pro')).toContainText('Needs 4 seats; 1 free.');
 });
@@ -133,7 +152,7 @@ test('three seats free: Solo and Plus can be chosen, Pro needs four', async ({ p
 	await page.goto('/billing');
 	await expect(page.getByRole('button', { name: 'Choose Solo' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeEnabled();
-	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Choose Pro' })).toHaveCount(0);
 	await expect(page.getByTestId('plan-pro')).toContainText('Needs 4 seats; 3 free.');
 });
 
@@ -179,16 +198,21 @@ test('when repose is full the page offers the waitlist and then shows the place'
 	await expect(page.getByRole('button', { name: /Choose/ })).toHaveCount(0);
 	await page.getByTestId('join-waitlist').click();
 	const place = page.getByTestId('waitlist-place');
-	await expect(place).toContainText("You're number 41 on the waitlist.");
+	await expect(place).toContainText('41st');
+	await expect(place).toContainText('of 41 waiting');
 	await expect(place).toContainText(
-		"We'll email dev@example.com when a seat frees; you'll have 72 hours to choose a plan."
+		'An email goes to dev@example.com when a seat frees; you then have 72 hours to choose a plan.'
 	);
+	// The plans stay in view, and none can be bought while waiting.
+	const waiting = page.getByRole('button', { name: 'Waiting for a seat' });
+	await expect(waiting).toHaveCount(3);
+	await expect(waiting.first()).toHaveAttribute('aria-disabled', 'true');
 	// Reloading shows the same place: the api remembers it.
 	await page.reload();
-	await expect(page.getByTestId('waitlist-place')).toContainText('number 41');
+	await expect(page.getByTestId('waitlist-place')).toContainText('41st');
 });
 
-test('an invited user sees the held seat and the plan cards', async ({ page }) => {
+test('an invited user sees the held seat and the plans', async ({ page }) => {
 	await setBilling({
 		mode: 'none',
 		seats: { total: 30, held: 30, waiting: 12 },
@@ -199,8 +223,9 @@ test('an invited user sees the held seat and the plan cards', async ({ page }) =
 	await expect(page.getByTestId('seat-held')).toContainText('(2 days left)');
 	await expect(page.getByRole('button', { name: 'Choose Solo' })).toBeEnabled();
 	// Plus needs two seats and Pro four; the hold is one.
-	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeDisabled();
-	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Choose Plus' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Choose Pro' })).toHaveCount(0);
+	await expect(page.getByTestId('plan-plus')).toContainText('Needs 2 seats');
 });
 
 test('a trial shows the first charge date and the usage bars, and no project count', async ({
@@ -209,7 +234,9 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	await setBilling({ mode: 'trial', plan: 'solo', egress_gb: 300 });
 	await page.goto('/billing');
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $20 on');
-	await expect(page.getByTestId('plan-status')).toContainText('; $29 a month from');
+	// The big figure is what the trial's first charge is, not the list price.
+	await expect(page.getByTestId('plan').locator('.plan-price .n')).toHaveText('$20');
+	await expect(page.getByTestId('intro-until')).toContainText('then $29 a month from');
 	await expect(page.getByTestId('meter-disk-held')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
 	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
@@ -218,6 +245,17 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
+});
+
+test('the egress meter reads a thousand GB as 1 TB and marks the day of the period', async ({
+	page
+}) => {
+	await setBilling({ mode: 'active', plan: 'pro', egress_gb: 42 });
+	await page.goto('/billing');
+	const egress = page.getByTestId('meter-egress-this-period');
+	await expect(egress).toContainText('42 GB of 1 TB');
+	await expect(egress).toContainText(/Day \d+ of \d+/);
+	await expect(page.locator('.facts').getByText(/^Day \d+ of \d+$/)).toBeVisible();
 });
 
 test('the disk meter counts what the projects hold and says what is refused while it is over', async ({
@@ -242,7 +280,7 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 	await setBilling({ mode: 'active', plan: 'plus' });
 	await page.goto('/billing');
 	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
-	const list = page.getByRole('list', { name: 'Invoices' });
+	const list = page.getByRole('table', { name: 'Invoices' });
 	await expect(list.getByText('$59.00')).toBeVisible();
 	await expect(list.getByText('REPOSE-0001', { exact: false })).toBeVisible();
 	await expect(list.getByRole('link', { name: 'PDF' })).toHaveAttribute(
@@ -285,18 +323,23 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.goto('/billing');
 	await page.getByRole('button', { name: 'Change plan' }).click();
+	const change = page.getByTestId('change-plan');
+	await expect(change).toContainText(
+		'Upgrades apply now, prorated. Downgrades apply at renewal on'
+	);
+	await expect(change.getByTestId('plan-solo')).toContainText('Current');
+	await expect(change.getByTestId('plan-plus')).toContainText('$59');
 	// From Solo both other plans are upgrades.
-	await expect(page.getByTestId('change-to-plus')).toContainText('Upgrade to Plus ($59 a month');
-	await expect(page.getByTestId('change-to-plus')).toContainText('Takes effect at once');
-	await expect(page.getByTestId('change-to-pro')).toContainText('Upgrade to Pro ($99 a month');
+	await expect(page.getByTestId('change-to-plus')).toHaveText('Upgrade to Plus');
+	await expect(page.getByTestId('change-to-pro')).toHaveText('Upgrade to Pro');
 	await expect(page.getByRole('button', { name: /Downgrade/ })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Upgrade to Plus' }).click();
 	await expect(page.getByTestId('plan').getByRole('heading', { name: 'Plus' })).toBeVisible();
 
 	// From Plus, one of each.
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	await expect(page.getByTestId('change-to-solo')).toContainText('Downgrade to Solo ($29 a month');
-	await expect(page.getByTestId('change-to-pro')).toContainText('Upgrade to Pro ($99 a month');
+	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
+	await expect(page.getByTestId('change-to-pro')).toHaveText('Upgrade to Pro');
 	await page.getByRole('button', { name: 'Change plan' }).click();
 
 	// Two large machines running: 16 GB, Plus's whole allowance and twice Solo's.
@@ -314,7 +357,10 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await page.reload();
 	await expect(page.getByTestId('meter-running-now')).toContainText('16 GB of 16 GB');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	await expect(page.getByTestId('change-plan')).toContainText('Downgrade to Solo ($29 a month');
+	// What runs now is set against each smaller plan, in amber.
+	await expect(page.getByTestId('change-plan').getByTestId('plan-solo')).toContainText(
+		'Running 16 GB, holds 8 GB'
+	);
 	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
 	const err = page.getByTestId('change-error');
 	// The api's sentence, the disk counted by what the projects hold (I-585).
@@ -341,10 +387,11 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByTestId('meter-running-now')).toContainText(
 		'two xl, four large, or any mix'
 	);
+	// What runs is listed under the meter, each with its size.
+	await expect(page.getByRole('list', { name: 'Running now' })).toContainText('pro-a');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	await expect(page.getByTestId('change-to-solo')).toContainText('Downgrade to Solo ($29 a month');
-	await expect(page.getByTestId('change-to-plus')).toContainText('Downgrade to Plus ($59 a month');
-	await expect(page.getByTestId('change-to-plus')).toContainText('Takes effect at the renewal');
+	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
+	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');
 	await expect(page.getByRole('button', { name: /Upgrade/ })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	const err = page.getByTestId('change-error');
@@ -367,8 +414,9 @@ test('a downgrade that fits is scheduled for the renewal and can be undone', asy
 	// With Plus scheduled, the box offers to keep Pro and still lists Solo.
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await expect(page.getByTestId('change-keep')).toContainText('Plus is scheduled for');
-	await expect(page.getByTestId('change-to-solo')).toContainText('Downgrade to Solo');
+	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveCount(0);
+	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText('From ');
 	await page.getByRole('button', { name: 'Keep Pro' }).click();
 	await expect(page.getByTestId('plan-status')).not.toContainText('Changes to Plus');
 });
@@ -406,4 +454,42 @@ test('cancelling asks first, then shows the end date and a Resume that undoes it
 	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
 	// Resume plan is gone; focus goes to Cancel plan, not <body>.
 	await expect(page.getByRole('button', { name: 'Cancel plan' })).toBeFocused();
+});
+
+// Last in the file: the fake keeps an invoice list once one is set.
+test('invoices come six to a page, newest first, with Newer and Older', async ({ page }) => {
+	const invoices = Array.from({ length: 14 }, (_, i) => {
+		const day = new Date(Date.UTC(2026, 9, 11) - i * 30 * 86_400_000).toISOString();
+		return {
+			id: `ord_page_${i}`,
+			number: `REPOSE-${String(14 - i).padStart(4, '0')}`,
+			status: 'paid',
+			currency: 'USD',
+			amount_cents: 5900,
+			subtotal_cents: 5900,
+			tax_cents: 0,
+			created_at: day,
+			period_start: day,
+			period_end: day,
+			pdf_url: `https://example.com/${i}.pdf`
+		};
+	});
+	await setBilling({ mode: 'active', plan: 'plus', invoices });
+	await page.goto('/billing');
+	const table = page.getByRole('table', { name: 'Invoices' });
+	const pages = page.getByRole('navigation', { name: 'Invoice pages' });
+	await expect(table.locator('tbody tr')).toHaveCount(6);
+	await expect(table.locator('tbody tr').first()).toContainText('REPOSE-0014');
+	await expect(pages).toContainText('1–6 of 14');
+	await expect(pages.getByRole('button', { name: 'Newer' })).toBeDisabled();
+	await pages.getByRole('button', { name: 'Older' }).click();
+	await expect(pages).toContainText('7–12 of 14');
+	await expect(table.locator('tbody tr').first()).toContainText('REPOSE-0008');
+	await pages.getByRole('button', { name: 'Older' }).click();
+	await expect(pages).toContainText('13–14 of 14');
+	await expect(table.locator('tbody tr')).toHaveCount(2);
+	await expect(pages.getByRole('button', { name: 'Older' })).toBeDisabled();
+	await pages.getByRole('button', { name: 'Newer' }).click();
+	await expect(pages).toContainText('7–12 of 14');
+	await setBilling({ invoices: [] });
 });

@@ -5,17 +5,21 @@ section: Account
 order: 30
 ---
 
-repose is a monthly plan. You choose one before your first machine starts, with a card, and the first week is free.
+A plan buys memory that runs at once, disk for what your projects hold, and egress a month. The first week is free; the card goes in at checkout, before your first machine starts.
 
-| Plan | A month | Running at once                        | Disk   | Egress a month |
-| ---- | ------- | -------------------------------------- | ------ | -------------- |
-| Solo | $29\*   | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         |
-| Plus | $59     | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         |
-| Pro  | $99     | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           |
+<!-- plans: the page draws lib/plans.ts here; this table is for /docs/billing.md -->
 
-\*Your first subscription to Solo costs $20 a month for its first 3 months, then $29. The 3 months start after the free week. Until the $29 month starts, the egress allowance is 100 GB a month: $0.05 a GB is charged past 100 GB, and your machines stop at 400 GB. If you had a subscription before, or you upgrade to Plus or Pro, you pay the price in the table.
+| Plan | A month                    | Running at once                        | Disk   | Egress a month      |
+| ---- | -------------------------- | -------------------------------------- | ------ | ------------------- |
+| Solo | $20 for 3 months, then $29 | 8 GB: one `large`, or two `small`      | 100 GB | 100 GB, then 250 GB |
+| Plus | $59                        | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB              |
+| Pro  | $99                        | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB                |
 
-Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan's memory is how much runs at the same time, around the clock: the month costs the same however many hours your machines run. Every plan keeps up to 100 projects, and a stopped one costs nothing.
+<!-- /plans -->
+
+Solo's $20 is for your first subscription. The 3 months start after the free week, and while they run your machines stop at 400 GB of egress. If you had a subscription before, Solo is $29 from the start, and upgrading to Plus or Pro ends the $20 price.
+
+Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its memory: `small` is 2 vCPU and 4 GB, `large` 4 vCPU and 8 GB, `xl` 8 vCPU and 16 GB. A plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. Every plan keeps up to 100 projects, and a stopped one costs nothing.
 
 An agent session needs a `large` to finish its work: a coding agent with its language servers, builds and browser fills 8 GB, and a `small` runs out of memory partway through. Pick by how many agents you want working at the same time: one on Solo, two on Plus, four on Pro.
 
@@ -41,7 +45,7 @@ Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
 this month
 ```
 
-`repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
+`repose ls` and `repose status` add a line when your projects hold more than the plan's disk, when egress is past the allowance, and when a payment failed. The dashboard's **Billing** page shows the same figures with the machines running, the projects holding the most disk and sending the most egress, the next charge, the overage so far and your invoices. Egress is totalled a few minutes past each hour, so it can trail by up to an hour.
 
 ## Changing and cancelling
 
@@ -68,4 +72,4 @@ Under the [refund policy](/refunds), the first charge after the free week is ref
 
 ## Deleting your account
 
-The dashboard's **Settings** page shows your handle, email and GitHub login, and has **Delete account** at the bottom. Any egress overage for the current month is charged on a final invoice, the plan is not renewed, every machine stops, and everything, snapshots included, is deleted 30 days later.
+The dashboard's **Settings** page shows your handle, email and GitHub login, with **Sign out**, and has **Delete account** at the bottom. Any egress overage for the current month is charged on a final invoice, the plan is not renewed, every machine stops, and everything, snapshots included, is deleted 30 days later.

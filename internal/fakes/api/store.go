@@ -103,6 +103,7 @@ type Event struct {
 	TS      time.Time `json:"ts"`
 	Kind    string    `json:"kind"`
 	Agent   string    `json:"agent,omitempty"`
+	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
 }
 

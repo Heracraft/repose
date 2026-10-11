@@ -7,7 +7,9 @@
 	import { Toaster } from 'svelte-sonner';
 	import { authState, initAuth } from '$lib/auth.svelte';
 	import { reachability } from '$lib/api/reachability.svelte';
-	import Header from '$lib/components/Header.svelte';
+	import SiteHeader from '$lib/components/SiteHeader.svelte';
+	import SiteFooter from '$lib/components/SiteFooter.svelte';
+	import LoadState from '$lib/components/LoadState.svelte';
 
 	let { children } = $props();
 
@@ -44,8 +46,8 @@
 		}
 	});
 
-	let showHeader = $derived(authState.authenticated === true && !isPublic(page.url.pathname));
-	let showChildren = $derived(authState.authenticated === true || isPublic(page.url.pathname));
+	let dashboard = $derived(!isPublic(page.url.pathname));
+	let showChildren = $derived(authState.authenticated === true || !dashboard);
 </script>
 
 <!-- The first thing a keyboard reaches on every page: past the header's
@@ -54,15 +56,19 @@
 
 <!-- No richColors: layout.css gives each toast type its banner's colours.
      From 600px up the toast's right edge is the content column's (the
-     header's max-w-5xl with its 20px gutter), not the window's, so at 1440
-     it lines up under the header's last link instead of 200px past it. On a
-     phone it spans the width between the page's 20px gutters (sonner's
-     own 16px missed the column by 4px on each side), at the bottom, where
-     it can be swiped away (DECISIONS I-391 keeps it off the header). -->
+     .frame's 1200px box less its gutter), not the window's, so at 1440 it
+     lines up under the header's account button instead of 160px past it.
+     On a phone it spans the width between the page's 20px gutters
+     (sonner's own 16px missed the column by 4px on each side), at the
+     bottom, where it can be swiped away (DECISIONS I-391 keeps it off the
+     header). -->
 <Toaster
 	theme="system"
 	position="bottom-right"
-	offset={{ right: 'max(24px, calc((100% - 64rem) / 2 + 1.25rem))', bottom: '24px' }}
+	offset={{
+		right: 'max(var(--frame-x), calc((100% - var(--frame-w)) / 2 + var(--frame-x)))',
+		bottom: '24px'
+	}}
 	mobileOffset={{ left: '20px', right: '20px', top: '12px', bottom: '20px' }}
 />
 
@@ -86,10 +92,21 @@
 	{/if}
 </div>
 
-{#if showHeader}
-	<Header />
-{/if}
-
-{#if showChildren}
-	{@render children()}
-{/if}
+<!-- The header is on every page from the first paint, before the sign-in
+     check answers, and the footer under every page; a short page keeps
+     the footer at the window's foot (DECISIONS I-655). A private page
+     whose check has not answered shows its skeleton in the frame where
+     its content will be, not bare paper. -->
+<div class="flex min-h-dvh flex-col">
+	<SiteHeader {dashboard} />
+	<div class="flex-1">
+		{#if showChildren}
+			{@render children()}
+		{:else if authState.authenticated === undefined}
+			<main id="main" class="frame pt-10 pb-24">
+				<LoadState status="loading" shape="page" onretry={() => {}} />
+			</main>
+		{/if}
+	</div>
+	<SiteFooter />
+</div>

@@ -18413,3 +18413,338 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+
+**I-655. One site header, one footer, and a dashboard row under the
+header (web-polish, 2026-10-11).** Amends I-380, I-381, I-568, I-578,
+I-391. *Made during implementation* (owner's asks: the navbar the same on
+every page, the logo on the dashboard going to the homepage, Feedback on
+every page).
+- `SiteHeader.svelte` is the only header. The root layout draws it on
+  every route (landing, docs, legal, dashboard, `/callback`) at the first
+  paint, before the sign-in check answers. It is sticky on every page,
+  56px over a full-bleed `--rule` hairline. `Header.svelte` is deleted, and
+  `HeaderFrame.svelte` goes with the landing's move to it.
+- The logo links to `/` on every page, named "repose, home", with a 40px
+  hit area. Below `sm` it is the 24px mark alone; from `sm` up the 28px
+  mark and the word, whose baseline is the links' baseline.
+- The items, in this order everywhere: Docs, Pricing (`/#pricing`, gone
+  below 400px), Feedback (`https://repose.fider.io`), GitHub (from `sm`),
+  then one account slot. The slot is "Sign in" while signed out or
+  unknown (the prerendered HTML included), "Dashboard" when signed in on a
+  public page, and on a signed-in page an "Account" disclosure holding
+  Settings and Sign out. The three share a minimum width, so the links do
+  not move when the check answers. The disclosure is not `role=menu`:
+  focus goes to its first item, the arrows move between the two, and
+  Escape, a click outside or a navigation closes it.
+- On signed-in pages `DashNav` sits under the header: 44px, not sticky,
+  with Projects, Billing and Settings. Projects carries an amber badge
+  with the count of questions waiting across every project
+  (`GET /questions?state=pending`, every 30s while the tab is in view),
+  and its name says it ("Projects, 1 question waiting"). The count is one
+  shared store (`lib/questions.svelte.ts`): the projects list sets it
+  from the pending list it reads, the Questions card re-reads it after an
+  answer or a cancel, and DashNav re-reads it after each navigation, so
+  an answered question does not stay counted for up to 30s. A failed
+  read keeps the last count and says nothing.
+- A project's pages carry `ProjectTabs` (Overview, Config, Secrets) under
+  the title, on its rule: links with `aria-current`, not ARIA tabs.
+- `SiteFooter.svelte` is on every page: the mark and word, then Docs,
+  Pricing, GitHub, Feedback and Terms, Privacy, Refunds; two columns
+  below 768px. The URLs live once in `lib/links.ts`.
+- Below `lg` the docs add a sticky 44px sub-bar under the header with the
+  Menu button and the open page's title. The docs' own header row with
+  its lead "Docs" link is gone.
+- Rejected: a hamburger for the site links on a phone (four words fit
+  320px), a sticky DashNav (two sticky bars take 101px of a phone), and
+  Sign out in the row (one stray tap ends the session).
+
+**I-656. One frame for every page (web-polish, 2026-10-11).** Amends
+I-380, I-396, I-397. *Made during implementation* (owner's ask: docs,
+dashboard and homepage consistent in width and feel).
+- `--frame-w: 75rem` (a 1200px box, gutter included) and `--frame-x:
+  clamp(1.25rem, 3vw, 2.5rem)` on `:root`, and one `frame` utility:
+  centred, full width up to `--frame-w`, padded by `--frame-x`. The
+  header row, the footer, `PageShell`'s main, the docs' frame, the legal
+  main, the root layout's loading placeholder and the landing's rails all
+  use it. The content column is 1120px from 1280 up.
+- The logo, a page's title and the docs' sidebar start at the same x on
+  every page: 160 at 1440 and 20 at 390 (7.5px less where a classic
+  scrollbar takes a gutter). Before, the logo sat at 100 on the docs, 216
+  on the landing and 228 elsewhere.
+- `html` keeps `scrollbar-gutter: stable`, so a page short enough to need
+  no scrollbar does not sit right of one that scrolls, and opening the
+  docs drawer does not shift the header.
+- `html` has `scroll-padding-top: calc(var(--header-h) + 1rem)`, 2.75rem
+  more below `lg` on the docs. The per-heading `scroll-mt-20` in `.doc`
+  is gone; the two added up.
+- The toast's right edge follows the frame's content edge.
+
+**I-657. Touch targets on a phone (web-polish, 2026-10-11).** *Made during
+implementation* (the critique pass at 390 found 30px header buttons and
+20px ghost words).
+- Below 640px `.btn--sm` is at least 40px tall.
+- A `hit` utility gives a word that does something (a ghost button, a
+  link in a dense row) an 8px transparent margin that takes the pointer,
+  with no change to the layout.
+
+**I-658. The legal pages on the docs' grid (web-polish, 2026-10-11).**
+Amends I-392, I-393. *Made during implementation* (owner's ask:
+consistent width and feel; the critique pass found a policy at the
+frame's left with an empty middle, unlike the docs beside it).
+- `LegalPage` draws no header of its own; the root header and footer
+  replace its Policies row.
+- A policy sits where a docs page sits, on the same tracks (I-660): from
+  `lg` a 220px "Policies" column (Terms, Privacy, Refunds, in the docs
+  sidebar's look, sticky at 57px), 48px, then the text; from `xl` the
+  text, 48px and a 180px "On this page" rail at the frame's right edge,
+  in the docs rail's type and 28px rows, marking the section being read.
+  At 1440 the text runs from 428 to 1052 and the rail from 1100, as on
+  `/docs/cli`.
+- Below `xl` the text is held to 42rem and the sections fold into an "On
+  this page" box under the effective date; below `lg` the policies are
+  one line of links there.
+- The component draws the policy's h1, so the effective date, the draft
+  notice and the policies' line sit under it in that order and the title
+  starts 40px under the header's rule, as on every page.
+
+**I-659. A finished surface: filled cards, stat strips, amber badges,
+measuring meters and a still skeleton (web-polish, 2026-10-11).** Amends
+I-373, I-388, I-492. *Made during implementation* (owner's asks: the
+dashboard bare, the UI basic; keep the brand).
+- `.card` is filled with `--surface`, one step off `--page`. With no fill
+  a page of cards read as a wireframe. The dark `--rule` goes from
+  `#2a2a28` to `#31312e`, so a filled card keeps an edge you can find.
+- `.stat-row` and `.stat`: a strip of figures on `--surface`, cells split
+  by hairlines (stacked, with horizontal hairlines, below `sm`), each a
+  12px muted label, a 24px serif tabular figure and an optional note.
+- `.badge--warn`: amber, for what waits on you or is over a limit.
+- The accent may draw a measure: a meter's fill under its limit and the
+  usage chart's line over a 12% accent area. Blue still means "this is a
+  link" in text; a bar or a line is not text.
+- `Meter.svelte` is 6px tall on `--sunken` with a `--control-edge` edge.
+  Past the limit the bar's scale becomes the used figure: the share up to
+  the limit stays blue, the overage is amber, and a 1px ink tick marks
+  the limit, so "over" reads as an amount. New optional `marker` (a faint
+  tick, such as the period's pace), `compact` (bar and reading on one
+  line, for a table cell) and `href` (the label is a link).
+- `LoadState` draws a static skeleton while a first load runs: `--sunken`
+  blocks for the title (only where no title is on screen yet), a stat
+  strip and four rows, with no shimmer. The word "Loading…" stays for a
+  screen reader. The root layout shows the page-shaped one on a private
+  route while the sign-in check runs, instead of bare paper.
+- `CodeCopy.svelte`: a one-line command block with its own Copy button,
+  which says "Copied" for 1.5s and in its own live region.
+
+**I-660. The docs frame: 220, 624 and 180, with prose at 17px and no
+desktop scrollbar on the sidebar (web-polish, 2026-10-11).** Amends
+I-382, I-396, I-400. *Made during implementation* (owner's asks: a
+scrollbar flashing over the docs on the first visit, and the centre
+scrunched while the right side sat empty).
+- Inside the 1120px column: from `lg` a 220px sidebar, 48px, then the
+  page's cell; from `xl` that cell is the text, 48px and a 180px rail at
+  the frame's right edge. At 1440: sidebar 160 to 380, text 428 to 1052
+  (624px), rail 1100 to 1280. Below `xl` the text is held to 42rem.
+- Prose, code, tables and the h2 rules share one right edge; the 33rem
+  prose measure inside a 68ch column is gone.
+- A new type step, `text-prose`, 17px at 1.7, for the docs' and the legal
+  pages' prose. Every page title is 36px (`text-4xl`) serif 600 at
+  -0.01em: `PageShell`, `DocPage`, a policy.
+- The scrollbar the owner saw was the sidebar's own overlay scrollbar,
+  shown while the list settled on the first visit. From `lg` up the
+  sidebar draws none (`scrollbar-width: none`) and still scrolls by
+  wheel, trackpad and keyboard; a 24px fade at its foot shows while more
+  of the list is below. The phone's drawer keeps its scrollbar.
+- The list fits 1440x900 whole (843px of 843px): rows of 26px, group
+  labels 16px apart, and the Tutorials group folds, open on a tutorial's
+  page and closed elsewhere. A rule under the search shows once the list
+  has scrolled under it. When the sidebar must scroll to show the open
+  page, it brings that page's group label to the top, never half under
+  the search; a saved scroll is not applied when the link shows without
+  it.
+- The rail lists each h2's h3s one step in (13px, 28px rows), shown
+  under the section being read, and all of them on `/docs/cli`. A command
+  heading shows as its command alone ("repose mcp forward"). Above the
+  first h2 the first entry is marked, so the rail always says where you
+  are (amends I-400). Only h2s are ever marked current. Below `xl` the
+  fold lists h2s only.
+- `/docs/quickstart` and `/docs/pricing` redirect to `/docs` and
+  `/docs/billing`, in the browser and in the no-script link of the
+  prerendered page.
+- A table cell holding a figure ("$59", "250 GB") gets `class="num"`:
+  tabular figures, no wrap.
+- On a phone the copy button sits in the code block's top-right corner,
+  6px in, over the padding; the block's first line keeps 4.5rem clear at
+  its right. A first line wider than the box still runs under the button
+  until it is scrolled.
+- `/docs/billing` draws the plans with `PlanCells` (I-663) where the page
+  marks a `<!-- plans -->` block. The markdown table stays inside the
+  block for `/docs/billing.md`, which agents read through `llms.txt`, so
+  they still get the prices; `plans.test.ts` fails when the table and
+  `lib/plans.ts` differ.
+
+**I-661. An armed danger button (web-polish, 2026-10-11).** Amends I-386.
+*Made during implementation* (critique: the moment `ConfirmType` lets you
+destroy was a grey outline turning into a red outline).
+- `.btn-danger--armed`: red-700 fill with white text (red-600 in the
+  dark). `ConfirmType` arms its button when the word matches; before
+  that it keeps the one disabled look.
+
+**I-662. Events in pages, with a count, a newer-than cursor and a kind
+filter (web-polish, 2026-10-11).** Amends I-414. *Made during
+implementation* (owner's ask: events need real pagination, not "Show
+older" without end).
+- `GET /projects/:id/events` gains `after=<event id>` (the `limit`
+  events newer than that one and nearest to it, still newest first,
+  ordered by `(ts, id)`, ignoring `since`) and `kind=<k>[,<k>...]` (only
+  those kinds; each must match `^[a-z_]{1,64}$`, an unknown one matches
+  nothing). `before` and `after` together, or a bad `after` or `kind`,
+  is `400 invalid`. Every answer carries `Repose-Event-Count`: how many
+  of the project's events match `kind` in all, whatever the cursor and
+  `limit` say. CORS exposes it, with `X-Request-Id`, in
+  `Access-Control-Expose-Headers`. The answer is still the bare array,
+  so an I-414 client keeps working. An api older than this sends no
+  header and ignores both parameters; the client then pages with
+  `before` alone and shows no page count.
+- `listEventsPage` in the client returns `{events, total?}`. The
+  project page's Events card shows one page of 25, newest first, with
+  Newest, Newer, "Page n of m" and Older in the card's header and again
+  under the list (on a phone the top row drops Newest so it fits one
+  line). The card asks for 26 to know whether an older page exists, and
+  Older is disabled on the last page. A single page still shows "Page 1
+  of 1" with every button disabled, so the pager does not appear when a
+  second page does.
+- The place lives in the URL (`events_before`, `events_after`,
+  `events_page`, `events_kind`; `eventsUrl.ts`), so a reload, Back and a
+  shared link keep it, and a page change moves focus to the list, named
+  "Events, page n".
+- Filters are All, Agents, Errors and Machine (`EVENT_FILTERS` in
+  `lib/events.ts`, fixed kind lists; an agent's `error` is under Agents
+  and Errors).
+- Rows group under day headings, with a clock time (the full date on
+  hover), a kind label (errors red, waiting amber), the agent, and a
+  summary of two lines that opens in full on click. Only the newest page
+  polls for rows, and announces new ones; a deeper page polls the count
+  and offers "N newer".
+- The fake api sorts by `(ts, id)`, ignores `since` with a cursor, and
+  its admin `POST /events` takes kinds, agents, windows, summaries and a
+  spacing, and dates the project before the seeded events; a new admin
+  `POST /agents` sets agents and SSH sessions.
+- Rejected: "51 to 100 of 180" as the position (a page number is what
+  the URL and Back step through) and `after` silently winning over
+  `before` (a client sending both has a bug worth hearing about).
+
+**I-663. Plans from one source on the landing, /billing and the docs
+(web-polish, 2026-10-11).** Amends I-397, I-402, I-497 as they
+apply to pricing. *Made during implementation*
+(owner's ask: pricing looks basic on the landing, /billing and the docs).
+- `lib/plans.ts` holds the plans' figures; `plans.test.ts` reads
+  `internal/billing/plans.go` and fails when a figure differs.
+  `PlanCells.svelte` draws them on `/#pricing`, on `/billing` (the plan
+  picker, the waitlist and Change plan) and on `/docs/billing`, so the
+  three cannot disagree. A cell: the serif name, the Units picture in a
+  fixed four-row box, "N GB running at once", ruled rows for disk and
+  egress, a reserved slot for the introductory price, the price on the
+  blue rule as the figure and "/ month", and an action at the foot. From
+  768px the cells share their rows, so names, price rules and actions
+  line up across the three.
+- The Units picture and the price rule are the two pieces of the
+  landing's grammar allowed off `/`, on `/billing` and in the docs; the
+  rest (rails, ticks, shapes) stays on `/`.
+- While an introductory price applies, the big figure is what will be
+  charged ($20) with "then $29" under it, on every surface. The docs'
+  table writes Solo as "$20 for 3 months, then $29", with no footnote.
+- The landing's pricing head is one sentence beside the seats reading;
+  the facts every plan shares move to an "Every plan" row. Each cell has
+  its own "Start Solo/Plus/Pro", which leads to `/billing?plan=<id>`
+  when signed in (that plan's button there is solid and focused), and
+  reads "Join the waitlist" when every seat is held. The section has no
+  large button; the hero's is the page's one. Signing in from a plan
+  button still lands on `/projects`: the sign-in flow takes no return
+  path.
+
+**I-664. The dashboard's pages fill the frame and lead with what you
+came for (web-polish, 2026-10-11).** Amends I-375, I-380 (form pages
+flush left at `max-w-2xl`), I-492 (Machine and Disk cards), I-578.
+*Made during implementation* (owner's ask: the dashboard is bare and not
+useful; new api routes allowed but not the point).
+- `PageShell` spans the frame by default (`width="full"`; `list` is kept
+  as its alias); `width="form"` still holds a form to 42rem, flush left.
+  The title row takes an action at its right from `sm` and under the
+  title below it, and an optional `tabs` row on its rule. What a page
+  leads with is a figure the user came for (what runs, what it costs,
+  what waits on them), then the rows.
+- **Projects.** The lede reads "3 running · Pro". Pending questions
+  (`GET /questions?state=pending`) show first, as one callout with a
+  3px accent rule: project, "`agent` asks", the question, its expiry and
+  Answer, which links to `/projects/<id>#questions`. Then a stat strip
+  (`PlanStrip`): Memory running (summed from the running projects'
+  classes), Disk held and Egress this period, each against the plan
+  with a meter and linking to `/billing`. When billing is off, failing
+  or has no limits (no plan, waitlist), the strip shows four facts the
+  list already has instead: Memory running, Machines running ("3 of
+  3"), Agents needing input (amber above zero, naming the projects) and
+  Disk in use. One poll reads the list, the destroyed ones, the
+  questions and billing; billing stops being asked after
+  `billing_disabled`, and a later billing failure keeps the last strip.
+- From `sm` the list is a table: Project (name, `temporary` and amber
+  `question` badges, remote), State (dot and word, uptime or amber
+  "unused", the temporary countdown, the error reason), Size (from
+  `lg`), Agents as chips (working emerald, needs input amber, idle
+  muted, then "N SSH"), Disk as a compact bar that turns amber at 90%
+  (from `md`), Last snapshot (from `xl`) and Start or Stop. The name's
+  link covers the row; the button sits above it, shows on hover, focus
+  and always on touch, runs one action per row at a time, and Stop keeps
+  its snapshot. Below `sm` each project is a stacked link at least 56px
+  tall with its action under it. Recently destroyed is a table in the
+  same style.
+- **Recent activity** under the list: the newest 10 events across up to
+  10 running projects, fanned out to `GET /projects/:id/events?limit=10`
+  and fetched again when the running set changes and every 60s while
+  in view; hidden when there are none. A cross-project events route
+  would replace the fan-out if it costs too much.
+- **A project.** From `lg` two columns: Questions (a blue-ruled callout
+  with "Cancel question", `id="questions"`), Events (I-662) and Usage
+  (blue charts that keep their height across polls) in the main one;
+  Connect (three commands with copy buttons), Machine (memory and disk
+  meters, the class's share of plan memory, resize in place), Agents
+  (one row each with its state and sessions), Details (base and hold,
+  config revision, default agent, created, last snapshot) and Snapshots
+  (a list drawn as a table with expiry, two lines in the side column) in
+  the side one. Destroy is last. Below `lg` the order is Questions,
+  Connect, Events, Snapshots, Usage, Machine, Agents, Details, Destroy.
+  The first load fetches the project, its questions, the events page,
+  snapshots, samples, the account and revisions together, so nothing
+  mounts above content already painted (layout shift was 0.23 at 390,
+  now under 0.001). Stop is the quiet button, Start the primary on a
+  stopped machine; `host_unreachable` and the `error` state get their
+  own banners.
+- **Billing**, for a subscriber, is two columns: the plan with its Units
+  picture and price, then three meters with the projects behind each
+  (running projects under memory, the top disk holders under disk, a
+  pace marker and the split by project on egress); on the right, period,
+  next charge and the latest invoice. "Change plan" and "Manage card and
+  receipts" sit together, Change plan opens the plan cells with the
+  current one marked and amber notes where usage is over a smaller plan
+  ("Running 28 GB, holds 8 GB"), and Cancel plan sits at the card's foot
+  with its two-step. A failed payment shows a banner with Update card.
+  Invoices are a table, six to a page, with Newer and Older. Without a
+  plan the page shows the trial line, the seats reading and the plan
+  cells; a plan without enough free seats says "Needs N seats; M free."
+  where its button would be. On the waitlist the place is a stat strip
+  (Place on the waitlist "3rd of 4 waiting", Seats free) over the cells.
+- **Settings** sections are rows: from `lg` a 280px column with the h2
+  and one fact, beside controls held to 560px (the machine.nix editor
+  takes the whole column). Account is a key and value list with Sign
+  out.
+- **Config and Secrets** carry `ProjectTabs`. Config is two columns from
+  `lg`: Menu or Nix, the editor and the build log on the left (two
+  thirds); Base updates ("Hold base updates"), the machine.nix switch
+  and Revisions (a table, "Show all N" past 8) on the right. On Nix,
+  Apply sits in the editor's footer with the status; on Menu it sits in
+  a bar that sticks to the window's foot with "N selected". The Nix
+  editors grow with their text (6 to 24 lines, then scroll), with a
+  placeholder when empty and a footer for the status and the action.
+  Secrets put the table (mono names, inline two-step delete) beside an
+  "Add a secret" card whose "Load from file" opens a styled file
+  picker; a chosen file shows by name and size with Clear, and disables
+  the Value field. Names are shown and sent in capitals.

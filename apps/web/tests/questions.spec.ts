@@ -1,6 +1,6 @@
 // A question an agent asked with repose-ask (DECISIONS I-245) shows on the
 // project page and is answered there: an option button, free text, or
-// Dismiss. The fake api records what the dashboard sent.
+// Cancel question. The fake api records what the dashboard sent.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, addQuestion } from './helpers';
 
@@ -49,7 +49,7 @@ test('no card without a pending question; an option button answers', async ({ pa
 	expect(got).toMatchObject({ state: 'answered', answer: 'yes', answered_via: 'dashboard' });
 });
 
-test('a free-text question takes a typed answer; Dismiss cancels', async ({ page }) => {
+test('a free-text question takes a typed answer; Cancel question cancels', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'ask-text-app',
 		remote_url: 'github.com/heracraft/ask-text-app'
@@ -69,7 +69,11 @@ test('a free-text question takes a typed answer; Dismiss cancels', async ({ page
 	await expect(card.getByText('Answered: 4173')).toBeVisible();
 
 	const second = card.getByTestId('question').filter({ hasText: 'Anything else' });
-	await second.getByRole('button', { name: 'Dismiss' }).click();
+	await expect(second.getByRole('button', { name: /Cancel question/ })).toHaveAttribute(
+		'title',
+		'The agent stops waiting'
+	);
+	await second.getByRole('button', { name: /Cancel question/ }).click();
 	await expect(card.getByTestId('question')).toHaveCount(0);
 
 	const all = await questionsOf(p.id);

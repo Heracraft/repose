@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -551,16 +552,55 @@ func ListSnapshots(ctx context.Context, q Querier, projectID uuid.UUID) ([]Snaps
 
 // --- events -----------------------------------------------------------
 
-// ListEvents lists a project's events after since, newest first.
-func ListEvents(ctx context.Context, q Querier, projectID uuid.UUID, since time.Time, limit int) ([]Event, error) {
+// ListEvents lists a project's events after since, newest first. kinds,
+// when not empty, keeps only those kinds (I-662).
+func ListEvents(ctx context.Context, q Querier, projectID uuid.UUID, since time.Time, limit int, kinds ...string) ([]Event, error) {
+	if len(kinds) > 0 {
+		return many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and ts > $2 and kind = any($4) order by ts desc, id desc limit $3", projectID, since, limit, kinds)
+	}
 	return many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and ts > $2 order by ts desc, id desc limit $3", projectID, since, limit)
 }
 
 // ListEventsBefore lists a project's events older than the event before,
 // newest first: the next page after a list that ended at before (I-414).
 // An id that is not one of the project's events gives no rows.
-func ListEventsBefore(ctx context.Context, q Querier, projectID, before uuid.UUID, limit int) ([]Event, error) {
+func ListEventsBefore(ctx context.Context, q Querier, projectID, before uuid.UUID, limit int, kinds ...string) ([]Event, error) {
+	if len(kinds) > 0 {
+		return many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and (ts, id) < (select ts, id from events where id = $2 and project_id = $1) and kind = any($4) order by ts desc, id desc limit $3", projectID, before, limit, kinds)
+	}
 	return many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and (ts, id) < (select ts, id from events where id = $2 and project_id = $1) order by ts desc, id desc limit $3", projectID, before, limit)
+}
+
+// ListEventsAfter lists the limit events newer than the event after and
+// nearest to it, newest first: the page before a page that started at
+// after (I-662). An id that is not one of the project's events gives no
+// rows.
+func ListEventsAfter(ctx context.Context, q Querier, projectID, after uuid.UUID, limit int, kinds ...string) ([]Event, error) {
+	var evs []Event
+	var err error
+	if len(kinds) > 0 {
+		evs, err = many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and (ts, id) > (select ts, id from events where id = $2 and project_id = $1) and kind = any($4) order by ts asc, id asc limit $3", projectID, after, limit, kinds)
+	} else {
+		evs, err = many[Event](ctx, q, "select "+eventCols+" from events where project_id = $1 and (ts, id) > (select ts, id from events where id = $2 and project_id = $1) order by ts asc, id asc limit $3", projectID, after, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	slices.Reverse(evs)
+	return evs, nil
+}
+
+// CountEvents counts a project's events, only those of kinds when kinds
+// is not empty: the Repose-Event-Count header (I-662).
+func CountEvents(ctx context.Context, q Querier, projectID uuid.UUID, kinds ...string) (int, error) {
+	var n int
+	var err error
+	if len(kinds) > 0 {
+		err = q.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = any($2)", projectID, kinds).Scan(&n)
+	} else {
+		err = q.QueryRow(ctx, "select count(*) from events where project_id = $1", projectID).Scan(&n)
+	}
+	return n, err
 }
 
 // --- base versions ----------------------------------------------------

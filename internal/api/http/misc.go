@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,15 +36,23 @@ func sinceQuery(r *http.Request) (time.Time, error) {
 	return t, nil
 }
 
+// eventKindRe is one kind in kind= on events (I-662).
+var eventKindRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
+
+// eventCountHeader carries how many of the project's events match kind=,
+// whatever since, before, after and limit say (I-662).
+const eventCountHeader = "Repose-Event-Count"
+
 func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProjectAny(r)
 	if err != nil {
 		return err
 	}
-	// limit and before page back through the list (I-414); with neither,
-	// the newest 50 as before.
+	q := r.URL.Query()
+	// limit and before page back through the list (I-414), after pages
+	// forward (I-662); with none of them, the newest 50 as before.
 	limit := 50
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 200 {
 			return errf("invalid", "limit must be 1 to 200")
@@ -54,16 +63,40 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	var kinds []string
+	if v := q.Get("kind"); v != "" {
+		for _, k := range strings.Split(v, ",") {
+			if !eventKindRe.MatchString(k) {
+				return errf("invalid", "kind must be event kinds separated by commas, such as error,needs_input")
+			}
+			kinds = append(kinds, k)
+		}
+	}
+	bv, av := q.Get("before"), q.Get("after")
+	if bv != "" && av != "" {
+		return errf("invalid", "before and after cannot be used together")
+	}
 	var evs []store.Event
-	if v := r.URL.Query().Get("before"); v != "" {
-		before, perr := uuid.Parse(v)
+	switch {
+	case bv != "":
+		before, perr := uuid.Parse(bv)
 		if perr != nil {
 			return errf("invalid", "before must be an event id")
 		}
-		evs, err = store.ListEventsBefore(r.Context(), s.d.Pool, p.ID, before, limit)
-	} else {
-		evs, err = store.ListEvents(r.Context(), s.d.Pool, p.ID, since, limit)
+		evs, err = store.ListEventsBefore(r.Context(), s.d.Pool, p.ID, before, limit, kinds...)
+	case av != "":
+		after, perr := uuid.Parse(av)
+		if perr != nil {
+			return errf("invalid", "after must be an event id")
+		}
+		evs, err = store.ListEventsAfter(r.Context(), s.d.Pool, p.ID, after, limit, kinds...)
+	default:
+		evs, err = store.ListEvents(r.Context(), s.d.Pool, p.ID, since, limit, kinds...)
 	}
+	if err != nil {
+		return err
+	}
+	total, err := store.CountEvents(r.Context(), s.d.Pool, p.ID, kinds...)
 	if err != nil {
 		return err
 	}
@@ -71,6 +104,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	for _, e := range evs {
 		out = append(out, map[string]any{"id": e.ID, "ts": e.TS, "kind": e.Kind, "agent": e.Agent, "window": e.TmuxWindow, "summary": e.Summary, "source": e.Source, "delivered": e.Delivered})
 	}
+	w.Header().Set(eventCountHeader, strconv.Itoa(total))
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

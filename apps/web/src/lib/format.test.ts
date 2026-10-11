@@ -8,7 +8,12 @@ import {
 	timeUntil,
 	tempLeft,
 	share,
-	normalizeRemoteDisplay
+	normalizeRemoteDisplay,
+	sizeGB,
+	agentStateLabel,
+	clockTime,
+	dayLabel,
+	classMemoryGB
 } from './format';
 
 describe('money', () => {
@@ -102,5 +107,57 @@ describe('normalizeRemoteDisplay', () => {
 		const a = normalizeRemoteDisplay('git@github.com:a/b.git');
 		const b = normalizeRemoteDisplay('https://github.com/a/b');
 		expect(a).toBe(b);
+	});
+});
+
+describe('sizeGB', () => {
+	it('says TB for whole thousands', () => {
+		expect(sizeGB(1000)).toBe('1 TB');
+		expect(sizeGB(2000)).toBe('2 TB');
+	});
+	it('says GB otherwise', () => {
+		expect(sizeGB(250)).toBe('250 GB');
+		expect(sizeGB(1500)).toBe('1500 GB');
+		expect(sizeGB(0)).toBe('0 GB');
+	});
+});
+
+describe('agentStateLabel', () => {
+	it('spaces the words', () => {
+		expect(agentStateLabel('needs_input')).toBe('needs input');
+		expect(agentStateLabel('working')).toBe('working');
+	});
+	it('gives nothing for an unknown or empty state', () => {
+		expect(agentStateLabel('unknown')).toBe('');
+		expect(agentStateLabel('')).toBe('');
+		expect(agentStateLabel(undefined)).toBe('');
+	});
+});
+
+describe('clockTime', () => {
+	it('is 24-hour local time', () => {
+		expect(clockTime(new Date(2026, 9, 9, 14, 2).toISOString())).toBe('14:02');
+		expect(clockTime(new Date(2026, 9, 9, 7, 5).toISOString())).toBe('07:05');
+	});
+});
+
+describe('dayLabel', () => {
+	const now = new Date(2026, 9, 11, 9, 0);
+	it('says Today and Yesterday', () => {
+		expect(dayLabel(new Date(2026, 9, 11, 0, 1).toISOString(), now)).toBe('Today');
+		expect(dayLabel(new Date(2026, 9, 10, 23, 59).toISOString(), now)).toBe('Yesterday');
+	});
+	it('gives the weekday, day and month before that', () => {
+		expect(dayLabel(new Date(2026, 9, 9, 12, 0).toISOString(), now)).toBe('Fri 9 Oct');
+		expect(dayLabel(new Date(2026, 8, 30, 12, 0).toISOString(), now)).toBe('Wed 30 Sep');
+	});
+});
+
+describe('classMemoryGB', () => {
+	it('gives each size class its memory', () => {
+		expect(classMemoryGB('small')).toBe(4);
+		expect(classMemoryGB('large')).toBe(8);
+		expect(classMemoryGB('xl')).toBe(16);
+		expect(classMemoryGB('huge')).toBe(0);
 	});
 });

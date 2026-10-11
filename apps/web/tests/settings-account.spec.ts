@@ -69,7 +69,10 @@ test('leaving settings with an unsaved ntfy URL asks first', async ({ page }) =>
 		void d.dismiss();
 	});
 
-	const projects = page.getByRole('link', { name: 'Projects', exact: true });
+	// Other specs can leave questions pending, which the link's name counts.
+	const projects = page
+		.getByRole('navigation', { name: 'Dashboard' })
+		.getByRole('link', { name: /^Projects\b/ });
 	await projects.click();
 	const ask = page.getByRole('alert').filter({ hasText: 'The ntfy URL is not saved.' });
 	await expect(ask).toBeVisible();
@@ -96,9 +99,12 @@ test('with the ntfy URL and machine.nix both unsaved, one Leave leaves', async (
 	const nix = page.locator('#machine-nix');
 	await nix.locator('.cm-content').click();
 	await page.keyboard.type('{ }');
-	await expect(nix.getByText('Not saved yet.')).toBeVisible();
+	await expect(nix.getByText('Unsaved changes')).toBeVisible();
 
-	await page.getByRole('link', { name: 'Projects', exact: true }).click();
+	await page
+		.getByRole('navigation', { name: 'Dashboard' })
+		.getByRole('link', { name: /^Projects\b/ })
+		.click();
 	await expect(page.getByText('The ntfy URL is not saved.')).toBeVisible();
 	await expect(nix.getByText('machine.nix is not saved.')).toBeVisible();
 	await nix.getByRole('button', { name: 'Leave anyway' }).click();
@@ -160,4 +166,45 @@ test('account deletion requires typing the exact handle', async ({ page }) => {
 	await deleteBtn.click();
 
 	await expect(page).toHaveURL('/', { timeout: 10_000 });
+});
+
+// I-664: Settings fills the frame. Each section is two tracks from lg, and
+// the machine.nix editor runs to the frame's right edge, so no 672px
+// column is left with 312px of paper beside it.
+test('settings spans the frame at 1440', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/settings');
+	const editor = page.locator('#machine-nix .nix-frame');
+	await expect(editor).toBeVisible();
+	const box = await editor.boundingBox();
+	expect(box!.x + box!.width).toBeGreaterThanOrEqual(1200);
+	// The account's key and value sit side by side, not 672px apart.
+	const handle = page.locator('#account dt', { hasText: 'Handle' });
+	const value = page.locator('#account dd').first();
+	const k = await handle.boundingBox();
+	const v = await value.boundingBox();
+	expect(v!.x - (k!.x + k!.width)).toBeLessThan(200);
+	expect(Math.abs(v!.y - k!.y)).toBeLessThan(4);
+});
+
+// The Save buttons are quiet ones: at rest the one disabled look, and once
+// there is a change the enabled .btn-quiet, which must not look disabled.
+test('a Save with a change to save does not look disabled', async ({ page }) => {
+	await page.goto('/settings');
+	const save = page
+		.locator('form', { has: page.getByLabel('ntfy URL') })
+		.getByRole('button', { name: 'Save', exact: true });
+	const colour = () => save.evaluate((b) => getComputedStyle(b).color);
+	const resting = await colour();
+	await page.getByLabel('ntfy URL').fill('https://ntfy.sh/repose-look');
+	await expect(save).toBeEnabled();
+	expect(await colour()).not.toBe(resting);
+});
+
+test('Sign out on Settings signs out', async ({ page }) => {
+	await page.goto('/settings');
+	await page.locator('#account').getByRole('button', { name: 'Sign out' }).click();
+	await expect(page).toHaveURL('/', { timeout: 10_000 });
+	await page.goto('/settings');
+	await expect(page).not.toHaveURL('/settings');
 });

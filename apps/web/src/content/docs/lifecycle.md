@@ -25,6 +25,8 @@ this month
 
 `repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
+The dashboard's **Projects** page shows the same: your plan's memory, disk and egress above the list, the questions agents are waiting on, and each project's state, agents, disk and last snapshot, with **Start** or **Stop** on its row. Under the list, **Recent activity** has the newest events across your running projects. The **Projects** link in the dashboard counts the questions waiting.
+
 For one project in detail, including each agent by its window, the commits on the machine your laptop doesn't have, and which processes are listening on ports:
 
 ```
@@ -32,7 +34,7 @@ repose status todo-app
 repose status todo-app --watch
 ```
 
-The dashboard's project page shows the state, agents, SSH sessions and usage, plus events (newest 20, with Show older for the rest), snapshots and the last build. It doesn't list listening ports.
+The dashboard's project page shows the state, agents, SSH sessions, memory and disk meters, usage charts, snapshots and the project's details. Its events come in pages of 25 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
 
 ## Stop and start
 
@@ -92,7 +94,7 @@ Or restore into a new project and leave the original alone:
 repose snapshots restore SNAPSHOT_ID --as todo-app-old
 ```
 
-The dashboard's snapshot list has **Create**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
+The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
 
 Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it before writing anything, and stops with `snapshot checksum mismatch` if they differ. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
 

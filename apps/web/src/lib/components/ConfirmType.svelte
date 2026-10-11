@@ -62,7 +62,9 @@
 			use:focusOnMount={autofocus}
 		/>
 		<div class="flex items-center gap-2">
-			<button type="submit" class="btn-danger" disabled={!ready}>
+			<!-- Disabled, it has the one disabled look; armed, the filled red,
+			     so the moment it can act is plain (I-661). -->
+			<button type="submit" class="btn-danger {ready ? 'btn-danger--armed' : ''}" disabled={!ready}>
 				{busy && busyLabel ? busyLabel : label}
 			</button>
 			{#if oncancel}

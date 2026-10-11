@@ -10,6 +10,8 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import MachineNix from '$lib/components/MachineNix.svelte';
+	import CodeCopy from '$lib/components/CodeCopy.svelte';
+	import { dateOnly } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { Me } from '$lib/api/types';
 
@@ -38,6 +40,14 @@
 	let heldFrom: HTMLElement | undefined;
 
 	let ntfyDirty = $derived(ntfyUrl.trim() !== savedNtfyUrl);
+
+	// Each section is a row of two tracks from lg (I-664): the h2 and one
+	// fact in 280px on the left, the controls on the right, held to 560px
+	// unless they are code. Below lg the two stack. MachineNix draws the
+	// same row with the same classes.
+	const ROW = 'form-section lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-x-12';
+	const FACT = 'mt-1 text-sm text-ink-muted';
+	const BODY = 'mt-4 min-w-0 max-w-[560px] lg:mt-0';
 
 	const supported =
 		typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
@@ -193,7 +203,7 @@
 	<title>Settings — repose</title>
 </svelte:head>
 
-<PageShell title="Settings" width="form">
+<PageShell title="Settings">
 	<LoadState
 		status={me ? 'ready' : loadError ? 'failed' : 'loading'}
 		error={loadError}
@@ -203,114 +213,148 @@
 		     in layout.css): the page title's rule is directly above it. The
 		     account was its own page until I-578; /account redirects here. -->
 		{#if me}
-			<div class="form-section" id="account">
-				<h2 class="text-xl font-semibold">Account</h2>
-				<dl class="mt-2 space-y-2 text-sm">
-					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">Handle</dt>
-						<dd class="font-mono">{me.handle}</dd>
+			<section class={ROW} id="account">
+				<div>
+					<h2 class="text-xl font-semibold">Account</h2>
+					<p class={FACT}>Created {dateOnly(me.created_at)}.</p>
+				</div>
+				<div class={BODY}>
+					<dl class="-mt-1.5 border-b border-rule text-sm">
+						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 py-2.5">
+							<dt class="text-ink-muted">Handle</dt>
+							<dd class="font-mono">{me.handle}</dd>
+						</div>
+						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 border-t border-rule py-2.5">
+							<dt class="text-ink-muted">Email</dt>
+							<dd class="min-w-0 break-all">{me.email}</dd>
+						</div>
+						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 border-t border-rule py-2.5">
+							<dt class="text-ink-muted">GitHub</dt>
+							<dd class={me.github_login ? '' : 'text-ink-muted'}>
+								{me.github_login ?? 'Not linked'}
+							</dd>
+						</div>
+					</dl>
+					<div class="mt-4">
+						<button type="button" class="btn-quiet btn--sm" onclick={() => signOut()}
+							>Sign out</button
+						>
 					</div>
-					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">Email</dt>
-						<dd class="min-w-0 break-all">{me.email}</dd>
-					</div>
-					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">GitHub</dt>
-						<dd class={me.github_login ? '' : 'text-ink-muted'}>
-							{me.github_login ?? 'Not linked'}
-						</dd>
-					</div>
-				</dl>
-			</div>
+				</div>
+			</section>
 		{/if}
 
-		<div class="form-section">
-			<h2 class="text-xl font-semibold">Timezone</h2>
-			{#if timezones.length}
-				<select
-					class="field mt-2 w-full sm:w-72"
-					aria-label="Timezone"
-					bind:value={tz}
-					onchange={saveTz}
-				>
-					{#each timezones as z (z)}
-						<option value={z}>{z}</option>
-					{/each}
-				</select>
-			{:else}
-				<input
-					class="field mt-2 w-full sm:w-72"
-					aria-label="Timezone"
-					bind:value={tz}
-					onchange={saveTz}
-				/>
-			{/if}
-		</div>
-
-		<div class="form-section">
-			<h2 class="text-xl font-semibold">Notifications</h2>
-			<label class="check-row mt-2">
-				<input type="checkbox" bind:checked={emailOn} onchange={saveEmail} />
-				Email notifications
-			</label>
-			<form class="mt-3" onsubmit={saveNtfy}>
-				<label for="ntfy-url" class="mb-1 block text-sm font-medium text-ink">ntfy URL</label>
-				<div class="flex gap-2">
-					<input
-						id="ntfy-url"
-						class="field min-w-0 flex-1"
-						placeholder="https://ntfy.sh/your-topic"
-						bind:value={ntfyUrl}
-					/>
-					<button type="submit" class="btn shrink-0" disabled={savingNtfy || !ntfyDirty}>
-						{savingNtfy ? 'Saving…' : 'Save'}
-					</button>
-				</div>
-				{#if ntfyDirty && heldNavigation}
-					<div
-						class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
-						role="alert"
+		<section class={ROW}>
+			<div>
+				<h2 class="text-xl font-semibold">Timezone</h2>
+				<p class={FACT}>
+					A machine keeps it until <code class="font-mono text-compact">repose run</code> sets your laptop's.
+				</p>
+			</div>
+			<div class={BODY}>
+				{#if timezones.length}
+					<select
+						class="field w-full sm:w-80"
+						aria-label="Timezone"
+						bind:value={tz}
+						onchange={saveTz}
 					>
-						<p>The ntfy URL is not saved. Leave this page anyway?</p>
-						<div class="flex items-center gap-2">
-							<button type="button" class="btn-quiet btn--sm" bind:this={stayButton} onclick={stay}
-								>Stay</button
-							>
-							<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
-						</div>
-					</div>
-				{:else if ntfyDirty}
-					<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
-				{/if}
-			</form>
-			<div class="mt-3">
-				{#if testAvailable}
-					<button type="button" class="btn-ghost px-0" disabled={testing} onclick={sendTest}>
-						{testing ? 'Sending…' : 'Send test'}
-					</button>
+						{#each timezones as z (z)}
+							<option value={z}>{z}</option>
+						{/each}
+					</select>
 				{:else}
-					<span class="text-sm text-ink-faint">Test not available yet</span>
+					<input
+						class="field w-full sm:w-80"
+						aria-label="Timezone"
+						bind:value={tz}
+						onchange={saveTz}
+					/>
 				{/if}
 			</div>
-		</div>
+		</section>
 
-		<div class="form-section">
-			<h2 class="text-xl font-semibold">Install</h2>
-			<code class="codeblock mt-2 block px-3 py-2"
-				>curl -fsSL https://repose.herakraft.co/install.sh | sh</code
-			>
-		</div>
+		<section class={ROW}>
+			<div>
+				<h2 class="text-xl font-semibold">Notifications</h2>
+				<p class={FACT}>When an agent finishes or needs input, on every project.</p>
+			</div>
+			<div class={BODY}>
+				<label class="check-row -mt-1.5">
+					<input type="checkbox" bind:checked={emailOn} onchange={saveEmail} />
+					Email notifications
+				</label>
+				<form class="mt-4" onsubmit={saveNtfy}>
+					<label for="ntfy-url" class="mb-1.5 block text-sm font-medium text-ink">ntfy URL</label>
+					<div class="flex gap-2">
+						<input
+							id="ntfy-url"
+							class="field min-w-0 flex-1"
+							placeholder="https://ntfy.sh/your-topic"
+							bind:value={ntfyUrl}
+						/>
+						<button type="submit" class="btn-quiet shrink-0" disabled={savingNtfy || !ntfyDirty}>
+							{savingNtfy ? 'Saving…' : 'Save'}
+						</button>
+					</div>
+					{#if ntfyDirty && heldNavigation}
+						<div
+							class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
+							role="alert"
+						>
+							<p>The ntfy URL is not saved. Leave this page anyway?</p>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="btn-quiet btn--sm"
+									bind:this={stayButton}
+									onclick={stay}>Stay</button
+								>
+								<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
+							</div>
+						</div>
+					{:else if ntfyDirty}
+						<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
+					{/if}
+				</form>
+				<div class="mt-3">
+					{#if testAvailable}
+						<button type="button" class="btn-ghost -ml-2" disabled={testing} onclick={sendTest}>
+							{testing ? 'Sending…' : 'Send test'}
+						</button>
+					{:else}
+						<span class="text-sm text-ink-faint">Test not available yet</span>
+					{/if}
+				</div>
+			</div>
+		</section>
+
+		<section class={ROW}>
+			<div>
+				<h2 class="text-xl font-semibold">Install</h2>
+				<p class={FACT}>The CLI, for macOS and Linux.</p>
+			</div>
+			<div class={BODY}>
+				<CodeCopy
+					command="curl -fsSL https://repose.herakraft.co/install.sh | sh"
+					what="install command"
+				/>
+			</div>
+		</section>
 
 		<MachineNix />
 
 		{#if me}
-			<div class="form-section" id="delete-account">
-				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
-				<p class="mt-1 text-sm text-ink-muted">
-					Stops every environment at once. Everything, including snapshots, is deleted 30 days
-					later.
-				</p>
-				<div class="mt-3">
+			<!-- The danger zone, last on the page (DESIGN-LANGUAGE.md "States"). -->
+			<section class={ROW} id="delete-account">
+				<div>
+					<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
+					<p class={FACT}>
+						Stops every environment at once. Everything, including snapshots, is deleted 30 days
+						later.
+					</p>
+				</div>
+				<div class={BODY}>
 					<ConfirmType
 						word={me.handle}
 						label="Delete account"
@@ -318,7 +362,7 @@
 						onconfirm={onDelete}
 					/>
 				</div>
-			</div>
+			</section>
 		{/if}
 	</LoadState>
 </PageShell>

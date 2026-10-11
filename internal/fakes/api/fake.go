@@ -197,6 +197,55 @@ func (f *Fake) now() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
 }
 
+// AddEventAs records an event with an agent and its tmux window, for the
+// admin switch's mixed seeding of a project's events (I-662). AddEvent
+// is the same with neither.
+func (f *Fake) AddEventAs(projectID string, ts time.Time, kind, agent, window, summary string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.projects[projectID]; ok {
+		p.events = append(p.events, &Event{ID: f.nextID(), TS: ts, Kind: kind, Agent: agent, Window: window, Summary: summary})
+	}
+}
+
+// BackdateCreation moves a project's creation to ts when it is newer: its
+// created_at, a started_at equal to it, and the events written at create
+// (project.created and the guest_state_changed beside it), so events
+// seeded into the past still come after the project's first one, as on a
+// real project.
+func (f *Fake) BackdateCreation(projectID string, ts time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.projects[projectID]
+	if !ok || !p.CreatedAt.After(ts) {
+		return
+	}
+	at := p.CreatedAt
+	ts = ts.UTC()
+	for _, ev := range p.events {
+		if ev.TS.Equal(at) && (ev.Kind == "project.created" || ev.Kind == "guest_state_changed") {
+			ev.TS = ts
+		}
+	}
+	if p.StartedAt != nil && p.StartedAt.Equal(at) {
+		p.StartedAt = &ts
+	}
+	p.CreatedAt = ts
+}
+
+// SetSessions sets the SSH sessions and tmux clients a running project's
+// signals report.
+func (f *Fake) SetSessions(projectID string, ssh, tmux int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.projects[projectID]; ok {
+		if p.Signals == nil {
+			p.Signals = &Signals{GuestdOK: true}
+		}
+		p.Signals.SSHSessions, p.Signals.TmuxClients = ssh, tmux
+	}
+}
+
 // nextID returns the next deterministic UUIDv7-looking id. Callers hold mu.
 func (f *Fake) nextID() string {
 	f.seq++
@@ -379,6 +428,7 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.Header().Set("Access-Control-Expose-Headers", "Repose-Event-Count, X-Request-Id")
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
