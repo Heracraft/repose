@@ -302,20 +302,21 @@ func TestResumeWaitsForThePool(t *testing.T) {
 	e := newEnv(t, false)
 	u := e.h.NewUser("ann")
 	p := e.h.CreateRunning(u, "todo-app")
-	// hosts.pool_unavailable is DECISIONS I-644's column; the resume reads
-	// it where it exists.
-	if _, err := e.h.Pool.Exec(e.ctx, "alter table hosts add column if not exists pool_unavailable boolean not null default false"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.h.Pool.Exec(e.ctx, "update hosts set pool_unavailable = true"); err != nil {
-		t.Fatal(err)
-	}
+	// The host comes back with its pool down (DECISIONS I-644): its Hello
+	// says so, and hosts.pool_unavailable follows it.
+	e.h.Fake.SetPoolUnavailable(true)
 	e.reboot("boot-2", 1)
+	var down bool
+	if err := e.h.Pool.QueryRow(e.ctx, "select pool_unavailable from hosts").Scan(&down); err != nil || !down {
+		t.Fatalf("hosts.pool_unavailable after the Hello: %v, %v", down, err)
+	}
 	e.tick()
 	e.tick()
 	if r := e.row(p.ID); r.outcome != resume.OutcomePending || r.attempts != 0 || e.startOps(p.ID) != 0 {
 		t.Fatalf("pool down: %+v, %d starts", r, e.startOps(p.ID))
 	}
+	// The pool is back; the next heartbeat would say so.
+	e.h.Fake.SetPoolUnavailable(false)
 	_, _ = e.h.Pool.Exec(e.ctx, "update hosts set pool_unavailable = false")
 	// A start that fails because the guest's volume would not activate
 	// waits too, and is not counted.

@@ -408,11 +408,11 @@ func downState(hello string) string {
 	return "stopped"
 }
 
-// hostPoolUnavailable reads hosts.pool_unavailable (DECISIONS I-644) where
-// the column exists: a start would only fail with volume_unavailable.
+// hostPoolUnavailable reads hosts.pool_unavailable (DECISIONS I-644,
+// migration 0021): a start would only fail with volume_unavailable.
 func hostPoolUnavailable(ctx context.Context, tx db.Tx, hostID uuid.UUID) bool {
 	var v bool
-	err := tx.QueryRow(ctx, `select coalesce((to_jsonb(h)->>'pool_unavailable')::boolean, false) from hosts h where id = $1`, hostID).Scan(&v)
+	err := tx.QueryRow(ctx, `select pool_unavailable from hosts where id = $1`, hostID).Scan(&v)
 	return err == nil && v
 }
 
