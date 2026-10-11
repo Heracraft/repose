@@ -40,8 +40,60 @@ let
       echo "guests.slice MemoryMax=$max (total=$total reserve=$reserve)"
     '';
   };
+  # A host shutdown stops every guest@ unit, and Cloud Hypervisor 53 exits
+  # within 0.2 s of the SIGTERM systemd sends, without telling the guest:
+  # the guest loses what its page cache held (on woker-1, the last 4 to 6 s
+  # of writes, with NUL bytes at the end of the file being written). The
+  # ACPI power button makes the guest power off cleanly in about 7 s with
+  # nothing lost (DECISIONS I-650, RESEARCH §16).
+  # guest@ units are transient, created by hostd with systemd-run, so a
+  # property hostd sets reaches only guests started after the change; this
+  # static template drop-in reaches every guest@ unit, already running ones
+  # included, at the daemon-reload of the switch that brings it.
+  # Only at a system shutdown: hostd's own stops ask guestd first and kill
+  # after their timeout, and a failed boot must not wait 20 s more.
+  guestCleanStop = pkgs.writeShellApplication {
+    name = "repose-guest-clean-stop";
+    runtimeInputs = [ pkgs.systemd pkgs.curl pkgs.coreutils ];
+    text = ''
+      id=$1
+      # running, degraded, starting: an ordinary stop. stopping is a
+      # shutdown; so is no answer at all, which is how a shutdown that has
+      # already stopped D-Bus looks to an unprivileged unit.
+      case "$(systemctl is-system-running 2>/dev/null || true)" in
+        running | degraded | starting | initializing | maintenance) exit 0 ;;
+      esac
+      [ -n "''${MAINPID:-}" ] || exit 0
+      sock=/var/lib/repose/guests/$id/ch.sock
+      curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.power-button >/dev/null || exit 0
+      echo "repose-guest-clean-stop: event=guest_power_button guest_id=$id"
+      start=$(date +%s)
+      while kill -0 "$MAINPID" 2>/dev/null; do
+        if [ $(( $(date +%s) - start )) -ge 20 ]; then
+          echo "repose-guest-clean-stop: event=guest_power_button_timeout guest_id=$id"
+          exit 0
+        fi
+        sleep 0.2
+      done
+      echo "repose-guest-clean-stop: event=guest_powered_off guest_id=$id seconds=$(( $(date +%s) - start ))"
+    '';
+  };
 in
 {
+  # The clean stop above, for every guest@ unit. After= on the guest's
+  # virtiofsd units makes a shutdown stop the guest first: it needs its
+  # store share to power off.
+  systemd.units."guest@.service" = {
+    overrideStrategy = "asDropin";
+    text = ''
+      [Unit]
+      After=virtiofsd@%i.service virtiofsd-auth@%i.service
+
+      [Service]
+      ExecStop=${guestCleanStop}/bin/repose-guest-clean-stop %i
+    '';
+  };
+
   systemd.slices.guests = {
     description = "Tenant guests (Cloud Hypervisor and virtiofsd transient units)";
     sliceConfig = {
@@ -72,7 +124,10 @@ in
       "repose-register.service"
       "repose-store-export.service"
       "repose-guests-slice.service"
-    ];
+    ] ++ lib.optional cfg.dataDisk.enable "repose-guest-pool.service";
+    # The pool unit is wanted, not required: hostd must come up and report
+    # a pool that cannot (Hello pool_unavailable, DECISIONS I-644), and
+    # waiting for it keeps reconcile from racing the activation.
     after = [
       "network-online.target"
       "nftables.service"
@@ -81,9 +136,9 @@ in
       "repose-store-export.service"
       "repose-guests-slice.service"
       "lvm2-monitor.service"
-    ];
+    ] ++ lib.optional cfg.dataDisk.enable "repose-guest-pool.service";
     path = with pkgs; [
-      lvm2
+      (lib.getBin config.services.lvm.package)
       thin-provisioning-tools
       nftables
       iproute2

@@ -69,6 +69,35 @@ groups:
           description: "{{ $value | humanizePercentage }} of vg-guests/thin is free. Autoextend has run out of PV or the disk needs growing."
           runbook: "docs/ops/RUNBOOK.md#poolfull"
 
+      - alert: PoolUnavailable
+        # The thin pool cannot serve guest volumes: inactive after a host
+        # reboot, missing, or failed (DECISIONS I-643, I-644). On
+        # 2026-10-10 it stayed down for 9 hours and nothing said so. Every
+        # start on the host answers volume_unavailable meanwhile, and
+        # nothing new is placed there.
+        expr: repose_host_pool_available == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "the guest pool on {{ $labels.host_id }} is unavailable"
+          description: "vg-guests/thin cannot serve volumes; no machine on this host can start. journalctl -u repose-guest-pool -b says why."
+          runbook: "docs/ops/RUNBOOK.md#poolunavailable"
+
+      - alert: PoolUnmonitored
+        # dmeventd does not watch the pool, so autoextend never runs and the
+        # pool fills to PoolFull without growing (I-643). After the
+        # 2026-10-10 reboot it was unmonitored for a day: lvm2-monitor ran
+        # before the pool was active, and the lvm on PATH had no dmeventd.
+        expr: repose_lvm_pool_monitored == 0
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "dmeventd does not monitor the guest pool on {{ $labels.host_id }}"
+          description: "vg-guests/thin is not monitored, so it will not autoextend at 80 percent."
+          runbook: "docs/ops/RUNBOOK.md#poolunmonitored"
+
       - alert: StoreFull
         # The host's root filesystem holds /nix/store, which every guest
         # reads over virtio-fs. A full store fails builds and, worse, a

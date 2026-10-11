@@ -78,6 +78,9 @@ type Fake struct {
 	// bad are closures that never reach Ready, with what their boot
 	// prints (I-590, I-592).
 	bad map[string]string
+	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
+	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
+	poolDown bool
 }
 
 // BadBootMessage is the fake's classification of a bad closure's boot,
@@ -246,11 +249,21 @@ func unresponsive(id string, g *Guest) *hostdv1.Result {
 	return errResult(id, "guest_unresponsive", "guestd unreachable for guest "+g.GuestID)
 }
 
+// SetPoolUnavailable sets the fake host's thin pool down or back.
+func (f *Fake) SetPoolUnavailable(down bool) {
+	f.mu.Lock()
+	f.poolDown = down
+	f.mu.Unlock()
+}
+
 // Hello is the reconciliation message.
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40}
+	if f.poolDown {
+		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
+	}
 	for _, g := range f.guests {
 		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure})
 	}
@@ -295,8 +308,12 @@ func (f *Fake) Run(ctx context.Context, conn grpc.ClientConnInterface) error {
 					}
 				}
 				dr := f.draining
+				hb := &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}
+				if f.poolDown {
+					hb.PoolFreeBytes, hb.PoolBytes, hb.PoolUnavailable = 0, 0, true
+				}
 				f.mu.Unlock()
-				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Heartbeat{Heartbeat: &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}}}) // a dead stream ends Recv
+				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Heartbeat{Heartbeat: hb}}) // a dead stream ends Recv
 			case <-sm.C:
 				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Samples{Samples: f.Samples()}}) // same
 			}

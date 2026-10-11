@@ -105,7 +105,8 @@ left out. It reads files only: no api, no guest, no package manager.
 `DIR` defaults to the current checkout's root.
 
 Exit codes: 0 ok; 1 generic (also the network: the api or the login
-server out of reach, I-623), and a confirmation answered no, empty or at
+server out of reach, I-623, and a start op that failed with
+`volume_unavailable`, a host whose thin pool is down, I-644), and a confirmation answered no, empty or at
 EOF (DECISIONS I-614; it exited 0 before); 2 usage; 3 not logged in or
 the login expired; 4 project not found;
 5 guest not running; 6 dirty remote tree (sync refused); 7 payment required

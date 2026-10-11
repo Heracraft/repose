@@ -326,3 +326,10 @@ func TestHelloCountsOnlyForTheHostsOwnGuests(t *testing.T) {
 		t.Fatalf("the project's own host did not reconcile it: %s", got)
 	}
 }
+
+func TestHumanErrorVolumeUnavailable(t *testing.T) {
+	got, ok := ops.HumanErrorForTest(ops.KindStart, ops.PhaseStartGuest, "volume_unavailable", "volume_unavailable: lvs: Volume group \"vg-guests\" not found")
+	if !ok || strings.Contains(got, "vg-guests") || !strings.Contains(got, "disk is intact") {
+		t.Fatalf("human %q %v", got, ok)
+	}
+}

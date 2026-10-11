@@ -18500,3 +18500,183 @@ implementation.*
   wrong disk); disk size (a staging host and a production host differ, and
   both disks can be the same size); `azure-nvme-id`, which is what Azure
   ships for this and is not in nixos-anywhere's kexec image.
+
+**I-643. One unit activates the guest pool after boot; the initrd has no
+LVM (host-pool, 2026-10-11).** *Made during implementation* (L4 of the
+host-restart plan, after the 2026-10-10 live migration of host-01).
+- On 2026-10-10 the initrd's LVM began a thin_check of `vg-guests/thin`
+  and the switch to the real root killed it. Its device-mapper leftovers
+  blocked every later activation, nothing tried again, and every guest,
+  the npm cache and the Docker mirror stayed down for about 9 hours.
+- `boot.initrd.services.lvm.enable = false` (its default follows the
+  systemd initrd): the root filesystem is ext4 on the OS disk. Nothing
+  autoactivates vg-guests: `auto_activation_volume_list = [ ]` in
+  lvm.conf, and the VG's own flag (`vgchange --setautoactivation n`, set
+  once by the unit) for any other config.
+- `repose-guest-pool.service` (oneshot, 30 min, `restartIfChanged =
+  false`, defined when `repose.host.dataDisk.enable`) is the one owner of
+  activation: waits up to 5 minutes for the VG; an active pool gets
+  `vgchange -ay` and nothing else (the switch on a live host); otherwise
+  leftovers are removed top down (pool, tpool, tdata, tmeta) and only at
+  open count 0, then `lvchange -ay` runs thin_check. Three attempts, 10,
+  30 and 60 s apart. A thin_check that exits non-zero (lvm's
+  `(status:N)`, N > 0) exits 2 at once: damage is never retried and never
+  repaired (`thin_repair` and `lvconvert --repair` are the owner's call).
+  A leftover held by anything else ends the attempt untouched.
+- Every failure (exit 1 or 2) leaves `/run/repose/pool-hold`, and the
+  unit's `ExecCondition` skips it while that file exists. Without it,
+  hostd's `Wants=` and the cache volume's `Requires=` start a failed
+  oneshot again at every hostd restart and every switch, which retried a
+  damaged pool and could remove a `thin_tmeta` an operator had activated
+  by hand to dump it. The operator removes the file before `systemctl
+  start repose-guest-pool`; it is on /run, so a reboot runs the unit once
+  more (review of host-pool, 2026-10-11).
+- It fails only for the pool or `repose-cache`. A tenant volume that does
+  not activate is logged and counted (`repose_lvm_volumes_inactive`) and
+  hostd's start activates it once (I-644).
+- It then starts `dm-event.service`, turns monitoring on with the
+  dmeventd-capable lvm and checks `seg_monitor` is `monitored`. After the
+  reboot host-01's pool was unmonitored for a day: `lvm2-monitor` ran
+  while the pool was inactive, and the `lvm` on PATH (`pkgs.lvm2`) has no
+  dmeventd support, so `lvchange --monitor y` did nothing and said
+  nothing. `pkgs.lvm2` is gone from the host's PATH, the pool monitor's,
+  the cache unit's and hostd's: each uses `services.lvm.package`.
+- The cache volume requires and follows the pool unit and is wanted by
+  it; npm-cache and docker-registry are wanted by the cache volume. A
+  pool brought back by hand (`systemctl start repose-guest-pool`) brings
+  them all back. hostd wants and follows the pool unit, never requires
+  it: it must come up and report a pool that did not (I-644).
+- The pool monitor leaves out a metric with no value (an empty
+  `repose_lvm_pool_data_percent` made node_exporter reject the whole
+  file) and adds `repose_lvm_pool_active`, `repose_lvm_pool_monitored`
+  and `repose_lvm_volumes_inactive`. Alert `PoolUnmonitored` (warn, 30
+  min).
+- VM test `host-reboot`; RUNBOOK `PoolUnavailable`, `PoolUnmonitored`,
+  "Host rebooted", "Switch a host to main" step 7.
+
+**I-644. `volume_unavailable` and the pool's health reach hostd, the api
+and the user (host-pool, 2026-10-11).** *Made during implementation* (L4).
+- `lvm.PoolStatus` is one `lvs` call (`lv_active`, `lv_health_status`,
+  size, data and metadata percent). `ErrPoolUnavailable` is a pool that
+  is inactive, missing, `failed` or `metadata_read_only`; `out_of_data`
+  is not (PoolFull pages for it). An inactive pool used to parse as 0
+  percent used, which read as an empty pool, so the scheduler kept
+  placing machines on host-01.
+- `VolumeExists` is false only when lvs says "Failed to find logical
+  volume"; a missing VG is an error. Before, it sent running guests to
+  `error` at reconcile and let destroy leak the volume.
+- The guard is in the lvm layer: `CreateVolume`, `Snapshot`,
+  `RemoveVolume`, `ExtendVolume` and `Activate` refuse an unavailable pool
+  before calling lvm, which would otherwise activate the pool itself,
+  with its own thin_check, behind the pool unit's back. Callers map it to
+  the new error code `volume_unavailable` (the twelfth,
+  grpc-hostd.md).
+- Start checks the pool first, then activates an inactive `g-` or
+  `auth-` volume once, and answers `volume_unavailable` if either fails,
+  so a dead pool never reaches the boot fallback (I-590). A pool error in
+  the capacity checks is `volume_unavailable` too.
+- Reconcile reads the pool once: while it is unavailable a guest whose
+  unit is gone becomes `stopped` ("reconciled: thin pool unavailable"),
+  never `error`, and the stale snapshot sweep waits for the pool.
+  `pool_high` stays quiet while the pool is down; `pool_unavailable` is
+  logged every 10 minutes instead.
+- `Hello.pool_unavailable = 6`, `Heartbeat.pool_unavailable = 7`; pool
+  bytes are 0 while it is set, so an api older than the field keeps new
+  machines off the host too. Metric `repose_host_pool_available`, alert
+  `PoolUnavailable` (page after 5 min), which inhibits PoolHigh,
+  PoolFull, PoolMetadataHigh and PoolUnmonitored for the host. `hostd
+  status` has a `pool` line.
+- Migration 0021 adds `hosts.pool_unavailable`, set from Hello and every
+  Heartbeat (absent from an older hostd: false). `PickHost` and `Freeing`
+  skip such hosts.
+- A start op that fails with `volume_unavailable` leaves the project
+  `stopped` with `last_error`; the next `repose start` is a start, not a
+  restart. A create or restore keeps `error` with its host: freeing the
+  placement would orphan hostd's record, and the scheduler already
+  places nothing there. The user reads "the server's machine disks are
+  unavailable right now; this machine's disk is intact, and `repose
+  start` works once they are back". The CLI exits 1 for it, not 8: it is
+  not a capacity refusal that clears in minutes.
+
+**I-649. Host hardening every Azure VM gets: `mana_ib`, NVMe timeout,
+ethtool, a 10 s boot menu (host-pool, 2026-10-11).** *Made during
+implementation* (L4, owner decisions D3 and 10).
+- `nix/hosts/vm-hardening.nix`, imported by hosts and the edge:
+  `mana_ib` blacklisted (nothing uses RDMA; the failed teardown calls on
+  2026-10-10 were its, so hygiene rather than a proven fix);
+  `nvme_core.io_timeout=240` on the kernel line, a udev rule for disks
+  that appear later, and `repose-nvme-timeout.service`, which writes
+  240000 to the running disks' `queue/io_timeout` at the switch (no
+  `udevadm trigger`, which would replay the LVM rules over every guest's
+  dm device); `ethtool` for the RUNBOOK's dead-VF step; the systemd-boot
+  menu waits 10 s instead of 2, so the previous generation can be picked
+  on the serial console.
+- The cost of the timeout: a disk that really fails shows as stuck I/O
+  for up to 4 minutes before the kernel resets it.
+
+**I-650. A host shutdown powers its guests off cleanly, and hostd
+records nothing as failed while the host goes down (host-pool,
+2026-10-11).** *Made during implementation* (L5; owner decision D7).
+- Measured on woker-1 with a real Cloud Hypervisor 53.0 guest (2 vCPU, a
+  writer appending every 0.2 s without fsync, RESEARCH §16): SIGTERM ends CH in 0.16 s with exit 0 and the guest is not
+  told; the last 26 to 32 writes (5 to 6 s) were lost, with NUL bytes at
+  the file's end. SIGKILL the same. `PUT /api/v1/vm.power-button` makes
+  the guest's systemd power off: CH exits 0 after 7.1 to 7.3 s and
+  nothing is lost; guestd's own Shutdown took 7.6 s, the same. A host
+  shutdown today is SIGTERM: guest@ units have `KillMode=mixed` and no
+  ExecStop.
+- guest@ units are transient (hostd's systemd-run), so a property hostd
+  sets reaches only guests started later. A static template drop-in,
+  `guest@.service.d/overrides.conf`, reaches every guest@ unit, already
+  running ones included, at the daemon-reload of the switch that brings
+  it (checked on woker-1's systemd 255 and in host-services). Its
+  `ExecStop` presses the power button through the guest's API socket and
+  waits up to 20 s for the hypervisor to exit, then systemd's SIGTERM
+  follows as before. It acts only while systemd says the system is
+  stopping (or cannot answer, as late in a shutdown): hostd's own stops
+  ask guestd first, and a failed boot must not wait 20 s more. The
+  drop-in also orders each guest after its virtiofsd units, so a shutdown
+  stops the guest while its store share still answers.
+- Two flags, because a hostd restart is not a host shutdown. hostd's
+  own flag, set when its context ends, only mutes the monitor's exit
+  check. The host flag is set once `systemctl is-system-running` says
+  `stopping` (asked too, since a guest@ unit can stop before hostd's
+  SIGTERM arrives). While either is set, a guest whose hypervisor exits
+  keeps its record (`running`, closure and last good closure) and logs
+  `guest_interrupted`. Only while the host flag is set does a boot that
+  fails neither write `error`, nor fall back (I-590), nor store its
+  result: the record stays `starting` (or `creating`), the next boot's
+  reconcile makes it `stopped`, and the api's resend runs the command
+  again. A create resent that way finds a `stopped` record of the same
+  project with no last good closure (it never reached Ready) and
+  continues it like an `error` one; any other `stopped` guest is still
+  `already_exists`. On a plain hostd restart (every switch) a boot in
+  progress is torn down and answered as before: its guest@ unit outlives
+  hostd, and left running it would reconcile as `running` with a closure
+  that never reached Ready (review of host-pool, 2026-10-11). Reconcile
+  at the next start sees `running` with no unit, which is what resume
+  after a reboot (I-645) marks.
+- A hard crash gets no clean stop. `TestUnexpectedExitDuringShutdownKeepsRunning`,
+  `TestBootDuringShutdownNeverFallsBack`, `TestHostdRestartMidBootIsNotAnInterruption`,
+  `TestCreateInterruptedByHostShutdownResends`, host-services' graceful
+  reboot subtest (the stand-in hypervisor under hostd's own guest@
+  sandbox).
+
+**I-654. The root password is for the serial console only, from a file
+placed by hand (host-pool, 2026-10-11).** *Made during implementation*
+(owner decision D3, changed at the owner's review: the hash is set at the
+handoff).
+- `users.users.root.hashedPasswordFile = /var/lib/repose/root-console.hash`
+  on hosts and the edge (vm-hardening.nix), replacing `hashedPassword =
+  "!"`. NixOS reads the file at every activation; a missing file leaves
+  the shadow entry `!`, locked (VM test `host-reboot`). `/etc/repose` does
+  not exist on host-01, so the file lives under `/var/lib/repose`.
+- SSH stays key-only (`PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password`,
+  checked on host-01), so the password opens the serial console and
+  nothing else. Without it, a rollback from the boot menu is possible but
+  no login: no dead-VF step and no diagnosis.
+- The owner makes the hash (`mkpasswd -m yescrypt`), installs it 0400 as
+  root and logs in once on the serial console; the host and the edge get
+  different passwords. Nothing secret is in the repo or the store. RUNBOOK
+  "Console access (host and edge)".

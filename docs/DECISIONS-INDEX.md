@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-662 entries.
+667 entries.
 
 ## Scope
 
@@ -694,3 +694,8 @@ pointer, not a summary.
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
 - **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18416
 - **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18456
+- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18504
+- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L18557
+- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L18601
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L18617
+- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L18665

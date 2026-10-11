@@ -2,10 +2,12 @@ package guest
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
 	"github.com/heracraft/repose/internal/obs"
@@ -250,8 +252,10 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 	}
 	if m.d.Metrics != nil {
 		m.d.Metrics.GuestdLost.Set(float64(lost))
-		m.d.Metrics.PoolFreeBytes.Set(float64(s.Host.PoolFree))
-		if size, _, err := m.d.LVM.PoolStats(ctx); err == nil {
+		// While the pool is unavailable its bytes keep their last values:
+		// a 0 would read as a full pool on the dashboard (I-644).
+		if size, free, err := m.d.LVM.PoolStats(ctx); err == nil {
+			m.d.Metrics.PoolFreeBytes.Set(float64(free))
 			m.d.Metrics.PoolBytes.Set(float64(size))
 		}
 		m.d.Metrics.MemFreeBytes.Set(float64(m.FreeMemBytes()))
@@ -264,6 +268,17 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 
 func (m *Manager) poolWarning() {
 	pct, err := m.poolUsedPct()
+	if errors.Is(err, lvm.ErrPoolUnavailable) {
+		// No pool_high from a pool that is down: PoolUnavailable pages
+		// instead, and this line says it is still down (I-644).
+		m.setPoolGauge(false)
+		if m.d.Now().Sub(m.poolDownLogged) >= 10*time.Minute {
+			m.poolDownLogged = m.d.Now()
+			m.d.Log.Warn("thin pool unavailable", "event", "pool_unavailable")
+		}
+	} else {
+		m.setPoolGauge(true)
+	}
 	if err == nil && pct >= m.cfg.PoolWarnPct && m.d.Now().Sub(m.poolWarned) >= 10*time.Minute {
 		m.poolWarned = m.d.Now()
 		m.d.Log.Warn("thin pool high", "event", "pool_warning", "pct", int(pct))

@@ -27,7 +27,9 @@ type StatusReply struct {
 	Guests    map[string]int `json:"guests_by_state"`
 	FreeMem   uint64         `json:"free_mem_bytes"`
 	PoolFree  uint64         `json:"pool_free_bytes"`
-	Uptime    string         `json:"uptime"`
+	// Pool is "active" or "unavailable (<reason>)" (DECISIONS I-644).
+	Pool   string `json:"pool"`
+	Uptime string `json:"uptime"`
 }
 
 // OperatorLoginReport is what `hostd audit-login` hands the daemon for an

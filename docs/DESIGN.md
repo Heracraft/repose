@@ -127,6 +127,20 @@ project lives on its host and a start adds a writer, so at 95 it waits
 for the operator rather than risk the pool. Nothing stops a running guest
 for the pool.
 
+**A host that restarts** (DECISIONS I-643, I-644, I-649, I-650). One unit
+after boot activates the pool; the initrd has no LVM, since an
+activation the initrd's teardown killed is what kept host-01's guests down
+for 9 hours on 2026-10-10. The unit clears an interrupted activation's
+leftovers and retries, but never retries or repairs a pool whose metadata
+check fails: that pages and the owner decides. While the pool is
+unavailable the host reports it, nothing is placed there, and a start is
+refused with `volume_unavailable`, the project left stopped with its disk
+intact. A graceful shutdown presses every running guest's power button
+and gives it 20 seconds, so its last writes reach its disk; a crash does
+not. Hosts boot with a 240 s NVMe timeout (a live migration stalls the
+disk) and a 10 s boot menu, and root has a console-only password from a
+file placed by hand (I-654).
+
 **Benchmark gate.** Deferred (DECISIONS I-12): the separate M0 benchmark
 was not run; the first M1 host measured itself instead (`RESEARCH.md` §11
 onwards). The rule stands: if nested virtualization costs more than roughly

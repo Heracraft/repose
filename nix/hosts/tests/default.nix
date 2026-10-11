@@ -11,6 +11,11 @@
 #                  587 and 443 open, the per-guest new-flow rate) with
 #                  hostd's nft commands, the per-guest egress shape
 #                  (hostd's tc commands, measured), Fluent Bit to a real Loki
+#   host-reboot    the guest pool after a clean reboot and a crash: the one
+#                  pool unit, no LVM in the initrd, leftovers cleared top
+#                  down, a failing thin_check never retried or repaired, a
+#                  held leftover untouched, dmeventd, the caches, the
+#                  console password file (I-643, I-644, I-649, I-654)
 #   host-storage   the disko data-disk layout on a virtual disk: PV, VG,
 #                  thin pool with autoextend, a thin volume, the pool monitor
 #   host-services  the real hostd, guests.slice, transient guest survives a
@@ -37,10 +42,12 @@ let
       hostName = "host-test";
       provider = "none";
       uplinkInterface = "eth1";
+      # Most tests have no data disk at boot; host-reboot turns it on.
+      dataDisk.enable = lib.mkDefault false;
     };
     disko.enableConfig = false;
-    # The test driver sets a root password file; the host's locked password
-    # would conflict with it.
+    # The test driver logs in through its backdoor shell; root's password
+    # comes from the host's console file (vm-hardening.nix) as on a host.
     users.users.root.hashedPassword = lib.mkForce null;
     boot.loader.systemd-boot.enable = lib.mkForce false;
     boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
@@ -534,6 +541,306 @@ in
   # on a KVM machine (a VM test would nest the guest three levels deep).
   host-guest-memory = import ./guest-memory.nix { inherit pkgs; };
 
+  # The host coming back from a reboot (DECISIONS I-643, I-644, I-649): the
+  # one pool unit after boot, no LVM in the initrd, the leftovers of an
+  # interrupted activation cleared top down, a real thin_check failure
+  # never retried or repaired, a held leftover never touched, dmeventd
+  # monitoring, the caches following the pool, and the console password
+  # file. On the hostd stub; host-services has the real hostd.
+  host-reboot = pkgs.testers.runNixOSTest {
+    name = "repose-host-reboot";
+    nodes.host = { lib, pkgs, ... }:
+      let
+        thin = pkgs.thin-provisioning-tools;
+        # thin_check that reports damage while the flag file exists, as a
+        # pool whose metadata is really damaged does.
+        thinCheck = pkgs.writeShellScript "thin_check" ''
+          if [ -e /var/lib/test/fail-thin-check ]; then
+            echo "thin_check: test damage" >&2
+            exit 1
+          fi
+          exec ${thin}/bin/thin_check "$@"
+        '';
+        # thin_repair that leaves a mark: nothing may ever run it.
+        thinRepair = pkgs.writeShellScript "thin_repair" ''
+          touch /var/lib/test/repaired
+          exec ${thin}/bin/thin_repair "$@"
+        '';
+      in
+      {
+        imports = [ stubNode ];
+        virtualisation.emptyDiskImages = [ 65536 ];
+        virtualisation.memorySize = lib.mkForce 2048;
+        repose.host.dataDisk.enable = true;
+        # nixpkgs' own global/thin_*_executable lines are replaced, not
+        # overridden: lvm warns about a duplicate setting and the wrapper
+        # was not the one used. The initrd has no LVM either way.
+        services.lvm.boot.thin.enable = lib.mkForce false;
+        environment.etc."lvm/lvm.conf".text = ''
+          global/thin_check_executable = "${thinCheck}"
+          global/thin_repair_executable = "${thinRepair}"
+          global/thin_dump_executable = "${thin}/bin/thin_dump"
+        '';
+        systemd.services.repose-guest-pool.environment = {
+          REPOSE_POOL_RETRY_DELAY = "1";
+          # The first boot has no VG yet; do not wait the real 5 minutes.
+          REPOSE_POOL_VG_WAIT = "20";
+        };
+        systemd.tmpfiles.rules = [ "d /var/lib/test 0755 root root -" ];
+        environment.systemPackages = [ thin pkgs.cpio pkgs.zstd pkgs.mkpasswd ];
+      };
+    testScript = { nodes, ... }: ''
+      import re, time
+
+      initrd = "${nodes.host.system.build.initialRamdisk}/${nodes.host.system.boot.loader.initrdFile}"
+      dm = "vg--guests-thin"
+
+      def journal(unit, boot=0):
+          return host.succeed(f"journalctl -b {boot} -u {unit} --no-pager -o cat")
+
+      def pool_active():
+          return host.succeed("lvs --noheadings -o lv_active vg-guests/thin").strip() == "active"
+
+      def mono(unit, prop):
+          return int(host.succeed(f"systemctl show {unit} -p {prop} --value").strip())
+
+      def assert_back(what):
+          host.wait_for_unit("repose-guest-pool.service")
+          log = journal("repose-guest-pool")
+          print(log)
+          assert "event=pool_activated" in log, f"{what}: the pool unit did not activate the pool"
+          for v in ["thin", "g-test", "auth-test", "repose-cache"]:
+              a = host.succeed(f"lvs --noheadings -o lv_active vg-guests/{v}").strip()
+              assert a == "active", f"{what}: {v} is {a!r}"
+          host.succeed("mkdir -p /mnt/g && mount /dev/vg-guests/g-test /mnt/g")
+          assert host.succeed("cat /mnt/g/file").strip() == "written before the reboot", what
+          host.succeed("umount /mnt/g")
+          host.wait_for_unit("repose-cache-volume.service")
+          host.succeed("mountpoint -q /var/cache/repose")
+          host.wait_for_unit("repose-npm-cache.service")
+          cond = host.succeed("systemctl show docker-registry -p ConditionResult --value").strip()
+          assert cond == "yes", f"{what}: docker-registry condition {cond}"
+          # Event activation after boot found nothing to do.
+          rc, ev = host.execute("journalctl -b 0 -u 'lvm-activate-vg-guests*' --no-pager -o cat")
+          print(ev)
+          if "now active" in ev:
+              assert re.search(r"\b0 logical volume\(s\)", ev), f"{what}: event activation activated volumes: {ev}"
+          pool_done = mono("repose-guest-pool", "ExecMainExitTimestampMonotonic")
+          for u in ["hostd", "repose-cache-volume"]:
+              started = mono(u, "ExecMainStartTimestampMonotonic")
+              assert started >= pool_done, f"{what}: {u} started at {started}, before the pool unit ended at {pool_done}"
+          mon = host.succeed("lvs --noheadings -o seg_monitor vg-guests/thin").strip()
+          assert mon == "monitored", f"{what}: seg_monitor {mon!r}"
+          host.succeed("systemctl start repose-pool-monitor.service")
+          prom = host.succeed("cat /var/lib/node_exporter/textfile/repose_lvm.prom")
+          for line in ["repose_lvm_pool_active 1", "repose_lvm_pool_monitored 1", "repose_lvm_volumes_inactive 0"]:
+              assert line in prom, f"{what}: {line!r} missing from {prom}"
+
+      def stop_cache_users():
+          host.succeed("systemctl stop repose-npm-cache docker-registry nginx repose-cache-volume")
+          host.succeed("umount /var/cache/repose || true")
+
+      def deactivate():
+          stop_cache_users()
+          host.succeed("vgchange -an vg-guests")
+          assert host.succeed(f"dmsetup ls | grep -c {dm} || true").strip() == "0", host.succeed("dmsetup ls")
+
+      def restart_pool():
+          # The operator's step (RUNBOOK "PoolUnavailable"): a failed run
+          # holds the unit until its marker is removed.
+          host.succeed("rm -f /run/repose/pool-hold")
+          t0 = time.monotonic()
+          rc, _ = host.execute("systemctl restart repose-guest-pool.service")
+          took = time.monotonic() - t0
+          inv = host.succeed("systemctl show repose-guest-pool -p InvocationID --value").strip()
+          log = host.succeed(f"journalctl _SYSTEMD_INVOCATION_ID={inv} --no-pager -o cat")
+          status = host.succeed("systemctl show repose-guest-pool -p ExecMainStatus --value").strip()
+          print(f"pool unit rc={rc} exit={status} took={took:.1f}s\n{log}")
+          return rc, status, log, took
+
+      host.start()
+      host.wait_for_unit("multi-user.target")
+
+      with subtest("1: first boot without the VG, then the pool, two volumes and a file"):
+          # No VG at the first boot: the unit waited and failed, and hostd
+          # and the caches came up regardless (wants, not requires).
+          host.wait_until_succeeds("systemctl is-failed repose-guest-pool.service", timeout=60)
+          assert "event=pool_vg_missing" in journal("repose-guest-pool")
+          host.succeed("systemctl is-active hostd.service")
+          host.succeed("test -e /run/repose/pool-hold")
+          print(host.succeed("${formatScript}"))
+          rc, status, log, _ = restart_pool()
+          assert rc == 0, log
+          assert "event=pool_autoactivation_off" in log and "event=pool_already_active" in log, log
+          assert host.succeed("vgs --noheadings -o autoactivation vg-guests").strip() == "", "VG autoactivation still enabled"
+          host.succeed("lvcreate -q -V 1G -T vg-guests/thin -n g-test && lvcreate -q -V 16M -T vg-guests/thin -n auth-test")
+          host.succeed("mkfs.ext4 -q /dev/vg-guests/g-test && mkdir -p /mnt/g && mount /dev/vg-guests/g-test /mnt/g")
+          host.succeed("echo 'written before the reboot' > /mnt/g/file && sync && umount /mnt/g")
+          host.wait_for_unit("repose-cache-volume.service")
+          host.succeed("mountpoint -q /var/cache/repose")
+          host.succeed("grep -q auto_activation_volume_list /etc/lvm/lvm.conf")
+
+      with subtest("2: a clean reboot brings the pool, the volumes and the caches back"):
+          host.shutdown()
+          host.start()
+          assert_back("clean reboot")
+
+      with subtest("3: a hard stop brings them back too"):
+          host.crash()
+          host.start()
+          assert_back("hard stop")
+
+      # The device-mapper tables of the active pool, to leave behind later.
+      tables = {}
+      for n in [f"{dm}_tmeta", f"{dm}_tdata", f"{dm}-tpool", dm]:
+          rc, t = host.execute(f"dmsetup table {n}")
+          if rc == 0 and t.strip():
+              mm = host.succeed(f"dmsetup info -c --noheadings -o major,minor {n}").strip()
+              uuid = host.succeed(f"dmsetup info -c --noheadings -o uuid {n}").strip()
+              tables[n] = (t.strip(), mm, uuid)
+      print(tables)
+      print(host.succeed("dmsetup ls --tree"))
+
+      def leave(names, with_uuid):
+          """Recreate the named pool devices bottom up, as an activation
+          killed halfway leaves them, with tables pointing at the new ones."""
+          remap = {}
+          for n in [f"{dm}_tmeta", f"{dm}_tdata", f"{dm}-tpool", dm]:
+              if n not in names or n not in tables:
+                  continue
+              table, mm, uuid = tables[n]
+              for old, new in remap.items():
+                  table = table.replace(old + " ", new + " ")
+              host.succeed(f"cat > /tmp/table <<'EOF'\n{table}\nEOF")
+              u = f"-u {uuid}" if with_uuid else ""
+              host.succeed(f"dmsetup create {n} {u} < /tmp/table")
+              remap[mm] = host.succeed(f"dmsetup info -c --noheadings -o major,minor {n}").strip()
+          print(host.succeed("dmsetup ls --tree"))
+
+      with subtest("4: the incident: tmeta left at open count 0 blocks activation; the unit clears it"):
+          deactivate()
+          rc, out = host.execute("lvchange -y -ay vg-guests/thin_tmeta 2>&1")
+          print(f"lvchange -ay thin_tmeta: rc={rc} {out}")
+          if f"{dm}_tmeta" not in host.succeed("dmsetup ls"):
+              leave([f"{dm}_tmeta"], True)
+          assert host.succeed(f"dmsetup info -c --noheadings -o open {dm}_tmeta").strip() == "0"
+          rc, out = host.execute("lvchange -ay vg-guests/thin 2>&1")
+          print(f"lvchange -ay thin with the leftover: rc={rc} {out}")
+          assert rc != 0, "lvm activated the pool over the leftover; the incident shape did not reproduce"
+          rc, status, log, _ = restart_pool()
+          assert rc == 0 and f"event=pool_leftover_removed device={dm}_tmeta" in log and "event=pool_activated" in log, log
+          host.wait_for_unit("repose-cache-volume.service")
+          host.succeed("mountpoint -q /var/cache/repose")
+          host.wait_for_unit("repose-npm-cache.service")
+          assert host.succeed("lvs --noheadings -o seg_monitor vg-guests/thin").strip() == "monitored"
+
+      with subtest("5: a whole stack left behind is removed top down"):
+          deactivate()
+          leave([f"{dm}_tmeta", f"{dm}_tdata", f"{dm}-tpool"], False)
+          host.fail("lvchange -ay vg-guests/thin")
+          rc, status, log, _ = restart_pool()
+          assert rc == 0, log
+          removed = re.findall(r"event=pool_leftover_removed device=(\S+)", log)
+          assert removed == [f"{dm}-tpool", f"{dm}_tdata", f"{dm}_tmeta"], f"removal order {removed}"
+          assert pool_active()
+
+      with subtest("6: a failing thin_check fails once, never retried, never repaired"):
+          deactivate()
+          host.succeed("touch /var/lib/test/fail-thin-check")
+          rc, status, log, took = restart_pool()
+          assert rc != 0 and status == "2", f"rc={rc} exit={status}"
+          assert took < 30, f"the unit took {took:.0f}s; a real check failure is not retried"
+          assert log.count("event=pool_check_failed") == 1, log
+          assert "status=1" in log, log
+          host.fail("test -e /var/lib/test/repaired")
+          assert not pool_active()
+          host.fail("systemctl is-active repose-cache-volume.service")
+          host.succeed("systemctl start repose-pool-monitor.service")
+          prom = host.succeed("cat /var/lib/node_exporter/textfile/repose_lvm.prom")
+          print(prom)
+          assert "repose_lvm_pool_active 0" in prom
+          assert not re.search(r"^\S+\s*$", prom, re.M), "a metric line without a value"
+          # hostd wants the unit and the cache volume requires it: their
+          # restarts (every switch restarts hostd) must not run it again.
+          host.succeed("test -e /run/repose/pool-hold")
+          host.succeed("systemctl restart hostd.service")
+          host.execute("systemctl restart repose-cache-volume.service")
+          host.wait_until_succeeds("journalctl -b 0 -u repose-guest-pool --no-pager -o cat | grep -q event=pool_held", timeout=30)
+          held = journal("repose-guest-pool")
+          print(held)
+          assert held.count("event=pool_check_failed") == 1, f"the held unit ran again: {held}"
+          host.fail("test -e /var/lib/test/repaired")
+          # This subtest started the cache volume more often in 10 s than
+          # systemd's start limit allows; a real host does not.
+          host.succeed("systemctl reset-failed repose-cache-volume.service")
+          host.succeed("rm /var/lib/test/fail-thin-check")
+          rc, status, log, _ = restart_pool()
+          assert rc == 0 and pool_active(), log
+          # The cache volume failed above (its required unit was held);
+          # the pool unit wants it, so it comes back from failed.
+          host.wait_until_succeeds("systemctl is-active repose-cache-volume.service", timeout=60)
+          host.wait_for_unit("repose-npm-cache.service")
+
+      with subtest("7: a leftover held open by something else is not touched"):
+          deactivate()
+          leave([f"{dm}_tmeta"], False)
+          host.succeed(f"systemd-run --unit holder ${pkgs.bash}/bin/bash -c 'exec 3</dev/mapper/{dm}_tmeta; exec ${pkgs.coreutils}/bin/sleep infinity'")
+          host.wait_until_succeeds(f"test \"$(dmsetup info -c --noheadings -o open {dm}_tmeta)\" = 1", timeout=30)
+          rc, status, log, _ = restart_pool()
+          assert rc != 0 and status == "1", f"rc={rc} exit={status}"
+          assert log.count(f"event=pool_leftover_held device={dm}_tmeta") == 3, log
+          host.succeed(f"dmsetup info {dm}_tmeta")
+          host.succeed("systemctl stop holder")
+          rc, status, log, _ = restart_pool()
+          assert rc == 0 and pool_active(), log
+          host.wait_for_unit("repose-cache-volume.service")
+
+      with subtest("a tenant volume that stays inactive is counted, and the pool and caches still come up"):
+          # Skipped by vgchange -ay, as a volume that will not activate is.
+          host.succeed("lvchange -an vg-guests/auth-test && lvchange --setactivationskip y vg-guests/auth-test")
+          rc, status, log, _ = restart_pool()
+          assert rc == 0 and "event=pool_volumes_inactive vg=vg-guests count=1" in log, log
+          host.succeed("systemctl start repose-pool-monitor.service")
+          assert "repose_lvm_volumes_inactive 1" in host.succeed("cat /var/lib/node_exporter/textfile/repose_lvm.prom")
+          host.wait_for_unit("repose-cache-volume.service")
+          host.succeed("lvchange --setactivationskip n vg-guests/auth-test && lvchange -ay vg-guests/auth-test")
+
+      with subtest("8: the initrd has no LVM"):
+          n = host.succeed(f"(zstdcat {initrd} 2>/dev/null || cat {initrd}) | cpio -t 2>/dev/null | grep -cE '69-dm-lvm.rules|bin/lvm$|bin/pvscan|bin/thin_check' || true").strip()
+          print(f"initrd LVM entries: {n}")
+          assert n == "0", f"{n} LVM entries in the initrd"
+          assert int(host.succeed(f"(zstdcat {initrd} 2>/dev/null || cat {initrd}) | cpio -t 2>/dev/null | wc -l").strip()) > 100, "initrd listing is empty"
+
+      with subtest("the dmeventd-capable lvm is the one on PATH"):
+          lvm = host.succeed("readlink -f $(command -v lvm)").strip()
+          print(lvm)
+          assert "dmeventd" in lvm, f"lvm on PATH is {lvm}"
+
+      with subtest("I-649: mana_ib blacklisted, NVMe io_timeout 240 s, ethtool"):
+          host.succeed("grep -q 'nvme_core.io_timeout=240' /proc/cmdline")
+          host.succeed("modprobe --showconfig | grep -q '^blacklist mana_ib$'")
+          host.succeed("ethtool --version")
+          host.succeed("systemctl is-active repose-nvme-timeout.service")
+
+      with subtest("I-654: root is locked without the console file, and takes its hash with it"):
+          shadow = lambda: host.succeed("getent shadow root | cut -d: -f2").strip()
+          host.fail("test -e /var/lib/repose/root-console.hash")
+          assert shadow() == "!", f"root's password without the file: {shadow()!r}"
+          h = host.succeed("mkpasswd -m yescrypt test-console-password").strip()
+          host.succeed(f"printf '%s\\n' '{h}' | install -m 0400 /dev/stdin /var/lib/repose/root-console.hash")
+          host.succeed("/run/current-system/activate")
+          assert shadow() == h, "the hash was not applied"
+          host.succeed("rm /var/lib/repose/root-console.hash && /run/current-system/activate")
+          assert shadow() == "!", "root not locked again once the file is gone"
+          # A reboot without the file keeps it locked.
+          host.shutdown()
+          host.start()
+          host.wait_for_unit("multi-user.target")
+          assert shadow() == "!"
+          host.succeed("grep -q '^PasswordAuthentication no' /etc/ssh/sshd_config || sshd -T 2>/dev/null | grep -qi '^passwordauthentication no'")
+    '';
+  };
+
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";
     nodes.host = { ... }: {
@@ -723,6 +1030,8 @@ in
       # join token, and the daemon holds the stream afterwards.
       repose.host.apiAddr = "${lanIP}:8443";
       repose.host.apiCAFile = "${hostdevCA}/ca.pem";
+      # The reboot subtest reads the previous boot's journal.
+      services.journald.settings.Journal.Storage = "persistent";
       # The bootstrap key is accepted only until the host has a Host CA
       # (I-177); the pair is a throwaway test fixture.
       repose.host.bootstrap = {
@@ -970,6 +1279,73 @@ in
               "ssh -n -F /dev/null -i /root/bootstrap -o IdentitiesOnly=yes -o StrictHostKeyChecking=no "
               "-o UserKnownHostsFile=/dev/null -o BatchMode=yes root@10.255.0.7 true </dev/null >/dev/null 2>&1"
           )
+
+      with subtest("a graceful reboot powers a running guest off cleanly and leaves it running in bbolt (I-650)"):
+          gid = "0192f0a1-1111-7000-8000-000000000042"
+          gdir = f"/var/lib/repose/guests/{gid}"
+          # The guest is started before the clean stop exists, as every
+          # guest on host-01 is at the switch that brings it: a runtime
+          # drop-in empties ExecStop until the "switch" below.
+          host.succeed("mkdir -p /run/systemd/system/guest@.service.d")
+          host.succeed("printf '[Service]\\nExecStop=\\n' > /run/systemd/system/guest@.service.d/zz-before-the-switch.conf && systemctl daemon-reload")
+          host.succeed("systemctl stop hostd.service")
+          host.succeed(f"install -d -m 1770 -g hostd {gdir}")
+          host.succeed(f"systemd-run --unit virtiofsd@{gid} --collect -p KillMode=mixed sleep infinity")
+          # hostd's own properties (systemd.go's KillMode, then
+          # GuestUnitProps as unit.golden pins them), so the clean stop runs
+          # in the real guest sandbox; there is no thin volume to allow.
+          props = " ".join("-p " + p for p in [
+              "KillMode=mixed", "MemoryMax=512M", "CPUQuota=100%", "Restart=no", "Slice=guests.slice",
+              "User=hostd", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "UMask=0077",
+              "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes", "ProtectKernelTunables=yes",
+              "ProtectKernelModules=yes", "ProtectKernelLogs=yes", "ProtectControlGroups=yes",
+              "ProtectProc=invisible", "RestrictNamespaces=yes", "RestrictRealtime=yes",
+              "RestrictSUIDSGID=yes", "LockPersonality=yes", "SystemCallArchitectures=native",
+              "TemporaryFileSystem=/var/lib/repose/guests", f"BindPaths={gdir}", f"ReadWritePaths={gdir}",
+              "DevicePolicy=closed", "'DeviceAllow=/dev/kvm rw'", "'DeviceAllow=/dev/net/tun rw'",
+              "'RestrictAddressFamilies=AF_UNIX AF_VSOCK'",
+          ])
+          host.succeed(f"systemd-run --unit guest@{gid} --collect {props} -- ${pkgs.python3}/bin/python3 ${./fixtures/fake_ch.py} {gdir}")
+          host.wait_until_succeeds(f"test -S {gdir}/ch.sock")
+          assert host.succeed(f"systemctl show guest@{gid} -p ExecStop --value").strip() == "", "ExecStop before the switch"
+          # The switch: the template drop-in now reaches the running unit.
+          host.succeed("rm /run/systemd/system/guest@.service.d/zz-before-the-switch.conf && systemctl daemon-reload")
+          stop = host.succeed(f"systemctl show guest@{gid} -p ExecStop --value")
+          assert "repose-guest-clean-stop" in stop, f"the running guest did not get the clean stop: {stop}"
+          # hostd's record of the running guest, as hostd wrote it at its start.
+          import json
+          rec = {"guest_id": gid, "project_id": "p-42", "class": "small", "volume_bytes": 10737418240,
+                 "system_closure": "", "state": "running", "ip": "10.64.4.42", "mac": "52:54:00:00:00:42",
+                 "tap": "tap-00000042", "vsock_cid": 1042, "ip_index": 40,
+                 "created_at": "2026-10-11T00:00:00Z", "updated_at": "2026-10-11T00:00:00Z"}
+          host.succeed(f"cat > /root/guest.json <<'EOF'\n{json.dumps(rec)}\nEOF")
+          host.succeed("hostd state export > /root/state.json")
+          host.succeed("jq --slurpfile g /root/guest.json '.guests = ((.guests // []) + $g)' /root/state.json > /root/state2.json")
+          host.succeed("hostd state import /root/state2.json")
+          host.succeed("systemctl start hostd.service")
+          host.wait_until_succeeds(f"journalctl -u hostd -b 0 -o cat | grep {gid} | grep -q reconcile", timeout=60)
+          host.succeed(f"hostd guests | grep {gid} | grep -q running")
+          boot0 = host.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+
+          host.shutdown()
+          host.start()
+          host.wait_for_unit("multi-user.target")
+          assert host.succeed("cat /proc/sys/kernel/random/boot_id").strip() != boot0
+          # The power button reached the guest and it powered off itself.
+          writes = host.succeed(f"cat {gdir}/writes.log")
+          print(writes)
+          assert writes.strip().endswith("powered off by the power button"), "the guest was killed, not powered off"
+          prev = host.succeed(f"journalctl -b -1 -u guest@{gid} --no-pager -o cat")
+          print(prev)
+          assert "event=guest_powered_off" in prev, "no clean stop in the previous boot"
+          hostd_prev = host.succeed("journalctl -b -1 -u hostd --no-pager -o cat")
+          for line in hostd_prev.splitlines():
+              if gid in line and '"state":"error"' in line:
+                  raise Exception(f"hostd wrote error for the guest the shutdown stopped: {line}")
+          # The first reconcile of this boot found it running in bbolt: the
+          # record the next boot's resume reads (I-645).
+          host.wait_until_succeeds(f"journalctl -u hostd -b 0 -o cat | grep {gid} | grep -F '\"prev\":\"running\"'", timeout=60)
+          print(host.succeed(f"journalctl -u hostd -b 0 -o cat | grep {gid}"))
     '';
   };
 }

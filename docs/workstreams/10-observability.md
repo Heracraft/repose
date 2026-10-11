@@ -125,7 +125,7 @@ over.
 Families:
 
 - Host (hostd): `repose_host_mem_free_bytes`, `repose_host_mem_reserved_bytes`,
-  `repose_host_pool_free_bytes`, `repose_host_store_bytes`,
+  `repose_host_pool_free_bytes`, `repose_host_pool_available` (I-644), `repose_host_store_bytes`,
   `repose_host_guests{state,class}`, `repose_host_builds_running`,
   `repose_host_build_duration_seconds{result}` (histogram),
   `repose_host_snapshot_duration_seconds{reason,result}`,
@@ -212,6 +212,8 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `PoolHigh` | `1 - pool_free_bytes / pool_bytes > 0.7` for 15m: no new projects placed there (I-586) | warn |
 | `PoolMetadataHigh` | `repose_lvm_pool_metadata_percent > 80` for 5m (I-586) | page |
 | `PoolFull` | `pool_free_bytes / pool_bytes < 0.1` | page |
+| `PoolUnavailable` | `repose_host_pool_available == 0` for 5m: the guest pool cannot serve volumes, every start on the host is refused (I-644); inhibits the other pool alerts of the host | page |
+| `PoolUnmonitored` | `repose_lvm_pool_monitored == 0` for 30m: dmeventd does not watch the pool, so it will not autoextend (I-643) | warn |
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
 | `RollupLag` | `repose_api_rollup_lag_seconds > 2*3600` | warn |

@@ -117,11 +117,11 @@ func (m *Manager) takeSnapshot(ctx context.Context, g *state.Guest, reason strin
 			t.log.Warn("freeze window long", "event", "snapshot_start", "freeze_ms", window.Milliseconds())
 		}
 		if lvErr != nil {
-			return failed(errf(CodeInternal, "lvcreate -s: %v", lvErr))
+			return failed(lvmErr("lvcreate -s", lvErr))
 		}
 	} else {
 		if err := m.d.LVM.Snapshot(ctx, vol, t.lv); err != nil {
-			return failed(errf(CodeInternal, "lvcreate -s: %v", err))
+			return failed(lvmErr("lvcreate -s", err))
 		}
 	}
 	return t, nil
@@ -135,7 +135,7 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 		_ = m.d.LVM.RemoveVolume(context.Background(), t.lv) // always, even on upload failure; a leftover snapshot is found by reconcile
 	}()
 	if err := m.d.LVM.Activate(ctx, t.lv); err != nil {
-		return t.fail(errf(CodeInternal, "lvchange -ay -K: %v", err))
+		return t.fail(lvmErr("lvchange -ay -K", err))
 	}
 	r, err := m.d.Stream.Read(ctx, m.d.LVM.DevPath(t.lv))
 	if err != nil {
@@ -280,11 +280,11 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	// on a fresh one.
 	if existing != nil {
 		if err := m.d.LVM.RemoveVolume(ctx, vol); err != nil {
-			return fail(errf(CodeInternal, "lvremove: %v", err))
+			return fail(lvmErr("lvremove", err))
 		}
 	}
 	if err := m.d.LVM.CreateVolume(ctx, vol, g.VolumeBytes); err != nil {
-		return fail(errf(CodeInternal, "lvcreate: %v", err))
+		return fail(lvmErr("lvcreate", err))
 	}
 	pr, pw := io.Pipe()
 	dlErr := make(chan error, 1)

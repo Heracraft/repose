@@ -704,9 +704,14 @@ type Hello struct {
 	PoolFreeBytes uint64                 `protobuf:"varint,4,opt,name=pool_free_bytes,json=poolFreeBytes,proto3" json:"pool_free_bytes,omitempty"`
 	// The thin pool's data size, which autoextend grows; 0 from a hostd
 	// older than I-586, which the api reads as "unknown" (DECISIONS I-586).
-	PoolBytes     uint64 `protobuf:"varint,5,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PoolBytes uint64 `protobuf:"varint,5,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	// The host's thin pool cannot hold a guest's volume: inactive after a
+	// reboot, missing, or failed (DECISIONS I-644). pool_free_bytes and
+	// pool_bytes are 0 while it is set, so an api older than the field keeps
+	// new machines off the host too. Absent from an older hostd: false.
+	PoolUnavailable bool `protobuf:"varint,6,opt,name=pool_unavailable,json=poolUnavailable,proto3" json:"pool_unavailable,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -774,6 +779,13 @@ func (x *Hello) GetPoolBytes() uint64 {
 	return 0
 }
 
+func (x *Hello) GetPoolUnavailable() bool {
+	if x != nil {
+		return x.PoolUnavailable
+	}
+	return false
+}
+
 type Heartbeat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FreeMemBytes  uint64                 `protobuf:"varint,1,opt,name=free_mem_bytes,json=freeMemBytes,proto3" json:"free_mem_bytes,omitempty"`
@@ -782,9 +794,11 @@ type Heartbeat struct {
 	RunningGuests uint32                 `protobuf:"varint,4,opt,name=running_guests,json=runningGuests,proto3" json:"running_guests,omitempty"`
 	Draining      bool                   `protobuf:"varint,5,opt,name=draining,proto3" json:"draining,omitempty"`
 	// As Hello's pool_bytes (DECISIONS I-586).
-	PoolBytes     uint64 `protobuf:"varint,6,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PoolBytes uint64 `protobuf:"varint,6,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	// As Hello's pool_unavailable (DECISIONS I-644).
+	PoolUnavailable bool `protobuf:"varint,7,opt,name=pool_unavailable,json=poolUnavailable,proto3" json:"pool_unavailable,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Heartbeat) Reset() {
@@ -857,6 +871,13 @@ func (x *Heartbeat) GetPoolBytes() uint64 {
 		return x.PoolBytes
 	}
 	return 0
+}
+
+func (x *Heartbeat) GetPoolUnavailable() bool {
+	if x != nil {
+		return x.PoolUnavailable
+	}
+	return false
 }
 
 type Secret struct {
@@ -4316,14 +4337,15 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x0e\n" +
 	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x1b\n" +
 	"\tvsock_cid\x18\x04 \x01(\rR\bvsockCid\x12%\n" +
-	"\x0esystem_closure\x18\x05 \x01(\tR\rsystemClosure\"\xc3\x01\n" +
+	"\x0esystem_closure\x18\x05 \x01(\tR\rsystemClosure\"\xee\x01\n" +
 	"\x05Hello\x12\x17\n" +
 	"\ahost_id\x18\x01 \x01(\tR\x06hostId\x124\n" +
 	"\x06guests\x18\x02 \x03(\v2\x1c.repose.hostd.v1.GuestStatusR\x06guests\x12$\n" +
 	"\x0efree_mem_bytes\x18\x03 \x01(\x04R\ffreeMemBytes\x12&\n" +
 	"\x0fpool_free_bytes\x18\x04 \x01(\x04R\rpoolFreeBytes\x12\x1d\n" +
 	"\n" +
-	"pool_bytes\x18\x05 \x01(\x04R\tpoolBytes\"\xd1\x01\n" +
+	"pool_bytes\x18\x05 \x01(\x04R\tpoolBytes\x12)\n" +
+	"\x10pool_unavailable\x18\x06 \x01(\bR\x0fpoolUnavailable\"\xfc\x01\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efree_mem_bytes\x18\x01 \x01(\x04R\ffreeMemBytes\x12&\n" +
 	"\x0fpool_free_bytes\x18\x02 \x01(\x04R\rpoolFreeBytes\x12\x14\n" +
@@ -4331,7 +4353,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x0erunning_guests\x18\x04 \x01(\rR\rrunningGuests\x12\x1a\n" +
 	"\bdraining\x18\x05 \x01(\bR\bdraining\x12\x1d\n" +
 	"\n" +
-	"pool_bytes\x18\x06 \x01(\x04R\tpoolBytes\"2\n" +
+	"pool_bytes\x18\x06 \x01(\x04R\tpoolBytes\x12)\n" +
+	"\x10pool_unavailable\x18\a \x01(\bR\x0fpoolUnavailable\"2\n" +
 	"\x06Secret\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\"s\n" +

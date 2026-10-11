@@ -14,6 +14,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/ch"
+	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/storeview"
@@ -45,6 +46,9 @@ var stepNames = map[int]string{
 func stepErr(step int, err error) *Error {
 	if e, ok := err.(*Error); ok && e.Code != CodeInternal {
 		return e
+	}
+	if errors.Is(err, lvm.ErrPoolUnavailable) {
+		return errf(CodeVolumeUnavailable, "create: step %d (%s) failed: %s", step, stepNames[step], err.Error())
 	}
 	code := CodeInternal
 	if step == stepReady {
@@ -95,7 +99,7 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 func (m *Manager) poolRoom() *Error {
 	pct, err := m.poolUsedPct()
 	if err != nil {
-		return errf(CodeInternal, "thin pool: %v", err)
+		return lvmErr("thin pool", err)
 	}
 	if pct >= m.cfg.PoolRefusePct {
 		return errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
@@ -125,6 +129,14 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 		case StateCreating, StateError:
 			// A re-run after a crash or a failed attempt: continue with the
 			// same record; every step below tolerates what already exists.
+		case StateStopped:
+			// A create a host shutdown cut off before Ready: the next boot's
+			// reconcile made it stopped and the api resends it (I-650). A
+			// guest that ever reached Ready has a last good closure and is
+			// refused below, as is another project's create.
+			if existing.LastGoodClosure != "" || existing.ProjectID != c.ProjectId {
+				return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
+			}
 		default:
 			return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
 		}
@@ -214,6 +226,13 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 // fail records a create or start failure, rolling back everything but the
 // volume, the address and the record.
 func (m *Manager) fail(g *state.Guest, step int, err error) *Error {
+	if m.HostStopping(context.Background()) {
+		// Leave the record as it is (starting, or creating): the guest's
+		// units are going down with the host, and the next boot's
+		// reconcile settles it (I-650). No error is written.
+		m.log(g).Warn("boot interrupted by the host shutdown", "event", "guest_interrupted", "step", step)
+		return interrupted("create: step " + stepNames[step])
+	}
 	e := stepErr(step, err)
 	m.teardown(context.Background(), g)
 	m.log(g).Error("guest failed", "event", "guest_state", "step", step, "reason", e.Message)
@@ -535,10 +554,30 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	} else if !ok {
 		return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
 	}
+	// The pool first (DECISIONS I-644): a start on a host whose pool is
+	// down is refused before anything is booted, so it can never reach
+	// bootOrFallBack and adopt the last good closure for a disk problem,
+	// and the project stays stopped.
+	if ok, p := m.poolAvailable(ctx); !ok {
+		return nil, errf(CodeVolumeUnavailable, "the host's guest pool is unavailable (%s)", p.Reason())
+	}
 	if ok, err := m.d.LVM.VolumeExists(ctx, VolumeName(g.GuestID)); err != nil {
-		return nil, errf(CodeInternal, "lvs: %v", err)
+		return nil, errf(CodeVolumeUnavailable, "lvs: %v", err)
 	} else if !ok {
 		return nil, errf(CodeNotFound, "volume for guest %s is missing", g.GuestID)
+	}
+	if err := m.ensureActive(ctx, g, VolumeName(g.GuestID)); err != nil {
+		return nil, err
+	}
+	if !m.cfg.NoAuthShare && hasAuthShare(g) {
+		auth := AuthVolumeName(g.UserID)
+		if ok, err := m.d.LVM.VolumeExists(ctx, auth); err != nil {
+			return nil, errf(CodeVolumeUnavailable, "lvs: %v", err)
+		} else if ok {
+			if err := m.ensureActive(ctx, g, auth); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// DECISIONS I-260: the api sends the project's class on every start,
 	// so a class changed while the project was stopped takes effect here:
@@ -558,7 +597,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// A start adds no bytes, but a running guest writes: past
 	// PoolStartRefusePct the pool is minutes from full, and one more
 	// writer risks every guest on it (DECISIONS I-586).
-	if pct, err := m.poolUsedPct(); err == nil && pct >= m.cfg.PoolStartRefusePct {
+	if pct, err := m.poolUsedPct(); err != nil {
+		return nil, lvmErr("thin pool", err)
+	} else if pct >= m.cfg.PoolStartRefusePct {
 		return nil, errf(CodeInsufficientCapacity, "thin pool %.0f%% full", pct)
 	}
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
@@ -912,6 +953,13 @@ func (mon *monitor) checkUnits() {
 func (m *Manager) unexpectedExit(ctx context.Context, id, reason string) {
 	g, err := m.d.State.GetGuest(id)
 	if err != nil || g.State != StateRunning {
+		return
+	}
+	if m.Stopping(ctx) {
+		// The host is shutting down and stopped the guest's units; the
+		// guest was running and stays recorded so, closure and all, for
+		// the next boot to find (DECISIONS I-650, I-645).
+		m.log(g).Warn("guest stopped by the host shutdown", "event", "guest_interrupted")
 		return
 	}
 	m.log(g).Error("guest died", "event", "guest_state", "reason", reason)

@@ -494,6 +494,61 @@ and then fails them, which is every tenant on the host at once: act now.
    projects stop <id>`) is the operator's call: it ends that tenant's
    processes and saves every other tenant's writes. Tell the tenant.
 
+## PoolUnavailable
+
+`repose_host_pool_available` is 0: hostd cannot use `vg-guests/thin`. It
+is inactive (the pool unit failed after a boot), the VG is missing (the
+data disk is not attached), or the pool's health is `failed` or
+`metadata_read_only` (DECISIONS I-643, I-644). Meanwhile every start on
+the host answers `volume_unavailable` and leaves its project stopped,
+nothing new is placed on the host (`hosts.pool_unavailable`), and running
+guests keep running if their volumes are still active. The disks are
+intact.
+
+1. `journalctl -u repose-guest-pool -b` says which case. A failed run
+   leaves `/run/repose/pool-hold`, and the unit is skipped
+   (`event=pool_held`) until it is gone, so hostd restarts and switches
+   never run it again. Each `systemctl start repose-guest-pool` below is
+   `rm /run/repose/pool-hold && systemctl start repose-guest-pool`.
+   - `event=pool_vg_missing`: no `vg-guests` after 5 minutes. `lsblk`,
+     `pvs`; in Azure, `az vm show -d` for the data disk's attachment.
+   - `event=pool_leftover_held device=...`: a device-mapper leftover held
+     open by something outside the pool. `dmsetup ls --tree` and
+     `dmsetup info -c` show it and its open count; `fuser -vm
+     /dev/mapper/<device>` names the holder. Stop the holder, then
+     `systemctl start repose-guest-pool`.
+   - `event=pool_check_failed ... status=N`: thin_check says the pool's
+     metadata is damaged. The unit never retries and never repairs. Go to
+     step 3, and leave the hold file in place until the owner decides.
+   - `event=pool_activate_failed`, three times: the activation itself
+     failed. `lvchange -ay vg-guests/thin` by hand shows lvm's message.
+2. Leftovers at open count 0 the unit removes itself, top down
+   (`event=pool_leftover_removed`); `systemctl start repose-guest-pool`
+   runs it again. Starting it brings back the cache volume, the npm cache
+   and the Docker mirror (they are wanted by it), and the next heartbeat
+   clears `pool_unavailable`.
+3. A real thin_check failure: do not run `thin_repair` or `lvconvert
+   --repair` before the owner decides. First keep what is there:
+   `thin_dump /dev/mapper/vg--guests-thin_tmeta > /var/lib/repose/thin-meta-$(date +%F).xml`
+   on the OS disk (activate the metadata alone with `lvchange -ay
+   vg-guests/thin_tmeta` if it is not), and an `az snapshot create` of
+   the data disk. The fallback is restoring each project from its nightly
+   snapshot onto a host with a working pool.
+
+## PoolUnmonitored
+
+dmeventd is not watching `vg-guests/thin`, so autoextend at 80 percent
+never happens and the pool fills to `PoolFull` without growing. The pool
+unit turns monitoring on after each activation (DECISIONS I-643); this
+fires when that did not take.
+
+1. `lvs -o+seg_monitor vg-guests/thin` says `monitored` or not.
+2. `systemctl start dm-event.service`, then `lvchange --monitor y
+   vg-guests/thin`. The `lvm` on PATH must be the one built with dmeventd
+   (`readlink -f $(command -v lvm)` names `lvm2-with-dmeventd`); the
+   plain one does nothing here and says nothing.
+3. `journalctl -u dm-event -b` if it still does not take.
+
 ## StoreFull
 
 Host root filesystem over 85 percent, almost always `/nix/store`.
@@ -746,8 +801,50 @@ so the derivation is copied and built there:
    logs `store_view_restart_needed` for any that was missed. The same
    restart moves a user's login share onto its own volume (I-464).
 
+7. After a switch that changes the boot (DECISIONS I-643, I-649):
+   - `systemctl is-active repose-guest-pool`, and its journal says
+     `event=pool_already_active`: on a live host it does no dm work.
+   - `vgs -o autoactivation vg-guests` prints nothing (disabled), and
+     `grep auto_activation_volume_list /etc/lvm/lvm.conf` finds the line.
+   - The next boot's initrd has no LVM:
+     `i=$(readlink -f /nix/var/nix/profiles/system/initrd); (zstdcat "$i" || cat "$i") | cpio -t 2>/dev/null | grep -cE '69-dm-lvm.rules|bin/lvm$|bin/pvscan|bin/thin_check'`
+     prints 0.
+   - `cat /sys/block/nvme*n1/queue/io_timeout` shows 240000 (written at the
+     switch by `repose-nvme-timeout`); the default boot entry in
+     `/boot/loader/entries/` has `nvme_core.io_timeout=240`;
+     `/etc/modprobe.d/nixos.conf` has `blacklist mana_ib`;
+     `/boot/loader/loader.conf` has `timeout 10`.
+   - `systemctl show 'guest@*' -p ExecStop` names
+     `repose-guest-clean-stop` for every running guest: the switch's
+     daemon-reload gave the clean stop to guests already running
+     (DECISIONS I-650).
+
 A push to main redeploys the api, which drops hostd's stream for a few
 seconds; a stop or restore timed across a push looks slow.
+
+## Console access (host and edge)
+
+Root logs in on the Azure serial console only, with a password whose hash
+is a file placed by hand, never in the repo (DECISIONS I-654). SSH never
+takes a password (`PasswordAuthentication no`). Without the file root is
+locked. The host and the edge each have their own password, kept in the
+owner's password manager.
+
+To set or change it, on the machine as root:
+
+1. Make the hash on the laptop: `nix run nixpkgs#mkpasswd -- -m yescrypt`
+   (it asks for the password).
+2. `install -m 0400 /dev/stdin /var/lib/repose/root-console.hash`, paste
+   the hash, then Ctrl-D.
+3. `/run/current-system/activate` applies it now; every switch and boot
+   reads it again. `getent shadow root | cut -c1-8` starts with `root:$y$`.
+4. Log in once on the serial console (`az serial-console connect -g
+   <resource group> -n <vm>`, or the portal's Serial console) to prove it.
+
+Removing the file and running `/run/current-system/activate` locks root
+again. At boot the systemd-boot menu waits 10 seconds on the serial
+console, which is where the previous generation is picked when a new one
+does not boot.
 
 ## Switch the edge
 
@@ -996,18 +1093,35 @@ NIC, so the api still sees the host as `ready`.
 
 ## Host rebooted
 
-`Hello` after boot reports every guest `stopped`; the api restarts those
-that were `running` and notifies their users (workstream 03). Kernel
-panics are not auto-rebooted (`panic=` is unset on purpose); a stuck host
-is restarted from the Azure portal.
+`Hello` after boot reports every guest `stopped`. Nothing starts them
+again yet: until resume after a reboot ships (DECISIONS I-645), a user's
+machine stays stopped until they run `repose start`, or an operator runs
+`repose-admin projects start <id>`. Kernel panics are not auto-rebooted
+(`panic=` is unset on purpose); a stuck host is restarted from the Azure
+portal.
+
+A graceful shutdown (Azure's heal, `systemctl reboot`) presses each
+running guest's ACPI power button and gives it 20 seconds to power off,
+so its last writes reach its disk (DECISIONS I-650);
+`journalctl -b -1 -t repose-guest-clean-stop` lists each guest with
+`guest_powered_off` or `guest_power_button_timeout`. A crash gets no
+clean stop.
 
 1. `journalctl -b -1 -p err` on the host for why. An OOM in the host
    itself means the `guests.slice` cap was wrong for the RAM: check
    `systemctl show guests.slice -p MemoryMax` against `free -b`.
-2. Check that everything came back: `systemctl --failed`, `nft list table
-   inet repose`, `ip addr show br-guests`, `wg show wg0`, `lvs vg-guests`,
+2. Check that everything came back, unit by unit (a unit skipped on its
+   condition is not "failed" and `systemctl --failed` does not list it):
+   `systemctl is-active repose-guest-pool repose-cache-volume
+   repose-npm-cache docker-registry hostd dm-event`, `nft list table inet
+   repose`, `ip addr show br-guests`, `wg show wg0`,
    `systemctl list-units 'guest@*'`.
-3. If the reboot was for a kernel update it should have been a drain
+3. The pool (DECISIONS I-643): `journalctl -u repose-guest-pool -b` ends
+   with `event=pool_monitored`; `lvs -o+seg_monitor vg-guests` shows the
+   pool and every `g-*` volume active and the pool `monitored`;
+   `curl -s 10.255.0.2:9101/metrics | grep repose_host_pool_available` is
+   1. If not, `PoolUnavailable`.
+4. If the reboot was for a kernel update it should have been a drain
    (`repose-admin hosts drain`, `nixos-rebuild boot`, reboot, undrain);
    an unplanned reboot with tenants on the host is an incident line in
    `docs/incidents/`.

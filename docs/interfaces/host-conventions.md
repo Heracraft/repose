@@ -20,9 +20,10 @@ change to either happens in the same commit.
 | `/run/repose/store-view/` | Mount point of each guest's store view (DECISIONS I-463); empty on the host. `virtiofsd@<id>` runs with `PrivateMounts=yes` and `TemporaryFileSystem=/run/repose/store-view:mode=0755,nosuid,nodev,size=16m`, shares this path, and pivots into it; hostd then bind-mounts every path of the guest's closure, and of the closures it ran before (up to 16 recorded, plus the project's `rev-*` roots, those still on the host) (`nix-store -qR`) into that namespace, read-only, `nosuid,nodev`, private propagation (a symlink store path is recreated as a symlink). An in-place apply adds the new closure's paths before the switch; nothing is removed until the guest's next start. Nothing is mounted in the host namespace. |
 | `/run/repose/store-export/` | Kept for one release (I-463): read-only bind of `/nix/store` with an empty tmpfs over `.links`, the whole store. Guests running when the host switches to I-463 are restarted at the switch (`hostd guests` shows them as `whole-store`); `hostd --store-export /run/repose/store-export` is the rollback that shares it again for every new start. Removed the release after. |
 | `/nix/var/nix/gcroots/repose/<guest_id>` | GC root for the guest's system closure; removed on destroy. `rev-<project_id>-<revision_id>` roots keep the last 3 built revisions per project and are all removed when the project's guest is destroyed (DECISIONS I-115; a later restore rebuilds). `good-<guest_id>` keeps the guest's last good closure, the one a boot that never reaches Ready falls back to; removed on destroy (I-590). |
-| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464). The pool is overcommitted by design: the plan's disk counts what volumes hold, not their sizes (DECISIONS I-585), so I-449's bound on the sum of the sizes is gone. Guarded by real use, data or metadata whichever is fuller (I-586): at 70 percent the api places no new project there and hostd sends `pool_high`; lvm autoextends at 80; hostd refuses (`insufficient_capacity`) a create, restore or resize at 85 and a start at 95; `PoolFull` pages at 90 and `PoolMetadataHigh` at 80 percent metadata. A running guest is never stopped for the pool |
+| `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 10 percent, discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464). The pool is overcommitted by design: the plan's disk counts what volumes hold, not their sizes (DECISIONS I-585), so I-449's bound on the sum of the sizes is gone. Guarded by real use, data or metadata whichever is fuller (I-586): at 70 percent the api places no new project there and hostd sends `pool_high`; lvm autoextends at 80; hostd refuses (`insufficient_capacity`) a create, restore or resize at 85 and a start at 95; `PoolFull` pages at 90 and `PoolMetadataHigh` at 80 percent metadata. A running guest is never stopped for the pool. Only `repose-guest-pool.service` activates it (DECISIONS I-643): the initrd has no LVM, lvm.conf has `auto_activation_volume_list = [ ]` and the VG's autoactivation flag is off, so udev's event activation activates nothing. While the pool is inactive, missing, `failed` or `metadata_read_only`, hostd answers `volume_unavailable`, reports `pool_unavailable` and exports `repose_host_pool_available 0` (I-644) |
 | `/var/log/repose/` | hostd log (journald is primary), build logs per op |
-| `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`) |
+| `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_active`, `repose_lvm_pool_monitored`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`, `repose_lvm_volumes_inactive`; a metric with no value, as an inactive pool's percentages, is left out, I-643), and again by `repose-guest-pool` when it ends |
+| `/var/lib/repose/root-console.hash` | root's password hash for the serial console, placed by hand (`install -m 0400`), never in the repo; read at each activation. Absent, root is locked. Hosts and the edge (DECISIONS I-654) |
 
 ### `host.json`
 
@@ -203,10 +204,28 @@ RestartPreventExitStatus=3), `virtiofsd@<guest>.service`,
 no user id) and
 `guest@<guest>.service` are **transient** units created by hostd with
 `systemd-run` inside `guests.slice`, named so `systemctl list-units
-'guest@*'` shows every guest. Host units, in start order:
+'guest@*'` shows every guest. A static drop-in for the template,
+`/etc/systemd/system/guest@.service.d/overrides.conf` (`nix/hosts/hostd.nix`),
+applies to every `guest@` unit, running ones included after the switch's
+daemon-reload: `After=virtiofsd@%i.service virtiofsd-auth@%i.service`
+(a shutdown stops the guest before its store share) and
+`ExecStop=repose-guest-clean-stop %i`, which, only while systemd says the
+system is stopping, presses the guest's ACPI power button through
+`ch.sock` and waits up to 20 s for the hypervisor to exit before
+systemd's SIGTERM (DECISIONS I-650). Host units, in start order:
 `nftables.service`, `repose-store-export.service`,
 `repose-host-net.service`, `wg-quick-wg0.service`, `repose-register.service`
 (oneshot, skipped when `host.json` exists or there is no token),
+`repose-guest-pool.service` (oneshot, `RemainAfterExit`, up to 30
+minutes; the one unit that activates `vg-guests/thin` after boot, clears
+the leftovers of an interrupted activation top down at open count 0,
+never retries or repairs a failed thin_check (exit 2), turns dmeventd
+monitoring on and checks it; never restarted by a switch; a failure
+leaves `/run/repose/pool-hold` and its `ExecCondition` skips the unit
+until that file is removed, so hostd's restarts never re-run it; DECISIONS
+I-643; hostd and the cache volume are ordered after it, hostd only
+`Wants` it), `repose-nvme-timeout.service` (writes the NVMe
+`io_timeout`, I-649),
 `repose-guests-slice.service` (sets `guests.slice` `MemoryMax` to RAM minus
 the reserve: 8 GiB below 128 GiB, 16 GiB above), `hostd.service`,
 `fluent-bit.service` (ships journald and every guest's console log to Loki,
@@ -241,7 +260,11 @@ the provider NIC.
 
 Storage: the thin volume `vg-guests/repose-cache` (64 GB, ext4, label
 `repose-cache`), created, formatted and mounted on `/var/cache/repose` by
-`repose-cache-volume.service` (idempotent). The cache and the mirror do
+`repose-cache-volume.service` (idempotent). It requires and follows
+`repose-guest-pool.service`, is wanted by it, and is skipped while the
+pool is not active (`ExecCondition`); `repose-npm-cache` and
+`docker-registry` are wanted by it, so starting the pool unit brings all
+three back (DECISIONS I-643). The cache and the mirror do
 not start without that mount (`ConditionPathIsMountPoint`); guests then
 use upstream. Log lines carry status, cache status, bytes and time,
 never a URL (a package name can be a private one). `repose.host.caches.enable
@@ -307,7 +330,13 @@ it. `repose.host.claudeLoginShare = false` (hostd
 
 Operators reach hosts over the edge's WireGuard (`ssh root@10.255.0.x` with
 an operator certificate from the Host CA; sshd trusts `host_ca_pub` from
-`host.json`). Root is the only account; there is no sudo and no password.
+`host.json`). Root is the only account; there is no sudo and SSH takes no
+password. On the Azure serial console root logs in with the password
+whose hash is `/var/lib/repose/root-console.hash`, and is locked without
+it; the systemd-boot menu waits 10 s there (DECISIONS I-649, I-654).
+Every host and the edge also boot with `nvme_core.io_timeout=240` (a udev
+rule and `repose-nvme-timeout.service` set the running disks to 240000 ms)
+and `mana_ib` blacklisted, and carry `ethtool` (I-649).
 Every interactive login is logged to `audit_log` via a PAM hook that calls
 `hostd audit-login`. `repose-admin exec` is the audited path for touching a
 guest. Before the edge exists, `repose.host.bootstrap` (workstream 11) also

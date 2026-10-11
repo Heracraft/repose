@@ -37,6 +37,7 @@ type M struct {
 	SamplesDroppedTotal   prometheus.Counter
 	PoolFreeBytes         prometheus.Gauge
 	PoolBytes             prometheus.Gauge
+	PoolAvailable         prometheus.Gauge
 	StoreBytes            prometheus.Gauge
 	MemFreeBytes          prometheus.Gauge
 	MemReservedBytes      prometheus.Gauge
@@ -87,6 +88,7 @@ func NewVersion(version string) *M {
 		SamplesDroppedTotal:   f.counter("samples_dropped_total", "Samples dropped from the outage buffer."),
 		PoolFreeBytes:         f.gauge("pool_free_bytes", "Thin pool free bytes."),
 		PoolBytes:             f.gauge("pool_bytes", "Thin pool size."),
+		PoolAvailable:         f.gauge("pool_available", "1 while the thin pool can serve guest volumes; 0 when it is inactive, missing or failed (DECISIONS I-644)."),
 		StoreBytes:            f.gauge("store_bytes", "Bytes used by the host store filesystem."),
 		MemFreeBytes:          f.gauge("mem_free_bytes", "Host free memory after the reserve."),
 		MemReservedBytes:      f.gauge("mem_reserved_bytes", "Memory reserved by running guests."),

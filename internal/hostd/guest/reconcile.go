@@ -33,10 +33,18 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The pool is read once: after a host reboot it may still be down (the
+	// pool unit failed or is retrying), and then a guest whose unit is
+	// gone is stopped, never error (DECISIONS I-644).
+	poolUp, pool := m.poolAvailable(ctx)
+	m.setPoolGauge(poolUp)
+	if !poolUp {
+		m.d.Log.Warn("thin pool unavailable at reconcile", "event", "pool_unavailable", "reason", pool.Reason())
+	}
 	known := map[string]bool{}
 	for _, g := range gs {
 		known[g.GuestID] = true
-		m.reconcileGuest(ctx, g, active[g.GuestID])
+		m.reconcileGuest(ctx, g, active[g.GuestID], poolUp)
 	}
 	for id := range active {
 		if known[id] {
@@ -46,12 +54,16 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 		if g := m.guestFromDisk(id); g != nil {
 			if _, err := m.d.State.AllocIndex(g.GuestID, m.maxIndex); err == nil {
 				_ = m.d.State.PutGuest(g) // adopted from guest.json; a failed write is retried at the next reconcile
-				m.reconcileGuest(ctx, g, true)
+				m.reconcileGuest(ctx, g, true, poolUp)
 			}
 		}
 	}
 	m.flagWholeStore(ctx)
-	m.sweepStaleSnapshots(ctx)
+	// A down pool has no snapshot volumes to remove, and removing would
+	// only fail; the next reconcile with the pool up sweeps them.
+	if poolUp {
+		m.sweepStaleSnapshots(ctx)
+	}
 	m.SweepAuthShares(ctx)
 	m.refreshGuestGauge()
 	return nil
@@ -101,7 +113,7 @@ func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 	}
 }
 
-func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive bool) {
+func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive, poolUp bool) {
 	m.reconcileGood(g, g.State == StateRunning && unitActive)
 	switch g.State {
 	case StateRunning, StateStarting, StateCreating, StateStopping:
@@ -114,7 +126,13 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 			return
 		}
 		m.teardown(ctx, g)
-		if vol, _ := m.d.LVM.VolumeExists(ctx, VolumeName(g.GuestID)); !vol {
+		if !poolUp {
+			_ = m.setState(g, StateStopped, "reconciled: thin pool unavailable") // see above
+			return
+		}
+		// error only when lvs says the volume is not there; an lvs that
+		// failed (a VG gone mid-reconcile) leaves the guest stopped.
+		if vol, err := m.d.LVM.VolumeExists(ctx, VolumeName(g.GuestID)); err == nil && !vol {
 			_ = m.setState(g, StateError, "reconciled: volume missing") // see above
 			return
 		}

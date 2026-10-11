@@ -483,11 +483,13 @@ func (s *Server) connectedCount() int {
 func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello) {
 	// pool_bytes follows the pool as autoextend grows it; a hostd older
 	// than I-586 sends 0, which keeps the registered size.
-	if _, err := s.pool.Exec(ctx, "update hosts set state = case when state in ('registering','unreachable') then 'ready' else state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else pool_bytes end, last_heartbeat_at = now() where id = $1",
-		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes)); err != nil {
+	// pool_unavailable (I-644) is absent from an older hostd, which reads
+	// as false: today's behaviour.
+	if _, err := s.pool.Exec(ctx, "update hosts set state = case when state in ('registering','unreachable') then 'ready' else state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else pool_bytes end, pool_unavailable = $5, last_heartbeat_at = now() where id = $1",
+		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable); err != nil {
 		s.log.Error("hello update failed", "event", "hello", "host_id", hostID.String(), "err", err.Error())
 	}
-	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests))
+	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests), "pool_unavailable", h.PoolUnavailable)
 	if s.handlers.Hello != nil {
 		s.handlers.Hello(ctx, hostID, h)
 	}
@@ -497,10 +499,10 @@ func (s *Server) onHeartbeat(ctx context.Context, hostID uuid.UUID, serial strin
 	var state string
 	var certSerial, prevCertSerial *string
 	err := s.pool.QueryRow(ctx, `update hosts set free_mem_bytes = $2, pool_free_bytes = $3, load1 = $4, running_guests = $5, draining = $6,
-		pool_bytes = case when $7::bigint > 0 then $7::bigint else pool_bytes end,
+		pool_bytes = case when $7::bigint > 0 then $7::bigint else pool_bytes end, pool_unavailable = $8,
 		state = case when state = 'unreachable' then 'ready' when $6 and state = 'ready' then 'draining' when not $6 and state = 'draining' then 'ready' else state end,
 		last_heartbeat_at = now() where id = $1 returning state, cert_serial, prev_cert_serial`,
-		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining, int64(hb.PoolBytes)).Scan(&state, &certSerial, &prevCertSerial)
+		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining, int64(hb.PoolBytes), hb.PoolUnavailable).Scan(&state, &certSerial, &prevCertSerial)
 	if err != nil {
 		s.log.Error("heartbeat update failed", "event", "heartbeat", "host_id", hostID.String(), "err", err.Error())
 		return nil
