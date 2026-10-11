@@ -129,6 +129,14 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 		case StateCreating, StateError:
 			// A re-run after a crash or a failed attempt: continue with the
 			// same record; every step below tolerates what already exists.
+		case StateStopped:
+			// A create a host shutdown cut off before Ready: the next boot's
+			// reconcile made it stopped and the api resends it (I-650). A
+			// guest that ever reached Ready has a last good closure and is
+			// refused below, as is another project's create.
+			if existing.LastGoodClosure != "" || existing.ProjectID != c.ProjectId {
+				return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
+			}
 		default:
 			return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
 		}
@@ -218,7 +226,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 // fail records a create or start failure, rolling back everything but the
 // volume, the address and the record.
 func (m *Manager) fail(g *state.Guest, step int, err error) *Error {
-	if m.Stopping(context.Background()) {
+	if m.HostStopping(context.Background()) {
 		// Leave the record as it is (starting, or creating): the guest's
 		// units are going down with the host, and the next boot's
 		// reconcile settles it (I-650). No error is written.

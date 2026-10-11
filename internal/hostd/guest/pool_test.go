@@ -353,3 +353,101 @@ func TestBootDuringShutdownNeverFallsBack(t *testing.T) {
 		t.Fatalf("command record %+v %v: an interrupted command must not be done", c, err)
 	}
 }
+
+// A plain hostd restart (every switch) is not a host shutdown: a boot cut
+// off by it is torn down and answered as before I-650, so a closure that
+// never reached Ready is never reconciled as running and the resend reads
+// the failure back.
+func TestHostdRestartMidBootIsNotAnInterruption(t *testing.T) {
+	h := fallbackHarness(t)
+	stoppedGuest(t, h)
+	bad := fakeClosure(t, "nixos-system-v2")
+	h.badClosure[bad] = stage2Missing
+	h.mustOK(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: bad}))
+	h.m.d.SystemStopping = func(context.Context) bool { return false }
+	start := cmd(&hostdv1.StartGuest{GuestId: gid1})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *hostdv1.Result, 1)
+	go func() { done <- h.m.Execute(ctx, start) }()
+	time.Sleep(100 * time.Millisecond)
+	// app.Run's order: the root context ends, SetShuttingDown, Close.
+	h.m.SetShuttingDown()
+	cancel()
+	res := <-done
+	if res == nil || res.Ok {
+		t.Fatalf("a start cut off by a hostd restart answered %v; want a stored failure", res)
+	}
+	if a, _ := h.sd.IsActive(context.Background(), GuestUnit(gid1)); a {
+		t.Fatal("the half-booted guest@ unit was left running")
+	}
+	h.m.Close()
+	m2, err := New(h.cfg, h.m.d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m2.Run()
+	defer m2.Close()
+	if err := m2.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if g := h.guest(gid1); g.State == StateRunning {
+		t.Fatalf("a closure that never reached Ready reconciled as running: %+v", g)
+	}
+	if r2 := m2.Execute(context.Background(), clone(start)); r2.Ok {
+		t.Fatal("the resent start answered ok for a boot that never reached Ready")
+	}
+}
+
+// A create cut off by a host shutdown is not stored; after the reboot the
+// api's resend of the same CreateGuest finishes it (I-650).
+func TestCreateInterruptedByHostShutdownResends(t *testing.T) {
+	h := newHarness(t, nil)
+	h.noBoot[gid1] = true
+	var stopping atomic.Bool
+	h.m.d.SystemStopping = func(context.Context) bool { return stopping.Load() }
+	req := createReq(gid1)
+	req.SystemClosure = h.closure
+	c := cmd(req)
+	done := make(chan *hostdv1.Result, 1)
+	go func() { done <- h.m.Execute(context.Background(), c) }()
+	for i := 0; i < 200; i++ {
+		if a, _ := h.sd.IsActive(context.Background(), GuestUnit(gid1)); a {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stopping.Store(true)
+	if res := <-done; res != nil {
+		t.Fatalf("an interrupted create answered %v", res)
+	}
+	h.m.Close()
+	h.sd.Exit(GuestUnit(gid1), 143) // the host went down
+	delete(h.noBoot, gid1)
+	m2, err := New(h.cfg, h.m.d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m2.d.SystemStopping = func(context.Context) bool { return false }
+	m2.Run()
+	defer m2.Close()
+	if err := m2.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r2 := m2.Execute(context.Background(), clone(c))
+	if !r2.Ok {
+		t.Fatalf("the resent create after the reboot: %v", r2.Error)
+	}
+	if g := h.guest(gid1); g.State != StateRunning {
+		t.Fatalf("after the resent create: %s", g.State)
+	}
+	// A different project's create for a stopped guest id is still refused.
+	other := createReq(gid1)
+	other.ProjectId = "p_other"
+	other.SystemClosure = h.closure
+	if r := m2.Execute(context.Background(), cmd(&hostdv1.StopGuest{GuestId: gid1})); !r.Ok {
+		t.Fatalf("stop: %v", r.Error)
+	}
+	if r := m2.Execute(context.Background(), cmd(other)); r.Ok || r.Error.Code != CodeAlreadyExists {
+		t.Fatalf("a create over a stopped guest that has booted: %v", r)
+	}
+}

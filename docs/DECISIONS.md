@@ -18436,6 +18436,14 @@ host-restart plan, after the 2026-10-10 live migration of host-01).
   `(status:N)`, N > 0) exits 2 at once: damage is never retried and never
   repaired (`thin_repair` and `lvconvert --repair` are the owner's call).
   A leftover held by anything else ends the attempt untouched.
+- Every failure (exit 1 or 2) leaves `/run/repose/pool-hold`, and the
+  unit's `ExecCondition` skips it while that file exists. Without it,
+  hostd's `Wants=` and the cache volume's `Requires=` start a failed
+  oneshot again at every hostd restart and every switch, which retried a
+  damaged pool and could remove a `thin_tmeta` an operator had activated
+  by hand to dump it. The operator removes the file before `systemctl
+  start repose-guest-pool`; it is on /run, so a reboot runs the unit once
+  more (review of host-pool, 2026-10-11).
 - It fails only for the pool or `repose-cache`. A tenant volume that does
   not activate is logged and counted (`repose_lvm_volumes_inactive`) and
   hostd's start activates it once (I-644).
@@ -18542,18 +18550,30 @@ records nothing as failed while the host goes down (host-pool,
   ask guestd first, and a failed boot must not wait 20 s more. The
   drop-in also orders each guest after its virtiofsd units, so a shutdown
   stops the guest while its store share still answers.
-- hostd sets a shutting-down flag when its context ends, and asks
-  `systemctl is-system-running` (a guest@ unit can stop before hostd's
-  SIGTERM arrives). While it is set, a guest whose hypervisor exits keeps
-  its record (`running`, closure and last good closure) and logs
-  `guest_interrupted`, and a boot that fails neither writes `error` nor
-  falls back (I-590) nor stores its result: the record stays `starting`
-  and a resend after the restart runs the command again. Reconcile at the
-  next start then sees `running` with no unit, which is what resume after
-  a reboot (I-645) marks.
+- Two flags, because a hostd restart is not a host shutdown. hostd's
+  own flag, set when its context ends, only mutes the monitor's exit
+  check. The host flag is set once `systemctl is-system-running` says
+  `stopping` (asked too, since a guest@ unit can stop before hostd's
+  SIGTERM arrives). While either is set, a guest whose hypervisor exits
+  keeps its record (`running`, closure and last good closure) and logs
+  `guest_interrupted`. Only while the host flag is set does a boot that
+  fails neither write `error`, nor fall back (I-590), nor store its
+  result: the record stays `starting` (or `creating`), the next boot's
+  reconcile makes it `stopped`, and the api's resend runs the command
+  again. A create resent that way finds a `stopped` record of the same
+  project with no last good closure (it never reached Ready) and
+  continues it like an `error` one; any other `stopped` guest is still
+  `already_exists`. On a plain hostd restart (every switch) a boot in
+  progress is torn down and answered as before: its guest@ unit outlives
+  hostd, and left running it would reconcile as `running` with a closure
+  that never reached Ready (review of host-pool, 2026-10-11). Reconcile
+  at the next start sees `running` with no unit, which is what resume
+  after a reboot (I-645) marks.
 - A hard crash gets no clean stop. `TestUnexpectedExitDuringShutdownKeepsRunning`,
-  `TestBootDuringShutdownNeverFallsBack`, host-services' graceful reboot
-  subtest.
+  `TestBootDuringShutdownNeverFallsBack`, `TestHostdRestartMidBootIsNotAnInterruption`,
+  `TestCreateInterruptedByHostShutdownResends`, host-services' graceful
+  reboot subtest (the stand-in hypervisor under hostd's own guest@
+  sandbox).
 
 **I-654. The root password is for the serial console only, from a file
 placed by hand (host-pool, 2026-10-11).** *Made during implementation*

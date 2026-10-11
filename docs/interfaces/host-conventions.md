@@ -220,7 +220,9 @@ systemd's SIGTERM (DECISIONS I-650). Host units, in start order:
 minutes; the one unit that activates `vg-guests/thin` after boot, clears
 the leftovers of an interrupted activation top down at open count 0,
 never retries or repairs a failed thin_check (exit 2), turns dmeventd
-monitoring on and checks it; never restarted by a switch; DECISIONS
+monitoring on and checks it; never restarted by a switch; a failure
+leaves `/run/repose/pool-hold` and its `ExecCondition` skips the unit
+until that file is removed, so hostd's restarts never re-run it; DECISIONS
 I-643; hostd and the cache volume are ordered after it, hostd only
 `Wants` it), `repose-nvme-timeout.service` (writes the NVMe
 `io_timeout`, I-649),

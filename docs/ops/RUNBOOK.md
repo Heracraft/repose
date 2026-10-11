@@ -505,7 +505,11 @@ nothing new is placed on the host (`hosts.pool_unavailable`), and running
 guests keep running if their volumes are still active. The disks are
 intact.
 
-1. `journalctl -u repose-guest-pool -b` says which case:
+1. `journalctl -u repose-guest-pool -b` says which case. A failed run
+   leaves `/run/repose/pool-hold`, and the unit is skipped
+   (`event=pool_held`) until it is gone, so hostd restarts and switches
+   never run it again. Each `systemctl start repose-guest-pool` below is
+   `rm /run/repose/pool-hold && systemctl start repose-guest-pool`.
    - `event=pool_vg_missing`: no `vg-guests` after 5 minutes. `lsblk`,
      `pvs`; in Azure, `az vm show -d` for the data disk's attachment.
    - `event=pool_leftover_held device=...`: a device-mapper leftover held
@@ -515,7 +519,7 @@ intact.
      `systemctl start repose-guest-pool`.
    - `event=pool_check_failed ... status=N`: thin_check says the pool's
      metadata is damaged. The unit never retries and never repairs. Go to
-     step 3.
+     step 3, and leave the hold file in place until the owner decides.
    - `event=pool_activate_failed`, three times: the activation itself
      failed. `lvchange -ay vg-guests/thin` by hand shows lvm's message.
 2. Leftovers at open count 0 the unit removes itself, top down

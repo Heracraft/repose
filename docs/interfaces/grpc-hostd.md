@@ -286,10 +286,12 @@ same command_id and hostd returns the stored result, re-executes a command
 that had started but not finished (every command except `Exec` is written
 to be safe to re-run; `Exec` returns `internal: command interrupted`), and
 ignores a command_id that is still executing (its result follows).
-hostd keeps results for 7 days. A command cut off because hostd or the
-host is going down (a boot that fails while systemd says `stopping`) is
-neither stored nor sent, so its resend runs it again; the guest keeps its
-record as it was (I-650).
+hostd keeps results for 7 days. A command cut off because the host is
+going down (a boot that fails while systemd says `stopping`) is neither
+stored nor sent, so its resend runs it again; the guest keeps its record
+as it was, and a resent `CreateGuest` continues a `stopped` record that
+never reached Ready. A boot cut off by a hostd restart alone fails and is
+stored as before (I-650).
 
 ## Fake
 

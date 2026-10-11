@@ -38,7 +38,7 @@ Migrations `0021_host_pool_unavailable` (L4) and `0022_resume` (L6).
   stop.
 - hostd: `lvm.PoolStatus`, `ErrPoolUnavailable`, the lvm-layer guard,
   `VolumeExists`, start, reconcile, Hello and Heartbeat, metric
-  `repose_host_pool_available`, the shutting-down flag.
+  `repose_host_pool_available`, the hostd and host shutting-down flags.
 - api: migration 0021, `hosts.pool_unavailable`, the scheduler filter, a
   failed start left `stopped`, the user sentence. CLI: exit 1.
 - Alerts `PoolUnavailable` (page), `PoolUnmonitored` (warn), the

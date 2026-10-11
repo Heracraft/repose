@@ -646,6 +646,9 @@ in
           assert host.succeed(f"dmsetup ls | grep -c {dm} || true").strip() == "0", host.succeed("dmsetup ls")
 
       def restart_pool():
+          # The operator's step (RUNBOOK "PoolUnavailable"): a failed run
+          # holds the unit until its marker is removed.
+          host.succeed("rm -f /run/repose/pool-hold")
           t0 = time.monotonic()
           rc, _ = host.execute("systemctl restart repose-guest-pool.service")
           took = time.monotonic() - t0
@@ -664,6 +667,7 @@ in
           host.wait_until_succeeds("systemctl is-failed repose-guest-pool.service", timeout=60)
           assert "event=pool_vg_missing" in journal("repose-guest-pool")
           host.succeed("systemctl is-active hostd.service")
+          host.succeed("test -e /run/repose/pool-hold")
           print(host.succeed("${formatScript}"))
           rc, status, log, _ = restart_pool()
           assert rc == 0, log
@@ -756,10 +760,25 @@ in
           print(prom)
           assert "repose_lvm_pool_active 0" in prom
           assert not re.search(r"^\S+\s*$", prom, re.M), "a metric line without a value"
+          # hostd wants the unit and the cache volume requires it: their
+          # restarts (every switch restarts hostd) must not run it again.
+          host.succeed("test -e /run/repose/pool-hold")
+          host.succeed("systemctl restart hostd.service")
+          host.execute("systemctl restart repose-cache-volume.service")
+          host.wait_until_succeeds("journalctl -b 0 -u repose-guest-pool --no-pager -o cat | grep -q event=pool_held", timeout=30)
+          held = journal("repose-guest-pool")
+          print(held)
+          assert held.count("event=pool_check_failed") == 1, f"the held unit ran again: {held}"
+          host.fail("test -e /var/lib/test/repaired")
+          # This subtest started the cache volume more often in 10 s than
+          # systemd's start limit allows; a real host does not.
+          host.succeed("systemctl reset-failed repose-cache-volume.service")
           host.succeed("rm /var/lib/test/fail-thin-check")
           rc, status, log, _ = restart_pool()
           assert rc == 0 and pool_active(), log
-          host.wait_for_unit("repose-cache-volume.service")
+          # The cache volume failed above (its required unit was held);
+          # the pool unit wants it, so it comes back from failed.
+          host.wait_until_succeeds("systemctl is-active repose-cache-volume.service", timeout=60)
           host.wait_for_unit("repose-npm-cache.service")
 
       with subtest("7: a leftover held open by something else is not touched"):
@@ -1272,11 +1291,19 @@ in
           host.succeed("systemctl stop hostd.service")
           host.succeed(f"install -d -m 1770 -g hostd {gdir}")
           host.succeed(f"systemd-run --unit virtiofsd@{gid} --collect -p KillMode=mixed sleep infinity")
+          # hostd's own properties (systemd.go's KillMode, then
+          # GuestUnitProps as unit.golden pins them), so the clean stop runs
+          # in the real guest sandbox; there is no thin volume to allow.
           props = " ".join("-p " + p for p in [
-              "KillMode=mixed", "Restart=no", "Slice=guests.slice", "User=hostd", "NoNewPrivileges=yes",
-              "CapabilityBoundingSet=", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes",
-              "ProtectProc=invisible", "TemporaryFileSystem=/var/lib/repose/guests", f"BindPaths={gdir}",
-              f"ReadWritePaths={gdir}", "'RestrictAddressFamilies=AF_UNIX AF_VSOCK'",
+              "KillMode=mixed", "MemoryMax=512M", "CPUQuota=100%", "Restart=no", "Slice=guests.slice",
+              "User=hostd", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "UMask=0077",
+              "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes", "ProtectKernelTunables=yes",
+              "ProtectKernelModules=yes", "ProtectKernelLogs=yes", "ProtectControlGroups=yes",
+              "ProtectProc=invisible", "RestrictNamespaces=yes", "RestrictRealtime=yes",
+              "RestrictSUIDSGID=yes", "LockPersonality=yes", "SystemCallArchitectures=native",
+              "TemporaryFileSystem=/var/lib/repose/guests", f"BindPaths={gdir}", f"ReadWritePaths={gdir}",
+              "DevicePolicy=closed", "'DeviceAllow=/dev/kvm rw'", "'DeviceAllow=/dev/net/tun rw'",
+              "'RestrictAddressFamilies=AF_UNIX AF_VSOCK'",
           ])
           host.succeed(f"systemd-run --unit guest@{gid} --collect {props} -- ${pkgs.python3}/bin/python3 ${./fixtures/fake_ch.py} {gdir}")
           host.wait_until_succeeds(f"test -S {gdir}/ch.sock")

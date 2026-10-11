@@ -408,6 +408,8 @@ type Manager struct {
 	// from then on a guest that exits, or a boot that fails, leaves its
 	// record as it is.
 	shuttingDown atomic.Bool
+	// hostDown is set once systemd says the host is stopping (HostStopping).
+	hostDown atomic.Bool
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
@@ -1066,7 +1068,7 @@ func (m *Manager) run(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Result
 	kind := Kind(cmd)
 	m.d.Log.Info("command start", "event", "command_start", "command_id", cmd.CommandId, "kind", kind, "guest_id", Target(cmd))
 	res := m.execute(ctx, cmd)
-	if wasInterrupted(res) && m.shuttingDown.Load() {
+	if wasInterrupted(res) && m.hostDown.Load() {
 		// Not stored: a resend after the restart runs the command again.
 		m.d.Log.Warn("command interrupted by the shutdown", "event", "command_result", "command_id", cmd.CommandId, "kind", kind, "result", "interrupted", "guest_id", Target(cmd))
 		return nil

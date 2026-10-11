@@ -63,7 +63,19 @@ let
   # repose-cache active. Exit 1: the VG never appeared, or three attempts
   # failed. Exit 2: thin_check says the metadata is damaged; never retried
   # and never repaired, the owner decides (RUNBOOK "PoolUnavailable").
+  # Every failure leaves /run/repose/pool-hold: hostd's Wants= and the cache
+  # volume's Requires= would otherwise start the failed unit again at every
+  # hostd restart and every switch, so the unit's ExecCondition skips it
+  # until an operator removes the file. It is on /run, so a reboot runs the
+  # unit once more.
   # Log lines carry the VG, volume and dm device names and exit codes only.
+  poolHold = "/run/repose/pool-hold";
+  poolHeld = pkgs.writeShellScript "repose-guest-pool-held" ''
+    if [ -e ${poolHold} ]; then
+      echo "repose-guest-pool: event=pool_held marker=${poolHold}"
+      exit 1
+    fi
+  '';
   poolScript = pkgs.writeShellApplication {
     name = "repose-guest-pool";
     runtimeInputs = [ lvm pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.systemd pkgs.util-linux ];
@@ -74,13 +86,19 @@ let
       dmpool="vg--guests-thin"
       vg_wait=''${REPOSE_POOL_VG_WAIT:-300}
       say() { echo "repose-guest-pool: $*"; }
+      hold() {
+        mkdir -p "$(dirname ${poolHold})"
+        : > ${poolHold}
+        exit "$1"
+      }
+      rm -f ${poolHold}
 
       udevadm settle --timeout=60 || true
       waited=0
       until vgs "$vg" >/dev/null 2>&1; do
         if [ "$waited" -ge "$vg_wait" ]; then
           say "event=pool_vg_missing vg=$vg waited_s=$waited"
-          exit 1
+          hold 1
         fi
         sleep 1
         waited=$((waited + 1))
@@ -150,7 +168,7 @@ let
             rm -f "$err"
             if [ -n "$status" ] && [ "$status" -gt 0 ]; then
               say "event=pool_check_failed vg=$vg pool=$pool status=$status"
-              exit 2
+              hold 2
             fi
             say "event=pool_activate_failed vg=$vg pool=$pool exit=$rc"
             return 1
@@ -178,7 +196,7 @@ let
       done
       if [ "$ok" != 1 ]; then
         say "event=pool_unavailable vg=$vg attempts=3"
-        exit 1
+        hold 1
       fi
 
       # A tenant volume that will not activate fails its own guest's start
@@ -287,11 +305,17 @@ in
         # second run would find nothing to do, and a changed script is
         # proven at the next boot instead.
         restartIfChanged = false;
+        # Its retries are its own and a failure holds it; systemd's start
+        # limit would only refuse the operator's start after a few held
+        # skips (start-limit-hit, seen in host-reboot).
+        startLimitIntervalSec = 0;
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
           # thin_check of a large pool after a crash takes minutes.
           TimeoutStartSec = "30min";
+          # A failed run held the unit (see poolScript): skipped, not failed.
+          ExecCondition = "${poolHeld}";
           ExecStart = "${poolScript}/bin/repose-guest-pool";
         };
       };
