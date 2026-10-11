@@ -119,3 +119,17 @@ func TestPauseEventSyncsClocksAfter(t *testing.T) {
 		t.Fatalf("%d clock syncs after the pause", h.syncs)
 	}
 }
+
+// Preempt and Terminate delete the VM: nothing is frozen or approved.
+func TestDeletionNoticeFreezesNothing(t *testing.T) {
+	for _, typ := range []string{"Preempt", "Terminate"} {
+		s, h := &imds{}, &host{}
+		l := newListener(t, s, h)
+		s.doc = Document{Events: []Event{{EventID: "d1", EventType: typ, EventStatus: "Scheduled"}}}
+		l.step(t)
+		l.step(t)
+		if h.freezes != 0 || len(s.approved) != 0 {
+			t.Fatalf("%s: %d freezes, approved %v", typ, h.freezes, s.approved)
+		}
+	}
+}

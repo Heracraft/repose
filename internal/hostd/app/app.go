@@ -280,7 +280,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		// first lets a freeze work from the first minute.
 		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		if err := fdeps.Sealer.Refresh(rctx); err != nil {
-			log.Warn("image key not fetched at start", "event", "freeze", "err", err.Error())
+			log.Warn("image key not fetched at start", "event", "guest_freeze", "err", err.Error())
 		}
 		cancel()
 	}

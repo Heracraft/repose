@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/ch"
+	"github.com/heracraft/repose/internal/hostd/fakeguestd"
 	"github.com/heracraft/repose/internal/hostd/freeze"
 )
 
@@ -473,5 +476,248 @@ func TestFreezeLogsCarryNoTenantData(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(logs), []byte(`"event":"guest_freeze"`)) || !bytes.Contains([]byte(logs), []byte(`"event":"guest_thaw"`)) {
 		t.Fatal("freeze and thaw not logged")
+	}
+}
+
+// hostd restarted mid-freeze (the record still `writing`, the hypervisor
+// running with the VM paused): the next start resumes the guest and only
+// then removes the image.
+func TestRestartMidFreezeResumesTheGuest(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	if err := fh.m.records().Put(&freeze.Record{GuestID: gid1, State: freeze.StateWriting, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	fh.img.vols[gid1] = "x"
+	_ = fh.chc.Pause(context.Background(), "paused-by-the-freeze")
+	before := len(fh.chc.Calls)
+	if err := fh.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(fh.chc.Calls[before:], "\n")
+	if !strings.Contains(calls, "resume ") {
+		t.Fatalf("guest left paused after a restart mid-freeze; hypervisor calls %q", calls)
+	}
+	if !fh.unitActive(gid1) || fh.guest(gid1).State != StateRunning {
+		t.Fatal("guest not running after the restart")
+	}
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("image or record kept once the guest ran again")
+	}
+}
+
+// If the hypervisor is still busy writing (it answers nothing), the image
+// is not removed under it: record and image stay for the next start.
+func TestMidFreezeBusyHypervisorKeepsImage(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.ResumeWait = 300 * time.Millisecond })
+	fh.create(gid1)
+	if err := fh.m.records().Put(&freeze.Record{GuestID: gid1, State: freeze.StateWriting, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	fh.img.vols[gid1] = "x"
+	fh.chc.Fail = map[string]error{"info": errors.New("timeout"), "resume": errors.New("timeout")}
+	res := fh.m.ThawAll(context.Background())
+	if len(res) != 1 || res[0].Outcome != "skipped" {
+		t.Fatalf("thaw with a busy hypervisor: %+v", res)
+	}
+	if slices.Contains(fh.img.ops, "remove "+gid1) || fh.record(gid1) == nil {
+		t.Fatalf("image removed under a busy hypervisor: ops %v", fh.img.ops)
+	}
+	// Once it answers, the next ThawAll resumes it and removes the image.
+	fh.chc.Fail = nil
+	fh.m.ThawAll(context.Background())
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("image kept once the guest ran again")
+	}
+}
+
+// A second freeze of a frozen guest (two FreezeAlls one after the other:
+// an operator's and the shutdown's) leaves the finished image alone.
+func TestSecondFreezeKeepsTheImage(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	if r := fh.freezeOne(gid1); !r.OK {
+		t.Fatalf("freeze: %+v", r)
+	}
+	if res := fh.m.FreezeAll(context.Background(), FreezeShutdown); len(res) != 0 {
+		t.Fatalf("second FreezeAll: %+v", res)
+	}
+	// What a job already queued for the guest does, on its worker.
+	res := fh.m.freezeGuest(context.Background(), gid1, FreezeShutdown)
+	if res.OK || res.Outcome != "skipped" {
+		t.Fatalf("second freeze of a frozen guest: %+v", res)
+	}
+	if strings.Count(strings.Join(fh.img.ops, " "), "create "+gid1) != 1 {
+		t.Fatalf("finished image re-created: %v", fh.img.ops)
+	}
+	if rec := fh.record(gid1); rec == nil || rec.State != freeze.StateComplete || !fh.img.has(gid1) {
+		t.Fatal("finished image lost to a second freeze")
+	}
+}
+
+// gatedCH holds a snapshot until the test releases it.
+type gatedCH struct {
+	freezeCH
+	started, release chan struct{}
+}
+
+func (c gatedCH) Snapshot(ctx context.Context, sock, dir string) error {
+	close(c.started)
+	<-c.release
+	return c.Fake.Snapshot(ctx, sock, dir)
+}
+
+// A thaw (hostd thaw, hostd reconcile, a called-off Scheduled Event) that
+// comes while a freeze is writing waits for it, and then restores the
+// finished image instead of removing the one being written.
+func TestThawDuringAFreezeWaitsForIt(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	gc := gatedCH{freezeCH: fh.m.d.CH.(freezeCH), started: make(chan struct{}), release: make(chan struct{})}
+	fh.m.d.CH = gc
+	frozen := make(chan []FreezeResult)
+	go func() { frozen <- fh.m.FreezeAll(context.Background(), FreezeOperator) }()
+	<-gc.started
+	thawed := make(chan []FreezeResult)
+	go func() { thawed <- fh.m.ThawAll(context.Background()) }()
+	select {
+	case r := <-thawed:
+		t.Fatalf("thaw ran during the freeze: %+v", r)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if slices.Contains(fh.img.ops, "remove "+gid1) {
+		t.Fatalf("image removed while it was written: %v", fh.img.ops)
+	}
+	close(gc.release)
+	if r := <-frozen; len(r) != 1 || !r[0].OK {
+		t.Fatalf("freeze: %+v", r)
+	}
+	if r := <-thawed; len(r) != 1 || r[0].Outcome != "thawed" {
+		t.Fatalf("thaw after the freeze: %+v", r)
+	}
+	if !fh.unitActive(gid1) {
+		t.Fatal("guest not running after the thaw")
+	}
+}
+
+// With Key Vault down, the start waits one UnwrapTimeout whatever the
+// number of images, not one per image.
+func TestThawWaitsOneUnwrapTimeout(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Concurrency = 1; c.UnwrapTimeout = 300 * time.Millisecond })
+	fh.create(gid1)
+	fh.create(gid2)
+	if res := fh.m.FreezeAll(context.Background(), FreezeOperator); len(res) != 2 || !res[0].OK || !res[1].OK {
+		t.Fatalf("freeze: %+v", res)
+	}
+	fh.sealer.unwrapErr = context.DeadlineExceeded
+	start := time.Now()
+	if err := fh.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d >= 550*time.Millisecond {
+		t.Fatalf("reconcile took %v for 2 images with a 300 ms unwrap timeout", d)
+	}
+	if fh.img.has(gid1) || fh.img.has(gid2) {
+		t.Fatal("images kept without their key")
+	}
+}
+
+// An image whose restore cannot start within UnwrapTimeout +
+// RestoreTimeout of the thaw is discarded; that guest starts cold.
+func TestThawRestoreWindowDiscards(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) {
+		c.Concurrency = 1
+		c.UnwrapTimeout = 100 * time.Millisecond
+		c.RestoreTimeout = 300 * time.Millisecond
+	})
+	fh.create(gid1)
+	fh.create(gid2)
+	if res := fh.m.FreezeAll(context.Background(), FreezeOperator); len(res) != 2 || !res[0].OK || !res[1].OK {
+		t.Fatalf("freeze: %+v", res)
+	}
+	// Whichever restore goes first takes 500 ms to start its hypervisor,
+	// past the 400 ms window: it still finishes, the other is discarded.
+	prev := fh.sd.OnRun
+	var once sync.Once
+	fh.sd.OnRun = func(unit string, argv []string) error {
+		if slices.Contains(argv, "--restore") {
+			once.Do(func() { time.Sleep(500 * time.Millisecond) })
+		}
+		return prev(unit, argv)
+	}
+	res := fh.m.ThawAll(context.Background())
+	got := map[string]int{}
+	for _, r := range res {
+		got[r.Reason]++
+	}
+	if got["restore window passed"] != 1 || got[""] != 1 {
+		t.Fatalf("results %+v", res)
+	}
+	if fh.img.has(gid1) || fh.img.has(gid2) {
+		t.Fatal("image kept")
+	}
+}
+
+// A guest whose snapshot would run past the deadline is not paused at
+// all: it is left running for the shutdown's clean stop.
+func TestFreezeSkipsASnapshotPastDeadline(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.WriteRate = 10 << 20; c.Deadline = 30 * time.Second })
+	fh.create(gid1)
+	fh.sd.Units[GuestUnit(gid1)].MemBytes = 2 << 30 // 2 GiB at 10 MiB/s: 205 s
+	res := fh.freezeOne(gid1)
+	if res.OK || res.Reason != "snapshot would outlast the deadline" {
+		t.Fatalf("freeze: %+v", res)
+	}
+	if strings.Contains(fh.chCalls(), "pause ") || !fh.unitActive(gid1) {
+		t.Fatal("guest paused or stopped for a snapshot that was not started")
+	}
+	// The unit's memory, not the class, is what is estimated: 200 MiB fits.
+	fh.sd.Units[GuestUnit(gid1)].MemBytes = 200 << 20
+	if r := fh.freezeOne(gid1); !r.OK {
+		t.Fatalf("freeze of a guest using 200 MiB: %+v", r)
+	}
+}
+
+// The page cache is dropped only in guests that will be frozen and have
+// the balloon; every guest still syncs.
+func TestFreezeDropsCachesOnlyWithTheBalloon(t *testing.T) {
+	execs := func(srv *fakeguestd.Server) string {
+		var out []string
+		for _, c := range srv.Calls() {
+			if c.Req == nil {
+				continue
+			}
+			if e := c.Req.GetExec(); e != nil {
+				out = append(out, strings.Join(e.Argv, " "))
+			}
+		}
+		return strings.Join(out, "\n")
+	}
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	srv := fh.guestd(gid1) // the hypervisor's guestd goes with it
+	if r := fh.freezeOne(gid1); !r.OK {
+		t.Fatalf("freeze: %+v", r)
+	}
+	if e := execs(srv); !strings.Contains(e, "sync") || strings.Contains(e, "drop_caches") {
+		t.Fatalf("guest without the balloon ran %q, want a sync and no cache drop", e)
+	}
+
+	fh = newFreezeHarness(t, nil)
+	fh.create(gid1)
+	args := filepath.Join(fh.m.guestDir(gid1), "ch.args")
+	b, err := os.ReadFile(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(args, append(b, []byte("--balloon\n"+ch.Balloon+"\n")...), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	srv = fh.guestd(gid1)
+	if r := fh.freezeOne(gid1); !r.OK {
+		t.Fatalf("freeze: %+v", r)
+	}
+	if e := execs(srv); !strings.Contains(e, "drop_caches") {
+		t.Fatalf("guest with the balloon ran %q, want a cache drop", e)
 	}
 }

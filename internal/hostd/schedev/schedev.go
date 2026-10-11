@@ -71,16 +71,23 @@ type Listener struct {
 	frozenFor string
 	// paused holds Freeze events in progress, by id.
 	paused map[string]bool
+	// logged holds Preempt and Terminate events already logged, by id.
+	logged map[string]bool
 }
 
-// impact reports whether an event takes the VM's memory away.
+// impact reports whether an event restarts the VM on a host it comes back
+// on, which is when an image is worth writing. Preempt and Terminate
+// delete the VM (and Preempt gives 30 s), so they are only logged.
 func impact(t string) bool {
 	switch t {
-	case "Reboot", "Redeploy", "Preempt", "Terminate":
+	case "Reboot", "Redeploy":
 		return true
 	}
 	return false
 }
+
+// gone reports whether an event deletes the VM.
+func gone(t string) bool { return t == "Preempt" || t == "Terminate" }
 
 func (l *Listener) mine(e Event) bool {
 	if l.Resource == "" || len(e.Resources) == 0 {
@@ -168,6 +175,9 @@ func (l *Listener) Run(ctx context.Context) {
 	if l.paused == nil {
 		l.paused = map[string]bool{}
 	}
+	if l.logged == nil {
+		l.logged = map[string]bool{}
+	}
 	t := time.NewTicker(iv)
 	defer t.Stop()
 	failing := false
@@ -198,6 +208,9 @@ func (l *Listener) Step(ctx context.Context, d *Document) {
 	if l.paused == nil {
 		l.paused = map[string]bool{}
 	}
+	if l.logged == nil {
+		l.logged = map[string]bool{}
+	}
 	seen := map[string]bool{}
 	for _, e := range d.Events {
 		if !l.mine(e) {
@@ -218,6 +231,12 @@ func (l *Listener) Step(ctx context.Context, d *Document) {
 				} else {
 					l.Log.Info("scheduled event approved", "event", "scheduled_event", "event_type", e.EventType)
 				}
+			}
+		case gone(e.EventType):
+			if !l.logged[e.EventID] {
+				l.Log.Warn("host VM to be deleted; guests not frozen", "event", "scheduled_event",
+					"event_type", e.EventType, "event_status", e.EventStatus, "source", e.EventSource, "not_before", e.NotBefore)
+				l.logged[e.EventID] = true
 			}
 		case e.EventType == "Freeze":
 			if !l.paused[e.EventID] {

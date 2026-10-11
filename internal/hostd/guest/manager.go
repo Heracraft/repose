@@ -404,8 +404,10 @@ type Manager struct {
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
 
-	// thawMu serialises ThawAll (freeze.go, I-652).
-	thawMu sync.Mutex
+	// freezeMu (a one-slot semaphore, so a wait can end with its context)
+	// lets one FreezeAll, ThawAll or SyncClocks run at a time (freeze.go,
+	// I-652).
+	freezeMu chan struct{}
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
@@ -428,7 +430,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, d: d,
-		workers: map[string]*worker{}, inflight: map[string]bool{},
+		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
 		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{},
 		last:     map[string]sampleCursor{},
 		buildSeq: map[string]uint64{},

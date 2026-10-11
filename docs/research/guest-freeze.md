@@ -360,6 +360,10 @@ powers the VM off.** A freeze has that long on a restart Azure asks for.
   for the slowest restore (39 s here). That is the intended order (the api
   must not see a frozen guest as stopped); it also means a stuck restore
   holds hostd for up to the 90 s key wait plus the 180 s restore bound.
+  After the review the key waits are shared (all keys unwrapped at once
+  under one 90 s bound) and no restore starts later than 90 + 180 s
+  after the thaw began, so the wait no longer grows with the number of
+  frozen guests (I-652).
 - Not tested on staging: Scheduled Events (turning the listener on turns
   the events on for the VM for 24 h, during which every staging restart
   waits for approval; left for a slot where that is wanted), Key Vault

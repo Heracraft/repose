@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -58,8 +59,20 @@ type FreezeConfig struct {
 	// (Key Vault) before the guest starts cold instead. Default 90 s.
 	UnwrapTimeout time.Duration
 	// RestoreTimeout bounds the hypervisor's restore (reading the image)
-	// and guestd's first answer after the resume. Default 180 s.
+	// and guestd's first answer after the resume. Default 180 s. A
+	// ThawAll starts no restore later than UnwrapTimeout + RestoreTimeout
+	// after it began; the images left are discarded and those guests
+	// start cold, so a slow restore never holds Hello back for long.
 	RestoreTimeout time.Duration
+	// WriteRate is the rate in bytes per second a FreezeAll assumes one
+	// snapshot writes at, until its first finished snapshot shows the
+	// real one. Default 100 MB/s (host-stg-01's 125 MB/s disk wrote a
+	// 4.1 GB image in 36 s with a second snapshot beside it).
+	WriteRate uint64
+	// ResumeWait bounds how long a guest left paused by a freeze that did
+	// not finish (a failed snapshot, or hostd restarted mid-freeze) is
+	// retried until it runs again. Default 2 min.
+	ResumeWait time.Duration
 }
 
 func (c FreezeConfig) withDefaults() FreezeConfig {
@@ -83,6 +96,12 @@ func (c FreezeConfig) withDefaults() FreezeConfig {
 	}
 	if c.RestoreTimeout == 0 {
 		c.RestoreTimeout = 180 * time.Second
+	}
+	if c.WriteRate == 0 {
+		c.WriteRate = 100_000_000
+	}
+	if c.ResumeWait == 0 {
+		c.ResumeWait = 2 * time.Minute
 	}
 	return c
 }
@@ -160,7 +179,10 @@ func (m *Manager) FreezeEnabled() bool {
 // FreezeAll freezes every running guest, smallest first, within the
 // configured deadline (ctx may end it sooner). It never stops a guest it
 // did not freeze: those are left running for whatever comes next (the
-// shutdown's clean stop, or nothing on an operator's freeze).
+// shutdown's clean stop, or nothing on an operator's freeze). One
+// FreezeAll, ThawAll or SyncClocks runs at a time: a second freeze must
+// not touch the first's images, and a thaw must not take an image the
+// hypervisor is still writing.
 func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	if !m.FreezeEnabled() {
 		return nil
@@ -169,6 +191,11 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	start := m.d.Now()
 	ctx, cancel := context.WithTimeout(ctx, fc.Deadline)
 	defer cancel()
+	if !m.lockFreeze(ctx) {
+		m.d.Log.Warn("freeze skipped: another freeze or thaw outlasted the deadline", "event", "guest_freeze", "reason", reason)
+		return nil
+	}
+	defer m.unlockFreeze()
 	if err := m.d.Freeze.Sealer.Ready(); err != nil {
 		m.d.Log.Warn("freeze skipped: no image key", "event", "guest_freeze", "reason", reason, "err", err.Error())
 		return nil
@@ -191,41 +218,11 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	sort.SliceStable(run, func(i, j int) bool { return Classes[run[i].Class].MemMiB < Classes[run[j].Class].MemMiB })
 	m.d.Log.Info("freezing guests", "event", "guest_freeze", "reason", reason, "guests", len(run))
 
-	// Ask each guest to write back and drop its page cache, all at once:
-	// with free page reporting the dropped pages go back to the host and
-	// are not written into the image (a guest that read 2.5 GB wrote a
-	// 3.6 GB image without, 1.6 GB with; docs/research/guest-freeze.md).
-	// The sync is worth it on its own: the guest's dirty pages reach its
-	// volume while it still runs.
-	var wg sync.WaitGroup
-	for _, g := range run {
-		wg.Add(1)
-		go func(g *state.Guest) {
-			defer wg.Done()
-			sess, serr := m.session(g.GuestID)
-			if serr != nil {
-				return
-			}
-			dctx, dcancel := context.WithTimeout(ctx, 10*time.Second)
-			defer dcancel()
-			if r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"}, 10, ""); err != nil || r.ExitCode != 0 {
-				m.log(g).Warn("guest cache drop failed before freeze", "event", "guest_freeze")
-			}
-		}(g)
-	}
-	wg.Wait()
-	if fc.Settle > 0 && len(run) > 0 && m.cfg.FreePageReporting {
-		select {
-		case <-time.After(fc.Settle):
-		case <-ctx.Done():
-		}
-	}
-
 	// Room in the pool: an image takes at most the class's memory; stop
 	// adding guests once the pool would pass the refuse threshold.
 	room := m.freezeRoom(ctx)
 	results := make([]FreezeResult, len(run))
-	sem := make(chan struct{}, fc.Concurrency)
+	take := make([]bool, len(run))
 	for i, g := range run {
 		need := Classes[g.Class].MemMiB << 20
 		if room >= 0 && need > uint64(room) {
@@ -235,9 +232,66 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 		if room >= 0 {
 			room -= int64(need)
 		}
+		take[i] = true
+	}
+
+	// Every guest writes back its dirty pages while it still runs, all at
+	// once: the sync is worth it whether it is frozen or stopped next. A
+	// guest that will be frozen and has the balloon also drops its page
+	// cache, so free page reporting hands those pages back and they are
+	// not written into the image (a guest that read 2.5 GB wrote a 3.6 GB
+	// image without, 1.6 GB with; docs/research/guest-freeze.md). Without
+	// the balloon the dropped pages stay in the image anyway, so the
+	// guest keeps its cache.
+	var wg sync.WaitGroup
+	var dropped atomic.Bool
+	for i, g := range run {
+		drop := take[i] && m.argsHaveBalloon(g.GuestID)
 		wg.Add(1)
-		go func(i int, id string) {
+		go func(g *state.Guest, drop bool) {
 			defer wg.Done()
+			sess, serr := m.session(g.GuestID)
+			if serr != nil {
+				return
+			}
+			dctx, dcancel := context.WithTimeout(ctx, 10*time.Second)
+			defer dcancel()
+			script := "sync"
+			if drop {
+				script = "sync; echo 3 > /proc/sys/vm/drop_caches"
+			}
+			if r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", script}, 10, ""); err != nil || r.ExitCode != 0 {
+				m.log(g).Warn("guest cache write-back failed before freeze", "event", "guest_freeze")
+			} else if drop {
+				dropped.Store(true)
+			}
+		}(g, drop)
+	}
+	wg.Wait()
+	if fc.Settle > 0 && dropped.Load() {
+		select {
+		case <-time.After(fc.Settle):
+		case <-ctx.Done():
+		}
+	}
+
+	// A snapshot cannot be interrupted, so one that would run past the
+	// deadline is not started: the shutdown unit's stop timeout is set
+	// from the deadline, and a guest still paused when it passes would be
+	// killed rather than stopped cleanly. The write rate starts at the
+	// configured one and becomes the slowest this freeze's own snapshots
+	// achieved once one has finished. A guest skipped here is left
+	// running for the shutdown's clean stop.
+	rate := newWriteRate(fc.WriteRate)
+	sem := make(chan struct{}, fc.Concurrency)
+	for i, g := range run {
+		if !take[i] {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, g *state.Guest) {
+			defer wg.Done()
+			id := g.GuestID
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
@@ -257,7 +311,19 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 					done <- FreezeResult{GuestID: id, Outcome: "skipped", Reason: "deadline passed"}
 					return
 				}
-				done <- m.freezeGuest(ctx, id, reason)
+				if dl, ok := ctx.Deadline(); ok {
+					if est := rate.estimate(m.memoryBytes(ctx, g)); est > time.Until(dl) {
+						m.log(g).Warn("guest not frozen: its snapshot would outlast the deadline", "event", "guest_freeze",
+							"reason", reason, "estimate_ms", est.Milliseconds())
+						done <- FreezeResult{GuestID: id, Outcome: "skipped", Reason: "snapshot would outlast the deadline"}
+						return
+					}
+				}
+				r := m.freezeGuest(ctx, id, reason)
+				if r.OK {
+					rate.observe(r.ImageBytes, time.Duration(r.Ms)*time.Millisecond)
+				}
+				done <- r
 			}})
 			select {
 			case <-started:
@@ -270,7 +336,7 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 					results[i] = FreezeResult{GuestID: id, Outcome: "skipped", Reason: "deadline passed"}
 				}
 			}
-		}(i, g.GuestID)
+		}(i, g)
 	}
 	wg.Wait()
 	n := 0
@@ -282,6 +348,75 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	m.d.Log.Info("guests frozen", "event", "guest_freeze", "reason", reason, "frozen", n, "guests", len(run),
 		"duration_ms", m.d.Now().Sub(start).Milliseconds())
 	return results
+}
+
+// lockFreeze takes the manager's freeze lock, or gives up when ctx ends.
+func (m *Manager) lockFreeze(ctx context.Context) bool {
+	select {
+	case m.freezeMu <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (m *Manager) unlockFreeze() { <-m.freezeMu }
+
+// writeRate is a FreezeAll's estimate of how fast one snapshot writes.
+type writeRate struct {
+	mu   sync.Mutex
+	bps  float64
+	seen bool
+}
+
+func newWriteRate(bps uint64) *writeRate { return &writeRate{bps: float64(max(bps, 1))} }
+
+// estimate is how long a snapshot of n bytes takes at the current rate.
+func (w *writeRate) estimate(n uint64) time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return time.Duration(float64(n) / w.bps * float64(time.Second))
+}
+
+// observe takes the rate of a finished freeze (its whole duration, so the
+// estimate errs long). The slowest seen wins: snapshots share the disk.
+func (w *writeRate) observe(n uint64, d time.Duration) {
+	if n == 0 || d <= 0 {
+		return
+	}
+	r := float64(n) / d.Seconds()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.seen || r < w.bps {
+		w.bps = r
+	}
+	w.seen = true
+}
+
+// memoryBytes is what a guest's image will hold at most: the memory its
+// hypervisor's unit holds (with free page reporting, what the guest
+// uses), or the class's memory when that cannot be read.
+func (m *Manager) memoryBytes(ctx context.Context, g *state.Guest) uint64 {
+	class := (Classes[g.Class].MemMiB + 256) << 20
+	props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "MemoryCurrent")
+	if err != nil {
+		return class
+	}
+	n, err := strconv.ParseUint(props["MemoryCurrent"], 10, 64)
+	if err != nil || n == 0 || n > class {
+		return class
+	}
+	return n
+}
+
+// argsHaveBalloon reports whether the guest's hypervisor was started with
+// the free page reporting balloon, from the argv hostd wrote at its boot.
+func (m *Manager) argsHaveBalloon(id string) bool {
+	b, err := os.ReadFile(filepath.Join(m.guestDir(id), "ch.args"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), "--balloon")
 }
 
 // freezeRoom is how many bytes images may take before the pool passes its
@@ -311,6 +446,17 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	}
 	if g.State != StateRunning {
 		res.Outcome, res.Reason = "skipped", "guest is not running"
+		return res
+	}
+	// Checked again here, on the guest's worker: a guest frozen since it
+	// was listed has no hypervisor and a record, and a second freeze would
+	// re-create (that is, remove) its finished image.
+	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); !a {
+		res.Outcome, res.Reason = "skipped", "guest is not running"
+		return res
+	}
+	if r, _ := m.records().Get(id); r != nil {
+		res.Outcome, res.Reason = "skipped", "guest already frozen"
 		return res
 	}
 	fz, ok := m.d.CH.(ch.Freezer)
@@ -387,7 +533,16 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	err = fz.Snapshot(sctx, sock, m.snapDir(id))
 	scancel()
 	if err != nil {
-		m.resumeAfterFailedSnapshot(context.WithoutCancel(ctx), g, sock)
+		if !m.resumeAfterFailedSnapshot(context.WithoutCancel(ctx), g, sock) {
+			// The hypervisor may still be writing into the image: it is not
+			// removed under it. The `writing` record stays, so the next
+			// ThawAll (hostd's next start, or `hostd thaw`) resumes the
+			// guest and removes the image then.
+			res.Reason = "snapshot failed; guest still paused"
+			res.Ms = m.d.Now().Sub(start).Milliseconds()
+			m.log(g).Error("freeze failed and the guest did not resume", "event", "guest_freeze", "err", err.Error())
+			return res
+		}
 		return fail("snapshot failed", err)
 	}
 	snapMs := m.d.Now().Sub(pausedAt).Milliseconds()
@@ -450,11 +605,12 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 const snapshotTimeout = 10 * time.Minute
 
 // resumeAfterFailedSnapshot brings a guest back from the pause of a freeze
-// that failed. The hypervisor may still be busy with the snapshot (its
-// API answers nothing until it is done), so the resume is retried until
-// vm.info says Running, for up to two minutes.
-func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest, sock string) {
-	deadline := m.d.Now().Add(2 * time.Minute)
+// that failed, or that a hostd restart cut short. The hypervisor may still
+// be busy with the snapshot (its API answers nothing until it is done), so
+// the resume is retried until vm.info says Running, for up to ResumeWait.
+// It reports whether the guest runs.
+func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest, sock string) bool {
+	deadline := m.d.Now().Add(m.fcfg().ResumeWait)
 	var last error
 	for m.d.Now().Before(deadline) {
 		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -462,12 +618,15 @@ func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest,
 		info, ierr := m.d.CH.Info(rctx, sock)
 		cancel()
 		if ierr == nil && strings.Contains(string(info), `"Running"`) {
-			m.log(g).Info("guest resumed after a failed snapshot", "event", "guest_freeze")
-			return
+			m.log(g).Info("guest resumed after a freeze that did not finish", "event", "guest_freeze")
+			return true
+		}
+		if ierr != nil {
+			last = ierr
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
@@ -475,7 +634,8 @@ func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest,
 	if last != nil {
 		msg = last.Error()
 	}
-	m.log(g).Error("guest left paused after a failed snapshot", "event", "guest_freeze", "err", msg)
+	m.log(g).Error("guest left paused after a freeze that did not finish", "event", "guest_freeze", "err", msg)
+	return false
 }
 
 // argsHaveAuthShare reports whether the guest's hypervisor was started
@@ -519,17 +679,28 @@ func (m *Manager) discardImage(ctx context.Context, id, why string) {
 	m.d.Log.Info("frozen image discarded", "event", "freeze_discard", "guest_id", id, "reason", why)
 }
 
-// ThawAll restores every frozen guest that can be, in parallel. Reconcile
-// calls it first, so the guests it restores are running when the stream
-// sends Hello; the rest are discarded and reconcile treats them as it
-// always has. Without the freeze turned on it still cleans up images a
-// host left behind, and restores none.
+// ThawAll restores every frozen guest that can be. Reconcile calls it
+// first, so the guests it restores are running when the stream sends
+// Hello; the rest are discarded and reconcile treats them as it always
+// has. Without the freeze turned on it still cleans up images a host left
+// behind, and restores none.
+//
+// It runs in two steps, so its length does not grow with the number of
+// images when Key Vault is slow or down: every image is checked and its
+// key unwrapped at once, under one UnwrapTimeout; then the images are
+// restored, Concurrency at a time, and an image whose restore has not
+// started UnwrapTimeout + RestoreTimeout after ThawAll began is discarded
+// (that guest starts cold).
 func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 	if m.cfg.Freeze.RecordDir == "" {
 		return nil
 	}
-	m.thawMu.Lock()
-	defer m.thawMu.Unlock()
+	if !m.lockFreeze(ctx) {
+		return nil
+	}
+	defer m.unlockFreeze()
+	fc := m.fcfg()
+	begin := time.Now()
 	recs := m.records()
 	ids, err := recs.List()
 	if err != nil {
@@ -541,16 +712,45 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 		return nil
 	}
 	results := make([]FreezeResult, len(ids))
-	sem := make(chan struct{}, m.fcfg().Concurrency)
+	preps := make([]*thawPrep, len(ids))
+	uctx, ucancel := context.WithTimeout(ctx, fc.UnwrapTimeout)
 	var wg sync.WaitGroup
 	for i, id := range ids {
 		wg.Add(1)
 		go func(i int, id string) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			results[i] = m.thawGuest(ctx, id)
+			preps[i], results[i] = m.prepareThaw(ctx, uctx, id)
 		}(i, id)
+	}
+	wg.Wait()
+	ucancel()
+
+	window, wcancel := context.WithDeadline(ctx, begin.Add(fc.UnwrapTimeout+fc.RestoreTimeout))
+	defer wcancel()
+	sem := make(chan struct{}, fc.Concurrency)
+	for i, p := range preps {
+		if p == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, p *thawPrep) {
+			defer wg.Done()
+			defer freeze.Wipe(p.key)
+			select {
+			case sem <- struct{}{}:
+			case <-window.Done():
+				m.discardImage(ctx, p.g.GuestID, "restore window passed")
+				results[i] = FreezeResult{GuestID: p.g.GuestID, Outcome: "discarded", Reason: "restore window passed"}
+				return
+			}
+			defer func() { <-sem }()
+			if window.Err() != nil {
+				m.discardImage(ctx, p.g.GuestID, "restore window passed")
+				results[i] = FreezeResult{GuestID: p.g.GuestID, Outcome: "discarded", Reason: "restore window passed"}
+				return
+			}
+			results[i] = m.thawGuest(ctx, p)
+		}(i, p)
 	}
 	wg.Wait()
 	n := 0
@@ -559,7 +759,8 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 			n++
 		}
 	}
-	m.d.Log.Info("frozen guests restored", "event", "guest_thaw", "restored", n, "images", len(ids))
+	m.d.Log.Info("frozen guests restored", "event", "guest_thaw", "restored", n, "images", len(ids),
+		"duration_ms", time.Since(begin).Milliseconds())
 	return results
 }
 
@@ -586,8 +787,18 @@ func (m *Manager) sweepImageVolumes(ctx context.Context, ids []string) {
 	}
 }
 
-// thawGuest restores one frozen guest, or discards its image.
-func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
+// thawPrep is an image that passed its checks, with its key unwrapped.
+type thawPrep struct {
+	g     *state.Guest
+	rec   *freeze.Record
+	key   []byte
+	start time.Time
+}
+
+// prepareThaw checks one image and unwraps its key (uctx bounds the
+// unwrap). It returns the prep for a restore, or nil and the image's
+// result when it was discarded or kept.
+func (m *Manager) prepareThaw(ctx, uctx context.Context, id string) (*thawPrep, FreezeResult) {
 	start := m.d.Now()
 	res := FreezeResult{GuestID: id, Outcome: "discarded"}
 	fc := m.fcfg()
@@ -595,15 +806,29 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 	if err != nil || rec == nil {
 		m.discardImage(ctx, id, "record unreadable")
 		res.Reason = "record unreadable"
-		return res
+		return nil, res
 	}
-	discard := func(why string) FreezeResult {
+	discard := func(why string) (*thawPrep, FreezeResult) {
 		m.discardImage(ctx, id, why)
 		res.Reason = why
 		res.Ms = m.d.Now().Sub(start).Milliseconds()
-		return res
+		return nil, res
 	}
 	g, gerr := m.getGuest(id)
+	// A guest whose hypervisor still runs was never frozen to the end: hostd
+	// stopped mid-freeze (crash, OOM, a switch restarting it), or a
+	// snapshot failed and the resume did not take. Its VM may be paused,
+	// and its hypervisor may still be writing the image. It is resumed
+	// first; the image is removed only once the guest runs, and otherwise
+	// kept with its record for the next start to try again.
+	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); a {
+		if !m.resumeAfterFailedSnapshot(ctx, g, ch.APISocket(m.guestDir(id))) {
+			res.Outcome, res.Reason = "skipped", "guest still paused; image kept"
+			res.Ms = m.d.Now().Sub(start).Milliseconds()
+			return nil, res
+		}
+		return discard("guest already running")
+	}
 	switch {
 	case gerr != nil:
 		return discard("guest no longer on this host")
@@ -626,9 +851,6 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 	case rec.Fingerprint == "":
 		return discard("no volume fingerprint")
 	}
-	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); a {
-		return discard("guest already running")
-	}
 	if chv, _ := m.d.CH.Version(ctx); chv != rec.CHVersion {
 		return discard("hypervisor version changed since the freeze")
 	}
@@ -647,19 +869,29 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 	if _, ok := m.d.CH.(ch.Freezer); !ok {
 		return discard("hypervisor client cannot restore")
 	}
-
-	uctx, ucancel := context.WithTimeout(ctx, fc.UnwrapTimeout)
 	key, err := m.unwrapWithRetry(uctx, rec)
-	ucancel()
 	if err != nil {
 		m.log(g).Warn("image key not unwrapped", "event", "guest_thaw", "err", err.Error())
 		return discard("image key unavailable")
 	}
-	defer freeze.Wipe(key)
 	if freeze.KeyCheck(key) != rec.KeyCheck {
+		freeze.Wipe(key)
 		return discard("image key does not match")
 	}
-	if err := m.d.Freeze.Image.Open(ctx, id, key, m.imageMount(id)); err != nil {
+	return &thawPrep{g: g, rec: rec, key: key, start: start}, FreezeResult{}
+}
+
+// thawGuest restores one checked image, or discards it.
+func (m *Manager) thawGuest(ctx context.Context, p *thawPrep) FreezeResult {
+	g, rec, id := p.g, p.rec, p.g.GuestID
+	res := FreezeResult{GuestID: id, Outcome: "discarded"}
+	discard := func(why string) FreezeResult {
+		m.discardImage(ctx, id, why)
+		res.Reason = why
+		res.Ms = m.d.Now().Sub(p.start).Milliseconds()
+		return res
+	}
+	if err := m.d.Freeze.Image.Open(ctx, id, p.key, m.imageMount(id)); err != nil {
 		m.log(g).Warn("image not opened", "event", "guest_thaw", "err", err.Error())
 		return discard("image volume not opened")
 	}
@@ -670,7 +902,7 @@ func (m *Manager) thawGuest(ctx context.Context, id string) FreezeResult {
 	}
 	m.discardImage(ctx, id, "restored")
 	res.OK, res.Outcome, res.Reason = true, "thawed", ""
-	res.Ms = m.d.Now().Sub(start).Milliseconds()
+	res.Ms = m.d.Now().Sub(p.start).Milliseconds()
 	m.log(g).Info("guest restored from its frozen image", "event", "guest_thaw", "class", g.Class,
 		"duration_ms", res.Ms, "frozen_s", int64(m.d.Now().Sub(rec.DoneAt).Seconds()), "image_bytes", rec.ImageBytes)
 	return res
@@ -778,6 +1010,10 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 // host itself was paused (an Azure Freeze event): the guests were paused
 // with it and their clocks fell behind by the same time.
 func (m *Manager) SyncClocks(ctx context.Context) {
+	if !m.lockFreeze(ctx) {
+		return
+	}
+	defer m.unlockFreeze()
 	gs, err := m.d.State.ListGuests()
 	if err != nil {
 		return

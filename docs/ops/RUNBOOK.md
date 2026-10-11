@@ -1043,15 +1043,24 @@ Checks:
   ("Host rebooted").
 - Shutdown side: `journalctl -b -1 -u repose-guest-freeze -u hostd | grep
   '"event":"guest_freeze"'`: `guests frozen` with `frozen`, `guests` and
-  `duration_ms`. A guest left out (`skipped`: deadline passed, or the pool
-  had no room) was stopped by the shutdown as before.
+  `duration_ms`. A guest left out (`skipped`: deadline passed, its
+  snapshot would outlast the deadline, or the pool had no room) was
+  stopped by the shutdown as before. The freeze unit holds the shutdown
+  for at most twice `deadline` plus 60 s (300 s at the default 120).
+- A guest still paused after a freeze that did not finish (hostd killed
+  mid-freeze, or `freeze failed and the guest did not resume` in the
+  journal): the image and its `writing` record are kept; `hostd thaw`, or
+  hostd's next start, resumes the guest and then removes them.
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
   restore. `dmsetup ls | grep repose-frz` is empty except during a freeze
   or restore.
 
-Key Vault unreachable at start: each restore waits up to 90 s for the key,
-then the guest starts cold. Nothing to do but find out why the host cannot
+Key Vault unreachable at start: hostd unwraps every image's key at once
+and waits up to 90 s in all (not per image), then those guests start
+cold. Hello, and the cold starts after it, wait that long. Whatever has
+not begun restoring 90 + 180 s after the start is discarded and starts
+cold too. Nothing to do but find out why the host cannot
 reach the vault (`curl -sS -H Metadata:true
 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net'`
 should return a token).

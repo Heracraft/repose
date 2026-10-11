@@ -83,7 +83,7 @@ resource "azurerm_key_vault_access_policy" "api" {
   tenant_id    = var.tenant_id
   object_id    = var.api_identity_object_id
 
-  key_permissions = ["Get", "WrapKey", "UnwrapKey"]
+  key_permissions = var.api_key_permissions
 }
 
 resource "azurerm_key_vault_key" "dek_wrap" {

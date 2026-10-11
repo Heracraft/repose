@@ -141,6 +141,7 @@ module "freeze_keyvault" {
 
   operator_object_id     = coalesce(var.operator_object_id, data.azurerm_client_config.current.object_id)
   api_identity_object_id = module.storage.host_identity_principal_id
+  api_key_permissions    = ["Get", "UnwrapKey"]
   key_name               = "freeze-wrap"
 
   tags = local.tags

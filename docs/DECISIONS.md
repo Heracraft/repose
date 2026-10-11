@@ -18429,10 +18429,23 @@ do not feel it"); off until the owner turns it on per host
   stays `running`: the state enum is fixed, and a frozen guest is a running
   guest whose hypervisor is between hosts. Smallest guests first, two
   snapshots at a time (they share the data disk), within a deadline
-  (`--freeze-deadline`, 120 s); a guest the pool has no room for, or one
-  the deadline leaves, is left running for whatever the shutdown does next.
+  (`--freeze-deadline`, 120 s, at most 240 in nix); a guest the pool has
+  no room for, or one the deadline leaves, is left running for whatever
+  the shutdown does next. A snapshot cannot be interrupted, so one whose
+  estimate (the guest@ unit's MemoryCurrent, or the class's memory, at
+  100 MB/s until this freeze's first snapshot shows the real rate) would
+  pass the deadline is not started; the freeze unit's TimeoutStopSec is
+  twice the deadline plus 60 s (540 s at most, inside Azure's ~600 s
+  wait). The page cache is dropped only in guests that will be frozen and
+  have the balloon (without it the drop saves nothing); every guest syncs.
+  One FreezeAll, ThawAll or SyncClocks runs at a time (a manager lock),
+  and the job on each guest's worker skips a guest with no hypervisor or
+  with a record, so two freezes, or a thaw during a freeze, never remove
+  an image being written or finished.
 - *What a restore is.* At hostd's start, inside Reconcile and before the
-  stream sends Hello, every complete image is checked, its key unwrapped,
+  stream sends Hello, every complete image is checked and its key
+  unwrapped, all at once under one 90 s bound (so a vault outage holds
+  Hello back 90 s, not 90 s per image); then, two at a time,
   the tap, rules, shape, store view, virtiofsd and login share brought back
   as a boot does, the hypervisor started with `--restore` (copy mode),
   the image closed (its key leaves the kernel), the VM resumed, guestd's
@@ -18454,6 +18467,16 @@ do not feel it"); off until the owner turns it on per host
   missing a path the guest held open refused the restore cleanly
   (virtiofsd's saved state names it); both leave the image intact, and
   hostd discards it rather than retry.
+  An image whose restore has not begun 90 + 180 s after the start is
+  discarded and that guest starts cold.
+- *A freeze cut short.* If hostd stops mid-freeze (crash, OOM, a switch
+  restarting it) the record says `writing` and the hypervisor may still
+  run with the VM paused. The next ThawAll resumes it (retrying until
+  vm.info says Running, up to 2 min, since a hypervisor mid-snapshot
+  answers nothing) and only then removes the image; if it never answers,
+  record and image stay for the next try rather than being removed under
+  it. A snapshot that fails and whose resume does not take leaves the
+  same `writing` record.
 - *Fallback.* A failed freeze resumes the guest (it never notices) and
   leaves it to the shutdown: I-650's clean stop when that lands, the kill
   until then. A failed restore stops what it started and discards the
@@ -18474,13 +18497,16 @@ do not feel it"); off until the owner turns it on per host
   the unit freezes nothing. (2) `hostd freeze` and `hostd thaw` for an
   operator: freeze before a window, thaw if the window is called off.
   (3) Azure Scheduled Events, in hostd behind `--scheduled-events`
-  (`repose.host.freeze.scheduledEvents`, off): a Reboot, Redeploy, Preempt
-  or Terminate notice for this VM freezes the guests and then approves the
+  (`repose.host.freeze.scheduledEvents`, off): a Reboot or Redeploy
+  notice for this VM freezes the guests and then approves the
   event so Azure need not wait out NotBefore (15 min for a Reboot); a
   Freeze notice (a pause of seconds for memory-preserving maintenance or a
   live migration) freezes nothing and sets the guests' clocks once it is
   over; an event that leaves the list while the host is still up (called
-  off) thaws the guests. Turning the listener on turns Scheduled Events on
+  off) thaws the guests. Preempt and Terminate (the VM is deleted;
+  Preempt gives 30 s) are logged only. This goes beyond owner decision
+  20 ("visibility only, off by default"): it is off by default, and the
+  owner signs it off before it is turned on anywhere. Turning the listener on turns Scheduled Events on
   for the VM: Azure then holds every reboot, the operator's own `az vm
   restart` included, until approved or NotBefore passes. That is why it
   is a separate switch (owner decision 20 deferred the listener for this
@@ -18531,7 +18557,15 @@ do not feel it"); off until the owner turns it on per host
   comes back as it was, programs, tmux windows and agents included; SSH
   sessions and other open connections drop and need reconnecting; the
   machine's clock is set when it comes back; if that cannot happen it
-  starts again as described there. Recorded so the flip is one commit.
+  starts again as described there. The same commit corrects what the
+  public pages promise about secrets in memory: secrets.md ("kept in
+  memory only: never on the machine's disk, never in snapshots", and the
+  refresh file kept "until the machine restarts") and lifecycle.md
+  (secrets "live only in memory") gain: during a server restart the
+  machine's memory, secrets included, is kept as an encrypted image on
+  the server for at most 6 h and removed once the machine resumes. And
+  it edits CLAUDE.md's "three homes for secrets" for I-653's exception,
+  which the owner signs off first. Recorded so the flip is one commit.
 - *Proof here:* Go tests in internal/hostd/guest/freeze_test.go
   (`TestFreezeThenThawRestoresTheGuest`, `TestThawDiscardsAStaleImage`
   with nine cases, `TestFreezeFailureResumesTheGuest`,
@@ -18539,7 +18573,14 @@ do not feel it"); off until the owner turns it on per host
   `TestFreezeOffRestoresNothingAndCleansUp`,
   `TestFreezeWithoutKeyFreezesNothing`, `TestFreezeStopsAtThePoolLimit`,
   `TestThawSweepsImageVolumesWithoutRecord`,
-  `TestFreezeLogsCarryNoTenantData`), internal/hostd/freeze and
+  `TestFreezeLogsCarryNoTenantData`, and after the review
+  `TestRestartMidFreezeResumesTheGuest`,
+  `TestRestartMidFreezeKeepsTheImageWhileTheHypervisorIsBusy`,
+  `TestSecondFreezeKeepsTheImage`, `TestThawDuringAFreezeWaitsForIt`,
+  `TestThawWaitsOneUnwrapTimeoutWhateverTheImages`,
+  `TestThawDiscardsWhatTheRestoreWindowLeaves`,
+  `TestFreezeSkipsASnapshotThatWouldOutlastTheDeadline`,
+  `TestFreezeDropsCachesOnlyWithTheBalloon`), internal/hostd/freeze and
   internal/hostd/schedev tests, and the experiments' 60-cycle loop on
   woker-1; the host VM test `host-freeze` (the drop-ins, the shutdown
   ordering, a switch freezing nothing, `hostd freeze`/`thaw`).

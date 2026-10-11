@@ -52,9 +52,15 @@ in
       description = "An RSA private key (PEM) on a path outside the host's disks, instead of Key Vault: staging and tests only.";
     };
     deadline = lib.mkOption {
-      type = lib.types.ints.positive;
+      type = lib.types.ints.between 10 240;
       default = 120;
-      description = "Seconds a freeze of every guest may take; guests not frozen by then are stopped by the shutdown as before.";
+      description = ''
+        Seconds a freeze of every guest may take; a snapshot that would
+        not finish by then is not started, and guests not frozen are
+        stopped by the shutdown as before. At most 240: the freeze unit
+        may hold the shutdown for twice this plus 60 s, which must stay
+        inside the about 600 s Azure waits for a graceful shutdown.
+      '';
     };
     freePageReporting = lib.mkOption {
       type = lib.types.bool;
@@ -93,7 +99,11 @@ in
         RemainAfterExit = true;
         ExecStart = "${pkgs.coreutils}/bin/true";
         ExecStop = "${hostd}/bin/hostd freeze --shutdown";
-        TimeoutStopSec = fz.deadline + 30;
+        # A snapshot cannot be interrupted, and hostd starts one only when
+        # its estimate fits the deadline; twice the deadline leaves room
+        # for an estimate that was off by half, and 60 s for the rest of
+        # the freeze. 2 x 240 + 60 = 540 s, inside Azure's ~600 s wait.
+        TimeoutStopSec = 2 * fz.deadline + 60;
       };
     };
 
