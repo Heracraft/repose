@@ -55,3 +55,7 @@ snapshots_account_name = "reposesnapshots3912"
 keyvault_name          = "repose-kv-3912"
 
 dns_zone = "herakraft.co"
+
+# Azure Monitor alerts on all three VMs, emailed to alert_email
+# (prod.local.tfvars). DECISIONS I-648; RUNBOOK "Azure alert".
+alerts_enabled = true

@@ -18413,3 +18413,75 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+
+**I-648. Paging goes to Google Chat through calert, Azure emails its own
+alerts, and an Uptime Kuma push monitor watches the alerting path
+(host-alerts, 2026-10-11).** Amends workstream 10's routing (ntfy to the
+owner). *Made during implementation* (host-restart plan L1 and L3, owner
+decisions D1 and D2 as changed after the owner's review). On 2026-10-10
+Azure live-migrated host-01, rebooted it, and repose kept guests down for
+nine hours with nobody paged: every Alertmanager route pointed at
+`ntfy.herakraft.co`, which answered 503, and the rules had no view of a host
+whose network died, of a dead api, or of the alerting path itself.
+- **Chat.** Alertmanager posts to calert v2.4.0 next to it on the personal
+  server, which turns the webhook into Google Chat's `{"text": ...}`, one
+  thread per alert from firing to resolved. Both receivers use the same
+  room (one space); a page goes at once and repeats hourly, the rest wait
+  30 s and repeat every 12 hours. The space's webhook URL is a secret: it
+  is only in calert's environment (`CALERT_PROVIDERS__REPOSE__ENDPOINT`,
+  from a 0600 env file or Coolify's Environment tab), never in the
+  repository or a log; calert refuses to start without it and does not log
+  it. ntfy for users (`repose notify`) is unchanged.
+- **Heartbeat.** `Watchdog` always fires and is routed only to an Uptime
+  Kuma push monitor (Kuma 2.0 or later, which accepts POST), whose URL
+  Alertmanager reads from a file. Kuma posts to the same space when the
+  pushes stop. Kuma replaces healthchecks.io because the owner already
+  runs it; it catches a dead server only if it runs elsewhere.
+- **Rules.** `HostdDown` (`up{job="hostd"} == 0` for 3m, page) is the
+  page for a host; HostUnreachable sees only host-to-api traffic and never
+  fired on 2026-10-10. `ApiDown` and `GatewayDown` page on the api,
+  api-grpc and gateway scrapes. `ApiHostsAbsent` pages when the gauge
+  HostUnreachable reads is gone. `HostServiceDown` warns on the units a
+  host needs (docker-registry stayed inactive after the reboot with
+  nothing saying so). Inhibitions keep one page per outage: HostdDown
+  holds back HostUnreachable (which has no host_id, so with two hosts a
+  scrape failure on one also holds back the other's; HostdDown still
+  pages for it) and the host's warnings, ApiDown holds back
+  ApiHostsAbsent. `ops/check.sh` now checks the route with amtool.
+- **Azure.** `infra/azure/modules/environment/alerts.tf`, behind
+  `alerts_enabled` (true in prod, false by default so staging never
+  emails): action group `repose-<env>` emailing `alert_email`, a Resource
+  Health alert for platform-initiated VM events, a Service Health alert
+  (incident, maintenance, advisories, East US and Global), and
+  `VmAvailabilityMetric < 1` over 5 minutes for each VM (host-01, edge-01,
+  coolify-01). Email only: Azure's webhook body is not what Google Chat
+  accepts, and the email arrives when everything of the owner's is down.
+  `alert_email` is in `prod.local.tfvars`, because the repository is
+  public.
+- Evidence: `promtool test rules` (30 rules), the end-to-end run in the
+  commit message, and `make plan ENV=prod` adding six `azurerm_monitor_*`
+  resources and nothing else.
+
+**I-651. Integrated main is pushed to GitHub's `integrated` branch, and
+operators work from woker-1 when host-01 is down (host-alerts,
+2026-10-11).** Amends I-416 and I-424. *Made during implementation*
+(host-restart plan L2, owner decision D8). kanali, which holds integrated
+main, the release queue, az and tofu, is a guest on host-01, so an outage
+of host-01 took away the tools and the code needed to fix it; on 2026-10-11
+kanali's main was 7 commits ahead of GitHub.
+- `release-queue done` pushes main to `origin` as `refs/heads/integrated`,
+  fast-forward only; a refusal is printed, not forced. A branch, not a
+  custom ref: it can be fetched by name and seen on GitHub, and every
+  workflow here is filtered to `main`, pull requests, `v*` tags or a
+  schedule, so a push to it runs nothing; Coolify deploys `main` only.
+  RELEASE.md "The integrated branch" lists what would break that.
+- woker-1 is the operator box: laptop, Tailscale, woker-1, with az under
+  the owner's own login and tofu with `prod.local.tfvars`. RUNBOOK
+  "Operating while host-01 is down" and "Host does not boot" are written
+  for it; the serial console is reached from the portal or Cloud Shell,
+  because the az extension does not install on its nix az.
+- A host switch runs from woker-1 as `systemd-run --unit=repose-switch
+  --wait --collect ... switch-to-configuration switch` and is read back
+  from the unit's journal: the switch completes on the host even if the
+  ssh session drops, and it is never started from kanali, which sits on
+  the host being switched.

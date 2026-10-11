@@ -15,6 +15,9 @@
 #   dashboard exprs        a PromQL expression in a panel that does not parse,
 #                          which renders as an empty panel with an error a
 #                          human has to click to see
+#   amtool                 a route that does not parse, or an alert that lands
+#                          on the wrong receiver (a page that waits 12 h, a
+#                          Watchdog that posts to Chat every minute)
 #   gen.py --check         committed JSON that no longer matches the generator
 #   grafana                a provisioning file or a dashboard Grafana refuses
 set -euo pipefail
@@ -33,6 +36,15 @@ promtool() {
     command promtool "$@"
   else
     nix shell nixpkgs#prometheus.cli -c promtool "$@"
+  fi
+}
+
+# amtool likewise, from nixpkgs#prometheus-alertmanager.
+amtool() {
+  if type -P amtool >/dev/null 2>&1; then
+    command amtool "$@"
+  else
+    nix shell nixpkgs#prometheus-alertmanager -c amtool "$@"
   fi
 }
 
@@ -56,6 +68,24 @@ if [ -n "$missing" ]; then
 else
   echo "all alerts have one"
 fi
+
+say "alertmanager route"
+# DECISIONS I-648: Watchdog only to the Kuma push, pages to the page
+# receiver, the rest to Chat on the slow timer.
+route=$ops/alertmanager/repose-route.yaml
+amtool check-config "$route" >/dev/null || fail=1
+while read -r want labels; do
+  # shellcheck disable=SC2086
+  amtool config routes test --config.file="$route" --verify.receivers="$want" $labels >/dev/null \
+    || { echo "$labels should route to $want" >&2; fail=1; }
+done <<'ROUTES'
+repose-watchdog stack=repose alertname=Watchdog severity=heartbeat
+repose-chat-page stack=repose alertname=HostdDown severity=page host_id=host-01
+repose-chat-page stack=repose alertname=ApiDown severity=page job=api-grpc
+repose-chat stack=repose alertname=HostServiceDown severity=warn host_id=host-01
+repose-chat stack=repose alertname=BillingStopped severity=info
+ROUTES
+echo "routes as intended"
 
 say "dashboards are what the generator produces"
 python3 "$ops/dashboards/gen.py" --check || fail=1

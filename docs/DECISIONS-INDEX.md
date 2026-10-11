@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-660 entries.
+662 entries.
 
 ## Scope
 
@@ -476,7 +476,7 @@ pointer, not a summary.
 - **I-408** Placement waits up to three minutes for a guest being stopped before it answers `capacity` — 2026-10-01; L10612
 - **I-409** hostd sends a heartbeat ahead of every command result — 2026-10-01; L10636
 - **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; L10652
-- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; L10717
+- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; L10717
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10751
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10780
 - **I-410** The command-not-found hint survives a command only one package has — 2026-10-03; L10824
@@ -489,7 +489,7 @@ pointer, not a summary.
 - **I-420** The destroyed list pages: `before` and `limit`, Show more past the first 100, and the CLI reads every page — 2026-10-03; L10939
 - **I-421** A window counts as an agent window while an agent is its foreground program, whatever its name — 2026-10-03; L10955
 - **I-423** The tools carry does not read Homebrew; a curated list is the likely next step — 2026-10-03; L10972
-- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; L10987
+- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; amended by I-651; L10987
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L11004
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11025
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11045
@@ -692,3 +692,5 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L18417
+- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L18465

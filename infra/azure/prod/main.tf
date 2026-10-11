@@ -106,4 +106,7 @@ module "environment" {
   cloudflare_zone_id = var.cloudflare_zone_id
   dns_zone           = var.dns_zone
   dns_prefix         = "repose"
+
+  alerts_enabled = var.alerts_enabled
+  alert_email    = var.alert_email
 }

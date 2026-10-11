@@ -200,3 +200,15 @@ variable "operator_object_id" {
   description = "Entra object id that keeps the Key Vault operator policy. Null means whoever runs tofu, which moves the policy to a service principal the first time one applies (DECISIONS I-361). Set it in the local tfvars."
   default     = null
 }
+
+variable "alerts_enabled" {
+  type        = bool
+  description = "Create the Azure Monitor alerts (DECISIONS I-648)."
+  default     = false
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Where the Azure alerts are emailed. Set it in prod.local.tfvars: the repository is public."
+  default     = ""
+}

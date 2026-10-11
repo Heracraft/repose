@@ -9,7 +9,8 @@
 #   release-queue drop BRANCH                      take a branch off the queue
 #   release-queue cut                              release session: merge the queue
 #   release-queue resume RELEASE                   release session: after a conflict
-#   release-queue done RELEASE                     after main holds it: on main, unreleased
+#   release-queue done RELEASE                     after main holds it: on main, unreleased,
+#                                                  and pushed to origin's `integrated` branch
 #   release-queue abandon RELEASE                  release session: undo a cut, requeue
 #
 # State is not on any branch: it lives in the repository's common git dir,
@@ -306,6 +307,22 @@ cmd_done() {
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove "$wt" && git branch -q -d "release/$rel" || echo "release-queue: left $wt in place (it has changes)" >&2
   echo "release $rel is on main; it is released when main is pushed (docs/ops/RELEASE.md)"
+  push_integrated
+}
+
+# DECISIONS I-651: integrated main also lives on GitHub, as the branch
+# `integrated`, so it survives the host kanali runs on. Nothing deploys
+# from that branch (docs/ops/RELEASE.md, "The integrated branch"). Only a
+# fast-forward is pushed: a refusal means someone moved it by hand, which
+# a human should look at rather than this script overwrite. The queue
+# state is already recorded, so a failed push is a warning, not a failure.
+push_integrated() {
+  local remote=${REPOSE_INTEGRATED_REMOTE:-origin}
+  if git push -q "$remote" "main:refs/heads/integrated"; then
+    echo "main is on $remote as integrated ($(git rev-parse --short main))"
+  else
+    echo "release-queue: main was not pushed to $remote integrated; push it by hand: git push $remote main:integrated" >&2
+  fi
 }
 
 sub=${1:-ls}

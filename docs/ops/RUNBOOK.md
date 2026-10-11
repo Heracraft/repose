@@ -9,6 +9,10 @@ machine.
 
 ### Operator machine
 
+woker-1 is the operator box (DECISIONS I-651): it runs on its own VM, not
+on a repose host, so it still works when host-01 is down ("Operating while
+host-01 is down"). A laptop with the dev shell can do the same.
+
 ```bash
 nix develop                                  # go, tofu, az, wg, promtool, grafana-cli
 az login
@@ -124,7 +128,9 @@ copy-paste version):
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
 - `ops/alerts.yaml` goes in its rule files, `ops/alertmanager/repose-route.yaml`
-  into Alertmanager (ntfy to the owner).
+  into Alertmanager, and calert (`ops/alertmanager/calert/`) next to it,
+  which posts to the owner's Google Chat space. Watchdog goes to an Uptime
+  Kuma push monitor (DECISIONS I-648; `ops/README.md` step 3).
 - `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
   provisioning; the eight dashboards appear in a `repose` folder.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
@@ -233,19 +239,177 @@ the counts, `temp_expire` names each project it enqueued, and
 
 No heartbeat for 90 seconds.
 
-1. From the operator machine: `ping 10.255.0.<host>` over WireGuard. If
-   that fails too, check the Azure portal for the VM state; a platform
-   repair event shows there.
-2. If the VM is up: `ssh root@10.255.0.<host>`, `systemctl status hostd`,
+Two paths lead to a host, and each alert watches one. HostUnreachable is
+the api's view: hostd's gRPC stream to the control VM over the VNet
+(10.200.x), so it fires when the host cannot reach the api. HostdDown is
+Prometheus's view: a scrape of `:9101` through the edge over WireGuard
+(10.255.x), so it fires when nothing can reach the host. A host whose
+network died after a live migration can fail both, or only one; on
+2026-10-10 HostUnreachable never fired and no `host_unreachable` was
+logged. The gauge is computed by api-grpc, so a dead api silences it
+(ApiHostsAbsent). While HostdDown fires, this alert is held back:
+HostdDown names the host.
+
+1. From woker-1: `ping 10.255.0.<host>` over WireGuard, and
+   `az vm get-instance-view -g repose-prod -n <host> --query
+   "instanceView.statuses[].displayStatus"`. A platform repair shows there,
+   in the Azure alert email, and under Resource health in the portal. If
+   the VM is not running: "Operating while host-01 is down".
+2. If the VM runs but neither path answers, its network may be dead
+   behind a working VM: "Host network dead after a live migration" below.
+3. If the VM is up and reachable: `ssh root@10.255.0.<host>`, `systemctl status hostd`,
    `journalctl -u hostd -n 200`. A `stream_disconnect` loop with TLS errors
    means the host cert expired: `repose-admin hosts rotate-cert` from the
    api side writes a new one via the edge jump. `PermissionDenied` with
    "not the host's current one" in hostd's log means the host holds a
    certificate the api has superseded (I-432); the same command fixes it.
-3. If the VM is gone: "Host loss" below.
-4. Guests keep running through an api outage; the only thing lost is
+4. If the VM is gone: "Host loss" below.
+5. Guests keep running through an api outage; the only thing lost is
    metering samples for the window, which the rollup marks as `gap` rather
    than zero.
+
+## Host network dead after a live migration
+
+The VM runs, Azure says it is healthy, and nothing reaches it: HostdDown
+and usually HostUnreachable fire, ssh through the edge times out. On Azure
+the fast path is the MANA virtual function (on host-01, `eth1`, the
+`lower_eth1` of `eth0`); after a live migration it can stop passing
+traffic while staying up (2026-10-10). Taking it down sends traffic over
+the slower synthetic `eth0`. This needs a login on the serial console,
+which needs the console password (I-654).
+
+1. Serial console (portal: the VM, Help, Serial console; or `az
+   serial-console connect -g repose-prod -n host-01` from Cloud Shell, which
+   has the extension). Log in as root.
+2. Is the VF stuck? Read its counters twice, 10 s apart:
+   `cat /sys/class/net/eth1/statistics/{tx,rx}_packets`. TX rising with RX
+   flat is the dead VF. With ethtool on the host (I-649), `ethtool -S eth0 |
+   grep vf_` shows the same per path.
+3. `ip link set dev eth1 down`. Within 30 s `ping -c3` of the control
+   VM's private address (`make -C infra output ENV=prod`,
+   `control_private_ip`) and the edge's `wg show` handshake for the host
+   should come back.
+   Leave eth1 down; Azure re-adds a VF or the next boot brings it back.
+4. If nothing answers after a minute, the synthetic path is broken too:
+   `az vm restart -g repose-prod -n host-01` from woker-1 ("Host
+   rebooted" afterwards).
+5. Record the times and the counters in the incident file.
+
+## HostdDown
+
+Prometheus has not scraped hostd on a host for 3 minutes. This is the
+page for a host: the host, its network, the edge's WireGuard or hostd is
+down. While it fires, HostUnreachable and the host's warnings are held
+back. "HostUnreachable" explains the two paths.
+
+1. Is it only this host? If GatewayDown or every target is down too, it
+   is the edge or the monitoring peer: "GatewayDown", then "Every
+   Prometheus target is down and WireGuard looks fine".
+2. Is the VM running? From woker-1, `az vm get-instance-view -g
+   repose-prod -n <host> --query "instanceView.statuses[].displayStatus"`.
+   Not running: "Operating while host-01 is down".
+3. Running: `ssh -J root@<edge>:2222 root@10.255.0.<host>` with a timeout.
+   No answer: "Host network dead after a live migration".
+4. Reachable: `systemctl status hostd`, `journalctl -u hostd -n 200`,
+   `ss -tlnp | grep 9101`, then "HostScrapeDown" step 3.
+
+## HostServiceDown
+
+A unit a host needs (`hostd`, `repose-guest-pool`, `repose-cache-volume`,
+`repose-npm-cache` or `docker-registry`) has not been active for 15
+minutes.
+
+1. On the host: `systemctl status <unit>` and `journalctl -u <unit> -b`.
+2. `Condition... was not met` means it was skipped at boot, which is how
+   `docker-registry` stayed down after the 2026-10-10 reboot: its mount
+   was not there yet. If the mount is there now, `systemctl start <unit>`.
+3. `repose-cache-volume` down takes both caches with it; guests fall back
+   to the public registries, slower but working.
+4. `hostd` or `repose-guest-pool` down means no guest starts: "Host
+   rebooted".
+
+## ApiDown
+
+Prometheus has not scraped `api` or `api-grpc` for 3 minutes.
+
+1. On the control VM: `docker ps --format '{{.Names}} {{.Status}}' | grep
+   -E 'api|grpc'`. A restart loop is in the app's log in Coolify.
+2. `api-grpc` down: "api-grpc stopped and did not come back". Hosts lose
+   their stream; guests keep running.
+3. `api` down: users cannot log in or create. If both are up and only the
+   scrape fails, it is the path: for `api`, the Traefik router's allow-list
+   (`ops/coolify/README.md` "The api's metrics"); for `api-grpc`, the
+   control VM's WireGuard peer.
+4. Postgres down takes both: "api: Postgres down".
+
+## GatewayDown
+
+Prometheus has not scraped the gateway on the edge for 3 minutes. Users'
+`ssh`, `run`, `attach` and `open` fail while the gateway is down.
+
+1. `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from woker-1:
+   `certificate required` means the gateway serves and only the scrape
+   path is broken ("Every Prometheus target is down and WireGuard looks
+   fine").
+2. No answer: `ssh -p 2222 root@<edge ip>`, `systemctl status gateway
+   gateway-ssh.socket wireguard-wg0`.
+3. Neither port answers: `az vm get-instance-view -g repose-prod -n
+   edge-01`. A running edge with no network is the same dead-VF case as a
+   host ("Host network dead after a live migration", device names from
+   `ip -br link` on the edge); otherwise `az vm restart -g repose-prod -n
+   edge-01`.
+
+## ApiHostsAbsent
+
+`repose_api_hosts` has had no series for 5 minutes, so HostUnreachable
+cannot fire. ApiDown holds this back when api-grpc is down; on its own it
+means api-grpc answers but no longer exports the gauge, or the scrape
+target changed.
+
+1. `curl -s http://10.255.255.1:9104/metrics | grep -c repose_api_hosts`
+   from the monitoring server. Zero: the api-grpc build lost the metric;
+   look at the last deploy.
+2. Until it is back, watch hosts with HostdDown and `repose-admin hosts
+   list`.
+
+## Watchdog
+
+Always firing, by design. Alertmanager sends it every minute to an Uptime
+Kuma push monitor and to nothing else. When the pushes stop, Kuma posts
+"down" to the Chat space itself: Prometheus, Alertmanager or the
+personal server has stopped, and no other alert can reach anyone.
+
+1. Is the server up? `tailscale ping augusti` from woker-1.
+2. On it: `systemctl status prometheus alertmanager` (or their
+   containers), `curl -s localhost:9093/-/healthy`,
+   `amtool alert query alertname=Watchdog`.
+3. Watchdog firing but Kuma reports down: the push URL file
+   (`/etc/alertmanager/secrets/repose-watchdog-url`) or Kuma itself.
+4. Until it is fixed, the Azure alert email is the only alert that still
+   reaches the owner.
+
+## Azure alert
+
+An email from Azure Monitor (action group `repose-prod`, DECISIONS I-648).
+It reaches the owner even when the personal server, the edge or the api is
+down.
+
+- **`repose-prod-vm-health`** (Resource Health): Azure itself stopped,
+  rebooted or degraded a VM, a live migration or a heal. Read the event in
+  the portal under the VM's Resource health; then "Host rebooted" for a
+  host, "Switch the edge" checks for the edge.
+- **`repose-prod-service-health`**: an Azure incident, planned maintenance
+  or advisory for East US. A maintenance notice names the VMs and the
+  window; plan a drain around it.
+- **`repose-prod-<vm>-availability`**: `VmAvailabilityMetric` below 1 for
+  5 minutes; the VM is not running as far as Azure can tell.
+  "Operating while host-01 is down".
+
+The alerts are in `infra/azure/modules/environment/alerts.tf`, created
+only where `alerts_enabled` is true. `az monitor action-group
+test-notifications create -g repose-prod --action-group repose-prod
+--alert-type servicehealth -a email owner <address> usecommonalertschema`
+sends a test.
 
 ## SnapshotStale
 
@@ -727,9 +891,12 @@ agents drop out of `signals.agents` until herdr answers again.
 
 ## Switch a host to main
 
-Done from a clean checkout of the pushed main commit, with the owner's word
-for this switch (`docs/ops/RELEASE.md`). The host only trusts signed paths,
-so the derivation is copied and built there:
+Done from woker-1, in a clean checkout of the main commit being shipped
+(the pushed `main`, or `integrated` for a host fix ahead of a release,
+`docs/ops/RELEASE.md`), with the owner's word for this switch. Never from
+kanali: it is a guest on the host being switched, and an ssh session that
+dies mid-switch leaves the activation half done. The host only trusts
+signed paths, so the derivation is copied and built there:
 
 1. `drv=$(nix eval --raw ./nix#nixosConfigurations.host-01.config.system.build.toplevel.drvPath)`
 2. `nix copy --derivation --to ssh-ng://host-01 "$drv"`
@@ -737,7 +904,11 @@ so the derivation is copied and built there:
 4. Read `ssh host-01 nix store diff-closures /run/current-system $out` and
    `ssh host-01 $out/bin/switch-to-configuration dry-activate`: what
    restarts. A change to hostd alone restarts hostd; guests keep running.
-5. `ssh host-01 "nix-env -p /nix/var/nix/profiles/system --set $out && $out/bin/switch-to-configuration switch"`
+5. `ssh host-01 "nix-env -p /nix/var/nix/profiles/system --set $out && systemd-run --unit=repose-switch --wait --collect $out/bin/switch-to-configuration switch"`,
+   then `ssh host-01 journalctl -u repose-switch -o cat`. The switch runs
+   as its own unit on the host, so it completes even if this ssh session
+   drops; `systemctl status repose-switch` shows it while it runs. If the
+   unit name is taken by a switch still running, wait for it.
 6. Guests whose virtiofsd shares the whole host store (started before
    DECISIONS I-463) are restarted at the switch, after telling their users:
    `ssh host-01 hostd guests` lists them with `whole-store` in the STORE
@@ -1403,6 +1574,57 @@ its WireGuard endpoint fails the same way.
    "DNS while manage_dns is false", has the full record table.
 3. Until then the edge is reachable at its literal address, the one
    every `ssh_jump` output prints.
+
+## Operating while host-01 is down
+
+kanali, the owner's coordinator, is a guest on host-01, so its az, its
+tofu and its copy of integrated main stop with the host. Operate from
+woker-1 instead (DECISIONS I-651): laptop, Tailscale, `ssh
+azureuser@azurewoker-01`. There az is logged in as the owner (`nix run
+nixpkgs#azure-cli -- account show`), tofu runs from `nix develop ./nix#infra`
+with `prod.local.tfvars` in `~/projects/factory/infra/azure/prod/`, and the
+edge and the control VM admit operator SSH from its address. From a phone,
+the Azure portal app or Cloud Shell (`shell.azure.com`) reach the same
+commands. Below, `az` is `nix run nixpkgs#azure-cli --`.
+
+| What | Command |
+|---|---|
+| Is it running | `az vm get-instance-view -g repose-prod -n host-01 --query "instanceView.statuses[].displayStatus"` |
+| What Azure did to it | `az monitor activity-log list -g repose-prod --offset 6h --query "[].{t:eventTimestamp, op:operationName.localizedValue, status:status.value}" -o table`; Resource health in the portal says why |
+| Its console output | `az vm boot-diagnostics get-boot-log -g repose-prod -n host-01 \| tail -100` |
+| A login on it with the network dead | the serial console: portal, the VM, Help, Serial console; or `az serial-console connect -g repose-prod -n host-01` in Cloud Shell (the extension does not install on woker-1's nix az). Root's console password is I-654. |
+| Restart it | `az vm restart -g repose-prod -n host-01`; guests stop, then "Host rebooted" |
+| Move it to other hardware | `az vm redeploy -g repose-prod -n host-01`, only when a restart did not help: it takes several minutes and loses the temporary disk, which repose does not use |
+| The integrated main | `git fetch origin integrated` (I-651), not kanali |
+
+A restart, a redeploy and any `tofu apply` are the owner's to run.
+
+## Host does not boot
+
+The VM runs but the host never answers: no WireGuard handshake on the
+edge, no Hello in the api log, and the boot log stops early or loops.
+
+1. `az vm boot-diagnostics get-boot-log -g repose-prod -n host-01 | tail
+   -100` from woker-1 ("Operating while host-01 is down"). The last lines
+   say where it stopped: initrd, a mount, a unit, a kernel panic.
+2. **The previous generation.** Open the serial console and restart the VM
+   from it (portal, Serial console, the power button, Restart VM), so the
+   console sees the boot from the start. systemd-boot shows its menu for
+   10 seconds (I-649); pick the generation above the newest one. When the
+   host is up on it, make it the default, so the next boot does not
+   return to the broken one: `nix-env -p /nix/var/nix/profiles/system
+   --rollback && /nix/var/nix/profiles/system/bin/switch-to-configuration
+   boot`. Then find out why the new one failed before switching again.
+3. **No menu, or every generation fails** (the boot disk itself): `az vm
+   repair create -g repose-prod -n host-01 --verbose` in Cloud Shell.
+   It makes a rescue VM with a copy of host-01's OS disk attached; mount
+   it there, fix it (or roll the profile link back by hand), then `az vm
+   repair restore -g repose-prod -n host-01 --verbose` swaps the fixed
+   disk in. The guest data disk is never touched. The rescue VM costs
+   money until `restore` deletes it; check `az vm list -g repose-prod`
+   after.
+4. If the OS disk cannot be saved: "Host loss". The data disk and the
+   snapshots are what the tenants' work is on.
 
 ## Host loss
 

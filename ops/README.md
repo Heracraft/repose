@@ -11,9 +11,10 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 21 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The 30 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
-| `alertmanager/repose-route.yaml` | Route and inhibitions for the owner's ntfy topics; `page` has its own receiver. |
+| `alertmanager/repose-route.yaml` | Route and inhibitions: everything to Google Chat through calert, `page` on a faster timer, `Watchdog` only to the Uptime Kuma push monitor (DECISIONS I-648). |
+| `alertmanager/calert/` | calert, the Alertmanager-to-Google-Chat adapter: its config, the message template and a compose file. |
 | `prometheus/prometheus.yml` | Scrape config: hosts (`:9100`, `:9101`, Fluent Bit `:2021`), edge (`:9102`), api (`:9103`), all over WireGuard. |
 | `prometheus/targets/hosts.yml` | The host list, re-read every minute. Adding a host is one edit here. |
 | `prometheus/wireguard-peer.conf` | How the monitoring server joins the edge's WireGuard hub, and how to check it. |
@@ -36,9 +37,35 @@ other end of those.
    `/etc/prometheus/prometheus.yml`, `alerts.yaml` and `prometheus/targets/`
    to `/etc/prometheus/repose/`, and run it with
    `--storage.tsdb.retention.time=90d`. Check `up{job=~"hosts|hostd"}`.
-3. **Alertmanager.** Merge `alertmanager/repose-route.yaml` into
-   `alertmanager.yml`. Check delivery by silencing nothing and stopping a
-   host's `fluent-bit` for half an hour, or with `amtool`.
+3. **Alertmanager, calert and the heartbeat** (DECISIONS I-648).
+   - calert: copy `alertmanager/calert/config.toml` and `message.tmpl` to
+     `/etc/calert/`, then write the Google Chat space's webhook URL into
+     calert's environment without it reaching the shell history, the
+     screen or a log:
+
+     ```
+     read -rsp 'Chat webhook URL: ' u; (umask 077; printf 'CALERT_PROVIDERS__REPOSE__ENDPOINT=%s\n' "$u" > /etc/calert/calert.env); unset u
+     docker compose -f alertmanager/calert/docker-compose.yml up -d
+     ```
+
+     In Coolify instead, paste the compose file as a service and put
+     `CALERT_PROVIDERS__REPOSE__ENDPOINT` in its Environment tab. calert
+     listens on `127.0.0.1:6000`; if Alertmanager runs in a container
+     without the host network, point the two webhook URLs at calert's
+     service name instead.
+   - Uptime Kuma: add a monitor of type Push, heartbeat interval 180 s,
+     retries 1, with the Chat space as its notification. Kuma must be 2.0
+     or later (1.x accepts only GET on push URLs; Alertmanager POSTs), and
+     should run somewhere other than this server, or a dead server goes
+     unheard. Put its push URL in Alertmanager's secrets:
+     `read -rsp 'Kuma push URL: ' u; install -d -m 0750 /etc/alertmanager/secrets; (umask 077; printf '%s' "$u" > /etc/alertmanager/secrets/repose-watchdog-url); unset u`,
+     readable by the user Alertmanager runs as.
+   - Merge `alertmanager/repose-route.yaml` into `alertmanager.yml` and
+     reload (`curl -X POST localhost:9093/-/reload`). Check each route with
+     `amtool config routes test --config.file=alertmanager.yml stack=repose
+     alertname=HostdDown severity=page` (and `Watchdog`, `HostServiceDown`),
+     then send one through to Chat: `amtool alert add alertname=ReposeTest
+     severity=warn stack=repose --annotation=summary="test"`.
 4. **Loki.** Merge `loki/retention.yaml`. Retention does nothing without the
    compactor, so check `curl -s localhost:3100/config | grep retention`.
 5. **Grafana.** Provisioning from `grafana/provisioning/`, dashboards from
