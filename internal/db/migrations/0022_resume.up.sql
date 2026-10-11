@@ -7,7 +7,9 @@
 -- the owner wanted the machine down. hello_state is the guest's state in
 -- that Hello, which the project takes when an op that was open then
 -- ends. outcome is pending until decided; starting while the start op
--- runs; then one of the closed outcomes.
+-- runs; then one of the closed outcomes. attempts counts the starts
+-- enqueued; timeouts the ones that failed because the machine did not
+-- answer in time, which alone use up the one more try.
 create table guest_resumes (
   id uuid primary key,
   project_id uuid not null references projects(id) on delete cascade,
@@ -24,6 +26,7 @@ create table guest_resumes (
   reason text,
   op_id uuid,
   attempts integer not null default 0,
+  timeouts integer not null default 0,
   created_at timestamptz not null default now(),
   decided_at timestamptz,
   unique (project_id, boot_id)

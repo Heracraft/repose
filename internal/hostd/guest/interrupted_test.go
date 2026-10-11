@@ -344,3 +344,60 @@ func gaugeValue(t *testing.T, g prometheus.Gauge) float64 {
 	t.Helper()
 	return testutil.ToFloat64(g)
 }
+
+// The graceful-shutdown race: systemd stops the guest units while hostd
+// still runs, hostd's monitor sees the hypervisor exit and records the
+// guest as `error`, and hostd stops a moment later. That guest was
+// running when the host went down, so the next boot marks it.
+func TestReconcileAfterGracefulShutdownMarksGuestTheMonitorSawExit(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.create(gid2)
+	b := withBoot(t, h, "boot-1")
+	h.sd.Exit("guest@"+gid1, 143)
+	h.waitState(gid1, StateError)
+	h.m.Close()
+	h.m.RecordStop()
+	hostRestart(t, h, b, "boot-2")
+	g := h.guest(gid1)
+	if g.Interrupted == nil || g.Interrupted.BootID != "boot-2" || g.Interrupted.PrevState != StateRunning {
+		t.Fatalf("guest the monitor saw exit at shutdown not marked: state %s mark %+v", g.State, g.Interrupted)
+	}
+	if g2 := h.guest(gid2); g2.Interrupted == nil {
+		t.Fatal("running guest not marked")
+	}
+	if at, _ := h.st.HostdStoppedAt(); !at.IsZero() {
+		t.Fatalf("hostd's stop time kept after the reconcile that read it: %v", at)
+	}
+}
+
+// A guest that died on its own well before hostd stopped, or with no
+// graceful stop of hostd at all (a crash), stays `error` and unmarked:
+// the restart did not take it down.
+func TestReconcileAfterRebootLeavesEarlierCrashUnmarked(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	b := withBoot(t, h, "boot-1")
+	h.sd.Exit("guest@"+gid1, 137)
+	h.waitState(gid1, StateError)
+	h.m.Close()
+	// hostd stopped 10 minutes after the guest died.
+	if err := h.st.SetHostdStoppedAt(time.Now().Add(10 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hostRestart(t, h, b, "boot-2")
+	if g := h.guest(gid1); g.Interrupted != nil {
+		t.Fatalf("a crash 10 minutes before the shutdown was marked: %+v", g.Interrupted)
+	}
+
+	// A crash of the host: hostd did not stop, nothing records a stop.
+	h2 := newHarness(t, nil)
+	h2.create(gid1)
+	b2 := withBoot(t, h2, "boot-1")
+	h2.sd.Exit("guest@"+gid1, 137)
+	h2.waitState(gid1, StateError)
+	hostRestart(t, h2, b2, "boot-2")
+	if g := h2.guest(gid1); g.Interrupted != nil {
+		t.Fatalf("an error guest was marked with no graceful stop of hostd: %+v", g.Interrupted)
+	}
+}

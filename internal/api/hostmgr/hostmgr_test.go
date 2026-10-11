@@ -255,6 +255,11 @@ func TestHelloRefusedClosesTheStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The api last heard from the host 20 minutes ago, before an outage.
+	before := time.Now().Add(-20 * time.Minute).UTC().Truncate(time.Second)
+	if _, err := h.pool.Exec(ctx, "update hosts set last_heartbeat_at = $2 where id = $1", hostID, before); err != nil {
+		t.Fatal(err)
+	}
 	var mu sync.Mutex
 	refuse, hellos := true, 0
 	var lastHeard []*time.Time
@@ -285,10 +290,12 @@ func TestHelloRefusedClosesTheStream(t *testing.T) {
 	if hellos != 2 {
 		t.Fatalf("%d Hellos, want 2", hellos)
 	}
-	// The handler sees when the api last heard from the host before this
-	// Hello: nothing before the first, the first Hello's time before the
-	// second.
-	if lastHeard[0] != nil || lastHeard[1] == nil {
-		t.Fatalf("last heard before each Hello: %v", lastHeard)
+	// The handler sees when the api last heard from the host before the
+	// outage, for both Hellos: the refused one does not stand in for it,
+	// or a stop the owner asked for during the outage would not count.
+	for i, lh := range lastHeard {
+		if lh == nil || !lh.Equal(before) {
+			t.Fatalf("last heard before Hello %d: %v, want %v", i+1, lh, before)
+		}
 	}
 }

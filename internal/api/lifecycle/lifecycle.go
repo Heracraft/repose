@@ -95,7 +95,9 @@ func Start(ctx context.Context, tx db.Tx, d Deps, u *store.User, projectID uuid.
 	if d.Gate == nil {
 		return nil, errors.New("lifecycle: no billing gate")
 	}
-	if err := d.Gate.Check(ctx, u, billing.Request{Class: p.Class, Project: p.ID, Resume: o.Resume}); err != nil {
+	// On tx: the row lock already holds a connection, and a second one
+	// per start could starve the pool under many starts at once.
+	if err := d.Gate.CheckIn(ctx, tx, u, billing.Request{Class: p.Class, Project: p.ID, Resume: o.Resume}); err != nil {
 		var ref *billing.Refusal
 		if errors.As(err, &ref) {
 			return nil, &Refusal{Code: "payment_required", Reason: ref.Reason, Message: ref.Message, Detail: ref.Detail}

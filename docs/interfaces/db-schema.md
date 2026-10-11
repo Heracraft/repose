@@ -191,7 +191,9 @@ guest_resumes (id pk, project_id fk, user_id fk, host_id fk, guest_id uuid,
               outcome text,            -- pending|starting|started|already_running|user_stopped|
                                        -- destroyed|temp_expired|window_passed|refused|failed
               reason text null,        -- refused|failed: the sentence the user is shown
-              op_id uuid null, attempts int, created_at, decided_at null,
+              op_id uuid null, attempts int, -- starts enqueued
+              timeouts int,            -- of them, failed on a Ready timeout (one more try)
+              created_at, decided_at null,
               unique (project_id, boot_id))
               -- one row per machine a host restart stopped (0022, I-645); the resume
               -- tick decides each once, in the transaction of the start it enqueues

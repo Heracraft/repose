@@ -512,6 +512,12 @@ func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 	if s.handlers.Hello != nil {
 		if err := s.handlers.Hello(context.WithValue(ctx, helloKey{}, lastHeard), hostID, h); err != nil {
 			s.log.Error("hello not handled; closing the stream so the host sends it again", "event", "hello", "host_id", hostID.String(), "err", err.Error())
+			// The Hello was not taken, so neither is its heartbeat: the
+			// resent one must read when the host really went quiet, or a
+			// stop asked for during the outage would not count.
+			if _, rerr := s.pool.Exec(ctx, "update hosts set last_heartbeat_at = $2 where id = $1", hostID, lastHeard); rerr != nil {
+				s.log.Error("last heartbeat not put back after a refused hello", "event", "hello", "host_id", hostID.String(), "err", rerr.Error())
+			}
 			return err
 		}
 	}

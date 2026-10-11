@@ -273,6 +273,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
+	// Deferred first, so it runs after Close: a guest exit the monitors
+	// saw while the host shut down comes before it (DECISIONS I-645).
+	defer mgr.RecordStop()
 	mgr.Run()
 	defer mgr.Close()
 

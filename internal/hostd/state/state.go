@@ -31,6 +31,10 @@ var (
 	// (DECISIONS I-645): a different one at the next start means the host
 	// restarted, and guests found running with no hypervisor are marked.
 	keyHostBootID = []byte("host_boot_id")
+	// keyHostdStoppedAt is when hostd last stopped gracefully, read and
+	// cleared by the next Reconcile: a guest its monitor saw exit just
+	// before is one a host shutdown stopped (DECISIONS I-645).
+	keyHostdStoppedAt = []byte("hostd_stopped_at")
 )
 
 // ErrNotFound is returned for a missing guest or command.
@@ -463,6 +467,34 @@ func (d *DB) HostBootID() (string, error) {
 func (d *DB) SetHostBootID(id string) error {
 	return d.db.Update(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketMeta).Put(keyHostBootID, []byte(id))
+	})
+}
+
+// HostdStoppedAt is when hostd last stopped gracefully, zero when it has
+// not since the last Reconcile cleared it.
+func (d *DB) HostdStoppedAt() (time.Time, error) {
+	var t time.Time
+	err := d.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bucketMeta).Get(keyHostdStoppedAt)
+		if len(v) == 0 {
+			return nil
+		}
+		return t.UnmarshalText(v)
+	})
+	return t, err
+}
+
+// SetHostdStoppedAt records when hostd stopped; the zero time clears it.
+func (d *DB) SetHostdStoppedAt(t time.Time) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		if t.IsZero() {
+			return tx.Bucket(bucketMeta).Delete(keyHostdStoppedAt)
+		}
+		v, err := t.UTC().MarshalText()
+		if err != nil {
+			return err
+		}
+		return tx.Bucket(bucketMeta).Put(keyHostdStoppedAt, v)
 	})
 }
 

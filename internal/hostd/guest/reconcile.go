@@ -34,6 +34,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 		return err
 	}
 	bootID, rebooted := m.hostBoot()
+	stoppedAt, _ := m.d.State.HostdStoppedAt() // unreadable reads as no graceful stop: nothing extra is marked
 	active := map[string]bool{}
 	for _, u := range units {
 		id := strings.TrimSuffix(strings.TrimPrefix(u, "guest@"), ".service")
@@ -47,7 +48,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	for _, g := range gs {
 		known[g.GuestID] = true
 		if rebooted && !active[g.GuestID] {
-			m.markInterrupted(g, bootID)
+			m.markInterrupted(g, bootID, stoppedAt)
 		}
 		m.reconcileGuest(ctx, g, active[g.GuestID])
 	}
@@ -64,6 +65,9 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 		}
 	}
 	m.recordBoot(bootID)
+	if !stoppedAt.IsZero() {
+		_ = m.d.State.SetHostdStoppedAt(time.Time{}) // read once; a failed clear only widens the next reboot's look back
+	}
 	m.pruneInterrupted()
 	m.flagWholeStore(ctx)
 	m.sweepStaleSnapshots(ctx)
@@ -103,16 +107,62 @@ func (m *Manager) hostBoot() (string, bool) {
 // reconcileGuest settles its state, so both are written together. Only a
 // guest that was running or starting is marked: one creating or restoring
 // has an open op whose command the api resends, and one stopping was
-// being stopped by its owner.
-func (m *Manager) markInterrupted(g *state.Guest, bootID string) {
-	if g.State != StateRunning && g.State != StateStarting {
+// being stopped by its owner. A guest in `error` is marked too when
+// hostd's monitor saw it exit at most ShutdownRace before hostd itself
+// stopped gracefully (stoppedAt): the host's shutdown stopped its unit
+// while hostd still ran. That guest was running; the L5 shutdown flag
+// (I-650) keeps such a guest `running` instead, and this is the fallback.
+func (m *Manager) markInterrupted(g *state.Guest, bootID string, stoppedAt time.Time) {
+	prev := g.State
+	switch {
+	case g.State == StateRunning, g.State == StateStarting:
+	case g.State == StateError && exitedAtShutdown(g, stoppedAt):
+		prev = StateRunning
+	default:
 		return
 	}
 	if g.Interrupted != nil && g.Interrupted.BootID == bootID {
 		return
 	}
-	g.Interrupted = &state.Interrupted{BootID: bootID, At: m.d.Now().UTC(), PrevState: g.State}
-	m.log(g).Warn("guest interrupted by a host restart", "event", "guest_interrupted", "boot_id", bootID, "prev", g.State)
+	g.Interrupted = &state.Interrupted{BootID: bootID, At: m.d.Now().UTC(), PrevState: prev}
+	m.log(g).Warn("guest interrupted by a host restart", "event", "guest_interrupted", "boot_id", bootID, "prev", prev)
+	if g.State == StateError {
+		// reconcileGuest writes nothing for a guest in error.
+		if err := m.d.State.PutGuest(g); err != nil {
+			m.log(g).Warn("interrupted mark not written", "event", "guest_interrupted", "err", err.Error())
+			return
+		}
+		m.writeGuestJSON(g)
+	}
+}
+
+// ShutdownRace is how long before hostd's graceful stop a guest's exit
+// counts as the host shutdown's: guest@ units get 90 s to stop.
+const ShutdownRace = 2 * time.Minute
+
+// The reasons unexpectedExit (create.go) records.
+const (
+	ReasonHypervisorExited = "hypervisor exited"
+	ReasonVirtiofsdExited  = "virtiofsd exited"
+)
+
+// exitedAtShutdown reports whether g went to error because hostd's
+// monitor saw its hypervisor or virtiofsd exit (unexpectedExit's
+// reasons) within ShutdownRace before hostd stopped at stoppedAt.
+func exitedAtShutdown(g *state.Guest, stoppedAt time.Time) bool {
+	if stoppedAt.IsZero() || !(strings.HasPrefix(g.Reason, ReasonHypervisorExited) || g.Reason == ReasonVirtiofsdExited) {
+		return false
+	}
+	return !g.UpdatedAt.Before(stoppedAt.Add(-ShutdownRace)) && !g.UpdatedAt.After(stoppedAt)
+}
+
+// RecordStop records that hostd is stopping gracefully, after Close, so
+// the next Reconcile can tell a guest exit during a host shutdown from a
+// crash before it.
+func (m *Manager) RecordStop() {
+	if err := m.d.State.SetHostdStoppedAt(time.Now().UTC()); err != nil {
+		m.d.Log.Warn("hostd stop time not recorded", "event", "host_boot", "err", err.Error())
+	}
 }
 
 // recordBoot writes the boot id this Reconcile ran under, once per boot.

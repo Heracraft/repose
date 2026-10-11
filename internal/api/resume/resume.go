@@ -231,14 +231,15 @@ type row struct {
 	outcome       string
 	opID          *uuid.UUID
 	attempts      int
+	timeouts      int
 	createdAt     time.Time
 }
 
-const rowCols = "id, project_id, user_id, host_id, boot_id, interrupted_at, host_lost_at, hello_state, outcome, op_id, attempts, created_at"
+const rowCols = "id, project_id, user_id, host_id, boot_id, interrupted_at, host_lost_at, hello_state, outcome, op_id, attempts, timeouts, created_at"
 
 func scanRow(sc interface{ Scan(...any) error }) (row, error) {
 	var w row
-	err := sc.Scan(&w.id, &w.projectID, &w.userID, &w.hostID, &w.bootID, &w.interruptedAt, &w.hostLostAt, &w.helloState, &w.outcome, &w.opID, &w.attempts, &w.createdAt)
+	err := sc.Scan(&w.id, &w.projectID, &w.userID, &w.hostID, &w.bootID, &w.interruptedAt, &w.hostLostAt, &w.helloState, &w.outcome, &w.opID, &w.attempts, &w.timeouts, &w.createdAt)
 	return w, err
 }
 
@@ -452,8 +453,9 @@ func (r *Resumer) settled(ctx context.Context, tx db.Tx, w row, p *store.Project
 		// snapshot: decided again when it ends.
 		return "", "", errLeave
 	}
-	// Its owner started it already.
-	if err := tx.QueryRow(ctx, `select count(*) from ops where project_id = $1 and created_at > $2 and kind in ('start', 'create') and state = 'done' and not coalesce((params->>'resume')::boolean, false)`, p.ID, w.createdAt).Scan(&n); err != nil {
+	// Its owner started it already: a start done since the Hello, also
+	// one asked for before the host went down that finished after.
+	if err := tx.QueryRow(ctx, ownerStarted, p.ID, w.createdAt).Scan(&n); err != nil {
 		return "", "", err
 	}
 	if n > 0 {
@@ -468,6 +470,10 @@ func (r *Resumer) settled(ctx context.Context, tx db.Tx, w row, p *store.Project
 	}
 	return "", "", nil
 }
+
+// ownerStarted counts the starts, not the resume's, that finished after
+// a row was written ($2): the machine runs because its owner started it.
+const ownerStarted = `select count(*) from ops where project_id = $1 and finished_at > $2 and kind in ('start', 'create') and state = 'done' and not coalesce((params->>'resume')::boolean, false)`
 
 // followStart reads the start a row enqueued: still running leaves the
 // row; done closes it started; a failure that clears by itself, or a
@@ -493,15 +499,17 @@ func (r *Resumer) followStart(ctx context.Context, tx db.Tx, w row) (string, str
 		code, _ = op.Error["code"].(string)
 		msg, _ = op.Error["message"].(string)
 	}
-	retry := false
+	retry, timeout := false, 0
 	switch code {
 	case "insufficient_capacity", "capacity", "host_unreachable", "volume_unavailable":
 		retry = true // waits, not counted
 	case "guest_unresponsive", "timeout":
-		retry = w.attempts <= ReadyRetries
+		// Only Ready timeouts use up the one more try: a start that first
+		// found the host full and then booted slowly still gets it.
+		retry, timeout = w.timeouts < ReadyRetries, 1
 	}
 	if retry && r.Now().Sub(w.interruptedAt) <= Window {
-		_, err := tx.Exec(ctx, "update guest_resumes set outcome = $2, op_id = null where id = $1", w.id, OutcomePending)
+		_, err := tx.Exec(ctx, "update guest_resumes set outcome = $2, op_id = null, timeouts = timeouts + $3 where id = $1", w.id, OutcomePending, timeout)
 		return "", "", err
 	}
 	if msg == "" {
@@ -537,7 +545,13 @@ func (r *Resumer) OnOpFinished(ctx context.Context, op *store.Op) {
 	case ops.KindStart, ops.KindCreate, ops.KindRestore, ops.KindStop, ops.KindDestroy, ops.KindResize:
 		// These set the state themselves.
 	default:
-		if _, err := r.pool.Exec(ctx, "update projects set state = $2 where id = $1 and state in ('running', 'starting') and not exists (select 1 from ops where project_id = $1 and state in ('pending', 'running'))", *op.ProjectID, downState(helloState)); err != nil {
+		// Not when its owner started it since the Hello: it runs.
+		if _, err := r.pool.Exec(ctx, `update projects set state = $2 where id = $1 and state in ('running', 'starting')
+			and not exists (select 1 from ops where project_id = $1 and state in ('pending', 'running'))
+			and not exists (select 1 from guest_resumes g join ops o on o.project_id = g.project_id
+				where g.project_id = $1 and g.decided_at is null and o.finished_at > g.created_at
+				and o.kind in ('start', 'create') and o.state = 'done' and not coalesce((o.params->>'resume')::boolean, false))`,
+			*op.ProjectID, downState(helloState)); err != nil {
 			r.log.Warn("project state not set from the host's Hello", "event", "guest_resume", "project_id", op.ProjectID.String(), "err", err.Error())
 		}
 	}

@@ -764,3 +764,93 @@ func TestNoticeText(t *testing.T) {
 		t.Fatalf("only machines the owner stopped: %q", s)
 	}
 }
+
+// A start that failed on capacity waits and is not counted: it does not
+// use up the one more try a Ready timeout gets. After a host restart,
+// with every guest starting at once, a machine may first find the host
+// full and then boot slowly.
+func TestReadyRetryNotUsedByCapacity(t *testing.T) {
+	e := newEnv(t, false)
+	u := e.h.NewUser("ann")
+	p := e.h.CreateRunning(u, "todo-app")
+	e.reboot("boot-2", 1)
+	// round runs the tick that enqueues a start, lets it fail, and the
+	// tick that reads the failure.
+	round := func() rowState {
+		e.tick()
+		r := e.row(p.ID)
+		if r.opID == nil {
+			t.Fatalf("no start enqueued: %+v", r)
+		}
+		e.h.WaitOp(*r.opID)
+		e.tick()
+		return e.row(p.ID)
+	}
+	e.h.Fake.SetFail("StartGuest", "insufficient_capacity")
+	for i := 0; i < 2; i++ {
+		if r := round(); r.decided || r.outcome != resume.OutcomePending {
+			t.Fatalf("capacity %d: %+v", i+1, r)
+		}
+	}
+	e.h.Fake.SetFail("StartGuest", "guest_unresponsive")
+	if r := round(); r.decided || r.outcome != resume.OutcomePending {
+		t.Fatalf("the first Ready timeout closed the row: %+v", r)
+	}
+	if r := round(); r.outcome != resume.OutcomeFailed || r.attempts != 4 {
+		t.Fatalf("the second Ready timeout: %+v", r)
+	}
+}
+
+// A start the owner asked for before the host went down, still open at
+// the Hello and done after it, is the owner's: the row closes
+// already_running and no second start is enqueued.
+func TestResumeOwnersStartOpenAtHello(t *testing.T) {
+	e := newEnv(t, false)
+	u := e.h.NewUser("ann")
+	p := e.h.CreateRunning(u, "todo-app")
+	e.h.WaitOp(e.h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &p.ID, Phases: ops.PlanStop()}))
+	e.h.StopEngine()
+	startID := e.h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &p.ID, Phases: ops.PlanStart(false)})
+	// hostd had the guest starting when the host went down.
+	if _, err := e.h.Pool.Exec(e.ctx, "update projects set state = 'starting' where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.h.Fake.SetInterrupted(p.GuestID.String(), "boot-2", time.Now())
+	e.reboot("boot-2", 1)
+	e.h.StartEngine(ops.Config{BaseRef: "deadbeef"})
+	e.wire(false)
+	if op := e.h.WaitOp(startID); op.State != "done" {
+		t.Fatalf("owner's start: %s %v", op.State, op.Error)
+	}
+	e.settle(5)
+	if r := e.row(p.ID); r.outcome != resume.OutcomeAlreadyRunning {
+		t.Fatalf("row %+v", r)
+	}
+	if n := e.startOps(p.ID); n != 1 {
+		t.Fatalf("%d start ops, want the owner's only", n)
+	}
+	if st := e.h.Project(p.ID).State; st != "running" {
+		t.Fatalf("project %s", st)
+	}
+}
+
+// Another op that ends while a row is still pending leaves a machine
+// its owner started meanwhile running.
+func TestOpFinishedKeepsOwnersStartedMachine(t *testing.T) {
+	e := newEnv(t, false)
+	e.r.Enabled = func() bool { return false }
+	u := e.h.NewUser("ann")
+	p := e.h.CreateRunning(u, "todo-app")
+	e.reboot("boot-2", 1)
+	if op := e.h.WaitOp(e.h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &p.ID, Phases: ops.PlanStart(false)})); op.State != "done" {
+		t.Fatalf("owner's start: %s %v", op.State, op.Error)
+	}
+	if st := e.h.Project(p.ID).State; st != "running" {
+		t.Fatalf("after the owner's start: %s", st)
+	}
+	pid := p.ID
+	e.r.OnOpFinished(e.ctx, &store.Op{Kind: ops.KindBuild, ProjectID: &pid, State: "done"})
+	if st := e.h.Project(p.ID).State; st != "running" {
+		t.Fatalf("a build that ended set the owner's running machine to %s", st)
+	}
+}

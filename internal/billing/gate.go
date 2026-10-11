@@ -92,10 +92,16 @@ func NewGate(pool *db.Pool, cfg Config, m *metrics.M, log *slog.Logger) *Gate {
 
 // Check returns nil or a *Refusal (or a database error).
 func (g *Gate) Check(ctx context.Context, u *store.User, req Request) error {
+	return g.CheckIn(ctx, g.pool, u, req)
+}
+
+// CheckIn is Check reading through q: a caller holding a transaction
+// passes it, so the check takes no second connection from the pool.
+func (g *Gate) CheckIn(ctx context.Context, q store.Querier, u *store.User, req Request) error {
 	if u.BillingStatus == "exempt" || !g.Enforce {
 		return nil
 	}
-	r, err := g.check(ctx, u, req)
+	r, err := g.check(ctx, q, u, req)
 	if err != nil {
 		return err
 	}
@@ -116,18 +122,18 @@ func (g *Gate) Suspended() *Refusal {
 	return &Refusal{Reason: ReasonSuspended, Message: fmt.Sprintf("Your account is suspended. Pay at %s to lift it, or email support.", g.cfg.BillingURL()), Detail: map[string]any{"reason": ReasonSuspended}}
 }
 
-func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal, error) {
+func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Request) (*Refusal, error) {
 	url := g.cfg.BillingURL()
 	if u.SuspendedAt != nil || u.BillingStatus == "suspended" {
 		return g.Suspended(), nil
 	}
-	sub, err := LiveSubscription(ctx, g.pool, u.ID)
+	sub, err := LiveSubscription(ctx, q, u.ID)
 	if err != nil {
 		return nil, err
 	}
 	if sub == nil || !g.Enabled {
 		r := &Refusal{Reason: ReasonSubscriptionRequired, Message: fmt.Sprintf("Choose a plan at %s first.", url), Detail: map[string]any{"reason": ReasonSubscriptionRequired, "waitlist": nil}}
-		if place, err := WaitlistPlace(ctx, g.pool, u.ID); err != nil {
+		if place, err := WaitlistPlace(ctx, q, u.ID); err != nil {
 			return nil, err
 		} else if place != nil && place.Position > 0 {
 			r.Detail["waitlist"] = map[string]any{"position": place.Position, "joined_at": place.JoinedAt}
@@ -144,7 +150,7 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
-	egress, err := PeriodEgress(ctx, g.pool, u.ID, period)
+	egress, err := PeriodEgress(ctx, q, u.ID, period)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +161,7 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 			Detail: map[string]any{"reason": ReasonEgressLimit, "plan": plan.ID, "limit_gb": plan.EgressHardStopBytes() >> 30, "used_gb": GBCeil(egress), "until": period.End}}, nil
 	}
 	if req.Class != "" {
-		running, usedGB, err := RunningMemory(ctx, g.pool, u.ID, req.Project)
+		running, usedGB, err := RunningMemory(ctx, q, u.ID, req.Project)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +186,7 @@ func (g *Gate) check(ctx context.Context, u *store.User, req Request) (*Refusal,
 				Message: fmt.Sprintf("Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at %s.", plan.Name, plan.DiskGB, plan.DiskGB, url),
 				Detail:  map[string]any{"reason": ReasonDiskLimit, "plan": plan.ID, "limit_gb": plan.DiskGB, "volume_gb": GBCeil(req.VolumeBytes)}}, nil
 		}
-		held, _, err := HeldDisk(ctx, g.pool, u.ID)
+		held, _, err := HeldDisk(ctx, q, u.ID)
 		if err != nil {
 			return nil, err
 		}
