@@ -3,6 +3,7 @@ package guestd
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
@@ -167,6 +168,12 @@ func (s *Server) shutdown(ctx context.Context, timeoutS uint32) error {
 	}
 	go func() {
 		time.Sleep(ShutdownFlush)
+		// The stop marker goes to disk before the save, so a save that
+		// fails or is cut off by hostd's kill still leaves the record
+		// that this boot was being stopped (DECISIONS I-646).
+		if err := s.writeStopMarker(); err != nil {
+			s.log.Warn("stop marker not written", "event", "shutdown")
+		}
 		// The tmux session's agent windows, recorded while every agent
 		// still runs, come back at the next start (DECISIONS I-636). A
 		// base without the script, or a herdr project, records nothing.
@@ -192,6 +199,20 @@ func (s *Server) shutdown(ctx context.Context, timeoutS uint32) error {
 	}()
 	_ = ctx
 	return nil
+}
+
+// writeStopMarker writes this boot's id to ~/.repose/stopped, dev's,
+// synced with its folder. Nothing is written when the boot id is unknown.
+func (s *Server) writeStopMarker() error {
+	if s.bootID == "" {
+		return nil
+	}
+	path := s.paths.StopMarker()
+	uid, gid := sysdep.DevIdentity()
+	if err := sysdep.WriteFileAtomic(path, []byte(s.bootID+"\n"), 0o644, uid, gid); err != nil {
+		return err
+	}
+	return sysdep.SyncDir(filepath.Dir(path))
 }
 
 func ok(result any) *guestdv1.Response {

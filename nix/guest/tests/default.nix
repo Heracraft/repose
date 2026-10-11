@@ -391,6 +391,9 @@ in
           guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w1/args", timeout=30)
           guest.succeed("test ! -e /home/dev/.repose/agent-windows")
           guest.succeed("sudo -u dev tmux kill-window -t =todo-app:opencode")
+          # The stand-in would shadow the real opencode for the subtests
+          # after this one (the MCP layer's `opencode debug config`).
+          guest.succeed("rm /home/dev/.local/bin/opencode")
 
       with subtest("I-560: a session on a tmux server outside the unit is not restarted"):
           def user_q(cmd):
@@ -1024,6 +1027,197 @@ in
           assert prof["slug"] == "todo-app" and prof["dir"] == "/home/dev/factory", prof
           assert prof["base_version"] == "${baseVersion}", prof
           assert prof["desktop"]["running"] is False, prof
+    '';
+  };
+
+  # The minute record of the agent windows and what each record reopens
+  # (DECISIONS I-646, amends I-636). Its own test: the last subtest
+  # crashes the VM.
+  guest-agent-windows = mkTest "guest-agent-windows" {
+    nodes.guest = { lib, ... }: {
+      imports = [ node ];
+      # The test driver's VMs carry no switch-to-configuration; the
+      # "a switch starts the timer" subtest runs one.
+      system.switch.enable = lib.mkForce true;
+    };
+    testScript = ''
+      import time
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      guest.wait_for_unit("guestd.service")
+
+      def user(cmd):
+          return guest.succeed(f"sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 {cmd}").strip()
+
+      def windows():
+          return sorted(guest.succeed("sudo -u dev tmux list-windows -t =todo-app -F '#{window_name}'").split())
+
+      def restart_session():
+          user("systemctl --user stop repose-tmux-session.service")
+          guest.succeed("! sudo -u dev tmux has-session -t =todo-app")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+
+      def live_with(boot, rows):
+          body = "#boot " + boot + "\\n" + "".join("\\037".join(r) + "\\n" for r in rows)
+          guest.succeed(f"printf '{body}' | sudo -u dev tee /home/dev/.repose/agent-windows.live > /dev/null")
+
+      boot = guest.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+
+      # Stand-in agents on the login PATH, as a user-installed agent is.
+      # Each records its arguments; pi refuses to resume while
+      # ~/pi-refuses exists.
+      guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
+      guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","class":"large"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev mkdir -p /home/dev/.local/bin /home/dev/w1 /home/dev/w2")
+      guest.succeed("printf '#!/bin/sh\\necho \"$*\" >> /home/dev/w1/opencode.args\\nexec sleep 100000\\n' | sudo -u dev tee /home/dev/.local/bin/opencode > /dev/null")
+      guest.succeed("printf '#!/bin/sh\\necho \"$*\" >> /home/dev/w2/pi.args\\n[ -e /home/dev/pi-refuses ] && exit 1\\nexec sleep 100000\\n' | sudo -u dev tee /home/dev/.local/bin/pi > /dev/null")
+      guest.succeed("chmod +x /home/dev/.local/bin/opencode /home/dev/.local/bin/pi")
+      user("systemctl --user start repose-tmux-session.service")
+      guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+
+      with subtest("I-646: the timer records the agent windows every minute, by boot"):
+          guest.succeed("systemctl is-enabled repose-tmux-save.timer")
+          guest.succeed("systemctl is-active repose-tmux-save.timer")
+          unit = guest.succeed("systemctl cat repose-tmux-save.service repose-tmux-save.timer")
+          for line in ["User=dev", "Nice=10", "IOSchedulingClass=idle", "OnBootSec=60", "OnUnitActiveSec=60"]:
+              assert line in unit, line
+          assert "repose-multiplexer-is tmux" in unit, unit
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n opencode -c /home/dev/w1 /home/dev/.local/bin/opencode")
+          guest.succeed("sudo -u dev tmux set -w -t =todo-app:opencode @repose-state working")
+          # The timer itself writes it, within a minute and a bit.
+          guest.wait_until_succeeds("grep -qF \"$(printf 'opencode\\037opencode\\037/home/dev/w1\\037\\037working')\" /home/dev/.repose/agent-windows.live", timeout=150)
+          assert guest.succeed("head -n 1 /home/dev/.repose/agent-windows.live").strip() == "#boot " + boot
+          guest.succeed("test \"$(stat -c %U /home/dev/.repose/agent-windows.live)\" = dev")
+          # Unchanged content is not written again.
+          before = guest.succeed("stat -c '%i %Y' /home/dev/.repose/agent-windows.live")
+          guest.succeed("sleep 1.1; systemctl start repose-tmux-save.service")
+          assert guest.succeed("stat -c '%i %Y' /home/dev/.repose/agent-windows.live") == before
+          # The timer comes round again.
+          n1 = guest.succeed("journalctl -u repose-tmux-save.service -o cat | grep -c 'Finished' || true").strip()
+          guest.wait_until_succeeds(f"[ $(journalctl -u repose-tmux-save.service -o cat | grep -c 'Finished') -gt {n1} ]", timeout=90)
+
+      with subtest("I-646: the record survives tmux being down, and a tmux exit in the same boot reopens nothing"):
+          sum1 = guest.succeed("sha256sum /home/dev/.repose/agent-windows.live")
+          user("systemctl --user stop repose-tmux-session.service")
+          guest.succeed("systemctl start repose-tmux-save.service")
+          assert guest.succeed("sha256sum /home/dev/.repose/agent-windows.live") == sum1
+          guest.succeed("rm -f /home/dev/w1/opencode.args")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux has-session -t =todo-app", timeout=60)
+          guest.succeed("sleep 2")
+          assert windows() == ["shell"], windows()
+          guest.succeed("test ! -e /home/dev/w1/opencode.args")
+          # With no agent window the minute record is the header alone.
+          guest.succeed("systemctl start repose-tmux-save.service")
+          assert guest.succeed("cat /home/dev/.repose/agent-windows.live").strip() == "#boot " + boot
+
+      with subtest("I-646: the timer firing during session creation loses nothing"):
+          user("systemctl --user stop repose-tmux-session.service")
+          live_with("0000-other-boot", [["opencode", "opencode", "/home/dev/w1", "", "working"]])
+          sum2 = guest.succeed("sha256sum /home/dev/.repose/agent-windows.live")
+          # A session younger than two minutes: another boot's record is
+          # the restore's, and the minute save leaves it.
+          guest.succeed("sudo -u dev tmux new-session -d -s todo-app")
+          guest.succeed("systemctl start repose-tmux-save.service")
+          assert guest.succeed("sha256sum /home/dev/.repose/agent-windows.live") == sum2
+          guest.succeed("sudo -u dev tmux kill-server")
+          guest.succeed("sleep 6")
+          guest.succeed("sudo -u dev tmux kill-server || true")
+          user("systemctl --user stop repose-tmux-session.service")
+          # The timer, many times over, while the unit creates the session.
+          guest.succeed("(for i in $(seq 60); do systemctl start repose-tmux-save.service; sleep 0.05; done) > /dev/null 2>&1 &")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w1/opencode.args", timeout=60)
+          assert windows() == ["opencode", "shell"], windows()
+          guest.succeed("sleep 5")
+          guest.succeed("systemctl start repose-tmux-save.service")
+          guest.succeed("head -n 1 /home/dev/.repose/agent-windows.live | grep -qx \"#boot $(cat /proc/sys/kernel/random/boot_id)\"")
+          guest.succeed("grep -q '^opencode' /home/dev/.repose/agent-windows.live")
+
+      with subtest("I-646: a clean stop's record wins over a minute record, and a 4-field record restores"):
+          guest.succeed("rm -f /home/dev/w1/opencode.args /home/dev/w2/pi.args")
+          user("systemctl --user stop repose-tmux-session.service")
+          live_with("0000-other-boot", [["opencode", "opencode", "/home/dev/w1", "", "working"]])
+          guest.succeed("printf 'pi\\037pi\\037/home/dev/w2\\037\\n' | sudo -u dev tee /home/dev/.repose/agent-windows > /dev/null")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w2/pi.args", timeout=60)
+          guest.succeed("sleep 2")
+          assert windows() == ["pi", "shell"], windows()
+          guest.succeed("test ! -e /home/dev/w1/opencode.args")
+          guest.succeed("test ! -e /home/dev/.repose/agent-windows")
+          guest.succeed("! grep -q other-boot /home/dev/.repose/agent-windows.live 2>/dev/null")
+
+      with subtest("I-646: the stop's save records 4 fields and removes the minute record"):
+          guest.succeed("systemctl start repose-tmux-save.service")
+          guest.succeed("test -s /home/dev/.repose/agent-windows.live")
+          guest.succeed("env -i HOME=/home/dev USER=dev PATH=/run/current-system/sw/bin setpriv --reuid=dev --regid=users --init-groups repose-tmux-save")
+          row = guest.succeed("cat /home/dev/.repose/agent-windows").rstrip("\n")
+          assert row.split("\x1f") == ["pi", "pi", "/home/dev/w2", ""], repr(row)
+          guest.succeed("test ! -e /home/dev/.repose/agent-windows.live")
+          guest.succeed("rm /home/dev/.repose/agent-windows")
+
+      with subtest("I-646: a stop whose save failed reopens the windows from the minute record"):
+          guest.succeed("rm -f /home/dev/w1/opencode.args")
+          user("systemctl --user stop repose-tmux-session.service")
+          live_with("0000-stopped-boot", [["opencode", "opencode", "/home/dev/w1", "", "working"]])
+          guest.succeed("echo 0000-stopped-boot | sudo -u dev tee /home/dev/.repose/stopped > /dev/null")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w1/opencode.args", timeout=60)
+          guest.wait_until_succeeds("journalctl _UID=1000 -o cat | grep -q 'reopening agent windows from the stop-unsaved record'", timeout=30)
+
+      with subtest("I-646: an agent that refuses to resume leaves a shell that says so"):
+          user("systemctl --user stop repose-tmux-session.service")
+          guest.succeed("sudo -u dev touch /home/dev/pi-refuses")
+          guest.succeed("printf 'pi\\037pi\\037/home/dev/w2\\037\\n' | sudo -u dev tee /home/dev/.repose/agent-windows > /dev/null")
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("sudo -u dev tmux capture-pane -p -t =todo-app:pi | grep -qF 'pi could not continue its conversation (exit 1).'", timeout=60)
+          guest.wait_until_succeeds("[ \"$(sudo -u dev tmux display-message -p -t =todo-app:pi '#{pane_current_command}')\" = bash ]", timeout=30)
+          # A shell is not an agent: the next minute record leaves it out.
+          guest.succeed("systemctl start repose-tmux-save.service")
+          guest.succeed("! grep -q '^pi' /home/dev/.repose/agent-windows.live")
+          guest.succeed("rm /home/dev/pi-refuses")
+
+      with subtest("I-646: a switch starts the timer"):
+          guest.succeed("systemctl stop repose-tmux-save.timer")
+          guest.succeed("! systemctl is-active repose-tmux-save.timer")
+          guest.succeed("/run/current-system/bin/switch-to-configuration test")
+          guest.succeed("systemctl is-active repose-tmux-save.timer")
+
+      with subtest("I-646: a crash reopens the agents from the minute record"):
+          # opencode's row is on disk (the sync); pi joins it just before
+          # the crash, so only a record the save synced can name it.
+          guest.succeed("sudo -u dev tmux kill-window -t =todo-app:pi || true")
+          guest.succeed("rm -f /home/dev/w1/opencode.args /home/dev/w2/pi.args")
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n opencode -c /home/dev/w1 /home/dev/.local/bin/opencode")
+          guest.wait_until_succeeds("test -e /home/dev/w1/opencode.args", timeout=30)
+          guest.succeed("systemctl start repose-tmux-save.service")
+          guest.succeed("grep -q '^opencode' /home/dev/.repose/agent-windows.live")
+          guest.succeed("rm /home/dev/w1/opencode.args; sync")
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n pi -c /home/dev/w2 /home/dev/.local/bin/pi")
+          guest.wait_until_succeeds("test -e /home/dev/w2/pi.args", timeout=30)
+          guest.succeed("rm /home/dev/w2/pi.args")
+          guest.succeed("systemctl start repose-tmux-save.service")
+          guest.succeed("grep -q '^pi' /home/dev/.repose/agent-windows.live")
+          guest.crash()
+          guest.start()
+          # Not multi-user.target: repose-paths-wait holds it for 180 s
+          # when no hostd registers paths, as here.
+          guest.wait_for_unit("guestd.service")
+          assert guest.succeed("cat /proc/sys/kernel/random/boot_id").strip() != boot
+          guestd_s = int(guest.succeed("systemctl show -p ActiveEnterTimestampMonotonic --value guestd.service").strip()) / 1e6
+          # guestd's SetupProject starts the session unit; the fake here
+          # does not, so the test does.
+          guest.wait_for_unit("user@1000.service")
+          t0 = time.monotonic()
+          user("systemctl --user start repose-tmux-session.service")
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w2/pi.args", timeout=60)
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w1/opencode.args", timeout=60)
+          t_windows = time.monotonic() - t0
+          assert windows() == ["opencode", "pi", "shell"], windows()
+          guest.wait_until_succeeds("journalctl _UID=1000 -b -o cat | grep -q 'reopening agent windows from the minute record'", timeout=30)
+          print(f"I-646 boot after a crash: guestd active {guestd_s:.1f}s after the kernel started (hostd waits 60 s for Ready); agent windows reopened {t_windows:.1f}s after the session unit's start")
     '';
   };
 

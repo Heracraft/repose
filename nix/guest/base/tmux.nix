@@ -25,7 +25,7 @@ let
   loginPath = import ./login-path.nix { inherit pkgs; };
   tmuxSession = pkgs.writeShellApplication {
     name = "repose-tmux-session";
-    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash checkout loginPath ];
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash pkgs.util-linux checkout loginPath ];
     text = ''
       project="$HOME/.repose/project.json"
       # Exit 3: nothing for the unit to keep running. A failed start is
@@ -78,81 +78,192 @@ let
       if [ -n "$tz" ]; then
         tmux set-environment -g TZ "$tz"
       fi
-      # The agents' windows the last stop recorded come back under the
-      # same names, each agent on its conversation (DECISIONS I-636).
-      # Only a session this run created: the file is renamed first, so a
-      # server that exits later in the boot starts with `shell` alone.
-      saved="$HOME/.repose/agent-windows"
-      if [ -n "$created" ] && [ -s "$saved" ] && mv -f "$saved" "$saved.restoring"; then
-        tmux_bin=$(command -v tmux)
-        window_path=''${login_path:-/run/current-system/sw/bin:$PATH}
-        seen=" "
-        while IFS="$(printf '\037')" read -r name agent cwd sid; do
-          [ -n "$name" ] && [ -d "$cwd" ] || continue
-          case "$sid" in *[!A-Za-z0-9_-]*) sid="" ;; esac
-          if [ -z "$sid" ]; then
-            # Without its own id an agent continues the folder's newest
-            # conversation; a second such window there would continue
-            # the same one, so it is not reopened.
-            key="$agent:$cwd"
-            case "$seen" in *" $key "*) continue ;; esac
-            seen="$seen$key "
+      # The agents' windows come back under the same names, each agent on
+      # its conversation (DECISIONS I-636, I-646). Only in a session this
+      # run created, and only from a record of an earlier boot:
+      #   1. agent-windows, written at a stop, wins;
+      #   2. agent-windows.live, the minute record of an earlier boot,
+      #      with no stop marker for that boot: the machine ended without
+      #      a stop (a host crash or restart);
+      #   3. the same with a stop marker: the stop's save failed or the
+      #      machine was killed after it began; the windows reopen as in 2;
+      #   4. a minute record of this boot: tmux exited and the unit
+      #      started it again, which reopens nothing (I-551).
+      # The record is renamed before it is read, so a server that exits
+      # later in the boot starts with `shell` alone. The lock keeps the
+      # minute save from writing while this runs (repose-tmux-save).
+      if [ -n "$created" ]; then
+        exec 9>>"$HOME/.repose/agent-windows.lock"
+        flock -w 10 9 || true
+        saved="$HOME/.repose/agent-windows"
+        live="$saved.live"
+        boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+        from=""
+        if [ -s "$saved" ] && mv -f "$saved" "$saved.restoring"; then
+          from=stop
+          rm -f "$live"
+        elif [ -s "$live" ]; then
+          live_boot=$(sed -n '1s/^#boot //p' "$live")
+          if [ -n "$live_boot" ] && [ "$live_boot" != "$boot" ] && mv -f "$live" "$saved.restoring"; then
+            stopped=$(cat "$HOME/.repose/stopped" 2>/dev/null || true)
+            if [ "$stopped" = "$live_boot" ]; then
+              from=stop-unsaved
+            else
+              from=minute
+            fi
           fi
-          case "$agent" in
-            claude) if [ -n "$sid" ]; then cmd="claude --resume $sid"; else cmd="claude --continue"; fi ;;
-            codex) if [ -n "$sid" ]; then cmd="codex resume $sid"; else cmd="codex resume --last"; fi ;;
-            opencode) cmd="opencode --continue" ;;
-            pi) cmd="pi --continue" ;;
-            gemini) cmd="gemini --resume latest" ;;
-            *) continue ;;
-          esac
-          # A client that is not attached gives the new window its own
-          # PATH, not the server's: this unit's PATH has no agent on it
-          # (the restored window exited 127, I-640). The login PATH it is.
-          PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$cmd" || true
-        done < "$saved.restoring"
-        rm -f "$saved.restoring"
+        fi
+        if [ -n "$from" ]; then
+          echo "repose-tmux-session: reopening agent windows from the $from record" >&2
+          tmux_bin=$(command -v tmux)
+          window_path=''${login_path:-/run/current-system/sw/bin:$PATH}
+          seen=" "
+          # The stop record has 4 fields, the minute record 5 (the
+          # agent's state, unused here) after a `#boot` line.
+          while IFS="$(printf '\037')" read -r name agent cwd sid _; do
+            case "$name" in "#"*) continue ;; esac
+            [ -n "$name" ] && [ -d "$cwd" ] || continue
+            case "$sid" in *[!A-Za-z0-9_-]*) sid="" ;; esac
+            if [ -z "$sid" ]; then
+              # Without its own id an agent continues the folder's newest
+              # conversation; a second such window there would continue
+              # the same one, so it is not reopened.
+              key="$agent:$cwd"
+              case "$seen" in *" $key "*) continue ;; esac
+              seen="$seen$key "
+            fi
+            case "$agent" in
+              claude) if [ -n "$sid" ]; then cmd="claude --resume $sid"; else cmd="claude --continue"; fi ;;
+              codex) if [ -n "$sid" ]; then cmd="codex resume $sid"; else cmd="codex resume --last"; fi ;;
+              opencode) cmd="opencode --continue" ;;
+              pi) cmd="pi --continue" ;;
+              gemini) cmd="gemini --resume latest" ;;
+              *) continue ;;
+            esac
+            # The window closes when the agent exits, as one `repose run`
+            # opened does, except when the agent refuses to resume (a
+            # conversation the crash cut mid-line, one that is gone): it
+            # exits non-zero within seconds, and the window keeps a login
+            # shell under a line that says so instead of vanishing.
+            # `set -m` gives the agent its own process group, the
+            # terminal's foreground one, so tmux names the agent as the
+            # pane's command, which the save reads.
+            wrapped="set -m; s=\$SECONDS; $cmd; rc=\$?; set +m; if [ \$rc -ne 0 ] && [ \$((SECONDS - s)) -lt 15 ]; then echo \"$agent could not continue its conversation (exit \$rc).\"; exec bash -l; fi; exit \$rc"
+            # A client that is not attached gives the new window its own
+            # PATH, not the server's: this unit's PATH has no agent on it
+            # (the restored window exited 127, I-640). The login PATH it is.
+            PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$wrapped" || true
+          done < "$saved.restoring"
+          rm -f "$saved.restoring"
+        fi
+        flock -u 9 || true
+        exec 9>&-
       fi
     '';
   };
-  # repose-tmux-save records the session's agent windows before a stop:
-  # guestd runs it as dev when hostd asks for the shutdown, while every
-  # agent still runs (DECISIONS I-636). One line per window that runs an
-  # agent: name, agent, folder, and the conversation id the agent's hook
-  # put in the pane's @repose-session. No agent window removes the file.
+  # repose-tmux-save records the session's agent windows (DECISIONS
+  # I-636, I-646). One line per window that runs an agent: name, agent,
+  # folder, and the conversation id the agent's hook put in the pane's
+  # @repose-session, separated by \037.
+  #
+  # With no argument it is the stop's save: guestd runs it as dev when
+  # hostd asks for the shutdown, while every agent still runs, after it
+  # wrote ~/.repose/stopped with this boot's id. It writes agent-windows
+  # (4 fields, which a restore script from before I-646 reads) and removes
+  # the minute record. No agent window removes agent-windows; a tmux that
+  # does not answer removes agent-windows and leaves the minute record,
+  # which the next start then reopens.
+  #
+  # With --periodic it is the minute save (repose-tmux-save.timer):
+  # agent-windows.live, a `#boot <boot id>` line, then a 5th field per
+  # row, the window's @repose-state. Written only when it changed, by
+  # temp file, sync, rename and a sync of the folder, so a host crash
+  # leaves the old record or the new one. A tmux that does not answer
+  # changes nothing; no agent window writes the header alone. A record
+  # of another boot is replaced only once the session is two minutes
+  # old: the restore consumes it. Both modes and the restore hold one
+  # lock.
   tmuxSave = pkgs.writeShellApplication {
     name = "repose-tmux-save";
-    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnugrep ];
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.util-linux ];
     text = ''
       # guestd runs this with no locale (POSIX), where tmux prints the
       # \037 below as `_` and no line splits (I-640). Any UTF-8 locale
       # passes it through; C.UTF-8 is built into glibc.
       export LC_ALL=C.UTF-8
-      out="$HOME/.repose/agent-windows"
-      slug=$(jq -r '.slug // empty' "$HOME/.repose/project.json" 2>/dev/null || true)
+      periodic=""
+      if [ "''${1:-}" = "--periodic" ]; then
+        periodic=1
+      fi
+      dir="$HOME/.repose"
+      out="$dir/agent-windows"
+      live="$out.live"
+      slug=$(jq -r '.slug // empty' "$dir/project.json" 2>/dev/null || true)
       [ -n "$slug" ] || exit 0
+      exec 9>>"$dir/agent-windows.lock"
+      if [ -n "$periodic" ]; then
+        # The restore or the stop's save has it: this minute is skipped.
+        flock -n 9 || exit 0
+      else
+        flock -w 3 9 || true
+      fi
+      boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
       # \037, not a tab: read collapses empty fields between tabs.
       us=$(printf '\037')
       if ! rows=$(tmux list-windows -t "=$slug" -F "#{window_name}$us#{pane_current_command}$us#{@repose-state}$us#{pane_current_path}$us#{@repose-session}" 2>/dev/null); then
-        rm -f "$out"
+        [ -n "$periodic" ] || rm -f "$out"
         exit 0
       fi
-      tmp=$(mktemp "$out.XXXXXX")
+      if [ -n "$periodic" ]; then
+        [ -n "$boot" ] || exit 0
+        if [ -e "$live" ]; then
+          live_boot=$(sed -n '1s/^#boot //p' "$live" 2>/dev/null || true)
+          if [ "$live_boot" != "$boot" ]; then
+            # Another boot's record is the restore's to consume. A session
+            # that has lived two minutes without consuming it was not
+            # created by the session unit (a tmux started over ssh, I-560),
+            # and then this boot's record replaces it.
+            created=$(tmux display-message -p -t "=$slug:" '#{session_created}' 2>/dev/null || echo 0)
+            case "$created" in ""|*[!0-9]*) created=0 ;; esac
+            [ $(( $(date +%s) - created )) -ge 120 ] || exit 0
+          fi
+        fi
+      fi
+      body=""
       while IFS="$us" read -r name command state cwd sid; do
         base=''${name##*/}
-        printf '%s\n' "$base" | grep -qE '^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$' || continue
+        [[ $base =~ ^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$ ]] || continue
         agent=''${base%-[0-9]*}
         # A window whose agent exited holds a shell: nothing to resume.
         if [ -z "$state" ]; then
           case "$command" in bash|sh|zsh|fish|"") continue ;; esac
         fi
-        printf '%s\037%s\037%s\037%s\n' "$name" "$agent" "$cwd" "$sid" >> "$tmp"
+        if [ -n "$periodic" ]; then
+          body+=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "$state")$'\n'
+        else
+          body+=$(printf '%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid")$'\n'
+        fi
       done <<< "$rows"
-      if [ -s "$tmp" ]; then
-        mv -f "$tmp" "$out"
+      if [ -n "$periodic" ]; then
+        target="$live"
+        body="#boot $boot"$'\n'"$body"
+        if [ -e "$live" ] && [ "$(cat "$live")"$'\n' = "$body" ]; then
+          exit 0
+        fi
       else
-        rm -f "$tmp" "$out"
+        target="$out"
+        if [ -z "$body" ]; then
+          rm -f "$out" "$live"
+          sync "$dir" || true
+          exit 0
+        fi
       fi
+      tmp=$(mktemp "$target.XXXXXX")
+      printf '%s' "$body" > "$tmp"
+      sync "$tmp"
+      mv -f "$tmp" "$target"
+      [ -n "$periodic" ] || rm -f "$live"
+      sync "$dir"
     '';
   };
 in
@@ -266,6 +377,44 @@ in
       # 100): with a build on every core, what you type still shows at
       # once (DECISIONS I-494).
       CPUWeight = 1000;
+    };
+  };
+
+  # The minute record of the agent windows, which a machine that ends
+  # without a stop (a host crash or restart) reopens at its next start
+  # (DECISIONS I-646). System units, so a switch starts the timer on a
+  # running machine; run as dev, whose tmux socket it reads. Skipped on
+  # a herdr project, whose own server records its tabs.
+  systemd.services.repose-tmux-save = {
+    description = "repose: record the agent windows";
+    # No ConditionPathExists: a start skipped by a condition never
+    # leaves `inactive`, and OnUnitActiveSec counts from that. The
+    # ExecCondition (no project.json, a herdr project) skips the run
+    # after the unit has started, and the script exits 0 with no slug.
+    # No start limit: a burst of starts beside the timer (the VM test
+    # makes one) must not fail any of them (DECISIONS I-646).
+    unitConfig.StartLimitIntervalSec = 0;
+    environment = {
+      HOME = "/home/dev";
+      XDG_RUNTIME_DIR = "/run/user/1000";
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      User = "dev";
+      ExecCondition = "${multiplexerIs}/bin/repose-multiplexer-is tmux";
+      ExecStart = "${tmuxSave}/bin/repose-tmux-save --periodic";
+      Nice = 10;
+      IOSchedulingClass = "idle";
+      TimeoutStartSec = 30;
+    };
+  };
+  systemd.timers.repose-tmux-save = {
+    description = "repose: record the agent windows every minute";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = 60;
+      OnUnitActiveSec = 60;
+      AccuracySec = "5s";
     };
   };
 
