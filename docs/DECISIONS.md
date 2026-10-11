@@ -18486,14 +18486,16 @@ do not feel it"); off until the owner turns it on per host
   is a separate switch (owner decision 20 deferred the listener for this
   reason; the freeze is what makes it worth having).
 - *Time budget.* Azure documents no limit for a guest OS's graceful
-  shutdown (`skipShutdown` exists to skip it); Scheduled Events give at
-  least 15 min for a Reboot and 10 for a Redeploy. A freeze costs about
-  1.7 s per GB of image at host-01's 600 MB/s data disk; images measured
-  0.8 to 1.2 GB for idle guests of any class and up to 6.6 GB for an xl
-  guest with 5.6 GB of anonymous memory. host-01's two running guests on
-  2026-10-11 held 17.8 GB resident: about 30 s, less after the cache drop.
-  The staging host measures Azure's real graceful-shutdown wait before the
-  owner turns this on (staging needs, below).
+  shutdown; measured on host-stg-01, `az vm restart` waits about 600 s
+  for it and then powers the VM off (a unit holding the shutdown wrote 596
+  one-second ticks; the next boot came 612 s after the request).
+  Scheduled Events give at least 15 min for a Reboot and 10 for a
+  Redeploy. A freeze is bound by the data disk: on host-stg-01 (125 MB/s)
+  two guests, 0.76 GB and 4.1 GB of image, froze in 42 to 43 s and
+  restored in 13 and 39 s; at host-01's 600 MB/s that is about 9 s and 8
+  s. Images measured 0.8 to 1.2 GB for idle guests of any class and up to
+  6.6 GB for an xl guest with 5.6 GB of anonymous memory. The 120 s
+  deadline is well inside Azure's wait.
 - *Free page reporting.* Without it a guest's memory on the host only
   grows (freed pages stay in the memfd), so its image does too: 6.6 GB
   for an xl guest long after the load that touched it ended. Guests
@@ -18540,16 +18542,20 @@ do not feel it"); off until the owner turns it on per host
   `TestFreezeLogsCarryNoTenantData`), internal/hostd/freeze and
   internal/hostd/schedev tests, and the experiments' 60-cycle loop on
   woker-1; the host VM test `host-freeze` (the drop-ins, the shutdown
-  ordering, a switch freezing nothing, `hostd freeze`/`thaw`). On
-  host-stg-01 with the real hostd: a small guest frozen and restored (6.1 s
-  after 26 s frozen); a large guest's `vm.snapshot` outlived the HTTP
-  client's 10 s timeout and was left paused, so the snapshot call is now
-  bounded only by its own 10 minutes and a resume after a failed snapshot
-  is retried until the VM runs. *Proof still owed:* a staging host: a graceful `systemctl
-  reboot`, an `az vm restart`, and a Scheduled Events Reboot with running
-  guests, each restored with the probes intact; Azure's graceful-shutdown
-  wait; freeze and restore times on Intel and Premium SSD v2. Host VM tests
-  cannot run a guest (no third level of virtualisation).
+  ordering, a switch freezing nothing, `hostd freeze`/`thaw`).
+  *Proof on staging* (host-stg-01, 2026-10-11, docs/research/guest-freeze.md,
+  "Staging"): a graceful `systemctl reboot` and an `az vm restart` each
+  froze both running guests (reason `shutdown`, 43 s) and restored both at
+  the next start with their processes, tmux windows and files intact and
+  the guests `running` in the first Hello; 10 operator freeze/thaw cycles
+  of both guests with no leftover, the guest clock within 1 s; the bug the
+  first run found (a guest left paused when `vm.snapshot` outlived the
+  HTTP client's 10 s timeout) fixed and the run repeated. *Still owed:*
+  the Scheduled Events listener on a VM (turning it on holds every restart
+  of that VM for approval for 24 h, so it needs its own slot), Key Vault as
+  the key's home (no staging vault yet), a host with more than two guests,
+  and timings on a 600 MB/s disk. Host VM tests cannot run a guest (no
+  third level of virtualisation).
 
 **I-653. A frozen guest's memory image: encrypted on a volume of its own,
 the key wrapped by Key Vault, removed once read (guest-freeze,

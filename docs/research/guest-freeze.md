@@ -276,11 +276,9 @@ had finished (journal, 18:17:40.339 to 18:17:43.342).
   https://learn.microsoft.com/en-us/azure/virtual-machines/linux/scheduled-events
 - How long Azure waits for a guest OS to finish a graceful shutdown
   (`az vm restart`, the hv_utils shutdown request of 2026-10-10) is not
-  documented. Azure offers `skipShutdown` to skip it, which says the wait
-  exists. host-01's shutdown on 2026-10-10 was graceful and ended within
-  seconds because nothing held it. The staging host measures it (a unit
-  whose ExecStop sleeps, then `az vm restart`); until then the freeze's
-  deadline is 120 s.
+  documented; `skipShutdown` exists to skip it. Measured on host-stg-01
+  (below): about 600 s, then the VM is powered off. The freeze's deadline
+  stays 120 s, well inside it.
 
 ## Staging plan (what proves it end to end)
 
@@ -314,32 +312,58 @@ probes from `ops/dev/freeze-bench.sh` (`start-probes`), in order:
 7. A Key Vault outage at start: deny the host's network to the vault;
    after 90 s each guest starts cold; nothing is left in `lvs | grep frz-`.
 
-## Staging, first runs (read from host-stg-01's journal, 2026-10-11 20:30Z)
+## Staging: host-stg-01, 2026-10-11 19:52Z to 20:55Z
 
-host-stg-01 (D16s_v7, Premium SSD v2 at 3000 IOPS and 125 MB/s) ran this
-branch's hostd with `--freeze --freeze-key-file` and two e2e guests (one
-large, one small) through `hostdev`. What its journal shows:
+host-stg-01 is Intel (Standard_D16s_v7, 64 GiB) with a Premium SSD v2 data
+disk at 3000 IOPS and **125 MB/s** (host-01: 16000 and 600). It ran this
+branch merged onto `staging-host` (a test branch, `gf-stg-test`, never
+merged) with `repose.host.freeze.enable` and an RSA key file on `/run`, the
+real hostd, registered with `hostdev` on the staging edge. Two e2e guests
+through `hostdev`: e2e-frz-large (large, a Python process holding 3 GiB
+and touching one byte per MiB every second, 4.1 GB resident) and
+e2e-frz-small (small, idle, 0.77 GB resident), each with the probes
+(writer, store reader, a TCP connection to an echo server on the host's
+bridge address, a tmux window with a counter). Raw output:
+[guest-freeze-data/staging-host-stg-01.txt](guest-freeze-data/staging-host-stg-01.txt).
 
-- `az vm restart` at 19:55:47Z: `hv_utils: Shutdown request received -
-  graceful shutdown initiated` at 19:56:14.73, systemd-shutdown at
-  19:56:15.20 (that boot ran the plain staging build, so nothing held the
-  shutdown and the half second says nothing about how long Azure would
-  wait); the next boot started 20:06:27Z, ten minutes after the request.
-- The first operator freeze with the real hostd (20:08:19Z, two guests):
-  the small guest froze (snapshot 250 ms, 0.76 GB image, 22.4 s from start
-  to record, most of it making the volume and flushing at 125 MB/s while
-  the large guest's image wrote beside it) and was restored at the next
-  reconcile in 6.1 s after 26 s frozen. The large guest's `vm.snapshot`
-  outlived the HTTP client's 10 s timeout: hostd took it for a failure,
-  its resume was refused while the hypervisor was still writing, and the
-  guest was left paused; the image could not be unmounted (busy). Fixed in
-  68361da4: the snapshot call is bounded only by its own 10 min, and a
-  resume after a failed snapshot is retried until `vm.info` says Running.
-  At the next start the half-written image was discarded ("image
-  incomplete") as designed.
-- Raw evidence: `journalctl -u hostd` on host-stg-01 (boots from 20:06Z);
-  the staging run's own scripts are in `/root` there (`stg-probes.sh`,
-  `freezebench`).
+**Azure's graceful-shutdown wait, measured.** With the plain staging build
+and a unit whose ExecStop loops forever (TimeoutStopSec 1200), `az vm
+restart`: the guest OS got `hv_utils: Shutdown request received` 27 s
+after the call; the loop wrote 596 one-second ticks (each with a sync);
+the next boot's kernel started 612 s after the request; `az` returned
+after 647 s. **Azure waits about 10 minutes for a graceful shutdown, then
+powers the VM off.** A freeze has that long on a restart Azure asks for.
+
+| test | result |
+|---|---|
+| 1. `hostd freeze`, `hostd thaw`, first build | small: frozen 22.4 s (snapshot 0.25 s; 15 s was the stop path's wait for a paused hypervisor to exit), restored 6.1 s, every probe intact, same TCP connection. large: `vm.snapshot` outlived `ch.HTTP`'s 10 s client timeout; the resume was refused while the hypervisor was still writing and **the guest was left paused**; after a manual resume its vsock never answered again and it was cold-started. At the next thaw the half-written image was discarded ("image incomplete"), nothing left. Fixed (commit 68361da4): no client timeout on the snapshot (10 min of its own), resume retried until `vm.info` says Running, a paused hypervisor killed after 3 s. |
+| 2. `hostd freeze`, `hostd thaw`, fixed build | both frozen: small 0.76 GB, large 4.10 GB (snapshot 35.7 s), all done in 41.8 s; restored: small 11.0 s, large 36.0 s. Writer no gap, store reader equal every pass, the same TCP connection (no reconnect), the tmux window's process the same pid with its counter carrying on. |
+| 3. graceful `systemctl reboot` (through `systemd-run`) | "freezing guests" 0.43 s after the reboot request, both frozen (reason `shutdown`) in 43.3 s, next kernel 51.9 s after the request; hostd restored small in 12.9 s and large in 38.9 s after it started (the large waited for the test key, re-delivered by hand at boot, see below); Hello went out after the restores, so hostdev saw both `running` throughout. Writer no gap, store reader intact, tmux processes alive with their counters continuing, TCP reset and reconnected (its peer on the host died with the reboot). |
+| 4. `az vm restart` (Azure's shutdown request) | `hv_utils` shutdown request, freeze started 0.42 s later, 2/2 frozen in 42.3 s, next kernel 54.5 s after the request, `az` returned after 103 s; both restored (12.8 s, 39.1 s), tmux pids unchanged (1213, 1116), counters continuing, writer no gap, store intact, TCP reconnected. |
+| 5. 10 `hostd freeze`/`thaw` cycles back to back | 20 of 20 guest-cycles frozen and restored; per cycle the large guest froze in 36.6 to 37.3 s and restored in 37.8 to 38.7 s, the small in 12.3 to 13.4 s (restore); guest clock within 1 s of the host's after every restore (19 at 0 s, 1 at 1 s); no image volume or dm mapping left after any cycle; host available memory flat (58.3 GB); the TCP connection never dropped; store reader never wrong; writer 9734 and 16950 lines with no gap. |
+
+- **The disk is the time.** Freeze and restore ran at 110 to 135 MB/s,
+  the staging disk's 125 MB/s, both directions, shared between the
+  guests. host-01's disk is 600 MB/s: the same two guests would take
+  about 9 s to freeze and 8 s to restore. Snapshot time alone (the
+  guest paused, before the hypervisor exits) is what the large guest
+  felt: 36 s here, about 7 s on host-01.
+- **A key file on `/run` does not survive the reboot it is meant for.**
+  The first reboot discarded both images ("image key unavailable",
+  guests started stopped and cold) because the test key lived on a tmpfs
+  and was not back within the 90 s unwrap window; the next two reboots
+  had it pushed at boot and restored. This is why production uses Key
+  Vault (I-653); `--freeze-key-file` is for tests that deliver the key at
+  boot.
+- **hostd answers nothing until the thaw is done.** The control socket
+  and the stream start after Reconcile, so `hostd guests` and Hello wait
+  for the slowest restore (39 s here). That is the intended order (the api
+  must not see a frozen guest as stopped); it also means a stuck restore
+  holds hostd for up to the 90 s key wait plus the 180 s restore bound.
+- Not tested on staging: Scheduled Events (turning the listener on turns
+  the events on for the VM for 24 h, during which every staging restart
+  waits for approval; left for a slot where that is wanted), Key Vault
+  (no vault for staging yet), more guests than two.
 
 ## hostd's own code against a real hypervisor (woker-1)
 
