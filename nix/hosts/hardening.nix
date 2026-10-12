@@ -8,7 +8,8 @@
   security.polkit.enable = lib.mkDefault false;
 
   users.mutableUsers = false;
-  users.users.root.hashedPassword = "!";
+  # root's password is console-only and comes from a file placed by hand;
+  # without it root is locked (vm-hardening.nix, DECISIONS I-654).
   # With bootstrap.keyUntilHostCA the keys are not static: repose-host-net
   # renders them into /run/repose/bootstrap_authorized_keys only while the
   # host has no Host CA (network.nix, DECISIONS I-177).
@@ -32,8 +33,9 @@
     RateLimitBurst = 20000;
   };
 
-  # Root has no password and, outside bootstrap, no static key: logins are
-  # Host CA certificates (ssh.nix), which NixOS cannot see at build time.
+  # Over SSH root has no password and, outside bootstrap, no static key:
+  # logins are Host CA certificates (ssh.nix), which NixOS cannot see at
+  # build time. The console password file may be absent.
   users.allowNoPasswordLogin = true;
 
   services.fstrim.enable = true;

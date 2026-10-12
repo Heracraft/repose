@@ -47,9 +47,35 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` It fetches the agent's commits before the machine stops, as `git fetch repose` would, in each of the project's checkouts on your laptop, from whatever folder you run it in; with nothing new it prints no `Fetched` line. The stop line ends with what stays on the machine: commits your checkouts haven't fetched and files the agent didn't commit. `repose status` shows those rows for the stopped machine. Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
+`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` It fetches the agent's commits before the machine stops, as `git fetch repose` would, in each of the project's checkouts on your laptop, from whatever folder you run it in; with nothing new it prints no `Fetched` line. The stop line ends with what stays on the machine: commits your checkouts haven't fetched and files the agent didn't commit. `repose status` shows those rows for the stopped machine. Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start after `repose stop`.
 
 `repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
+
+## When a machine's server restarts
+
+The server your machines run on can restart, for maintenance or after a fault. Every machine running on it stops: the disk is kept, but processes and memory are lost, and an agent in the middle of a turn loses that turn.
+
+When the server is back, repose starts each machine that was running or starting when it went down, usually within a few minutes, three at a time per server. It boots the system the machine was running; a configuration built and waiting for the next start is applied at the one after. A machine started again holds your plan's memory like any running machine, and its traffic counts toward the month.
+
+A machine isn't started again when:
+
+- you stopped, removed, restored or resized it while the server was down, or started it yourself since;
+- more than 6 hours passed between the restart and repose being able to start it;
+- it's [temporary](#temporary-machines) and its time ran out;
+- a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped, as it doesn't stop a running machine ([Billing](/docs/billing));
+- its start fails, after one more try when the machine doesn't answer in time.
+
+You get one [notification](/docs/notifications) per server restart, by email and ntfy if you have them on, with a line for each machine:
+
+```text
+The server running your machines restarted; it was back at 05:46 UTC.
+api: running again.
+todo-app: running again; its last agent turn was interrupted.
+```
+
+A machine that wasn't started gets `not started:`, the reason, and `repose start NAME`. Machines you stopped or removed meanwhile aren't listed. A machine still waiting 10 minutes after the server came back is listed as `waiting to start`, and there is no second notification when it does. `repose events` shows `server restarted` on each machine that stopped.
+
+`repose start api` starts one that wasn't started. While the server is down, `repose start`, `repose ssh` and `repose code` say ``api's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start api` works then``.
 
 ## Unused machines
 
@@ -91,6 +117,8 @@ Or restore into a new project and leave the original alone:
 ```
 repose snapshots restore SNAPSHOT_ID --as todo-app-old
 ```
+
+The new project starts with its `shell` window; the agent windows the snapshot recorded reopen only in the project they came from.
 
 The dashboard's snapshot list has **Create**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
 
@@ -227,7 +255,7 @@ Added the git remotes todo-app-fork-1, todo-app-fork-2 and
 todo-app-fork-3.
 ```
 
-`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over; each copy boots fresh. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
+`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and the source's agent windows don't reopen: each copy boots fresh with its `shell` window. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
 

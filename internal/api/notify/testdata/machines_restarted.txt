@@ -1,0 +1,11 @@
+Your machines' server restarted
+
+The server running your machines restarted; it was back at 05:46 UTC.
+api: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.
+todo-app: running again; its last agent turn was interrupted.
+
+Your machines: https://repose.herakraft.co/projects
+
+--
+repose. Open the dashboard: https://repose.herakraft.co
+You get these about your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

@@ -61,7 +61,10 @@ const (
 
 // Handlers are called for incoming messages. Every handler is optional.
 type Handlers struct {
-	Hello    func(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello)
+	// Hello may refuse the message: the stream then closes, and hostd
+	// sends Hello again when it reconnects. The resume rows are written
+	// this way (DECISIONS I-645), so a failed insert is never lost.
+	Hello    func(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello) error
 	Result   func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result)
 	Samples  func(ctx context.Context, hostID uuid.UUID, s *hostdv1.Samples)
 	Event    func(ctx context.Context, hostID uuid.UUID, e *hostdv1.Event) bool
@@ -442,7 +445,9 @@ func (s *Server) Session(stream hostdv1.HostService_SessionServer) error {
 		}
 		switch m := msg.Msg.(type) {
 		case *hostdv1.HostMessage_Hello:
-			s.onHello(ctx, hostID, m.Hello)
+			if err := s.onHello(ctx, hostID, m.Hello); err != nil {
+				return status.Error(codes.Unavailable, "hello not recorded; reconnect")
+			}
 		case *hostdv1.HostMessage_Heartbeat:
 			// A host marked lost or retired, or whose certificate was
 			// superseded, loses an open stream at its next heartbeat.
@@ -480,27 +485,55 @@ func (s *Server) connectedCount() int {
 	return len(s.sessions)
 }
 
-func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello) {
+// helloKey carries, in the context the Hello handler gets, the host's
+// last heartbeat before this Hello: when the api last heard from it,
+// which onHello overwrites (DECISIONS I-645).
+type helloKey struct{}
+
+// LastHeardBefore is the host's last_heartbeat_at before the Hello being
+// handled, or nil.
+func LastHeardBefore(ctx context.Context) *time.Time {
+	t, _ := ctx.Value(helloKey{}).(*time.Time)
+	return t
+}
+
+func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello) error {
 	// pool_bytes follows the pool as autoextend grows it; a hostd older
 	// than I-586 sends 0, which keeps the registered size.
-	if _, err := s.pool.Exec(ctx, "update hosts set state = case when state in ('registering','unreachable') then 'ready' else state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else pool_bytes end, last_heartbeat_at = now() where id = $1",
-		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes)); err != nil {
+	// pool_unavailable (I-644) is absent from an older hostd, which reads
+	// as false: today's behaviour. The previous last_heartbeat_at is read
+	// in the same statement, before it is overwritten: the resume needs
+	// when the host went quiet (I-645).
+	var lastHeard *time.Time
+	if err := s.pool.QueryRow(ctx, `update hosts h set state = case when h.state in ('registering','unreachable') then 'ready' else h.state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else h.pool_bytes end, pool_unavailable = $5, last_heartbeat_at = now()
+		from (select id, last_heartbeat_at from hosts where id = $1 for update) prev where h.id = prev.id returning prev.last_heartbeat_at`,
+		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable).Scan(&lastHeard); err != nil {
 		s.log.Error("hello update failed", "event", "hello", "host_id", hostID.String(), "err", err.Error())
 	}
-	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests))
+	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests), "pool_unavailable", h.PoolUnavailable, "boot_id", h.HostBootId)
 	if s.handlers.Hello != nil {
-		s.handlers.Hello(ctx, hostID, h)
+		if err := s.handlers.Hello(context.WithValue(ctx, helloKey{}, lastHeard), hostID, h); err != nil {
+			s.log.Error("hello not handled; closing the stream so the host sends it again", "event", "hello", "host_id", hostID.String(), "err", err.Error())
+			// The Hello was not taken, so neither is its heartbeat: the
+			// resent one must read when the host really went quiet, or a
+			// stop asked for during the outage would not count.
+			if _, rerr := s.pool.Exec(ctx, "update hosts set last_heartbeat_at = $2 where id = $1", hostID, lastHeard); rerr != nil {
+				s.log.Error("last heartbeat not put back after a refused hello", "event", "hello", "host_id", hostID.String(), "err", rerr.Error())
+			}
+			return err
+		}
 	}
+	return nil
 }
 
 func (s *Server) onHeartbeat(ctx context.Context, hostID uuid.UUID, serial string, hb *hostdv1.Heartbeat) error {
 	var state string
 	var certSerial, prevCertSerial *string
 	err := s.pool.QueryRow(ctx, `update hosts set free_mem_bytes = $2, pool_free_bytes = $3, load1 = $4, running_guests = $5, draining = $6,
-		pool_bytes = case when $7::bigint > 0 then $7::bigint else pool_bytes end,
+		pool_bytes = case when $7::bigint > 0 then $7::bigint else pool_bytes end, pool_unavailable = $8,
 		state = case when state = 'unreachable' then 'ready' when $6 and state = 'ready' then 'draining' when not $6 and state = 'draining' then 'ready' else state end,
 		last_heartbeat_at = now() where id = $1 returning state, cert_serial, prev_cert_serial`,
-		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining, int64(hb.PoolBytes)).Scan(&state, &certSerial, &prevCertSerial)
+		hostID, int64(hb.FreeMemBytes), int64(hb.PoolFreeBytes), hb.Load1, int32(hb.RunningGuests), hb.Draining, int64(hb.PoolBytes), hb.PoolUnavailable).Scan(&state, &certSerial, &prevCertSerial)
 	if err != nil {
 		s.log.Error("heartbeat update failed", "event", "heartbeat", "host_id", hostID.String(), "err", err.Error())
 		return nil

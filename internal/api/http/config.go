@@ -126,6 +126,11 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	var opID uuid.UUID
 	pid := p.ID
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
+		// The project's row first, then its ops (YieldPersonalBuilds), the
+		// order every start takes too (Enqueue, lifecycle.Start).
+		if _, err := tx.Exec(ctx, "select 1 from projects where id = $1 for update", pid); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, $4, $5, 'building', $6, $7, $8)", rid, pid, fragment, menuJSON, p.BaseVersion, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}

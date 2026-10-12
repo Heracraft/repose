@@ -897,9 +897,9 @@ const pendingRevisionSQL = `select id from config_revisions
 	order by created_at desc limit 1`
 
 // PendingRevision reports whether a start of p would apply a revision.
-func PendingRevision(ctx context.Context, pool *db.Pool, p *store.Project) (bool, error) {
+func PendingRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
 	var rid uuid.UUID
-	err := pool.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
+	err := q.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return false, nil
@@ -1205,6 +1205,13 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		reason := "destroying " + p.Slug + " failed: " + strings.TrimSuffix(short, ".") + ". `repose rm " + p.Slug + "` tries again"
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'error', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+reason) // best effort; the op carries the error
 		e.notifyPlatform(ctx, p.ID, "destroy_failed", reason+".")
+	case op.Kind == KindStart && code == codeVolumeUnavailable:
+		// The host's pool is down (I-644): nothing booted and the disk is
+		// intact, so the project is stopped, not error, and the next
+		// start is a start, not a restart. A create or restore keeps
+		// error with its host: freeing the placement would orphan hostd's
+		// record, and the scheduler already places nothing there.
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
 	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindStop || op.Kind == KindRestore:
 		if code == "capacity" {
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement

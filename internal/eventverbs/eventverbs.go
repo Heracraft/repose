@@ -23,6 +23,10 @@ var Verbs = map[string]string{
 	"boot_failed":          "new system did not boot",
 	"guest_state_changed":  "machine",
 	"notifications_paused": "notifications paused",
+	// The server under the machine restarted (DECISIONS I-645): the
+	// project event, and the user's notice that names no project.
+	"host_restarted":     "server restarted",
+	"machines_restarted": "server restarted",
 }
 
 // Verb is kind's word, or the kind with its separators as spaces.

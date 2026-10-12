@@ -104,7 +104,11 @@ Stop:
   conversation id), and the next start opens those windows again under
   the same names, each agent on its conversation (`claude --resume ID`,
   I-636), so `repose ps` and `attach -w` find them; on a herdr project
-  herdr resumes agents with an integration by itself (I-501). When the project's newest sample shows agents working or
+  herdr resumes agents with an integration by itself (I-501). A machine
+  that ends without a stop (its host crashed or restarted) reopens the
+  windows of the minute record a timer keeps, from at most a minute
+  before; herdr puts back what it saved a few seconds before (I-646).
+  When the project's newest sample shows agents working or
   waiting for an answer, the CLI asks before stopping (`api has claude
   (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
   nothing, and without a terminal it refuses with exit 2 unless
@@ -238,6 +242,18 @@ Failure handling:
   else `guest_unresponsive`, I-592), and the console's last 200 lines
   attached to the op; `repose logs --kind console` shows them. The volume
   is untouched; `start` retries; `snapshots restore` is the escape.
+- A host whose thin pool is unavailable (after a reboot that did not
+  bring it back, or a failed metadata check) refuses `start` with
+  `volume_unavailable` before anything boots (I-644). The project stays
+  `stopped`, not `error`, with `last_error`, so the next `start` is a
+  plain start once the pool is back; the CLI exits 1. A create or restore
+  that meets it keeps `error` with its host, and the scheduler places
+  nothing on the host meanwhile.
+- A graceful host shutdown powers each running guest off through its
+  ACPI power button (up to 20 s) so the guest's last writes reach its
+  disk, and hostd leaves the guest recorded as running rather than
+  failed (I-650). Nothing starts it again after the host is back until
+  resume after a reboot ships (I-645); `repose start` does.
 - A dead guestd never makes an op fail instantly for ever. `stop` stops
   the unit anyway and snapshots the stopped volume; `destroy` finishes as
   above; `start` restarts. A manual snapshot and a resize need guestd (to

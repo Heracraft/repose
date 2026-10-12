@@ -168,6 +168,12 @@ func TestOpFailedExitCodes(t *testing.T) {
 			"Could not start todo-app: the host had no room for it right now (insufficient_capacity). Try again in a few minutes."},
 		{OpError{Code: "payment_required", Message: "the account needs a plan"}, "", ExitPaymentRequired, "Could not start todo-app: the account needs a plan (payment_required)."},
 		{OpError{Code: "boot_failed"}, "", ExitGeneric, "Could not start todo-app"},
+		// A host whose pool is down (DECISIONS I-644): exit 1, and the
+		// api's sentence says when `repose start` works, so nothing is added.
+		{OpError{Code: "volume_unavailable", Message: "the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back"}, nextAfterFailedStart("todo-app", "volume_unavailable"), ExitGeneric,
+			"Could not start todo-app: the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back (volume_unavailable)."},
+		{OpError{Code: "volume_unavailable"}, nextAfterFailedStart("todo-app", "volume_unavailable"), ExitGeneric,
+			"Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact (volume_unavailable)."},
 	}
 	for _, c := range cases {
 		err := opFailed("start", "todo-app", c.oe, c.next)

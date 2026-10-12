@@ -1,0 +1,29 @@
+# hloop 25 2026-10-11T20:28:31Z
+cycle 1 | image_ms=211 snapshot_ms=394 total_ms=3239 image_bytes=997658624 | open_ms=139 restore_ms=1052 total_ms=1487 | seq=57 tcp=1 storebad=
+grep: /home/dev/store.log: No such file or directory | lvs=0 dm=0 recs=0 pool=0.00
+cycle 2 | image_ms=293 snapshot_ms=408 total_ms=3376 image_bytes=998035456 | open_ms=89 restore_ms=872 total_ms=1217 | seq=94 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 3 | image_ms=353 snapshot_ms=896 total_ms=4128 image_bytes=998109184 | open_ms=157 restore_ms=1534 total_ms=2456 | seq=134 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 4 | image_ms=267 snapshot_ms=820 total_ms=3465 image_bytes=998137856 | open_ms=96 restore_ms=844 total_ms=1229 | seq=167 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 5 | image_ms=210 snapshot_ms=516 total_ms=3230 image_bytes=998240256 | open_ms=117 restore_ms=822 total_ms=1265 | seq=202 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 6 | image_ms=191 snapshot_ms=423 total_ms=3276 image_bytes=998256640 | open_ms=98 restore_ms=781 total_ms=1132 | seq=238 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 7 | image_ms=180 snapshot_ms=410 total_ms=3210 image_bytes=998260736 | open_ms=89 restore_ms=789 total_ms=1129 | seq=273 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 8 | image_ms=168 snapshot_ms=390 total_ms=3139 image_bytes=998268928 | open_ms=90 restore_ms=785 total_ms=1109 | seq=308 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 9 | image_ms=174 snapshot_ms=404 total_ms=3171 image_bytes=998285312 | open_ms=90 restore_ms=841 total_ms=1222 | seq=343 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 10 | image_ms=770 snapshot_ms=414 total_ms=3584 image_bytes=998313984 | open_ms=86 restore_ms=988 total_ms=1686 | seq=385 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 11 | image_ms=348 snapshot_ms=1281 total_ms=4166 image_bytes=998350848 | open_ms=164 restore_ms=1299 total_ms=1866 | seq=422 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 12 | image_ms=187 snapshot_ms=554 total_ms=3027 image_bytes=998801408 | open_ms=87 restore_ms=1054 total_ms=1462 | seq=457 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 13 | image_ms=229 snapshot_ms=501 total_ms=4492 image_bytes=998805504 | open_ms=132 restore_ms=1577 total_ms=2558 | seq=495 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 14 | image_ms=329 snapshot_ms=797 total_ms=3381 image_bytes=998825984 | open_ms=185 restore_ms=899 total_ms=1337 | seq=529 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 15 | image_ms=188 snapshot_ms=419 total_ms=3251 image_bytes=998830080 | open_ms=107 restore_ms=782 total_ms=1245 | seq=564 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 16 | image_ms=209 snapshot_ms=417 total_ms=3270 image_bytes=998862848 | open_ms=79 restore_ms=812 total_ms=1154 | seq=600 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 17 | image_ms=177 snapshot_ms=398 total_ms=3311 image_bytes=999071744 | open_ms=91 restore_ms=892 total_ms=1230 | seq=635 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 18 | image_ms=165 snapshot_ms=385 total_ms=3078 image_bytes=999161856 | open_ms=79 restore_ms=806 total_ms=1134 | seq=670 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 19 | image_ms=163 snapshot_ms=381 total_ms=3105 image_bytes=999268352 | open_ms=85 restore_ms=768 total_ms=1101 | seq=705 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 20 | image_ms=161 snapshot_ms=401 total_ms=3096 image_bytes=999325696 | open_ms=91 restore_ms=795 total_ms=1135 | seq=740 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 21 | image_ms=169 snapshot_ms=393 total_ms=3092 image_bytes=999415808 | open_ms=84 restore_ms=805 total_ms=1595 | seq=779 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 22 | image_ms=171 snapshot_ms=392 total_ms=2995 image_bytes=999522304 | open_ms=104 restore_ms=789 total_ms=1143 | seq=815 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 23 | image_ms=195 snapshot_ms=439 total_ms=3215 image_bytes=999624704 | open_ms=89 restore_ms=856 total_ms=1191 | seq=850 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 24 | image_ms=183 snapshot_ms=435 total_ms=3312 image_bytes=999731200 | open_ms=80 restore_ms=802 total_ms=1162 | seq=885 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+cycle 25 | image_ms=200 snapshot_ms=429 total_ms=3275 image_bytes=999804928 | open_ms=96 restore_ms=800 total_ms=1151 | seq=921 tcp=1 storebad=0 | lvs=0 dm=0 recs=0 pool=0.00
+seq_total=953 first=0 last=952 gaps=0 []
+HLOOP_DONE

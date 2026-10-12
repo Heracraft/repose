@@ -78,6 +78,8 @@ type Options struct {
 	NoWG             bool
 	Substituters     string
 	LogLevel         string
+	// Freeze is the guest freeze across host restarts (freeze.go, I-652).
+	Freeze FreezeOptions
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -250,7 +252,10 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		VirtiofsSocketWait: 10 * time.Second,
 		GuestUser:          o.GuestUser,
 		NoAuthShare:        !o.ClaudeLoginShare,
+		FreePageReporting:  o.Freeze.FreePageReporting,
 	}
+	fcfg, fdeps := freezeSetup(o, r, l, log)
+	cfg.Freeze = fcfg
 	if os.Getenv("REPOSE_HOSTD_TESTING") == "1" {
 		cfg.FailAtStep = o.FailAtStep
 		// The hostd and virtiofsd accounts exist on hosts only; under the
@@ -263,15 +268,22 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
+		SystemStopping: systemStopping(r),
+		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
+		Freeze: fdeps,
 	})
 	if err != nil {
 		return err
 	}
 	lh.m = mgr
 	d.mgr = mgr
+	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
+	// Deferred first, so it runs after Close: a guest exit the monitors
+	// saw while the host shut down comes before it (DECISIONS I-645).
+	defer mgr.RecordStop()
 	mgr.Run()
 	defer mgr.Close()
 
@@ -289,12 +301,21 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("rotation", func() { d.rotationLoop(ctx, roots) })
 	run("prune", func() { d.pruneLoop(ctx) })
 	run("metrics", func() { d.serveMetrics(ctx) })
+	if fdeps.Sealer != nil && fcfg.Enabled {
+		run("freeze-key", func() { freezeKeyLoop(ctx, fdeps.Sealer, log) })
+	}
+	if se := scheduledEvents(o, mgr, log); se != nil {
+		run("scheduled-events", func() { se.Run(ctx) })
+	}
 	run("control", func() {
 		if err := control.Serve(ctx, o.ControlSock, d); err != nil {
 			log.Error("control socket failed", "event", "control", "err", err.Error())
 		}
 	})
 	<-ctx.Done()
+	// From here a guest that exits or a boot that fails is not recorded
+	// as failed: the host or hostd is going down (DECISIONS I-650).
+	mgr.SetShuttingDown()
 	wg.Wait()
 	consoles.stopAll()
 	return nil
@@ -399,7 +420,7 @@ func (d *Daemon) Status(ctx context.Context) (*control.StatusReply, error) {
 	}
 	return &control.StatusReply{
 		HostID: d.id.Host.HostID, Version: d.o.Version, Connected: d.strm.Connected(), Draining: d.mgr.Draining(),
-		Guests: by, FreeMem: d.mgr.FreeMemBytes(), PoolFree: d.mgr.PoolFreeBytes(), Uptime: time.Since(d.start).Round(time.Second).String(),
+		Guests: by, FreeMem: d.mgr.FreeMemBytes(), PoolFree: d.mgr.PoolFreeBytes(), Pool: d.mgr.PoolStatusText(), Uptime: time.Since(d.start).Round(time.Second).String(),
 	}, nil
 }
 
@@ -519,4 +540,18 @@ func (d *Daemon) OperatorLogin(r control.OperatorLoginReport) error {
 		Ev: &hostdv1.Event_OperatorLogin{OperatorLogin: &hostdv1.OperatorLogin{PamType: r.PAMType, UserPresent: r.UserPresent, KeyId: r.KeyID, Serial: r.Serial, KeyFingerprint: r.KeyFingerprint}}}
 	d.strm.Event(ev)
 	return nil
+}
+
+// systemStopping asks systemd whether the host is shutting down. A
+// guest@ unit stopped by a shutdown can exit before hostd's own SIGTERM
+// arrives; this is how hostd tells that exit from a crash (I-650).
+func systemStopping(r shell.Runner) func(ctx context.Context) bool {
+	return func(ctx context.Context) bool {
+		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		// is-system-running exits non-zero for every state but running;
+		// the state is on stdout either way.
+		res, _ := r.Run(cctx, "systemctl", "is-system-running")
+		return strings.TrimSpace(string(res.Stdout)) == "stopping"
+	}
 }

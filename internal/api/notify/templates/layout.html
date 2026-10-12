@@ -54,7 +54,7 @@
 <tr><td style="padding:14px 2px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#767671;">
 <a href="{{.Dashboard}}" style="color:#767671;text-decoration:underline;">Open the dashboard</a>
 {{- if .Unsubscribe}}
-<br>You get these because an agent on your machine reported something. <a href="{{.Unsubscribe}}" style="color:#767671;text-decoration:underline;">Stop these emails</a>.
+<br>{{.Why}} <a href="{{.Unsubscribe}}" style="color:#767671;text-decoration:underline;">Stop these emails</a>.
 {{- end}}
 </td></tr>
 </table>

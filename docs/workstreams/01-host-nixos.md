@@ -17,10 +17,12 @@ tenants' guests. Every path, device and rule in
   `provider` (`azure` now, `hetzner` later), imported by
   `nix/flake.nix` as `nixosConfigurations.host-<name>`.
 - `nix/hosts/disko.nix`: disk layout for nixos-anywhere. OS disk: GPT, 1 GB
-  ESP, rest ext4 for `/`. Data disk (`/dev/disk/azure/scsi1/lun0` on Azure,
-  passed in as `dataDevice`): one PV, VG `vg-guests`, thin pool `thin` using
-  all but 5 percent of the VG (pool metadata sized at 1 percent, minimum
-  1 GB).
+  ESP, rest ext4 for `/`. Data disk: one PV, VG `vg-guests`, thin pool
+  `thin` using all but 5 percent of the VG (pool metadata sized at 1 percent,
+  minimum 1 GB). Neither device is named in advance on Azure: the layout's
+  hook resolves `/dev/disk/repose/os` and `/dev/disk/repose/data` at install
+  time from the NVMe namespace ids, the OS disk being nsid 1 (DECISIONS I-41,
+  I-647).
 - `nix/hosts/kernel.nix`: `boot.kernelModules = [ "kvm-intel" "vhost_vsock"
   "vhost_net" "tun" "nf_tables" "dm_thin_pool" "overlay" ]`,
   `boot.kernelParams = [ "transparent_hugepage=madvise" ]`, sysctl
@@ -41,7 +43,7 @@ tenants' guests. Every path, device and rule in
 - `nix/hosts/storage.nix`: `services.lvm.enable`, `boot.initrd.services.lvm
   .enable`, thin provisioning tools, `lvm.conf` with
   `thin_pool_autoextend_threshold = 80` and
-  `thin_pool_autoextend_percent = 10` so the pool grows into the VG headroom
+  `thin_pool_autoextend_percent = 5` (I-643) so the pool grows into the VG headroom
   rather than filling silently; a `repose-pool-monitor.timer` every 5
   minutes that exports pool usage to a textfile for node_exporter.
 - `nix/hosts/virt.nix`: `cloud-hypervisor`, `virtiofsd`, `ch-remote` in
@@ -214,14 +216,15 @@ by drain, `nixos-rebuild boot`, reboot, undrain. `system.autoUpgrade` is off.
 
 | Failure | Operator-visible outcome |
 |---|---|
-| Data disk missing at install | disko fails with `device /dev/disk/azure/scsi1/lun0 not found`; nixos-anywhere aborts before touching the OS disk. Attach the disk, rerun. |
+| Data disk missing at install | the layout's hook fails with `expected exactly one data disk besides ...` and the disks it saw; nixos-anywhere aborts before touching either disk. Attach the disk, rerun. |
+| OS disk not identifiable at install | the hook fails with `expected exactly one NVMe namespace with nsid 1` and the disk list, before anything is written. A SCSI size sets `repose.host.osDevice` to the real path instead (DECISIONS I-647). |
 | `host.json` absent at boot (registration never ran) | `repose-host-net.service` logs `no host.json; bridge not configured` and exits 0; hostd starts, sees no registration, retries `Register` every 30 s using the join token, logs `waiting for join token` if that is missing too. Alert `host_unregistered` after 10 minutes (10-observability). |
 | Join token rejected | hostd logs `register: join token invalid or used`; same alert. Operator mints a new one with `repose-admin hosts add --reissue <host>` and writes it to `/run/repose/join-token`. |
 | Thin pool at 70 percent, data or metadata | `host_warning{pool_high}` event, `PoolHigh` alert, no new placements; autoextend consumes the headroom at 80; at 85 percent hostd refuses `CreateGuest`, `Restore` and `ResizeVolume`, and at 95 `StartGuest`, with `insufficient_capacity`; existing guests keep running (DECISIONS I-586). |
 | Store at 80 percent | `host_warning{store_80}`; `nix.settings.min-free` triggers GC of unrooted paths; builds fail with `closure_too_large` before touching the last 50 GB. |
 | WireGuard handshake fails | `wg show wg0` shows no handshake; hostd's gRPC still works (it goes over the Azure NIC), so the api sees the host but the gateway cannot reach guests; alert `host_wg_down` from the edge side. |
 | hostd crashes | Restarts in 2 s; guests are untouched (transient units, `KillMode=process`); hostd reconciles from `state.db` and `systemctl list-units 'guest@*'`. |
-| Kernel panic or host reboot | Every guest is down; `Hello` after boot reports all guests `stopped`; the api restarts those that were `running` (03) and notifies users. |
+| Kernel panic or host reboot | Every guest is down; `Hello` after boot reports each guest that was `running` as `stopped` with the new boot id as its interrupted mark; the api starts those again within 6 h and tells each user once (DECISIONS I-645). |
 
 ## 7. Testing
 

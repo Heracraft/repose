@@ -47,6 +47,9 @@ type Spec struct {
 	// when the guest has none (no user id recorded), and then no second
 	// --fs is rendered.
 	AuthTag string // claude-auth
+	// FreePageReporting adds the balloon that hands freed guest pages
+	// back to the host (Balloon, DECISIONS I-652).
+	FreePageReporting bool
 }
 
 // Paths under the guest directory.
@@ -143,6 +146,9 @@ func (s Spec) Args() []string {
 	}
 	if s.AuthTag != "" {
 		args = append(args, "--fs", fmt.Sprintf("tag=%s,socket=%s", s.AuthTag, AuthSocket(s.GuestDir)))
+	}
+	if s.FreePageReporting {
+		args = append(args, "--balloon", Balloon)
 	}
 	return args
 }
@@ -288,10 +294,11 @@ func (h *HTTP) Version(ctx context.Context) (string, error) {
 
 // Fake records API calls.
 type Fake struct {
-	mu    sync.Mutex
-	Calls []string
-	Fail  map[string]error
-	Ver   string
+	mu     sync.Mutex
+	Calls  []string
+	Fail   map[string]error
+	Ver    string
+	paused map[string]bool // vm.info says Paused between a pause and a resume
 }
 
 func (f *Fake) record(op, sock string) error {
@@ -301,15 +308,46 @@ func (f *Fake) record(op, sock string) error {
 	return f.Fail[op]
 }
 
-func (f *Fake) Shutdown(_ context.Context, sock string) error { return f.record("shutdown", sock) }
-func (f *Fake) Pause(_ context.Context, sock string) error    { return f.record("pause", sock) }
-func (f *Fake) Resume(_ context.Context, sock string) error   { return f.record("resume", sock) }
+func (f *Fake) Shutdown(_ context.Context, sock string) error {
+	f.setPaused(sock, false)
+	return f.record("shutdown", sock)
+}
+
+func (f *Fake) Pause(_ context.Context, sock string) error {
+	err := f.record("pause", sock)
+	if err == nil {
+		f.setPaused(sock, true)
+	}
+	return err
+}
+
+func (f *Fake) Resume(_ context.Context, sock string) error {
+	err := f.record("resume", sock)
+	if err == nil {
+		f.setPaused(sock, false)
+	}
+	return err
+}
+
+func (f *Fake) setPaused(sock string, p bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.paused == nil {
+		f.paused = map[string]bool{}
+	}
+	f.paused[sock] = p
+}
 func (f *Fake) ResizeDisk(_ context.Context, sock, _ string, _ uint64) error {
 	return f.record("resize-disk", sock)
 }
 func (f *Fake) Info(_ context.Context, sock string) (json.RawMessage, error) {
 	if err := f.record("info", sock); err != nil {
 		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.paused[sock] {
+		return json.RawMessage(`{"state":"Paused"}`), nil
 	}
 	return json.RawMessage(`{"state":"Running"}`), nil
 }

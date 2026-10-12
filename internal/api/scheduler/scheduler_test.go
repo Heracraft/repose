@@ -218,3 +218,51 @@ func TestPickCountsGuestSlots(t *testing.T) {
 		t.Fatalf("a destroyed project's slot: %v", err)
 	}
 }
+
+func setPoolUnavailable(t *testing.T, pool *db.Pool, id uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), "update hosts set pool_unavailable = true where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// DECISIONS I-644: a host whose thin pool is down is never chosen, however
+// much memory it has; with the pool bytes it reports then at 0 an older
+// api skips it too, and this filter does not depend on that.
+func TestPickSkipsPoolUnavailable(t *testing.T) {
+	pool := testdb.Open(t)
+	now := time.Now()
+	a := addHost(t, pool, host{"a", "ready", false, 64 << 30, 50 << 30, 1 << 40, now})
+	b := addHost(t, pool, host{"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, now})
+	setPoolUnavailable(t, pool, a)
+	if p, err := pick(t, pool, "large", 1<<30, 40<<30); err != nil || p.Name != "b" {
+		t.Fatalf("got %+v %v, want b", p, err)
+	}
+	setPoolUnavailable(t, pool, b)
+	if p, err := pick(t, pool, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("got %+v %v, want no capacity", p, err)
+	}
+}
+
+// Freeing waits only for hosts PickHost could choose.
+func TestFreeingSkipsPoolUnavailable(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	a := addHost(t, pool, host{"a", "ready", false, 64 << 30, 4 << 30, 1 << 40, now})
+	uid := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, 'p', 'p', 'large', 'stopping', $3, 1)`,
+		uuid.Must(uuid.NewV7()), uid, a); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, "large", 1<<30, 40<<30, now); err != nil || !ok {
+		t.Fatalf("freeing %v %v, want true with a large guest stopping", ok, err)
+	}
+	setPoolUnavailable(t, pool, a)
+	if ok, err := scheduler.Freeing(ctx, pool, "large", 1<<30, 40<<30, now); err != nil || ok {
+		t.Fatalf("freeing %v %v on a host whose pool is down, want false", ok, err)
+	}
+}

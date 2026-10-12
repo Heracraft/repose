@@ -22,3 +22,8 @@ output "installed" {
   description = "Known once the edge is running NixOS; hosts depend on it because it is their jump host."
   value       = module.install.post_install_id
 }
+
+output "vm_id" {
+  description = "Azure resource id of the edge VM, for the availability alert (DECISIONS I-648)."
+  value       = azurerm_linux_virtual_machine.main.id
+}

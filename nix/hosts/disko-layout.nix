@@ -26,6 +26,56 @@ let
   # would have asked for more metadata than a thin pool allows.
   poolMetadataSize = ''"$(( m = $(blockdev --getsize64 "''${lvm_devices[0]}") / 100, m = (m < 1073741824 ? 1073741824 : (m > 17179869184 ? 17179869184 : m)), m / 1048576 ))m"'';
 
+  # A symlink under /dev/disk/repose is this hook's own answer from a
+  # previous run. /dev is tmpfs, but an install that failed and is retried
+  # has not rebooted, so last run's answer is still there — and if it was
+  # wrong, keeping it is how both disks ended up resolving to the same one
+  # (host-stg-01, 2026-10-11). Drop ours and resolve again; a path the
+  # operator named (a real node, a by-LUN symlink) is never touched.
+  dropStale = path: ''
+    case "${path}" in
+      /dev/disk/repose/*) rm -f "${path}" ;;
+    esac
+  '';
+
+  # Which NVMe namespace is the OS disk, resolved at install time rather
+  # than assumed (DECISIONS I-647). Azure's mapping is by namespace id: the
+  # OS disk is nsid 1 and a data disk at LUN n is nsid n+2. Controller order
+  # is not: host-01's D16s_v7 put both on one controller, so the OS disk was
+  # /dev/nvme0n1 as I-39 recorded, while host-stg-01's D2s_v7 gave the data
+  # disk its own controller and enumerated it first — /dev/nvme0n1, nsid 12
+  # for LUN 10, with the OS disk second as /dev/nvme1n1, nsid 1. A fixed
+  # /dev/nvme0n1 installed the OS onto the data disk there (2026-10-11).
+  #
+  # Runs from both disks' preCreateHook because attribute order makes disko
+  # create `data` before `os`, and the data hook needs the answer to know
+  # which disk is not the OS disk. Idempotent, and a no-op when osDevice is
+  # a real path (a SCSI size, or a test's virtual disk).
+  azureOsResolve = lib.optionalString (azureUdevRules != null) ''
+    ${dropStale osDevice}
+    if [ ! -e "${osDevice}" ]; then
+      # lsblk rather than a glob, for the reason in the data hook below:
+      # disko's script runs with globbing off, so /sys/block/nvme*n* stays
+      # literal and matches nothing.
+      found=""
+      for name in $(lsblk -dn -o NAME,TYPE | awk '$2 == "disk" { print $1 }'); do
+        case "$name" in nvme*) ;; *) continue ;; esac
+        [ -r "/sys/block/$name/nsid" ] || continue
+        [ "$(cat "/sys/block/$name/nsid")" = "1" ] || continue
+        found="$found /dev/$name"
+      done
+      set -- $found
+      if [ "$#" -ne 1 ]; then
+        echo "repose: expected exactly one NVMe namespace with nsid 1 (the Azure OS disk), found:$found" >&2
+        lsblk -d -o NAME,SIZE,MODEL >&2 || true
+        exit 1
+      fi
+      mkdir -p "$(dirname "${osDevice}")"
+      ln -sfn "$1" "${osDevice}"
+      echo "repose: os disk ${osDevice} -> $1"
+    fi
+  '';
+
   # nixos-anywhere's kexec installer has no Azure udev rules, and the v7
   # sizes expose disks over NVMe with no by-LUN name at all (DECISIONS I-39,
   # I-41). This runs before disko touches the data disk and makes
@@ -33,6 +83,8 @@ let
   # retriggering, on an NVMe size by pointing the symlink at the one NVMe
   # disk that is not the OS disk. A no-op wherever the path already exists.
   azureUdevHook = lib.optionalString (azureUdevRules != null) ''
+    ${azureOsResolve}
+    ${dropStale dataDevice}
     # The SCSI branch is best effort: this waagent build ships no rules at
     # that path, and on host-01 the unguarded cp aborted the whole hook
     # before the NVMe branch below ever ran (2026-09-20).
@@ -71,6 +123,7 @@ let
   os = {
     type = "disk";
     device = osDevice;
+    preCreateHook = azureOsResolve;
     content = {
       type = "gpt";
       partitions = {

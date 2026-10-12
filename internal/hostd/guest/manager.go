@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,7 +68,8 @@ const (
 	// CodeStorePathHidden is guestd's Switch refusal of a closure an
 	// overlayfs whiteout in the guest's store hides (DECISIONS I-589).
 	CodeStorePathHidden = "store_path_hidden"
-	// CodeBootFailed (bootfail.go) is the eleventh, since I-592.
+	// CodeBootFailed (bootfail.go) is the eleventh, since I-592, and
+	// CodeVolumeUnavailable (pool.go) the twelfth, since I-644.
 )
 
 // Reserved secret names (DECISIONS I-10).
@@ -127,6 +129,9 @@ type Error struct {
 	// console was classified as.
 	NoReady bool
 	Reason  string
+	// interrupted marks a failure caused by the host shutting down
+	// (I-650): run neither stores nor sends it.
+	interrupted bool
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -207,6 +212,13 @@ type Config struct {
 	UnitPoll        time.Duration
 	// FailAtStep injects a failure into CreateGuest at that step (tests).
 	FailAtStep int
+	// Freeze turns on freezing guests across host restarts (I-652).
+	Freeze FreezeConfig
+	// FreePageReporting starts guests with a balloon that hands the pages
+	// they free back to the host (I-652): smaller frozen images, and the
+	// unit holds what the guest uses. Guests started before keep their
+	// devices until their next start.
+	FreePageReporting bool
 }
 
 // Defaults fills documented values into zero fields.
@@ -344,6 +356,17 @@ type Deps struct {
 	// func stops it. Nil disables capture (tests).
 	ConsoleStart func(guestID, dir string) (stop func())
 	Now          func() time.Time
+	// SystemStopping reports a host shutdown in progress (systemd says
+	// "stopping"). Nil means never (tests set it). DECISIONS I-650.
+	SystemStopping func(ctx context.Context) bool
+	// BootID returns the host's current boot id and BootTime when that
+	// boot began (DECISIONS I-645). A nil BootID marks no guest as
+	// interrupted (tests that do not exercise it).
+	BootID   func() (string, error)
+	BootTime func() (time.Time, error)
+	// Freeze is the guest freeze's key, image volume and fingerprint
+	// (I-652, I-653); empty when the freeze is off.
+	Freeze FreezeDeps
 }
 
 type job struct {
@@ -357,11 +380,16 @@ type worker struct {
 
 // Manager owns the guests.
 type Manager struct {
-	cfg  Config
-	d    Deps
-	ctx  context.Context
-	stop context.CancelFunc
-	wg   sync.WaitGroup
+	cfg Config
+	d   Deps
+	// cutFreeze, in tests, ends a freeze as a hostd killed at that point
+	// would: at "snapshot" (the snapshot written, the VM still paused) or
+	// "stopped" (the hypervisor gone, the image not closed). Nil outside
+	// tests.
+	cutFreeze func(guestID, at string) bool
+	ctx       context.Context
+	stop      context.CancelFunc
+	wg        sync.WaitGroup
 
 	// curMu guards the sample cursors and the last sample timestamp; a
 	// tap's counters are read under it (advanceNet).
@@ -389,10 +417,23 @@ type Manager struct {
 	maxIndex    uint32
 	poolWarned  time.Time
 	storeWarned time.Time
+	// poolDownLogged paces the pool_unavailable log line (I-644).
+	poolDownLogged time.Time
 
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// shuttingDown is set once hostd or the host is going down (I-650):
+	// from then on a guest that exits, or a boot that fails, leaves its
+	// record as it is.
+	shuttingDown atomic.Bool
+	// hostDown is set once systemd says the host is stopping (HostStopping).
+	hostDown atomic.Bool
+	// freezeMu (a one-slot semaphore, so a wait can end with its context)
+	// lets one FreezeAll, ThawAll or SyncClocks run at a time (freeze.go,
+	// I-652).
+	freezeMu chan struct{}
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.
@@ -415,7 +456,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, d: d,
-		workers: map[string]*worker{}, inflight: map[string]bool{},
+		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
 		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{},
 		last:     map[string]sampleCursor{},
 		buildSeq: map[string]uint64{},
@@ -541,6 +582,12 @@ func (m *Manager) log(g *state.Guest) *slog.Logger {
 func (m *Manager) setState(g *state.Guest, st, reason string) error {
 	prev := g.State
 	g.State, g.Reason = st, reason
+	// A guest that runs again, or that its owner stops, destroys or
+	// restores, is no longer one a host restart interrupted (I-645).
+	switch st {
+	case StateRunning, StateStopping, StateDestroying, StateRestoring:
+		g.Interrupted = nil
+	}
 	if err := m.d.State.PutGuest(g); err != nil {
 		return fmt.Errorf("state write: %w", err)
 	}
@@ -582,9 +629,14 @@ func (m *Manager) refreshGuestGauge() {
 			m.d.Metrics.Guests.WithLabelValues(st, class).Set(0)
 		}
 	}
+	interrupted := 0
 	for _, g := range gs {
 		m.d.Metrics.Guests.WithLabelValues(g.State, g.Class).Inc()
+		if g.Interrupted != nil && g.State != StateRunning && m.d.Now().Sub(g.Interrupted.At) < InterruptedRecent {
+			interrupted++
+		}
 	}
+	m.d.Metrics.GuestsInterrupted.Set(float64(interrupted))
 }
 
 // GuestStates is the guest state enum of docs/interfaces/README.md, the
@@ -715,19 +767,48 @@ func (m *Manager) poolUsedPct() (float64, error) {
 	return max(pct, meta), nil
 }
 
-// Hello builds the reconciliation message for the stream.
+// Hello builds the reconciliation message for the stream. It carries the
+// host's boot and each guest a host restart interrupted (I-645); both come
+// from bbolt and the kernel, so a hostd or api restart loses neither.
 func (m *Manager) Hello() *hostdv1.Hello {
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes()}
+	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
+	// (an lvs error), so an api older than pool_unavailable keeps new
+	// machines off the host too (DECISIONS I-644).
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable()}
+	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
-		h.Guests = append(h.Guests, &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure})
+		gst := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure}
+		if g.Interrupted != nil {
+			gst.InterruptedBootId, gst.InterruptedAt = g.Interrupted.BootID, g.Interrupted.At.Unix()
+		}
+		h.Guests = append(h.Guests, gst)
 	}
 	return h
 }
 
+// hostBootInfo is the host's boot id and its start in unix seconds; "" and 0 when
+// either is unknown.
+func (m *Manager) hostBootInfo() (string, int64) {
+	if m.d.BootID == nil {
+		return "", 0
+	}
+	id, err := m.d.BootID()
+	if err != nil {
+		return "", 0
+	}
+	var at int64
+	if m.d.BootTime != nil {
+		if t, err := m.d.BootTime(); err == nil {
+			at = t.Unix()
+		}
+	}
+	return id, at
+}
+
 // Heartbeat builds the periodic heartbeat.
 func (m *Manager) Heartbeat() *hostdv1.Heartbeat {
-	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), Draining: m.Draining()}
+	hb := &hostdv1.Heartbeat{FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), Draining: m.Draining(), PoolUnavailable: m.PoolUnavailable()}
 	if m.d.Load1 != nil {
 		hb.Load1 = m.d.Load1()
 	}
@@ -1022,8 +1103,9 @@ func (m *Manager) runJob(j job) {
 		j.internal(m.ctx)
 		return
 	}
-	res := m.run(m.ctx, j.cmd)
-	m.d.Emit.Result(res)
+	if res := m.run(m.ctx, j.cmd); res != nil {
+		m.d.Emit.Result(res)
+	}
 }
 
 // Execute admits and runs a command to completion, returning its result
@@ -1047,6 +1129,11 @@ func (m *Manager) run(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Result
 	kind := Kind(cmd)
 	m.d.Log.Info("command start", "event", "command_start", "command_id", cmd.CommandId, "kind", kind, "guest_id", Target(cmd))
 	res := m.execute(ctx, cmd)
+	if wasInterrupted(res) && m.hostDown.Load() {
+		// Not stored: a resend after the restart runs the command again.
+		m.d.Log.Warn("command interrupted by the shutdown", "event", "command_result", "command_id", cmd.CommandId, "kind", kind, "result", "interrupted", "guest_id", Target(cmd))
+		return nil
+	}
 	m.finish(cmd, res, start)
 	return res
 }

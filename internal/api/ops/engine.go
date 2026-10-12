@@ -149,8 +149,17 @@ var ErrOpInProgress = errors.New("an operation is in progress")
 
 // Enqueue inserts a pending op inside q. A project with an open op refuses
 // a second one unless allowQueue is set (secrets pushes queue behind).
+//
+// The count runs under the project's row lock, so two transactions that
+// each find no open op cannot both enqueue one: a user's start or rm and
+// the resume tick's start (DECISIONS I-645) serialise on it, and the
+// second sees the first's op. Called on the pool, the lock lasts only the
+// statement.
 func (e *Engine) Enqueue(ctx context.Context, q store.Querier, n NewOp, allowQueue bool) (uuid.UUID, error) {
 	if n.ProjectID != nil && !allowQueue {
+		if _, err := q.Exec(ctx, "select 1 from projects where id = $1 for update", *n.ProjectID); err != nil {
+			return uuid.Nil, err
+		}
 		var open int
 		if err := q.QueryRow(ctx, "select count(*) from ops where project_id = $1 and state in ('pending','running')", *n.ProjectID).Scan(&open); err != nil {
 			return uuid.Nil, err

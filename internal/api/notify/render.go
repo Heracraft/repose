@@ -45,6 +45,9 @@ type content struct {
 	Lines        []string
 	Dashboard    string
 	Unsubscribe  string
+	// Why is the footer's reason for the email, beside the unsubscribe
+	// link: the partial's `why` block, or the agent sentence.
+	Why string
 }
 
 type step struct {
@@ -249,6 +252,12 @@ func Render(m Message) (Rendered, error) {
 		c.Unsubscribe = m.Unsubscribe
 	}
 	var err error
+	if c.Why, err = block(t, "why", d); err != nil {
+		return Rendered{}, err
+	}
+	if c.Why == "" {
+		c.Why = "You get these because an agent on your machine reported something."
+	}
 	if c.Heading, err = block(t, "heading", d); err != nil {
 		return Rendered{}, err
 	}

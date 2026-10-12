@@ -58,6 +58,7 @@ type Harness struct {
 	Questions *questions.Service
 
 	engine       atomic.Pointer[ops.Engine]
+	helloHook    atomic.Pointer[func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error]
 	grpcAddr     string
 	cancel       context.CancelFunc
 	engineCancel context.CancelFunc
@@ -104,10 +105,16 @@ func New(t *testing.T, o Options) *Harness {
 	h.Questions = questions.New(pool, h.Events, h.HostMgr, log)
 	h.Events.SetQuestions(h.Questions)
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
-		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) {
+		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
+			if f := h.helloHook.Load(); f != nil {
+				if err := (*f)(ctx, hostID, hl); err != nil {
+					return err
+				}
+			}
 			if e := h.engine.Load(); e != nil {
 				e.OnHello(ctx, hostID, hl)
 			}
+			return nil
 		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
 			if h.Questions.OnResult(ctx, hostID, r) {
@@ -168,6 +175,13 @@ func (h *Harness) StartEngine(cfg ops.Config) *ops.Engine {
 	h.Engine = e
 	go e.Run(ectx)
 	return e
+}
+
+// SetHelloHook runs f on every Hello before the engine's own handling, as
+// app.go runs the resume's (DECISIONS I-645); an error refuses the Hello
+// and closes the host's stream.
+func (h *Harness) SetHelloHook(f func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error) {
+	h.helloHook.Store(&f)
 }
 
 // StopEngine halts the engine loop without replacing it.

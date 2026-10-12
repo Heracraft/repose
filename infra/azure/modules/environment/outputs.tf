@@ -53,6 +53,14 @@ output "keyvault" {
   }
 }
 
+output "freeze_keyvault" {
+  description = "The guest freeze's vault URI and key name for repose.host.freeze (DECISIONS I-653); null when not created."
+  value = length(module.freeze_keyvault) == 0 ? null : {
+    vault_uri = module.freeze_keyvault[0].vault_uri
+    key_name  = "freeze-wrap"
+  }
+}
+
 output "fqdns" {
   description = "DNS names created, empty when manage_dns is false."
   value       = var.manage_dns ? module.dns[0].fqdns : {}

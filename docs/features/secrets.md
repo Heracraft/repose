@@ -282,6 +282,13 @@ rejects a fragment containing a string that matches a current secret value
 of that project). Not in tmux history the platform can see; the platform
 cannot see tmux history.
 
+Not on a host's disk in the clear, with one bounded exception (DECISIONS
+I-653): on a host with the guest freeze turned on, a restart writes each
+running guest's memory, secrets included, to an image on the host. The
+image is encrypted with a key of its own that only the host's identity can
+unwrap at Key Vault, never leaves the host, and is removed as soon as the
+guest is restored or the image is found unusable, at most 6 hours later.
+
 ## Depends on
 
 Workstreams 05 (secrets routes, envelope encryption, Key Vault), 03

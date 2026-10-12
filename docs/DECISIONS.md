@@ -18413,3 +18413,872 @@ STATUS left open).
   A stopped machine is not fetched: its final snapshot holds the
   commits for 30 days.
 - `TestRmFetchesFirst`, `TestSSHStartsAStoppedMachineAndExecDoesNot`.
+**I-642. The staging host registers with `hostdev` on the staging edge, not
+with production's api (staging-host, 2026-10-11).** *Made during
+implementation.*
+- Staging exists so that a host-level change is proven on a machine whose
+  guests nobody paid for. It has no control plane of its own
+  (`coolify_count = 0`), and the obvious shortcut — register the staging host
+  with production's api and drain it at once — does not work. The api's gRPC
+  listener is `10.200.3.4:8443`, a private address in production's VNet;
+  `nsg-control` opens 80, 443 and 22, and no 8443; and both environments take
+  the module default `10.200.0.0/16`, so the two VNets cannot be peered. What
+  is left is a rule on production's control plane opening the api to
+  staging's NAT address — and `Register`'s reply would then make a throwaway
+  machine a WireGuard peer on production's edge with a route for its guest
+  CIDR. Draining stops the scheduler; it does not undo that.
+- So the api side of `grpc-hostd.md` is played by `hostdev` (I-17) on the
+  staging edge: `hostdev init --listen 10.200.2.4:8444`, its CA in
+  `nix/hosts/host-stg-01.nix`, and the host reaching it privately inside
+  staging's own VNet. 8444 because the edge's gateway holds 8443 for hook
+  ingest. Two steps are by hand and stay by hand, both in `infra/README.md`:
+  the binary is copied over and kept out of the edge's configuration
+  (`docs/SECURITY.md` M-4 took it out of there for holding key material), and
+  one nft rule accepts 8444 from the hosts subnet, because the edge's input
+  chain drops by default.
+- What this buys: every host-side claim provable on a disposable machine —
+  whether the pool comes back, the activation unit's ordering, LVM leftovers,
+  a genuine `thin_check` failure left alone rather than repaired, guests
+  restarting, agent windows surviving a reboot.
+- What it does not: hostdev speaks the protocol and holds none of the api's
+  logic, so the user-visible halves — the `volume_unavailable` refusal
+  (I-644) and the api restarting what was running with one notification
+  (I-645) — stay proven by their Go tests and by the one planned host-01
+  reboot.
+- *Rejected:* a second Coolify environment on `coolify-01` (the api still
+  listens in production's VNet, so the NSG rule comes back, and a staging
+  container shares the production control plane); staging's own control VM
+  managed by the owner's Coolify instance, which is the designed shape (I-83)
+  and would prove the api halves too, but costs $4.6 a day and is a second
+  control plane for a product that is not yet validated (owner's call,
+  2026-10-11).
+
+**I-647. The OS disk is resolved at install time too, by NVMe namespace id
+(staging-host, 2026-10-11).** Amends I-39, extends I-41. *Made during
+implementation.*
+- I-41 resolved the data disk at install time and left
+  `repose.host.osDevice` fixed at `/dev/nvme0n1`, the name I-39 recorded.
+  Installing host-stg-01 showed why that is not safe. On its `D2s_v7` the
+  data disk's controller enumerated first, so `/dev/nvme0n1` was the 64 GB
+  **data** disk and the 256 GB OS disk was `/dev/nvme1n1`. disko wrote the
+  ESP and the ext4 root onto the data disk, renamed the Ubuntu root
+  partition `disk-data-pv`, and stopped only because `vgcreate` found an
+  ext4 signature on it and would not wipe one unasked. With LVM rather than
+  ext4 on that partition — a re-install of a host that already carries
+  guests, which the runbook offers as a recovery — nothing would have asked.
+- Azure's mapping is by namespace, not by name: the OS disk is nsid 1, and a
+  data disk at LUN n is nsid n+2. Both sightings fit that and neither fits a
+  fixed name: I-39's `nvme0n1`/`nvme0n2` pair is nsid 1 and LUN 0 + 2 on one
+  controller, and host-stg-01 is the same mapping spread across two
+  (`nvme0n1` 64G nsid 12 for LUN 10, `nvme1n1` 256G nsid 1, both controllers
+  reporting `MSFT NVMe Accelerator v1.0`).
+- So the layout's Azure hook resolves `/dev/disk/repose/os` from the one
+  namespace whose nsid is 1, and fails with the list of disks it saw when
+  there is not exactly one — the shape I-41 gave the data disk.
+  `repose.host.osDevice` defaults to that symlink; any real path (a SCSI
+  size, a test's virtual disk) is used as it stands and the hook is a no-op.
+  It runs from both disks' `preCreateHook`, because attribute order makes
+  disko create `data` before `os` and the data hook needs to know which disk
+  is not the OS disk.
+- Both hooks delete their own symlink before resolving. `/dev` is tmpfs,
+  but an install that failed and is retried has not rebooted, so the
+  previous run's answer is still there, and a wrong one stays wrong: on the
+  second attempt `/dev/disk/repose/data` still held run one's answer, both
+  names resolved to the same disk, and disko partitioned it twice — a
+  238 GB thin pool, then an "ESP" that was the PV. A path the operator
+  named, a real node or a by-LUN symlink, is never touched.
+- The edge keeps `/dev/nvme0n1`: it has one disk and `nix/edge/disko.nix`
+  calls the layout without the Azure hook. A second edge disk would need
+  this treatment.
+- Not changed, but worth knowing on any re-install: disko runs mkfs only
+  when `blkid` finds nothing, so a stale superblock inside a new partition's
+  range makes it skip the format and fail on the mount instead
+  (`fsconfig() failed: Can't open blockdev` for a vfat mount of an ext4
+  signature). Zero the first 16 MiB of both disks before a re-install.
+- *Rejected:* the Ubuntu image's `cloudimg-rootfs` filesystem label (ties
+  the installer to a marketplace image, and a failed run leaves it on the
+  wrong disk); disk size (a staging host and a production host differ, and
+  both disks can be the same size); `azure-nvme-id`, which is what Azure
+  ships for this and is not in nixos-anywhere's kexec image.
+
+**I-643. One unit activates the guest pool after boot; the initrd has no
+LVM (host-pool, 2026-10-11).** *Made during implementation* (L4 of the
+host-restart plan, after the 2026-10-10 live migration of host-01).
+- On 2026-10-10 the initrd's LVM began a thin_check of `vg-guests/thin`
+  and the switch to the real root killed it. Its device-mapper leftovers
+  blocked every later activation, nothing tried again, and every guest,
+  the npm cache and the Docker mirror stayed down for about 9 hours.
+- `boot.initrd.services.lvm.enable = false` (its default follows the
+  systemd initrd): the root filesystem is ext4 on the OS disk. Nothing
+  autoactivates vg-guests: `auto_activation_volume_list = [ ]` in
+  lvm.conf, and the VG's own flag (`vgchange --setautoactivation n`, set
+  once by the unit) for any other config.
+- `repose-guest-pool.service` (oneshot, 30 min, `restartIfChanged =
+  false`, defined when `repose.host.dataDisk.enable`) is the one owner of
+  activation: waits up to 5 minutes for the VG; an active pool gets
+  `vgchange -ay` and nothing else (the switch on a live host); otherwise
+  leftovers are removed top down (pool, tpool, tdata, tmeta) and only at
+  open count 0, then `lvchange -ay` runs thin_check. Three attempts, 10,
+  30 and 60 s apart. A thin_check that exits non-zero (lvm's
+  `(status:N)`, N > 0) exits 2 at once: damage is never retried and never
+  repaired (`thin_repair` and `lvconvert --repair` are the owner's call).
+  A leftover held by anything else ends the attempt untouched.
+- Every failure (exit 1 or 2) leaves `/run/repose/pool-hold`, and the
+  unit's `ExecCondition` skips it while that file exists. Without it,
+  hostd's `Wants=` and the cache volume's `Requires=` start a failed
+  oneshot again at every hostd restart and every switch, which retried a
+  damaged pool and could remove a `thin_tmeta` an operator had activated
+  by hand to dump it. The operator removes the file before `systemctl
+  start repose-guest-pool`; it is on /run, so a reboot runs the unit once
+  more (review of host-pool, 2026-10-11).
+- It fails only for the pool or `repose-cache`. A tenant volume that does
+  not activate is logged and counted (`repose_lvm_volumes_inactive`) and
+  hostd's start activates it once (I-644).
+- It then starts `dm-event.service`, turns monitoring on with the
+  dmeventd-capable lvm and checks `seg_monitor` is `monitored`. After the
+  reboot host-01's pool was unmonitored for a day: `lvm2-monitor` ran
+  while the pool was inactive, and the `lvm` on PATH (`pkgs.lvm2`) has no
+  dmeventd support, so `lvchange --monitor y` did nothing and said
+  nothing. `pkgs.lvm2` is gone from the host's PATH, the pool monitor's,
+  the cache unit's and hostd's: each uses `services.lvm.package`.
+- The cache volume requires and follows the pool unit and is wanted by
+  it; npm-cache and docker-registry are wanted by the cache volume. A
+  pool brought back by hand (`systemctl start repose-guest-pool`) brings
+  them all back. hostd wants and follows the pool unit, never requires
+  it: it must come up and report a pool that did not (I-644).
+- The pool monitor leaves out a metric with no value (an empty
+  `repose_lvm_pool_data_percent` made node_exporter reject the whole
+  file) and adds `repose_lvm_pool_active`, `repose_lvm_pool_monitored`
+  and `repose_lvm_volumes_inactive`. Alert `PoolUnmonitored` (warn, 30
+  min).
+- VM test `host-reboot`; RUNBOOK `PoolUnavailable`, `PoolUnmonitored`,
+  "Host rebooted", "Switch a host to main" step 7.
+- Autoextend grows the pool by 5 percent, not I-586's 10: lvm extends
+  only by the whole step, and 10 percent of a pool that is 95 percent of
+  the disk is twice the VG's 5 percent headroom, so the extension at 80
+  percent could never happen. On host-stg-01 (2026-10-12), filled to 83
+  percent, dmeventd logged "Insufficient free space: 12190 extents
+  needed, but only 6554 available" every 10 to 50 s and the pool stayed
+  476 GiB; the warnings (`pool_high` at 75 percent seen, `PoolHigh`)
+  were the only response. 5 percent of the pool fits the headroom once;
+  `host-storage` asserts that the step fits the VG's free space.
+
+**I-644. `volume_unavailable` and the pool's health reach hostd, the api
+and the user (host-pool, 2026-10-11).** *Made during implementation* (L4).
+- `lvm.PoolStatus` is one `lvs` call (`lv_active`, `lv_health_status`,
+  size, data and metadata percent). `ErrPoolUnavailable` is a pool that
+  is inactive, missing, `failed` or `metadata_read_only`; `out_of_data`
+  is not (PoolFull pages for it). An inactive pool used to parse as 0
+  percent used, which read as an empty pool, so the scheduler kept
+  placing machines on host-01.
+- `VolumeExists` is false only when lvs says "Failed to find logical
+  volume"; a missing VG is an error. Before, it sent running guests to
+  `error` at reconcile and let destroy leak the volume.
+- The guard is in the lvm layer: `CreateVolume`, `Snapshot`,
+  `RemoveVolume`, `ExtendVolume` and `Activate` refuse an unavailable pool
+  before calling lvm, which would otherwise activate the pool itself,
+  with its own thin_check, behind the pool unit's back. Callers map it to
+  the new error code `volume_unavailable` (the twelfth,
+  grpc-hostd.md).
+- Start checks the pool first, then activates an inactive `g-` or
+  `auth-` volume once, and answers `volume_unavailable` if either fails,
+  so a dead pool never reaches the boot fallback (I-590). A pool error in
+  the capacity checks is `volume_unavailable` too.
+- Reconcile reads the pool once: while it is unavailable a guest whose
+  unit is gone becomes `stopped` ("reconciled: thin pool unavailable"),
+  never `error`, and the stale snapshot sweep waits for the pool.
+  `pool_high` stays quiet while the pool is down; `pool_unavailable` is
+  logged every 10 minutes instead.
+- `Hello.pool_unavailable = 6`, `Heartbeat.pool_unavailable = 7`; pool
+  bytes are 0 while it is set, so an api older than the field keeps new
+  machines off the host too. Metric `repose_host_pool_available`, alert
+  `PoolUnavailable` (page after 5 min), which inhibits PoolHigh,
+  PoolFull, PoolMetadataHigh and PoolUnmonitored for the host. `hostd
+  status` has a `pool` line.
+- Migration 0021 adds `hosts.pool_unavailable`, set from Hello and every
+  Heartbeat (absent from an older hostd: false). `PickHost` and `Freeing`
+  skip such hosts.
+- A start op that fails with `volume_unavailable` leaves the project
+  `stopped` with `last_error`; the next `repose start` is a start, not a
+  restart. A create or restore keeps `error` with its host: freeing the
+  placement would orphan hostd's record, and the scheduler already
+  places nothing there. The user reads "the server's machine disks are
+  unavailable right now; this machine's disk is intact, and `repose
+  start` works once they are back". The CLI exits 1 for it, not 8: it is
+  not a capacity refusal that clears in minutes.
+
+**I-649. Host hardening every Azure VM gets: `mana_ib`, NVMe timeout,
+ethtool, a 10 s boot menu (host-pool, 2026-10-11).** *Made during
+implementation* (L4, owner decisions D3 and 10).
+- `nix/hosts/vm-hardening.nix`, imported by hosts and the edge:
+  `mana_ib` blacklisted (nothing uses RDMA; the failed teardown calls on
+  2026-10-10 were its, so hygiene rather than a proven fix);
+  `nvme_core.io_timeout=240` on the kernel line, a udev rule for disks
+  that appear later, and `repose-nvme-timeout.service`, which writes
+  240000 to the running disks' `queue/io_timeout` at the switch (no
+  `udevadm trigger`, which would replay the LVM rules over every guest's
+  dm device); `ethtool` for the RUNBOOK's dead-VF step; the systemd-boot
+  menu waits 10 s instead of 2, so the previous generation can be picked
+  on the serial console.
+- The cost of the timeout: a disk that really fails shows as stuck I/O
+  for up to 4 minutes before the kernel resets it.
+
+**I-650. A host shutdown powers its guests off cleanly, and hostd
+records nothing as failed while the host goes down (host-pool,
+2026-10-11).** *Made during implementation* (L5; owner decision D7).
+- Measured on woker-1 with a real Cloud Hypervisor 53.0 guest (2 vCPU, a
+  writer appending every 0.2 s without fsync, RESEARCH §16): SIGTERM ends CH in 0.16 s with exit 0 and the guest is not
+  told; the last 26 to 32 writes (5 to 6 s) were lost, with NUL bytes at
+  the file's end. SIGKILL the same. `PUT /api/v1/vm.power-button` makes
+  the guest's systemd power off: CH exits 0 after 7.1 to 7.3 s and
+  nothing is lost; guestd's own Shutdown took 7.6 s, the same. A host
+  shutdown today is SIGTERM: guest@ units have `KillMode=mixed` and no
+  ExecStop.
+- guest@ units are transient (hostd's systemd-run), so a property hostd
+  sets reaches only guests started later. A static template drop-in,
+  `guest@.service.d/overrides.conf`, reaches every guest@ unit, already
+  running ones included, at the daemon-reload of the switch that brings
+  it (checked on woker-1's systemd 255 and in host-services). Its
+  `ExecStop` presses the power button through the guest's API socket and
+  waits up to 20 s for the hypervisor to exit, then systemd's SIGTERM
+  follows as before. It acts only while systemd says the system is
+  stopping (or cannot answer, as late in a shutdown): hostd's own stops
+  ask guestd first, and a failed boot must not wait 20 s more. The
+  drop-in also orders each guest after its virtiofsd units, so a shutdown
+  stops the guest while its store share still answers.
+- Two flags, because a hostd restart is not a host shutdown. hostd's
+  own flag, set when its context ends, only mutes the monitor's exit
+  check. The host flag is set once `systemctl is-system-running` says
+  `stopping` (asked too, since a guest@ unit can stop before hostd's
+  SIGTERM arrives). While either is set, a guest whose hypervisor exits
+  keeps its record (`running`, closure and last good closure) and logs
+  `guest_interrupted`. Only while the host flag is set does a boot that
+  fails neither write `error`, nor fall back (I-590), nor store its
+  result: the record stays `starting` (or `creating`), the next boot's
+  reconcile makes it `stopped`, and the api's resend runs the command
+  again. A create resent that way finds a `stopped` record of the same
+  project with no last good closure (it never reached Ready) and
+  continues it like an `error` one; any other `stopped` guest is still
+  `already_exists`. On a plain hostd restart (every switch) a boot in
+  progress is torn down and answered as before: its guest@ unit outlives
+  hostd, and left running it would reconcile as `running` with a closure
+  that never reached Ready (review of host-pool, 2026-10-11). Reconcile
+  at the next start sees `running` with no unit, which is what resume
+  after a reboot (I-645) marks.
+- A hard crash gets no clean stop. `TestUnexpectedExitDuringShutdownKeepsRunning`,
+  `TestBootDuringShutdownNeverFallsBack`, `TestHostdRestartMidBootIsNotAnInterruption`,
+  `TestCreateInterruptedByHostShutdownResends`, host-services' graceful
+  reboot subtest (the stand-in hypervisor under hostd's own guest@
+  sandbox).
+
+**I-654. The root password is for the serial console only, from a file
+placed by hand (host-pool, 2026-10-11).** *Made during implementation*
+(owner decision D3, changed at the owner's review: the hash is set at the
+handoff).
+- `users.users.root.hashedPasswordFile = /var/lib/repose/root-console.hash`
+  on hosts and the edge (vm-hardening.nix), replacing `hashedPassword =
+  "!"`. NixOS reads the file at every activation; a missing file leaves
+  the shadow entry `!`, locked (VM test `host-reboot`). `/etc/repose` does
+  not exist on host-01, so the file lives under `/var/lib/repose`.
+- SSH stays key-only (`PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password`,
+  checked on host-01), so the password opens the serial console and
+  nothing else. Without it, a rollback from the boot menu is possible but
+  no login: no dead-VF step and no diagnosis.
+- The owner makes the hash (`mkpasswd -m yescrypt`), installs it 0400 as
+  root and logs in once on the serial console; the host and the edge get
+  different passwords. Nothing secret is in the repo or the store. RUNBOOK
+  "Console access (host and edge)".
+
+**I-645. Running machines start again after a host reboot (host-resume,
+2026-10-11).** Amends I-147 (for the resume only). *Made during
+implementation* (L6 of the host-restart plan after the 2026-10-10
+host-01 reboot left guests down for 9 hours; the owner said yes to D4,
+D5 and D6 as recommended).
+- hostd records the boot id each Reconcile runs under (bbolt `meta`
+  `host_boot_id`). When the next start finds a different one, every
+  guest bbolt says was `running` or `starting` with no `guest@` unit is
+  marked `Interrupted{boot_id, at, prev_state}` before its state is
+  settled, and the boot id is written after the guests, so a Reconcile
+  cut short marks the same guests again. The first start that records a
+  boot id marks nothing; a hostd restart in the same boot marks nothing.
+  `creating`, `restoring` and `stopping` guests are not marked: their
+  op resends its command, or their owner was stopping them.
+- The mark is cleared when the guest next reaches `running` (setState,
+  which covers reconcile's found-running path), and by a stop (also of a
+  guest already stopped), a destroy and a restore; marks nothing cleared
+  are dropped after 7 days. `Hello` carries `host_boot_id` (7),
+  `host_boot_at` (8) and per guest `interrupted_boot_id` (6) and
+  `interrupted_at` (7), all built from bbolt, so neither a hostd nor an
+  api restart loses one. Gauge `repose_host_guests_interrupted`: marks
+  under 6 h whose guest is not running. Logs `host_boot` and
+  `guest_interrupted`, ids only.
+- The api writes a `guest_resumes` row per (project, boot id) from the
+  Hello (0022), only for a guest placed on that host (I-447), with the
+  host's last heartbeat before the Hello as `host_lost_at` (read in the
+  statement that overwrites it). A failed insert refuses the Hello: the
+  stream closes with UNAVAILABLE, `last_heartbeat_at` is put back, so the
+  resent Hello reads the same `host_lost_at`, and hostd sends it again.
+- A tick (60 s plus kicks, on the replica holding `LockResume`, in
+  api-grpc) decides each open row in its own transaction with the start
+  it enqueues: a failure anywhere rolls both back and the row is decided
+  again. Closed: `started`; `already_running` (a start of the owner's
+  that finished after the row was written, also one asked for before the
+  host went down); `user_stopped` (any stop, destroy, restore or resize
+  created after `host_lost_at`, by the owner or the platform, whatever
+  its result, or the newest op is a destroy); `destroyed`;
+  `temp_expired`; `window_passed` (6 h after `interrupted_at`); `refused`
+  (lifecycle.Start refused: suspended, plan memory, abuse hold, restore
+  unfinished, a retired or lost host); `failed` (the start failed, after
+  one more try when the machine did not answer in time; only such
+  timeouts use up that try, counted in `guest_resumes.timeouts`, so a
+  start that first found the host full keeps it). Left pending
+  and not counted: an open op, an unreachable host or
+  `hosts.pool_unavailable` (I-644, read where the column exists), a start
+  that failed on capacity or `volume_unavailable`, `REPOSE_RESUME=off`,
+  and past the 3 starts per host per tick. A machine counts as down from
+  hostd's word, whatever `projects.state` says, and a project left
+  `running` by an op that was open at the Hello takes the Hello's state
+  when that op ends, unless its owner started it since.
+- The start is `lifecycle.Start`, extracted from the HTTP route, which
+  both use: it takes the project's row lock first, and `Engine.Enqueue`
+  now takes the same lock before counting open ops, so a resume and a
+  user's start or rm can never both enqueue (`TestResumeRacesHTTPRm`
+  fails without that lock). The billing gate reads on the same
+  transaction (`Gate.CheckIn`), so a start holds one pool connection,
+  not two. The resume lets `past_due` through
+  (billing.md day 0: machines keep running) and boots what was running
+  with `PlanStart(false)`: a built revision waits for the next start,
+  because terms.md says a reboot for a change is asked for first (this
+  amends I-147 for the resume only).
+- One `machines_restarted` notice per (user, host, boot), when all the
+  user's rows are closed or 10 minutes after the first, listing open
+  ones as waiting; never a second (`resume_notices`). It names no
+  project, follows `notify_email` (with the unsubscribe link) and the
+  ntfy URL, and lists only machines started or not started, with the
+  refusal sentence and `repose start <slug>`; a herdr machine's line
+  names no agent turn. Each machine gets a `host_restarted` project
+  event that notifies nobody.
+- `REPOSE_RESUME=off` on api-grpc holds every resume (rows stay
+  pending); it takes the app's restart.
+- `repose start`, `ssh` and `code` on a project whose host is
+  `unreachable` say the machine starts again by itself when the server
+  is back; the restore advice stays for `retired` and `lost`.
+- terms.md: "Environments run until you stop them" became true again
+  with the restart clause, and the availability paragraph says what a
+  restart ends and keeps (D6, owner approved).
+- Alerts: `ResumeStalled` (page, `repose_api_guest_resumes_pending > 0`
+  for 20 m) and `ResumeNotStarted` (warn, the hostd gauge above 0 for
+  30 m, which catches rows never written; not a page, since
+  `user_stopped` and `refused` leave the mark for up to 6 h).
+- A graceful host shutdown stops the guest units while hostd still
+  runs, and hostd's monitor records each exit as `error`. The shutdown
+  flag that keeps such a guest `running` is L5 (I-650). Until it lands,
+  and as a fallback after: hostd records `hostd_stopped_at` in bbolt
+  when it stops gracefully, and the first Reconcile of a new boot also
+  marks an `error` guest whose reason is the monitor's ("hypervisor
+  exited", "virtiofsd exited") and which went to error at most 2 min
+  before that stop, with `prev_state` running. The key is cleared by
+  every Reconcile, so a hostd restart in the same boot leaves nothing
+  for the next. A guest that crashed earlier, or any guest in error
+  after a host crash (no graceful stop recorded), is not marked.
+  Queue host-resume with or after L5: the L8 reboot should show a
+  `guest_interrupted` for every running guest either way.
+- `TestReconcileAfterHostReboot*`,
+  `TestReconcileAfterGracefulShutdownMarksGuestTheMonitorSawExit`,
+  `TestReconcileAfterRebootLeavesEarlierCrashUnmarked`,
+  `TestSetStateRunningClearsMark`,
+  `TestStopDestroyRestoreClearMark`, `TestHelloCarriesInterrupted`,
+  `TestOldMarkPruned`, the `internal/api/resume` tests,
+  `TestStartUnreachableText`, `TestHelloRefusedClosesTheStream`, the
+  machines_restarted html, txt and ntfy goldens, and the host-services
+  VM subtest.
+
+**I-652. Guests are frozen across a host restart and restored where they
+were (guest-freeze, 2026-10-11).** Amends I-233 and DESIGN.md §19 ("we
+do not use CH snapshot/restore"). *Made during implementation*, the
+owner's ask of 2026-10-11 ("freeze, restart, unfreeze, so overnight runs
+do not feel it"); off until the owner turns it on per host
+(`repose.host.freeze.enable`). Measured in docs/research/guest-freeze.md.
+- *What a freeze is.* hostd asks the guest to write back and drop its page
+  cache, waits 5 s, pauses it (`vm.pause`), has Cloud Hypervisor write its
+  memory and device state into an encrypted image of its own
+  (`vm.snapshot`, I-653), and ends the hypervisor with the VM still
+  paused; the tap, virtiofsd and the login share go as at a stop. The
+  guest's disk then holds exactly what its memory expects. Its bbolt state
+  stays `running`: the state enum is fixed, and a frozen guest is a running
+  guest whose hypervisor is between hosts. Smallest guests first, two
+  snapshots at a time (they share the data disk), within a deadline
+  (`--freeze-deadline`, 120 s, at most 240 in nix); a guest the pool has
+  no room for, or one the deadline leaves, is left running for whatever
+  the shutdown does next. A snapshot cannot be interrupted, so one whose
+  estimate (the guest@ unit's MemoryCurrent, or the class's memory, at
+  100 MB/s until this freeze's first snapshot shows the real rate) would
+  pass the deadline is not started; the freeze unit's TimeoutStopSec is
+  twice the deadline plus 60 s (540 s at most, inside Azure's ~600 s
+  wait). The page cache is dropped only in guests that will be frozen and
+  have the balloon (without it the drop saves nothing); every guest syncs.
+  One FreezeAll, ThawAll or SyncClocks runs at a time (a manager lock),
+  and the job on each guest's worker skips a guest with no hypervisor or
+  with a record, so two freezes, or a thaw during a freeze, never remove
+  an image being written or finished.
+- *What a restore is.* At hostd's start, inside Reconcile and before the
+  stream sends Hello, every complete image is checked and its key
+  unwrapped, all at once under one 90 s bound (so a vault outage holds
+  Hello back 90 s, not 90 s per image); then, two at a time,
+  the tap, rules, shape, store view, virtiofsd and login share brought back
+  as a boot does, the hypervisor started with `--restore` (copy mode),
+  the image closed (its key leaves the kernel), the VM resumed, guestd's
+  answer awaited, and the guest's clock set to the host's through guestd's
+  Exec (`date -u -s`): it resumes at the snapshot's time otherwise. The
+  image is then removed. Processes, tmux, agents and open files carry on;
+  connections that went through the host (SSH through the gateway, the
+  agents' HTTPS) end and are made again. Hello then reports the guest
+  running, so the api sees no stop.
+- *Restored only when nothing changed.* The record must be `complete`,
+  under 6 h old (I-645's window), and name the guest's current closure,
+  class and volume size and this hypervisor version; the guest must still
+  be `running` in bbolt with no unit; the volume's fingerprint (its first
+  4 KiB read with O_DIRECT: ext4's superblock, which any mount or fsck
+  changes) must match the one taken after the hypervisor exited; the key
+  must unwrap within 90 s and match its check. Anything else discards the
+  image and the guest goes on through reconcile as after any restart. A
+  CH 53 image refused CH 45 cleanly (CPUID check), and a store share
+  missing a path the guest held open refused the restore cleanly
+  (virtiofsd's saved state names it); both leave the image intact, and
+  hostd discards it rather than retry.
+  An image whose restore has not begun 90 + 180 s after the start is
+  discarded and that guest starts cold.
+- *A freeze cut short.* If hostd stops mid-freeze (crash, OOM, a switch
+  restarting it) the record says `writing` and the hypervisor may still
+  run with the VM paused. The next ThawAll resumes it (retrying until
+  vm.info says Running, up to 2 min, since a hypervisor mid-snapshot
+  answers nothing) and only then removes the image; if it never answers,
+  record and image stay for the next try rather than being removed under
+  it. A snapshot that fails and whose resume does not take leaves the
+  same `writing` record. Once the snapshot has returned, the image is
+  synced (syncfs) and the record says `written`: a hostd killed after
+  that, when it had already stopped the hypervisor, would otherwise
+  leave a whole image discarded as incomplete and the guest stopped with
+  its memory gone (host-stg-01, 2026-10-12, a kill -9 38 s into a freeze
+  of four guests). The next start finishes that freeze instead (leftover
+  units, the close, the volume's fingerprint, which nothing can have
+  changed since the pause) and restores the guest. A VM that has been
+  snapshotted must not be resumed: with Cloud Hypervisor 53 and
+  virtiofsd 1.14 its virtio-fs stops answering after vm.resume, so every
+  program run from /nix/store hangs while the guest otherwise runs
+  (host-stg-01, 2026-10-12, reproduced with vm.pause, vm.snapshot,
+  vm.resume by hand). So a hypervisor that outlived hostd mid-freeze is
+  waited for; if its VM is paused and the image is still mounted (same
+  boot), the snapshot is taken again into it and the guest restored like
+  any frozen one. Only when that cannot be done is it resumed. A
+  snapshot that fails inside a freeze still resumes the guest; whether
+  that guest's virtio-fs survives depends on how far the hypervisor got,
+  and is not handled.
+- *No full store optimise on hosts.* `nix-store --optimise` replaces a
+  store file already in use with a hard link to an identical one; the
+  guest's virtiofsd then holds a deleted inode that it cannot name in the
+  snapshot ("Inode deleted" at the freeze, "Migration source has lost
+  inode" at the restore), and the restore fails. On host-stg-01 the
+  daily nix-optimise run at 03:59 (2026-10-12) made all four restores of
+  the next freeze fail. Hosts no longer run it (`nix.optimise.automatic
+  = false`); `auto-optimise-store` still deduplicates each path as it is
+  added, before any guest can open it. An operator's manual
+  `nix-store --optimise` on a host has the same effect (RUNBOOK). Guests
+  are snapshotted smallest first, with the two slots taken in that order
+  (the goroutines used to race for them, and the largest won).
+- *Fallback.* A failed freeze resumes the guest (it never notices) and
+  leaves it to the shutdown: I-650's clean stop when that lands, the kill
+  until then. A failed restore stops what it started and discards the
+  image; reconcile then finds the guest `running` with no unit and settles
+  it as before (stopped; I-645 marks it interrupted and the api starts it
+  cold).
+- *Triggers.* (1) The host shutting down: `repose-guest-freeze.service`
+  (wanted by multi-user.target, after hostd and the pool unit) runs `hostd
+  freeze --shutdown` as its ExecStop. A drop-in on the template names
+  `guest@`, `virtiofsd@` and `virtiofsd-auth@` gives every guest unit,
+  transient ones and those already running after the switch's reload
+  included, `Before=repose-guest-freeze.service`, so systemd waits for the
+  freeze before it stops any guest, and stops hostd and the pool after it.
+  This covers `systemctl reboot` in a planned window, a switch that needs
+  a reboot, and Azure's graceful shutdown request (hv_utils, as on
+  2026-10-10). `--shutdown` freezes only when `systemctl
+  is-system-running` says `stopping`, so a switch that restarts or removes
+  the unit freezes nothing. (2) `hostd freeze` and `hostd thaw` for an
+  operator: freeze before a window, thaw if the window is called off.
+  (3) Azure Scheduled Events, in hostd behind `--scheduled-events`
+  (`repose.host.freeze.scheduledEvents`, off): a Reboot or Redeploy
+  notice for this VM freezes the guests and then approves the
+  event so Azure need not wait out NotBefore (15 min for a Reboot); a
+  Freeze notice (a pause of seconds for memory-preserving maintenance or a
+  live migration) freezes nothing and sets the guests' clocks once it is
+  over; an event that leaves the list while the host is still up (called
+  off) thaws the guests. Preempt and Terminate (the VM is deleted;
+  Preempt gives 30 s) are logged only. This goes beyond owner decision
+  20 ("visibility only, off by default"): it is off by default, and the
+  owner signs it off before it is turned on anywhere. Turning the listener on turns Scheduled Events on
+  for the VM: Azure then holds every reboot, the operator's own `az vm
+  restart` included, until approved or NotBefore passes. That is why it
+  is a separate switch (owner decision 20 deferred the listener for this
+  reason; the freeze is what makes it worth having).
+- *Time budget.* Azure documents no limit for a guest OS's graceful
+  shutdown; measured on host-stg-01, `az vm restart` waits about 600 s
+  for it and then powers the VM off (a unit holding the shutdown wrote 596
+  one-second ticks; the next boot came 612 s after the request).
+  Scheduled Events give at least 15 min for a Reboot and 10 for a
+  Redeploy. A freeze is bound by the data disk: on host-stg-01 (125 MB/s)
+  two guests, 0.76 GB and 4.1 GB of image, froze in 42 to 43 s and
+  restored in 13 and 39 s; at host-01's 600 MB/s that is about 9 s and 8
+  s. Images measured 0.8 to 1.2 GB for idle guests of any class and up to
+  6.6 GB for an xl guest with 5.6 GB of anonymous memory. The 120 s
+  deadline is well inside Azure's wait.
+- *Free page reporting.* Without it a guest's memory on the host only
+  grows (freed pages stay in the memfd), so its image does too: 6.6 GB
+  for an xl guest long after the load that touched it ended. Guests
+  started with `--free-page-reporting` (on with the freeze) get a balloon
+  of size 0 with `free_page_reporting=on`; the guest kernel hands freed
+  pages back and images follow use (3.6 GB to 1.5 GB for the cached case;
+  0.75 GB resident 40 s after a 3.4 GB cache was dropped). It also makes
+  the guest@ unit hold what the guest uses. Guests already running keep
+  their devices until their next start; the restore itself takes the
+  devices from the image.
+- *Not adopted:* `memory_restore_mode=ondemand` (0.11 s against 0.75 s,
+  but the image must stay readable for the guest's life and the next
+  image was the whole class, 8 GiB); freezing on a hostd stop (hostd
+  restarts do not touch guests); a new guest state (`frozen`); keeping the
+  image to retry a failed restore.
+- *L4, L5, L6, L7.* L4: Reconcile runs after the pool unit (hostd
+  `wants`/`after` it); an image on a pool that is down cannot be opened or
+  removed, so its record stays and the next start tries again, while the
+  guest itself is settled as L4 says. L5 (I-650): with the freeze on, the
+  clean stop becomes the freeze; guests the freeze did not take get the
+  clean stop; frozen guests' monitors are removed before their hypervisor
+  exits, so the shutdown flag never sees them. L6 (I-645): ThawAll runs
+  first in Reconcile, so a restored guest has a unit when the marks are
+  computed and is not marked; a guest whose image was discarded is marked
+  as any other and started cold by the api. L7 (I-646): the minute record
+  is still written and is what a cold start reopens.
+- *Interfaces.* No proto change: Hello says `running` for a restored
+  guest, as for one that never stopped. host-conventions.md lists the
+  image volume, its mount, the record, the unit and the flags.
+- *User docs.* Nothing user-visible ships while it is off. The commit that
+  turns it on for a host adds to lifecycle.md's "When a machine's server
+  restarts" (I-645): a machine that was running when its server restarted
+  comes back as it was, programs, tmux windows and agents included; SSH
+  sessions and other open connections drop and need reconnecting; the
+  machine's clock is set when it comes back; if that cannot happen it
+  starts again as described there. The same commit corrects what the
+  public pages promise about secrets in memory: secrets.md ("kept in
+  memory only: never on the machine's disk, never in snapshots", and the
+  refresh file kept "until the machine restarts") and lifecycle.md
+  (secrets "live only in memory") gain: during a server restart the
+  machine's memory, secrets included, is kept as an encrypted image on
+  the server for at most 6 h and removed once the machine resumes. And
+  it edits CLAUDE.md's "three homes for secrets" for I-653's exception,
+  which the owner signs off first. Recorded so the flip is one commit.
+- *Proof here:* Go tests in internal/hostd/guest/freeze_test.go
+  (`TestFreezeThenThawRestoresTheGuest`, `TestThawDiscardsAStaleImage`
+  with nine cases, `TestFreezeFailureResumesTheGuest`,
+  `TestThawFallsBackWhenTheRestoreFails`,
+  `TestFreezeOffRestoresNothingAndCleansUp`,
+  `TestFreezeWithoutKeyFreezesNothing`, `TestFreezeStopsAtThePoolLimit`,
+  `TestThawSweepsImageVolumesWithoutRecord`,
+  `TestFreezeLogsCarryNoTenantData`, and after the review
+  `TestRestartMidFreezeResumesTheGuest`,
+  `TestRestartMidFreezeKeepsTheImageWhileTheHypervisorIsBusy`,
+  `TestSecondFreezeKeepsTheImage`, `TestThawDuringAFreezeWaitsForIt`,
+  `TestThawWaitsOneUnwrapTimeoutWhateverTheImages`,
+  `TestThawDiscardsWhatTheRestoreWindowLeaves`,
+  `TestFreezeSkipsASnapshotThatWouldOutlastTheDeadline`,
+  `TestFreezeDropsCachesOnlyWithTheBalloon`), internal/hostd/freeze and
+  internal/hostd/schedev tests, and the experiments' 60-cycle loop on
+  woker-1; the host VM test `host-freeze` (the drop-ins, the shutdown
+  ordering, a switch freezing nothing, `hostd freeze`/`thaw`).
+  *Proof on staging* (host-stg-01, 2026-10-11, docs/research/guest-freeze.md,
+  "Staging"): a graceful `systemctl reboot` and an `az vm restart` each
+  froze both running guests (reason `shutdown`, 43 s) and restored both at
+  the next start with their processes, tmux windows and files intact and
+  the guests `running` in the first Hello; 10 operator freeze/thaw cycles
+  of both guests with no leftover, the guest clock within 1 s; the bug the
+  first run found (a guest left paused when `vm.snapshot` outlived the
+  HTTP client's 10 s timeout) fixed and the run repeated. *Still owed:*
+  the Scheduled Events listener on a VM (turning it on holds every restart
+  of that VM for approval for 24 h, so it needs its own slot), Key Vault as
+  the key's home (no staging vault yet), a host with more than two guests,
+  and timings on a 600 MB/s disk. Host VM tests cannot run a guest (no
+  third level of virtualisation).
+
+**I-653. A frozen guest's memory image: encrypted on a volume of its own,
+the key wrapped by Key Vault, removed once read (guest-freeze,
+2026-10-11).** Amends I-235 (option 2, with the key in Key Vault instead
+of the api) and the "three homes for secrets" rule (CLAUDE.md,
+features/secrets.md) for this one case.
+- *What the image holds.* All of the guest's RAM: named secrets on
+  `/run/repose/secrets`, tool logins, whatever agents and programs hold.
+  I-233 and I-235 left freezing out until it could not be a fourth home
+  for secrets in the clear.
+- *Where.* A thin volume per guest, `vg-guests/frz-<guest_id>`, sized
+  the class's memory plus 256 MiB (thin: it takes what is written, the
+  guest's touched memory); dm-crypt in plain mode (aes-xts-plain64, a
+  512-bit key from the kernel's random source, new for every image, no
+  header on disk) as `/dev/mapper/repose-frz-<guest_id>`; ext4; mounted on
+  `<guest dir>/freeze`, owned by the hypervisor's user, mode 0700. That
+  mount point is the only place the hypervisor's sandbox can write (I-51);
+  a mount made there after the unit started reaches it by propagation.
+  The image never leaves the host and is never uploaded.
+- *The key.* The image key is wrapped with RSA-OAEP-256 by the public half
+  of the `freeze-wrap` key in a Key Vault of its own (`freeze_keyvault_name`
+  in tofu; a separate vault because access policies are vault-wide, and the
+  hosts get nothing on the vault that wraps users' DEKs). hostd fetches the
+  public half at start and hourly, so wrapping at shutdown needs no
+  network; only the host's managed identity can unwrap (Get and UnwrapKey,
+  nothing else), and only at Key Vault. The wrapped key, its version and a
+  check (sha256 of the key under a fixed label, so a wrong key is caught
+  before anything mounts what it decrypts to) sit in the record,
+  `/var/lib/repose/hostd/freeze/<guest_id>.json` (root, 0700, written
+  atomically with fsyncs). The plain key lives in hostd's memory and the
+  kernel's dm table only while the image is open, and is zeroed after use.
+  `--freeze-key-file` (an RSA PEM) replaces Key Vault for staging and
+  tests; on a host it must sit off the host's disks.
+- *What it defends.* The image at rest: a stolen disk, a disk snapshot or
+  backup, a host decommissioned with its disk. Not a compromised running
+  host, which can read live guest RAM anyway (I-235) and can unwrap as the
+  host identity while it is compromised. Key Vault's audit log records
+  each unwrap.
+- *Lifecycle.* Made at the freeze; closed (unmounted, key out of the
+  kernel) as soon as the snapshot is written; opened at the restore and
+  closed as soon as the hypervisor has read it; removed (`lvremove`, which
+  discards the blocks back to the pool) right after a restore, on any
+  check that fails, on a failed freeze or restore, when the freeze is off,
+  and at every hostd start for a volume with no record. A destroy, volume
+  restore, resize, class change or closure change while a guest is frozen
+  is caught at the next start by the record checks (state, size, class,
+  closure, fingerprint) and the image removed then. Older than 6 h:
+  removed.
+- *Size budget.* An image takes at most the class's memory from the guest
+  pool; a freeze adds guests smallest first only while the pool stays
+  under the refuse threshold (85 percent, I-586). host-01's 476 GiB pool
+  at 28.6 percent takes every image a 64 GiB host can hold (at most 13
+  percent of it).
+- *Cost.* Making, mounting and flushing the encrypted volume added about
+  0.5 s to a freeze and nothing measurable to a restore (docs/research/
+  guest-freeze.md). One Key Vault unwrap per guest per restore.
+- *Azure.* A Key Vault and an RSA 3072 key per environment, an access
+  policy for the host identity; tofu has them behind
+  `freeze_keyvault_name` (null: none). Not applied by the builder.
+
+**I-646. Agent windows are recorded every minute, and a machine that
+ended without a stop reopens them (agent-windows, 2026-10-11).** Amends
+I-636. *Made during implementation* (host-restart plan L7, after host-01's
+reboot on 2026-10-10 left every tmux machine with a `shell` window alone:
+I-636 records only at a stop, and a host crash is not one).
+- `repose-tmux-save --periodic`, from a system timer pair
+  (`repose-tmux-save.timer`, `OnBootSec=60`, `OnUnitActiveSec=60`; the
+  service runs as dev at nice 10 and idle I/O, behind `ExecCondition=
+  repose-multiplexer-is tmux`), writes `~/.repose/agent-windows.live`: a
+  `#boot <boot id>` line, then I-636's rows with a fifth field, the
+  window's `@repose-state`. Temp file, `sync`, rename, `sync` of
+  `~/.repose`, and only when the content changed, so a crash leaves the
+  old record or the new one and an idle machine writes nothing. A tmux
+  that does not answer changes nothing (the record survives tmux being
+  down); no agent window writes the header alone. System units, not
+  user units: a switch starts a new system timer without a reboot, and
+  the timer has no ConditionPathExists, because a start skipped by a
+  condition never leaves `inactive` and `OnUnitActiveSec` counts from
+  that. The service has no start limit (`StartLimitIntervalSec=0`): the
+  VM test's burst of starts hit the default one (5 in 10 s) and a start
+  failed. The timer alone never comes near it; a burst of starts beside
+  it should not fail either.
+- The stop's file, `agent-windows`, keeps I-636's 4 fields, so the
+  restore script of an older base (the I-590 fallback closure) reads it;
+  its first line, `#project <project id>`, has no folder, which that
+  script skips. The stop's save now also removes the minute record. A
+  tmux that does not answer at the stop removes both: its agents ended
+  with the server, as I-636 had it, and a minute record the user may
+  have closed on purpose must not come back. Only a save cut short (the
+  5 s limit, the machine killed) leaves the minute record.
+- guestd writes `~/.repose/stopped` (the boot id, fsynced with its
+  folder) before it runs the stop's save. The restore takes, only in a
+  session it created: `agent-windows` first; else a minute record of
+  another boot, with or without a stop marker for that boot; never a
+  minute record of this boot (tmux exited and the unit restarted it:
+  I-551, I-636). The marker only labels the journal line ("from the
+  stop-unsaved record") today; it is there for the re-prompt setting
+  the plan deferred, which must not prompt after a stop.
+- The restore writes the windows it reopened as this boot's minute
+  record (`#boot`, rows with an empty fifth field; temp file, sync,
+  rename, sync of the folder, under the lock) before it removes the
+  record it read. Without that, nothing names the agents until the
+  timer's first run 60 s after boot, and a second crash in that minute
+  (a host that fails twice running) reopens nothing; the review
+  reproduced that in the VM.
+- A record names its project: `#boot <boot id> <project id>` and the
+  stop's `#project <project id>`. A fork or `snapshots restore --as`
+  copies a running source's minute record (another boot, no stop
+  marker), and each copy's first start would take it for a crash and
+  resume every agent, N idle agents for `fork -n N`. The restore skips
+  and removes a record whose project id is not project.json's (a record
+  with none, from this branch's first builds, is taken). That applies to
+  the stop's record too, so a copy of a stopped source no longer reopens
+  the source's agents, which I-636 did: a copy starts with `shell`, as
+  the fork docs say ("each copy boots fresh"). An in-place restore keeps
+  the id and reopens them.
+- The race: the timer could fire between the unit's `new-session` and
+  the restore. All three scripts hold `flock ~/.repose/agent-windows.lock`,
+  and the minute save leaves a record of another boot alone while the
+  session is under two minutes old. The plan said "never replaces one";
+  that would leave a machine whose session a hand-started tmux took
+  (I-560, the unit exits 3 before any restore) with no minute record
+  for the whole boot, and a crash would then reopen a boot-old record.
+- A reopened window runs the resume form under `set -m` and closes when
+  the agent exits, as one `repose run` opened does. An agent that exits
+  non-zero within 15 s could not resume (a conversation the crash cut
+  mid-line, one that is gone): the window keeps a login shell under
+  `<agent> could not continue its conversation (exit N).` instead of
+  vanishing. `set -m` is needed: without it the pane's foreground
+  process group is the wrapping bash, tmux reports `bash` as the pane's
+  command, and the next save would drop a stateless agent's window
+  (checked with tmux 3.7c: `opencode sleep` with it, `plain bash`
+  without). `set -m` also turns a Ctrl-Z (Claude Code's own suspend, a
+  terminal SIGTSTP) into a stopped job and exit 148 for the wrapper,
+  which closed the window after 15 s and printed the refusal line before
+  (review, tmux 3.7c). The wrapper puts a stopped job (147 to 150) back
+  in the foreground with `fg` at once. It does so from a function that
+  calls itself, not a loop: bash breaks out of a loop whose foreground
+  job stops, so the second Ctrl-Z escaped a `while` (checked by hand).
+  `fg`'s stderr must stay on the terminal; with it on /dev/null bash
+  cannot hand the terminal back and the job runs in the background. Exit
+  130 and 143 (Ctrl-C, TERM) are not counted as a refusal.
+- What a crash loses: the turn in progress, a window opened in the last
+  minute, every other process and the panes' contents, and the disk's
+  last seconds. No re-prompt (deferred in the plan until a user asks).
+- herdr, checked on woker-1 with herdr 0.9.3 (`herdr server` with a
+  scratch HOME, a workspace, a tab, a stand-in `claude` with a resume
+  argv reported through `pane report-agent`, then `kill -9` of the
+  server and a new `herdr server`): the workspace, both tabs and their
+  folders came back, and the stand-in was started again as `claude
+  --resume 0b1c2d3e`. A plain process in another tab (`sleep`) and the
+  tab's scrollback were gone; the tab was a new shell in its folder.
+  herdr saves `session.json` a few seconds after a change (2 s for a new
+  tab, 10 s for the resume argv in the log) by `session.json.tmp` and a
+  rename, with no fsync (strace: `open`, `write`, `close`, `rename`).
+  On ext4 a rename over an existing file flushes the data first
+  (`auto_da_alloc`), so a guest crash should leave the old file or the
+  new one, a few seconds behind; not tested with a VM crash. The docs
+  say only what was seen. No code change for herdr.
+- Proof: the VM test `guest-agent-windows` (its own test, since its
+  last subtest crashes the VM): the timer writes the record within a
+  minute and again a minute later, by boot, and an unchanged record is
+  not rewritten; the record survives tmux being down, and a tmux exit
+  in the same boot reopens nothing; sixty starts of the save during the
+  session's creation lose nothing; a stop's record wins and a 4-field
+  one restores; the stop's save writes 4 fields and removes the minute
+  record; a stop with tmux down removes both and reopens nothing; a
+  record of another project reopens nothing, and the restored windows
+  are this boot's record at once; Ctrl-Z three times in a reopened
+  window leaves the window and the agent running; a killed save's temp
+  files are removed; a stop marker for the record's boot labels the
+  restore "stop-unsaved" and reopens the windows (the subtest writes
+  `stopped` and the record by hand: guestd's shutdown with tmux failing
+  is not run there; `TestShutdownWritesTheStopMarkerBeforeTheSave` checks
+  only that the marker precedes the save); an agent that refuses to
+  resume leaves its line and a shell; `switch-to-configuration test` of
+  the same configuration starts a timer that was stopped (not a switch
+  from a base without the units, which is L8's canary step); a crash
+  right after the save (no `sync` after it) reopens both agents, and a
+  second crash at under 60 s of uptime, before the timer's first run,
+  reopens them again. After the crash guestd was active 4.9 s after
+  the kernel started (9.7 s at the first boot; hostd waits 60 s for
+  Ready), and the windows reopened 0.4 s after the session unit's
+  start. Those times are QEMU's in the test driver, not
+  cloud-hypervisor's; staging measures the real ones.
+
+**I-648. Paging goes to Google Chat through calert, Azure emails its own
+alerts, and an Uptime Kuma push monitor watches the alerting path
+(host-alerts, 2026-10-11).** Amends workstream 10's routing (ntfy to the
+owner). *Made during implementation* (host-restart plan L1 and L3, owner
+decisions D1 and D2 as changed after the owner's review). On 2026-10-10
+Azure live-migrated host-01, rebooted it, and repose kept guests down for
+nine hours with nobody paged: every Alertmanager route pointed at
+`ntfy.herakraft.co`, which answered 503, and the rules had no view of a host
+whose network died, of a dead api, or of the alerting path itself.
+- **Chat.** Alertmanager posts to calert v2.4.0 next to it on the personal
+  server, which turns the webhook into Google Chat's `{"text": ...}`, one
+  thread per alert from firing to resolved. Both receivers use the same
+  room (one space); a page goes after 20 s (so an inhibition between two
+  pages for one outage can settle) and repeats hourly, the rest wait 30 s
+  and repeat every 12 hours. The space's webhook URL is a secret: it
+  is only in calert's environment (`CALERT_PROVIDERS__REPOSE__ENDPOINT`,
+  from a 0600 env file or Coolify's Environment tab), never in the
+  repository or a log; calert refuses to start without it and does not log
+  it. ntfy for users (`repose notify`) is unchanged.
+- **Heartbeat.** `Watchdog` always fires and is routed only to an Uptime
+  Kuma push monitor (Kuma 2.0 or later, which accepts POST), whose URL
+  Alertmanager reads from a file. Its route repeats every 30 s under a
+  1-minute group interval: with both at 1 minute, a flush a few
+  milliseconds short of the repeat was skipped and pushes came 2 minutes
+  apart. Kuma posts to the same space when the
+  pushes stop. Kuma replaces healthchecks.io because the owner already
+  runs it; it catches a dead server only if it runs elsewhere.
+- **Rules.** `HostdDown` (`up{job="hostd"} == 0` for 3m, page) is the
+  page for a host; HostUnreachable sees only host-to-api traffic and never
+  fired on 2026-10-10. `ApiDown` and `GatewayDown` page on the api,
+  api-grpc and gateway scrapes. `ApiHostsAbsent` pages when the gauge
+  HostUnreachable reads is gone. `HostServiceDown` warns on the units a
+  host needs (docker-registry stayed inactive after the reboot with
+  nothing saying so). Inhibitions keep one page per outage: HostdDown
+  holds back HostUnreachable (which has no host_id, so with two hosts a
+  scrape failure on one also holds back the other's; HostdDown still
+  pages for it) and the host's warnings, ApiDown holds back
+  ApiHostsAbsent. Prometheus reaches every target through the edge's
+  WireGuard, so a dead edge or tunnel failed gateway, hostd and both api
+  scrapes together and sent three pages; `MonitoringPathDown` (the sum of
+  those `up` series is 0 for 2m, page) fires a minute earlier and holds
+  back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent. `ops/check.sh`
+  now checks the route with amtool.
+- **Azure.** `infra/azure/modules/environment/alerts.tf`, behind
+  `alerts_enabled` (true in prod, false by default so staging never
+  emails): action group `repose-<env>` emailing `alert_email`, a Resource
+  Health alert for platform-initiated VM events, a Service Health alert
+  (incident, maintenance, advisories, East US and Global), and
+  `VmAvailabilityMetric` with a 5-minute Maximum below 1 for each VM
+  (host-01, edge-01, coolify-01): every minute of the five was 0, so a
+  planned reboot's minute or two does not email. Email only: Azure's webhook body is not what Google Chat
+  accepts, and the email arrives when everything of the owner's is down.
+  `alert_email` is in `prod.local.tfvars`, because the repository is
+  public.
+- Evidence: `promtool test rules` (31 rules), the end-to-end run in the
+  commit message, and `make plan ENV=prod` adding six `azurerm_monitor_*`
+  resources and nothing else.
+
+**I-651. Integrated main is pushed to GitHub's `integrated` branch, and
+operators work from woker-1 when host-01 is down (host-alerts,
+2026-10-11).** Amends I-416 and I-424. *Made during implementation*
+(host-restart plan L2, owner decision D8). kanali, which holds integrated
+main, the release queue, az and tofu, is a guest on host-01, so an outage
+of host-01 took away the tools and the code needed to fix it; on 2026-10-11
+kanali's main was 7 commits ahead of GitHub.
+- `release-queue done` pushes main to `origin` as `refs/heads/integrated`,
+  fast-forward only; a refusal is printed, not forced. A branch, not a
+  custom ref: it can be fetched by name and seen on GitHub, and every
+  workflow here is filtered to `main`, pull requests, `v*` tags or a
+  schedule, so a push to it runs nothing; Coolify deploys `main` only.
+  RELEASE.md "The integrated branch" lists what would break that.
+- The repository is public, so `integrated` publishes every integrated
+  commit before it is deployed. Owner decision D8 chose GitHub for its
+  survival off host-01; the cost is that a security fix must not be
+  integrated until the release that ships it. `REPOSE_INTEGRATED_REMOTE=none`
+  skips the push for such a batch (RELEASE.md "The integrated branch").
+- woker-1 is the operator box: laptop, Tailscale, woker-1, with az under
+  the owner's own login and tofu with `prod.local.tfvars`. RUNBOOK
+  "Operating while host-01 is down" and "Host does not boot" are written
+  for it; the serial console is reached from the portal or Cloud Shell,
+  because the az extension does not install on its nix az. woker-1 has no
+  WireGuard, so it reaches a host through the edge's sshd with a `host-01`
+  ssh block (`ProxyJump root@<edge>:2222`, `HostKeyAlias` the VNet
+  address), which RUNBOOK "Operator machine" gives.
+- A host switch runs from woker-1 as `systemd-run --unit=repose-switch
+  --wait --collect ... switch-to-configuration switch` and is read back
+  from the unit's journal: the switch completes on the host even if the
+  ssh session drops, and it is never started from kanali, which sits on
+  the host being switched.

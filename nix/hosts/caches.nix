@@ -28,6 +28,7 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.repose.host.caches;
+  dataDisk = config.repose.host.dataDisk.enable;
   address = cfg.address;
   dir = "/var/cache/repose";
   npmPort = toString cfg.npm.port;
@@ -148,15 +149,26 @@ in
     # nginx and the registry bind the address even before networkd has put
     # it on the bridge: kernel.nix already sets net.ipv4.ip_nonlocal_bind.
 
+    # The volume needs the pool, which repose-guest-pool activates
+    # (DECISIONS I-643): required and ordered after it, and started again
+    # whenever it is, so a pool brought back by hand brings the caches back
+    # with it. npm-cache and the registry are wanted by this unit for the
+    # same reason; on 2026-10-10 the registry stayed down for a day after
+    # the pool came back.
     systemd.services.repose-cache-volume = {
       description = "The caches' thin volume, vg-guests/repose-cache on ${dir}";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "lvm2-activation.service" "local-fs.target" ];
-      path = [ pkgs.lvm2 pkgs.e2fsprogs pkgs.util-linux pkgs.coreutils ];
-      unitConfig.ConditionPathExists = "/dev/vg-guests";
+      wantedBy = [ "multi-user.target" ] ++ lib.optional dataDisk "repose-guest-pool.service";
+      after = [ "local-fs.target" ] ++ lib.optional dataDisk "repose-guest-pool.service";
+      requires = lib.optional dataDisk "repose-guest-pool.service";
+      path = [ (lib.getBin config.services.lvm.package) pkgs.e2fsprogs pkgs.util-linux pkgs.coreutils ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        # The pool unit is active long after the pool may have gone; a
+        # condition, not a failure, so the unit is only skipped.
+        ExecCondition = pkgs.writeShellScript "repose-pool-active" ''
+          [ "$(${lib.getBin config.services.lvm.package}/bin/lvs --noheadings -o lv_active vg-guests/thin 2>/dev/null | ${pkgs.coreutils}/bin/tr -d ' ')" = active ]
+        '';
       };
       script = ''
         dev=/dev/vg-guests/repose-cache
@@ -238,7 +250,7 @@ in
 
     systemd.services.repose-npm-cache = {
       description = "npm registry cache for guests (behind the nginx front on ${address}:${npmPort})";
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = [ "multi-user.target" "repose-cache-volume.service" ];
       after = [ "network-online.target" "repose-cache-volume.service" ];
       wants = [ "network-online.target" ];
       requires = [ "repose-cache-volume.service" ];
@@ -277,6 +289,7 @@ in
       };
     };
     systemd.services.docker-registry = {
+      wantedBy = [ "repose-cache-volume.service" ];
       after = [ "repose-cache-volume.service" ];
       requires = [ "repose-cache-volume.service" ];
       # Without the volume, no mirror: dockerd goes to Docker Hub.

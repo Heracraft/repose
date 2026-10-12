@@ -54,3 +54,16 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode, uid, gid int) (
 	}
 	return nil
 }
+
+// SyncDir fsyncs a directory, so a rename into it survives a crash.
+func SyncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return err
+	}
+	return d.Close()
+}

@@ -83,6 +83,13 @@ message GuestStatus {
   string ip = 3;
   uint32 vsock_cid = 4;
   string system_closure = 5;
+  // The host boot id whose start found this guest running (or starting)
+  // with no hypervisor: the host restarted under it. Empty when the guest
+  // was not interrupted, or has started, stopped, been destroyed or been
+  // restored since (DECISIONS I-645).
+  string interrupted_boot_id = 6;
+  // When hostd recorded the interruption, unix seconds; 0 with no mark.
+  int64 interrupted_at = 7;
 }
 
 message Hello {
@@ -93,6 +100,16 @@ message Hello {
   // The thin pool's data size, which autoextend grows; 0 from a hostd
   // older than I-586, which the api reads as "unknown" (DECISIONS I-586).
   uint64 pool_bytes = 5;
+  // The host's thin pool cannot hold a guest's volume: inactive after a
+  // reboot, missing, or failed (DECISIONS I-644). pool_free_bytes and
+  // pool_bytes are 0 while it is set, so an api older than the field keeps
+  // new machines off the host too. Absent from an older hostd: false.
+  bool pool_unavailable = 6;
+  // The host's current boot id (/proc/sys/kernel/random/boot_id) and when
+  // that boot began, unix seconds. Empty and 0 from a hostd older than
+  // I-645, which the api reads as "no resume information".
+  string host_boot_id = 7;
+  int64 host_boot_at = 8;
 }
 
 message Heartbeat {
@@ -103,6 +120,8 @@ message Heartbeat {
   bool draining = 5;
   // As Hello's pool_bytes (DECISIONS I-586).
   uint64 pool_bytes = 6;
+  // As Hello's pool_unavailable (DECISIONS I-644).
+  bool pool_unavailable = 7;
 }
 
 message Secret { string name = 1; bytes value = 2; }

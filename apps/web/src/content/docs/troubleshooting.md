@@ -29,7 +29,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there. `run` and `attach` do this for you.
 
-**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. The machine is still running. `run` and `attach` attach again as soon as it answers.
+**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. `run` and `attach` attach again as soon as the machine answers. If it was the machine's server that restarted, the machine stopped with it and repose starts it again, usually within a few minutes ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
 
 **`attach` takes more than a few seconds to come back.** After the laptop slept or changed networks, `attach` needs up to 2 seconds to find that the old connection is dead, then a normal connect. If it takes longer, run `REPOSE_TIMING=1 repose attach`; it prints how long each step took.
 
@@ -45,6 +45,10 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **``todo-app is stopped. `repose start todo-app` starts it.``** `exec`, `ps`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach`, `repose ssh`, `repose code` and `repose run` do.
 
+**A machine that was running is stopped, and you didn't stop it.** Its server restarted. repose starts such machines again by itself, and the notification it sends says which it didn't and why; `repose events todo-app` shows `server restarted`. `repose start todo-app` starts it ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
+
+**``todo-app's server is not answering; machines that were running on it start again by themselves when it is back``.** The server under the machine is down or unreachable, and the machine's disk is on it, so nothing can start it elsewhere without losing work since its last snapshot.
+
 **`todo-app is in an error state`** or **`repose's service on the machine stopped answering`.** `repose start todo-app` restarts it. When a boot fails, the message says how, and `repose logs todo-app --kind console` shows what the machine printed.
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason. That system isn't tried again on its own; the next base update, or a change to the configuration, builds a new one. `repose logs todo-app --kind console` shows what the failed boot printed.
@@ -52,6 +56,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 **`todo-app: a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one`.** A garbage collection run on the machine on an older base deleted store paths that repose shares with it and that the new system needs. The machine keeps running what it had. `repose stop todo-app`, then `repose start todo-app`: the start puts the paths back and switches to the new system.
 
 **`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** The machine's store doesn't show paths the new system needs: on an older base, a `nix-collect-garbage` or `nix store gc` run inside the machine hid them; on a current base, the server no longer has them. The machine keeps running what it had.
+
+**`Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact`.** The server running the machine restarted and its disk storage for machines didn't come back. `todo-app` stays stopped with its disk as it was. `repose start todo-app` works once the storage is back.
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout [waits for the destroy](/docs/lifecycle#start-over-with-a-fresh-machine), then creates a fresh `todo-app`.
 

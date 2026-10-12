@@ -288,6 +288,17 @@ variable "keyvault_name" {
   description = "Globally unique Key Vault name."
 }
 
+variable "freeze_keyvault_name" {
+  type        = string
+  description = <<-EOT
+    Key Vault for the guest freeze's image-wrapping key (DECISIONS I-653),
+    a vault of its own because access policies are vault-wide: the hosts
+    get Get and UnwrapKey here, and nothing on the vault that wraps users'
+    secret keys. Null creates nothing; hosts then cannot freeze guests.
+  EOT
+  default     = null
+}
+
 # --- DNS -------------------------------------------------------------------
 
 variable "manage_dns" {
@@ -336,4 +347,22 @@ variable "tags" {
   type        = map(string)
   description = "Extra tags merged into every resource."
   default     = {}
+}
+
+# --- Alerts (DECISIONS I-648) ------------------------------------------------
+
+variable "alerts_enabled" {
+  type        = bool
+  description = <<-EOT
+    Create the Azure Monitor action group and alerts in alerts.tf. True in
+    prod. False by default, so staging, whose VMs come and go, never emails
+    the owner.
+  EOT
+  default     = false
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Where the Azure alerts are emailed. Required when alerts_enabled is true. It is a personal address in a public repository, so it goes in the environment's local tfvars."
+  default     = ""
 }

@@ -25,6 +25,8 @@ in
     ./hardening.nix
     ./azure.nix
     ./caches.nix
+    ./vm-hardening.nix
+    ./freeze.nix
   ];
 
   options.repose.host = {
@@ -54,9 +56,12 @@ in
     osDevice = lib.mkOption {
       type = lib.types.str;
       # Every size this subscription may use (Intel v7) exposes disks over
-      # NVMe only: the OS disk is nvme0n1 (DECISIONS I-39); a SCSI size
-      # would be /dev/sda. The data disk is resolved at install time (I-41).
-      default = "/dev/nvme0n1";
+      # NVMe only, and which name the OS disk takes depends on how many
+      # controllers the size uses, so it is resolved at install time from
+      # the namespace ids like the data disk (DECISIONS I-647, amending
+      # I-39; I-41). A SCSI size would set this to /dev/sda, and any real
+      # path here is used as it stands.
+      default = "/dev/disk/repose/os";
       description = "OS disk for the disko layout (GPT, ESP, ext4 root).";
     };
 
@@ -264,7 +269,6 @@ in
     boot.loader.systemd-boot.enable = true;
     boot.loader.systemd-boot.configurationLimit = 5;
     boot.loader.efi.canTouchEfiVariables = true;
-    boot.loader.timeout = 2;
 
     # The operator toolbox named in docs/ops/RUNBOOK.md and the checklists.
     environment.systemPackages = with pkgs; [

@@ -4,7 +4,29 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestBootIDAndTime(t *testing.T) {
+	dir := t.TempDir()
+	id := filepath.Join(dir, "boot_id")
+	_ = os.WriteFile(id, []byte("8b0c5e7e-1f2a-4c3d-9e8f-0a1b2c3d4e5f\n"), 0o644)
+	if got, err := bootIDFrom(id); err != nil || got != "8b0c5e7e-1f2a-4c3d-9e8f-0a1b2c3d4e5f" {
+		t.Fatalf("boot id %q, %v", got, err)
+	}
+	_ = os.WriteFile(id, []byte("\n"), 0o644)
+	if _, err := bootIDFrom(id); err == nil {
+		t.Fatal("an empty boot id was accepted")
+	}
+	st := filepath.Join(dir, "stat")
+	_ = os.WriteFile(st, []byte("cpu  1 2 3\nbtime 1760075172\nprocesses 9\n"), 0o644)
+	if got, err := bootTimeFrom(st); err != nil || !got.Equal(time.Unix(1760075172, 0)) {
+		t.Fatalf("boot time %v, %v", got, err)
+	}
+	if _, err := BootID(); err != nil {
+		t.Fatalf("this machine's boot id: %v", err)
+	}
+}
 
 func TestMemInfo(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "meminfo")

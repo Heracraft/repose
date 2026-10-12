@@ -1,0 +1,74 @@
+g-r2-before.txt:=== g-r2-before at 2026-10-12T04:51:33.762467002Z
+g-r2-before.txt:--- e2e-st-small edge_before 1791780694.305751935
+g-r2-before.txt:now 1791780694.601201197 boot 89056cbf-78ba-4007-9473-ff14842e2c70 up 334.19
+g-r2-before.txt:stress 1082 alive appender 1085 alive
+g-r2-before.txt:docker running 1172 2026-10-12T04:39:21.265280396Z lines 50 last 1791780694
+g-r2-before.txt:tmux_st 1195 loop 311 1791780694
+g-r2-before.txt:agentwin shell:864:bash claude:955:claude codex:964:codex 
+g-r2-before.txt:ts.log lines 48 backwards 0 (max 0.0) maxgap 86.1 at 1791780572.108240757
+g-r2-before.txt:docker.log lines 50 backwards 0 (max 0.0) maxgap 86.0 at 1791780572
+g-r2-before.txt:edge_after 1791780695.159577147
+g-r2-before.txt:--- e2e-st-large edge_before 1791780695.161011843
+g-r2-before.txt:now 1791780695.414994829 boot 7770f1cf-89f6-4f9f-8809-7894e933f045 up 445.19
+g-r2-before.txt:stress 1187 alive appender 1191 alive
+g-r2-before.txt:docker running 1262 2026-10-12T04:39:30.615648316Z lines 69 last 1791780694
+g-r2-before.txt:tmux_st 1287 loop 411 1791780695
+g-r2-before.txt:agentwin shell:956:bash claude:1072:claude codex:1086:codex 
+g-r2-before.txt:ts.log lines 66 backwards 0 (max 0.0) maxgap 66.2 at 1791780583.413551400
+g-r2-before.txt:docker.log lines 70 backwards 0 (max 0.0) maxgap 66.0 at 1791780584
+g-r2-before.txt:edge_after 1791780695.782684510
+g-r2-before.txt:--- e2e-st-xl edge_before 1791780695.784031679
+g-r2-before.txt:now 1791780695.906060723 boot 573823bc-0e05-408d-933e-ca9782ef07c8 up 342.85
+g-r2-before.txt:stress 1337 alive appender 1339 alive
+g-r2-before.txt:docker running 1449 2026-10-12T04:39:42.243226938Z lines 56 last 1791780696
+g-r2-before.txt:tmux_st 1480 loop 310 1791780695
+g-r2-before.txt:agentwin shell:1046:bash claude:1198:claude codex:1209:codex pi:1215:pi 
+g-r2-before.txt:ts.log lines 54 backwards 0 (max 0.0) maxgap 81.4 at 1791780584.316212759
+g-r2-before.txt:docker.log lines 56 backwards 0 (max 0.0) maxgap 81.0 at 1791780583
+g-r2-before.txt:edge_after 1791780696.643505733
+g-r2-before.txt:--- e2e-st-small2 edge_before 1791780696.644936754
+g-r2-before.txt:now 1791780696.887314041 boot d062dc79-4b44-4d97-8be3-5a8248c645ac up 379.48
+g-r2-before.txt:stress 1076 alive appender 1079 alive
+g-r2-before.txt:docker running 1176 2026-10-12T04:39:55.629310197Z lines 64 last 1791780696
+g-r2-before.txt:tmux_st 1204 loop 348 1791780696
+g-r2-before.txt:agentwin shell:889:bash claude:983:claude codex:993:codex 
+g-r2-before.txt:ts.log lines 60 backwards 0 (max 0.0) maxgap 73.1 at 1791780572.618245311
+g-r2-before.txt:docker.log lines 64 backwards 0 (max 0.0) maxgap 73.0 at 1791780573
+g-r2-before.txt:edge_after 1791780697.411109068
+g-r2-after.txt:=== g-r2-after at 2026-10-12T04:53:46.310013980Z
+g-r2-after.txt:--- e2e-st-small edge_before 1791780826.866461941
+g-r2-after.txt:now 1791780827.013557969 boot 89056cbf-78ba-4007-9473-ff14842e2c70 up 383.82
+g-r2-after.txt:stress 1082 alive appender 1085 alive
+g-r2-after.txt:docker running 1172 2026-10-12T04:39:21.265280396Z lines 99 last 1791780826
+g-r2-after.txt:tmux_st 1195 loop 359 1791780827
+g-r2-after.txt:agentwin shell:864:bash claude:955:claude codex:964:codex 
+g-r2-after.txt:ts.log lines 96 backwards 0 (max 0.0) maxgap 86.1 at 1791780572.108240757
+g-r2-after.txt:docker.log lines 99 backwards 0 (max 0.0) maxgap 86.0 at 1791780572
+g-r2-after.txt:edge_after 1791780827.869064883
+g-r2-after.txt:--- e2e-st-large edge_before 1791780827.870528487
+g-r2-after.txt:now 1791780828.180732714 boot 7770f1cf-89f6-4f9f-8809-7894e933f045 up 510.36
+g-r2-after.txt:stress 1187 alive appender 1191 alive
+g-r2-after.txt:docker running 1262 2026-10-12T04:39:30.615648316Z lines 134 last 1791780827
+g-r2-after.txt:tmux_st 1287 loop 473 1791780828
+g-r2-after.txt:agentwin shell:956:bash claude:1072:claude codex:1086:codex 
+g-r2-after.txt:ts.log lines 129 backwards 0 (max 0.0) maxgap 68.6 at 1791780717.121284585
+g-r2-after.txt:docker.log lines 134 backwards 0 (max 0.0) maxgap 68.0 at 1791780718
+g-r2-after.txt:edge_after 1791780828.794393369
+g-r2-after.txt:--- e2e-st-xl edge_before 1791780828.795805266
+g-r2-after.txt:now 1791780829.088696291 boot 573823bc-0e05-408d-933e-ca9782ef07c8 up 392.49
+g-r2-after.txt:stress 1337 alive appender 1339 alive
+g-r2-after.txt:docker running 1449 2026-10-12T04:39:42.243226938Z lines 105 last 1791780829
+g-r2-after.txt:tmux_st 1480 loop 357 1791780828
+g-r2-after.txt:agentwin shell:1046:bash claude:1198:claude codex:1209:codex pi:1215:pi 
+g-r2-after.txt:ts.log lines 102 backwards 0 (max 0.0) maxgap 84.6 at 1791780717.846047906
+g-r2-after.txt:docker.log lines 105 backwards 0 (max 0.0) maxgap 84.0 at 1791780717
+g-r2-after.txt:edge_after 1791780829.753620288
+g-r2-after.txt:--- e2e-st-small2 edge_before 1791780829.755107107
+g-r2-after.txt:now 1791780858.646480796 boot d062dc79-4b44-4d97-8be3-5a8248c645ac up 465.76
+g-r2-after.txt:stress 1076 alive appender 1079 alive
+g-r2-after.txt:docker running 1176 2026-10-12T04:39:55.629310197Z lines 117 last 1791780858
+g-r2-after.txt:tmux_st 1204 loop 369 1791780858
+g-r2-after.txt:agentwin shell:889:bash claude:983:claude codex:993:codex 
+g-r2-after.txt:ts.log lines 81 backwards 0 (max 0.0) maxgap 76.6 at 1791780705.169180996
+g-r2-after.txt:docker.log lines 117 backwards 0 (max 0.0) maxgap 76.0 at 1791780704
+g-r2-after.txt:edge_after 1791780859.187127923

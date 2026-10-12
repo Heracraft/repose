@@ -95,6 +95,12 @@ type M struct {
 	WaitlistInvitedTotal   prometheus.Counter
 	WaitlistConvertedTotal prometheus.Counter
 	WaitlistExpiredTotal   prometheus.Counter
+	// GuestResumesPending is the machines a host restart stopped that the
+	// api has not yet started or closed (DECISIONS I-645): above 0 for
+	// 20 minutes pages (ResumeStalled). GuestResumesTotal counts the rows
+	// decided, by outcome (the result label).
+	GuestResumesPending prometheus.Gauge
+	GuestResumesTotal   *prometheus.CounterVec
 }
 
 // New registers every family on reg.
@@ -144,6 +150,8 @@ func New(reg prometheus.Registerer) *M {
 		WaitlistInvitedTotal:         prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_waitlist_invited_total", Help: "Waitlist invitations the api sent."}),
 		WaitlistConvertedTotal:       prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_waitlist_converted_total", Help: "Invited users whose subscription arrived."}),
 		WaitlistExpiredTotal:         prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_waitlist_expired_total", Help: "Waitlist invitations whose 72-hour hold ran out."}),
+		GuestResumesPending:          prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_guest_resumes_pending", Help: "Machines a host restart stopped that the api has not started or closed yet (I-645)."}),
+		GuestResumesTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_guest_resumes_total", Help: "Resume rows decided, by outcome (I-645)."}, []string{"result"}),
 	}
 	// The alert on stops reads increase(); a series that exists from start
 	// is what lets the first stop register as one.
@@ -165,7 +173,8 @@ func New(reg prometheus.Registerer) *M {
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
-		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal)
+		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
+		m.GuestResumesPending, m.GuestResumesTotal)
 	return m
 }
 

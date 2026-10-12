@@ -1,0 +1,92 @@
+######## delay 10
+kill at 1791775360.219166568
+records: 01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b.json 01a12ddd-e9f1-7bd0-a5b4-720491858812.json 
+frz lvs: frz-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b frz-01a12ddd-e9f1-7bd0-a5b4-720491858812 
+hostd answers after 19 s
+records: 
+frz lvs:  dm: 0 mounts: 0
+
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-e9f1 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-916e 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-6bc5 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-b54a 
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-e9f1 
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-6bc5 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-e9f1 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-6bc5 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-e9f1 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-6bc5
+e2e-st-small store-ok
+e2e-st-large store-ok
+e2e-st-xl store-ok
+e2e-st-small2 store-ok
+######## delay 22
+kill at 1791775411.885229338
+records: 01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b.json 01a12ddd-916e-7092-945c-800626b1ae93.json 01a12ddd-b54a-7270-b71a-dfb2c9ae0389.json 01a12
+frz lvs: frz-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b frz-01a12ddd-916e-7092-945c-800626b1ae93 frz-01a12ddd-b54a-7270-b71a-dfb2c9ae0389 frz-01a1
+hostd answers after 66 s
+records: 
+frz lvs:  dm: 0 mounts: 0
+
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-e9f1 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-916e 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-6bc5 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-b54a
+e2e-st-small store-ok
+e2e-st-large store-ok
+e2e-st-xl store-ok
+e2e-st-small2 store-ok
+######## delay 30
+kill at 1791775519.984411208
+records: 01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b.json 01a12ddd-916e-7092-945c-800626b1ae93.json 01a12ddd-b54a-7270-b71a-dfb2c9ae0389.json 01a12
+frz lvs: frz-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b frz-01a12ddd-916e-7092-945c-800626b1ae93 frz-01a12ddd-b54a-7270-b71a-dfb2c9ae0389 frz-01a1
+hostd answers after 62 s
+records: 
+frz lvs:  dm: 0 mounts: 0
+
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-6bc5 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-916e 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-e9f1 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-b54a
+e2e-st-small store-ok
+e2e-st-large store-ok
+e2e-st-xl store-ok
+e2e-st-small2 store-ok
+######## delay 40
+kill at 1791775629.547900632
+records: 01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b.json 01a12ddd-916e-7092-945c-800626b1ae93.json 01a12ddd-b54a-7270-b71a-dfb2c9ae0389.json 01a12
+frz lvs: frz-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b frz-01a12ddd-916e-7092-945c-800626b1ae93 frz-01a12ddd-b54a-7270-b71a-dfb2c9ae0389 frz-01a1
+hostd answers after 53 s
+records: 
+frz lvs:  dm: 0 mounts: 0
+
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-916e 
+  "msg":"paused guest frozen again after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"freeze finished after hostd restarted" "guest_id":"01a12ddd-b54a 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-e9f1 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-916e 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-6bc5 
+  "msg":"guest restored from its frozen image" "guest_id":"01a12ddd-b54a
+e2e-st-small store-ok
+e2e-st-large store-ok
+e2e-st-xl store-ok
+e2e-st-small2 store-ok
+records: 0 frz lvs: 0 dm: 0 mounts: 0
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b running 10.64.4.2 restored from a frozen image 
+01a12ddd-916e-7092-945c-800626b1ae93 running 10.64.4.3 restored from a frozen image 
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389 running 10.64.4.4 restored from a frozen image 
+01a12ddd-e9f1-7bd0-a5b4-720491858812 running 10.64.4.5 restored from a frozen image 
+"msg":"freeze finished after hostd restarted" "msg":"freeze finished after hostd restarted" "msg":"guest state changed" "reason":"restored from a frozen image" "msg":"frozen image discarded" "reason":"restored" "msg":"guest restored from its frozen image"
+e2e-st-small store-ok
+e2e-st-large store-ok
+e2e-st-xl store-ok
+e2e-st-small2 store-ok

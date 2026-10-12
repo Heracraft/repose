@@ -103,6 +103,10 @@
       # differs from `host`: today the api address, its CA and the Blob
       # account (DECISIONS I-40).
       nixosConfigurations.host-01 = mkHost { hostName = "host-01"; modules = [ ./hosts/host-01.nix ]; };
+      # The staging host (infra/README.md, "Staging"): the same configuration
+      # pointed at `hostdev` instead of the api, because staging has no
+      # control plane (DECISIONS I-642).
+      nixosConfigurations.host-stg-01 = mkHost { hostName = "host-stg-01"; modules = [ ./hosts/host-stg-01.nix ]; };
 
       # Edge: gateway + WireGuard hub. docs/workstreams/06-gateway-edge.md
       # The production values (operator addresses, the control plane's

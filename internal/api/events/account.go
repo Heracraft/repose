@@ -82,3 +82,63 @@ func (i *Ingest) Account(ctx context.Context, userID uuid.UUID, kind string, pay
 	}
 	return id, err
 }
+
+// UserNoticeKinds are the notifications that name a user and no project
+// but are not account mail: a platform event that touched several of the
+// user's machines at once, told once rather than once per machine. Unlike
+// AccountKinds they follow the user's channels: email only with
+// notify_email on (and the unsubscribe link), ntfy when a URL is set. The
+// summary is the plain text of the notice. machines_restarted is the
+// server under the user's machines restarting (DECISIONS I-645).
+var UserNoticeKinds = map[string]bool{
+	"machines_restarted": true,
+}
+
+// ErrNotUserNoticeKind is InsertUserNotice's answer to another kind.
+var ErrNotUserNoticeKind = errors.New("events: not a user notice kind")
+
+// InsertUserNotice writes a user-only notice and an outbox row per
+// channel the user has on, in the caller's transaction, and returns the
+// event id. With no channel on, the event is still written.
+func InsertUserNotice(ctx context.Context, q store.Querier, userID uuid.UUID, ts time.Time, kind, summary string) (uuid.UUID, error) {
+	if !UserNoticeKinds[kind] {
+		return uuid.Nil, fmt.Errorf("%w: %s", ErrNotUserNoticeKind, kind)
+	}
+	id := store.NewID()
+	if _, err := q.Exec(ctx, `insert into events (id, project_id, user_id, ts, ts_second, kind, summary, source) values ($1, null, $2, $3, $4, $5, $6, 'api')`,
+		id, userID, ts, ts.Unix(), kind, store.CleanText(summary, MaxNoticeSummary)); err != nil {
+		return uuid.Nil, err
+	}
+	var notifyEmail bool
+	var email, ntfy *string
+	if err := q.QueryRow(ctx, "select notify_email, email, ntfy_url from users where id = $1", userID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+		return uuid.Nil, err
+	}
+	if notifyEmail && email != nil && *email != "" {
+		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'email')", id); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	if ntfy != nil && *ntfy != "" {
+		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'ntfy')", id); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return id, nil
+}
+
+// MaxNoticeSummary caps a user notice's text: one line per machine of a
+// user's, which can pass the 1 KB of a project event.
+const MaxNoticeSummary = 8192
+
+// InsertProjectQuiet writes a project event that notifies nobody (a kind
+// outside the notifying set, such as host_restarted, DECISIONS I-645) in
+// the caller's transaction, so it commits with whatever it records.
+func InsertProjectQuiet(ctx context.Context, q store.Querier, projectID uuid.UUID, ts time.Time, kind, summary string) error {
+	if notifyKinds[kind] {
+		return fmt.Errorf("events: %s notifies; use Insert", kind)
+	}
+	_, err := q.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, $5, $6, 'api')`,
+		store.NewID(), projectID, ts, ts.Unix(), kind, store.CleanText(summary, MaxSummary))
+	return err
+}
