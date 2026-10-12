@@ -33,7 +33,7 @@ type fakeImage struct {
 	// a host, so the fake fails too.
 	fs       map[string]string
 	openedAs map[string]string
-	// madeAs is what FS() reports; the real one is btrfs (I-655).
+	// madeAs is what FS() reports; the real one is btrfs (I-685).
 	madeAs string
 }
 
@@ -863,7 +863,7 @@ func TestKilledWhilePausedRestoresInsteadOfResuming(t *testing.T) {
 }
 
 // The record names the image's filesystem, and the restore mounts that:
-// a new image is the compressed btrfs of I-655, and an image written by
+// a new image is the compressed btrfs of I-685, and an image written by
 // the release before (ext4, no filesystem in its record) is still
 // restored, as docs/interfaces promises for one release.
 func TestFreezeRecordsTheImageFilesystem(t *testing.T) {
@@ -914,7 +914,7 @@ func TestThawRestoresAnImageFromTheReleaseBefore(t *testing.T) {
 // Restores run RestoreConcurrency at a time, which is more than the
 // freeze's Concurrency: a compressed image is read back by one core
 // decompressing it, so restoring more guests at once finishes them all
-// sooner (I-655). Before, both shared the one Concurrency and a host that
+// sooner (I-685). Before, both shared the one Concurrency and a host that
 // froze two at a time restored two at a time.
 func TestRestoresRunMoreAtOnceThanFreezes(t *testing.T) {
 	fh := newFreezeHarness(t, func(c *FreezeConfig) {
@@ -972,7 +972,7 @@ func TestFreezeConfigDefaultsRestoreConcurrency(t *testing.T) {
 // page of its memory, none of it compressible. btrfs allocates data in
 // chunks of up to 1 GiB and needs a metadata and a system chunk besides,
 // so the volume is the class's memory rounded up to a chunk plus room for
-// those (I-655). The volume is thin: what it does not write costs nothing.
+// those (I-685). The volume is thin: what it does not write costs nothing.
 func TestImageVolumeHasRoomForAnIncompressibleImage(t *testing.T) {
 	const gib = uint64(1) << 30
 	for _, class := range []string{"small", "large", "xl"} {

@@ -49,7 +49,7 @@ type FreezeConfig struct {
 	// data disk's bandwidth. Default 2.
 	Concurrency int
 	// RestoreConcurrency is how many images are read back at once.
-	// Default 4: with compressed images (I-655) a restore spends its time
+	// Default 4: with compressed images (I-685) a restore spends its time
 	// decompressing, one core per image, rather than waiting on the disk,
 	// so more of them at once finishes them all sooner. Zero takes the
 	// default, and it is never more than Concurrency when that is higher.
@@ -124,7 +124,7 @@ type FreezeImage interface {
 	Create(ctx context.Context, guestID string, size uint64, key []byte, dir string, uid, gid int) error
 	Open(ctx context.Context, guestID string, key []byte, dir, fs string) error
 	// FS names the filesystem Create makes, which the record keeps so a
-	// restore mounts what is there (I-655).
+	// restore mounts what is there (I-685).
 	FS() string
 	Close(ctx context.Context, guestID, dir string) error
 	Remove(ctx context.Context, guestID, dir string) error
@@ -651,7 +651,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 // headroom is what keeps the pathological image -- a guest whose memory is
 // full of incompressible bytes -- from running the volume out of space:
 // btrfs allocates data in chunks of up to 1 GiB and needs a metadata and a
-// system chunk besides (I-655).
+// system chunk besides (I-685).
 func imageVolumeBytes(class string) uint64 {
 	return (Classes[class].MemMiB + 1536) << 20
 }

@@ -127,7 +127,7 @@ func TestFingerprint(t *testing.T) {
 
 // The image volume is btrfs with compression forced on, above dm-crypt, so
 // a freeze writes and a restore reads a fraction of the guest's memory
-// (I-655). Its metadata is single, not btrfs's default DUP, so an
+// (I-685). Its metadata is single, not btrfs's default DUP, so an
 // incompressible image still fits.
 func TestImageIsCompressedBtrfs(t *testing.T) {
 	r := &shell.Fake{}
@@ -168,7 +168,7 @@ func TestImageIsCompressedBtrfs(t *testing.T) {
 	}
 }
 
-// An image written by the release before I-655 is ext4; its record names no
+// An image written by the release before I-685 is ext4; its record names no
 // filesystem, and a restore mounts it as ext4 rather than refusing it.
 func TestImageOpensAnOlderExt4Image(t *testing.T) {
 	r := &shell.Fake{}

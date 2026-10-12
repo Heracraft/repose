@@ -88,7 +88,7 @@ in
     # cryptsetup for the image's dm-crypt, btrfs-progs to make its
     # filesystem: the image is compressed btrfs, which is what makes a
     # freeze and a restore write and read a fraction of the guest's
-    # memory (I-655).
+    # memory (I-685).
     systemd.services.hostd.path = [ pkgs.cryptsetup pkgs.btrfs-progs ];
 
     # Loaded at boot, not when the host is already shutting down.

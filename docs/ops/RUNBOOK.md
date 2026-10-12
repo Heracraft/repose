@@ -1432,7 +1432,9 @@ Checks:
   canary before trusting a reboot, or before a planned window.
 - After a reboot: `journalctl -u hostd -b | grep -E '"event":"(guest_thaw|freeze_discard)"'`.
   `guest restored from its frozen image` with `duration_ms` and
-  `frozen_s` per guest; `frozen image discarded` with a fixed `reason`
+  `frozen_s` per guest, and a `restore phases` line beside it
+  (`net_ms`, `virtiofsd_ms`, `store_view_ms`, `image_ms`, `resume_ms`,
+  `guestd_ms`) saying which part of a slow restore was slow; `frozen image discarded` with a fixed `reason`
   for each one that started cold instead (closure changed, volume changed,
   key unavailable, restore failed, ...). Those go on as after any reboot
   ("Host rebooted").
@@ -1458,6 +1460,14 @@ Checks:
   replaces store files the guests have open, and their next restore
   fails (`Migration source has lost inode` in the virtiofsd journal);
   they start cold instead (DECISIONS I-652).
+- Image size: an image holds the guest's memory compressed (btrfs with
+  `compress-force=zstd:1` above the dm-crypt, I-685), about a fifth of it
+  for real work and never more than it. `lvs vg-guests -o lv_name,data_percent
+  | grep frz-` is the share of a volume (class RAM + 1536 MiB) actually on
+  disk: single figures are normal, and a volume near 100 percent is a
+  guest whose memory is incompressible. Four loaded guests on host-01's
+  disk restore in about 6 s rather than 27 (docs/research/
+  freeze-fast-restore.md).
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
   restore. `dmsetup ls | grep repose-frz` is empty except during a freeze

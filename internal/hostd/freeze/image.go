@@ -27,7 +27,7 @@ func MapperName(guestID string) string { return "repose-frz-" + guestID }
 func MapperPath(guestID string) string { return "/dev/mapper/" + MapperName(guestID) }
 
 // Image filesystems. The image is btrfs with zstd compression forced on
-// (I-655): the guest's memory is what a freeze writes and a restore reads,
+// (I-685): the guest's memory is what a freeze writes and a restore reads,
 // and compressing it is the one change that makes both faster, because
 // both are bounded by the host's data disk (600 MB/s on host-01). Measured
 // on woker-1, one large guest: 3.99 GB of image bytes on disk became 0.33
@@ -35,7 +35,7 @@ func MapperPath(guestID string) string { return "/dev/mapper/" + MapperName(gues
 // /dev/urandom resident (the worst case), and the snapshot was never
 // slower. Real agent memory on that box compresses 5.3x at zstd -1.
 //
-// FSExt4 is what images made before I-655 are; a record without a
+// FSExt4 is what images made before I-685 are; a record without a
 // filesystem names it, so an image written by the previous release still
 // restores (one release, as docs/interfaces promises).
 const (
@@ -127,7 +127,7 @@ func (i *Image) Create(ctx context.Context, guestID string, size uint64, key []b
 
 // Open maps and mounts an existing image volume for a restore. fs is the
 // filesystem the record says it holds; "" is ext4, what images written
-// before I-655 are.
+// before I-685 are.
 func (i *Image) Open(ctx context.Context, guestID string, key []byte, dir, fs string) error {
 	if ok, err := i.LVM.VolumeExists(ctx, LVName(guestID)); err != nil {
 		return err

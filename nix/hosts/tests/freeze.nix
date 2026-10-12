@@ -55,7 +55,7 @@ pkgs.testers.runNixOSTest {
         host.succeed("test -d /sys/module/btrfs || modinfo btrfs")
 
     with subtest("an image volume holds a fraction of what is written to it"):
-        # The whole point of I-655: the image is btrfs with compression
+        # The whole point of I-685: the image is btrfs with compression
         # forced on, above dm-crypt, so a freeze writes and a restore
         # reads a fraction of the guest's memory. No guest can boot here,
         # so the filesystem itself is built the way freeze.Image builds it
