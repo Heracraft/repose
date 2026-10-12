@@ -1254,8 +1254,8 @@ restoring in place. The 30 percent left is room for those guests to grow
 into: plans count what volumes hold (I-585), so the volumes' sizes sum
 past the pool by design.
 
-Why 70: the next thresholds are 80 (lvm autoextends the pool once, by 10
-percent of its size into the VG's 5 percent headroom), 85 (hostd refuses
+Why 70: the next thresholds are 80 (lvm autoextends the pool once, by 5
+percent of its size into the VG's 5 percent headroom; I-643), 85 (hostd refuses
 creates, restores and grows), 90 (`PoolFull` pages) and 95 (hostd
 refuses starts). Growing the data disk takes a human an hour or two, and
 the 15 percent between 70 and 85 is 300 GB of a 2 TB pool (71 GB of

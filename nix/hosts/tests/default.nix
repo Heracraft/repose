@@ -870,7 +870,12 @@ in
 
       with subtest("autoextend is configured and monitored"):
           host.succeed("lvm dumpconfig activation/thin_pool_autoextend_threshold | grep -q '=80'")
-          host.succeed("lvm dumpconfig activation/thin_pool_autoextend_percent | grep -q '=10'")
+          # The step must fit the VG's headroom or dmeventd never extends
+          # ("Insufficient free space" at 80 percent on host-stg-01,
+          # 2026-10-12: 10 percent of the pool against 5 percent of the VG).
+          pct = int(host.succeed("lvm dumpconfig activation/thin_pool_autoextend_percent").strip().split("=")[1])
+          vfree_gb = float(host.succeed("vgs --noheadings --units g --nosuffix -o vg_free vg-guests").strip())
+          assert size_gb * pct / 100 <= vfree_gb, f"autoextend step {size_gb * pct / 100:.2f} GiB exceeds the VG's free {vfree_gb} GiB"
           host.succeed("lvm dumpconfig activation/monitoring | grep -q '=1'")
           host.succeed("systemctl is-active lvm2-monitor.service")
 

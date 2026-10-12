@@ -18553,6 +18553,15 @@ host-restart plan, after the 2026-10-10 live migration of host-01).
   min).
 - VM test `host-reboot`; RUNBOOK `PoolUnavailable`, `PoolUnmonitored`,
   "Host rebooted", "Switch a host to main" step 7.
+- Autoextend grows the pool by 5 percent, not I-586's 10: lvm extends
+  only by the whole step, and 10 percent of a pool that is 95 percent of
+  the disk is twice the VG's 5 percent headroom, so the extension at 80
+  percent could never happen. On host-stg-01 (2026-10-12), filled to 83
+  percent, dmeventd logged "Insufficient free space: 12190 extents
+  needed, but only 6554 available" every 10 to 50 s and the pool stayed
+  476 GiB; the warnings (`pool_high` at 75 percent seen, `PoolHigh`)
+  were the only response. 5 percent of the pool fits the headroom once;
+  `host-storage` asserts that the step fits the VG's free space.
 
 **I-644. `volume_unavailable` and the pool's health reach hostd, the api
 and the user (host-pool, 2026-10-11).** *Made during implementation* (L4).

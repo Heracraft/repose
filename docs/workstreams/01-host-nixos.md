@@ -43,7 +43,7 @@ tenants' guests. Every path, device and rule in
 - `nix/hosts/storage.nix`: `services.lvm.enable`, `boot.initrd.services.lvm
   .enable`, thin provisioning tools, `lvm.conf` with
   `thin_pool_autoextend_threshold = 80` and
-  `thin_pool_autoextend_percent = 10` so the pool grows into the VG headroom
+  `thin_pool_autoextend_percent = 5` (I-643) so the pool grows into the VG headroom
   rather than filling silently; a `repose-pool-monitor.timer` every 5
   minutes that exports pool usage to a textfile for node_exporter.
 - `nix/hosts/virt.nix`: `cloud-hypervisor`, `virtiofsd`, `ch-remote` in

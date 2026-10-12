@@ -247,12 +247,14 @@ in
 
       environment.etc."lvm/lvm.conf".text = lib.mkAfter ''
         activation {
-          # Grow the pool by 10 percent of its size into the VG headroom every
-          # time it passes 80 percent full. hostd's pool_high warning fires
+          # Grow the pool by 5 percent of its size into the VG headroom when
+          # it passes 80 percent full. lvm extends only by the whole step,
+          # and the headroom is 5 percent of the VG (disko-layout.nix), so
+          # 10 never fit (DECISIONS I-643). hostd's pool_high warning fires
           # earlier, at 70, where the api stops placing new projects on the
           # host and a human grows the disk (DECISIONS I-586).
           thin_pool_autoextend_threshold = 80
-          thin_pool_autoextend_percent = 10
+          thin_pool_autoextend_percent = 5
           monitoring = 1
           # Nothing is activated by udev events or at boot by lvm itself:
           # repose-guest-pool owns activation (DECISIONS I-643).
