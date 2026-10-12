@@ -45,6 +45,15 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEnlaWLqhKDXwKRp74FWyHFmrK5eZXh7U3VL3a3J/EO0 operator"
     ];
 
+    # The guest freeze is proven here before host-01 (DECISIONS I-652,
+    # I-653), with staging's own vault (`make output ENV=staging`,
+    # freeze_keyvault).
+    freeze = {
+      enable = true;
+      keyVaultUrl = "https://repose-frz-stg-3912.vault.azure.net/";
+      keyName = "freeze-wrap";
+    };
+
     # Staging's own account and identity (`make output ENV=staging`), so a
     # snapshot taken here can never land beside a tenant's.
     snapshots = {
