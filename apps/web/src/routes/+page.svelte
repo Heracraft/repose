@@ -207,7 +207,7 @@
 <div class="rails">
 	<main id="main">
 		<section class="sec">
-			<div class="hero-grid inset">
+			<div class="hero-grid land-inset">
 				<p class="eyebrow">For solo founders and their agents</p>
 				<h1 class="hero-h">
 					<span class="line">Your dev environment,</span>
@@ -240,8 +240,8 @@
 
 		<section class="sec">
 			<SectionHead id="features" title="On every machine" />
-			<ul class="cells">
-				<li class="cell">
+			<ul class="land-cells">
+				<li class="land-cell">
 					<ComesBack />
 					<h3>{@render cellMark('pinwheel')}Let it break the whole machine</h3>
 					<!-- The line breaks between the two sentences (.whole): at 1440 it
@@ -250,7 +250,7 @@
 						Databases, tools, logins, uncommitted work. <span>Back in minutes.</span>
 					</p>
 				</li>
-				<li class="cell">
+				<li class="land-cell">
 					<Localhost />
 					<h3>{@render cellMark('halves')}Your dev server on your localhost</h3>
 					<p>
@@ -258,7 +258,7 @@
 						as they do locally.
 					</p>
 				</li>
-				<li class="cell">
+				<li class="land-cell">
 					<Browser />
 					<h3>{@render cellMark('ring')}Watch the agent use the browser</h3>
 					<p>
@@ -266,7 +266,7 @@
 						over.
 					</p>
 				</li>
-				<li class="cell">
+				<li class="land-cell">
 					<Editor />
 					<h3>{@render cellMark('arch')}Open it in your editor</h3>
 					<p>Every machine is an SSH host. Neovim on it, VS Code, Cursor or Zed over SSH.</p>

@@ -406,8 +406,8 @@
 			// snapshot command, crosses there, and settles onto the machine's
 			// row once past the laptop. Stacked, the commands fill the gap, so
 			// it comes into view on the machine, over its head, and settles.
-			const runChip = rel(pic.querySelector('.hop .chip')!);
-			const askChip = rel(pic.querySelector('.ask .chip')!);
+			const runChip = rel(pic.querySelector('.hop .pic-chip')!);
+			const askChip = rel(pic.querySelector('.ask .pic-chip')!);
 			// Just over repose run, so it is still behind the laptop's head
 			// until it clears the laptop's wall.
 			const band = Math.max(runChip.t - 4 - a.h, askChip.b + 2) - a.t;
@@ -917,7 +917,7 @@
 
 		<!-- Your command for a snapshot, typed on the laptop. -->
 		<div class="ask" aria-hidden="true">
-			<span class="chip" class:fire={ask}>repose snapshots create</span>
+			<span class="pic-chip" class:fire={ask}>repose snapshots create</span>
 			<span class="wire arrow"></span>
 		</div>
 
@@ -940,7 +940,7 @@
 
 		<div class="hop" aria-hidden="true">
 			<span class="wire"></span>
-			<span class="chip" class:fire>repose run</span>
+			<span class="pic-chip" class:fire>repose run</span>
 			<span class="wire arrow"></span>
 		</div>
 

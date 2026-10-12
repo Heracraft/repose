@@ -577,12 +577,12 @@
 		<div class="hop" aria-hidden="true">
 			<div class="leg run">
 				<span class="wire"></span>
-				<span class="chip" class:fire>repose run</span>
+				<span class="pic-chip" class:fire>repose run</span>
 				<span class="wire arrow"></span>
 			</div>
 			<div class="leg fetch m-later">
 				<span class="wire arrow back"></span>
-				<span class="chip" class:fire={fetchFire}>git fetch repose</span>
+				<span class="pic-chip" class:fire={fetchFire}>git fetch repose</span>
 				<span class="wire"></span>
 			</div>
 		</div>

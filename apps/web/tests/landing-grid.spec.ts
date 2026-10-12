@@ -6,7 +6,7 @@
 // Localhost's two pages never show at once.
 import { test, expect, type Page } from '@playwright/test';
 
-const cells = '.cells > .cell';
+const cells = '.land-cells > .land-cell';
 
 async function grid(page: Page, width: number) {
 	await page.setViewportSize({ width, height: 900 });
@@ -78,29 +78,29 @@ for (const width of [1440, 1024, 820, 390, 360]) {
 	test(`ComesBack shows every row's label whole at ${width}`, async ({ page }) => {
 		await grid(page, width);
 		const cut = await page
-			.locator('.cells .m-row .nm, .cells .m-row .val')
+			.locator('.land-cells .m-row .nm, .land-cells .m-row .val')
 			.evaluateAll((els) =>
 				els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent)
 			);
 		expect(cut).toEqual([]);
-		await expect(page.locator('.cells .m-row')).toHaveCount(6);
+		await expect(page.locator('.land-cells .m-row')).toHaveCount(6);
 	});
 }
 
 test('the Editor shows every column of the screen at card width', async ({ page }) => {
 	await grid(page, 1440);
 	const over = await page
-		.locator('.cells .screen .ln')
+		.locator('.land-cells .screen .ln')
 		.evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
 	expect(over).toBe(0);
-	await expect(page.locator('.cells .screen .ln')).toHaveCount(20);
+	await expect(page.locator('.land-cells .screen .ln')).toHaveCount(20);
 });
 
 test("the Browser's log sits under its viewport, not over the page", async ({ page }) => {
 	await grid(page, 1440);
 	const [vp, term] = await Promise.all([
-		page.locator('.cells .vp').boundingBox(),
-		page.locator('.cells .bw .term').boundingBox()
+		page.locator('.land-cells .vp').boundingBox(),
+		page.locator('.land-cells .bw .term').boundingBox()
 	]);
 	expect(term!.y).toBeGreaterThanOrEqual(vp!.y + vp!.height - 1);
 });

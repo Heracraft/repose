@@ -177,7 +177,7 @@
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
 		const one = (s: string) => pic.querySelector<HTMLElement>(s)!;
-		const moved = () => [pic, ...q('.layer, .ring, .chip, .pointer, .rows, .tr')];
+		const moved = () => [pic, ...q('.layer, .ring, .pic-chip, .pointer, .rows, .tr')];
 		// The style attributes the markup gave them (a row's captured
 		// background), so a stop puts back exactly those.
 		const markup = new Map(moved().map((el) => [el, el.getAttribute('style')]));
@@ -199,7 +199,7 @@
 				if (style === null) el.removeAttribute('style');
 				else el.setAttribute('style', style);
 			}
-			one('.chip').classList.remove('fire');
+			one('.pic-chip').classList.remove('fire');
 			q('.tr').forEach((r) => r.classList.remove('new'));
 		}
 
@@ -219,8 +219,8 @@
 					utils.set(q('.l-blank, .tb-blank'), { opacity: 1 });
 					utils.set(pic, { '--pan': PAN.nav });
 					utils.set(one('.ring'), { opacity: 0, ...ring(URLBAR, TB) });
-					utils.set(one('.chip'), { opacity: 0, scale: 0.85 });
-					one('.chip').classList.remove('fire');
+					utils.set(one('.pic-chip'), { opacity: 0, scale: 0.85 });
+					one('.pic-chip').classList.remove('fire');
 					utils.set(one('.pointer'), { opacity: 0 });
 					utils.set(rowEls, { opacity: 0 });
 					utils.set(rowEls[0], { opacity: 1 });
@@ -296,16 +296,16 @@
 					rowEls.forEach((r) => t.call(() => r.classList.remove('new'), 8800));
 					t.add(rowEls, { opacity: REST, duration: 500, ease: 'outQuad' }, 8800);
 					t.add(
-						one('.chip'),
+						one('.pic-chip'),
 						{ opacity: [0, 1], scale: [0.85, 1], duration: 320, ease: 'outBack' },
 						9000
 					);
-					t.call(() => one('.chip').classList.add('fire'), 9450);
-					t.call(() => one('.chip').classList.remove('fire'), 9950);
+					t.call(() => one('.pic-chip').classList.add('fire'), 9450);
+					t.call(() => one('.pic-chip').classList.remove('fire'), 9950);
 					pan(PAN.you, 9300, 900);
 
 					const k = pic.querySelector('.br')!.getBoundingClientRect().width / 574;
-					const c = one('.chip').getBoundingClientRect();
+					const c = one('.pic-chip').getBoundingClientRect();
 					const b = pic.querySelector('.br')!.getBoundingClientRect();
 					const sx = (c.left - b.left + c.width * 0.3) / k;
 					const sy = (c.bottom - b.top - 4) / k;
@@ -335,7 +335,7 @@
 					t.call(() => at || picture.looped(), SEAM - 1);
 					swap('.l-nav, .l-typed, .l-bug, .l-t0, .l-t1', SEAM, 0);
 					t.add(
-						q('.l-t2, .chip, .pointer'),
+						q('.l-t2, .pic-chip, .pointer'),
 						{ opacity: 0, duration: 450, ease: 'inQuad' },
 						SEAM
 					).add(rowEls, { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM);
@@ -462,7 +462,7 @@
 					</div>
 				</div>
 				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
-				<span class="chip">repose browser</span>
+				<span class="pic-chip">repose browser</span>
 				<svg
 					class="pointer"
 					viewBox="0 0 12 18"
@@ -639,7 +639,7 @@
 
 	/* You: the command, and your pointer in the same window. The grid's
 	   chip (landing.css), in --chip on the white page. */
-	.stage .chip {
+	.stage .pic-chip {
 		position: absolute;
 		right: 10px;
 		top: calc(var(--k) * 48 + 10px);
@@ -647,7 +647,7 @@
 		background: #fff;
 		color: var(--chip);
 	}
-	.stage .chip:global(.fire) {
+	.stage .pic-chip:global(.fire) {
 		background: var(--chip);
 		color: #fff;
 	}

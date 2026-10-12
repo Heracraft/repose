@@ -8,7 +8,8 @@ import {
 	apiURLFromEnv,
 	addQuestion,
 	setBilling,
-	resetBilling
+	resetBilling,
+	setAgents
 } from './helpers';
 
 test.beforeEach(async ({ page }) => {
@@ -174,4 +175,28 @@ test('Stop on a row stops the project', async ({ page }) => {
 	await expect(r.getByRole('button', { name: `Start ${p.name}` })).toBeVisible();
 	// Still on the list: the button is above the row's link.
 	await expect(page).toHaveURL('/projects');
+});
+
+// The landing's stylesheet stays loaded after a client-side move to the
+// dashboard, so a generic class there restyled the dashboard: its `.chip`
+// turned the agent chip into a blue mono command chip with no gap
+// (owner's screenshot, 2026-10-12). The landing's names are its own now.
+test('an agent chip keeps its look after coming from the landing', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'chip-app',
+		remote_url: 'github.com/heracraft/chip-app'
+	});
+	await setAgents(p.id, [{ agent: 'claude', window: '1', state: 'working' }]);
+	await page.getByRole('link', { name: 'repose, home' }).click();
+	await page.waitForURL(/\/$/);
+	await page.getByRole('link', { name: 'Dashboard' }).first().click();
+	await page.waitForURL(/\/projects$/);
+	const chip = row(page, p.name).locator('.chip').first();
+	await expect(chip).toBeVisible();
+	const look = await chip.evaluate((el) => {
+		const s = getComputedStyle(el);
+		return { display: s.display, fontSize: s.fontSize };
+	});
+	expect(look).toEqual({ display: 'flex', fontSize: '11px' });
+	await setAgents(p.id, []);
 });
