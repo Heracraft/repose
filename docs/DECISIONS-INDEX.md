@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-702 entries.
+704 entries.
 
 ## Scope
 
@@ -714,8 +714,8 @@ pointer, not a summary.
 - **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19107
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19155
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19174
-- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — L19278
-- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L19492
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; L19278
+- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19492
 - **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19551
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19677
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19735
@@ -734,3 +734,5 @@ pointer, not a summary.
 - **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L20391
 - **I-678** A Polar event about a customer or product repose does not know is acknowledged, not failed — 2026-10-12; L20438
 - **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20457
+- **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
+- **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583

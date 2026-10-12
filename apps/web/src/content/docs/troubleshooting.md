@@ -29,7 +29,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **Your connection closed on its own after hours.** A connection ends when its certificate expires, at most 24 hours after it was issued, or when you run `repose logout` on another device. Connect again; your `ssh` renews the certificate. The tmux session on the machine is still there. `run` and `attach` do this for you.
 
-**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. `run` and `attach` attach again as soon as the machine answers. If it was the machine's server that restarted, the machine stopped with it and repose starts it again, usually within a few minutes ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
+**`repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.`** The connection dropped: Wi-Fi, a laptop that slept, or a restart on repose's side. `run` and `attach` attach again as soon as the machine answers. If it was the machine's server that restarted, the machine comes back by itself, usually in a couple of minutes ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
 
 **`attach` takes more than a few seconds to come back.** After the laptop slept or changed networks, `attach` needs up to 2 seconds to find that the old connection is dead, then a normal connect. If it takes longer, run `REPOSE_TIMING=1 repose attach`; it prints how long each step took.
 

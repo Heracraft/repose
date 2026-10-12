@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,10 +28,21 @@ type fakeImage struct {
 	ops     []string
 	failOn  map[string]error
 	created map[string]uint64
+	// fs is the filesystem each volume was made with, and openedAs what
+	// the restore asked for: an image mounted as the wrong type fails on
+	// a host, so the fake fails too.
+	fs       map[string]string
+	openedAs map[string]string
+	// madeAs is what FS() reports; the real one is btrfs (I-685).
+	madeAs string
 }
 
 func newFakeImage() *fakeImage {
-	return &fakeImage{vols: map[string]string{}, open: map[string]bool{}, failOn: map[string]error{}, created: map[string]uint64{}}
+	return &fakeImage{vols: map[string]string{}, open: map[string]bool{}, failOn: map[string]error{},
+		created: map[string]uint64{}, fs: map[string]string{}, openedAs: map[string]string{},
+		// What the real image volume makes, so a test of the record's
+		// filesystem is a test of the host's, not of the fake's.
+		madeAs: (&freeze.Image{}).FS()}
 }
 
 func (f *fakeImage) op(s string) error {
@@ -45,10 +57,13 @@ func (f *fakeImage) Create(_ context.Context, id string, size uint64, key []byte
 		return err
 	}
 	f.vols[id], f.open[id], f.created[id] = freeze.KeyCheck(key), true, size
+	f.fs[id] = f.madeAs
 	return nil
 }
 
-func (f *fakeImage) Open(_ context.Context, id string, key []byte, _ string) error {
+func (f *fakeImage) FS() string { return f.madeAs }
+
+func (f *fakeImage) Open(_ context.Context, id string, key []byte, _, fs string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.op("open " + id); err != nil {
@@ -60,6 +75,13 @@ func (f *fakeImage) Open(_ context.Context, id string, key []byte, _ string) err
 	}
 	if kc != freeze.KeyCheck(key) {
 		return errors.New("mount: wrong fs type")
+	}
+	if fs == "" {
+		fs = freeze.FSExt4
+	}
+	f.openedAs[id] = fs
+	if made, ok := f.fs[id]; ok && made != "" && made != fs {
+		return fmt.Errorf("mount: image is %s, asked for %s", made, fs)
 	}
 	f.open[id] = true
 	return nil
@@ -246,7 +268,7 @@ func TestFreezeThenThawRestoresTheGuest(t *testing.T) {
 	if !strings.Contains(strings.Join(fh.img.ops, " "), "close "+gid1) {
 		t.Fatalf("image not closed after the freeze: %v", fh.img.ops)
 	}
-	if fh.img.created[gid1] != (8192+256)<<20 {
+	if fh.img.created[gid1] != (8192+1536)<<20 {
 		t.Fatalf("image volume of %d bytes for a large guest", fh.img.created[gid1])
 	}
 
@@ -627,6 +649,7 @@ func TestThawWaitsOneUnwrapTimeout(t *testing.T) {
 func TestThawRestoreWindowDiscards(t *testing.T) {
 	fh := newFreezeHarness(t, func(c *FreezeConfig) {
 		c.Concurrency = 1
+		c.RestoreConcurrency = 1
 		c.UnwrapTimeout = 100 * time.Millisecond
 		c.RestoreTimeout = 300 * time.Millisecond
 	})
@@ -836,5 +859,132 @@ func TestKilledWhilePausedRestoresInsteadOfResuming(t *testing.T) {
 	}
 	if fh.record(gid1) != nil || fh.img.has(gid1) {
 		t.Fatal("image or record left after the restore")
+	}
+}
+
+// The record names the image's filesystem, and the restore mounts that:
+// a new image is the compressed btrfs of I-685, and an image written by
+// the release before (ext4, no filesystem in its record) is still
+// restored, as docs/interfaces promises for one release.
+func TestFreezeRecordsTheImageFilesystem(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	if res := fh.freezeOne(gid1); !res.OK {
+		t.Fatalf("freeze: %+v", res)
+	}
+	if rec := fh.record(gid1); rec.FS != freeze.FSBtrfs {
+		t.Fatalf("record says the image is %q", rec.FS)
+	}
+	if err := fh.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := fh.img.openedAs[gid1]; got != freeze.FSBtrfs {
+		t.Fatalf("image opened as %q", got)
+	}
+	if !fh.unitActive(gid1) {
+		t.Fatal("guest not restored")
+	}
+}
+
+func TestThawRestoresAnImageFromTheReleaseBefore(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	if res := fh.freezeOne(gid1); !res.OK {
+		t.Fatalf("freeze: %+v", res)
+	}
+	// What the previous release left: an ext4 image and a record with no
+	// filesystem in it.
+	rec := fh.record(gid1)
+	rec.FS = ""
+	if err := fh.m.records().Put(rec); err != nil {
+		t.Fatal(err)
+	}
+	fh.img.fs[gid1] = freeze.FSExt4
+	if err := fh.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := fh.img.openedAs[gid1]; got != freeze.FSExt4 {
+		t.Fatalf("an image from the release before was opened as %q", got)
+	}
+	if !fh.unitActive(gid1) || fh.img.has(gid1) {
+		t.Fatalf("guest restored=%v image kept=%v", fh.unitActive(gid1), fh.img.has(gid1))
+	}
+}
+
+// Restores run RestoreConcurrency at a time, which is more than the
+// freeze's Concurrency: a compressed image is read back by one core
+// decompressing it, so restoring more guests at once finishes them all
+// sooner (I-685). Before, both shared the one Concurrency and a host that
+// froze two at a time restored two at a time.
+func TestRestoresRunMoreAtOnceThanFreezes(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) {
+		c.Concurrency = 1
+		c.RestoreConcurrency = 2
+		c.RestoreTimeout = 10 * time.Second
+	})
+	fh.create(gid1)
+	fh.create(gid2)
+	if res := fh.m.FreezeAll(context.Background(), FreezeOperator); len(res) != 2 || !res[0].OK || !res[1].OK {
+		t.Fatalf("freeze: %+v", res)
+	}
+	var mu sync.Mutex
+	now, most := 0, 0
+	prev := fh.sd.OnRun
+	fh.sd.OnRun = func(unit string, argv []string) error {
+		if !slices.Contains(argv, "--restore") {
+			return prev(unit, argv)
+		}
+		mu.Lock()
+		now++
+		if now > most {
+			most = now
+		}
+		mu.Unlock()
+		time.Sleep(300 * time.Millisecond)
+		mu.Lock()
+		now--
+		mu.Unlock()
+		return prev(unit, argv)
+	}
+	res := fh.m.ThawAll(context.Background())
+	if len(res) != 2 || !res[0].OK || !res[1].OK {
+		t.Fatalf("thaw: %+v", res)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 2 {
+		t.Fatalf("at most %d restore(s) ran at once; RestoreConcurrency is 2", most)
+	}
+}
+
+// Four freezes and four restores at once by default (I-685), and never
+// fewer restores than freezes.
+func TestFreezeConfigDefaultsConcurrency(t *testing.T) {
+	c := FreezeConfig{}.withDefaults()
+	if c.Concurrency != 4 || c.RestoreConcurrency != 4 {
+		t.Fatalf("defaults: freeze %d, restore %d", c.Concurrency, c.RestoreConcurrency)
+	}
+	if got := (FreezeConfig{Concurrency: 6}).withDefaults(); got.RestoreConcurrency != 6 {
+		t.Fatalf("with 6 freezes at once, %d restores", got.RestoreConcurrency)
+	}
+	if got := (FreezeConfig{RestoreConcurrency: 1}).withDefaults(); got.RestoreConcurrency != got.Concurrency {
+		t.Fatalf("fewer restores (%d) than freezes (%d) at once", got.RestoreConcurrency, got.Concurrency)
+	}
+}
+
+// An image volume has room for the worst image a guest can write: every
+// page of its memory, none of it compressible. btrfs allocates data in
+// chunks of up to 1 GiB and needs a metadata and a system chunk besides,
+// so the volume is the class's memory rounded up to a chunk plus room for
+// those (I-685). The volume is thin: what it does not write costs nothing.
+func TestImageVolumeHasRoomForAnIncompressibleImage(t *testing.T) {
+	const gib = uint64(1) << 30
+	for _, class := range []string{"small", "large", "xl"} {
+		mem := uint64(Classes[class].MemMiB) << 20
+		got := imageVolumeBytes(class)
+		need := (mem+gib-1)/gib*gib + 288<<20
+		if got < need {
+			t.Fatalf("%s: image volume %d bytes, an incompressible image needs %d", class, got, need)
+		}
 	}
 }

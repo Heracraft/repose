@@ -46,6 +46,9 @@ type Record struct {
 	Class       string `json:"class"`
 	VolumeBytes uint64 `json:"volume_bytes"`
 	CHVersion   string `json:"ch_version"`
+	// FS is the image volume's filesystem (I-685). Empty means ext4, what
+	// a record written before I-685 has.
+	FS string `json:"fs,omitempty"`
 	// AuthShare: the snapshot has the login share's virtio-fs device, so
 	// its virtiofsd must be up before the restore.
 	AuthShare bool `json:"auth_share"`

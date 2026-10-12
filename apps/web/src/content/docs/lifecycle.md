@@ -55,9 +55,11 @@ todo-app is running (large), ready in 9s.
 
 ## When a machine's server restarts
 
-The server your machines run on can restart, for maintenance or after a fault. Every machine running on it stops: the disk is kept, but processes and memory are lost, and an agent in the middle of a turn loses that turn.
+The server your machines run on can restart, for maintenance or after a fault. A machine running on it comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. SSH sessions, forwarded ports and anything else connected to the machine drop and need connecting again. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server, for at most 6 hours, and removed once the machine is back.
 
-When the server is back, repose starts each machine that was running or starting when it went down, usually within a few minutes, three at a time per server. It boots the system the machine was running; a configuration built and waiting for the next start is applied at the one after. A machine started again holds your plan's memory like any running machine, and its traffic counts toward the month.
+A machine that can't come back that way stops instead: the disk is kept, but processes and memory are lost, and an agent in the middle of a turn loses that turn. That is what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
+
+When the server is back, repose starts each machine that stopped and was running or starting when it went down, usually within a few minutes, three at a time per server. It boots the system the machine was running; a configuration built and waiting for the next start is applied at the one after. A machine started again holds your plan's memory like any running machine, and its traffic counts toward the month.
 
 A machine isn't started again when:
 
@@ -67,7 +69,7 @@ A machine isn't started again when:
 - a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped, as it doesn't stop a running machine ([Billing](/docs/billing));
 - its start fails, after one more try when the machine doesn't answer in time.
 
-You get one [notification](/docs/notifications) per server restart, by email and ntfy if you have them on, with a line for each machine:
+If any machine stopped, you get one [notification](/docs/notifications) per server restart, by email and ntfy if you have them on, with a line for each:
 
 ```text
 The server running your machines restarted; it was back at 05:46 UTC.
@@ -105,7 +107,7 @@ repose snapshots create
 repose snapshots list
 ```
 
-Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which live only in memory, or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
+Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which are kept in memory and never on the machine's disk, [other than while its server restarts](#when-a-machines-server-restarts), or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
 
 To put a project back to a snapshot, stop it first. Stopping takes its own snapshot, so this can be undone; the question names both snapshots, and says so when no snapshot holds the disk as it is now (after `repose stop --no-snapshot` or `repose resize --size`):
 

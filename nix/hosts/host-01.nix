@@ -40,6 +40,20 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEnlaWLqhKDXwKRp74FWyHFmrK5eZXh7U3VL3a3J/EO0 operator"
     ];
 
+    # Guests are frozen to an encrypted image of their memory when this host
+    # restarts and restored where they were (DECISIONS I-652, I-653); the
+    # owner signed off I-653's exception to the secrets rule on 2026-10-12
+    # and host-01 is the first host with it on (I-686). The vault is prod's
+    # `freeze_keyvault_name` (`make output ENV=prod`, freeze_keyvault); the
+    # host identity below holds Get and UnwrapKey on it, and nothing else.
+    # Azure Scheduled Events stay off: turning that listener on holds every
+    # restart of this VM for approval, so it is its own decision (I-652).
+    freeze = {
+      enable = true;
+      keyVaultUrl = "https://repose-frz-3912.vault.azure.net/";
+      keyName = "freeze-wrap";
+    };
+
     # infra outputs `snapshots.blob_endpoint` and `snapshots.identity_client_id`
     # (the user-assigned identity id-repose-host, Storage Blob Data
     # Contributor on the container).
