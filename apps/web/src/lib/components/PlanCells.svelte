@@ -67,7 +67,10 @@
 			<div class="p-run">
 				<p>{memoryLine(p.memoryGB)}</p>
 				{#if overRun && compare}
-					<p class="p-over">Running {gbs(compare.runningGB)}, holds {gbs(p.memoryGB)}</p>
+					<p class="p-over">
+						Running <span class="nw">{gbs(compare.runningGB)}</span>, holds
+						<span class="nw">{gbs(p.memoryGB)}</span>
+					</p>
 				{/if}
 			</div>
 			<div class="p-specs">
@@ -82,7 +85,7 @@
 					</div>
 				</dl>
 				{#if overDisk && compare}
-					<p class="p-over">Projects hold {gbs(compare.diskHeldGB)}</p>
+					<p class="p-over">Projects hold <span class="nw">{gbs(compare.diskHeldGB)}</span></p>
 				{/if}
 			</div>
 			<div class="p-intro">
@@ -98,9 +101,10 @@
 			</p>
 			<p class="p-then">
 				{#if intro}
-					then {price(p.priceCents)}{intro.egressGB !== p.egressGB
-						? ` and ${planSize(p.egressGB)} egress`
-						: ''} from month {intro.months + 1}
+					then {price(p.priceCents)}
+					{#if intro.egressGB !== p.egressGB}and <span class="nw">{planSize(p.egressGB)}</span>
+						egress{/if}
+					from <span class="nw">month {intro.months + 1}</span>
 				{/if}
 			</p>
 			{#if action}
@@ -169,12 +173,19 @@
 		background: var(--ink);
 	}
 
+	/* In a narrow cell the Current badge drops under the name rather
+	   than run into the squares beside it. */
 	.p-top {
 		grid-area: top;
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.625rem;
+		gap: 0.375rem 0.625rem;
 		min-width: 0;
+	}
+	/* A figure never splits between its number and its unit. */
+	.nw {
+		white-space: nowrap;
 	}
 	.p-name {
 		font-family: var(--font-display);

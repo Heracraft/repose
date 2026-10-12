@@ -80,9 +80,9 @@ test("an experimental page's banner links to the feedback board", async ({ page 
 	).toHaveAttribute('href', 'https://repose.fider.io');
 });
 
-// On a phone the Copy button sits in the code block's corner, not on a row
-// of its own above the code.
-test('on a phone the Copy button sits in the code block corner', async ({ page }) => {
+// On a phone the Copy button sits in the code block's top right corner, in a
+// strip of its own above the first line, so it never hides that line's end.
+test('on a phone the Copy button sits in the code block corner, over no code', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/docs');
 	const m = await page
@@ -92,9 +92,13 @@ test('on a phone the Copy button sits in the code block corner', async ({ page }
 			const pre = el.querySelector('pre')!.getBoundingClientRect();
 			const copy = el.querySelector('.copy')!.getBoundingClientRect();
 			const line = el.querySelector('.l1')!.getBoundingClientRect();
-			return { top: copy.top - pre.top, right: pre.right - copy.right, line: line.top - pre.top };
+			return {
+				top: copy.top - pre.top,
+				right: pre.right - copy.right,
+				lineBelowCopy: line.top - copy.bottom
+			};
 		});
 	expect(m.top).toBeLessThanOrEqual(8);
 	expect(m.right).toBeLessThanOrEqual(8);
-	expect(m.line).toBeLessThan(20);
+	expect(m.lineBelowCopy).toBeGreaterThanOrEqual(0);
 });

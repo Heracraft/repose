@@ -2,7 +2,8 @@
   What a project is built from and when things happened to it: its base
   (and whether base updates are held), the config revision it runs and
   whether that built, the agent a bare `repose run` opens, when it was
-  created and when it last took a snapshot.
+  created, when a temporary one is destroyed, and when it last took a
+  snapshot.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -44,8 +45,14 @@
 		</div>
 		<div class="row flex items-baseline justify-between gap-4 py-2">
 			<dt class="text-ink-muted">Created</dt>
-			<dd class="tabular-nums">{dateTime(project.created_at)}</dd>
+			<dd class="whitespace-nowrap tabular-nums">{dateTime(project.created_at)}</dd>
 		</div>
+		{#if project.expires_at}
+			<div class="row flex items-baseline justify-between gap-4 py-2" data-testid="details-expires">
+				<dt class="text-ink-muted">Expires</dt>
+				<dd class="whitespace-nowrap tabular-nums">{dateTime(project.expires_at)}</dd>
+			</div>
+		{/if}
 		<div class="row flex items-baseline justify-between gap-4 py-2">
 			<dt class="text-ink-muted">Last snapshot</dt>
 			<dd class="tabular-nums">

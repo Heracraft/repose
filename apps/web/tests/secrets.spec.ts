@@ -190,3 +190,67 @@ test('secrets spans the frame at 1440', async ({ page }) => {
 	const empty = await page.getByRole('heading', { name: 'No secrets yet' }).boundingBox();
 	expect(empty!.y).toBeLessThan(box!.y + box!.height);
 });
+
+// With no secrets the dashed empty state runs the form's height, so the
+// two columns end level.
+test('the empty state ends level with the Add a secret card at 1440', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'secrets-level-app',
+		remote_url: 'github.com/heracraft/secrets-level-app'
+	});
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}/secrets`);
+	const card = await page
+		.locator('form', { has: page.getByRole('heading', { name: 'Add a secret' }) })
+		.boundingBox();
+	const empty = await page
+		.locator('div', { has: page.getByRole('heading', { name: 'No secrets yet' }) })
+		.last()
+		.boundingBox();
+	expect(Math.abs(empty!.y + empty!.height - (card!.y + card!.height))).toBeLessThan(2);
+});
+
+// At 320 a long name breaks after its underscores, never inside a word,
+// and the Updated column gives its width to the name: the date is a
+// second line under it.
+test('on a phone a long name breaks at its underscores and Updated folds under it', async ({
+	page
+}) => {
+	const name = 'STRIPE_WEBHOOK_SIGNING_SECRET_FOR_BILLING_WORKER_STAGING';
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'secrets-phone-app',
+		remote_url: 'github.com/heracraft/secrets-phone-app'
+	});
+	await page.setViewportSize({ width: 320, height: 800 });
+	await page.goto(`/projects/${p.id}/secrets`);
+	await page.getByLabel('Name', { exact: true }).fill(name);
+	await page.getByLabel('Value', { exact: true }).fill('whsec_x');
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	const cell = page.getByText(name, { exact: true });
+	await expect(cell).toBeVisible({ timeout: 5_000 });
+
+	await expect(page.getByRole('columnheader', { name: 'Updated' })).toBeHidden();
+	const row = page.getByRole('row').filter({ has: cell });
+	await expect(
+		row.getByText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/).filter({ visible: true })
+	).toHaveCount(1);
+
+	// Each word between underscores sits on one line, and the name takes
+	// more than one.
+	const lines = await cell.evaluate((el) => {
+		const tops = new Set<number>();
+		const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+		const split: string[] = [];
+		for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+			const r = document.createRange();
+			r.selectNodeContents(n);
+			const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+			if (rects.length > 1) split.push(n.textContent ?? '');
+			rects.forEach((x) => tops.add(Math.round(x.top)));
+		}
+		return { count: tops.size, split };
+	});
+	expect(lines.split).toEqual([]);
+	expect(lines.count).toBeGreaterThan(1);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});

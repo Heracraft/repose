@@ -847,13 +847,20 @@
 	@apply border-zinc-900 outline-2 outline-offset-2 dark:border-zinc-300;
 	outline-color: var(--focus);
 }
+/* The gutter is a solid strip with its own edge, and the code starts
+   0.5rem past it: a long line scrolled sideways slides under that edge
+   instead of running into the line numbers. --rule on --sunken was too
+   faint to read as an edge at 1x, so it takes the strong rule. */
 .nix-editor .cm-editor .cm-gutters {
-	@apply border-r text-ink-faint;
+	@apply text-ink-faint;
 	background-color: var(--sunken);
-	border-color: var(--rule);
+	border-right: 1px solid var(--rule-strong);
+}
+.nix-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
+	@apply pr-2 pl-2.5;
 }
 .nix-editor .cm-editor .cm-content {
-	@apply font-mono text-ink;
+	@apply pl-2 font-mono text-ink;
 }
 .nix-editor .cm-editor .cm-activeLine,
 .nix-editor .cm-editor .cm-activeLineGutter {
@@ -1015,13 +1022,60 @@
 .doc th {
 	@apply text-left font-medium text-ink-muted;
 }
-/* From sm up a command in a table stays on one line. On a phone it
-   wraps at its spaces (each word is a .nobreak span), or the command
-   column took all but 75px of a 350px table and cut the description
-   ("repose snapshots restore SNAPSHOT_ID" in cli.md, I-395). */
+/* From sm up the term column (a command, a key, "day 33") stays on one
+   line. Code in a description wraps like code in prose, at its spaces
+   or anywhere in a long span: kept on one line too, it pushed the
+   /docs/cli Secrets table to 690px in a 624px column. */
 @media (width >= 40rem) {
-	.doc td code {
+	.doc td:first-child,
+	.doc td:first-child code {
 		@apply whitespace-nowrap;
+	}
+}
+/* On a phone a reference table of two or three columns stacks each row:
+   the term on its own line, a middle cell (a Default) muted beside it,
+   and the description under both at the full width. Side by side, the
+   term column took all but 75px of a 350px table and cut the
+   description ("repose snapshots restore SNAPSHOT_ID", I-395), and the
+   config.toml and environment variable tables ran 70px past 335. A
+   wider table holds figures read across a row (plans, sizes), which
+   need their headings, so it keeps its grid at tighter cell padding
+   and scrolls only past that. */
+@media (width < 40rem) {
+	.doc .table-wrap:not(:has(th:nth-child(4))) {
+		& thead {
+			@apply sr-only;
+		}
+		& table,
+		& tbody {
+			@apply block;
+		}
+		& tr {
+			@apply flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5;
+		}
+		& td {
+			@apply min-w-0 p-0;
+		}
+		& td:first-child {
+			@apply font-medium text-ink;
+		}
+		& td:first-child code {
+			white-space: normal;
+			overflow-wrap: anywhere;
+		}
+		& td:not(:first-child, :last-child) {
+			@apply text-ink-muted;
+		}
+		& td:last-child:not(:first-child) {
+			@apply basis-full;
+		}
+	}
+	.doc .table-wrap:has(th:nth-child(4)) :is(th, td) {
+		@apply px-1.5 first:pl-0 last:pr-0;
+	}
+	.doc .table-wrap:has(th:nth-child(4)) td:not(:first-child) code {
+		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 }
 .doc .note {

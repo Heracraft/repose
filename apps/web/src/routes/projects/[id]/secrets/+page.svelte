@@ -140,6 +140,11 @@
 	}
 </script>
 
+<!-- A name breaks after an underscore before anywhere else: at 320
+     STRIPE_WEBHOOK_SIGNING_SECRET_… split mid-word with break-all. -->
+{#snippet secretName(n: string)}{#each n.split('_') as part, i (i)}{#if i > 0}_<wbr
+			/>{/if}{part}{/each}{/snippet}
+
 <svelte:head>
 	<title>{project ? `${project.name} secrets — repose` : 'Secrets — repose'}</title>
 </svelte:head>
@@ -162,14 +167,23 @@
 		error={loadError}
 	>
 		<!-- The list and the form side by side from lg (I-664): the list
-		     takes what the frame has left, the form a 22rem card. -->
-		<div class="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
+		     takes what the frame has left, the form a 22rem card. With no
+		     secrets the dashed box is the column's content, and it runs the
+		     form's height so the two end level. -->
+		<div
+			class="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12 {secrets?.length ===
+			0
+				? 'lg:items-stretch'
+				: ''}"
+		>
 			<div class="min-w-0">
 				{#if secrets && secrets.length === 0}
 					<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
 					     to add one is beside it, so the sentence is where a secret
 					     lands, not how to add one (I-485). -->
-					<div class="rounded-sm border border-dashed border-rule-strong px-6 py-12 text-center">
+					<div
+						class="flex h-full flex-col justify-center rounded-sm border border-dashed border-rule-strong px-6 py-12 text-center"
+					>
 						<h2 class="text-xl font-semibold">No secrets yet</h2>
 						<p class="mx-auto mt-2 max-w-md text-sm text-ink-muted">
 							The machine sees each as an environment variable and as a file at
@@ -188,20 +202,27 @@
 						<thead>
 							<tr>
 								<th scope="col">Name</th>
-								<th scope="col" class="w-px whitespace-nowrap">Updated</th>
+								<th scope="col" class="hidden w-px whitespace-nowrap sm:table-cell">Updated</th>
 								<th scope="col" class="w-px"><span class="sr-only">Delete</span></th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each secrets as s (s.name)}
 								<tr>
+									<!-- Below sm the date is a second line under the name, so
+									     the name has the row's width and breaks at its
+									     underscores. -->
 									<td
-										class="font-mono break-all align-middle {confirming === s.name
+										class="font-mono wrap-anywhere align-middle {confirming === s.name
 											? 'border-b-0'
-											: ''}">{s.name}</td
+											: ''}"
+										><span>{@render secretName(s.name)}</span><span
+											class="block font-sans text-xs whitespace-nowrap text-ink-muted tabular-nums sm:hidden"
+											>{dateTime(s.updated_at)}</span
+										></td
 									>
 									<td
-										class="align-middle whitespace-nowrap text-ink-muted tabular-nums {confirming ===
+										class="hidden align-middle whitespace-nowrap text-ink-muted tabular-nums sm:table-cell {confirming ===
 										s.name
 											? 'border-b-0'
 											: ''}">{dateTime(s.updated_at)}</td
@@ -222,8 +243,10 @@
 									<tr>
 										<td colspan="3" class="pt-0" data-testid="confirm-delete-secret">
 											<p class="text-ink-muted">
-												Remove <span class="font-mono break-all text-ink">{s.name}</span>? Running
-												processes that already read it keep their copy until they restart.
+												Remove <span class="font-mono wrap-anywhere text-ink"
+													>{@render secretName(s.name)}</span
+												>? Running processes that already read it keep their copy until they
+												restart.
 											</p>
 											<div class="mt-2 flex items-center gap-2">
 												<button
@@ -253,8 +276,10 @@
 
 			<!-- Each field has a visible label and its error is tied to it with
 			     aria-describedby, so a screen reader hears why Add refused. -->
+			<!-- Beside a long list the form stays in view from lg, so Add is
+			     in reach at the list's end. -->
 			<form
-				class="card"
+				class="card {secrets?.length ? 'lg:sticky lg:top-20 lg:self-start' : ''}"
 				onsubmit={(e) => {
 					e.preventDefault();
 					void onAdd();

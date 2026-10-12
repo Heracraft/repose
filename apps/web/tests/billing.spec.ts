@@ -40,7 +40,9 @@ test.beforeEach(async ({ page }) => {
 
 test('with billing off the page says so and sells nothing', async ({ page }) => {
 	await page.goto('/billing');
-	await expect(page.getByTestId('billing-disabled')).toHaveText('Billing is not switched on yet.');
+	await expect(page.getByTestId('billing-disabled')).toHaveText('Billing is not switched on yet');
+	// A state in a card, not a stray line.
+	await expect(page.getByTestId('billing-disabled')).toHaveClass(/\bcard\b/);
 	await expect(page.getByRole('button', { name: /Choose/ })).toHaveCount(0);
 	// billing_disabled is a 503 the api gives as an answer, not an outage,
 	// so no outage bar sits over the page (I-390).
@@ -200,9 +202,8 @@ test('when repose is full the page offers the waitlist and then shows the place'
 	const place = page.getByTestId('waitlist-place');
 	await expect(place).toContainText('41st');
 	await expect(place).toContainText('of 41 waiting');
-	await expect(place).toContainText(
-		'An email goes to dev@example.com when a seat frees; you then have 72 hours to choose a plan.'
-	);
+	await expect(place).toContainText('An email goes to dev@example.com when a seat frees.');
+	await expect(place).toContainText(/Hold after invite\s*72 h\s*to choose a plan/);
 	// The plans stay in view, and none can be bought while waiting.
 	const waiting = page.getByRole('button', { name: 'Waiting for a seat' });
 	await expect(waiting).toHaveCount(3);
@@ -225,7 +226,9 @@ test('an invited user sees the held seat and the plans', async ({ page }) => {
 	// Plus needs two seats and Pro four; the hold is one.
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toHaveCount(0);
-	await expect(page.getByTestId('plan-plus')).toContainText('Needs 2 seats');
+	// The held seat counts as free, so the counts agree with the banner.
+	await expect(page.getByTestId('seats-line')).toHaveText('Held for you: 1 seat');
+	await expect(page.getByTestId('plan-plus')).toContainText('Needs 2 seats; 1 free.');
 });
 
 test('a trial shows the first charge date and the usage bars, and no project count', async ({
@@ -271,6 +274,41 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await expect(disk).toContainText(
 		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
 	);
+});
+
+test('over its limits at 390, Solo keeps every usage row inside the plan card', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await setBilling({ mode: 'active', plan: 'solo', disk_held_gb: 180, egress_gb: 412.7 });
+	await page.goto('/billing');
+	await expect(page.getByTestId('meter-disk-held')).toContainText('180 GB of 100 GB · over');
+	await expect(page.getByTestId('meter-egress-this-period')).toContainText(
+		'412.7 GB of 100 GB · over'
+	);
+	const fit = await page.evaluate(() => {
+		const card = document.querySelector('[data-testid="plan"]')!.getBoundingClientRect();
+		const rows = [...document.querySelectorAll('[data-testid="plan"] .u-row')];
+		const inside = rows.every((row) =>
+			[row, ...row.querySelectorAll('*')].every((el) => {
+				const r = el.getBoundingClientRect();
+				return r.left >= card.left - 0.5 && r.right <= card.right + 0.5;
+			})
+		);
+		return {
+			rows: rows.length,
+			inside,
+			// The body's width leaves out the stable scrollbar gutter, which
+			// the root's clientWidth counts on a desktop browser: the page
+			// scrolls sideways only when its scroll width passes the body's.
+			scrollWidth: document.documentElement.scrollWidth,
+			bodyWidth: document.body.clientWidth
+		};
+	});
+	expect(fit.rows).toBe(2);
+	expect(fit.inside).toBe(true);
+	expect(fit.scrollWidth).toBeLessThanOrEqual(fit.bodyWidth);
+	await setBilling({ disk_held_gb: -1, egress_gb: 0 });
 });
 
 test('an active plan shows its renewal, receipts through Polar, and invoices with PDF links', async ({
@@ -322,7 +360,15 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.goto('/billing');
 	await page.getByRole('button', { name: 'Change plan' }).click();
+	// The plans open at page width in their own section under the plan
+	// card, not squeezed inside it.
 	const change = page.getByTestId('change-plan');
+	await expect(change.getByRole('heading', { level: 2, name: 'Change plan' })).toBeVisible();
+	await expect(page.getByTestId('plan').getByTestId('change-plan')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Change plan' })).toHaveAttribute(
+		'aria-expanded',
+		'true'
+	);
 	await expect(change).toContainText(
 		'Upgrades apply now, prorated. Downgrades apply at renewal on'
 	);

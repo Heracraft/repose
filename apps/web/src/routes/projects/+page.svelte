@@ -270,36 +270,56 @@
 		error={loadError}
 	>
 		{#if projects && projects.length === 0}
-			<div class="max-w-xl">
-				{#if me?.waitlist && holdActive && me.waitlist.hold_until}
-					<div class="banner banner--ok mb-6" data-testid="seat-held">
+			{@const banner =
+				me?.waitlist && holdActive && me.waitlist.hold_until
+					? 'held'
+					: me?.waitlist
+						? 'waitlist'
+						: me?.billing.status === 'none'
+							? 'none'
+							: undefined}
+			{@const planFigures = !banner && !billingOff && !!billing && billing.usage.memory_gb > 0}
+			<!-- One card across the frame, as the plan strip is: what to run on
+			     the left, the plan's figures or what stands before a first
+			     machine beside it. -->
+			<div class="empty" class:empty--side={!!banner || planFigures}>
+				<div class="empty-main">
+					<h2 class="text-xl font-semibold">No projects yet</h2>
+					<p class="mt-2 text-ink-muted">
+						A git checkout becomes a project, with a machine of its own, the first time you run this
+						in it.
+					</p>
+					<div class="mt-4">
+						<CodeCopy command="repose run" what="repose run" />
+					</div>
+				</div>
+				<!-- The side column is the banner itself, its colours to the
+				     card's edge, so no box sits inside the card's box. -->
+				{#if banner === 'held' && me?.waitlist?.hold_until}
+					<div class="empty-side banner banner--ok" data-testid="seat-held">
 						Your seat is held until {dateTime(me.waitlist.hold_until)}.
 						<a href={resolve('/billing')} class="link">Choose a plan</a> before then.
 					</div>
-				{:else if me?.waitlist}
-					<div class="banner banner--warn mb-6" data-testid="waitlist-place">
+				{:else if banner === 'waitlist' && me?.waitlist}
+					<div class="empty-side banner banner--warn" data-testid="waitlist-place">
 						repose is full. You’re number {me.waitlist.position} on the waitlist; we’ll email
 						{me.email} when a seat frees, and you’ll have 72 hours to choose a plan.
 					</div>
-				{:else if me?.billing.status === 'none'}
-					<div class="banner mb-6" data-testid="no-plan">
+				{:else if banner === 'none'}
+					<div class="empty-side empty-side--plain banner" data-testid="no-plan">
 						<a href={resolve('/billing')} class="link">Choose a plan</a> before your first machine can
 						start. Seven days free, card at checkout.
 					</div>
+				{:else if planFigures}
+					<div class="empty-side empty-side--strip">
+						<PlanStrip projects={[]} {billing} flat />
+					</div>
 				{/if}
-				<h2 class="text-xl font-semibold">No projects yet</h2>
-				<p class="mt-2 text-ink-muted">
-					A git checkout becomes a project, with a machine of its own, the first time you run this
-					in it.
-				</p>
-				<div class="mt-4 max-w-sm">
-					<CodeCopy command="repose run" what="repose run" />
-				</div>
 			</div>
 		{:else if projects}
 			<div class="flex flex-col gap-6">
 				<PendingQuestions {questions} />
-				<PlanStrip {projects} billing={billingOff ? undefined : billing} />
+				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
 			</div>
 
 			<!-- From sm up, a table. A region with a name and a tab stop: between
@@ -398,13 +418,16 @@
 			</div>
 
 			<!-- Below sm, a stacked list: each project one link, its action
-			     under it. -->
+			     on its first line. -->
 			<ul class="mt-6 border-t border-rule-strong sm:hidden" aria-label="Projects">
 				{#each projects as p (p.id)}
 					{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
 					{@const agents = p.signals?.agents ?? []}
-					<li class="border-b border-rule">
-						<a href={resolve('/projects/[id]', { id: p.id })} class="mrow">
+					{@const act = actionFor(p)}
+					<!-- The row is one link; Start or Stop sits on its first line's
+				     right edge, outside the link, as a tab stop of its own. -->
+					<li class="relative border-b border-rule">
+						<a href={resolve('/projects/[id]', { id: p.id })} class="mrow" class:mrow--act={!!act}>
 							<span class="flex items-baseline justify-between gap-3">
 								<span class="flex min-w-0 items-baseline gap-2">
 									<span class="truncate font-medium">{p.name}</span>
@@ -435,8 +458,8 @@
 								<span class="mt-1 block text-xs text-red-700 dark:text-red-400">{reason(p)}</span>
 							{/if}
 						</a>
-						{#if actionFor(p)}
-							<div class="pb-3">{@render actionButton(p, true)}</div>
+						{#if act}
+							<span class="mrow-action">{@render actionButton(p, true)}</span>
 						{/if}
 					</li>
 				{/each}
@@ -481,16 +504,19 @@
 	.prow:has(.pname:focus-visible) {
 		background-color: color-mix(in srgb, var(--sunken) 60%, transparent);
 	}
-	/* The remote is cut with an ellipsis (its whole value in the title),
-	   narrower until lg, so the table fits the frame from sm up. */
+	/* The remote is cut with an ellipsis (its whole value in the title)
+	   until lg, so the table fits the frame from sm up; from lg it takes
+	   its column. */
 	.pcell-name,
 	.premote {
 		max-width: 14rem;
 	}
 	@media (width >= 64rem) {
-		.pcell-name,
+		.pcell-name {
+			max-width: none;
+		}
 		.premote {
-			max-width: 22rem;
+			max-width: 40rem;
 		}
 	}
 	.pname {
@@ -509,8 +535,9 @@
 		position: absolute;
 		inset: 0;
 	}
+	/* Fixed, so the columns hold still as Stop turns to Start. */
 	.pcell-actions {
-		width: 1px;
+		width: 5.5rem;
 		white-space: nowrap;
 		text-align: right;
 	}
@@ -552,11 +579,56 @@
 
 	.mrow {
 		display: block;
-		min-height: 3.5rem;
 		padding: 0.75rem 0;
 		color: inherit;
 	}
-	.mrow + div {
-		margin-top: -0.25rem;
+	/* Room on the right for the button over the first line. */
+	.mrow--act {
+		padding-right: 5.75rem;
+	}
+	.mrow-action {
+		position: absolute;
+		top: 0.25rem;
+		right: 0;
+	}
+
+	.empty {
+		display: grid;
+		overflow: hidden;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius-md);
+		background: var(--surface);
+	}
+	.empty-main {
+		min-width: 0;
+		padding: 1.5rem;
+	}
+	.empty-main > * {
+		max-width: 36rem;
+	}
+	.empty-side {
+		min-width: 0;
+		margin: 0;
+		padding: 1.5rem;
+		border-width: 1px 0 0;
+		border-style: solid;
+		border-color: var(--rule);
+		border-radius: 0;
+	}
+	.empty-side--plain {
+		border-color: var(--rule);
+		background: transparent;
+	}
+	/* The strip draws its own cells and padding. */
+	.empty-side--strip {
+		padding: 0;
+	}
+	@media (width >= 64rem) {
+		.empty--side {
+			grid-template-columns: minmax(0, 1fr) 22rem;
+		}
+		.empty-side {
+			border-width: 0 0 0 1px;
+		}
 	}
 </style>

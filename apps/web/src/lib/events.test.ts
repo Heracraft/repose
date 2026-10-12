@@ -45,10 +45,13 @@ describe('eventKind', () => {
 			group: 'machine'
 		});
 		expect(eventKind('temp_expiring').label).toBe('expiring');
+		// The dotted kinds the api writes, as the CLI reads them.
+		expect(eventKind('snapshot.created').label).toBe('snapshot');
+		expect(eventKind('project.created').label).toBe('created');
 	});
-	it('shows an unknown kind by its own name', () => {
+	it('shows an unknown kind by its own name, as words', () => {
 		expect(eventKind('pool_high')).toEqual({
-			label: 'pool_high',
+			label: 'pool high',
 			tone: 'neutral',
 			group: 'machine'
 		});

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-672 entries.
+674 entries.
 
 ## Scope
 
@@ -460,7 +460,7 @@ pointer, not a summary.
 - **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; L9847
 - **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; L9915
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9981
-- **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; L10008
+- **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10008
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10039
 - **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; L10068
 - **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; L10128
@@ -697,10 +697,12 @@ pointer, not a summary.
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
 - **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18490
 - **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; L18510
-- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — L18538
+- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; L18538
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18585
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18592
 - **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18636
 - **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
-- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; L18752
-- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — L18789
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; L18752
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; L18789
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — L18816
+- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — L18846

@@ -21,6 +21,7 @@
 		readonly = false,
 		label = 'Nix fragment',
 		placeholder = '{ pkgs, ... }: { home.packages = [ ]; }',
+		floor,
 		footer
 	}: {
 		value: string;
@@ -31,19 +32,25 @@
 		/** Shown in --ink-faint while the editor is empty; never saved. */
 		placeholder?: string;
 		/**
+		 * A CSS length the code area is at least, over the five-line floor:
+		 * the config page, where the editor is the page's subject, asks for
+		 * room to write in.
+		 */
+		floor?: string;
+		/**
 		 * A bar inside the editor's frame, under the code: the caller's
 		 * status on the left and its action (Save, Apply) on the right.
 		 */
 		footer?: Snippet;
 	} = $props();
 
-	// The editor is as tall as its text plus three empty lines, at least
-	// six and at most 24; past that it scrolls inside itself. A fixed
-	// 320px box was mostly empty for a one-line fragment and too short for
-	// a long one.
-	const MIN_ROWS = 6;
+	// The editor is as tall as its text plus one empty line, at least five
+	// lines (or the caller's floor) and at most 24; past that it scrolls
+	// inside itself. A one-line machine.nix took six lines and three of
+	// them were empty paper.
+	const MIN_ROWS = 5;
 	const MAX_ROWS = 24;
-	let rows = $derived(Math.min(MAX_ROWS, Math.max(MIN_ROWS, value.split('\n').length + 3)));
+	let rows = $derived(Math.min(MAX_ROWS, Math.max(MIN_ROWS, value.split('\n').length + 1)));
 
 	let container: HTMLDivElement;
 	let view: EditorView | undefined;
@@ -114,6 +121,7 @@
 		class="nix-editor"
 		style:--nix-rows={rows}
 		style:--nix-max={MAX_ROWS}
+		style:--nix-floor={floor}
 		bind:this={container}
 	></div>
 	{#if footer}
@@ -149,10 +157,10 @@
 	   over the height CodeMirror writes on it inline, so its rule runs the
 	   editor's full height. */
 	.nix-editor :global(.cm-content) {
-		min-height: calc(var(--nix-rows) * 1lh + 8px);
+		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px));
 	}
 	.nix-editor :global(.cm-gutters) {
-		min-height: calc(var(--nix-rows) * 1lh + 8px) !important;
+		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px)) !important;
 	}
 	.nix-editor :global(.cm-scroller) {
 		max-height: calc(var(--nix-max) * 1lh + 8px);

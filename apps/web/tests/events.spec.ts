@@ -14,6 +14,7 @@ function eventsCard(page: Page) {
 	const top = card.getByRole('navigation', { name: 'Event pages' });
 	return {
 		card,
+		pager: top,
 		rows: card.getByTestId('event-row'),
 		position: card.getByTestId('events-position'),
 		newest: top.getByRole('button', { name: 'Newest' }),
@@ -32,6 +33,7 @@ test('pages of 10 with Older, Newer and Newest, kept in the URL', async ({ page 
 	await page.goto(`/projects/${p.id}`);
 	const ev = eventsCard(page);
 	await expect(ev.rows).toHaveCount(10);
+	await expect(ev.pager).toBeVisible();
 	await expect(ev.position).toHaveText('Page 1 of 3');
 	await expect(ev.card.getByTestId('events-total')).toHaveText('27 events');
 	await expect(ev.rows.first()).toContainText('e024');
@@ -114,7 +116,8 @@ test('the Errors filter shows only errors', async ({ page }) => {
 	for (const kind of await ev.rows.evaluateAll((els) => els.map((e) => e.dataset.kind))) {
 		expect(kind).toBe('error');
 	}
-	await expect(ev.position).toHaveText('Page 1 of 1');
+	// One page of errors: no pager, the count says it (I-680).
+	await expect(ev.pager).toHaveCount(0);
 	await expect(ev.card.getByTestId('events-total')).toHaveText('10 events');
 });
 
@@ -127,8 +130,9 @@ test('a project with few events has one page', async ({ page }) => {
 	await page.goto(`/projects/${p.id}`);
 	const ev = eventsCard(page);
 	await expect(ev.rows).toHaveCount(7);
-	await expect(ev.position).toHaveText('Page 1 of 1');
-	await expect(ev.older).toHaveAttribute('aria-disabled', 'true');
+	// One page has no pager; the count beside the title is enough (I-680).
+	await expect(ev.card.getByTestId('events-total')).toHaveText('7 events');
+	await expect(ev.pager).toHaveCount(0);
 	await expect(ev.card.getByRole('group', { name: /end of list/ })).toHaveCount(0);
 });
 

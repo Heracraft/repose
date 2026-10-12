@@ -62,7 +62,9 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	temp_expiring: { label: 'expiring', tone: 'attention' },
 	temp_destroyed: { label: 'destroyed', tone: 'neutral' },
 	host_moved: { label: 'moved', tone: 'neutral' },
-	billing_stopped: { label: 'stopped', tone: 'error' }
+	billing_stopped: { label: 'stopped', tone: 'error' },
+	'project.created': { label: 'created', tone: 'neutral' },
+	notifications_paused: { label: 'paused', tone: 'neutral' }
 };
 
 /** The label, tone and group of an event's kind. */
@@ -70,7 +72,9 @@ export function eventKind(kind: string, agent?: string): EventKindInfo {
 	if (kind.endsWith('_failed') || FAILED_KINDS.includes(kind)) {
 		return { label: 'failed', tone: 'error', group: 'error' };
 	}
-	if (kind.startsWith('snapshot_')) {
+	// The api writes some kinds dotted (snapshot.created, project.created),
+	// as the CLI's eventverbs reads them.
+	if (kind.startsWith('snapshot_') || kind.startsWith('snapshot.')) {
 		return { label: 'snapshot', tone: 'neutral', group: 'machine' };
 	}
 	const known = LABELS[kind];
@@ -79,5 +83,6 @@ export function eventKind(kind: string, agent?: string): EventKindInfo {
 			known.tone === 'error' ? 'error' : AGENT_KINDS.includes(kind) ? 'agent' : 'machine';
 		return { ...known, group };
 	}
-	return { label: kind, tone: 'neutral', group: agent ? 'agent' : 'machine' };
+	// An unknown kind reads as words, as the CLI's eventverbs.Verb does.
+	return { label: kind.replace(/[._]/g, ' '), tone: 'neutral', group: agent ? 'agent' : 'machine' };
 }

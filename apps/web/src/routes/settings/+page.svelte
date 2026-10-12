@@ -204,10 +204,14 @@
 </svelte:head>
 
 <PageShell title="Settings">
+	<!-- Only what reads /v1/me waits on it: the install line and
+	     machine.nix have their own sources and show while it loads or
+	     after it failed. -->
 	<LoadState
 		status={me ? 'ready' : loadError ? 'failed' : 'loading'}
 		error={loadError}
 		onretry={load}
+		shape="rows"
 	>
 		<!-- The first section draws no rule of its own (.form-section:first-child
 		     in layout.css): the page title's rule is directly above it. The
@@ -328,41 +332,41 @@
 				</div>
 			</div>
 		</section>
+	</LoadState>
 
-		<section class={ROW}>
+	<section class={ROW}>
+		<div>
+			<h2 class="text-xl font-semibold">Install</h2>
+			<p class={FACT}>The CLI, for macOS and Linux.</p>
+		</div>
+		<div class={BODY}>
+			<CodeCopy
+				command="curl -fsSL https://repose.herakraft.co/install.sh | sh"
+				what="install command"
+			/>
+		</div>
+	</section>
+
+	<MachineNix />
+
+	{#if me}
+		<!-- The danger zone, last on the page (DESIGN-LANGUAGE.md "States"). -->
+		<section class={ROW} id="delete-account">
 			<div>
-				<h2 class="text-xl font-semibold">Install</h2>
-				<p class={FACT}>The CLI, for macOS and Linux.</p>
+				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
+				<p class={FACT}>
+					Stops every environment at once. Everything, including snapshots, is deleted 30 days
+					later.
+				</p>
 			</div>
 			<div class={BODY}>
-				<CodeCopy
-					command="curl -fsSL https://repose.herakraft.co/install.sh | sh"
-					what="install command"
+				<ConfirmType
+					word={me.handle}
+					label="Delete account"
+					disabled={deleting}
+					onconfirm={onDelete}
 				/>
 			</div>
 		</section>
-
-		<MachineNix />
-
-		{#if me}
-			<!-- The danger zone, last on the page (DESIGN-LANGUAGE.md "States"). -->
-			<section class={ROW} id="delete-account">
-				<div>
-					<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
-					<p class={FACT}>
-						Stops every environment at once. Everything, including snapshots, is deleted 30 days
-						later.
-					</p>
-				</div>
-				<div class={BODY}>
-					<ConfirmType
-						word={me.handle}
-						label="Delete account"
-						disabled={deleting}
-						onconfirm={onDelete}
-					/>
-				</div>
-			</section>
-		{/if}
-	</LoadState>
+	{/if}
 </PageShell>

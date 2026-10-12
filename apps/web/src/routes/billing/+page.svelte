@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -82,6 +82,9 @@
 	let holdActive = $derived(
 		!!billing?.waitlist?.hold_until && new Date(billing.waitlist.hold_until).getTime() > Date.now()
 	);
+	/** Free seats as this user can count them: the fleet's, plus the one
+	 * their invitation holds, so the counts agree with the held-seat banner. */
+	let seatsFree = $derived(billing ? billing.seats.free + (holdActive ? 1 : 0) : 0);
 	let anyAvailable = $derived(!!billing?.plans.some((p) => p.available));
 	let accountStatus = $derived(me?.billing.status);
 	// What the projects hold, which the plan's disk counts (I-585); an api
@@ -252,6 +255,21 @@
 		}
 	}
 
+	/** Opens or closes Change plan. The section sits under the plan card,
+	 * often below the fold, so opening it scrolls it into view; the focus
+	 * stays on the button. */
+	async function toggleChange() {
+		changing = !changing;
+		changeError = undefined;
+		confirmCancel = false;
+		if (!changing) return;
+		await tick();
+		const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		document
+			.getElementById('change-plan')
+			?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'nearest' });
+	}
+
 	async function changePlan(to: PlanId) {
 		busy = `plan-${to}`;
 		changeError = undefined;
@@ -323,12 +341,6 @@
 		return `${count(large)} large, or ${count(Math.floor(p.memory_gb / 4))} small`;
 	}
 
-	/** "Trial. First charge of $20 on 2026-10-18." The price it becomes
-	 * stands under the big figure (I-497). */
-	function trialLine(sub: Subscription, plan: Plan): string {
-		return `Trial. First charge of ${price(sub.next_charge_cents ?? plan.price_cents)} on ${dateOnly(sub.trial_end!)}.`;
-	}
-
 	/** Which day of the period today is, of how many. */
 	function periodDays(s: Subscription): { day: number; of: number; elapsed: number } {
 		const start = new Date(s.period_start).getTime();
@@ -365,7 +377,7 @@
 {#snippet chooseAction(fp: PlanFigures)}
 	{@const p = apiPlan(fp.id)}
 	{#if p && !p.available && billing}
-		<p class="needs">Needs {p.seats} seats; {billing.seats.free} free.</p>
+		<p class="needs">Needs {p.seats} seats; {seatsFree} free.</p>
 	{:else}
 		<button
 			type="button"
@@ -401,7 +413,7 @@
 				<p class="needs">Your plan</p>
 			{/if}
 		{:else if fp.id === scheduledPlan?.id}
-			<p class="needs">From {dateOnly(sub.period_end)}</p>
+			<p class="needs">From {@render day(sub.period_end)}</p>
 		{:else}
 			{@const up = fp.seats > plan.seats}
 			<button
@@ -421,6 +433,9 @@
 	{/if}
 {/snippet}
 
+<!-- A date never splits at its hyphens. -->
+{#snippet day(iso: string)}<span class="date">{dateOnly(iso)}</span>{/snippet}
+
 {#snippet pricesNote()}
 	<p class="mt-6 text-xs text-ink-muted">
 		Prices in USD before tax; Polar adds the tax for your country at checkout.
@@ -438,9 +453,9 @@
 
 <PageShell title="Billing">
 	{#if billingDisabled}
-		<p class="text-sm text-ink-muted" data-testid="billing-disabled">
-			Billing is not switched on yet.
-		</p>
+		<section class="card" data-testid="billing-disabled">
+			<h2 class="text-xl font-semibold">Billing is not switched on yet</h2>
+		</section>
 	{:else if !billing}
 		<LoadState status={loadError ? 'failed' : 'loading'} error={loadError} onretry={load} />
 	{:else if settingUp}
@@ -462,9 +477,8 @@
 		{/if}
 		{#if holdActive && billing.waitlist?.hold_until}
 			<div class="banner banner--ok" data-testid="seat-held">
-				Your seat is held until {dateTime(billing.waitlist.hold_until)} ({timeUntil(
-					billing.waitlist.hold_until
-				)} left). Choose a plan before then.
+				Your seat is held until <span class="date">{dateTime(billing.waitlist.hold_until)}</span>
+				({timeUntil(billing.waitlist.hold_until)} left). Choose a plan before then.
 			</div>
 		{/if}
 		{#if setupTimedOut || holdActive || anyAvailable}
@@ -473,8 +487,12 @@
 					{billing.plans[0]?.trial_days ?? 7} days free, card at checkout, cancel any time.
 				</p>
 				<p class="font-mono text-compact text-ink-muted tabular-nums" data-testid="seats-line">
-					{billing.seats.free}
-					{billing.seats.free === 1 ? 'seat' : 'seats'} left
+					{#if holdActive}
+						Held for you: 1 seat
+					{:else}
+						{billing.seats.free}
+						{billing.seats.free === 1 ? 'seat' : 'seats'} left
+					{/if}
 				</p>
 			</div>
 			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={chooseAction} />
@@ -483,26 +501,28 @@
 				{#if billing.waitlist}
 					<!-- The place reads as a stat strip, as the plan's figures do on
 					     /projects: a serif figure, the queue's length beside it. -->
-					<div data-testid="waitlist-place">
-						<div class="stat-row wait-strip">
-							<div class="stat">
-								<span class="stat-label">Place on the waitlist</span>
-								<span class="stat-value"
-									>{ordinal(billing.waitlist.position)}
-									<span class="wait-of"
-										>of {Math.max(billing.seats.waiting, billing.waitlist.position)} waiting</span
-									></span
-								>
-							</div>
-							<div class="stat">
-								<span class="stat-label">Seats free</span>
-								<span class="stat-value">{billing.seats.free}</span>
-							</div>
+					<div class="stat-row wait-strip" data-testid="waitlist-place">
+						<div class="stat">
+							<span class="stat-label">Place on the waitlist</span>
+							<span class="stat-value"
+								>{ordinal(billing.waitlist.position)}
+								<span class="wait-of"
+									>of {Math.max(billing.seats.waiting, billing.waitlist.position)} waiting</span
+								></span
+							>
+							<span class="stat-sub"
+								>An email goes to <span class="email">{me?.email ?? 'you'}</span> when a seat frees.</span
+							>
 						</div>
-						<p class="mt-3 text-sm text-ink-muted">
-							An email goes to {me?.email ?? 'you'} when a seat frees; you then have 72 hours to choose
-							a plan.
-						</p>
+						<div class="stat">
+							<span class="stat-label">Seats free</span>
+							<span class="stat-value">{billing.seats.free}</span>
+						</div>
+						<div class="stat">
+							<span class="stat-label">Hold after invite</span>
+							<span class="stat-value">72 h</span>
+							<span class="stat-sub">to choose a plan</span>
+						</div>
 					</div>
 				{:else}
 					<h2 class="text-xl font-semibold">repose is full</h2>
@@ -570,24 +590,27 @@
 					</p>
 					{#if introCharge && sub.intro_until}
 						<p class="mt-1.5 font-mono text-compact text-ink-muted" data-testid="intro-until">
-							then {price(plan.price_cents)} a month from {dateOnly(sub.intro_until)}
+							then {price(plan.price_cents)} a month from {@render day(sub.intro_until)}
 						</p>
 					{/if}
 					<p class="mt-3 text-sm text-ink-muted" data-testid="plan-status">
 						{#if sub.cancel_at}
-							Cancelled. Ends {dateOnly(sub.cancel_at)}; machines stop then and snapshots stay 30
+							Cancelled. Ends {@render day(sub.cancel_at)}; machines stop then and snapshots stay 30
 							days.
 						{:else if sub.status === 'trialing' && sub.trial_end}
-							{trialLine(sub, plan)}
+							<!-- The price it becomes stands under the big figure (I-497). -->
+							Trial. First charge of {price(sub.next_charge_cents ?? plan.price_cents)} on {@render day(
+								sub.trial_end
+							)}.
 						{:else if sub.status === 'past_due'}
 							Payment past due.
 						{:else if sub.next_billed_at}
-							Active. Renews {dateOnly(sub.next_billed_at)}.
+							Active. Renews {@render day(sub.next_billed_at)}.
 						{:else}
 							Active.
 						{/if}
 						{#if scheduledPlan}
-							Changes to {scheduledPlan.name} on {dateOnly(sub.period_end)}.
+							Changes to {scheduledPlan.name} on {@render day(sub.period_end)}.
 						{/if}
 					</p>
 				</div>
@@ -601,12 +624,9 @@
 							type="button"
 							class="btn-quiet"
 							aria-expanded={changing}
+							aria-controls="change-plan"
 							disabled={!!busy}
-							onclick={() => {
-								changing = !changing;
-								changeError = undefined;
-								confirmCancel = false;
-							}}>Change plan</button
+							onclick={toggleChange}>Change plan</button
 						>
 					{/if}
 					<button
@@ -622,28 +642,6 @@
 				</div>
 			</div>
 
-			{#if changing}
-				<div class="plan-band" data-testid="change-plan">
-					<p class="mb-4 text-sm">
-						Upgrades apply now, prorated. Downgrades apply at renewal on {dateOnly(sub.period_end)}.
-					</p>
-					{#if scheduledPlan}
-						<p class="mb-4 text-sm text-ink-muted" data-testid="change-keep">
-							{scheduledPlan.name} is scheduled for {dateOnly(sub.period_end)}.
-						</p>
-					{/if}
-					<PlanCells
-						plans={figures}
-						current={sub.plan}
-						compare={{ runningGB: billing.usage.running_gb, diskHeldGB: diskHeld }}
-						action={changeAction}
-					/>
-					{#if changeError}
-						<p class="field-error" data-testid="change-error">{changeError}</p>
-					{/if}
-				</div>
-			{/if}
-
 			<!-- What the plan is holding now (I-674): memory as the plan's own
 			     squares, filled by each running machine; disk and egress as a
 			     figure with a small ring. Then the period it is billed for. -->
@@ -652,7 +650,7 @@
 					<div class="u-head">
 						<span class="u-label">Running now</span>
 						<span class="u-fig" class:u-over={billing.usage.running_gb > billing.usage.memory_gb}
-							>{gbs(billing.usage.running_gb)}
+							><span class="u-n">{gbs(billing.usage.running_gb)}</span>
 							<span class="u-of">
 								of {gbs(
 									billing.usage.memory_gb
@@ -693,7 +691,7 @@
 						/>
 						<span class="u-label">Disk held</span>
 						<span class="u-fig" class:u-over={diskHeld > billing.usage.disk_gb}
-							>{gbs(diskHeld)}
+							><span class="u-n">{gbs(diskHeld)}</span>
 							<span class="u-of">
 								of {gbs(billing.usage.disk_gb)}{#if diskHeld > billing.usage.disk_gb}&nbsp;· over{/if}</span
 							></span
@@ -720,7 +718,7 @@
 						/>
 						<span class="u-label">Egress this period</span>
 						<span class="u-fig" class:u-over={egOver}
-							>{egressFigure(billing.usage.egress_gb)}
+							><span class="u-n">{egressFigure(billing.usage.egress_gb)}</span>
 							<span class="u-of">
 								of {egressFigure(billing.usage.egress_included_gb)}{#if egOver}&nbsp;· over{/if}</span
 							></span
@@ -749,7 +747,7 @@
 				{#if period}
 					<div>
 						<dt>Period</dt>
-						<dd>{dateOnly(sub.period_start)} to {dateOnly(sub.period_end)}</dd>
+						<dd>{@render day(sub.period_start)} to {@render day(sub.period_end)}</dd>
 						<dd class="fact-sub">Day {period.day} of {period.of}</dd>
 					</div>
 				{/if}
@@ -758,14 +756,14 @@
 					{#if nextCharge(sub, plan)}
 						{@const next = nextCharge(sub, plan)!}
 						<dd>
-							<span data-testid="next-charge">{money(next.cents)}</span> on {dateOnly(next.on)}
+							<span data-testid="next-charge">{money(next.cents)}</span> on {@render day(next.on)}
 						</dd>
 						{#if billing.usage.overage_cents > 0}
 							<dd class="fact-sub">plus {money(billing.usage.overage_cents)} egress so far</dd>
 						{/if}
 					{:else}
 						<dd>None</dd>
-						{#if sub.cancel_at}<dd class="fact-sub">Plan ends {dateOnly(sub.cancel_at)}</dd>{/if}
+						{#if sub.cancel_at}<dd class="fact-sub">Plan ends {@render day(sub.cancel_at)}</dd>{/if}
 					{/if}
 				</div>
 				<div>
@@ -773,7 +771,7 @@
 					{#if newest(invoices)}
 						{@const inv = newest(invoices)!}
 						<dd>{money(inv.amount_cents)}, {inv.status.replaceAll('_', ' ')}</dd>
-						<dd class="fact-sub">{dateOnly(inv.created_at)}</dd>
+						<dd class="fact-sub">{@render day(inv.created_at)}</dd>
 					{:else}
 						<dd class="text-ink-muted">None yet</dd>
 					{/if}
@@ -789,7 +787,7 @@
 					{#if confirmCancel}
 						<div class="text-sm" data-testid="confirm-cancel">
 							<p class="text-ink-muted">
-								Cancel the plan? It ends on {dateOnly(
+								Cancel the plan? It ends on {@render day(
 									sub.status === 'trialing' && sub.trial_end ? sub.trial_end : sub.period_end
 								)}. Machines run until then and stop at it; snapshots are kept 30 days after.
 								Nothing is charged after that.
@@ -826,6 +824,41 @@
 			{/if}
 		</section>
 
+		<!-- The plans at page width under the card, so each cell has room
+		     for its squares, its figures and its button. -->
+		{#if changing}
+			<section
+				id="change-plan"
+				class="mt-8"
+				data-testid="change-plan"
+				aria-labelledby="change-plan-h"
+			>
+				<div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+					<h2 id="change-plan-h" class="text-xl font-semibold">Change plan</h2>
+					<p class="text-sm text-ink-muted">
+						Upgrades apply now, prorated. Downgrades apply at renewal on {@render day(
+							sub.period_end
+						)}.
+					</p>
+				</div>
+				{#if scheduledPlan}
+					<p class="mb-4 text-sm text-ink-muted" data-testid="change-keep">
+						{scheduledPlan.name} is scheduled for {@render day(sub.period_end)}.
+					</p>
+				{/if}
+				<PlanCells
+					plans={figures}
+					current={sub.plan}
+					compare={{ runningGB: billing.usage.running_gb, diskHeldGB: diskHeld }}
+					action={changeAction}
+					level={3}
+				/>
+				{#if changeError}
+					<p class="field-error" data-testid="change-error">{changeError}</p>
+				{/if}
+			</section>
+		{/if}
+
 		<section class="mt-12" aria-labelledby="invoices-h">
 			<div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
 				<h2 id="invoices-h" class="text-xl font-semibold">Invoices</h2>
@@ -849,7 +882,7 @@
 					<tbody>
 						{#each shownInvoices as inv (inv.id)}
 							<tr>
-								<td class="tabular-nums">{dateOnly(inv.created_at)}</td>
+								<td class="whitespace-nowrap tabular-nums">{dateOnly(inv.created_at)}</td>
 								<td class="font-mono text-compact max-sm:hidden">{inv.number ?? ''}</td>
 								<td>
 									<span class="badge {inv.status === 'paid' ? '' : 'badge--warn'}"
@@ -920,8 +953,8 @@
 	.waiting {
 		margin-bottom: 1.5rem;
 	}
-	.wait-strip {
-		max-width: 32rem;
+	.email {
+		overflow-wrap: anywhere;
 	}
 	/* The queue's length beside the place, in the strip's .plan-of
 	   style (PlanStrip.svelte). */
@@ -933,7 +966,7 @@
 		letter-spacing: 0;
 		color: var(--ink-muted);
 	}
-	/* On a phone the two cells stack: label and figure on one line, as
+	/* On a phone the cells stack: label and figure on one line, as
 	   the plan strip's cells do. */
 	@media (width < 40rem) {
 		.wait-strip .stat {
@@ -946,6 +979,9 @@
 		.wait-strip .stat-value {
 			margin-top: 0;
 			font-size: var(--text-lg);
+		}
+		.wait-strip .stat-sub {
+			grid-column: 1 / -1;
 		}
 	}
 	.alert-row {
@@ -1008,7 +1044,7 @@
 	@media (width < 40rem) {
 		.plan-actions {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
 			width: 100%;
 		}
 		.plan-actions > :global(button) {
@@ -1016,16 +1052,12 @@
 			padding-inline: 0.5rem;
 		}
 	}
-	.plan-band,
 	.plan-foot {
-		padding: 1.5rem;
+		padding: 0.875rem 1.5rem;
 		border-top: 1px solid var(--rule);
 	}
-	.plan-band {
-		background: var(--page);
-	}
-	.plan-foot {
-		padding-block: 0.875rem;
+	.date {
+		white-space: nowrap;
 	}
 
 	/* Usage: memory with its squares on the left, disk and egress as two
@@ -1046,13 +1078,18 @@
 		gap: 1rem;
 	}
 	.u-label {
-		white-space: nowrap;
+		min-width: 0;
 		font-size: var(--text-sm);
 		color: var(--ink-muted);
 	}
+	/* The figure wraps only between the number and its "of LIMIT". */
 	.u-fig {
+		min-width: 0;
 		font-size: 0.9375rem;
 		font-variant-numeric: tabular-nums;
+	}
+	.u-n,
+	.u-of {
 		white-space: nowrap;
 	}
 	.mem .u-fig {
@@ -1120,10 +1157,13 @@
 	}
 	.u-row {
 		display: grid;
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
 		column-gap: 0.75rem;
 		padding: 1.125rem 1.5rem;
+	}
+	.u-row .u-fig {
+		text-align: right;
 	}
 	.u-row + .u-row {
 		border-top: 1px solid var(--rule);
@@ -1132,6 +1172,23 @@
 		grid-column: 2 / -1;
 		margin-top: 0.375rem;
 		line-height: 1.5;
+	}
+	/* On a phone the figure takes its own line under the label, the ring
+	   beside both, and the note under the figure. */
+	@media (width < 40rem) {
+		.u-row {
+			align-items: start;
+		}
+		.u-row > :global(.uring) {
+			grid-row: 1 / span 2;
+			align-self: start;
+			margin-top: 0.125rem;
+		}
+		.u-row .u-fig {
+			grid-column: 2 / -1;
+			margin-top: 0.125rem;
+			text-align: left;
+		}
 	}
 	@media (prefers-color-scheme: dark) {
 		.u-over .u-of,

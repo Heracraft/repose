@@ -121,33 +121,36 @@
 		     One tbody per project, so the name field a Restore opens sits in
 		     the project's own group, on a row of its own under it. -->
 		<table class="table dtable mt-4">
-			<thead>
+			<thead class="max-sm:sr-only">
 				<tr>
 					<th>Project</th>
 					<th class="hidden md:table-cell">Size</th>
 					<th class="hidden sm:table-cell">Destroyed</th>
 					<th class="hidden lg:table-cell">Snapshot</th>
-					<th class="hidden sm:table-cell">Restore</th>
+					<th class="hidden sm:table-cell">Kept</th>
 					<th><span class="sr-only">Actions</span></th>
 				</tr>
 			</thead>
 			{#each visible as d (d.id)}
+				{@const until = d.restorable_until ? dateTime(d.restorable_until).slice(0, 10) : ''}
 				<tbody data-testid="destroyed-row">
 					<tr class:dopen={openFor === d.id}>
-						<td>
-							<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-								<span class="font-medium">{d.name}</span>
+						<td class="dname">
+							<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1 lg:flex-nowrap">
+								<span class="dname-text font-medium" title={d.name}>{d.name}</span>
 								{#if !d.name_free}
-									<span class="badge">name in use</span>
+									<span class="badge shrink-0">name in use</span>
 								{/if}
 							</span>
 							<!-- Below sm the other columns are not drawn; their figures
-							     go under the name. -->
+							     go under the name, the date it is kept until on a line
+							     of its own. -->
 							<span class="mt-0.5 block text-xs text-ink-muted tabular-nums sm:hidden">
 								<span class="font-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
-								{#if d.restorable_until}
-									· restorable until {dateTime(d.restorable_until).slice(0, 10)}
-									({timeLeft(d.restorable_until)})
+								{#if until}
+									<span class="block whitespace-nowrap"
+										>until {until} · {timeLeft(d.restorable_until)}</span
+									>
 								{/if}
 							</span>
 						</td>
@@ -162,14 +165,14 @@
 						</td>
 						<td class="hidden whitespace-nowrap text-ink-muted tabular-nums lg:table-cell">
 							{dateTime(d.snapshot.created_at)}
-							<span class="mt-0.5 block font-mono text-compact">{mb(d.snapshot.bytes)}</span>
+							<span aria-hidden="true">·</span>
+							<span class="font-mono text-compact">{mb(d.snapshot.bytes)}</span>
 						</td>
 						<td class="hidden whitespace-nowrap tabular-nums sm:table-cell">
-							{#if d.restorable_until}
-								{timeLeft(d.restorable_until)}
-								<span class="mt-0.5 block text-xs text-ink-muted"
-									>restorable until {dateTime(d.restorable_until).slice(0, 10)}</span
-								>
+							{#if until}
+								<span class="text-ink-muted">until</span>
+								{until}
+								<span class="text-ink-muted">· {timeLeft(d.restorable_until)}</span>
 							{/if}
 						</td>
 						<td class="dcell-action">
@@ -217,16 +220,32 @@
 {/if}
 
 <style>
+	/* One line a row, about 45px, so a long list does not take the page. */
 	.dtable td {
 		vertical-align: baseline;
-		padding-top: 0.875rem;
-		padding-bottom: 0.875rem;
+		padding-top: 0.75rem;
+		padding-bottom: 0.75rem;
 	}
 	.dtable :is(th, td):first-child {
 		padding-left: 1rem;
 	}
 	.dtable :is(th, td):last-child {
 		padding-right: 1rem;
+	}
+	/* From lg the name takes what the figures leave and a long one ends
+	   in an ellipsis, so a row stays one line; the form under it shows
+	   the whole name. */
+	@media (width >= 64rem) {
+		.dtable td.dname {
+			width: 100%;
+			max-width: 0;
+		}
+		.dname-text {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
 	}
 	/* The row whose name field is open and the field's row read as one. */
 	.dtable tr.dopen td {
@@ -236,8 +255,11 @@
 	.dtable td.dform {
 		padding-top: 0;
 	}
-	.dcell-action {
+	/* The ghost button's own padding makes up the cell's. */
+	.dtable td.dcell-action {
 		width: 1px;
+		padding-top: 0.5rem;
+		padding-bottom: 0.5rem;
 		white-space: nowrap;
 		text-align: right;
 	}

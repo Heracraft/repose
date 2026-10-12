@@ -106,8 +106,11 @@ test('with the ntfy URL and machine.nix both unsaved, one Leave leaves', async (
 		.getByRole('link', { name: /^Projects\b/ })
 		.click();
 	await expect(page.getByText('The ntfy URL is not saved.')).toBeVisible();
-	await expect(nix.getByText('machine.nix is not saved.')).toBeVisible();
-	await nix.getByRole('button', { name: 'Leave anyway' }).click();
+	const nixAsk = nix.getByRole('alert').filter({ hasText: 'machine.nix is not saved.' });
+	await expect(nixAsk).toBeVisible();
+	// Both questions have one shape: Stay, which has focus, and Leave.
+	await expect(nixAsk.getByRole('button', { name: 'Stay', exact: true })).toBeVisible();
+	await nixAsk.getByRole('button', { name: 'Leave', exact: true }).click();
 	await expect(page).toHaveURL('/projects');
 });
 
@@ -123,6 +126,13 @@ test('/settings shows a failed first load and Retry loads it', async ({ page }) 
 	const failed = page.getByRole('alert');
 	await expect(failed).toBeVisible();
 	await expect(page.getByText('Loading…')).toHaveCount(0);
+	// Install and machine.nix do not read /v1/me, so they stay.
+	for (const heading of ['Install', 'machine.nix']) {
+		await expect(page.getByRole('heading', { level: 2, name: heading, exact: true })).toBeVisible();
+	}
+	await expect(page.getByRole('heading', { level: 2, name: 'Account', exact: true })).toHaveCount(
+		0
+	);
 	await failed.getByRole('button', { name: 'Retry' }).click();
 	for (const heading of ['Account', 'Timezone', 'Delete account']) {
 		await expect(page.getByRole('heading', { level: 2, name: heading, exact: true })).toBeVisible();

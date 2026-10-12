@@ -2,7 +2,8 @@
   A project's events in pages of 10, newest first (I-662). The page's
   place lives in the URL (eventsUrl.ts), so Back steps between pages and a
   reload keeps the page. Newest, Newer and Older move by the api's cursors;
-  the position is "Page 3 of 8" from the api's count. A filter keeps the
+  the position is "Page 3 of 8" from the api's count. With one page there
+  is no pager (I-680). A filter keeps the
   agents', the errors' or the machine's events. Only the newest page polls
   for rows; a deeper one polls the count and offers the newer ones in one
   link, so the rows being read never move.
@@ -239,14 +240,20 @@
 {#snippet pager()}
 	{@const newerOff = onNewest}
 	{@const olderOff = !hasOlder}
-	<div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
-		{#if newerCount > 0 && !onNewest}
-			<button type="button" class="btn-ghost text-xs" onclick={() => to(newestState(view))}
-				>{newerCount} newer</button
+	{@const offerNewer = newerCount > 0 && !onNewest}
+	<!-- A phone lays the pager across the card: Newer, the position (or
+	     the newer events' link in its place) centred, and Older, on one
+	     row. Newest waits for a wider screen. -->
+	<div
+		class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
+	>
+		{#if offerNewer}
+			<button
+				type="button"
+				class="btn-ghost text-xs max-sm:hidden"
+				onclick={() => to(newestState(view))}>{newerCount} newer</button
 			>
 		{/if}
-		<!-- A phone has room for Newer, the position and Older on one row;
-		     Newest waits for a wider screen. -->
 		<button
 			type="button"
 			class="btn-quiet btn--sm max-sm:hidden"
@@ -262,8 +269,17 @@
 			onclick={() => !newerOff && events.length > 0 && to(newerState(view, events[0].id))}
 			>Newer</button
 		>
+		{#if offerNewer}
+			<button
+				type="button"
+				class="btn-ghost justify-self-center text-xs sm:hidden"
+				onclick={() => to(newestState(view))}>{newerCount} newer</button
+			>
+		{/if}
 		<span
-			class="px-1 text-center sm:min-w-[5.5rem] text-sm whitespace-nowrap tabular-nums"
+			class="px-1 text-center text-sm whitespace-nowrap tabular-nums sm:min-w-[5.5rem] {offerNewer
+				? 'max-sm:hidden'
+				: ''}"
 			data-testid="events-position">{position}</span
 		>
 		<button
@@ -294,7 +310,10 @@
 				>
 			{/if}
 		</div>
-		<nav aria-label="Event pages">{@render pager()}</nav>
+		<!-- One page has no pager: the count says it all. -->
+		{#if holdHeight || newerCount > 0}
+			<nav aria-label="Event pages" class="max-sm:w-full">{@render pager()}</nav>
+		{/if}
 	</div>
 
 	<!-- The filter changes the URL, so its choices are links with

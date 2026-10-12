@@ -338,24 +338,11 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* Code on a phone: 12px, so more of a line shows, and the Copy button
-	   in the block's top right corner over its padding, where it had a
-	   40px strip of its own above the code. The first line ends 4.5rem
-	   early, so scrolled to its end it stops clear of the button. The 28px
-	   button, its live region, the edge bars and the tab stop are as on
-	   every width (I-394, I-395). */
+	/* Code on a phone: 12px, so more of a line shows. The Copy button keeps
+	   the 40px strip above the code that layout.css gives it below 40rem:
+	   laid over the first line it hid that line's end until you scrolled
+	   (I-394, I-395). */
 	@media (width < 40rem) {
-		article :global(.code pre) {
-			padding-top: 0.625rem;
-			font-size: 0.75rem;
-		}
-		article :global(.code .copy) {
-			top: 0.375rem;
-			right: 0.375rem;
-		}
-		article :global(.code .l1) {
-			padding-right: 4.5rem;
-		}
 		article :global(pre) {
 			font-size: 0.75rem;
 		}

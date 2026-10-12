@@ -214,6 +214,14 @@ main > .sec:first-child {
 .hero-h .line {
 	display: block;
 }
+/* "environment," is 6.64em wide: 292px at the 44px floor, past the 280px
+   column of a 320 phone, where the comma broke onto a line of its own.
+   At 40px it is 265px. */
+@media (width < 22.5rem) {
+	.hero-h {
+		font-size: 2.5rem;
+	}
+}
 /* Three sentences, each kept whole, so a line breaks between sentences
    and never ends on the next one's first word: balance alone left a lone
    "A", then a lone "The", at the end of line 1. Balanced, the three break

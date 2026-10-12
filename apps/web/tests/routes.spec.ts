@@ -54,9 +54,9 @@ test('/projects/[id]/secrets renders the secrets page', async ({ page }) => {
 
 test('/billing renders', async ({ page }) => {
 	await page.goto('/billing');
-	await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Billing', exact: true })).toBeVisible();
 	// The suite runs the fake with billing off unless a spec turns it on.
-	await expect(page.getByText('Billing is not switched on yet.')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Billing is not switched on yet' })).toBeVisible();
 });
 
 test('/settings renders', async ({ page }) => {

@@ -174,16 +174,20 @@
 					</div>
 				{/if}
 				{#if heldNavigation}
-					<div class="banner banner--warn mt-3 mb-0" role="alert">
-						<p>machine.nix is not saved.</p>
-						<div class="mt-2 flex gap-2">
+					<!-- The same one-row question as the ntfy URL's on Settings. -->
+					<div
+						class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
+						role="alert"
+					>
+						<p>machine.nix is not saved. Leave this page anyway?</p>
+						<div class="flex items-center gap-2">
 							<button
 								type="button"
-								class="btn-ghost -ml-2"
+								class="btn-quiet btn--sm"
 								bind:this={stayButton}
 								onclick={() => (heldNavigation = undefined)}>Stay</button
 							>
-							<button type="button" class="btn-ghost" onclick={leave}>Leave anyway</button>
+							<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
 						</div>
 					</div>
 				{/if}

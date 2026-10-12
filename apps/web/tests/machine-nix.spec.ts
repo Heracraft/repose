@@ -75,13 +75,15 @@ test("the Config page's switch keeps machine.nix off one machine", async ({ page
 	await expect(page.getByRole('heading', { name: 'machine.nix' })).toBeInViewport();
 });
 
-// The editor is as tall as its text plus three lines, between 6 and 24,
-// and scrolls inside itself past that.
+// The editor is as tall as its text plus one line, between 5 and 24, and
+// scrolls inside itself past that. An empty one is five lines tall, not a
+// block of blank paper.
 test('the machine.nix editor grows with its text up to a cap', async ({ page }) => {
 	await page.goto('/settings');
 	const section = page.locator('#machine-nix');
 	const scroller = section.locator('.cm-scroller');
 	const empty = (await scroller.boundingBox())!.height;
+	expect(empty).toBeLessThan(5 * 20 + 12);
 	await section.locator('.cm-content').click();
 	for (let i = 0; i < 10; i++) await page.keyboard.press('Enter');
 	const eleven = (await scroller.boundingBox())!.height;

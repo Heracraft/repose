@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import {
@@ -72,6 +73,28 @@
 	const REVISIONS_SHOWN = 8;
 	let allRevisions = $state(false);
 	let shownRevisions = $derived(allRevisions ? revisions : revisions.slice(0, REVISIONS_SHOWN));
+
+	// From lg the editor is the page's subject beside a short rail, so it
+	// opens with room to write (28rem) whatever the fragment's length.
+	const wide = new MediaQuery('min-width: 64rem');
+
+	/**
+	 * The revisions box takes a tab stop while its list is taller than it
+	 * (Show all, from lg) and gives it up when the list fits, so a
+	 * keyboard can scroll to the oldest revision (axe
+	 * scrollable-region-focusable).
+	 */
+	function tabStopWhenTall(node: HTMLElement) {
+		const mark = () => {
+			if (node.scrollHeight > node.clientHeight) node.tabIndex = 0;
+			else node.removeAttribute('tabindex');
+		};
+		mark();
+		const ro = new ResizeObserver(mark);
+		ro.observe(node);
+		if (node.firstElementChild) ro.observe(node.firstElementChild);
+		return { destroy: () => ro.disconnect() };
+	}
 
 	// Nix tab state.
 	let fragmentText = $state('');
@@ -458,6 +481,7 @@
 							{/if}
 							<NixEditor
 								bind:value={fragmentText}
+								floor={wide.current ? '28rem' : undefined}
 								readonly={nixReadonly}
 								errorLine={fragmentErrorLine(buildError)}
 							>
@@ -509,8 +533,10 @@
 				</div>
 
 				<!-- The rail: what changes how the machine is built, and what it
-				     was built from. -->
-				<div class="min-w-0">
+				     was built from. From lg it stays in view beside the editor,
+				     and the full revision list scrolls inside itself, so the rail
+				     never runs far past the editor. -->
+				<div class="min-w-0 lg:sticky lg:top-20 lg:self-start">
 					<section class="form-section">
 						<h2 class="text-xl font-semibold">Base updates</h2>
 						<p class="mt-1 text-sm text-ink-muted">
@@ -551,42 +577,55 @@
 						{#if revisions.length === 0}
 							<p class="mt-2 text-sm text-ink-muted">No revisions yet.</p>
 						{:else}
-							<table class="table mt-2">
-								<thead>
-									<tr>
-										<th scope="col">Saved</th>
-										<th scope="col">Status</th>
-										<th scope="col" class="w-px"><span class="sr-only">Re-apply</span></th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each shownRevisions as rev (rev.revision_id)}
+							<!-- The full list scrolls inside itself from lg; while it does, the
+							     box takes a tab stop so a keyboard can reach its end. -->
+							<div
+								class={allRevisions
+									? 'mt-2 lg:max-h-96 lg:overflow-y-auto lg:[&_thead_th]:sticky lg:[&_thead_th]:top-0 lg:[&_thead_th]:z-10 lg:[&_thead_th]:bg-page'
+									: 'mt-2'}
+								use:tabStopWhenTall
+								role={allRevisions && wide.current ? 'region' : undefined}
+								aria-label={allRevisions && wide.current ? 'Revisions' : undefined}
+							>
+								<table class="table">
+									<thead>
 										<tr>
-											<td class="py-2 align-middle tabular-nums sm:whitespace-nowrap"
-												>{dateTime(rev.created_at)}</td
-											>
-											<td class="py-2 align-middle">
-												<span
-													class="badge"
-													class:badge--new={rev.status === 'applied'}
-													class:badge--error={rev.status === 'failed'}>{rev.status}</span
-												>
-											</td>
-											<td class="py-2 text-right align-middle">
-												{#if rev.status !== 'building'}
-													<button
-														type="button"
-														class="btn-ghost whitespace-nowrap sm:-mr-2"
-														disabled={applying}
-														onclick={() => reapply(rev)}
-														>{reapplying === rev.revision_id ? 'Re-applying…' : 'Re-apply'}</button
-													>
-												{/if}
-											</td>
+											<th scope="col">Saved</th>
+											<th scope="col">Status</th>
+											<th scope="col" class="w-px"><span class="sr-only">Re-apply</span></th>
 										</tr>
-									{/each}
-								</tbody>
-							</table>
+									</thead>
+									<tbody>
+										{#each shownRevisions as rev (rev.revision_id)}
+											<tr>
+												<td class="py-2 align-middle tabular-nums sm:whitespace-nowrap"
+													>{dateTime(rev.created_at)}</td
+												>
+												<td class="py-2 align-middle">
+													<span
+														class="badge"
+														class:badge--new={rev.status === 'applied'}
+														class:badge--error={rev.status === 'failed'}>{rev.status}</span
+													>
+												</td>
+												<td class="py-2 text-right align-middle">
+													{#if rev.status !== 'building'}
+														<button
+															type="button"
+															class="btn-ghost whitespace-nowrap sm:-mr-2"
+															disabled={applying}
+															onclick={() => reapply(rev)}
+															>{reapplying === rev.revision_id
+																? 'Re-applying…'
+																: 'Re-apply'}</button
+														>
+													{/if}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
 							{#if revisions.length > REVISIONS_SHOWN}
 								<button
 									type="button"

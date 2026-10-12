@@ -248,6 +248,26 @@ test.describe('public pages', () => {
 		});
 	}
 
+	// A reference table fits its column: from sm the term column stays on
+	// one line and description code wraps; on a phone a two- or three-column
+	// table stacks each row (/docs/cli Secrets ran 690px in 624, config.toml
+	// 403 in 335).
+	for (const width of [1440, 390]) {
+		test(`no /docs/cli table scrolls sideways at ${width}`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.goto('/docs/cli');
+			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+			const wide = await page
+				.locator('.doc .table-wrap')
+				.evaluateAll((els) =>
+					els
+						.filter((el) => el.scrollWidth > el.clientWidth)
+						.map((el) => `${el.scrollWidth}/${el.clientWidth}`)
+				);
+			expect(wide).toEqual([]);
+		});
+	}
+
 	test('monospace text draws "://" with no ligature gap', async ({ page }) => {
 		await page.goto('/docs/install');
 		const code = page.locator('.doc pre code').first();

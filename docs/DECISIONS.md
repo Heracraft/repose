@@ -18812,3 +18812,85 @@ stuff)".
   Its sample project reads `your-project`, not `job-alerts`, which
   visitors could not place; the phone tmux bar ends after the session
   name, since the longer name left room only for a cut clock.
+
+**I-680. The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12).**
+Amends I-679's project-page bullet. With 14 snapshots the equal-height
+row of three left Agents and Details about 900px of empty card, and a
+snapshot's Restore confirm put its Cancel past the card's edge. The
+owner: "even the form being in such a small area".
+- No card is stretched to match a neighbour; every grid of cards is
+  `items-start`, and the columns line up by what they hold
+  (DESIGN-LANGUAGE.md, "Card layout").
+- Questions run across the frame above the rest, only while any wait.
+- Row one from `lg`: Events in two thirds, Connect then Machine in one
+  (about 560 against 510px with a full page of events). Usage across
+  the frame. Row two: Snapshots in two thirds, Agents (only while the
+  machine runs) then Details in one. With no snapshot yet a running
+  machine's three cards share a row of three. Destroy last.
+- The snapshot list shows the newest 8 behind "Show all N", as the
+  config revisions do. Its restore panel puts the warning beside the
+  typed confirm from 40rem; `ConfirmType` and `RestoreNameForm` lay out
+  by their own container.
+- **Resize…** stays under Disk in the Machine card, but its form opens
+  in a panel across the frame under the Events, Connect and Machine
+  row (under Machine on a phone): "Resize the disk" and the current
+  size with "Disks can't shrink." on the left, the size and Grow and
+  Cancel on the right from 40rem. Squeezed into the side card it was
+  323px wide at 1440 and made its row 90px uneven.
+- The events pager is gone when there is one page.
+- A project in `error` has **Restart** in the header; it is the same
+  POST /start that starts a stopped one. A temporary project's status
+  line says "temporary" and its time left, Details has its Expires
+  row, and Connect leaves out `repose run`.
+
+**I-681. Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12).**
+Amends I-660, I-674, I-679. The owner's screenshots showed cards
+stretched to a neighbour's height and a restore confirm squeezed into a
+third-width card: "even the form being in such a small area". I-680
+settled the project page; this round applied the same rules
+(DESIGN-LANGUAGE.md, "Card layout") to the other pages, measured with a
+gap check at 1440, 1280, 1024, 768, 390 and 320 wide in both schemes.
+- I-679's rows "stretched to one height" and "in one row of three at
+  equal height" are gone: a card is as tall as its content, every grid
+  of cards is `items-start`, and columns line up by pairing cards of
+  like height. A list that grows over time shows its newest N (snapshots
+  8, config revisions 8, Recently destroyed 10 with Show more). A form
+  opens inline in a box at least 32rem wide, and a list whose rows open
+  one sits in a card two thirds wide or wider.
+- **Projects.** `MemoryBlocks` lays out by its own box: 16 squares to a
+  row under 413px, 32 above (it was 16 below a 640px viewport, and at
+  768 to 860 the squares ran out of their cell). With no plan limits
+  the strip is one row of four cells; Agents needing input counts the
+  pending questions too, each agent once, and lists the projects.
+  Recently destroyed rows take one line: the snapshot cell is its date
+  and size, and the column once headed Restore is Kept, "until DATE ·
+  N days left". With no projects the empty state is one card across the
+  frame, `repose run` on the left and the plan facts or the waitlist on
+  the right. On a phone Start or Stop is its own tab stop on the row's
+  first line.
+- **Billing.** Change plan opens as its own section across the frame
+  under the plan card, headed "Change plan", and scrolls into view.
+  Usage rows let the label wrap and keep each figure whole; below 40rem
+  the figure takes its own line. Every date is one unbreakable span.
+  The waitlist strip runs across the frame with three cells (place,
+  seats free, the 72-hour hold). With a seat held the seats line reads
+  "Held for you: 1 seat" and the plan buttons count that seat as free,
+  as the banner does. With billing off the line is a card's heading.
+- **Secrets, Config, Settings.** Below `sm` a secret's Updated date
+  sits under its name, and names break at underscores. On Config the
+  editor is at least 28rem tall from `lg`, the side column sticks, and
+  the expanded revision list scrolls inside its box. The Nix editor is
+  as tall as its text plus a line, between 5 and 24 lines, with a
+  solid gutter edge. On Settings only Account, Timezone and
+  Notifications wait on the account; Install and machine.nix show even
+  when it fails to load. `CodeCopy` keeps its button outside the
+  scrolling line.
+- **Docs.** Only a table's term column stays on one line. Below 40rem
+  a table of two or three columns stacks each row (the term, a middle
+  cell muted beside it, the description under both) and a wider one
+  keeps its grid with tighter cells. This replaces I-395's phone rule
+  of wrapping a command at its spaces. Amends I-660: on a phone the
+  code block's Copy button keeps the 40px strip above the code, as on
+  a wider screen; laid over the first line it hid that line's end.
+- **Landing.** Below 360px the hero headline is 40px, so
+  "environment," keeps its comma on the line at 320.

@@ -235,7 +235,7 @@ test('a destroyed project can be restored from the projects list', async ({ page
 	const section = page.getByRole('region', { name: 'Recently destroyed' });
 	await expect(section).toBeVisible({ timeout: 15_000 });
 	const row = section.getByTestId('destroyed-row').filter({ hasText: p.name });
-	await expect(row).toContainText('restorable until');
+	await expect(row).toContainText(/until\s+\d{4}-\d{2}-\d{2}/);
 	await expect(row).toContainText('days left');
 
 	await row.getByRole('button', { name: 'Restore…' }).click();

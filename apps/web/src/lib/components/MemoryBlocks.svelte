@@ -37,35 +37,42 @@
 	);
 </script>
 
-<div
-	class="blocks"
-	style="--cols: {Math.min(total, perRow)}; --cols-narrow: {Math.min(total, 16)}"
-	role="meter"
-	aria-label={label}
-	aria-valuemin={0}
-	aria-valuemax={limit}
-	aria-valuenow={Math.min(used, limit)}
-	aria-valuetext={reading}
->
-	{#each squares as q, i (i)}
-		<i
-			class:on={q.seg >= 0}
-			class:alt={q.seg % 2 === 1}
-			class:over={q.over}
-			title={q.name ? `${q.name}` : undefined}
-		></i>
-	{/each}
+<div class="fit">
+	<div
+		class="blocks"
+		style="--cols: {Math.min(total, perRow)}; --cols-narrow: {Math.min(total, 16)}"
+		role="meter"
+		aria-label={label}
+		aria-valuemin={0}
+		aria-valuemax={limit}
+		aria-valuenow={Math.min(used, limit)}
+		aria-valuetext={reading}
+	>
+		{#each squares as q, i (i)}
+			<i
+				class:on={q.seg >= 0}
+				class:alt={q.seg % 2 === 1}
+				class:over={q.over}
+				title={q.name ? `${q.name}` : undefined}
+			></i>
+		{/each}
+	</div>
 </div>
 
 <style>
+	/* The squares lay out by the box they sit in, not the viewport: a
+	   narrow cell beside a side column took 32 to a row past its edge. */
+	.fit {
+		container-type: inline-size;
+	}
 	.blocks {
 		display: grid;
 		grid-template-columns: repeat(var(--cols), 10px);
 		gap: 3px;
 		width: max-content;
 	}
-	/* A phone takes sixteen to a row: 32 squares fit 413px, not 350. */
-	@media (width < 40rem) {
+	/* Sixteen to a row in a box under 413px, what 32 squares take. */
+	@container (width < 413px) {
 		.blocks {
 			grid-template-columns: repeat(var(--cols-narrow), 10px);
 		}

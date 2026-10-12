@@ -34,7 +34,7 @@ repose status todo-app
 repose status todo-app --watch
 ```
 
-The dashboard's project page shows the state, agents, SSH sessions, memory and disk in use, usage charts, snapshots and the project's details. Its events come in pages of 10 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
+The dashboard's project page shows the state, a temporary project's time left, agents, SSH sessions, memory and disk in use, usage charts, snapshots and the project's details. Its events come in pages of 10 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
 
 ## Stop and start
 
@@ -51,7 +51,7 @@ todo-app is running (large), ready in 9s.
 
 `repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ended claude (working).` It fetches the agent's commits before the machine stops, as `git fetch repose` would, in each of the project's checkouts on your laptop, from whatever folder you run it in; with nothing new it prints no `Fetched` line. The stop line ends with what stays on the machine: commits your checkouts haven't fetched and files the agent didn't commit. `repose status` shows those rows for the stopped machine. Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start.
 
-`repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard's **Start** button is there only while a project is stopped.
+`repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard shows **Start** while a project is stopped and **Restart** in the `error` state.
 
 ## Unused machines
 
@@ -94,7 +94,7 @@ Or restore into a new project and leave the original alone:
 repose snapshots restore SNAPSHOT_ID --as todo-app-old
 ```
 
-The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…** too. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
+The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…** too. It shows the newest 8; **Show all** lists the rest. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
 
 Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it before writing anything, and stops with `snapshot checksum mismatch` if they differ. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
 

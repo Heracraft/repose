@@ -298,31 +298,80 @@ or its first screen goes through a DECISIONS entry.
   list (memory, machines running, agents needing input, disk in use);
   the table; Recent activity; Recently destroyed. The table's name link
   covers the row, and its Start or Stop answers in place. Below `sm`
-  rows stack, never scroll sideways.
-- **A project**: two columns from `lg`, the work (Questions, Events,
-  Usage) in the main one and the machine (Connect, Machine, Agents,
-  Details, Snapshots) in a side one; Destroy last. Below `lg` one
-  column in the order Questions, Connect, Events, Snapshots, Usage,
-  Machine, Agents, Details, Destroy. Nothing mounts above painted
-  content: what the first screen needs is fetched together. The
-  Machine card is memory in use and disk as ring rows (the size's vCPUs
-  and memory are on the status line); Usage's busiest processes are a
-  full-width table folded under a `<details>` until opened (I-674).
+  rows stack, never scroll sideways. With no projects the empty state
+  is one card across the frame: `repose run` on the left, the plan
+  facts or the waitlist on the right (I-681).
+- **A project** (I-680): Questions across the frame while any wait;
+  then Events in two thirds beside Connect over Machine; Usage across
+  the frame; then Snapshots in two thirds beside Agents (while the
+  machine runs) over Details; Destroy last. With no snapshot yet, a
+  running machine's Snapshots, Agents and Details share a row of
+  three. From `md` the short cards pair and Events and Snapshots span
+  both columns. A phone has one column in the order Questions,
+  Connect, Events, Machine, Usage, Snapshots, Agents, Details,
+  Destroy. Nothing mounts above painted content: what the first screen
+  needs is fetched together. The Machine card is memory in use and
+  disk as ring rows (the size's vCPUs and memory are on the status
+  line); Usage's busiest processes are a table folded under a
+  `<details>` until opened, `max-w-2xl` so its columns sit together
+  (I-674). The snapshot list shows the newest 8 behind "Show all N".
+  **Resize…** under Disk opens a panel across the frame under the
+  Events, Connect and Machine row (under Machine on a phone).
 - **Events** come in numbered pages, not an endless "Show older": 10
   rows under day headings, one pager (Newest, Newer, "Page n of m",
   Older) above the list (I-674), the place in the URL, and the
   filters as links with `aria-current`, drawn like the project's tabs.
   A disabled pager button keeps its place and says why in its title.
+  One page has no pager; the count beside the title is enough. Below
+  `sm` the pager spans the card: Newer, the position (or "N newer" in
+  its place), Older (I-680).
 - **Billing**: the plan, its price once and its status, then memory
   as squares beside disk and egress as ring rows, then one band of
   facts (period, next charge, latest invoice) (I-674); plans as
   `PlanCells`. On a phone the plan's two actions share a row at equal
-  width.
+  width. Change plan opens its own section across the frame under the
+  plan card, not inside it (I-681).
   Paged tables (invoices) use the same Newer and Older.
 - **Settings, Config, Secrets**: a 280px label column beside the
   controls from `lg` (Settings), or the work in two thirds and its
   context in one (Config, Secrets). An action that saves sits in the
   footer of what it saves.
+
+## Card layout
+
+Rules for every grid of cards (I-680). The owner, on a restore
+confirm squeezed into a third-width card: "even the form being in such
+a small area".
+
+- **A card is as tall as its content.** No `h-full`, `*:h-full`,
+  `flex-1` or stretch to match a neighbour; every grid that holds
+  cards is `items-start`. A card's inner bottom ends within 40px of
+  its last content, in every state and at every width.
+- **Columns line up by what is in them.** Pair cards whose natural
+  heights match in the common state (running, a full page of events,
+  1 to 3 agents, 5 or more snapshots). Something whose count changes,
+  like Questions, runs across the frame, never in a column. In a
+  sparse state the shorter column may end up to about 300px early;
+  fill that with real content or leave it.
+- **A list that grows over time is capped**: the newest N and a
+  `.btn-ghost` "Show all N" / "Show fewer" under it (snapshots 8,
+  config revisions 8); Recently destroyed shows 10 and fetches the rest
+  with "Show more" (I-681). A paged list hides its pager on one page. Rows in a wide card take one line.
+- **A form opens inline under what asked for it, in a box at least
+  32rem wide.** A list whose rows open a form sits in a card two
+  thirds wide or full width, never a third-width side card. A shared
+  form lays out by its own `@container`, never the viewport: the
+  field is `flex-1 min-w-0` up to about 32rem, the buttons a
+  `shrink-0` group that wraps under it whole. In a confirm panel 40rem
+  or wider the warning sits left and the form right, as in Destroy;
+  narrower, they stack. Nothing passes its box's edge from 320 to
+  1440 wide.
+- **From `md` to `lg` short cards sit two to a row**; a card without
+  a partner spans both, and no card spans 700px for one line.
+- **Figures and dates never split.** A date is one `whitespace-nowrap`
+  span; a figure may wrap between its number and its "of LIMIT", never
+  inside either. Labels take `min-w-0` (a `minmax(0,1fr)` grid column)
+  so they wrap or ellipsize instead of pushing a figure out.
 
 ## Hairlines, not boxes
 
@@ -412,7 +461,8 @@ takes the pointer without moving the layout (I-657).
   project page's memory and disk. Charts beyond a meter need a DECISIONS
   entry.
 - Plan limits (I-674): memory running is `MemoryBlocks.svelte`, the
-  plan's squares (one per GB, 32 to a row, 16 below 640px) filled by
+  plan's squares (one per GB, 32 to a row, 16 in a box under 413px,
+  I-681) filled by
   each running machine in the accent, alternate machines at 55%, free
   squares outlined, past the limit amber. Disk held and egress are
   `UsageRing.svelte`, an 18px pie (a filled wedge on a `--sunken` disc,
@@ -432,9 +482,9 @@ takes the pointer without moving the layout (I-657).
   say what each measure means.
 - A reading of a share is "X of Y" ("4 GB of 20 GB"), on a meter or in a
   card, never "X / Y".
-- `CodeCopy.svelte`: one command on a `.codeblock` line with its own
-  Copy button in the corner, "Copied" for 1.5s and in its own live
-  region; a failure toasts.
+- `CodeCopy.svelte`: one command on a `.codeblock` line that scrolls,
+  with its own Copy button beside it outside the scroll, "Copied" for
+  1.5s and in its own live region; a failure toasts.
 - `.codeblock`: a command block on a dashboard page, 13px mono on
   `--sunken`. Its lines scroll sideways, as the docs' blocks do; a
   wrapped install line left "| sh" alone on the last line. As the docs'
@@ -496,7 +546,7 @@ One pattern per consequence, and never the browser's `confirm()` (I-386):
 - **Focus follows the panel** (WCAG 2.4.3, I-391). A panel that opens in
   place of the button that asked for it takes focus: "Keep it" in a
   two-step, the field in `ConfirmType` or `RestoreNameForm`, the size
-  select of the Disk card's resize panel. Cancel or Keep it puts focus
+  select of the project page's resize panel. Cancel or Keep it puts focus
   back on that button; a row that goes away passes it to the next row's
   button. A panel that closes on its own after a wait (a grow that
   finished) gives focus back only if focus was still inside it.
@@ -607,8 +657,12 @@ prompts and output, and no token hue: in the docs blue is a link (I-388).
 A block or table wider than its box shows a 2px `--ink-faint` bar at the
 edge where text is hidden, and takes a tab stop so a keyboard can scroll
 it; one that fits has neither (I-394, I-395). The bar is a one-colour
-layer. On a phone a command in a table wraps at its spaces,
-so the description beside it keeps its width.
+layer. Only a table's term column stays on one line. Below 40rem a
+table of two or three columns stacks each row: the term, a middle cell
+muted beside it, the description under both at full width; a wider
+table keeps its grid with tighter cells (I-681). On a phone a code
+block's Copy button keeps the 40px strip above the code, so it hides
+no line (I-681).
 The copy button is 28px tall and says "Copied" to a screen reader through
 a live region as well as on its face. Links are in
 the accent; h2 sections are separated by a rule. Prose is `text-prose`, 17px at 1.7, and the title 36px, 40px under the

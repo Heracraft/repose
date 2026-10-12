@@ -24,7 +24,15 @@
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible, pollUntilDone } from '$lib/poll';
-	import { uptime, gb, gbs, dateOnly, normalizeRemoteDisplay, classMemoryGB } from '$lib/format';
+	import {
+		uptime,
+		gb,
+		gbs,
+		dateOnly,
+		normalizeRemoteDisplay,
+		classMemoryGB,
+		tempLeft
+	} from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
@@ -41,7 +49,8 @@
 		type LoadedEvents
 	} from '$lib/components/project/EventsCard.svelte';
 	import { readEventsState } from '$lib/components/project/eventsUrl';
-	import MachineCard from '$lib/components/project/MachineCard.svelte';
+	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
+	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
 	import SnapshotsTable from '$lib/components/project/SnapshotsTable.svelte';
@@ -383,7 +392,52 @@
 		}
 	}
 
-	/** Grows the volume; true when the machine card should close its panel. */
+	// Resize. The Machine card's Resize… opens a panel across the frame
+	// under the card's row: the card is a third wide, and a form needs
+	// room (I-680). A volume only grows, so the choices are the sizes
+	// strictly larger than the disk now, and the select opens on the
+	// smallest of them.
+	let showResize = $state(false);
+	let largerSizes = $derived(
+		project ? DISK_SIZES_GB.filter((s) => s * GIB > project!.volume_bytes) : []
+	);
+	let resizeTo = $state<number | undefined>(undefined);
+	let resizePanel = $state<HTMLElement | undefined>(undefined);
+	// A poll can grow the disk under an open panel (another tab, the CLI):
+	// the choice moves to the next size that is still a grow, and the panel
+	// closes once none is left.
+	$effect(() => {
+		if (!showResize) return;
+		if (largerSizes.length === 0) closeResize();
+		else if (resizeTo === undefined || !largerSizes.includes(resizeTo)) resizeTo = largerSizes[0];
+	});
+
+	function toggleResize() {
+		if (showResize) return closeResize();
+		resizeTo = largerSizes[0];
+		showResize = true;
+	}
+
+	/**
+	 * Close the resize panel. Focus goes back to Resize… (or, when the disk
+	 * is now at the largest size, to the sentence that replaces it), but
+	 * only if it was inside the panel: a grow ends after a poll, and by then
+	 * the person may be somewhere else on the page.
+	 */
+	function closeResize() {
+		const hadFocus = !!resizePanel?.contains(document.activeElement);
+		showResize = false;
+		if (hadFocus) void focusAfterRender('resize-open', 'resize-largest');
+	}
+
+	async function submitResize() {
+		// The select only offers grows, but the api must never be asked to
+		// shrink a disk from a button labelled Grow, whatever the select holds.
+		if (!project || resizeTo === undefined || resizeTo * GIB <= project.volume_bytes) return;
+		if (await onResize(resizeTo * GIB)) closeResize();
+	}
+
+	/** Grows the volume; true when the resize panel should close. */
 	async function onResize(bytes: number): Promise<boolean> {
 		opBusy = 'resize';
 		try {
@@ -520,6 +574,12 @@
 				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
 					{opBusy === 'start' ? 'Starting…' : 'Start'}
 				</button>
+			{:else if project?.state === 'error'}
+				<!-- POST /start restarts a machine in error on its newest
+				     configuration (lifecycle.md). -->
+				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
+					{opBusy === 'start' ? 'Restarting…' : 'Restart'}
+				</button>
 			{:else if project?.state === 'running'}
 				<!-- Below sm the check sits under Stop; from sm up beside it. -->
 				<div class="flex flex-col-reverse items-start gap-1 sm:flex-row sm:items-center sm:gap-4">
@@ -554,6 +614,11 @@
 			{#if project.state === 'running'}
 				<span aria-hidden="true">·</span>
 				<span class="tabular-nums">up {uptime(project.started_at)}</span>
+			{/if}
+			{#if project.expires_at}
+				<span aria-hidden="true">·</span>
+				<span class="badge" data-testid="project-temporary">temporary</span>
+				<span class="whitespace-nowrap tabular-nums">{tempLeft(project.expires_at)}</span>
 			{/if}
 		</p>
 
@@ -608,32 +673,38 @@
 			<div class="banner banner--warn mt-4">No capacity right now, try again in a few minutes.</div>
 		{/if}
 
-		<!-- Two columns from lg: the work (questions, events) on the left,
-		     how to reach the machine and what it uses (connect, machine) on
-		     the right, the two about the same height. Below lg the wrappers
-		     step aside (display: contents) and one column orders the cards
-		     by what a phone visit is for. Each card's title is an h2 at the
-		     one h2 size every dashboard page uses (text-xl). -->
+		<!-- Questions run across the frame, and only while there are any:
+		     their count changes, so they never sit in a column (I-680).
+		     empty:hidden: with no question the card renders nothing, and the
+		     empty cell would add a gap. One wrapper either way, so the card
+		     keeps its "Answered" line when the last question goes. -->
+		<div class="mt-6 min-w-0 empty:hidden">
+			<QuestionsCard projectId={id} {pollFailures} bind:questions />
+		</div>
+
+		<!-- Each card is as tall as its content; the columns line up by what
+		     they hold (I-680). From lg two columns: Events on the left,
+		     Connect then Machine on the right (about 560 against 510px with
+		     a full page of events). From md Connect and Machine pair over
+		     Events. Below lg the right column's wrapper steps aside
+		     (display: contents), and a phone orders the cards by what a
+		     visit is for: Connect, Events, Machine. Each card's title is an
+		     h2 at the one h2 size every dashboard page uses (text-xl). -->
 		<div
-			class="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-stretch"
+			class="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
 		>
-			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
-				<!-- empty:hidden: with no question the card renders nothing, and
-				     an empty cell would add a gap. One wrapper either way, so the
-				     card keeps its "Answered" line when the last question goes. -->
-				<div class="order-1 min-w-0 empty:hidden lg:order-none">
-					<QuestionsCard projectId={id} {pollFailures} bind:questions />
-				</div>
-				<div class="order-3 min-w-0 lg:order-none lg:flex-1 lg:*:h-full">
-					<EventsCard projectId={id} initial={firstEvents} {pollFailures} />
-				</div>
+			<div class="order-2 min-w-0 md:order-3 md:col-span-2 lg:order-none lg:col-span-1">
+				<EventsCard projectId={id} initial={firstEvents} {pollFailures} />
 			</div>
 
 			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
-				<section class="card order-2 min-w-0 lg:order-none" aria-labelledby="connect-title">
+				<section class="card order-1 min-w-0 lg:order-none" aria-labelledby="connect-title">
 					<h2 id="connect-title" class="text-xl font-semibold">Connect</h2>
 					<div class="mt-4 space-y-2">
-						<CodeCopy command="repose run" what="repose run, from the checkout" />
+						{#if project.remote_url}
+							<!-- A temporary project has no checkout to run in. -->
+							<CodeCopy command="repose run" what="repose run, from the checkout" />
+						{/if}
 						<CodeCopy command="ssh {project.slug}.repose" what="the ssh command" />
 						<CodeCopy command="repose code {project.slug}" what="the repose code command" />
 					</div>
@@ -645,23 +716,77 @@
 						</p>
 					{/if}
 				</section>
-				<!-- The Machine card takes what the column has left, so the two
-				     columns end on one line (I-679). -->
-				<div class="order-6 min-w-0 lg:order-none lg:flex-1 lg:*:h-full">
+				<div class="order-3 min-w-0 md:order-2 lg:order-none">
 					<MachineCard
 						{project}
 						memUsed={memNow}
 						memTotal={samples?.memory_bytes}
 						busy={!!opBusy}
-						resizing={opBusy === 'resize'}
-						onresize={onResize}
+						resizeOpen={showResize}
+						onresizetoggle={toggleResize}
 					/>
 				</div>
 			</div>
+
+			{#if showResize}
+				<!-- Under the row that holds Machine, across the frame; from md
+				     the row under Connect and Machine, on a phone under Machine.
+				     The select takes focus, and Cancel gives it back to
+				     Resize…. From 40rem the sentence sits left and the form
+				     right, as in Destroy; narrower, they stack (I-680). -->
+				<section
+					id="resize-panel"
+					class="card @container order-3 min-w-0 md:order-2 md:col-span-2 lg:order-none"
+					aria-labelledby="resize-title"
+					bind:this={resizePanel}
+				>
+					<div
+						class="flex flex-col gap-4 @min-[40rem]:flex-row @min-[40rem]:items-start @min-[40rem]:justify-between @min-[40rem]:gap-10"
+					>
+						<div class="min-w-0">
+							<h2 id="resize-title" class="text-xl font-semibold">Resize the disk</h2>
+							<p class="mt-1 text-sm text-ink-muted tabular-nums">
+								It is {gb(project.volume_bytes)} now. Disks can't shrink.
+							</p>
+						</div>
+						<form
+							class="@container min-w-0 @min-[40rem]:w-[26rem] @min-[40rem]:shrink-0"
+							onsubmit={(e) => {
+								e.preventDefault();
+								void submitResize();
+							}}
+						>
+							<label for="resize-to" class="block text-sm text-ink-muted">Grow to</label>
+							<div class="mt-1.5 flex flex-wrap items-center gap-2">
+								<select
+									id="resize-to"
+									class="field min-w-0 max-w-[32rem] flex-[1_1_8rem] tabular-nums"
+									bind:value={resizeTo}
+									use:focusOnMount
+								>
+									{#each largerSizes as s (s)}
+										<option value={s}>{s} GB</option>
+									{/each}
+								</select>
+								<div class="flex shrink-0 items-center gap-2">
+									<button
+										type="submit"
+										class="btn-quiet"
+										disabled={!!opBusy || resizeTo === undefined}
+									>
+										{opBusy === 'resize' ? 'Resizing…' : 'Grow'}
+									</button>
+									<button type="button" class="btn-ghost" onclick={closeResize}>Cancel</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</section>
+			{/if}
 		</div>
 
-		<!-- Usage spans the frame under both columns: the charts read best
-		     wide, and the work and the machine above stay side by side (I-679). -->
+		<!-- Usage spans the frame between the two rows: the charts read best
+		     wide (I-679). -->
 		<section class="card mt-6 min-w-0" data-testid="usage-card" aria-labelledby="usage-title">
 			<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
 				<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
@@ -743,7 +868,7 @@
 							Busiest processes
 							<span class="procs-n">{samples.procs.length}</span>
 						</summary>
-						<table class="table mt-2 w-full text-sm">
+						<table class="table mt-2 w-full max-w-2xl text-sm">
 							<thead>
 								<tr>
 									<th scope="col" class="text-left">Process</th>
@@ -775,16 +900,20 @@
 			{/if}
 		</section>
 
-		<!-- What the machine is doing and holding, in one row of three from
-		     lg, under the charts (I-679): the two columns above stay level. -->
-		<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-			<div class="min-w-0 *:h-full">
-				<AgentsCard signals={project.signals} {questions} updated={lastUpdated} />
-			</div>
-			<div class="min-w-0 *:h-full">
-				<DetailsList {project} {revision} />
-			</div>
-			<div class="min-w-0 *:h-full">
+		<!-- Snapshots take the wide column, since a row opens its restore
+		     form under it and a form needs room (I-680); Agents, while the
+		     machine runs, then Details on the right. With no snapshot yet
+		     the list has no form to open, and a running machine's three
+		     short cards share one row of three. From md the cards pair,
+		     and one left without a partner spans both columns. -->
+		{@const running = project.state === 'running'}
+		{@const anySnapshot = snapshots.length > 0}
+		<div
+			class="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2 {running && !anySnapshot
+				? 'lg:grid-cols-3'
+				: 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}"
+		>
+			<div class="min-w-0 {anySnapshot ? 'md:col-span-2 lg:col-span-1' : ''}">
 				<SnapshotsTable
 					{project}
 					{snapshots}
@@ -794,6 +923,20 @@
 					oncreate={onCreateSnapshot}
 					onrestore={onRestore}
 				/>
+			</div>
+			<div
+				class={running && !anySnapshot
+					? 'contents'
+					: 'contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6'}
+			>
+				{#if running}
+					<div class="min-w-0">
+						<AgentsCard signals={project.signals} {questions} updated={lastUpdated} />
+					</div>
+				{/if}
+				<div class="min-w-0 {running !== anySnapshot ? 'md:col-span-2 lg:col-span-1' : ''}">
+					<DetailsList {project} {revision} />
+				</div>
 			</div>
 		</div>
 

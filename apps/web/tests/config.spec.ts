@@ -165,4 +165,7 @@ test('at lg the revisions sit in a rail beside the editor', async ({ page }) => 
 	const revisions = await page.getByRole('heading', { name: 'Revisions' }).boundingBox();
 	expect(revisions!.x).toBeGreaterThan(editor!.x + editor!.width);
 	expect(revisions!.x + 300).toBeGreaterThanOrEqual(1200);
+	// The editor is the page's subject: it opens with room to write in
+	// (28rem) even for an empty fragment.
+	expect((await page.locator('.nix-editor').boundingBox())!.height).toBeGreaterThanOrEqual(440);
 });
