@@ -382,6 +382,10 @@ type worker struct {
 type Manager struct {
 	cfg  Config
 	d    Deps
+	// cutFreeze, in tests, ends a freeze as a hostd killed at that point
+	// would: after the snapshot and the hypervisor's exit, before the
+	// image is closed. Nil outside tests.
+	cutFreeze func(guestID string) bool
 	ctx  context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup

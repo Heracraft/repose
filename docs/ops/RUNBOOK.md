@@ -1439,7 +1439,10 @@ Checks:
 - A guest still paused after a freeze that did not finish (hostd killed
   mid-freeze, or `freeze failed and the guest did not resume` in the
   journal): the image and its `writing` record are kept; `hostd thaw`, or
-  hostd's next start, resumes the guest and then removes them.
+  hostd's next start, resumes the guest and then removes them. hostd
+  killed after a guest's snapshot, with its hypervisor already stopped,
+  leaves a `written` record: the next start finishes the freeze and
+  restores the guest (`freeze finished after hostd restarted`).
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
   restore. `dmsetup ls | grep repose-frz` is empty except during a freeze

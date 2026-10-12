@@ -757,3 +757,52 @@ func TestFreezeStartsSmallestFirst(t *testing.T) {
 		}
 	}
 }
+
+// hostd killed after a guest's snapshot finished and its hypervisor
+// exited, before the image was closed (host-stg-01, 2026-10-12: kill -9
+// 38 s into a freeze of 4 guests): the image is whole, so the next start
+// restores the guest from it rather than leaving it stopped with its
+// memory gone.
+func TestKilledAfterTheSnapshotRestoresTheGuest(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	fh.m.cutFreeze = func(string) bool { return true }
+	fh.m.FreezeAll(context.Background(), FreezeOperator)
+	fh.m.cutFreeze = nil
+	if fh.unitActive(gid1) {
+		t.Fatal("hypervisor still running at the cut")
+	}
+	res := fh.m.ThawAll(context.Background())
+	if len(res) != 1 || !res[0].OK {
+		t.Fatalf("thaw after a kill past the snapshot: %+v", res)
+	}
+	if !fh.unitActive(gid1) || fh.guest(gid1).State != StateRunning {
+		t.Fatal("guest not running after the thaw")
+	}
+	if argv := strings.Join(fh.unitArgv(gid1), " "); !strings.Contains(argv, "--restore source_url=file://") {
+		t.Fatalf("hypervisor started with %q, want a restore", argv)
+	}
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("image or record left after the restore")
+	}
+}
+
+// Killed before the snapshot finished, the image is never trusted: the
+// guest's hypervisor is gone with it only if hostd stopped it, which it
+// does after the snapshot; before that the guest is resumed (above).
+func TestKilledMidSnapshotNeverRestores(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	if err := fh.m.records().Put(&freeze.Record{GuestID: gid1, State: freeze.StateWriting, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	fh.img.vols[gid1] = "x"
+	fh.sd.Exit(GuestUnit(gid1), 0)
+	res := fh.m.ThawAll(context.Background())
+	if len(res) != 1 || res[0].OK || res[0].Reason != "image incomplete" {
+		t.Fatalf("thaw of an image cut mid-snapshot: %+v", res)
+	}
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("broken image kept")
+	}
+}

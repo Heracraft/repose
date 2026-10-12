@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"sort"
@@ -556,6 +557,17 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		return fail("snapshot failed", err)
 	}
 	snapMs := m.d.Now().Sub(pausedAt).Milliseconds()
+	// The image is whole once it is on disk: recorded as such, a hostd
+	// killed from here on (before the close below) leaves an image the
+	// next start can finish and restore rather than discard.
+	if err := syncDir(m.snapDir(id)); err != nil {
+		m.log(g).Warn("image not synced after the snapshot", "event", "guest_freeze", "err", err.Error())
+	} else {
+		rec.State = freeze.StateWritten
+		if err := recs.Put(rec); err != nil {
+			m.log(g).Warn("record not marked written", "event", "guest_freeze", "err", err.Error())
+		}
+	}
 	// The image is written; the rest (end the hypervisor, close the image,
 	// mark the record) runs to the end even if the deadline has passed,
 	// so the record never says less than what happened.
@@ -582,6 +594,10 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		stopConsole()
 	}
 	m.teardown(ctx, g)
+	if m.cutFreeze != nil && m.cutFreeze(id) {
+		res.Reason = "cut"
+		return res
+	}
 
 	if m.d.Freeze.Fingerprint != nil {
 		fp, err := m.d.Freeze.Fingerprint(m.d.LVM.DevPath(VolumeName(id)))
@@ -839,6 +855,11 @@ func (m *Manager) prepareThaw(ctx, uctx context.Context, id string) (*thawPrep, 
 		}
 		return discard("guest already running")
 	}
+	if gerr == nil && rec.State == freeze.StateWritten && m.FreezeEnabled() {
+		if why := m.finishWrittenImage(ctx, g, rec); why != "" {
+			return discard(why)
+		}
+	}
 	switch {
 	case gerr != nil:
 		return discard("guest no longer on this host")
@@ -889,6 +910,50 @@ func (m *Manager) prepareThaw(ctx, uctx context.Context, id string) (*thawPrep, 
 		return discard("image key does not match")
 	}
 	return &thawPrep{g: g, rec: rec, key: key, start: start}, FreezeResult{}
+}
+
+// finishWrittenImage does what a freeze killed after its snapshot did
+// not: the hypervisor is gone (checked by the caller), so the guest's
+// leftovers go, the volume is fingerprinted (nothing wrote to it since the
+// pause), the image is closed and the record marked complete. It returns
+// why the image cannot be used, or "".
+func (m *Manager) finishWrittenImage(ctx context.Context, g *state.Guest, rec *freeze.Record) string {
+	id := g.GuestID
+	m.teardown(ctx, g)
+	if rec.ImageBytes == 0 {
+		rec.ImageBytes = m.imageBytes(m.snapDir(id))
+	}
+	if err := m.d.Freeze.Image.Close(ctx, id, m.imageMount(id)); err != nil {
+		m.log(g).Warn("image not closed", "event", "guest_thaw", "err", err.Error())
+		return "image not closed"
+	}
+	if m.d.Freeze.Fingerprint == nil {
+		return "no volume fingerprint"
+	}
+	if err := m.d.LVM.Activate(ctx, VolumeName(id)); err != nil {
+		return "guest volume unavailable"
+	}
+	fp, err := m.d.Freeze.Fingerprint(m.d.LVM.DevPath(VolumeName(id)))
+	if err != nil {
+		return "no volume fingerprint"
+	}
+	rec.Fingerprint = fp
+	rec.State, rec.DoneAt = freeze.StateComplete, m.d.Now().UTC()
+	if err := m.records().Put(rec); err != nil {
+		return "record not written"
+	}
+	m.log(g).Info("freeze finished after hostd restarted", "event", "guest_thaw")
+	return ""
+}
+
+// syncDir flushes the filesystem holding dir (syncfs).
+func syncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close() //nolint:errcheck // read-only handle
+	return unix.Syncfs(int(f.Fd()))
 }
 
 // thawGuest restores one checked image, or discards it.

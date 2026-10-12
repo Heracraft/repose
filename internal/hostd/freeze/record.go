@@ -16,6 +16,13 @@ const (
 	// into it. Found at start, it is an image a power cut or crash broke:
 	// it is discarded and never restored.
 	StateWriting = "writing"
+	// StateWritten: the snapshot finished and the image is on disk
+	// (synced); the hypervisor may still run, paused, and the guest
+	// volume's fingerprint is not taken yet. Found at start with the
+	// hypervisor gone (hostd killed between the snapshot and the close),
+	// the freeze is finished there and the image restored; with the
+	// hypervisor still there, the guest is resumed instead.
+	StateWritten = "written"
 	// StateComplete: the snapshot finished, the hypervisor is gone and the
 	// image is closed. Restored at the next start of hostd.
 	StateComplete = "complete"

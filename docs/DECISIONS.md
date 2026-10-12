@@ -18847,7 +18847,17 @@ do not feel it"); off until the owner turns it on per host
   answers nothing) and only then removes the image; if it never answers,
   record and image stay for the next try rather than being removed under
   it. A snapshot that fails and whose resume does not take leaves the
-  same `writing` record.
+  same `writing` record. Once the snapshot has returned, the image is
+  synced (syncfs) and the record says `written`: a hostd killed after
+  that, when it had already stopped the hypervisor, would otherwise
+  leave a whole image discarded as incomplete and the guest stopped with
+  its memory gone (host-stg-01, 2026-10-12, a kill -9 38 s into a freeze
+  of four guests). The next start finishes that freeze instead (leftover
+  units, the close, the volume's fingerprint, which nothing can have
+  changed since the pause) and restores the guest; a `written` image
+  whose hypervisor still runs is resumed like a `writing` one. Guests
+  are snapshotted smallest first, with the two slots taken in that order
+  (the goroutines used to race for them, and the largest won).
 - *Fallback.* A failed freeze resumes the guest (it never notices) and
   leaves it to the shutdown: I-650's clean stop when that lands, the kill
   until then. A failed restore stops what it started and discards the
