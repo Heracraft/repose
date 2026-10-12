@@ -20648,3 +20648,79 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-688. A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504.**
+
+The owner: "Everytime claude finishes its turn even when its not done done ... repose reports it and pings me as if it is done done." Prod, 7 days to 2026-10-12: 326 of 399 notifying events (81.7%) were Claude turn ends, and 856 of 958 Claude `completed` summaries in 30 days were the fallback "claude finished".
+
+- A hook-reported or heuristic `completed` (Claude `Stop`, codex `agent-turn-complete`, opencode `session.idle`/`execution.succeeded`, herdr completions, the tmux-idle heuristic) is recorded as an event and sets the agent's state, and queues no delivery. `completed` leaves the api's notifying kinds.
+- New guest kind `agent_done`, sent by `repose-notify --done TEXT` (1 KB, like a message). Title `<project>: <agent> is done`, ntfy priority 4, never deduped, counted in the hourly cap like `agent_message`. hostd and the api accept it; an older hostd that refuses the kind makes guestd fall back to sending the same text as `agent_message`, so the report still arrives.
+- Claude's `Stop` payload (Claude Code 2.1.x) carries `last_assistant_message`, `background_tasks`, `session_crons` and `stop_hook_active`. The summary is `last_assistant_message` (the transcript tail stays as the fallback). A `Stop` with `stop_hook_active` true, or with a running or pending background task, is a pause: the agent stays `working` and no event is written.
+- The machine guide (`nix/guest/base/agent-guide.md`) stops promising a notification at every finish. It tells the agent: a finished turn notifies nobody; run `repose-notify --done "WHAT, AND WHERE TO LOOK"` once when work the user asked for is complete and they should look at it, never while background work is still running or while the user is typing to you.
+- `needs_input` (a permission prompt) and `error` keep notifying, under I-689's hold.
+- Rejected: keeping turn-end notifications behind a setting. Nobody wants a ping per turn, and a setting nobody turns on is a second code path to keep correct.
+
+**I-689. Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12).**
+
+The owner: "We might as well not have questions then, or only have them when the user is not attached."
+
+- Present means the project's latest guest sample, no older than 2 minutes, shows a tmux client or an SSH session (`meter_samples.tmux_clients + ssh_sessions > 0`; a laptop herdr bridge is an SSH session, I-511).
+- Agent kinds (`agent_question`, `agent_done`, `agent_message`, `needs_input`, `error`) queued while the owner is present are held: the outbox worker checks presence at send time and moves `next_at` on by 1 minute without counting an attempt, for at most 10 minutes from the event, then sends. A held row is dropped instead of sent when what it reports is over: a question that is no longer pending, or a `needs_input` followed by a later event from the same agent window. Platform and account kinds are never held.
+- The hold is recorded on the event's `delivered` as `held` while it waits and `dropped: resolved` when dropped, so the "I got nothing" question has an answer.
+
+**I-690. A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445.**
+
+Cause, verified on kanali: Claude Code's Bash tool moves a command past its timeout (2 minutes by default) into the background and lets it run. `repose-ask` waits 30 minutes, so the agent asks again in the chat, the owner answers there, and the question stays pending with "expires in 11m".
+
+- Claude's `UserPromptSubmit` hook is installed beside `Notification` and `Stop`. It maps to the socket kind `prompt`, which never leaves the guest and never reads the prompt text. On it guestd closes every open question asked from inside the same agent process (the nearest agent ancestor of the hook's and of `repose-ask`'s SO_PEERCRED pid, keyed `pid:starttime`; the window when no ancestor is found), with reason `terminal`, and sets that agent `working`. The other agents get the same hook where their shipped binary is shown to fire one (codex `UserPromptSubmit`, gemini `BeforeAgent`, pi `input`, opencode's user message); one not shown stays on withdrawal and the sweep.
+- `repose-ask --cancel` withdraws the caller's own open questions, `--cancel ID` one, `--cancel --all` every open one in the guest (reason `withdrawn`). It prints how many it closed.
+- guestd records the last poll of each open question and closes one nobody has polled for 90 seconds (reason `asker_gone`), which covers a killed asker.
+- The close travels as the existing guest-side close with a new `reason` (`Question.reason = 8` on vsock, `AgentQuestion.reason = 9` on hostd's channel; values `terminal|withdrawn|interrupted|asker_gone`). An older hostd drops the field and the api sees a plain cancel. hostd's per-guest bucket no longer drops a close, and guestd re-announces closes the api has not acknowledged, alongside open questions.
+- The api stores `terminal` as `answered` with `answer` null and `answered_via='terminal'`, and `withdrawn` as `cancelled` with `answered_via='agent'`. `Describe` says "answered in the terminal" and "withdrawn by the agent". A held delivery of that question is dropped (I-689).
+- `repose-ask` exits 6 on `terminal` ("the user answered in the terminal"), 5 on `withdrawn` as on any cancel.
+- `repose reply --dismiss [PROJECT]` dismisses from the laptop; the api route already existed.
+- Accepted cost: any prompt to that agent closes its open questions, even one unrelated to them. The owner is at the agent, which can ask in the chat.
+
+**I-691. Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6.**
+
+- The 30-an-hour cap counted `events_outbox` rows, which are deleted once sent, so it never fired (0 `notifications_paused` in prod). It now counts the project's events of notifying kinds in the last hour that queued a delivery, and the pause message says when it lifts as a time, not "the top of the hour".
+- Sends run on up to 8 workers, each channel's rows in order, so a hanging ntfy server delays its own rows only.
+- Resend gets `Idempotency-Key: <event id>/<channel>`, so a timeout or a failed mark after a send cannot mail twice.
+- `events.delivered` stores the short reason from `sendFailure`, never `err.Error()`, which for a network error contains the full URL (an ntfy topic, a Chat webhook's key and token) and is returned by `GET /projects/:id/events`.
+- Turning a channel off also deletes its queued user notices (`machines_restarted`), not only project events.
+- `POST /me/notify-test` is limited to 6 a minute per user, and its message is its own kind of test, titled `repose: test`.
+- The ntfy click opens the project's page, not `/projects`. No ntfy tag carries an emoji: tags are dropped, and priority says urgency (5 question, 4 done or failure, 3 message).
+- A Prometheus rule `NotifyFailing` pages when `repose_api_notify_total{result="failed"}` rises for 10 minutes or the outbox lag passes 5 minutes.
+
+**I-692. Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444.**
+
+The owner prefers email and Google Chat.
+
+- Channel name `gchat` in the outbox, `delivered`, `answered_via`, the CLI flag (`repose notify set --gchat URL|off`) and JSON; "Google Chat" in prose. Migration 0023 adds `users.gchat_url` and `users.gchat_broken_at`.
+- The URL must be `https://chat.googleapis.com/v1/spaces/<id>/messages?key=..&token=..` and is stored in that canonical form. It is a credential: never logged (the logger's deny list gains `gchat_url` and `webhook`), never echoed. `GET /me` returns `notify.gchat: null | {space, broken_at}`; the CLI and the dashboard show the space id.
+- A message is one `cardsV2` card plus `fallbackText`, no emoji: a header with the project and `<agent> asks|is done|says|...`, the tenant text escaped in a `textParagraph`, and `openLink` buttons: one per option to the signed reply link (a GET shows the confirm page, only the POST answers, so a link preview cannot answer), else "Open project". Each message starts its own thread (`threadKey` per event), since a reply in a thread the owner does not follow may not alert. When a question closes, a reply in its thread says how ("Answered in the terminal", "Answered yes from the dashboard").
+- Sends to one space are at least 1.1 s apart; 429 and 5xx retry. 401, 403 and 404 mark the channel broken once (`gchat_broken_at`) and send one account email of the new kind `notify_channel_broken`; delivery to it stops until a new URL is saved or a test succeeds.
+- Incoming webhooks need a Google Workspace account; the docs say so.
+
+**I-693. Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680.**
+
+The owner: "absolutely fucking ugly". Captured at 1440 and 390: a blue 3px rule on each row inside a bordered card, 18px unclamped text at about 150 characters a line, mono "claude asks in shell", a red underlined "Cancel question", a 320px input, and two components that print the same expiry differently ("expires in 11m", "expires in less than an hour").
+
+- One `QuestionRow` component on /projects and on the project page. The card is titled "Waiting on you" with a `.badge--warn` count, rows split by hairlines, and one amber square marker per row (amber is "waits on you"; blue stays links, focus and measures). No left rule.
+- A row: a 13px meta line, the agent in mono and the window in muted sans, "asked 3m ago" right-aligned and nowrap; the expiry appears only in its last 10 minutes, in amber. The question at `text-sm`/`text-base`, at most about 80 characters a line, clamped to 3 lines (4 on a phone) with "Show all" only when it is clamped. Options are `.btn-quiet .btn--sm` chips; a free answer is a field that grows to 4 lines, Enter sends, Shift+Enter breaks a line, with a quiet "Send". "Dismiss" is a muted ghost button, not red.
+- /projects answers in place, grouped by project when more than one project waits; 3 rows show before "Show all N". On a project page several questions from one agent window show the newest open and the older ones folded to one line.
+- An answered row collapses for 8 seconds to one line saying the answer and where it came from ("Answered in the terminal", "Answered yes by email"), then leaves.
+- The Events card keeps question rows; the Agents card and the projects table keep their `question` badge.
+
+**I-694. The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614.**
+
+The owner, after `repose stop obsidian` asked about "shell (working)" when only a dev server was running: "do we have a way to distinguish active work when we can say confidently agent claude working or not."
+
+- An agent with turn hooks (Claude, codex, opencode, and any agent I-690 gives a prompt hook) is `working` from its prompt to the end of a turn with no background task running, `needs input` on a permission prompt, and `idle` after. Those states come from hooks only.
+- CPU use in a pane no longer makes a shell `working`. A plain shell window is not an agent and is left out of the agents list, `repose ls`'s AGENTS column and `stop`'s question. A heuristic-only agent shows `running` (its process is alive) instead of `working` or `idle`.
+- `repose stop` asks before ending a machine only when a hooked agent is `working` or `needs input`.
+
+**I-695. What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12).**
+
+- ntfy notifications are not updated or withdrawn when a question closes (`X-Sequence-ID` needs a recent ntfy server; not verified against ntfy.sh).
+- The Chat webhook's answers to `requestId`, and the status a deleted webhook returns, are taken from Google's docs and not from a live deleted webhook.
