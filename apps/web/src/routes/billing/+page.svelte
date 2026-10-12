@@ -32,8 +32,8 @@
 	import { fromApi, ordinal, type PlanFigures } from '$lib/plans';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
-	import Units from '$lib/components/landing/Units.svelte';
-	import Meter from '$lib/components/Meter.svelte';
+	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import UsageRing from '$lib/components/UsageRing.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { Billing, Invoice, Me, Plan, PlanId, Project, Subscription } from '$lib/api/types';
@@ -97,7 +97,10 @@
 			.sort((a, b) => (b.root_used_bytes ?? 0) - (a.root_used_bytes ?? 0))
 			.slice(0, 3)
 	);
+	/** "kanali 30 GB, landing-site 12 GB": the largest few, for a note. */
+	const most = (rows: string[][]) => rows.map(([n, v]) => `${n} ${v}`).join(', ');
 	let projectName = $derived(new Map(projects.map((p) => [p.id, p.name])));
+	let egOver = $derived(!!billing && billing.usage.egress_gb > billing.usage.egress_included_gb);
 	let period = $derived(sub ? periodDays(sub) : undefined);
 	/** The first charges are the introductory price (I-497): the big figure is what is charged next. */
 	let introCharge = $derived(
@@ -560,10 +563,7 @@
 			     subscriber comes here to do. -->
 			<div class="plan-head">
 				<div class="min-w-0">
-					<div class="flex items-center gap-3">
-						<h2 class="plan-name">{plan.name}</h2>
-						<span class="flex" aria-hidden="true"><Units count={plan.memory_gb} /></span>
-					</div>
+					<h2 class="plan-name">{plan.name}</h2>
 					<p class="plan-price">
 						<span class="n">{price(introCharge ? sub.next_charge_cents! : plan.price_cents)}</span>
 						<span class="per">/ month</span>
@@ -591,7 +591,7 @@
 						{/if}
 					</p>
 				</div>
-				<div class="flex flex-wrap items-center gap-2">
+				<div class="plan-actions">
 					{#if sub.cancel_at}
 						<button type="button" id="resume-plan" class="btn" disabled={!!busy} onclick={resume}>
 							{busy === 'resume' ? 'Resuming…' : 'Resume plan'}
@@ -609,8 +609,15 @@
 							}}>Change plan</button
 						>
 					{/if}
-					<button type="button" class="btn-quiet" disabled={!!busy} onclick={() => openPortal()}
-						>{busy === 'portal' ? 'Opening…' : 'Manage card and receipts'}</button
+					<button
+						type="button"
+						class="btn-quiet"
+						disabled={!!busy}
+						onclick={() => openPortal()}
+						aria-label={busy === 'portal' ? undefined : 'Manage card and receipts'}
+						>{#if busy === 'portal'}Opening…{:else}<span class="max-sm:hidden"
+								>Manage card and receipts</span
+							><span class="sm:hidden">Card and receipts</span>{/if}</button
 					>
 				</div>
 			</div>
@@ -637,123 +644,138 @@
 				</div>
 			{/if}
 
-			<!-- What the plan is holding now, and the period it is billed for. -->
-			<div class="plan-body">
-				<div class="meters">
-					<div>
-						<Meter
-							label="Running now"
-							used={billing.usage.running_gb}
-							limit={billing.usage.memory_gb}
-							format={gbs}
-							note={runsAtOnce(plan)}
-						/>
-						{#if running.length}
-							<ul class="breakdown" aria-label="Running now">
-								{#each running as p (p.id)}
-									<li>
-										<a href={resolve('/projects/[id]', { id: p.id })} class="hover:underline"
-											>{p.name}</a
-										>
-										<span>{p.class} · {classMemoryGB(p.class)} GB</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
+			<!-- What the plan is holding now (I-674): memory as the plan's own
+			     squares, filled by each running machine; disk and egress as a
+			     figure with a small ring. Then the period it is billed for. -->
+			<div class="usage">
+				<div class="mem" data-testid="meter-running-now">
+					<div class="u-head">
+						<span class="u-label">Running now</span>
+						<span class="u-fig" class:u-over={billing.usage.running_gb > billing.usage.memory_gb}
+							>{gbs(billing.usage.running_gb)}<span class="u-of">
+								of {gbs(
+									billing.usage.memory_gb
+								)}{#if billing.usage.running_gb > billing.usage.memory_gb}&nbsp;· over{/if}</span
+							></span
+						>
 					</div>
-					<div>
-						<Meter
+					<div class="mem-pic">
+						<MemoryBlocks
+							label="Running now"
+							segments={running.map((p) => ({ name: p.name, gb: classMemoryGB(p.class) }))}
+							limit={billing.usage.memory_gb}
+						/>
+					</div>
+					{#if running.length}
+						<ul class="legend" aria-label="Running now">
+							{#each running as p, i (p.id)}
+								<li>
+									<i class="sw" class:sw--alt={i % 2 === 1} aria-hidden="true"></i>
+									<a href={resolve('/projects/[id]', { id: p.id })} class="hover:underline"
+										>{p.name}</a
+									>
+									<span class="u-num">{classMemoryGB(p.class)} GB</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<p class="u-note">{runsAtOnce(plan)}</p>
+				</div>
+
+				<div class="u-rows">
+					<div class="u-row" data-testid="meter-disk-held">
+						<UsageRing
 							label="Disk held"
 							used={diskHeld}
 							limit={billing.usage.disk_gb}
 							format={gbs}
-							note={diskHeld > billing.usage.disk_gb
-								? 'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less. A deleted file stops counting within a day, or when its machine stops.'
-								: undefined}
 						/>
-						{#if heaviest.length}
-							<ul class="breakdown" aria-label="Most disk">
-								{#each heaviest as p (p.id)}
-									<li>
-										<a href={resolve('/projects/[id]', { id: p.id })} class="hover:underline"
-											>{p.name}</a
-										>
-										<span>{gb(p.root_used_bytes ?? 0)}</span>
-									</li>
-								{/each}
-							</ul>
+						<span class="u-label">Disk held</span>
+						<span class="u-fig" class:u-over={diskHeld > billing.usage.disk_gb}
+							>{gbs(diskHeld)}<span class="u-of">
+								of {gbs(billing.usage.disk_gb)}{#if diskHeld > billing.usage.disk_gb}&nbsp;· over{/if}</span
+							></span
+						>
+						{#if diskHeld > billing.usage.disk_gb}
+							<p class="u-note u-note--warn">
+								Creating, restoring and forking projects, and growing a disk, are refused until your
+								projects hold less. A deleted file stops counting within a day, or when its machine
+								stops.
+							</p>
+						{:else if heaviest.length && diskHeld >= billing.usage.disk_gb * 0.8}
+							<!-- Who holds it, only once it nears the limit. -->
+							<p class="u-note">
+								Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}
+							</p>
 						{/if}
 					</div>
-					<div>
-						<Meter
+					<div class="u-row" data-testid="meter-egress-this-period">
+						<UsageRing
 							label="Egress this period"
 							used={billing.usage.egress_gb}
 							limit={billing.usage.egress_included_gb}
 							format={egressFigure}
-							marker={period?.elapsed}
-							markerLabel={period ? `Day ${period.day} of ${period.of}` : undefined}
-							note={billing.usage.overage_cents > 0
-								? `Over by ${gbs(billing.usage.egress_gb - billing.usage.egress_included_gb)}: ${money(billing.usage.overage_cents)} on the next invoice at $0.05 a GB.`
-								: undefined}
 						/>
-						{#if egressBy.length}
-							<ul class="breakdown" aria-label="Most egress">
-								{#each egressBy as e (e.id)}
-									<li>
-										{#if projectName.get(e.id)}
-											<a href={resolve('/projects/[id]', { id: e.id })} class="hover:underline"
-												>{projectName.get(e.id)}</a
-											>
-										{:else}
-											<span class="text-ink-muted">A destroyed project</span>
-										{/if}
-										<span>{gbs(Math.round(e.gb * 10) / 10)}</span>
-									</li>
-								{/each}
-							</ul>
+						<span class="u-label">Egress this period</span>
+						<span class="u-fig" class:u-over={egOver}
+							>{egressFigure(billing.usage.egress_gb)}<span class="u-of">
+								of {egressFigure(billing.usage.egress_included_gb)}{#if egOver}&nbsp;· over{/if}</span
+							></span
+						>
+						{#if billing.usage.overage_cents > 0}
+							<p class="u-note u-note--warn">
+								Over by {gbs(billing.usage.egress_gb - billing.usage.egress_included_gb)}: {money(
+									billing.usage.overage_cents
+								)} on the next invoice at $0.05 a GB.
+							</p>
+						{:else if egressBy.length && billing.usage.egress_gb >= billing.usage.egress_included_gb * 0.5}
+							<p class="u-note">
+								Most: {most(
+									egressBy.map((e) => [
+										projectName.get(e.id) ?? 'a destroyed project',
+										gbs(Math.round(e.gb * 10) / 10)
+									])
+								)}
+							</p>
 						{/if}
 					</div>
 				</div>
-
-				<dl class="facts">
-					{#if period}
-						<div>
-							<dt class="stat-label">Period</dt>
-							<dd class="fact-value">
-								{dateOnly(sub.period_start)} to {dateOnly(sub.period_end)}
-							</dd>
-							<dd class="stat-sub">Day {period.day} of {period.of}</dd>
-						</div>
-					{/if}
-					<div>
-						<dt class="stat-label">Next charge</dt>
-						{#if nextCharge(sub, plan)}
-							{@const next = nextCharge(sub, plan)!}
-							<dd class="stat-value" data-testid="next-charge">{money(next.cents)}</dd>
-							<dd class="stat-sub">
-								on {dateOnly(next.on)}{#if billing.usage.overage_cents > 0}, plus {money(
-										billing.usage.overage_cents
-									)} egress so far{/if}
-							</dd>
-						{:else}
-							<dd class="stat-value">None</dd>
-							{#if sub.cancel_at}<dd class="stat-sub">Plan ends {dateOnly(sub.cancel_at)}</dd>{/if}
-						{/if}
-					</div>
-					<div>
-						<dt class="stat-label">Latest invoice</dt>
-						{#if newest(invoices)}
-							{@const inv = newest(invoices)!}
-							<dd class="stat-value">{money(inv.amount_cents)}</dd>
-							<dd class="stat-sub">
-								{dateOnly(inv.created_at)} · {inv.status.replaceAll('_', ' ')}
-							</dd>
-						{:else}
-							<dd class="stat-value text-ink-muted">None yet</dd>
-						{/if}
-					</div>
-				</dl>
 			</div>
+
+			<dl class="facts">
+				{#if period}
+					<div>
+						<dt>Period</dt>
+						<dd>{dateOnly(sub.period_start)} to {dateOnly(sub.period_end)}</dd>
+						<dd class="fact-sub">Day {period.day} of {period.of}</dd>
+					</div>
+				{/if}
+				<div>
+					<dt>Next charge</dt>
+					{#if nextCharge(sub, plan)}
+						{@const next = nextCharge(sub, plan)!}
+						<dd>
+							<span data-testid="next-charge">{money(next.cents)}</span> on {dateOnly(next.on)}
+						</dd>
+						{#if billing.usage.overage_cents > 0}
+							<dd class="fact-sub">plus {money(billing.usage.overage_cents)} egress so far</dd>
+						{/if}
+					{:else}
+						<dd>None</dd>
+						{#if sub.cancel_at}<dd class="fact-sub">Plan ends {dateOnly(sub.cancel_at)}</dd>{/if}
+					{/if}
+				</div>
+				<div>
+					<dt>Latest invoice</dt>
+					{#if newest(invoices)}
+						{@const inv = newest(invoices)!}
+						<dd>{money(inv.amount_cents)}, {inv.status.replaceAll('_', ' ')}</dd>
+						<dd class="fact-sub">{dateOnly(inv.created_at)}</dd>
+					{:else}
+						<dd class="text-ink-muted">None yet</dd>
+					{/if}
+				</div>
+			</dl>
 
 			{#if !sub.cancel_at}
 				<div class="plan-foot">
@@ -954,18 +976,15 @@
 		letter-spacing: -0.01em;
 		text-transform: uppercase;
 	}
-	/* The price on the blue rule, as on the plan cells (I-663). */
 	.plan-price {
-		display: inline-flex;
+		display: flex;
 		align-items: baseline;
 		gap: 0.375rem;
-		margin-top: 1rem;
-		padding-top: 0.75rem;
-		background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 100% 3px;
+		margin-top: 0.625rem;
 	}
 	.plan-price .n {
 		font-family: var(--font-display);
-		font-size: 2.75rem;
+		font-size: 2rem;
 		font-weight: 700;
 		line-height: 1;
 		letter-spacing: -0.02em;
@@ -974,6 +993,25 @@
 	.plan-price .per {
 		font-size: 0.8125rem;
 		color: var(--ink-muted);
+	}
+	.plan-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	/* On a phone the two actions share one row at equal width, so they
+	   read as a pair, not a ragged stack. */
+	@media (width < 40rem) {
+		.plan-actions {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+			width: 100%;
+		}
+		.plan-actions > :global(button) {
+			width: 100%;
+			padding-inline: 0.5rem;
+		}
 	}
 	.plan-band,
 	.plan-foot {
@@ -986,60 +1024,150 @@
 	.plan-foot {
 		padding-block: 0.875rem;
 	}
-	.plan-body {
+
+	/* Usage: memory with its squares on the left, disk and egress as two
+	   quiet rows on the right. */
+	.usage {
 		display: grid;
 		border-top: 1px solid var(--rule);
 	}
-	.meters {
-		display: grid;
-		gap: 1.75rem;
+	.mem {
 		min-width: 0;
 		padding: 1.5rem;
 	}
-	.facts {
-		min-width: 0;
-		border-top: 1px solid var(--rule);
-	}
-	.facts > div {
-		padding: 1.125rem 1.5rem;
-	}
-	.facts > div + div {
-		border-top: 1px solid var(--rule);
-	}
-	.fact-value {
-		margin-top: 0.25rem;
-		font-size: 0.9375rem;
-		font-variant-numeric: tabular-nums;
-		color: var(--ink);
-	}
-	@media (min-width: 1024px) {
-		.plan-body {
-			grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-		}
-		.facts {
-			border-top: 0;
-			border-left: 1px solid var(--rule);
-		}
-	}
-	/* What makes up a meter's figure: the projects running, the largest
-	   disks, the most egress. Small rows under the bar. */
-	.breakdown {
-		margin-top: 0.75rem;
-		list-style: none;
-		font-size: 0.8125rem;
-	}
-	.breakdown li {
+	.u-head {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 1rem;
-		padding-block: 0.3125rem;
-		border-top: 1px solid var(--rule);
 	}
-	.breakdown li > span:last-child {
-		font-family: var(--font-mono);
+	.u-label {
+		white-space: nowrap;
+		font-size: var(--text-sm);
+		color: var(--ink-muted);
+	}
+	.u-fig {
+		font-size: 0.9375rem;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+	}
+	.mem .u-fig {
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.u-of {
+		margin-left: 0.25rem;
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+		font-weight: 400;
+		letter-spacing: 0;
 		color: var(--ink-muted);
+	}
+	.u-over .u-of {
+		color: var(--color-amber-800);
+	}
+	.mem-pic {
+		margin-top: 1rem;
+	}
+	.legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 1.25rem;
+		margin-top: 1rem;
+		list-style: none;
+		font-size: 0.8125rem;
+	}
+	.legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4375rem;
+	}
+	/* The swatch is a square of the picture, so the legend reads as part of it. */
+	.sw {
+		width: 10px;
+		height: 10px;
+		border-radius: var(--radius-xs);
+		background: var(--accent);
+	}
+	.sw--alt {
+		background: color-mix(in srgb, var(--accent) 55%, var(--surface));
+	}
+	.u-num {
+		font-family: var(--font-mono);
+		font-size: var(--text-compact);
+		font-variant-numeric: tabular-nums;
+		color: var(--ink-muted);
+	}
+	.u-note {
+		margin-top: 0.75rem;
+		font-size: var(--text-xs);
+		color: var(--ink-muted);
+	}
+	.u-note--warn {
+		color: var(--color-amber-800);
+	}
+	.u-rows {
+		display: grid;
+		align-content: center;
+		min-width: 0;
+		border-top: 1px solid var(--rule);
+	}
+	.u-row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		column-gap: 0.75rem;
+		padding: 1.125rem 1.5rem;
+	}
+	.u-row + .u-row {
+		border-top: 1px solid var(--rule);
+	}
+	.u-row .u-note {
+		grid-column: 2 / -1;
+		margin-top: 0.375rem;
+		line-height: 1.5;
+	}
+	@media (prefers-color-scheme: dark) {
+		.u-over .u-of,
+		.u-note--warn {
+			color: var(--color-amber-300);
+		}
+	}
+
+	/* The billing period's facts in one quiet band: small labels, plain
+	   figures, no second big price. */
+	.facts {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		gap: 1rem 2rem;
+		padding: 1.125rem 1.5rem;
+		border-top: 1px solid var(--rule);
+		background: var(--page);
+	}
+	.facts dt {
+		font-size: var(--text-xs);
+		color: var(--ink-muted);
+	}
+	.facts dd {
+		margin-top: 0.25rem;
+		font-size: 0.875rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.facts .fact-sub {
+		margin-top: 0.125rem;
+		font-size: var(--text-xs);
+		color: var(--ink-muted);
+	}
+	@media (min-width: 1024px) {
+		.usage {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+		}
+		.u-rows {
+			border-top: 0;
+			border-left: 1px solid var(--rule);
+		}
 	}
 </style>

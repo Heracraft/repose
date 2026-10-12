@@ -228,7 +228,7 @@ The project's page in the dashboard has a **Machine** card with the size, its vC
 - **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU is at 100% means more work than vCPUs, for example several builds or test runs at once. Run fewer at a time, or give the machine more vCPUs with `repose resize --size`.
 - **Waiting for the server**: the time the machine waited for the server it runs on. High here while CPU is low means the server was busy, and repose watches for that.
 
-Below them is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type, as the [privacy policy](/privacy) promises.
+Below them, folded until you open it, is the list of the busiest processes in that window, by name, with their CPU time and peak memory. The figures are sampled once a minute while the machine runs, and a stopped machine shows a gap. For a live view, run `htop` on the machine. repose records process names and numbers, never their arguments or anything you type, as the [privacy policy](/privacy) promises.
 
 Your SSH sessions and tmux get the CPU before the programs running in your panes when every vCPU is busy, so what you type keeps showing up at once.
 

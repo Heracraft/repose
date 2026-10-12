@@ -1,5 +1,5 @@
 <!--
-  A project's events in pages of 25, newest first (I-662). The page's
+  A project's events in pages of 10, newest first (I-662). The page's
   place lives in the URL (eventsUrl.ts), so Back steps between pages and a
   reload keeps the page. Newest, Newer and Older move by the api's cursors;
   the position is "Page 3 of 8" from the api's count. A filter keeps the
@@ -135,7 +135,7 @@
 	);
 	let onNewest = $derived(isNewest(view));
 	let hasOlder = $derived(loaded?.hasOlder ?? false);
-	// A short last page keeps the list's height, so the pager under it
+	// A short last page keeps the list's height, so the card under it
 	// does not jump; a project with one page of events has no such floor.
 	let holdHeight = $derived(!onNewest || hasOlder);
 
@@ -174,7 +174,7 @@
 			await tick();
 			list?.focus({ preventScroll: true });
 			// Back to the card's top only when its heading has gone up under
-			// the sticky header; a click on the top pager stays where it is.
+			// the sticky header.
 			if (card && card.getBoundingClientRect().top < 64) {
 				card.scrollIntoView({ block: 'start' });
 			}
@@ -236,20 +236,20 @@
 	});
 </script>
 
-{#snippet pager(where: 'top' | 'bottom')}
+{#snippet pager()}
 	{@const newerOff = onNewest}
 	{@const olderOff = !hasOlder}
 	<div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
-		{#if where === 'top' && newerCount > 0 && !onNewest}
+		{#if newerCount > 0 && !onNewest}
 			<button type="button" class="btn-ghost text-xs" onclick={() => to(newestState(view))}
 				>{newerCount} newer</button
 			>
 		{/if}
-		<!-- On a phone the top pager has no room for Newest; the one under
-		     the list has it. -->
+		<!-- A phone has room for Newer, the position and Older on one row;
+		     Newest waits for a wider screen. -->
 		<button
 			type="button"
-			class="btn-quiet btn--sm max-sm:px-2.5 {where === 'top' ? 'max-sm:hidden' : ''}"
+			class="btn-quiet btn--sm max-sm:hidden"
 			aria-disabled={newerOff}
 			title={newerOff ? 'This is the newest page' : undefined}
 			onclick={() => !newerOff && to(newestState(view))}>Newest</button
@@ -264,7 +264,7 @@
 		>
 		<span
 			class="px-1 text-center sm:min-w-[5.5rem] text-sm whitespace-nowrap tabular-nums"
-			data-testid={where === 'top' ? 'events-position' : undefined}>{position}</span
+			data-testid="events-position">{position}</span
 		>
 		<button
 			type="button"
@@ -294,7 +294,7 @@
 				>
 			{/if}
 		</div>
-		<nav aria-label="Event pages">{@render pager('top')}</nav>
+		<nav aria-label="Event pages">{@render pager()}</nav>
 	</div>
 
 	<!-- The filter changes the URL, so its choices are links with
@@ -346,29 +346,19 @@
 			{/each}
 		</ul>
 	{/if}
-
-	{#if hasOlder || !onNewest}
-		<div
-			class="mt-3 flex justify-end border-t pt-3 border-rule"
-			role="group"
-			aria-label="Event pages, end of list"
-		>
-			{@render pager('bottom')}
-		</div>
-	{/if}
 </section>
 
 <style>
 	.events-list {
 		transition: opacity 120ms;
 	}
-	/* 25 rows of 36px and two day headings. */
+	/* 10 rows of 37px and two day headings. */
 	.events-list.hold {
-		min-height: calc(25 * 2.3125rem + 2 * 2.25rem);
+		min-height: calc(10 * 2.3125rem + 2 * 2.25rem);
 	}
 	@media (width < 40rem) {
 		.events-list.hold {
-			min-height: calc(25 * 3.75rem + 2 * 2.25rem);
+			min-height: calc(10 * 3.75rem + 2 * 2.25rem);
 		}
 	}
 	.events-list :global(li:first-child) {

@@ -1,4 +1,4 @@
-// The project page's Events card shows pages of 25, newest first, with
+// The project page's Events card shows pages of 10, newest first, with
 // Newest, Newer and Older, the position from the api's count, and a filter
 // by kind; the page lives in the URL, so Back and a reload keep it
 // (DECISIONS I-662, which replaced I-414's Show older).
@@ -22,50 +22,50 @@ function eventsCard(page: Page) {
 	};
 }
 
-test('pages of 25 with Older, Newer and Newest, kept in the URL', async ({ page }) => {
+test('pages of 10 with Older, Newer and Newest, kept in the URL', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'busy-app',
 		remote_url: 'github.com/heracraft/busy-app'
 	});
-	// 75 events and the project's own two (created, running), the oldest.
-	await addEvents(p.id, 75);
+	// 25 events and the project's own two (created, running), the oldest.
+	await addEvents(p.id, 25);
 	await page.goto(`/projects/${p.id}`);
 	const ev = eventsCard(page);
-	await expect(ev.rows).toHaveCount(25);
-	await expect(ev.position).toHaveText('Page 1 of 4');
-	await expect(ev.card.getByTestId('events-total')).toHaveText('77 events');
-	await expect(ev.rows.first()).toContainText('e074');
-	await expect(ev.rows.last()).toContainText('e050');
+	await expect(ev.rows).toHaveCount(10);
+	await expect(ev.position).toHaveText('Page 1 of 3');
+	await expect(ev.card.getByTestId('events-total')).toHaveText('27 events');
+	await expect(ev.rows.first()).toContainText('e024');
+	await expect(ev.rows.last()).toContainText('e015');
 	await expect(ev.newer).toHaveAttribute('aria-disabled', 'true');
 
 	await ev.older.click();
-	await expect(ev.position).toHaveText('Page 2 of 4');
-	await expect(ev.rows.first()).toContainText('e049');
+	await expect(ev.position).toHaveText('Page 2 of 3');
+	await expect(ev.rows.first()).toContainText('e014');
 	await ev.older.click();
-	await expect(ev.position).toHaveText('Page 3 of 4');
-	await expect(ev.rows.first()).toContainText('e024');
-	await expect(ev.rows.last()).toContainText('e000');
+	await expect(ev.position).toHaveText('Page 3 of 3');
+	await expect(ev.rows.first()).toContainText('e004');
+	await expect(ev.rows).toHaveCount(7);
 	// The list takes focus, named for its page.
 	await expect(page.getByRole('list', { name: 'Events, page 3' })).toBeFocused();
 
 	await ev.newer.click();
-	await expect(ev.position).toHaveText('Page 2 of 4');
-	await expect(ev.rows.first()).toContainText('e049');
+	await expect(ev.position).toHaveText('Page 2 of 3');
+	await expect(ev.rows.first()).toContainText('e014');
 	// Newer goes by the after cursor.
 	await expect(page).toHaveURL(/events_after=.*events_page=2/);
 	await page.reload();
-	await expect(ev.position).toHaveText('Page 2 of 4');
-	await expect(ev.rows.first()).toContainText('e049');
+	await expect(ev.position).toHaveText('Page 2 of 3');
+	await expect(ev.rows.first()).toContainText('e014');
 
 	// Back steps to the page before.
 	await ev.older.click();
-	await expect(ev.position).toHaveText('Page 3 of 4');
+	await expect(ev.position).toHaveText('Page 3 of 3');
 	await page.goBack();
-	await expect(ev.position).toHaveText('Page 2 of 4');
+	await expect(ev.position).toHaveText('Page 2 of 3');
 
 	await ev.newest.click();
-	await expect(ev.position).toHaveText('Page 1 of 4');
-	await expect(ev.rows.first()).toContainText('e074');
+	await expect(ev.position).toHaveText('Page 1 of 3');
+	await expect(ev.rows.first()).toContainText('e024');
 	await expect(page).not.toHaveURL(/events_/);
 });
 
@@ -74,22 +74,22 @@ test('the last page ends with the project created and has no Older', async ({ pa
 		name: 'deep-app',
 		remote_url: 'github.com/heracraft/deep-app'
 	});
-	await addEvents(p.id, 75);
+	await addEvents(p.id, 25);
 	await page.goto(`/projects/${p.id}`);
 	const ev = eventsCard(page);
-	for (const n of [2, 3, 4]) {
+	for (const n of [2, 3]) {
 		await ev.older.click();
-		await expect(ev.position).toHaveText(`Page ${n} of 4`);
+		await expect(ev.position).toHaveText(`Page ${n} of 3`);
 	}
-	await expect(ev.rows).toHaveCount(2);
+	await expect(ev.rows).toHaveCount(7);
 	await expect(ev.rows.last()).toHaveAttribute('data-kind', 'project.created');
 	await expect(ev.older).toHaveAttribute('aria-disabled', 'true');
 	await expect(ev.older).toHaveAttribute('title', 'No older events');
 	// Newer from the last page goes by the after cursor.
 	await ev.newer.click();
-	await expect(ev.position).toHaveText('Page 3 of 4');
+	await expect(ev.position).toHaveText('Page 2 of 3');
 	await expect(page).toHaveURL(/events_after=/);
-	await expect(ev.rows.first()).toContainText('e024');
+	await expect(ev.rows.first()).toContainText('e014');
 });
 
 test('the Errors filter shows only errors', async ({ page }) => {
@@ -156,7 +156,7 @@ test('the project page holds still while it loads, at 390', async ({ page }) => 
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('questions')).toBeVisible();
-	await expect(eventsCard(page).rows).toHaveCount(25);
+	await expect(eventsCard(page).rows).toHaveCount(10);
 	await page.waitForTimeout(1500);
 	const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 	expect(cls).toBeLessThanOrEqual(0.05);

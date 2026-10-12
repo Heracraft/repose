@@ -184,12 +184,12 @@
 	}
 
 	/** The guest's root filesystem used, in percent, with its figures for a title. */
-	function disk(p: Project): { pct: number; title: string } | undefined {
+	function disk(p: Project): { pct: number; used: string; title: string } | undefined {
 		const used = p.root_used_bytes;
 		const size = p.root_size_bytes ?? p.volume_bytes;
 		if (used === undefined || !size || size <= 0 || used < 0) return undefined;
 		const pct = Math.min(100, Math.floor((used * 100) / size));
-		return { pct, title: `${gb(used)} of ${gb(size)}` };
+		return { pct, used: gb(used), title: `${gb(used)} of ${gb(size)}` };
 	}
 
 	let summary = $derived.by(() => {
@@ -221,26 +221,17 @@
 {/snippet}
 
 {#snippet diskCell(p: Project)}
+	<!-- What the guest holds, as a figure: a bar per row was noise next to
+	     the plan's own figure above (I-674). Amber only near full. -->
 	{@const d = disk(p)}
 	{#if d}
 		{@const full = d.pct >= DISK_FULL_PERCENT}
-		<span class="disk" title={d.title}>
-			<span
-				class="disk-track"
-				role="meter"
-				aria-label="Disk"
-				aria-valuemin="0"
-				aria-valuemax="100"
-				aria-valuenow={d.pct}
-				aria-valuetext="{d.pct}%, {d.title}"
-			>
-				<span class="disk-fill" class:disk-fill--full={full} style="width: {Math.max(d.pct, 2)}%"
-				></span>
-			</span>
-			<span class="disk-pct font-mono text-compact tabular-nums" class:disk-pct--full={full}
-				>{d.pct}%</span
-			>
-		</span>
+		<span
+			class="font-mono text-compact tabular-nums"
+			class:disk--full={full}
+			class:text-ink-muted={!full}
+			title={d.title}>{full ? `${d.pct}% full` : d.used}</span
+		>
 	{:else}
 		<span class="font-mono text-compact text-ink-muted">{gb(p.volume_bytes)}</span>
 	{/if}
@@ -549,45 +540,12 @@
 		opacity: 1;
 	}
 
-	.disk {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.disk-track {
-		display: flex;
-		width: 4rem;
-		height: 6px;
-		overflow: hidden;
-		border: 1px solid var(--control-edge);
-		border-radius: var(--radius-xs);
-		background-color: var(--sunken);
-	}
-	.disk-fill {
-		height: 100%;
-		background-color: var(--accent);
-	}
-	.disk-fill--full {
-		background-color: var(--color-amber-500);
-	}
-	.disk-pct {
-		color: var(--ink-muted);
-	}
-	.disk-pct--full {
+	.disk--full {
 		color: var(--color-amber-800);
 	}
 	@media (prefers-color-scheme: dark) {
-		.disk-fill--full {
-			background-color: var(--color-amber-400);
-		}
-		.disk-pct--full {
+		.disk--full {
 			color: var(--color-amber-300);
-		}
-	}
-	@media (forced-colors: active) {
-		.disk-fill {
-			forced-color-adjust: none;
-			background-color: CanvasText;
 		}
 	}
 

@@ -5,7 +5,6 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import {
-		getMe,
 		getProject,
 		listProjects,
 		startProject,
@@ -48,7 +47,6 @@
 	import SnapshotsTable from '$lib/components/project/SnapshotsTable.svelte';
 	import { pct, cpuTime, latest, type Pt } from '$lib/usage';
 	import type {
-		Me,
 		PaymentRequiredReason,
 		Project,
 		Question,
@@ -68,7 +66,6 @@
 	let lastUpdated = $state<Date | undefined>(undefined);
 	let snapshots = $state<Snapshot[]>([]);
 	let revisions = $state<Revision[]>([]);
-	let me = $state<Me | undefined>(undefined);
 	let questions = $state<Question[]>([]);
 	/** The events page the first load fetched, handed to the card so it paints with the rest. */
 	let firstEvents = $state<LoadedEvents | undefined>(undefined);
@@ -107,13 +104,12 @@
 	 * own poll.
 	 */
 	async function firstLoad() {
-		const [p, qs, ev, snaps, smp, m, revs] = await Promise.all([
+		const [p, qs, ev, snaps, smp, revs] = await Promise.all([
 			getProject(id),
 			listProjectQuestions(id).catch(() => [] as Question[]),
 			fetchEventsPage(id, readEventsState(page.url.searchParams)).catch(() => undefined),
 			listSnapshots(id).catch(() => undefined),
 			getSamples(id, samplesWindow).catch(() => undefined),
-			getMe().catch(() => undefined),
 			listRevisions(id).catch(() => [] as Revision[])
 		]);
 		questions = qs;
@@ -123,7 +119,6 @@
 			samples = smp;
 			samplesAt = Date.now();
 		}
-		me = m;
 		revisions = revs;
 		project = p;
 	}
@@ -704,32 +699,41 @@
 							/>
 						</div>
 						{#if samples.procs.length > 0}
-							<!-- A caption, not a heading (I-375): the card's h2 is the
-							     section, and the table is one of its readings. -->
-							<p class="mt-7 text-xs font-medium text-ink-muted">Busiest processes</p>
-							<table class="table mt-1 max-w-xl text-sm">
-								<thead>
-									<tr>
-										<th scope="col" class="text-left">Process</th>
-										<th scope="col" class="text-right">CPU time</th>
-										<th scope="col" class="text-right">Peak memory</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each samples.procs as p (p.comm)}
+							<!-- Folded by default: the charts answer most visits, and the
+							     table is there when a chart's peak needs a name (I-674).
+							     The summary is a caption, not a heading (I-375). -->
+							<details class="procs" data-testid="busiest-processes">
+								<summary>
+									<svg class="procs-chev" viewBox="0 0 16 16" aria-hidden="true"
+										><path d="M6 4l4 4-4 4" /></svg
+									>
+									Busiest processes
+									<span class="procs-n">{samples.procs.length}</span>
+								</summary>
+								<table class="table mt-2 w-full text-sm">
+									<thead>
 										<tr>
-											<td class="py-2 font-mono text-compact">{p.comm}</td>
-											<td class="py-2 text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
-											<td class="py-2 text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
+											<th scope="col" class="text-left">Process</th>
+											<th scope="col" class="text-right">CPU time</th>
+											<th scope="col" class="text-right">Peak memory</th>
 										</tr>
-									{/each}
-								</tbody>
-							</table>
+									</thead>
+									<tbody>
+										{#each samples.procs as p (p.comm)}
+											<tr>
+												<td class="font-mono text-compact">{p.comm}</td>
+												<td class="text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
+												<td class="text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</details>
 						{/if}
 					{/if}
 					{#if egressGb !== undefined}
 						<p
-							class="mt-6 flex items-baseline justify-between gap-4 border-t pt-4 text-sm border-rule"
+							class="egress-row mt-6 flex items-baseline justify-between gap-4 border-t pt-4 text-sm border-rule"
 							data-testid="egress-period"
 						>
 							<span class="font-medium">Egress this period</span>
@@ -758,8 +762,6 @@
 				<div class="order-6 min-w-0 lg:order-none">
 					<MachineCard
 						{project}
-						{me}
-						{vcpus}
 						memUsed={memNow}
 						memTotal={samples?.memory_bytes}
 						busy={!!opBusy}
@@ -813,6 +815,60 @@
 {/if}
 
 <style>
+	.procs {
+		margin-top: 1.75rem;
+		border-top: 1px solid var(--rule);
+	}
+	.procs summary {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2.75rem;
+		cursor: pointer;
+		list-style: none;
+		font-size: var(--text-sm);
+		font-weight: 500;
+	}
+	.procs summary::-webkit-details-marker {
+		display: none;
+	}
+	.procs summary:hover {
+		color: var(--ink);
+	}
+	.procs-chev {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		color: var(--ink-muted);
+		transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	.procs[open] .procs-chev {
+		transform: rotate(90deg);
+	}
+	/* One rule under the head and none between rows: the section's own
+	   rule above and Egress's below already frame it. */
+	.procs td {
+		border-bottom: 0;
+		padding-block: 0.375rem;
+	}
+	.procs table {
+		margin-bottom: 0.5rem;
+	}
+	.procs + .egress-row {
+		margin-top: 0;
+	}
+	.procs-n {
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink-muted);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.procs-chev {
+			transition: none;
+		}
+	}
 	.danger {
 		border-color: color-mix(in srgb, var(--color-red-600) 35%, var(--rule));
 	}

@@ -10,7 +10,7 @@
 import { EVENT_FILTERS, type EventFilter } from '$lib/events';
 
 /** Events on one page, at every width. */
-export const EVENTS_PAGE_SIZE = 25;
+export const EVENTS_PAGE_SIZE = 10;
 
 export interface EventsState {
 	before?: string;

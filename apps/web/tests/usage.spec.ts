@@ -7,7 +7,9 @@ test.beforeEach(async ({ page }) => {
 	await signIn(page);
 });
 
-test('the machine card says what the size gives', async ({ page }) => {
+test('the status line says what the size gives and the machine card reads memory and disk', async ({
+	page
+}) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'machine-card-app',
 		remote_url: 'github.com/heracraft/machine-card-app',
@@ -15,16 +17,14 @@ test('the machine card says what the size gives', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('project-class')).toHaveText('small');
+	await expect(page.getByText('2 vCPU', { exact: true })).toBeVisible();
 	const card = page.getByTestId('machine-card');
-	await expect(card.locator('dt', { hasText: 'vCPUs' }).locator('+ dd')).toHaveText('2');
-	await expect(card.locator('dt', { hasText: /^Memory$/ }).locator('+ dd')).toHaveText('4 GB');
 	// The newest sample's memory, of the size's 4 GB.
 	await expect(card.getByRole('meter', { name: 'Memory in use' })).toHaveAttribute(
 		'aria-valuetext',
 		/ of 4 GB$/
 	);
 	await expect(card.getByRole('meter', { name: 'Disk' })).toBeVisible();
-	await expect(card.getByTestId('plan-memory')).toHaveText(/^small uses 4 of \d+ GB plan memory$/);
 });
 
 test('usage draws the samples and switches window', async ({ page }) => {

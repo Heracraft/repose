@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-670 entries.
+671 entries.
 
 ## Scope
 
@@ -696,9 +696,10 @@ pointer, not a summary.
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18461
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
 - **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18490
-- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — L18510
+- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; L18510
 - **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — L18538
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18585
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18592
-- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — L18636
-- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — L18665
+- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; L18636
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — L18752

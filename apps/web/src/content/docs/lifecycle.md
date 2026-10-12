@@ -34,7 +34,7 @@ repose status todo-app
 repose status todo-app --watch
 ```
 
-The dashboard's project page shows the state, agents, SSH sessions, memory and disk meters, usage charts, snapshots and the project's details. Its events come in pages of 25 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
+The dashboard's project page shows the state, agents, SSH sessions, memory and disk in use, usage charts, snapshots and the project's details. Its events come in pages of 10 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
 
 ## Stop and start
 

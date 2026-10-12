@@ -247,14 +247,13 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
 });
 
-test('the egress meter reads a thousand GB as 1 TB and marks the day of the period', async ({
+test('the egress meter reads a thousand GB as 1 TB and the facts mark the day of the period', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'pro', egress_gb: 42 });
 	await page.goto('/billing');
 	const egress = page.getByTestId('meter-egress-this-period');
 	await expect(egress).toContainText('42 GB of 1 TB');
-	await expect(egress).toContainText(/Day \d+ of \d+/);
 	await expect(page.locator('.facts').getByText(/^Day \d+ of \d+$/)).toBeVisible();
 });
 

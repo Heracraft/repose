@@ -1,22 +1,20 @@
 <!--
-  The machine behind a project: what its size gives, the memory in use
-  now (the newest sample, I-492) and the disk (the guest's root
-  filesystem, I-567), each a meter of its limit. The size's share of the
-  plan's memory is the line under the memory meter. The disk grows in
+  The machine behind a project: the memory in use now (the newest
+  sample, I-492) and the disk (the guest's root filesystem, I-567), each
+  a figure with a small ring (I-674). The size's vCPUs and memory are on
+  the page's status line, so the card does not repeat them. The disk grows in
   place: Resize… opens a panel on the disk's row (DESIGN-LANGUAGE.md,
   "Focus follows the panel").
 -->
 <script lang="ts">
-	import Meter from '$lib/components/Meter.svelte';
+	import UsageRing from '$lib/components/UsageRing.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { diskFullPercent } from '$lib/disk';
 	import { gb, classMemoryGB } from '$lib/format';
-	import type { Me, Project } from '$lib/api/types';
+	import type { Project } from '$lib/api/types';
 
 	let {
 		project,
-		me,
-		vcpus,
 		memUsed,
 		memTotal,
 		busy = false,
@@ -24,8 +22,6 @@
 		onresize
 	}: {
 		project: Project;
-		me?: Me;
-		vcpus?: number;
 		/** The newest sample's memory in use, in bytes; undefined while not running. */
 		memUsed?: number;
 		/** The machine's memory in bytes, from the samples. */
@@ -97,44 +93,34 @@
 <section class="card" data-testid="machine-card" aria-labelledby="machine-title">
 	<h2 id="machine-title" class="text-xl font-semibold">Machine</h2>
 
-	<dl class="spec mt-4 grid grid-cols-2 rounded-sm border border-rule">
-		<div class="px-3 py-2.5">
-			<dt class="text-xs text-ink-muted">vCPUs</dt>
-			<dd class="mt-0.5 font-display text-xl font-semibold tabular-nums">{vcpus ?? '—'}</dd>
-		</div>
-		<div class="border-l px-3 py-2.5 border-rule">
-			<dt class="text-xs text-ink-muted">Memory</dt>
-			<dd class="mt-0.5 font-display text-xl font-semibold tabular-nums">
-				{ownGB ? `${ownGB} GB` : '—'}
-			</dd>
-		</div>
-	</dl>
-
-	<div class="mt-5">
+	<div class="m-row mt-4">
 		{#if memUsed !== undefined}
-			<Meter label="Memory in use" used={memUsed} limit={memBytes} format={memGb} />
+			<UsageRing label="Memory in use" used={memUsed} limit={memBytes} format={memGb} />
 		{:else}
-			<div class="flex items-baseline justify-between gap-4 text-sm">
-				<span class="font-medium">Memory in use</span>
-				<span class="text-ink-muted">not running</span>
-			</div>
+			<span class="m-ring-gap" aria-hidden="true"></span>
 		{/if}
-		{#if me && me.limits.memory_gb > 0 && ownGB}
-			<p class="mt-2 text-xs text-ink-muted" data-testid="plan-memory">
-				{project.class} uses {ownGB} of {me.limits.memory_gb} GB plan memory
-			</p>
-		{/if}
+		<span class="m-label">Memory in use</span>
+		<span class="m-fig">
+			{#if memUsed !== undefined}{memGb(memUsed)}<span class="m-of">
+					of {memGb(memBytes)}</span
+				>{:else}<span class="m-of">not running</span>{/if}
+		</span>
 	</div>
 
-	<div class="mt-5">
+	<div class="m-row">
 		{#if diskUsed !== undefined && diskSize}
-			<Meter label="Disk" used={diskUsed} limit={diskSize} format={gb} />
+			<UsageRing label="Disk" used={diskUsed} limit={diskSize} format={gb} />
 		{:else}
-			<div class="flex items-baseline justify-between gap-4 text-sm">
-				<span class="font-medium">Disk</span>
-				<span class="font-mono text-compact text-ink-muted tabular-nums">— of {gb(diskSize)}</span>
-			</div>
+			<span class="m-ring-gap" aria-hidden="true"></span>
 		{/if}
+		<span class="m-label">Disk</span>
+		<span class="m-fig"
+			>{diskUsed !== undefined ? gb(diskUsed) : '—'}<span class="m-of">
+				of {gb(diskSize)}</span
+			></span
+		>
+	</div>
+	<div class="m-sub">
 		{#if full !== null}
 			<p
 				class="mt-2 text-xs text-amber-800 tabular-nums dark:text-amber-300"
@@ -191,3 +177,37 @@
 		{/if}
 	</div>
 </section>
+
+<style>
+	.m-row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		column-gap: 0.75rem;
+		padding-block: 0.75rem;
+	}
+	.m-row + .m-row {
+		border-top: 1px solid var(--rule);
+	}
+	.m-ring-gap {
+		width: 18px;
+	}
+	.m-label {
+		font-size: var(--text-sm);
+		color: var(--ink-muted);
+	}
+	.m-fig {
+		font-size: 0.9375rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.m-of {
+		margin-left: 0.25rem;
+		font-size: var(--text-sm);
+		color: var(--ink-muted);
+	}
+	/* Under the disk row, aligned with its label. */
+	.m-sub {
+		padding-left: calc(18px + 0.75rem);
+	}
+</style>

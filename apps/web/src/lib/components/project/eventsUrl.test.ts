@@ -94,15 +94,15 @@ describe('stepping', () => {
 describe('labels', () => {
 	it('counts pages', () => {
 		expect(pageCount(0)).toBe(1);
-		expect(pageCount(25)).toBe(1);
-		expect(pageCount(26)).toBe(2);
-		expect(pageCount(183)).toBe(8);
+		expect(pageCount(10)).toBe(1);
+		expect(pageCount(11)).toBe(2);
+		expect(pageCount(183)).toBe(19);
 	});
 	it('says the position', () => {
-		expect(positionLabel({ page: 3, total: 183 })).toBe('Page 3 of 8');
+		expect(positionLabel({ page: 3, total: 183 })).toBe('Page 3 of 19');
 		expect(positionLabel({ page: 3 })).toBe('Page 3');
-		// More pages than the total says (it grew since): never "Page 9 of 8".
-		expect(positionLabel({ page: 9, total: 183 })).toBe('Page 9 of 9');
+		// More pages than the total says (it grew since): never "Page 20 of 19".
+		expect(positionLabel({ page: 20, total: 183 })).toBe('Page 20 of 20');
 		expect(positionLabel({})).toBe('');
 	});
 	it('labels a page by its times when its number is not known', () => {

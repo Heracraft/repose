@@ -301,14 +301,20 @@ or its first screen goes through a DECISIONS entry.
   Details, Snapshots) in a side one; Destroy last. Below `lg` one
   column in the order Questions, Connect, Events, Snapshots, Usage,
   Machine, Agents, Details, Destroy. Nothing mounts above painted
-  content: what the first screen needs is fetched together.
-- **Events** come in numbered pages, not an endless "Show older": 25
-  rows under day headings, a pager (Newest, Newer, "Page n of m",
-  Older) above and under the list, the place in the URL, and the
+  content: what the first screen needs is fetched together. The
+  Machine card is memory in use and disk as ring rows (the size's vCPUs
+  and memory are on the status line); Usage's busiest processes are a
+  full-width table folded under a `<details>` until opened (I-674).
+- **Events** come in numbered pages, not an endless "Show older": 10
+  rows under day headings, one pager (Newest, Newer, "Page n of m",
+  Older) above the list (I-674), the place in the URL, and the
   filters as links with `aria-current`, drawn like the project's tabs.
   A disabled pager button keeps its place and says why in its title.
-- **Billing**: the plan and its meters on the left, the money on the
-  right (period, next charge, latest invoice); plans as `PlanCells`.
+- **Billing**: the plan, its price once and its status, then memory
+  as squares beside disk and egress as ring rows, then one band of
+  facts (period, next charge, latest invoice) (I-674); plans as
+  `PlanCells`. On a phone the plan's two actions share a row at equal
+  width.
   Paged tables (invoices) use the same Newer and Older.
 - **Settings, Config, Secrets**: a 280px label column beside the
   controls from `lg` (Settings), or the work in two thirds and its
@@ -399,8 +405,15 @@ takes the pointer without moving the layout (I-657).
   an amount; the reading and `aria-valuetext` say "over" too. An optional
   `marker` draws a 1px `--ink-muted` tick (the period's pace on egress),
   described by `markerLabel`; `compact` puts the bar and the reading on
-  one line for a table cell; `href` makes the label a link. Every limit
-  on billing is a meter. Charts beyond a meter need a DECISIONS entry.
+  one line for a table cell; `href` makes the label a link. It draws the
+  project page's memory and disk. Charts beyond a meter need a DECISIONS
+  entry.
+- Plan limits (I-674): memory running is `MemoryBlocks.svelte`, the
+  plan's squares (one per GB, 32 to a row, 16 below 640px) filled by
+  each running machine in the accent, alternate machines at 55%, free
+  squares outlined, past the limit amber. Disk held and egress are
+  `UsageRing.svelte`, an 18px ring beside the "X of Y" figure. A page
+  shows each limit once and draws no bar for it.
 - Stat strips (I-659): `.stat-row` is a `--surface` box whose `.stat`
   cells are split by `--rule` hairlines (stacked, with horizontal ones,
   below `sm`). A cell is a `.stat-label` (12px, muted), a `.stat-value`

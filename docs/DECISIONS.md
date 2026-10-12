@@ -18748,3 +18748,40 @@ useful; new api routes allowed but not the point).
   "Add a secret" card whose "Load from file" opens a styled file
   picker; a chosen file shows by name and size with Clear, and disables
   the Value field. Names are shown and sent in capitals.
+
+**I-674. Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12).**
+Amends I-659, I-663, I-664. The owner called the billing card ugly and
+cluttered and the bars on /projects ugly and too many, after Dribbble
+references (Kevin's billing table with a ring per row, Sanity's usage
+stacked by project, Daybrief's plain "3 / 3 used" rows).
+- `MemoryBlocks.svelte` draws memory running as the plan's own squares
+  (one per GB, as `Units.svelte` draws a plan on the plan cells), 32 to
+  a row and 16 below 640px, each running machine a run of squares in
+  the accent, alternate runs at 55% accent, free squares outlined, past
+  the limit amber. It is a `role=meter` whose `aria-valuetext` names
+  each machine. Memory decides what may start, so it is the one picture.
+- `UsageRing.svelte` draws disk held and egress as an 18px ring beside
+  the figure: accent arc, `--rule-strong` track, closed and amber past
+  the limit, a sliver for any use. The class is `uring`: Tailwind's
+  `ring` utility would draw a box around a `.ring`.
+- /projects' plan strip is one card: memory with its squares on the
+  left, disk and egress as two ring rows on the right. The table's Disk
+  column is the figure ("1 GB"), turning to amber "N% full" at 90%.
+- /billing's plan card: the name and a 32px price with the status (no
+  squares beside the name, no blue rule); Running now with the squares
+  and a legend of what runs (swatch, name, GB) and the "two xl, four
+  large" line; Disk held and Egress this period as ring rows, naming
+  the largest projects only from 80% of disk or 50% of egress; the
+  period, next charge and latest invoice as one band of small facts,
+  so the price appears once at size. `Meter.svelte` stays for the
+  project page's memory and disk.
+- The project page follows: the Machine card is Memory in use and
+  Disk as ring rows with the volume and Resize under the disk; the
+  vCPU and memory boxes and the "uses N of M GB plan memory" line go,
+  since the status line and /billing say them. Events come 10 to a
+  page (the owner: "events gotta be capped at 10"), with one pager
+  above the list; ten rows need no second one under it. Busiest
+  processes is a full-width table in a `<details>`, folded by default.
+- On a phone the billing card's two actions share a row at equal
+  width, "Card and receipts" for the long one (its name stays "Manage
+  card and receipts"); at 320px wide they stack at full width.

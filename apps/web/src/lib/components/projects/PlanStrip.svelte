@@ -1,7 +1,8 @@
 <!--
-  The plan's three limits over /projects (I-659): memory running now, disk
-  the projects hold, egress this period, each a .stat cell that opens
-  /billing. Memory is summed from the list itself (a size class's memory
+  The plan's three limits over /projects (I-659, I-674): memory running
+  now as the plan's squares filled by each running machine, then disk the
+  projects hold and egress this period as a figure with a small ring. The
+  band opens /billing. Memory is summed from the list itself (a size class's memory
   for each running machine), so it reads even with billing off or failing.
   With no usage or no limits from the api, the other cells are facts the list already
   holds: machines running, agents needing input, and the disk the guests
@@ -10,7 +11,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { classMemoryGB, gb, money, sizeGB } from '$lib/format';
-	import Meter from '$lib/components/Meter.svelte';
+	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import UsageRing from '$lib/components/UsageRing.svelte';
 	import type { Billing, Project } from '$lib/api/types';
 
 	let {
@@ -46,6 +48,11 @@
 	/** An agent waiting on you, as AgentChips marks it. */
 	const waiting = (state: string) => state === 'needs_input' || state === 'question';
 
+	let segments = $derived(
+		projects
+			.filter((p) => p.state === 'running')
+			.map((p) => ({ name: p.name, gb: classMemoryGB(p.class) }))
+	);
 	let memoryRunning = $derived(
 		projects.filter((p) => p.state === 'running').reduce((n, p) => n + classMemoryGB(p.class), 0)
 	);
@@ -115,53 +122,120 @@
 		// zeros: the list's own facts fill the strip instead.
 		return out.length === 1 && !memory.meter ? [memory, ...listCells()] : out;
 	});
+	let m = $derived(cells[0]);
+	let mOver = $derived(m.limit !== undefined && m.used > m.limit);
+	let rest = $derived(cells.slice(1));
 </script>
 
-<div class="stat-row plan-strip" data-testid="plan-strip">
-	{#each cells as c (c.label)}
-		{@const f = c.format ?? fmt}
-		{@const over = c.meter === true && c.limit !== undefined && c.used > c.limit}
-		<svelte:element
-			this={c.href ? 'a' : 'div'}
-			href={c.href}
-			class="stat plan-cell"
-			class:plan-cell--link={!!c.href}
-			class:plan-cell--warn={c.warn}
-			aria-label={c.href
-				? `${c.label}, ${f(c.used)}${c.limit !== undefined ? ` of ${f(c.limit)}${over ? ', over' : ''}` : ''}`
-				: undefined}
+<div class="band" data-testid="plan-strip">
+	<svelte:element
+		this={m.href ? 'a' : 'div'}
+		href={m.href}
+		class="mem"
+		aria-label="{m.label}, {fmt(m.used)}{m.limit !== undefined ? ` of ${fmt(m.limit)}` : ''}{mOver
+			? ', over'
+			: ''}"
+	>
+		<span class="stat-label">{m.label}</span>
+		<span class="stat-value" class:plan-over={mOver}
+			>{fmt(m.used)}{#if m.limit !== undefined}<span class="plan-of">
+					of {fmt(m.limit)}{#if mOver}&nbsp;· over{/if}</span
+				>{/if}</span
 		>
-			<span class="stat-label">{c.label}</span>
-			<span class="stat-value" class:plan-over={over}
-				>{f(c.used)}{#if c.limit !== undefined}<span class="plan-of">
-						of {f(c.limit)}{#if over}&nbsp;· over{/if}</span
-					>{/if}</span
-			>
-			{#if c.meter && c.limit !== undefined}
-				<Meter label={c.label} used={c.used} limit={c.limit} format={f} />
-			{/if}
-			{#if c.sub}<span class="stat-sub plan-sub">{c.sub}</span>{/if}
-		</svelte:element>
-	{/each}
+		{#if m.meter && m.limit !== undefined}
+			<span class="mem-blocks"><MemoryBlocks label={m.label} {segments} limit={m.limit} /></span>
+		{/if}
+	</svelte:element>
+	{#if rest.length}
+		<div class="side">
+			{#each rest as c (c.label)}
+				{@const f = c.format ?? fmt}
+				{@const over = c.meter === true && c.limit !== undefined && c.used > c.limit}
+				<svelte:element
+					this={c.href ? 'a' : 'div'}
+					href={c.href}
+					class="row"
+					class:row--link={!!c.href}
+					class:row--warn={c.warn}
+				>
+					{#if c.meter && c.limit !== undefined}
+						<UsageRing label={c.label} used={c.used} limit={c.limit} format={f} />
+					{/if}
+					<span class="row-label">{c.label}</span>
+					<span class="row-value" class:plan-over={over}
+						>{f(c.used)}{#if c.limit !== undefined}<span class="plan-of">
+								of {f(c.limit)}{#if over}&nbsp;· over{/if}</span
+							>{/if}</span
+					>
+					{#if c.sub}<span class="row-sub">{c.sub}</span>{/if}
+				</svelte:element>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 <style>
-	.plan-cell {
+	/* One card: memory, the limit that decides what may start, on the
+	   left with its squares; the other figures in quiet rows beside it. */
+	.band {
+		display: grid;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius-md);
+		background: var(--surface);
+	}
+	.mem {
 		display: block;
+		padding: 1.25rem 1.5rem;
 		color: inherit;
+	}
+	.mem-blocks {
+		display: block;
+		margin-top: 0.875rem;
+	}
+	.side {
+		display: grid;
+		align-content: center;
+		border-top: 1px solid var(--rule);
+	}
+	.row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		column-gap: 0.75rem;
+		padding: 0.875rem 1.5rem;
+		color: inherit;
+	}
+	.row:not(:has(svg)) {
+		grid-template-columns: 1fr auto;
+	}
+	.row + .row {
+		border-top: 1px solid var(--rule);
+	}
+	.mem,
+	.row--link {
 		transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 	}
-	.plan-cell--link:hover {
+	.mem:is(a):hover,
+	.row--link:hover {
 		background-color: color-mix(in srgb, var(--sunken) 70%, transparent);
 	}
-	/* The cell's value says the reading in large type, so the meter's own
-	   label and figures row is not drawn here; the bar keeps its
-	   aria-valuetext. */
-	.plan-cell :global(.meter > div:first-child) {
-		display: none;
+	.row-label {
+		font-size: var(--text-sm);
+		color: var(--ink-muted);
 	}
-	.plan-cell :global(.meter) {
-		margin-top: 0.75rem;
+	.row-value {
+		font-size: 0.9375rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.row-sub {
+		grid-column: 1 / -1;
+		margin-top: 0.125rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-xs);
+		color: var(--ink-muted);
 	}
 	.plan-of {
 		margin-left: 0.375rem;
@@ -171,41 +245,26 @@
 		letter-spacing: 0;
 		color: var(--ink-muted);
 	}
+	.row-value .plan-of {
+		margin-left: 0.25rem;
+	}
 	.plan-over .plan-of,
-	.plan-cell--warn .stat-value {
+	.row--warn .row-value {
 		color: var(--color-amber-800);
 	}
 	@media (prefers-color-scheme: dark) {
 		.plan-over .plan-of,
-		.plan-cell--warn .stat-value {
+		.row--warn .row-value {
 			color: var(--color-amber-300);
 		}
 	}
-	.plan-sub {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	/* On a phone the three cells stack: label and figure on one line keeps
-	   the strip to a third of the height. */
-	@media (width < 40rem) {
-		.plan-cell {
-			display: grid;
-			grid-template-columns: 1fr auto;
-			align-items: baseline;
-			column-gap: 1rem;
-			padding: 0.75rem 1rem;
+	@media (min-width: 48rem) {
+		.band {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
 		}
-		.plan-cell .stat-value {
-			margin-top: 0;
-			font-size: var(--text-lg);
-		}
-		.plan-cell :global(.meter),
-		.plan-cell .stat-sub {
-			grid-column: 1 / -1;
-		}
-		.plan-cell :global(.meter) {
-			margin-top: 0.25rem;
+		.side {
+			border-top: 0;
+			border-left: 1px solid var(--rule);
 		}
 	}
 </style>
