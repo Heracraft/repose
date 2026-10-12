@@ -454,12 +454,12 @@ to them.
 
 A monthly plan through Polar (I-604), chosen before the first machine starts,
 with a card at checkout and a week free (DECISIONS I-289, superseding the
-hourly meter this section first described). Solo, $29 a month, buys 8 GB
+hourly meter this section first described). Solo, $49 a month, buys 8 GB
 of memory that may run at once (one `large`, or two `small`), 100 GB of
-disk and 250 GB of egress; Plus, $59, buys 16 GB, 250 GB and 500 GB;
-Pro, $99, buys 32 GB, 500 GB and 1000 GB (I-362). A first Solo
-subscription pays $20 and has 100 GB of egress for its first three months
-(I-497).
+disk and 250 GB of egress; Plus, $89, buys 16 GB, 250 GB and 500 GB;
+Pro, $169, buys 32 GB, 500 GB and 1000 GB (I-362, prices from I-672). The
+first 30 Solo subscribers pay a founding $39 for their first twelve
+months (I-672, superseding I-497's $20 for three).
 A plan sells no project count: a stopped project costs only the disk it
 holds, the plan's disk counting what each volume holds and not its size
 (I-585), and

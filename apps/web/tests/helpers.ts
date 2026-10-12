@@ -71,8 +71,10 @@ export interface BillingState {
 	/** What the projects hold in all (I-585); negative clears the override. */
 	disk_held_gb?: number;
 	invoices?: unknown[];
-	/** The account had a subscription before: no introductory price (I-497). */
+	/** The account had a subscription before: no founding price (I-497, I-672). */
 	intro_used?: boolean;
+	/** GET /public/seats's founding_left (I-672); negative serves null, no offer. */
+	founding_left?: number;
 }
 
 function adminURL(): string {
@@ -91,7 +93,7 @@ export async function setBilling(state: BillingState): Promise<void> {
 	if (!res.ok) throw new Error(`/billing: ${res.status} ${await res.text()}`);
 }
 
-/** The default: billing off, the account exempt, seats 18 of 30 free, nobody waiting. */
+/** The default: billing off, the account exempt, seats 18 of 30 free, nobody waiting, 30 founding places. */
 export async function resetBilling(): Promise<void> {
 	await setBilling({
 		mode: 'off',
@@ -101,7 +103,8 @@ export async function resetBilling(): Promise<void> {
 		disk_held_gb: -1,
 		scheduled_plan: '',
 		cancelled: false,
-		intro_used: false
+		intro_used: false,
+		founding_left: 30
 	});
 }
 

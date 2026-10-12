@@ -280,7 +280,7 @@ func TestBillingRoutes(t *testing.T) {
 		t.Fatalf("usage disk: %v", u)
 	}
 	plans := r.body["plans"].([]any)
-	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(5900) || plans[2].(map[string]any)["price_cents"] != float64(9900) {
+	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(8900) || plans[2].(map[string]any)["price_cents"] != float64(16900) {
 		t.Fatalf("plans: %v", plans)
 	}
 	// Checkout: unknown plan, then the hosted checkout's URL, with the

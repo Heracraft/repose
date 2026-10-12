@@ -252,7 +252,7 @@
 		return `${count(large)} large, or ${count(Math.floor(p.memory_gb / 4))} small`;
 	}
 
-	/** "Trial. First charge of $20 on 12 Oct; $29 a month from 12 Jan." (I-497) */
+	/** "Trial. First charge of $39 on 2026-10-12; $49 a month from 2027-10-12." (I-497, I-672) */
 	function trialLine(sub: Subscription, plan: Plan): string {
 		const first = `Trial. First charge of ${price(sub.next_charge_cents ?? plan.price_cents)} on ${dateOnly(sub.trial_end!)}`;
 		return sub.intro_until
@@ -290,7 +290,8 @@
 				</div>
 				{#if intro(p)}
 					<p class="mt-1 text-right text-sm text-balance text-ink-muted" data-testid="intro-{p.id}">
-						For {p.intro_months} months, then {price(p.price_cents)} and {allowance(p.egress_gb)} egress
+						For {p.intro_months} months, then {price(p.price_cents)}{#if p.intro_egress_gb}
+							and {allowance(p.egress_gb)} egress{/if}
 					</p>
 				{/if}
 				<dl class="mt-4 space-y-1.5 text-sm tabular-nums">

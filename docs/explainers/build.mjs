@@ -198,7 +198,7 @@ ${body}
 `;
 }
 
-const short = { "price-level": "Price level", "third-party-pays": "Someone else pays", "pause-idle": "Resting idle machines" };
+const short = { "price-level": "Price level", "pause-idle": "Resting idle machines" };
 const shortTitle = (p) => short[p.key];
 
 export function build() {

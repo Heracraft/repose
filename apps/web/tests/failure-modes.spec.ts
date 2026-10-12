@@ -163,12 +163,12 @@ test('egress_limit, past_due and suspended each show the sentence and the right 
 	const startBtn = page.getByRole('button', { name: 'Start', exact: true });
 	const refusal = page.getByTestId('refusal');
 
-	// A first Solo subscription has the introductory 100 GB (I-497).
+	// A first Solo subscription keeps the plan's 250 GB at the founding price (I-672).
 	await setBilling({ mode: 'active', plan: 'solo', egress_gb: 1000 });
 	await startBtn.click();
 	await expect(refusal).toHaveAttribute('data-reason', 'egress_limit');
 	await expect(refusal).toContainText(
-		"egress this period is 1000 GB, four times Solo's 100 GB allowance."
+		"egress this period is 1000 GB, four times Solo's 250 GB allowance."
 	);
 	await expect(refusal.getByRole('link', { name: 'See usage' })).toHaveAttribute(
 		'href',

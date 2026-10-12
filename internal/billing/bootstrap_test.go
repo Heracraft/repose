@@ -76,14 +76,14 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("metered price: %v", metered)
 		}
 	}
-	// The introductory discount: $9 off Solo for three months.
+	// The founding discount: $10 off Solo for twelve months.
 	ds := f.Bodies["POST /discounts/"]
 	if len(ds) != 1 || res.DiscountIntro == "" {
 		t.Fatalf("discounts created: %v (%q)", ds, res.DiscountIntro)
 	}
 	d := ds[0]
-	if d["type"] != "fixed" || d["amount"] != float64(900) || d["currency"] != "usd" || d["duration"] != "repeating" || d["duration_in_months"] != float64(3) ||
-		len(d["products"].([]any)) != 1 || d["products"].([]any)[0] != res.ProductSolo || d["metadata"].(map[string]any)["repose"] != "intro-solo-2000-3" || d["code"] != nil {
+	if d["type"] != "fixed" || d["amount"] != float64(1000) || d["currency"] != "usd" || d["duration"] != "repeating" || d["duration_in_months"] != float64(12) ||
+		len(d["products"].([]any)) != 1 || d["products"].([]any)[0] != res.ProductSolo || d["metadata"].(map[string]any)["repose"] != "intro-solo-3900-12" || d["code"] != nil {
 		t.Fatalf("discount body: %v", d)
 	}
 	we := f.Bodies["POST /webhooks/endpoints"][0]
@@ -127,7 +127,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	// A product with another price is not reused: a changed price makes a
 	// new product, and the introductory discount follows it.
 	for id, pr := range f.products {
-		if pr["metadata"].(map[string]any)["repose"] == "plan-solo-2900" {
+		if pr["metadata"].(map[string]any)["repose"] == "plan-solo-4900" {
 			pr["prices"].([]any)[0].(map[string]any)["price_amount"] = float64(1900)
 			delete(f.products, id)
 			pr["metadata"] = map[string]any{"repose": "plan-solo-1900"}

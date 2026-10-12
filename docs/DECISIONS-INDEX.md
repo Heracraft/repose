@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-661 entries.
+662 entries.
 
 ## Scope
 
@@ -427,7 +427,7 @@ pointer, not a summary.
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9152
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9179
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9200
-- **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; L9223
+- **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; partly superseded by I-672; L9223
 - **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; L9265
 - **I-364** tmux's mouse mode is off in the guest — 2026-09-29; L9291
 - **I-365** `repose secrets set` echoes one `*` per character — 2026-09-29; L9306
@@ -567,7 +567,7 @@ pointer, not a summary.
 - **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13502
 - **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13615
 - **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13731
-- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; L13772
+- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; superseded by I-672; L13772
 - **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13843
 - **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13854
 - **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13878
@@ -693,3 +693,4 @@ pointer, not a summary.
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
 - **I-642** The pricing research carries Hetzner's 15 June 2026 dedicated prices, and the plans lose money on Hetzner too (hetzner-repricing, 2026-10-09) — L18417
+- **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L18442

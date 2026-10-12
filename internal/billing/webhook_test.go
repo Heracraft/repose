@@ -220,9 +220,9 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 	if len(seats.converted) != 1 || seats.converted[0] != a.UserID.String() {
 		t.Fatalf("Seats.Converted once on the first live subscription: %v", seats.converted)
 	}
-	// The introductory discount runs three months from the trial's end
-	// (DECISIONS I-497, I-604).
-	if !sub.Intro || sub.IntroUntil == nil || !sub.IntroUntil.Equal(time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)) {
+	// The founding discount runs twelve months from the trial's end
+	// (DECISIONS I-604, I-672).
+	if !sub.Intro || sub.IntroUntil == nil || !sub.IntroUntil.Equal(time.Date(2027, 10, 8, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("intro: %v %v", sub.Intro, sub.IntroUntil)
 	}
 	// Another discount is not the introductory offer.
@@ -304,7 +304,7 @@ func TestWebhookSubscriptionLifecycle(t *testing.T) {
 	if p := accountEmail(t, pool, a, "subscription_cancelled", "Plus", "1 November 2026 at 00:00 UTC"); p["plan"] != "plus" || p["ends_at"] != "2026-11-01T00:00:00Z" {
 		t.Fatalf("subscription_cancelled payload %v", p)
 	}
-	if p := accountEmail(t, pool, a, "payment_failed", "Plus"); p["plan"] != "plus" || p["amount_cents"] != float64(5900) {
+	if p := accountEmail(t, pool, a, "payment_failed", "Plus"); p["plan"] != "plus" || p["amount_cents"] != float64(8900) {
 		t.Fatalf("payment_failed payload %v", p)
 	}
 	if p := accountEmail(t, pool, a, "subscription_ended", "Plus", "3 October 2026 at 12:00 UTC", "2 November 2026 at 12:00 UTC"); p["plan"] != "plus" || p["retention_until"] != "2026-11-02T12:00:00Z" {

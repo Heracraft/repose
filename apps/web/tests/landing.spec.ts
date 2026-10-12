@@ -17,14 +17,14 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 		)
 	).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
-	await expect(pricing.getByText('$20')).toBeVisible();
+	await expect(pricing.getByText('$39')).toBeVisible();
 	await expect(
-		pricing.getByText('First 3 months for new subscribers, then $29 and 250 GB egress')
+		pricing.getByText('First 12 months for the first 30 subscribers, then $49')
 	).toBeVisible();
-	await expect(pricing.getByText('$59')).toBeVisible();
-	await expect(pricing.getByText('$99')).toBeVisible();
+	await expect(pricing.getByText('$89')).toBeVisible();
+	await expect(pricing.getByText('$169')).toBeVisible();
 	await expect(pricing.getByText('8 GB running at once')).toBeVisible();
-	await expect(pricing.getByText('100 GB disk · 100 GB egress')).toBeVisible();
+	await expect(pricing.getByText('100 GB disk · 250 GB egress')).toBeVisible();
 	await expect(pricing.getByText('16 GB running at once')).toBeVisible();
 	await expect(pricing.getByText('250 GB disk · 500 GB egress')).toBeVisible();
 	await expect(pricing.getByText('32 GB running at once')).toBeVisible();
@@ -32,6 +32,23 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
 	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
+	// The launch-price terms under the cards (I-672).
+	await expect(
+		pricing.getByText(
+			'Launch prices. A change reaches you by email 30 days ahead. Your subscription keeps the list price it started on for 12 months from its start.'
+		)
+	).toBeVisible();
+});
+
+test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
+	await setBilling({ founding_left: 0 });
+	await page.goto('/');
+	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	const solo = pricing.locator('.tier', { has: page.getByRole('heading', { name: 'Solo' }) });
+	await expect(solo.locator('.tier-price .n')).toHaveText('$49');
+	await expect(solo.locator('.tier-then')).toHaveCount(0);
+	await expect(pricing.getByText('$39')).toHaveCount(0);
+	await setBilling({ founding_left: 30 });
 });
 
 test('when full, the line says so with the number waiting', async ({ page }) => {

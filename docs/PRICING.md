@@ -15,29 +15,36 @@ I-77, I-179 to I-185 and I-205; the hourly design is kept in
 
 | Plan | Price | Memory for running machines | Disk | Egress a month | Seats |
 |---|---|---|---|---|---|
-| Solo | $29 a month | 8 GB: one `large`, or two `small` | 100 GB | 250 GB | 1 |
-| Plus | $59 a month | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 2 |
-| Pro | $99 a month | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 4 |
+| Solo | $49 a month | 8 GB: one `large`, or two `small` | 100 GB | 250 GB | 1 |
+| Plus | $89 a month | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 2 |
+| Pro | $169 a month | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 4 |
 
-Solo costs $20 a month for its first 3 months, then $29: the
-introductory price, for an account's first subscription only. The week
-free comes first, so the first three charges after it are $20 and the
-fourth is $29. Polar charges it as a fixed discount of $9, repeating for
-3 months and restricted to Solo's product, which the api attaches to a
-first Solo checkout (I-604); Polar counts the months from the first
-charged period, the trial's end. The discount applies to the whole order,
-so the overage line on a $20 renewal is billed in full; a user
-who had any subscription before, or who checks out Plus or Pro, pays the
-table's price. An upgrade from Solo during the three months ends the
-introductory price: the api removes the discount from the subscription
-at Polar with the change, since the offer is Solo's only and Polar would
-otherwise carry the $9 onto Plus or Pro (DECISIONS I-497, I-604).
-The introductory offer also has less egress: 100 GB of egress a period
-while it runs (the free week and the three $20 periods), then 250 GB. The
-$0.05 overage starts past 100 GB, and the stop at four times the allowance
-is at 400 GB. On Azure a GB of egress costs about $0.087, so 250 GB is
-$21.75, more than a $20 month; prod measured 28 GB for the whole fleet in
-two weeks, so the cut costs a typical user nothing.
+The prices are ladder C of `proposals/2026-10-11-price-level.md`,
+chosen for launch (DECISIONS I-672, superseding I-362's $29, $59 and $99).
+An always-on agent costs about $263 a month on GitHub Codespaces and about
+$161 on Vercel Sandbox, and the buyer already pays Anthropic $100 to $200
+a month; $49 is a fifth to a third of the first two.
+
+Solo costs $39 a month for its first 12 months, then $49: the founding
+price, for the first 30 subscribers, on an account's first subscription
+only (DECISIONS I-672, superseding I-497's $20 for 3 months). The week
+free comes first, so the first twelve charges after it are $39 and the
+thirteenth is $49. Polar charges it as a fixed discount of $10, repeating
+for 12 months and restricted to Solo's product, which the api attaches
+to a first Solo checkout while fewer than 30 subscriptions carry it
+(I-604); Polar counts the months from the first charged period, the
+trial's end. The count is the api's: subscriptions in any status that
+carry the discount, so a cancelled founding subscription keeps its place
+and an upgrade gives its place back. `GET /public/seats` reports the
+places left as `founding_left`, and the landing's Solo card shows $49
+once none are. The discount applies to the whole order, so the overage
+line on a $39 renewal is billed in full; a user who had any
+subscription before, or who checks out Plus or Pro, pays the table's
+price. An upgrade from Solo during the twelve months ends the founding
+price: the api removes the discount from the subscription at Polar with
+the change, since the offer is Solo's only and Polar would otherwise
+carry the $10 onto Plus or Pro (DECISIONS I-497, I-604). The founding
+price keeps Solo's 250 GB of egress.
 
 Three plans because one agent needs a `large`: a harness with its
 language servers, builds and browser fills 8 GB, and a smaller machine
@@ -94,8 +101,8 @@ A plan's rules:
   projects and their 30-day snapshots are free.
 
 Example: a Solo user with a `large` running all month, a 40 GB disk, and
-20 GB of egress pays $29. The same user with 300 GB of egress pays $29 plus
-$2.50. Two `large` machines at once need Plus; three or four need Pro.
+20 GB of egress pays $49, or $39 in the founding months. The same user
+with 300 GB of egress pays $49 plus $2.50. Two `large` machines at once need Plus; three or four need Pro.
 
 ## The trial
 
@@ -171,9 +178,9 @@ binding constraint at 30 seats per host (256 GB minus 16 GB reserve, no
 memory oversubscription; CPU is oversubscribed 2:1). The launch host is a
 `D64s_v7` (DECISIONS I-39) at about $3,000 a month on demand, so a seat
 that runs around the clock costs about $100 in compute before storage, the
-control plane and the edge, and Solo at $29 loses about $70 a month on such
-a user; a Pro user running four seats all month costs about $400 and loses
-about $300. That is accepted for the launch (owner, 2026-09-27: "use Azure as a
+control plane and the edge, and Solo at $49 loses about $54 a month on such
+a user ($63 at the founding $39); a Pro user running four seats all month
+costs about $400 and loses about $240. That is accepted for the launch (owner, 2026-09-27: "use Azure as a
 cash sink for now"): the Azure credit pays for it while the product is
 learned, the seat count caps the loss at the size of one host, and the
 prices are set for the host the business ends up on.
@@ -181,13 +188,15 @@ prices are set for the host the business ends up on.
 That host is no longer cheap. Hetzner's 15 June 2026 repricing (DECISIONS
 I-642) took the 256 GB AX162 from about €242 to €842.30 a month ($992.10,
 plus a €419 setup fee), so a seat on it costs about $33 a month, not the
-€8 this section first said. A plan earns per seat, after Polar's fee:
+€8 this section first said. A plan earns per seat, after Polar's fee,
+at I-672's prices:
 
-| Plan | Per seat a month |
-|---|---|
-| Solo | $27.05 ($18.50 during the $20 months) |
-| Plus | $27.78 |
-| Pro | $23.39 |
+| Plan | Per seat a month | Against an AX162-2 seat ($33.07) | Against an Azure seat (~$100) |
+|---|---|---|---|
+| Solo | $46.05 | +$12.98 | −$53.95 |
+| Solo, founding $39 | $36.55 | +$3.48 | −$63.45 |
+| Plus | $42.03 | +$8.96 | −$57.97 |
+| Pro | $40.01 | +$6.94 | −$59.99 |
 
 Hetzner's dedicated servers, per seat, in USD for new orders, excluding
 IPv4 (seats are RAM minus the 16 GB reserve, in 8 GB blocks):
@@ -202,21 +211,23 @@ IPv4 (seats are RAM minus the 16 GB reserve, in 8 GB blocks):
 | AX162-1-LTD | EPYC 9454P, 48 cores | 128 GB | 372.10 | 14 | 26.58 |
 | EX131-2-LTD | Xeon Gold 6731P | 256 GB | 602.10 | 30 | 20.07 |
 
-A seat runs on a regular Hetzner server at a loss of about $5 to $10 a
-month on every plan, before disk, egress, snapshots, the edge and the
-control plane. Only EX131-2-LTD clears all three plans, by about $3 a seat
-on Pro, and Hetzner sells LTD servers only while it has the hardware. The
+At I-362's $29, $59 and $99 a seat ran on a regular Hetzner server at a
+loss of about $5 to $10 a month on every plan. At I-672's prices every
+plan clears an AX162-2 seat, by $3.48 (founding Solo) to $12.98 (Solo),
+before disk, egress, snapshots, the edge and the control plane, and only
+on a full host: a subscription holds its seats whether its machines run
+or not ("Seats and the waitlist"), so the fleet pays for every seat sold
+around the clock, and an empty seat earns nothing. Ladder C clears the
+AX162-2's $992.10 once 22 Solo seats are sold (75% fill with the setup
+fee spread over 12 months; `proposals/2026-10-11-price-level.md` §4). The
 server auction was not priced: its data no longer loads without
-JavaScript. The loss holds because a subscription holds its seats whether
-its machines run or not ("Seats and the waitlist"), so the fleet pays for
-every seat sold around the clock. Moving hosts no longer fixes the margin
-by itself; the prices, or the one seat held per 8 GB sold, have to change
-too, and that is the owner's decision.
+JavaScript. On Azure every plan still loses $54 to $63 a seat, which the
+credit pays.
 
 Polar takes 5% plus 50¢ a transaction on its Starter rate, the same as
 Paddle did (I-604; Stripe alone would take about 2.9% plus
-30¢ and leave the tax filing to us): $1.95 of a Solo month, $3.45 of a Plus
-one, $5.45 of a Pro one.
+30¢ and leave the tax filing to us): $2.95 of a Solo month ($2.45 of a
+founding one), $4.95 of a Plus one, $8.95 of a Pro one.
 
 ## What is deliberately not priced
 
@@ -233,4 +244,17 @@ one, $5.45 of a Pro one.
 Prices live in one place in the API's configuration (`internal/billing/plans.go`,
 the Polar product ids in the environment) and in this doc. A change is a
 `DECISIONS.md` entry, a 30-day notice to users by email, and a new Polar
-price; existing subscriptions keep their price until moved.
+price. A subscription keeps the list price it started on for 12 months
+from its start (DECISIONS I-672, which cut "until moved"); a founding
+price is a discount with its own end, stated at checkout. The pricing
+page says so in one line: "Launch prices. A change reaches you by email
+30 days ahead. Your subscription keeps the list price it started on for
+12 months from its start."
+
+The code cannot keep that hold yet. A new `PriceCents` makes a new Polar
+product, the config maps one product per plan, and the webhook refuses a
+subscription on an old product. Before the next price change ships, the
+api needs old product ids mapped to their plan, the subscription's own
+price stored from the webhook, and `ChargeCents` reading it
+(`proposals/2026-10-11-price-level.md` §6). I-672 shipped without them
+because no subscription was live.

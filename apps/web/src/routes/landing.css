@@ -534,13 +534,21 @@
 	text-transform: uppercase;
 	color: var(--ink-faint);
 }
-/* The price a plan becomes after its introductory months (I-497), under
-   the price in the muted ink of the spec line. */
+/* The price Solo becomes after its founding months (I-672), under the
+   price in the muted ink of the spec line. */
 .tier-then {
 	margin-top: 0.5rem;
 	font-size: 0.875rem;
 	color: var(--ink-muted);
 	text-wrap: balance;
+}
+/* The launch-price terms (I-672), under the cards in the same muted ink,
+   aligned with the cards' text. */
+.tier-note {
+	margin: 0;
+	padding: 0 var(--land-x) 1.5rem;
+	font-size: 0.875rem;
+	color: var(--ink-muted);
 }
 .cta-row {
 	display: flex;

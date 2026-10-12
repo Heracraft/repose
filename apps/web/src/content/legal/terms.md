@@ -1,6 +1,6 @@
 ---
 title: Terms of service
-effective: 2026-10-08
+effective: 2026-10-11
 status: these terms are under review before launch.
 ---
 
@@ -116,8 +116,10 @@ every environment and suspend the account; thirty days after that the
 snapshots are deleted. A successful payment at any point restores the
 account. Refunds are described in the [refund policy](/refunds).
 
-We may change prices with at least 30 days' notice by email; an existing
-plan keeps its price until that date. A plan is for one person's own use;
+We may change prices with at least 30 days' notice by email. A
+subscription keeps the list price it started on for 12 months from its
+start, and a new price reaches it no sooner than the later of that date
+and the notice's end. A plan is for one person's own use;
 seats for other people are not sold yet.
 
 ## Your data

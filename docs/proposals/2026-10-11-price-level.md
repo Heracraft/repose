@@ -1,7 +1,6 @@
 # Charging what it is worth (proposal, 2026-10-11)
 
-**Status: analysis only. Nothing here is decided.** Companion to
-`docs/proposals/2026-10-11-third-party-pays.md`. The question: repose may
+**Status: ladder C chosen and shipped at launch, with the founding $39 for 12 months for the first 30 Solo subscribers (DECISIONS I-672); the launch trigger below was not taken. The rest is analysis.** The question: repose may
 be priced too low for the buyer it names. I-362 defines that buyer as "the
 heavy Claude Code user already paying Anthropic $100 to $200 a month and
 running several agents across repositories". The plans today are Solo

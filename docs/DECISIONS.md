@@ -18438,3 +18438,51 @@ out of date).
   (4 shared AMD vCPU) is $41.99 in Germany and the US CPX31 $73.49, so
   Solo still undercuts a Hetzner VPS of the same memory. The CX line
   ($9.99 for 8 GB) is listed but was not orderable on 2026-10-07.
+
+**I-672. Launch at ladder C: Solo $49, Plus $89, Pro $169, with a
+founding $39 for the first 30 Solo subscribers (pricing-directions,
+2026-10-11).** Supersedes I-497. Supersedes I-362's prices; its plans
+and their memory stand. Amends PRICING.md "Changing
+prices". *Made during
+implementation* (owner, 2026-10-11, after reading
+`proposals/2026-10-11-price-level.md`: "2 inspired me to choose ladder
+C"; on timing, "Now, at launch, no existing user is an actual user, just
+me so we dont need backwards compatability"; the founding offer as
+proposed).
+- Prices: Solo $49, Plus $89, Pro $169 a month; memory, disk, egress and
+  seats unchanged. An always-on agent costs about $263 a month on GitHub
+  Codespaces and about $161 on Vercel Sandbox; the buyer already pays
+  Anthropic $100 to $200. The proposal put the switch on a trigger (a
+  binding waitlist, or the first Hetzner host); the owner chose launch,
+  so there is no $29 period to grandfather.
+- Founding price: Solo's first 12 charges after the free week are $39,
+  then $49, on an account's first subscription, for the first 30
+  subscribers. It replaces I-497's $20 for 3 months and its 100 GB
+  egress: the founding price keeps Solo's 250 GB. `plans.go` carries it
+  as `IntroCents 3900, IntroMonths 12, IntroLimit 30`; Polar charges a
+  fixed $10 discount repeating 12 months (key `intro-solo-3900-12`). The
+  api counts the cap: subscriptions in any status with `intro` set
+  (`billing.IntroTaken`), so a cancelled founding subscription keeps its
+  place and an upgrade gives it back. The Polar discount has no
+  `max_redemptions`: a checkout that raced past 30 would fail at Polar
+  instead of charging $49, and a place or two over costs $10 a month
+  each.
+- `GET /public/seats` gains `founding_left` (additive), and the landing's
+  Solo card shows $49 with no founding line once it is 0.
+- The price-change promise: "Launch prices. A change reaches you by email
+  30 days ahead. Your subscription keeps the list price it started on for
+  12 months from its start." It is on the landing under the plans, in
+  `billing.md`, in `terms.md` (effective 2026-10-11) and in PRICING.md,
+  replacing "existing subscriptions keep their price until moved", which
+  had no end and which the code could not keep.
+- The code still cannot keep the 12-month hold across a price change: a
+  new price makes a new Polar product and the webhook refuses a
+  subscription on an old one. Mapping old products to their plan,
+  storing a subscription's price from the webhook and reading it in
+  `ChargeCents` is required before the next price change ships, and
+  PRICING.md says so.
+- Per seat after Polar's fee: Solo $46.05 (founding $36.55), Plus $42.03,
+  Pro $40.01. Against a Hetzner AX162-2 seat ($33.07) that is +$12.98,
+  +$3.48, +$8.96 and +$6.94 on a full host; against an Azure seat
+  (about $100) every plan still loses $54 to $63, which the credit pays
+  (owner, 2026-09-27).

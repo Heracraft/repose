@@ -33,10 +33,14 @@ type seatsCache struct {
 	mu    sync.Mutex
 	at    time.Time
 	count waitlist.Count
+	// introLeft is founding_left: the introductory offer's places left,
+	// nil when there is no offer or no limit (DECISIONS I-672).
+	introLeft *int
 }
 
-// publicSeats is GET /public/seats: `{total, free, waiting}` for the
-// landing page, no token, cached a minute in memory.
+// publicSeats is GET /public/seats: `{total, free, waiting,
+// founding_left}` for the landing page, no token, cached a minute in
+// memory.
 func (s *Server) publicSeats(w http.ResponseWriter, r *http.Request) error {
 	if s.d.Seats == nil {
 		return errors.New("seats not configured")
@@ -49,9 +53,19 @@ func (s *Server) publicSeats(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		s.seats.count, s.seats.at = c, now
+		var introLeft *int
+		if s.d.Billing != nil {
+			left, ok, err := s.d.Billing.IntroLeft(r.Context())
+			if err != nil {
+				return err
+			}
+			if ok && left >= 0 {
+				introLeft = &left
+			}
+		}
+		s.seats.count, s.seats.introLeft, s.seats.at = c, introLeft, now
 	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{"total": s.seats.count.Total, "free": s.seats.count.Free, "waiting": s.seats.count.Waiting})
+	writeJSON(w, http.StatusOK, map[string]any{"total": s.seats.count.Total, "free": s.seats.count.Free, "waiting": s.seats.count.Waiting, "founding_left": s.seats.introLeft})
 	return nil
 }
