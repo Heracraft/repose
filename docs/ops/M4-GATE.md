@@ -103,7 +103,7 @@ code; exempt accounts pass the gate and never reach checkout, I-16).
    first.` and exits 7.
 2. `/billing` shows Solo, Plus and Pro with the seats left. Choose **Solo**.
    The browser goes to Polar's hosted checkout (`sandbox.polar.sh`). It
-   shows "7 days free", the line "Solo introductory price, until <date>",
+   shows "7 days free", the line "Solo founding price, until <date>",
    "Additional metered charges may apply", and tax on top for the
    address's country. Pay with `4242 4242 4242 4242`; nothing is charged.
    Polar returns the browser to `/billing?checkout=done`, which waits for

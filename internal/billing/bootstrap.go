@@ -180,6 +180,12 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 			if k, _ := d.Metadata["repose"].(string); k == introDiscountKey(plan) && slices.Contains(ids, productID) {
 				res.DiscountIntro = d.ID
 				found("discount intro", d.ID)
+				if want := IntroDiscountName(plan); d.Name != want {
+					if err := p.RenameDiscount(ctx, d.ID, want); err != nil {
+						return nil, fmt.Errorf("rename the introductory discount: %w", err)
+					}
+					say("updated  %-16s %s (name %q)", "discount intro", d.ID, want)
+				}
 				break
 			}
 		}

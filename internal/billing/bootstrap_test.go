@@ -116,6 +116,15 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("rerun made %s", r)
 		}
 	}
+	// The discount reads as the founding price at Polar; an older name is
+	// corrected on a rerun without making a new discount.
+	if d := f.Bodies["POST /discounts/"][0]; d["name"] != "Solo founding price" {
+		t.Fatalf("discount name %v", d["name"])
+	}
+	f.discounts[res.DiscountIntro]["name"] = "Solo introductory price"
+	if renamed, err := billing.Bootstrap(ctx, p, billing.BootstrapOptions{WebhookURL: hook}); err != nil || len(renamed.Created) != 0 || f.discounts[res.DiscountIntro]["name"] != "Solo founding price" {
+		t.Fatalf("rename: %v %v %v", renamed, err, f.discounts[res.DiscountIntro]["name"])
+	}
 	// An endpoint missing an event is brought up to date.
 	f.endpoints[again.WebhookID]["events"] = []any{"order.paid"}
 	if _, err := billing.Bootstrap(ctx, p, billing.BootstrapOptions{WebhookURL: hook}); err != nil {
