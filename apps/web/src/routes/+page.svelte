@@ -6,10 +6,9 @@
 	import { authState, signIn } from '$lib/auth.svelte';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
-	import PlanCells from '$lib/components/PlanCells.svelte';
-	import { PLANS, type PlanFigures } from '$lib/plans';
 	import Hero from '$lib/components/landing/Hero.svelte';
 	import Gauge from '$lib/components/landing/Gauge.svelte';
+	import Units from '$lib/components/landing/Units.svelte';
 	import Shape, { type Kind, type Tone } from '$lib/components/landing/Shape.svelte';
 	import SectionHead from '$lib/components/landing/SectionHead.svelte';
 	import { landOnView } from '$lib/components/landing/inview';
@@ -31,8 +30,6 @@
 	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 	/** GET /public/seats (I-290): the launch's gauge; undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
-	/** Every seat is held: a plan's button joins the waitlist instead (I-290). */
-	let full = $derived(seats !== undefined && seats.free === 0);
 
 	onMount(() => {
 		publicSeats()
@@ -81,30 +78,56 @@
 	// `what` finishes each Copy button's name for a screen reader ("Copy
 	// the sign-in command"), so the three buttons are not three "Copy"s.
 	// The checkout in the last one is named after its laptop folder (I-368),
-	// the hero picture's job-alerts/. That path is an example, so its Copy
+	// the hero picture's your-project/. That path is an example, so its Copy
 	// button copies `repose run` alone (`copy`): a pasted
-	// `cd ~/code/job-alerts` fails on a visitor's laptop.
+	// `cd ~/code/your-project` fails on a visitor's laptop.
 	const steps: { title: string; command: string; copy?: string; what: string }[] = [
 		{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
 		{
 			title: 'Run in any checkout',
-			command: 'cd ~/code/job-alerts && repose run',
+			command: 'cd ~/code/your-project && repose run',
 			copy: 'repose run',
 			what: 'repose run, to run in your checkout'
 		}
 	];
-	// The plans come from lib/plans.ts, the figures plans.go holds
-	// (I-663). The cells say "running at once" in words and count no agents
-	// or machines: a count reads as a ceiling on what the product does, and
-	// the memory is shared by whatever is running (I-402). Solo shows its
-	// introductory price, then the price it becomes (I-497). What holds for
-	// every plan is said once, under the three.
-	const everyPlan = [
-		'Memory runs at once, around the clock',
-		'Up to 100 projects; a stopped one uses no memory',
-		'Snapshots kept 7 days',
-		'$0.05 a GB past the egress allowance'
+	// docs/PRICING.md's three plans, with internal/billing/plans.go's
+	// figures. The Units count is the plan's memory, one square per GB, so
+	// the plans compare at a glance. The cards say "running at once" in words and
+	// count no agents or machines: a count reads as a ceiling on what the
+	// product does, and the memory is shared by whatever is running
+	// (I-402). Solo shows its introductory price, then the price it
+	// becomes (I-497).
+	const plans: {
+		name: string;
+		price: string;
+		then?: string;
+		memory: number;
+		disk: string;
+		egress: string;
+	}[] = [
+		{
+			name: 'Solo',
+			price: '$20',
+			then: 'First 3 months for new subscribers, then $29 and 250 GB egress',
+			memory: 8,
+			disk: '100 GB',
+			egress: '100 GB'
+		},
+		{
+			name: 'Plus',
+			price: '$59',
+			memory: 16,
+			disk: '250 GB',
+			egress: '500 GB'
+		},
+		{
+			name: 'Pro',
+			price: '$99',
+			memory: 32,
+			disk: '500 GB',
+			egress: '1 TB'
+		}
 	];
 	// The sign-off row: every shape the page used, in the order it used
 	// them, so the row reads as the page's own symbols and none appears
@@ -147,21 +170,6 @@
 	{:else}
 		<button type="button" class={klass} disabled={signingIn} onclick={onSignIn}
 			>{@render authLabel(signedOut, signedIn)}</button
-		>
-	{/if}
-{/snippet}
-
-<!-- A plan's own button: signed out it signs in (the dashboard's Billing
-     page then sells the plan); signed in it opens that page on the plan.
-     The label is the same either way, so the auth check moves nothing.
-     While every seat is held, each one joins the waitlist (I-290). -->
-{#snippet planAction(p: PlanFigures)}
-	{@const label = full ? 'Join the waitlist' : `Start ${p.name}`}
-	{#if authState.authenticated}
-		<a href="{resolve('/billing')}?plan={p.id}" class="btn-quiet btn--sm">{label}</a>
-	{:else}
-		<button type="button" class="btn-quiet btn--sm" disabled={signingIn} onclick={onSignIn}
-			>{label}</button
 		>
 	{/if}
 {/snippet}
@@ -296,31 +304,46 @@
 
 		<section class="sec">
 			<SectionHead id="pricing" title="Pricing">
-				Seven days free, card at checkout. Prices in USD, before tax.
-				{#snippet aside()}
-					<!-- The launch's gauge (I-290), as a reading beside the title.
-					     Signed in, the dashboard's Billing page has it. -->
-					{#if seats && !authState.authenticated}
+				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs
+				at the same time, around the clock, across up to 100 projects; a stopped project uses none.
+				A plan's disk counts the data your projects hold.
+			</SectionHead>
+			<ul class="tiers" use:landOnView>
+				{#each plans as t, i (t.name)}
+					<li class="tier">
+						<div class="tier-top">
+							<h3 class="tier-name">{t.name}</h3>
+							<span class="tier-units land" style="--d: {i * 110}ms"
+								><Units count={t.memory} /></span
+							>
+						</div>
+						<p class="tier-run">{t.memory} GB running at once</p>
+						<p class="tier-spec">
+							<span>{t.disk} disk ·</span> <span>{t.egress} egress</span>
+						</p>
+						<p class="tier-price">
+							<span class="n">{t.price}</span>
+							<span class="per">a month</span>
+						</p>
+						{#if t.then}
+							<p class="tier-then">{t.then}</p>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			<div class="cta-row">
+				{@render authAction('btn btn--lg', 'Start a free week', 'Open the dashboard')}
+				{#if !authState.authenticated}
+					{#if seats}
 						<p class="seats" data-testid="seats-line">
 							{#if seats.free > 0}
 								{seats.free} {seats.free === 1 ? 'seat' : 'seats'} left
 							{:else}
-								{seats.waiting} waiting. You're emailed when a seat frees.
+								Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
 							{/if}
 						</p>
 					{/if}
-				{/snippet}
-			</SectionHead>
-			<div use:landOnView>
-				<PlanCells plans={PLANS} variant="landing" level={3} introEligible action={planAction} />
-			</div>
-			<div class="every">
-				<h3 class="every-h">Every plan</h3>
-				<ul>
-					{#each everyPlan as fact (fact)}
-						<li>{fact}</li>
-					{/each}
-				</ul>
+				{/if}
 			</div>
 		</section>
 	</main>

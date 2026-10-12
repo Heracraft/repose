@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-671 entries.
+672 entries.
 
 ## Scope
 
@@ -692,7 +692,7 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
-- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — L18417
+- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18417
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18461
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
 - **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18490
@@ -700,6 +700,7 @@ pointer, not a summary.
 - **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — L18538
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18585
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18592
-- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; L18636
+- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18636
 - **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
-- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — L18752
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; L18752
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — L18789

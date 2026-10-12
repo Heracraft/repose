@@ -86,9 +86,6 @@
 	const listFailure = new PollFailure('Could not load projects.');
 
 	async function refresh() {
-		// The strip's and the callout's calls go out with the list's; each
-		// fails on its own and keeps what it showed last.
-		const side = Promise.all([refreshQuestions(), refreshBilling()]);
 		try {
 			projects = await listProjects();
 			loadFailed = false;
@@ -102,10 +99,14 @@
 				loadError = loadErrorText(err, 'Could not load projects.');
 			}
 			listFailure.fail(err, projects === undefined);
-			// Not asked while the list fails: its answer would reset the
-			// "cannot reach the api" bar the failed list just raised.
+			// Nothing else is asked while the list fails: an answer would
+			// reset the "cannot reach the api" bar the failed list just
+			// raised (the strip's and the callout's calls included).
 			return;
 		}
+		// The strip's and the callout's calls go out once the list is in;
+		// each fails on its own and keeps what it showed last.
+		const side = Promise.all([refreshQuestions(), refreshBilling()]);
 		// Its own try: an api without the route (older than I-167) answers
 		// 404, and that must not hide the live list or raise a toast.
 		try {

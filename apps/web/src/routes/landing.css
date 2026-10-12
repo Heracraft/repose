@@ -125,15 +125,6 @@ main > .sec:first-child {
 	}
 }
 
-/* The title and, at its right, a reading (pricing's seats left); under
-   it once the line is too short for both. */
-.sec-title {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 0.75rem 1.5rem;
-}
 /* A section's head: the serif title and one sentence. From lg the
    padding is less below than above, so the title sits nearer the stage it
    names than the rule it follows: at --land-y both ways (84px) it floated
@@ -196,11 +187,11 @@ main > .sec:first-child {
    then the button and the install command on one row. Nothing is pushed
    to the right; the picture below is what fills the width. */
 .hero-grid {
-	padding-block: clamp(2rem, 3vw, 2.5rem) clamp(1.75rem, 2.4vw, 2.25rem);
+	padding-block: clamp(2.75rem, 5.5vw, 4.5rem) clamp(2.5rem, 5vw, 4rem);
 }
 /* Who the page is for, above the headline: the page's label style. */
 .eyebrow {
-	margin-bottom: 0.875rem;
+	margin-bottom: 1.25rem;
 	font-family: var(--font-mono);
 	font-size: 0.6875rem;
 	letter-spacing: 0.12em;
@@ -223,13 +214,6 @@ main > .sec:first-child {
 .hero-h .line {
 	display: block;
 }
-/* On a short window (1280x800, 1440x900) the headline steps down, so the
-   machine's panel shows above the fold. */
-@media (max-height: 860px) {
-	.hero-h {
-		font-size: clamp(2.75rem, 5.4vw, 4.5rem);
-	}
-}
 /* Three sentences, each kept whole, so a line breaks between sentences
    and never ends on the next one's first word: balance alone left a lone
    "A", then a lone "The", at the end of line 1. Balanced, the three break
@@ -241,7 +225,7 @@ main > .sec:first-child {
 .hero-grid .lead {
 	max-width: 34rem;
 	text-wrap: balance;
-	margin-top: 1.375rem;
+	margin-top: 1.75rem;
 }
 .hero-grid .lead > span {
 	display: inline-block;
@@ -253,7 +237,7 @@ main > .sec:first-child {
 	align-items: center;
 	gap: 0.75rem;
 	min-width: 0;
-	margin-top: 1.5rem;
+	margin-top: 1.75rem;
 }
 
 /* A command to copy: the way a picture shows a row of a terminal. */
@@ -432,64 +416,126 @@ main > .sec:first-child {
 	padding: 0.625rem 0.875rem;
 }
 
-/* Pricing. The plans are PlanCells (I-663); the seats left stand level
-   with the title as a mono reading, the launch's gauge (I-290). */
-.seats {
-	margin: 0;
-	font-family: var(--font-mono);
-	font-size: var(--text-compact);
-	font-variant-numeric: tabular-nums;
-	color: var(--ink-muted);
-}
-/* What every plan has, said once under the three: a label cell, then
-   four facts, cut by the same hairlines as the plans. */
-.every {
+/* Sizes: three columns cut by hairlines, the price on its blue rule. */
+.tiers {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+@media (min-width: 768px) {
+	.tiers {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+.tier {
+	position: relative;
+	padding: 1.75rem var(--land-x) 2rem;
 	border-top: 1px solid var(--rule);
 }
-.every-h {
-	grid-column: 1 / -1;
-	padding: 1.25rem var(--land-x) 0;
+@media (min-width: 768px) {
+	.tier + .tier {
+		border-left: 1px solid var(--rule);
+	}
+}
+/* The units sit on the name's baseline and grow upward, a row per 8 GB:
+   Solo one row, Plus two, Pro four, so each plan reads as a stack of
+   Solos. The grid has no text, so its last baseline is its bottom edge,
+   and last-baseline alignment puts that edge on the letters, not on the
+   name's line box 5px below them. */
+.tier-top {
+	display: flex;
+	align-items: last baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+/* Side by side, 50px holds Pro's four rows (45px) plus the 5px of the
+   name's line box under its baseline, so the names and the spec lines of
+   the three cards sit on one line across. */
+@media (min-width: 768px) {
+	.tier-top {
+		min-height: 50px;
+	}
+}
+.tier-name {
+	font-family: var(--font-display);
+	font-size: 2.25rem;
+	line-height: 1;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	text-transform: uppercase;
+	color: var(--ink);
+}
+/* A flex box, so the grid inside is a block whose last baseline is its
+   bottom row: an inline grid would lend the line its first row instead. */
+.tier-units {
+	display: flex;
+	flex: none;
+	line-height: 0;
+}
+/* The plan's memory gets its own line in ink: it is what the plan sells,
+   and it runs at the same time across the projects (I-402). */
+.tier-run {
+	margin-top: 0.625rem;
+	font-size: 0.9375rem;
+	color: var(--ink);
+}
+.tier-spec {
+	margin-top: 0.125rem;
+	font-size: 0.875rem;
+	color: var(--ink-muted);
+}
+/* A fact stays on one line with the dot after it, so the line breaks
+   after a dot and never starts with one: at 1440 the bare dots between
+   spans fell to the head of line 2 on two cards and not the third. */
+.tier-spec span {
+	white-space: nowrap;
+}
+.tier-price {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6rem;
+	margin-top: 1.5rem;
+	padding-top: 1.125rem;
+	background: linear-gradient(var(--sh-accent), var(--sh-accent)) no-repeat 0 0 / 100% 3px;
+}
+.tier-price .n {
+	font-family: var(--font-display);
+	font-size: 2.75rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	color: var(--ink);
+}
+.tier-price .per {
 	font-family: var(--font-mono);
 	font-size: 0.6875rem;
-	font-weight: 400;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--ink-faint);
 }
-.every ul {
-	display: contents;
-	list-style: none;
-}
-.every li {
-	padding: 0.75rem var(--land-x) 1.5rem;
-	font-size: 0.9375rem;
-	line-height: 1.45;
-	text-wrap: pretty;
+/* The price a plan becomes after its introductory months (I-497), under
+   the price in the muted ink of the spec line. */
+.tier-then {
+	margin-top: 0.5rem;
+	font-size: 0.875rem;
 	color: var(--ink-muted);
+	text-wrap: balance;
 }
-.every li:nth-child(even) {
-	border-left: 1px solid var(--rule);
-}
-.every li:nth-child(n + 3) {
-	padding-top: 1.25rem;
+.cta-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1rem 1.5rem;
+	padding: 2rem var(--land-x) var(--land-y);
 	border-top: 1px solid var(--rule);
 }
-@media (min-width: 1024px) {
-	.every {
-		grid-template-columns: minmax(0, 0.8fr) repeat(4, minmax(0, 1fr));
-	}
-	.every-h {
-		grid-column: auto;
-		padding: 1.75rem var(--land-x);
-	}
-	.every li,
-	.every li:nth-child(n + 3) {
-		padding: 1.625rem 1.5rem 1.75rem;
-		border-top: 0;
-		border-left: 1px solid var(--rule);
-	}
+/* The seats left, live from the api (I-290): one line beside the button,
+   in the muted ink, the reading of the launch's gauge. */
+.cta-row .seats {
+	margin: 0;
+	font-size: 1rem;
+	color: var(--ink-muted);
 }
 
 /* The sign-off: the page's shapes, one to a cell between the rails. */
@@ -514,15 +560,5 @@ main > .sec:first-child {
 @media (max-width: 1239px) {
 	.frieze {
 		margin-inline: var(--frame-x);
-	}
-}
-/* In the dark the light tone and the ink detail go up a step here, so
-   the pinwheel's grey quarter and the arch's door read on the page.
-   Both come from the tokens (CHECKLIST.md, "The landing"): the grey
-   shape's zinc-500 and the pictures' ink. */
-@media (prefers-color-scheme: dark) {
-	.frieze {
-		--sh-light: var(--sh-grey);
-		--sh-ink: var(--pic-ink);
 	}
 }

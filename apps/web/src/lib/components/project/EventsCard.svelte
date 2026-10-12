@@ -352,13 +352,14 @@
 	.events-list {
 		transition: opacity 120ms;
 	}
-	/* 10 rows of 37px and two day headings. */
+	/* 10 rows of 37px and one day heading; a page across midnight grows
+	   by a heading. */
 	.events-list.hold {
-		min-height: calc(10 * 2.3125rem + 2 * 2.25rem);
+		min-height: calc(10 * 2.3125rem + 2.25rem);
 	}
 	@media (width < 40rem) {
 		.events-list.hold {
-			min-height: calc(10 * 3.75rem + 2 * 2.25rem);
+			min-height: calc(10 * 3.75rem + 2.25rem);
 		}
 	}
 	.events-list :global(li:first-child) {

@@ -18785,3 +18785,30 @@ stacked by project, Daybrief's plain "3 / 3 used" rows).
 - On a phone the billing card's two actions share a row at equal
   width, "Card and receipts" for the long one (its name stays "Manage
   card and receipts"); at 320px wide they stack at full width.
+
+**I-679. One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12).**
+Amends I-655, I-663, I-674. The owner: "these stacked menus really
+ain't it", "I really liked having this full width metrics
+visualization, also the white is kinda nice; keep blue and white as
+options that I can switch between", and "revert all changes made to the
+content and visualizations in landing page (not consistency width
+stuff)".
+- The dashboard's places (Projects with its question count, Billing,
+  Settings) sit in the site header beside the logo; the 44px row under
+  it is gone. A signed-in page's header drops Pricing. Below sm Settings,
+  Docs and Feedback live in the Account menu; below 360px Billing too.
+  Public pages keep I-655's items.
+- A project page: Events beside Connect and Machine, the two columns
+  stretched to one height (the Machine card, or Events with few rows,
+  takes the rest); then Usage across the frame; then Agents, Details
+  and Snapshots in one row of three at equal height; Destroy last.
+- `--chart-line` in layout.css is the usage charts' line and area:
+  `var(--ink)` (white on the dark scheme, the default) or
+  `var(--accent)` for blue; one line to switch.
+- `UsageRing` draws a filled wedge on a `--sunken` disc, not a stroked
+  arc: a short arc read as a loading spinner.
+- The landing's copy, sections, pricing and pictures are main's again;
+  it keeps the shared header, footer and frame width (I-655 to I-657).
+  Its sample project reads `your-project`, not `job-alerts`, which
+  visitors could not place; the phone tmux bar ends after the session
+  name, since the longer name left room only for a cut clock.

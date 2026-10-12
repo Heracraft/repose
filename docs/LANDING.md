@@ -374,17 +374,20 @@ reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
 - **Every step's command has a Copy button** (I-398), as the install
   command beside the hero's button does. "Copy" says a step is its title
   and its command; the button is the command row's, not a third part.
-  The last step shows `cd ~/code/job-alerts && repose run` and its button
+  The last step shows `cd ~/code/your-project && repose run` and its button
   copies `repose run` alone, since the path is an example that a pasted
   command would fail on (I-401).
-- **Pricing's sentence and spec line** (I-397, recorded in I-401;
-  amended by I-663). The head sentence is "Seven days free, card at
-  checkout. Prices in USD, before tax." alone. What I-401 added (how
-  memory and disk are counted) moved to the "Every plan" row under the
-  cells, one short fact a cell, so the head is one line and the facts
-  sit where a reader compares plans. Each cell says its memory as
-  "N GB running at once", the owner's chosen wording (b7f7a97c); I-402's
-  "N GB of memory" is superseded.
+- **Pricing's sentence and spec line** (I-397, recorded in I-401). The
+  head sentence is "Seven days free, card at checkout. Prices in USD,
+  before tax. A plan's memory is shared by the machines you have
+  running; a stopped machine uses none. A plan's disk counts the data
+  your projects hold." (it was "Three plans. Seven days free, card at
+  checkout."; the disk sentence came with I-585, so a buyer reads 100 GB
+  as room for many projects, most of them stopped): the three cards show there are three,
+  and the currency, tax and how memory is counted are
+  `docs/PRICING.md`'s, facts the cards do not show. Each card's spec
+  reads "N GB of memory" (it was "N GB running at once", which did not
+  say it was memory), naming what the units count (I-402).
 - **The meta description** (I-397, recorded in I-401): "A cloud dev
   machine for your repo in one command, with your code, tools and logins
   on it, so coding agents can run with full permissions and your laptop
@@ -403,18 +406,9 @@ reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
   ceiling on the product, so the cards have no caption. Memory, disk and
   egress are the plan; the head sentence says the memory is shared by
   whatever is running.
-- **The hero's laptop panel hugs its rows** (I-398): side by side it
-  ends under its last row instead of stretching to the machine's height.
-- **The hero stacks below 1024** (web-polish, I-663): at 768 the five
-  columns squeezed the machine's rows until file names crossed its wall;
-  stacked, as on a phone, every row fits, and a name too long for its
-  row ends in an ellipsis inside the panel. The fold is tighter (the
-  eyebrow 40px under the header's rule at 1440, 36px from the buttons to
-  the stage), and under 860px of height the headline steps down to
-  `clamp(2.75rem, 5.4vw, 4.5rem)`: the whole stage shows at 1440x900
-  (it ends at y=879) and the machine's lower half at 1280x800.
-- **Ready's lower row has no side inset of its own**: the tool list
-  starts and the terminal ends on the divider's edges.
+- **The hero's laptop panel hugs its rows** (I-398): from 768 wide it
+  ends under its last row (y=748 at 1440) instead of stretching to the
+  machine's height (y=867). Before, both panels ended at y=870.
 - **The hero's lead keeps each sentence whole** (I-400): the line
   breaks between sentences, never after a sentence's first word. A
   sentence wider than the column wraps inside its own box (I-401), so
@@ -523,34 +517,8 @@ no CLI output blocks.
 
 ## Pricing
 
-The plans and their buttons, from one source (`lib/plans.ts`,
-`PlanCells.svelte`, I-663), the same cells /billing draws. No dashboard
-screenshot, no notes paragraphs.
-
-- **The head** is the title, the one sentence ("Seven days free, card at
-  checkout. Prices in USD, before tax.") and, level with the title, the
-  seats left as a mono reading (`18 seats left`; when full, `N waiting.
-  You're emailed when a seat frees.`). Signed in, the reading goes.
-- **Three cells** cut by hairlines, rows shared across them (a subgrid),
-  so names, spec lines, price rules and buttons each stand on one line:
-  the name with its memory as squares (Units, top-aligned in a box four
-  rows high), "N GB running at once" in ink, Disk and Egress a month on
-  hairlines, a slot for the offer (`$20 for 3 months` on Solo, reserved
-  on the others), the price on the blue rule with "/ month" in 13px sans,
-  "then $29 and 250 GB egress from month 4" under Solo's, and the cell's
-  own button at its foot. Below 768 a cell is compact: the name over its
-  squares with the price beside them, then the memory, then disk and
-  egress side by side.
-- **Per-cell actions.** "Start Solo", "Start Plus", "Start Pro", quiet
-  buttons the cell's width. Signed out each signs in; signed in each
-  opens /billing on that plan (`?plan=`), where that plan's button is the
-  solid one and has the focus. While every seat is held each reads "Join
-  the waitlist". The section has no large button of its own: the hero's
-  is the page's one.
-- **Every plan.** A row under the cells, a mono label cell and four
-  facts: memory runs at once, around the clock; up to 100 projects, a
-  stopped one uses no memory; snapshots kept 7 days; $0.05 a GB past the
-  egress allowance. Five across from 1024, two by two below.
+The size table and the call to action. No dashboard screenshot, no notes
+paragraphs.
 
 ## Process
 
@@ -576,7 +544,8 @@ by `+page.svelte` alone; the house tokens stay in `layout.css`):
   every page shares (`--frame-w`, 1200px: x=120 and 1320 at 1440), with
   the text inset by the frame's gutter (`--land-x` is `--frame-x`), so
   the headline starts under the logo (I-656). They and their ticks are
-  hidden below 1240px, where a rail would stand on the window's edge. On load they draw themselves from the top down, once, and
+  hidden below 1240px, where a rail would stand on the window's edge.
+  On load they draw themselves from the top down, once, and
   the ticks fade in after them ("Motion").
 - **Rules run wall to wall, ticked.** Every section (`.sec`) opens with a
   rule across the full width, and a small cross (`::before`/`::after`)
@@ -591,7 +560,7 @@ by `+page.svelte` alone; the house tokens stay in `layout.css`):
   is sunken and fills the width between the rails, so a picture reads as
   a bay inside the walls. The hero's picture sits on a stage the same way.
 - **Cells, not cards.** The features (`.cells`/`.cell`), the steps
-  (`.step`) and the plans (`PlanCells`) are cut by the same hairlines, and the
+  (`.step`) and the sizes (`.tier`) are cut by the same hairlines, and the
   dividers cross the full width. Each feature picture is cropped to one
   `.shot` frame; the title and sentence under it belong to the page, not to
   the picture's component.
@@ -617,9 +586,9 @@ by `+page.svelte` alone; the house tokens stay in `layout.css`):
   `clamp(1.9rem, 3.4vw, 2.5rem)`; cell and step titles 1.125rem serif
   600; a cell's sentence 1rem (a step has none, "Copy"); lead
   `clamp(1rem, 1.3vw, 1.125rem)`; a command row (`.cmd`) `--text-compact`
-  mono; a plan's name 2.25rem serif 700 uppercase (1.8rem below 768) and its price
-  serif 700 (3rem from 768), with "/ month" in 13px sans; labels 11px
-  JetBrains Mono, 0.12em tracking, uppercase (the eyebrow, "Every plan"); a drawn picture's rows 12px to 12.5px mono, 11px on
+  mono; a size's name 2.25rem serif 700 uppercase and its price 2.75rem
+  serif 700; labels 11px JetBrains Mono, 0.12em tracking, uppercase (the
+  price's "a month"); a drawn picture's rows 12px to 12.5px mono, 11px on
   a phone (I-399). A captured picture draws at the scale that fits the
   capture in its frame, under the 11px floor where it must (the Editor's
   screen at 8.4px on a phone), as it keeps its tool's colours

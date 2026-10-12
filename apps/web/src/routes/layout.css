@@ -379,6 +379,10 @@
 		--accent-strong: var(--color-blue-900);
 		--selection: var(--color-blue-200);
 		--focus: var(--color-blue-600);
+		/* The usage charts' line and area (I-679). The owner switches it
+		   here: var(--accent) draws them blue, var(--ink) in ink (white on
+		   the dark scheme). Both hold the contrast floor in both schemes. */
+		--chart-line: var(--ink);
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {

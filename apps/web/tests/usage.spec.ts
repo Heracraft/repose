@@ -45,6 +45,9 @@ test('usage draws the samples and switches window', async ({ page }) => {
 	await expect(card.getByTestId('chart-memory')).toContainText('now 3.6 GB');
 	await expect(card.getByTestId('chart-waiting-for-a-vcpu')).toContainText('peak 62%');
 	await expect(card.getByTestId('chart-waiting-for-the-server')).toContainText('now 2%');
+	// The processes are folded until opened.
+	await expect(card.getByRole('cell', { name: 'cc1plus' })).toBeHidden();
+	await card.getByText('Busiest processes').click();
 	await expect(card.getByRole('cell', { name: 'cc1plus' })).toBeVisible();
 	await expect(card.getByText('100% of 4 vCPUs')).toBeVisible();
 

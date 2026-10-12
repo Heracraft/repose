@@ -24,7 +24,9 @@ class PendingQuestions {
 		if (Date.now() - this.#at < maxAge) return;
 		this.#at = Date.now();
 		try {
-			this.count = (await listQuestions('pending')).length;
+			// Passive: a background count must not clear an outage the page
+			// it sits over has just reported.
+			this.count = (await listQuestions('pending', { passive: true })).length;
 		} catch {
 			// Keep the last count.
 		}

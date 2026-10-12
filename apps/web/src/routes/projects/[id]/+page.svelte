@@ -608,13 +608,15 @@
 			<div class="banner banner--warn mt-4">No capacity right now, try again in a few minutes.</div>
 		{/if}
 
-		<!-- Two columns from lg: what happens on the machine (questions,
-		     events, usage) on the left, what it is (connect, machine, agents,
-		     details, snapshots) on the right. Below lg the two wrappers step
-		     aside (display: contents) and one column orders the cards by
-		     what a phone visit is for. Each card's title is an h2 at the one
-		     h2 size every dashboard page uses (text-xl). -->
-		<div class="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+		<!-- Two columns from lg: the work (questions, events) on the left,
+		     how to reach the machine and what it uses (connect, machine) on
+		     the right, the two about the same height. Below lg the wrappers
+		     step aside (display: contents) and one column orders the cards
+		     by what a phone visit is for. Each card's title is an h2 at the
+		     one h2 size every dashboard page uses (text-xl). -->
+		<div
+			class="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-stretch"
+		>
 			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
 				<!-- empty:hidden: with no question the card renders nothing, and
 				     an empty cell would add a gap. One wrapper either way, so the
@@ -622,125 +624,9 @@
 				<div class="order-1 min-w-0 empty:hidden lg:order-none">
 					<QuestionsCard projectId={id} {pollFailures} bind:questions />
 				</div>
-				<div class="order-3 min-w-0 lg:order-none">
+				<div class="order-3 min-w-0 lg:order-none lg:flex-1 lg:*:h-full">
 					<EventsCard projectId={id} initial={firstEvents} {pollFailures} />
 				</div>
-				<section
-					class="card order-5 min-w-0 lg:order-none"
-					data-testid="usage-card"
-					aria-labelledby="usage-title"
-				>
-					<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-						<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
-						<!-- The current window is marked the way the config tabs mark
-						     theirs: ink with a 1px underline, no accent. -->
-						<div class="flex gap-4 text-sm" role="group" aria-label="Window">
-							{#each WINDOWS as [w, name] (w)}
-								<button
-									type="button"
-									aria-pressed={samplesWindow === w}
-									class="cursor-pointer border-b {samplesWindow === w
-										? 'border-current text-ink'
-										: 'border-transparent text-ink-muted hover:text-ink'}"
-									onclick={() => chooseWindow(w)}>{name}</button
-								>
-							{/each}
-						</div>
-					</div>
-					{#if !samples}
-						<p class="mt-3 text-sm text-ink-muted">
-							{samplesFailed ? 'Could not load usage. It tries again in a minute.' : 'Loading…'}
-						</p>
-					{:else if samples.points.length === 0}
-						<p class="mt-3 text-sm text-ink-muted">
-							No samples in this window: the machine was not running.
-						</p>
-					{:else}
-						<div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
-							<UsageChart
-								label="CPU"
-								points={series.cpu}
-								max={1}
-								stepS={samples.step_s}
-								start={samplesAt - span}
-								end={samplesAt}
-								format={pct}
-								maxLabel="100% of {samples.vcpus} vCPUs"
-							/>
-							<UsageChart
-								label="Memory"
-								points={series.mem}
-								max={samples.memory_bytes}
-								stepS={samples.step_s}
-								start={samplesAt - span}
-								end={samplesAt}
-								format={memGb}
-								maxLabel={gb(samples.memory_bytes)}
-							/>
-							<UsageChart
-								label="Waiting for a vCPU"
-								points={series.pressure}
-								max={1}
-								stepS={samples.step_s}
-								start={samplesAt - span}
-								end={samplesAt}
-								format={pct}
-								maxLabel="100%"
-							/>
-							<UsageChart
-								label="Waiting for the server"
-								points={series.wait}
-								max={1}
-								stepS={samples.step_s}
-								start={samplesAt - span}
-								end={samplesAt}
-								format={pct}
-								maxLabel="100%"
-							/>
-						</div>
-						{#if samples.procs.length > 0}
-							<!-- Folded by default: the charts answer most visits, and the
-							     table is there when a chart's peak needs a name (I-674).
-							     The summary is a caption, not a heading (I-375). -->
-							<details class="procs" data-testid="busiest-processes">
-								<summary>
-									<svg class="procs-chev" viewBox="0 0 16 16" aria-hidden="true"
-										><path d="M6 4l4 4-4 4" /></svg
-									>
-									Busiest processes
-									<span class="procs-n">{samples.procs.length}</span>
-								</summary>
-								<table class="table mt-2 w-full text-sm">
-									<thead>
-										<tr>
-											<th scope="col" class="text-left">Process</th>
-											<th scope="col" class="text-right">CPU time</th>
-											<th scope="col" class="text-right">Peak memory</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each samples.procs as p (p.comm)}
-											<tr>
-												<td class="font-mono text-compact">{p.comm}</td>
-												<td class="text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
-												<td class="text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</details>
-						{/if}
-					{/if}
-					{#if egressGb !== undefined}
-						<p
-							class="egress-row mt-6 flex items-baseline justify-between gap-4 border-t pt-4 text-sm border-rule"
-							data-testid="egress-period"
-						>
-							<span class="font-medium">Egress this period</span>
-							<span class="text-xs text-ink-muted tabular-nums">{gbs(egressGb)}</span>
-						</p>
-					{/if}
-				</section>
 			</div>
 
 			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
@@ -759,7 +645,9 @@
 						</p>
 					{/if}
 				</section>
-				<div class="order-6 min-w-0 lg:order-none">
+				<!-- The Machine card takes what the column has left, so the two
+				     columns end on one line (I-679). -->
+				<div class="order-6 min-w-0 lg:order-none lg:flex-1 lg:*:h-full">
 					<MachineCard
 						{project}
 						memUsed={memNow}
@@ -769,23 +657,143 @@
 						onresize={onResize}
 					/>
 				</div>
-				<div class="order-7 min-w-0 lg:order-none">
-					<AgentsCard signals={project.signals} {questions} updated={lastUpdated} />
+			</div>
+		</div>
+
+		<!-- Usage spans the frame under both columns: the charts read best
+		     wide, and the work and the machine above stay side by side (I-679). -->
+		<section class="card mt-6 min-w-0" data-testid="usage-card" aria-labelledby="usage-title">
+			<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+				<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
+				<!-- The current window is marked the way the config tabs mark
+					     theirs: ink with a 1px underline, no accent. -->
+				<div class="flex gap-4 text-sm" role="group" aria-label="Window">
+					{#each WINDOWS as [w, name] (w)}
+						<button
+							type="button"
+							aria-pressed={samplesWindow === w}
+							class="cursor-pointer border-b {samplesWindow === w
+								? 'border-current text-ink'
+								: 'border-transparent text-ink-muted hover:text-ink'}"
+							onclick={() => chooseWindow(w)}>{name}</button
+						>
+					{/each}
 				</div>
-				<div class="order-8 min-w-0 lg:order-none">
-					<DetailsList {project} {revision} />
-				</div>
-				<div class="order-4 min-w-0 lg:order-none">
-					<SnapshotsTable
-						{project}
-						{snapshots}
-						busy={!!opBusy}
-						creating={opBusy === 'snapshot'}
-						restoring={opBusy === 'restore'}
-						oncreate={onCreateSnapshot}
-						onrestore={onRestore}
+			</div>
+			{#if !samples}
+				<p class="mt-3 text-sm text-ink-muted">
+					{samplesFailed ? 'Could not load usage. It tries again in a minute.' : 'Loading…'}
+				</p>
+			{:else if samples.points.length === 0}
+				<p class="mt-3 text-sm text-ink-muted">
+					No samples in this window: the machine was not running.
+				</p>
+			{:else}
+				<div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+					<UsageChart
+						label="CPU"
+						points={series.cpu}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100% of {samples.vcpus} vCPUs"
+					/>
+					<UsageChart
+						label="Memory"
+						points={series.mem}
+						max={samples.memory_bytes}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={memGb}
+						maxLabel={gb(samples.memory_bytes)}
+					/>
+					<UsageChart
+						label="Waiting for a vCPU"
+						points={series.pressure}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100%"
+					/>
+					<UsageChart
+						label="Waiting for the server"
+						points={series.wait}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100%"
 					/>
 				</div>
+				{#if samples.procs.length > 0}
+					<!-- Folded by default: the charts answer most visits, and the
+						     table is there when a chart's peak needs a name (I-674).
+						     The summary is a caption, not a heading (I-375). -->
+					<details class="procs" data-testid="busiest-processes">
+						<summary>
+							<svg class="procs-chev" viewBox="0 0 16 16" aria-hidden="true"
+								><path d="M6 4l4 4-4 4" /></svg
+							>
+							Busiest processes
+							<span class="procs-n">{samples.procs.length}</span>
+						</summary>
+						<table class="table mt-2 w-full text-sm">
+							<thead>
+								<tr>
+									<th scope="col" class="text-left">Process</th>
+									<th scope="col" class="text-right">CPU time</th>
+									<th scope="col" class="text-right">Peak memory</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each samples.procs as p (p.comm)}
+									<tr>
+										<td class="font-mono text-compact">{p.comm}</td>
+										<td class="text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
+										<td class="text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</details>
+				{/if}
+			{/if}
+			{#if egressGb !== undefined}
+				<p
+					class="egress-row mt-6 flex items-baseline justify-between gap-4 border-t pt-4 text-sm border-rule"
+					data-testid="egress-period"
+				>
+					<span class="font-medium">Egress this period</span>
+					<span class="text-xs text-ink-muted tabular-nums">{gbs(egressGb)}</span>
+				</p>
+			{/if}
+		</section>
+
+		<!-- What the machine is doing and holding, in one row of three from
+		     lg, under the charts (I-679): the two columns above stay level. -->
+		<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+			<div class="min-w-0 *:h-full">
+				<AgentsCard signals={project.signals} {questions} updated={lastUpdated} />
+			</div>
+			<div class="min-w-0 *:h-full">
+				<DetailsList {project} {revision} />
+			</div>
+			<div class="min-w-0 *:h-full">
+				<SnapshotsTable
+					{project}
+					{snapshots}
+					busy={!!opBusy}
+					creating={opBusy === 'snapshot'}
+					restoring={opBusy === 'restore'}
+					oncreate={onCreateSnapshot}
+					onrestore={onRestore}
+				/>
 			</div>
 		</div>
 
@@ -847,11 +855,13 @@
 	.procs[open] .procs-chev {
 		transform: rotate(90deg);
 	}
-	/* One rule under the head and none between rows: the section's own
-	   rule above and Egress's below already frame it. */
+	/* Rows keep their hairlines; the last one drops its own, since
+	   Egress's rule follows right under it. */
 	.procs td {
+		padding-block: 0.5rem;
+	}
+	.procs tr:last-child td {
 		border-bottom: 0;
-		padding-block: 0.375rem;
 	}
 	.procs table {
 		margin-bottom: 0.5rem;

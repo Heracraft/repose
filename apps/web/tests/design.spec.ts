@@ -122,12 +122,23 @@ for (const width of [320, 360, 390, 1440]) {
 		for (const path of FRAME_PAGES) {
 			await page.goto(path);
 			const nav = page.getByRole('navigation', { name: 'Site' });
-			await expect(nav.getByRole('link', { name: 'Docs' })).toBeVisible();
+			if (path !== '/projects' || width >= 640) {
+				await expect(nav.getByRole('link', { name: 'Docs' })).toBeVisible();
+			}
 			const items = nav.locator(':scope > a:visible, :scope > div > :visible');
 			const count = await items.count();
-			// Docs, Feedback and the account slot at every width; Pricing
-			// from 400px and GitHub from sm.
-			expect(count, path).toBe(width >= 640 ? 5 : width >= 400 ? 4 : 3);
+			if (path === '/projects') {
+				// Signed in, the places sit beside the logo and Pricing goes
+				// (I-679): Docs, Feedback, GitHub and Account from sm; below
+				// it Account alone, which holds Docs and Feedback.
+				expect(count, path).toBe(width >= 640 ? 4 : 1);
+				const places = page.getByRole('navigation', { name: 'Dashboard' });
+				await expect(places.getByRole('link', { name: /^Projects/ })).toBeInViewport({ ratio: 1 });
+			} else {
+				// Docs, Feedback and the account slot at every width; Pricing
+				// from 400px and GitHub from sm.
+				expect(count, path).toBe(width >= 640 ? 5 : width >= 400 ? 4 : 3);
+			}
 			for (let i = 0; i < count; i++) {
 				await expect(items.nth(i), `${path} item ${i}`).toBeInViewport({ ratio: 1 });
 			}

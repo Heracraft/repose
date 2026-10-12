@@ -44,6 +44,10 @@ interface RequestOptions {
 	body?: unknown;
 	/** Internal: set on the one retry rate_limited gets (5.5). */
 	_retried?: boolean;
+	/** A background read (the header's question count): its failure can
+	 * raise the outage bar, but its success never clears it, so it cannot
+	 * hide an outage the page's own call just reported. */
+	passive?: boolean;
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -79,7 +83,7 @@ async function requestWithHeaders<T>(
 	const requestId = res.headers.get('X-Request-Id');
 
 	if (res.status === 204) {
-		reachability.up();
+		if (!opts.passive) reachability.up();
 		return { data: undefined as T, headers: res.headers };
 	}
 
@@ -90,7 +94,7 @@ async function requestWithHeaders<T>(
 	} catch {
 		// A proxy's HTML error page: the api itself did not answer.
 		if (res.status >= 500) reachability.down('server');
-		else reachability.up();
+		else if (!opts.passive) reachability.up();
 		throw new ApiError(
 			{ code: 'internal', message: 'the api sent a response that was not JSON' },
 			res.status,
@@ -102,7 +106,7 @@ async function requestWithHeaders<T>(
 	// A 5xx raises the persistent bar (08-dashboard.md 6), except the 503s
 	// the api gives as answers (isOutage); anything else clears it.
 	if (isOutage(res.status, errBody?.code)) reachability.down('server');
-	else reachability.up();
+	else if (!opts.passive) reachability.up();
 
 	if (!res.ok) {
 		const body = errBody ?? {
@@ -256,8 +260,10 @@ export async function listEventsPage(
 
 // Questions (repose-ask, I-245).
 /** Questions across every project, newest first, at most 50; `pending` lists only the ones still waiting. */
-export const listQuestions = (state: 'pending' | 'all' = 'pending') =>
-	request<{ questions: Question[] }>(`/questions?state=${state}`).then((r) => r.questions);
+export const listQuestions = (
+	state: 'pending' | 'all' = 'pending',
+	opts: { passive?: boolean } = {}
+) => request<{ questions: Question[] }>(`/questions?state=${state}`, opts).then((r) => r.questions);
 export const listProjectQuestions = (id: string, pendingOnly = true) =>
 	request<{ questions: Question[] }>(
 		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`

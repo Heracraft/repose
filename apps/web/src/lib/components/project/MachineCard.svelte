@@ -101,9 +101,9 @@
 		{/if}
 		<span class="m-label">Memory in use</span>
 		<span class="m-fig">
-			{#if memUsed !== undefined}{memGb(memUsed)}<span class="m-of">
-					of {memGb(memBytes)}</span
-				>{:else}<span class="m-of">not running</span>{/if}
+			{#if memUsed !== undefined}{memGb(memUsed)}
+				<span class="m-of"> of {memGb(memBytes)}</span>{:else}
+				<span class="m-of">not running</span>{/if}
 		</span>
 	</div>
 
@@ -115,9 +115,8 @@
 		{/if}
 		<span class="m-label">Disk</span>
 		<span class="m-fig"
-			>{diskUsed !== undefined ? gb(diskUsed) : '—'}<span class="m-of">
-				of {gb(diskSize)}</span
-			></span
+			>{diskUsed !== undefined ? gb(diskUsed) : '—'}
+			<span class="m-of"> of {gb(diskSize)}</span></span
 		>
 	</div>
 	<div class="m-sub">
@@ -202,7 +201,7 @@
 		white-space: nowrap;
 	}
 	.m-of {
-		margin-left: 0.25rem;
+		margin-left: 0;
 		font-size: var(--text-sm);
 		color: var(--ink-muted);
 	}

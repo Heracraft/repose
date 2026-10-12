@@ -5,9 +5,10 @@
 	import { pollWhileVisible } from '$lib/poll';
 	import { pendingQuestions } from '$lib/questions.svelte';
 
-	// The dashboard's own row, under the site header on signed-in pages
-	// (DECISIONS I-655): the three places a signed-in visitor goes. It
-	// scrolls away with the page; the header above it stays.
+	// The dashboard's places, in the site header beside the logo on
+	// signed-in pages (DECISIONS I-655, I-679: one row, not a second bar).
+	// Below sm Settings is only in the Account menu, and below 360px
+	// Billing too, so the row fits a 320px phone.
 	const links = [
 		{ href: resolve('/projects'), label: 'Projects' },
 		{ href: resolve('/billing'), label: 'Billing' },
@@ -31,27 +32,29 @@
 	let waiting = $derived(pendingQuestions.count);
 </script>
 
-<nav aria-label="Dashboard" class="border-b border-rule">
-	<div class="frame flex h-11 items-stretch gap-6 text-sm">
-		{#each links as link (link.href)}
-			<!-- eslint-disable svelte/no-navigation-without-resolve -- link.href is built with resolve() in the links array above -->
-			<a
-				href={link.href}
-				aria-current={isCurrent(link.href) ? 'page' : undefined}
-				class="-mb-px flex items-center gap-2 border-b transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {isCurrent(
-					link.href
-				)
-					? 'border-ink text-ink'
-					: 'border-transparent text-ink-muted hover:text-ink'}"
-				aria-label={link.label === 'Projects' && waiting > 0
-					? `Projects, ${waiting} ${waiting === 1 ? 'question' : 'questions'} waiting`
-					: undefined}
-				>{link.label}{#if link.label === 'Projects' && waiting > 0}<span
-						class="badge badge--warn tabular-nums"
-						aria-hidden="true">{waiting}</span
-					>{/if}</a
-			>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
-		{/each}
-	</div>
+<nav aria-label="Dashboard" class="flex h-full items-stretch gap-4 text-sm sm:gap-6">
+	{#each links as link (link.href)}
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- link.href is built with resolve() in the links array above -->
+		<a
+			href={link.href}
+			aria-current={isCurrent(link.href) ? 'page' : undefined}
+			class="-mb-px flex items-center gap-2 border-b transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {isCurrent(
+				link.href
+			)
+				? 'border-ink text-ink'
+				: 'border-transparent text-ink-muted hover:text-ink'} {link.label === 'Settings'
+				? 'max-sm:hidden'
+				: link.label === 'Billing'
+					? 'max-[359px]:hidden'
+					: ''}"
+			aria-label={link.label === 'Projects' && waiting > 0
+				? `Projects, ${waiting} ${waiting === 1 ? 'question' : 'questions'} waiting`
+				: undefined}
+			>{link.label}{#if link.label === 'Projects' && waiting > 0}<span
+					class="badge badge--warn tabular-nums"
+					aria-hidden="true">{waiting}</span
+				>{/if}</a
+		>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/each}
 </nav>

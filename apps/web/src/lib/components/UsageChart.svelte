@@ -2,8 +2,8 @@
   One measure of a machine over a window, as a thin line over a faint area
   (DECISIONS I-492). One series, so no legend: the label names it and the
   reading beside it ("now 12%, peak 100%") carries the numbers, as a
-  Meter's does. The line is the accent over a flat 12% area of it, as a
-  meter's fill is (I-659); nothing rides on colour. The dashed lines are
+  Meter's does. The line is --chart-line (the accent or ink, one switch in
+  layout.css, I-679) over a flat 12% area of it; nothing rides on colour. The dashed lines are
   the top and the middle of the scale, each labelled above itself. A gap
   is a time the machine was stopped or did not report.
   Hover, or focus and the arrow keys, show one bucket's time and value.
@@ -165,25 +165,25 @@
 		font-size: 11px;
 	}
 	.area {
-		fill: var(--accent);
+		fill: var(--chart-line);
 		opacity: 0.12;
 	}
 	.line {
 		fill: none;
-		stroke: var(--accent);
+		stroke: var(--chart-line);
 		stroke-width: 2;
 		stroke-linejoin: round;
 		stroke-linecap: round;
 	}
 	.dot {
-		fill: var(--accent);
+		fill: var(--chart-line);
 	}
 	.cursor {
 		stroke: var(--ink-muted);
 		stroke-width: 1;
 	}
 	.mark {
-		fill: var(--accent);
+		fill: var(--chart-line);
 		stroke: var(--surface);
 		stroke-width: 2;
 	}

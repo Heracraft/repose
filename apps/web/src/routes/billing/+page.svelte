@@ -652,7 +652,8 @@
 					<div class="u-head">
 						<span class="u-label">Running now</span>
 						<span class="u-fig" class:u-over={billing.usage.running_gb > billing.usage.memory_gb}
-							>{gbs(billing.usage.running_gb)}<span class="u-of">
+							>{gbs(billing.usage.running_gb)}
+							<span class="u-of">
 								of {gbs(
 									billing.usage.memory_gb
 								)}{#if billing.usage.running_gb > billing.usage.memory_gb}&nbsp;· over{/if}</span
@@ -692,7 +693,8 @@
 						/>
 						<span class="u-label">Disk held</span>
 						<span class="u-fig" class:u-over={diskHeld > billing.usage.disk_gb}
-							>{gbs(diskHeld)}<span class="u-of">
+							>{gbs(diskHeld)}
+							<span class="u-of">
 								of {gbs(billing.usage.disk_gb)}{#if diskHeld > billing.usage.disk_gb}&nbsp;· over{/if}</span
 							></span
 						>
@@ -718,7 +720,8 @@
 						/>
 						<span class="u-label">Egress this period</span>
 						<span class="u-fig" class:u-over={egOver}
-							>{egressFigure(billing.usage.egress_gb)}<span class="u-of">
+							>{egressFigure(billing.usage.egress_gb)}
+							<span class="u-of">
 								of {egressFigure(billing.usage.egress_included_gb)}{#if egOver}&nbsp;· over{/if}</span
 							></span
 						>
@@ -1059,7 +1062,7 @@
 		letter-spacing: -0.01em;
 	}
 	.u-of {
-		margin-left: 0.25rem;
+		margin-left: 0;
 		font-family: var(--font-sans);
 		font-size: var(--text-sm);
 		font-weight: 400;

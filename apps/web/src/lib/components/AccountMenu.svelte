@@ -3,19 +3,26 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { signOut } from '$lib/auth.svelte';
+	import { FEEDBACK_URL } from '$lib/links';
 
 	// The account slot on a signed-in page (DECISIONS I-655): a disclosure,
-	// not an ARIA menu, holding Settings and Sign out. Sign out is one step
+	// not an ARIA menu, holding Settings and Sign out, and on a phone the
+	// header links that the one row has no room for (I-679). Sign out is one step
 	// away from every page and never sits in a row where a stray tap ends
 	// the session. No modal and no trap: Tab leaves it and it closes.
 	const id = $props.id();
+	const ITEM =
+		'flex h-9 items-center px-3 text-sm text-ink hover:bg-sunken focus-visible:-outline-offset-2';
 	let open = $state(false);
 	let wrap: HTMLElement | undefined = $state();
 	let button: HTMLButtonElement | undefined = $state();
 	let panel: HTMLElement | undefined = $state();
 
 	function items(): HTMLElement[] {
-		return panel ? [...panel.querySelectorAll<HTMLElement>('a, button')] : [];
+		// Items a narrow screen shows here, hidden on a wide one, are skipped.
+		return panel
+			? [...panel.querySelectorAll<HTMLElement>('a, button')].filter((el) => el.checkVisibility())
+			: [];
 	}
 
 	async function show() {
@@ -97,6 +104,10 @@
 		hidden={!open}
 		class="absolute top-full right-0 z-40 mt-1.5 min-w-44 rounded-sm border border-rule-strong bg-surface py-1"
 	>
+		<a href={resolve('/billing')} class="{ITEM} min-[360px]:hidden">Billing</a>
+		<a href={resolve('/docs')} class="{ITEM} sm:hidden">Docs</a>
+		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the feedback board is off-site -->
+		<a href={FEEDBACK_URL} class="{ITEM} sm:hidden">Feedback</a>
 		<a
 			href={resolve('/settings')}
 			class="flex h-9 items-center px-3 text-sm text-ink hover:bg-sunken focus-visible:-outline-offset-2"

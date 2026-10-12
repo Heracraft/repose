@@ -138,7 +138,8 @@
 	>
 		<span class="stat-label">{m.label}</span>
 		<span class="stat-value" class:plan-over={mOver}
-			>{fmt(m.used)}{#if m.limit !== undefined}<span class="plan-of">
+			>{fmt(m.used)}{m.limit !== undefined ? ' ' : ''}{#if m.limit !== undefined}
+				<span class="plan-of">
 					of {fmt(m.limit)}{#if mOver}&nbsp;· over{/if}</span
 				>{/if}</span
 		>
@@ -163,7 +164,8 @@
 					{/if}
 					<span class="row-label">{c.label}</span>
 					<span class="row-value" class:plan-over={over}
-						>{f(c.used)}{#if c.limit !== undefined}<span class="plan-of">
+						>{f(c.used)}{c.limit !== undefined ? ' ' : ''}{#if c.limit !== undefined}
+							<span class="plan-of">
 								of {f(c.limit)}{#if over}&nbsp;· over{/if}</span
 							>{/if}</span
 					>
@@ -238,7 +240,7 @@
 		color: var(--ink-muted);
 	}
 	.plan-of {
-		margin-left: 0.375rem;
+		margin-left: 0;
 		font-family: var(--font-sans);
 		font-size: var(--text-sm);
 		font-weight: 400;
@@ -246,7 +248,7 @@
 		color: var(--ink-muted);
 	}
 	.row-value .plan-of {
-		margin-left: 0.25rem;
+		margin-left: 0;
 	}
 	.plan-over .plan-of,
 	.row--warn .row-value {

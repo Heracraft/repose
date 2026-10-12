@@ -247,11 +247,14 @@ rows. It is a disclosure, not an ARIA menu: focus moves to its first
 item, the arrows move between them, Escape, a click outside or a
 navigation closes it. The URLs are in `lib/links.ts`.
 
-**Under the header.** On signed-in pages `DashNav.svelte` is a 44px row,
-not sticky, on the frame over a `--rule` hairline: Projects, Billing and
-Settings in the header's link style. Projects carries a `.badge--warn`
-with the number of questions waiting across every project, and its name
-says it ("Projects, 1 question waiting"). A project's pages put
+**The dashboard's places.** On signed-in pages `DashNav.svelte` sits in
+the header row beside the logo, 20px after it below `sm` and 32px from
+it (I-679): Projects, Billing and Settings in the header's link style;
+Settings hides below `sm` and Billing below 360px, both still in the
+Account menu, which also takes Docs and Feedback below `sm`. A signed-in
+page's right side drops Pricing. Projects carries a `.badge--warn` with
+the number of questions waiting across every project, and its name says
+it ("Projects, 1 question waiting"). A project's pages put
 `ProjectTabs.svelte` (Overview, Config, Secrets) under the title on the
 title's rule, through `PageShell`'s `tabs` snippet: links with
 `aria-current`, drawn like the header's. On the docs below `lg` a sticky
@@ -412,7 +415,8 @@ takes the pointer without moving the layout (I-657).
   plan's squares (one per GB, 32 to a row, 16 below 640px) filled by
   each running machine in the accent, alternate machines at 55%, free
   squares outlined, past the limit amber. Disk held and egress are
-  `UsageRing.svelte`, an 18px ring beside the "X of Y" figure. A page
+  `UsageRing.svelte`, an 18px pie (a filled wedge on a `--sunken` disc,
+  I-679) beside the "X of Y" figure. A page
   shows each limit once and draws no bar for it.
 - Stat strips (I-659): `.stat-row` is a `--surface` box whose `.stat`
   cells are split by `--rule` hairlines (stacked, with horizontal ones,

@@ -50,7 +50,7 @@
 	// The status bar as a client on that window drew it (the mode flag
 	// cropped, and its first 10 columns, the session name, cropped off the
 	// left so it starts at the window list).
-	const barHost = '"job-alerts" ';
+	const barHost = '"your-project" ';
 	const barDate = ' 25-Sep-26';
 	const hint = [
 		['  nix profile add nixpkgs#pgcli', 'install it on this machine'],
@@ -145,12 +145,10 @@
 	.am {
 		color: var(--ink);
 	}
-	/* No side inset: the tool list starts and the terminal ends on the
-	   divider's own edges, the stage's padding is the margin. */
 	.below {
 		display: grid;
 		gap: 24px;
-		padding: 16px 0;
+		padding: 16px;
 		align-items: start;
 		border-top: 1px solid var(--rule);
 	}
@@ -179,7 +177,7 @@
 			padding: 40px 32px;
 		}
 		.below {
-			padding: 32px 0 0;
+			padding: 32px;
 		}
 	}
 	@media (min-width: 768px) {

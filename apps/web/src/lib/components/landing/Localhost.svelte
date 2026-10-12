@@ -27,12 +27,12 @@
 	import { watchReducedMotion } from './inview';
 
 	const LOCAL =
-		'\u001b[35m@job-alerts/web:dev: \u001b[39m  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[0m:   \u001b[36mhttp://localhost:\u001b[1m5173\u001b[0m\u001b[36m/\u001b[39m';
+		'\u001b[35m@your-project/web:dev: \u001b[39m  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[0m:   \u001b[36mhttp://localhost:\u001b[1m5173\u001b[0m\u001b[36m/\u001b[39m';
 	const BAR_LEFT = '0:shell- 1:dev*';
-	// '⇄ 5173 5433 9101 │ "job-alerts" 19:38 25-Sep-26', split at the
+	// '⇄ 5173 5433 9101 │ "your-project" 19:38 25-Sep-26', split at the
 	// forward that travels.
 	const BAR_PORT = ' 5173';
-	const BAR_REST = ' 5433 9101 │ "job-alerts" ';
+	const BAR_REST = ' 5433 9101 │ "your-project" ';
 	const BAR_CLOCK = '19:38 25-Sep-26';
 	const ADDR = 'localhost:5173';
 
@@ -480,8 +480,9 @@
 	.port {
 		display: inline-block;
 	}
-	/* At card width the bar is cropped after the host name; on a phone,
-	   without the left end, after the clock. */
+	/* The bar is cropped after the session name; on a phone without the
+	   left end too. The clock stays off: "your-project" left it room
+	   only for a cut "19:3". */
 	.bar .clock {
 		display: none;
 	}
@@ -491,9 +492,6 @@
 		}
 		.bar .right {
 			text-align: left;
-		}
-		.bar .clock {
-			display: inline;
 		}
 	}
 	.fw {
