@@ -14,7 +14,14 @@ in
     randomizedDelaySec = "1h";
   };
 
-  nix.optimise.automatic = true;
+  # No daily `nix-store --optimise` pass (DECISIONS I-652). It replaces a
+  # store file already in use with a hard link to an identical one, so a
+  # guest's virtiofsd holds a deleted inode it cannot name in a freeze
+  # snapshot, and that guest's restore fails: on host-stg-01 the 03:59 run
+  # (2026-10-12) cost all four frozen guests their restore. New paths are
+  # still deduplicated as they are added (auto-optimise-store below),
+  # before any guest can open them.
+  nix.optimise.automatic = false;
 
   nix.settings = {
     min-free = 50 * 1024 * 1024 * 1024;

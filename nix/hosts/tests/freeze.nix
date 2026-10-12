@@ -50,6 +50,15 @@ pkgs.testers.runNixOSTest {
         # hostd's own path for cryptsetup.
         host.succeed("systemctl show hostd -p Environment --value | tr ' ' '\\n' | grep '^PATH=' | grep -q cryptsetup")
 
+    with subtest("no store optimise pass replaces files under running guests"):
+        # `nix-store --optimise` swaps a store file for a hard link to an
+        # identical one; virtiofsd then holds a deleted inode, cannot name
+        # it in the snapshot, and every guest's restore fails (host-stg-01,
+        # 2026-10-12, the 03:59 nix-optimise run). New paths are still
+        # deduplicated as they are added (auto-optimise-store).
+        host.fail("systemctl cat nix-optimise.timer")
+        host.succeed("nix config show auto-optimise-store | grep -qx true")
+
     with subtest("guest units, transient and running, stop only after the freeze unit"):
         host.succeed("systemd-run --unit guest@t1 --slice guests.slice sleep infinity")
         host.succeed("systemd-run --unit virtiofsd@t1 --slice guests.slice sleep infinity")

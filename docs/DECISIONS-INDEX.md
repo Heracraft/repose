@@ -701,7 +701,7 @@ pointer, not a summary.
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L18665
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L18684
 - **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — L18788
-- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L18992
-- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19051
-- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19177
-- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19235
+- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L19002
+- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19061
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19187
+- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19245

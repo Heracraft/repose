@@ -18865,7 +18865,17 @@ do not feel it"); off until the owner turns it on per host
   any frozen one. Only when that cannot be done is it resumed. A
   snapshot that fails inside a freeze still resumes the guest; whether
   that guest's virtio-fs survives depends on how far the hypervisor got,
-  and is not handled. Guests
+  and is not handled.
+- *No full store optimise on hosts.* `nix-store --optimise` replaces a
+  store file already in use with a hard link to an identical one; the
+  guest's virtiofsd then holds a deleted inode that it cannot name in the
+  snapshot ("Inode deleted" at the freeze, "Migration source has lost
+  inode" at the restore), and the restore fails. On host-stg-01 the
+  daily nix-optimise run at 03:59 (2026-10-12) made all four restores of
+  the next freeze fail. Hosts no longer run it (`nix.optimise.automatic
+  = false`); `auto-optimise-store` still deduplicates each path as it is
+  added, before any guest can open it. An operator's manual
+  `nix-store --optimise` on a host has the same effect (RUNBOOK). Guests
   are snapshotted smallest first, with the two slots taken in that order
   (the goroutines used to race for them, and the largest won).
 - *Fallback.* A failed freeze resumes the guest (it never notices) and

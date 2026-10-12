@@ -1448,6 +1448,10 @@ Checks:
   resumed after a snapshot loses its virtio-fs. If a guest was resumed
   anyway (`guest resumed after a freeze that did not finish`) and its
   commands hang, `hostd freeze` then `hostd thaw` brings it back.
+- Never run `nix-store --optimise` on a host with running guests: it
+  replaces store files the guests have open, and their next restore
+  fails (`Migration source has lost inode` in the virtiofsd journal);
+  they start cold instead (DECISIONS I-652).
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
   restore. `dmsetup ls | grep repose-frz` is empty except during a freeze
