@@ -32,18 +32,19 @@ export const PLANS: PlanFigures[] = [
 	{
 		id: 'solo',
 		name: 'Solo',
-		priceCents: 2900,
+		priceCents: 4900,
 		trialDays: 7,
 		seats: 1,
 		memoryGB: 8,
 		diskGB: 100,
 		egressGB: 250,
-		intro: { priceCents: 2000, months: 3, egressGB: 100 }
+		// The founding price, for the first 30 Solo subscribers (I-672).
+		intro: { priceCents: 3900, months: 12, egressGB: 250 }
 	},
 	{
 		id: 'plus',
 		name: 'Plus',
-		priceCents: 5900,
+		priceCents: 8900,
 		trialDays: 7,
 		seats: 2,
 		memoryGB: 16,
@@ -53,7 +54,7 @@ export const PLANS: PlanFigures[] = [
 	{
 		id: 'pro',
 		name: 'Pro',
-		priceCents: 9900,
+		priceCents: 16900,
 		trialDays: 7,
 		seats: 4,
 		memoryGB: 32,

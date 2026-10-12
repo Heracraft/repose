@@ -623,7 +623,7 @@ func (p *Polar) ListDiscounts(ctx context.Context) ([]Discount, error) {
 func (p *Polar) CreateIntroDiscount(ctx context.Context, plan Plan, productID string) (Discount, error) {
 	var out Discount
 	err := p.do(ctx, http.MethodPost, "/discounts/", map[string]any{
-		"name":               fmt.Sprintf("%s introductory price", plan.Name),
+		"name":               IntroDiscountName(plan),
 		"type":               "fixed",
 		"amount":             plan.IntroDiscountCents(),
 		"currency":           strings.ToLower(plan.Currency),
@@ -633,6 +633,17 @@ func (p *Polar) CreateIntroDiscount(ctx context.Context, plan Plan, productID st
 		"metadata":           map[string]any{"repose": introDiscountKey(plan)},
 	}, &out)
 	return out, err
+}
+
+// IntroDiscountName is what Polar's checkout, receipts and portal call
+// the discount: the founding price (DECISIONS I-672).
+func IntroDiscountName(plan Plan) string {
+	return fmt.Sprintf("%s founding price", plan.Name)
+}
+
+// RenameDiscount sets a discount's name.
+func (p *Polar) RenameDiscount(ctx context.Context, id, name string) error {
+	return p.do(ctx, http.MethodPatch, "/discounts/"+url.PathEscape(id), map[string]any{"name": name}, nil)
 }
 
 // introDiscountKey is the metadata.repose value of a plan's introductory

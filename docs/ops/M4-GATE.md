@@ -103,7 +103,7 @@ code; exempt accounts pass the gate and never reach checkout, I-16).
    first.` and exits 7.
 2. `/billing` shows Solo, Plus and Pro with the seats left. Choose **Solo**.
    The browser goes to Polar's hosted checkout (`sandbox.polar.sh`). It
-   shows "7 days free", the line "Solo introductory price, until <date>",
+   shows "7 days free", the line "Solo founding price, until <date>",
    "Additional metered charges may apply", and tax on top for the
    address's country. Pay with `4242 4242 4242 4242`; nothing is charged.
    Polar returns the browser to `/billing?checkout=done`, which waits for
@@ -139,8 +139,8 @@ ops/polar/subscription.sh end-trial <subscription id>
 ```
 
 It sends `PATCH /v1/subscriptions/{id}` with `{"trial_end": "now"}`, and
-Polar charges the first period on the card: $29 less the $9 introductory
-discount, plus tax. Polar sends `subscription.updated`, `subscription.active`
+Polar charges the first period on the card: $49 less the $10 founding
+discount (I-672), plus tax. Polar sends `subscription.updated`, `subscription.active`
 and `order.paid`. `ra billing show`: `billing active`, `solo active`,
 `next billed` a month out. `GET /billing/invoices` (the dashboard's
 Billing page) lists the order, `paid`, with a PDF link once Polar has
@@ -193,20 +193,20 @@ Evidence: the `show` outputs after each event, the `events` rows, the
 On the first account. The line is computed from `usage_hours.egress_bytes`
 over the hours of the period (`hour` from `period_start`). Give the
 account a known egress rather than moving a terabyte: insert one hour 10
-GB over the allowance for its project. A first Solo subscription carries
-the introductory offer, so the allowance is 100 GB, not 250 (`ra billing
-show` prints it on the `limits` line). Put the row at an hour inside the
+GB over the allowance for its project. The founding offer keeps Solo's
+250 GB allowance (I-672; `ra billing show` prints it on the `limits`
+line). Put the row at an hour inside the
 period that the rollup has not reached: the rollup rewrites the hour it
 rolls up. A day before `period_end` does both.
 
 ```
 insert into usage_hours (project_id, hour, class, running_seconds, gb_alloc, egress_bytes, cost_cents, period_start, period_end, price_version)
-select p.id, date_trunc('hour', s.period_end) - interval '1 day', p.class, 0, 0, 110::bigint * 1073741824, 0, s.period_start, s.period_end, 'plan-v1'
+select p.id, date_trunc('hour', s.period_end) - interval '1 day', p.class, 0, 0, 260::bigint * 1073741824, 0, s.period_start, s.period_end, 'plan-v1'
 from projects p join subscriptions s on s.user_id = p.user_id where p.slug = '<slug>' and s.status in ('trialing','active','past_due');
 ```
 
-then `ra billing show <handle>`: `egress 110.00 GB of 100 GB included`,
-`overage ceil(110.00 - 100) = 10 GB x 5 cents = 50 cents`. `ra billing
+then `ra billing show <handle>`: `egress 260.00 GB of 250 GB included`,
+`overage ceil(260.00 - 250) = 10 GB x 5 cents = 50 cents`. `ra billing
 explain <slug> <that hour>` prints the same arithmetic for the hour. The
 tick sends the line within three hours of `period_end`; send it now:
 
@@ -226,16 +226,16 @@ curl -s -H "Authorization: Bearer $POLAR_ACCESS_TOKEN" -H "Polar-Version: 2026-1
 prints `10` (the meter id is in the bootstrap's stderr; the user uuid is
 `select id from users where handle = …`), and the customer portal shows
 10 units of metered usage. The renewal order a month later carries the
-line "Egress overage", 10 units at $0.05, $0.50 before tax, beside $29
-less the $9 introductory discount; the discount does not reduce it. That
+line "Egress overage", 10 units at $0.05, $0.50 before tax, beside $49
+less the $10 founding discount; the discount does not reduce it. That
 order is the final evidence; until it exists, the meter's quantity and
 the portal are.
 
-The hard stop: `insert` another hour of 290 GB (400 in all, four times the
-introductory 100), run the tick (or restart `api-grpc`): the machine stops
+The hard stop: `insert` another hour of 740 GB (1000 in all, four times
+Solo's 250), run the tick (or restart `api-grpc`): the machine stops
 with reason `billing`, the `egress_stopped` email goes out, `repose start`
 is refused `Your machines are stopped until <period end>: this period's
-egress passed 400 GB…`, exit 7, and a second tick does nothing more.
+egress passed 1000 GB…`, exit 7, and a second tick does nothing more.
 Delete the two `usage_hours` rows afterwards.
 
 Evidence: the `show` and `explain` outputs, the `overage-now` lines, the

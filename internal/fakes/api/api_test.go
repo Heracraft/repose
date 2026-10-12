@@ -752,8 +752,23 @@ func TestUsageAndBilling(t *testing.T) {
 	// The public count needs no token and no billing.
 	r = call(t, f, "GET", "/v1/public/seats", "", nil)
 	want(t, r, 200)
-	if string(bytes.TrimSpace(r.body)) != `{"total":30,"free":18,"waiting":0}` {
+	if string(bytes.TrimSpace(r.body)) != `{"total":30,"free":18,"waiting":0,"founding_left":30}` {
 		t.Fatalf("seats: %s", r.body)
+	}
+	// founding_left: the places left at Solo's founding price, null with
+	// no offer (DECISIONS I-672).
+	for _, c := range []struct {
+		left int
+		want string
+	}{{0, `"founding_left":0}`}, {-1, `"founding_left":null}`}} {
+		left := c.left
+		if err := f.SetBillingState(BillingState{FoundingLeft: &left}); err != nil {
+			t.Fatal(err)
+		}
+		r = call(t, f, "GET", "/v1/public/seats", "", nil)
+		if !strings.HasSuffix(string(bytes.TrimSpace(r.body)), c.want) {
+			t.Fatalf("founding_left %d: %s", c.left, r.body)
+		}
 	}
 
 	g := New(Options{Billing: true})

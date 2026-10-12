@@ -15,6 +15,13 @@ for the trial), on Azure hosts that must be Intel (R2-17, I-39).
 Numbers marked *unverified* were not confirmed at the time. Re-check
 every price before it is used.
 
+**Correction (2026-10-09, DECISIONS I-642).** The Hetzner prices below
+predate Hetzner's 15 June 2026 repricing of new orders. The AX162-R is now
+the AX162-2 at €842.30 a month (was €242), and the AX102 is the AX102-1
+at €257.30 (was €122). 8 GB on Hetzner now costs about €28 a month, not
+€7 to 8, so the plans lose money on Hetzner too. `docs/PRICING.md`, "The
+cost floor", has the current table.
+
 ## Summary
 
 | Question | Answer |
@@ -141,7 +148,8 @@ which is simpler to prove than the current 100-hour test.
 ## 3. Hetzner hosts
 
 **New dedicated servers** (Germany, excluding VAT, after the April 2026
-price rise; https://www.hetzner.com/dedicated-rootserver/matrix-ax/):
+price rise; https://www.hetzner.com/dedicated-rootserver/matrix-ax/).
+Superseded on 15 June 2026: see the correction at the top.
 
 | Server | CPU | RAM | Large guests (8 GB) | €/month | Replaces |
 |---|---|---|---|---|---|

@@ -56,16 +56,21 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 	} else if m, _ := strconv.Atoi(intro[2]); m != billing.Solo.IntroMonths {
 		t.Errorf("PRICING.md's introductory months %s; plans.go has %d", intro[2], billing.Solo.IntroMonths)
 	}
-	if m := regexp.MustCompile(`introductory offer also has less egress: (\d+) GB`).FindStringSubmatch(doc); m == nil {
-		t.Errorf("PRICING.md no longer states the introductory egress allowance")
-	} else if n, _ := strconv.Atoi(m[1]); n != billing.Solo.IntroEgressGB {
-		t.Errorf("PRICING.md's introductory egress %s GB; plans.go has %d", m[1], billing.Solo.IntroEgressGB)
+	// The founding offer keeps Solo's egress and is capped at the first
+	// 30 subscribers (DECISIONS I-672).
+	if billing.Solo.IntroEgressGB != 0 || strings.Contains(doc, "introductory offer also has less egress") {
+		t.Errorf("the founding offer keeps the plan's egress; plans.go has %d GB and PRICING.md must not say less", billing.Solo.IntroEgressGB)
+	}
+	if m := regexp.MustCompile(`for the first (\d+) subscribers`).FindStringSubmatch(doc); m == nil {
+		t.Errorf("PRICING.md no longer states how many subscribers the founding price is for")
+	} else if n, _ := strconv.Atoi(m[1]); n != billing.Solo.IntroLimit {
+		t.Errorf("PRICING.md's founding limit %s; plans.go has %d", m[1], billing.Solo.IntroLimit)
 	}
 	if billing.Plus.HasIntro() || billing.Pro.HasIntro() {
 		t.Errorf("only Solo has an introductory price")
 	}
-	if billing.Solo.IntroDiscountCents() != 900 {
-		t.Errorf("Solo's discount %d cents, want 900", billing.Solo.IntroDiscountCents())
+	if billing.Solo.IntroDiscountCents() != 1000 {
+		t.Errorf("Solo's discount %d cents, want 1000", billing.Solo.IntroDiscountCents())
 	}
 	if billing.PriceVersion != "plan-v1" {
 		t.Errorf("PriceVersion %q", billing.PriceVersion)

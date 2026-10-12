@@ -40,10 +40,10 @@ checkout takes Stripe's test card until step 6 replaces it.
    POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=sandbox ops/polar/bootstrap.sh > /tmp/polar.env
    ```
 
-   It creates the meter "Egress overage", the three products (Solo $29,
-   Plus $59, Pro $99, each with the metered overage price at 5 cents a GB
-   and a seven-day trial), Solo's introductory discount ($9 off the first
-   three charges, I-497), and the webhook endpoint at
+   It creates the meter "Egress overage", the three products (Solo $49,
+   Plus $89, Pro $169, each with the metered overage price at 5 cents a GB
+   and a seven-day trial), Solo's founding discount ($10 off the first
+   twelve charges, I-672), and the webhook endpoint at
    `https://api.repose.herakraft.co/v1/billing/webhook`; it sets the
    organization (one subscription per customer, trial abuse prevention,
    plan changes off in the customer portal, prices exclusive of tax) and

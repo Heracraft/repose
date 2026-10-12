@@ -104,6 +104,11 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 	if r.status != 200 || r.body["total"] != float64(2) || r.body["free"] != float64(0) || r.body["waiting"] != float64(2) {
 		t.Fatalf("public seats: %d %s", r.status, r.raw)
 	}
+	// Without billing there is no founding offer: founding_left is null
+	// (DECISIONS I-672).
+	if left, has := r.body["founding_left"]; !has || left != nil {
+		t.Fatalf("public seats without billing: %s", r.raw)
+	}
 
 	// POST /projects is not the waitlist's gate any more: B, with no plan,
 	// is refused compute with subscription_required (not 503 waitlisted),

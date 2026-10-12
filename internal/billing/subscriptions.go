@@ -112,6 +112,15 @@ func EverSubscribed(ctx context.Context, q store.Querier, userID uuid.UUID) (boo
 	return ok, err
 }
 
+// IntroTaken counts the subscriptions, in any status, that carry the
+// introductory discount: what IntroLimit caps (DECISIONS I-672). Leaving
+// Solo clears a subscription's flag, so an upgrade gives its place back.
+func IntroTaken(ctx context.Context, q store.Querier) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, "select count(*) from subscriptions where intro").Scan(&n)
+	return n, err
+}
+
 // IntroAt reports whether the introductory offer covers at: the
 // subscription carries the introductory discount, its plan has an
 // introductory price, and at is before the discount's end (or the end is

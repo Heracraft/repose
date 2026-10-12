@@ -33,14 +33,18 @@ type Plan struct {
 	IntroCents    int64
 	IntroMonths   int
 	IntroEgressGB int
+	// IntroLimit is how many subscriptions may carry the introductory
+	// price at once: the founding offer's first 30 (DECISIONS I-672). Zero
+	// is no limit.
+	IntroLimit int
 }
 
-// The three plans (DECISIONS I-362), and Solo's introductory price
-// (DECISIONS I-497).
+// The three plans (DECISIONS I-362) at ladder C's prices, and Solo's
+// founding price for the first 30 subscribers (DECISIONS I-672).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, IntroCents: 2000, IntroMonths: 3, IntroEgressGB: 100}
-	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500}
-	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
+	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500}
+	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000}
 )
 
 // Plans lists the plans in the order the dashboard shows them.

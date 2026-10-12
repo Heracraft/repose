@@ -51,8 +51,9 @@ type PlanDef struct {
 	// ProjectLimit is ProjectCap on every plan; the api keeps sending it
 	// for one release after I-569.
 	ProjectLimit int `json:"project_limit"`
-	// IntroPriceCents and IntroMonths are the introductory price; 0 for
-	// none (DECISIONS I-497).
+	// IntroPriceCents and IntroMonths are the introductory price, Solo's
+	// founding price; 0 for none (DECISIONS I-497, I-672). IntroEgressGB
+	// is the egress allowance while it runs; 0 keeps EgressGB.
 	IntroPriceCents int64 `json:"intro_price_cents"`
 	IntroMonths     int   `json:"intro_months"`
 	IntroEgressGB   int   `json:"intro_egress_gb"`
@@ -60,9 +61,9 @@ type PlanDef struct {
 
 // Plans is docs/PRICING.md's table.
 var Plans = []PlanDef{
-	{ID: "solo", Name: "Solo", PriceCents: 2900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: ProjectCap, IntroPriceCents: 2000, IntroMonths: 3, IntroEgressGB: 100},
-	{ID: "plus", Name: "Plus", PriceCents: 5900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: ProjectCap},
-	{ID: "pro", Name: "Pro", PriceCents: 9900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: ProjectCap},
+	{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: ProjectCap, IntroPriceCents: 3900, IntroMonths: 12},
+	{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: ProjectCap},
+	{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: ProjectCap},
 }
 
 // ProjectCap is how many live projects, running or stopped, an account
@@ -182,6 +183,10 @@ type BillingState struct {
 	// IntroUsed marks the account as having had a subscription before, so
 	// it gets no introductory price (DECISIONS I-497).
 	IntroUsed *bool `json:"intro_used,omitempty"`
+	// FoundingLeft is GET /public/seats's founding_left, the founding
+	// price's places left (DECISIONS I-672); negative answers null, no
+	// offer.
+	FoundingLeft *int `json:"founding_left,omitempty"`
 }
 
 type billingState struct {
@@ -200,6 +205,7 @@ type billingState struct {
 	diskHeldGB    *float64
 	invoices      *[]Invoice
 	introUsed     bool
+	foundingLeft  int                 // negative: no offer, founding_left null
 	checkouts     map[string]checkout // checkout id -> plan and return origin
 	checkoutSeq   int
 	checkoutBase  string
@@ -207,10 +213,11 @@ type billingState struct {
 
 func (f *Fake) initBilling() {
 	f.bill = billingState{
-		mode:       BillingOff,
-		seatsTotal: 30,
-		seatsHeld:  12,
-		checkouts:  map[string]checkout{},
+		mode:         BillingOff,
+		seatsTotal:   30,
+		seatsHeld:    12,
+		foundingLeft: 30,
+		checkouts:    map[string]checkout{},
 	}
 	f.startPeriod()
 }
@@ -379,6 +386,9 @@ func (f *Fake) SetBillingState(s BillingState) error {
 	if s.IntroUsed != nil {
 		f.bill.introUsed = *s.IntroUsed
 	}
+	if s.FoundingLeft != nil {
+		f.bill.foundingLeft = *s.FoundingLeft
+	}
 	if s.DiskHeldGB != nil {
 		if *s.DiskHeldGB < 0 {
 			f.bill.diskHeldGB = nil
@@ -463,7 +473,8 @@ func (f *Fake) hasSubscription() bool {
 }
 
 // currentPlan is the subscription's plan as it applies to this period:
-// with the introductory egress allowance while the offer runs (I-497).
+// with the introductory egress allowance while the offer runs, if the
+// plan has one (I-497; Solo's founding price keeps 250 GB, I-672).
 func (f *Fake) currentPlan() *PlanDef {
 	if !f.hasSubscription() {
 		return nil
@@ -1018,10 +1029,15 @@ func (f *Fake) billingWebhook(w http.ResponseWriter, r *http.Request) *apiError 
 
 func (f *Fake) publicSeats(w http.ResponseWriter, r *http.Request) *apiError {
 	s := f.seatsOf()
+	var left *int
+	if n := f.bill.foundingLeft; n >= 0 {
+		left = &n
+	}
 	writeJSON(w, http.StatusOK, struct {
-		Total   int `json:"total"`
-		Free    int `json:"free"`
-		Waiting int `json:"waiting"`
-	}{s.Total, s.Free, s.Waiting})
+		Total        int  `json:"total"`
+		Free         int  `json:"free"`
+		Waiting      int  `json:"waiting"`
+		FoundingLeft *int `json:"founding_left"`
+	}{s.Total, s.Free, s.Waiting, left})
 	return nil
 }
