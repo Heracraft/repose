@@ -9,6 +9,7 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"strings"
@@ -248,45 +249,22 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 // enqueue writes one outbox row per enabled channel, applying the
 // per-project hourly cap with a single digest event past it.
 func (i *Ingest) enqueue(ctx context.Context, tx db.Tx, eventID, projectID uuid.UUID, kind string, ts time.Time) error {
-	var notifyEmail bool
-	var email, ntfy *string
-	if err := tx.QueryRow(ctx, "select u.notify_email, u.email, u.ntfy_url from users u join projects p on p.user_id = u.id where p.id = $1", projectID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+	var userID uuid.UUID
+	var tz *string
+	if err := tx.QueryRow(ctx, "select u.id, u.tz from users u join projects p on p.user_id = u.id where p.id = $1", projectID).Scan(&userID, &tz); err != nil {
 		return err
 	}
-	var channels []string
-	if notifyEmail && email != nil && *email != "" {
-		channels = append(channels, "email")
-	}
-	if ntfy != nil && *ntfy != "" {
-		channels = append(channels, "ntfy")
+	channels, err := Channels(ctx, tx, userID)
+	if err != nil {
+		return err
 	}
 	if len(channels) == 0 {
 		return nil
 	}
 	if kind != "notifications_paused" {
-		var recent int
-		if err := tx.QueryRow(ctx, `select count(distinct o.event_id) from events_outbox o join events e on e.id = o.event_id where e.project_id = $1 and e.ts > $2 and e.kind <> 'notifications_paused'`, projectID, ts.Add(-time.Hour)).Scan(&recent); err != nil {
+		capped, err := i.overNotifyCap(ctx, tx, projectID, ts, tz)
+		if err != nil || capped {
 			return err
-		}
-		if recent >= RatePerHour {
-			var paused int
-			if err := tx.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'notifications_paused' and ts > $2", projectID, ts.Add(-time.Hour)).Scan(&paused); err != nil {
-				return err
-			}
-			if paused == 0 {
-				did := store.NewID()
-				if _, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, 'notifications_paused', $5, 'api')`,
-					did, projectID, ts, ts.Unix(), "30+ events in the last hour; notifications for this project are paused until the top of the hour. See the dashboard."); err != nil {
-					return err
-				}
-				for _, ch := range channels {
-					if _, err := tx.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", did, ch); err != nil {
-						return err
-					}
-				}
-			}
-			i.m.EventsTotal.WithLabelValues("rate_limited").Inc()
-			return nil
 		}
 	}
 	for _, ch := range channels {
@@ -295,6 +273,72 @@ func (i *Ingest) enqueue(ctx context.Context, tx db.Tx, eventID, projectID uuid.
 		}
 	}
 	return nil
+}
+
+// queuedSQL picks the project's events of the hour before $2 that queued
+// a delivery: a row still in the outbox, or a delivery result recorded on
+// the event (sent, failed, held, dropped). The outbox row alone is not
+// enough, since a sent row is deleted (DECISIONS I-691: counting only the
+// outbox, the cap never fired).
+const queuedSQL = `from events e where e.project_id = $1 and e.ts > $2 and e.kind <> 'notifications_paused'
+	and (e.delivered <> '{}'::jsonb or exists (select 1 from events_outbox o where o.event_id = e.id))`
+
+// overNotifyCap reports whether the project already queued RatePerHour
+// notifications in the hour before ts, and writes the one
+// notifications_paused event of that hour when it has.
+func (i *Ingest) overNotifyCap(ctx context.Context, tx db.Tx, projectID uuid.UUID, ts time.Time, tz *string) (bool, error) {
+	var recent int
+	if err := tx.QueryRow(ctx, "select count(*) "+queuedSQL, projectID, ts.Add(-time.Hour)).Scan(&recent); err != nil {
+		return false, err
+	}
+	if recent < RatePerHour {
+		return false, nil
+	}
+	i.m.EventsTotal.WithLabelValues("rate_limited").Inc()
+	var paused int
+	if err := tx.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'notifications_paused' and ts > $2", projectID, ts.Add(-time.Hour)).Scan(&paused); err != nil {
+		return true, err
+	}
+	if paused > 0 {
+		return true, nil
+	}
+	// The window slides: the cap lifts when the oldest event that keeps
+	// the count at RatePerHour is an hour old.
+	var oldest time.Time
+	if err := tx.QueryRow(ctx, "select e.ts "+queuedSQL+" order by e.ts limit 1 offset $3", projectID, ts.Add(-time.Hour), recent-RatePerHour).Scan(&oldest); err != nil {
+		return true, err
+	}
+	did := store.NewID()
+	if _, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, 'notifications_paused', $5, 'api')`,
+		did, projectID, ts, ts.Unix(), PausedSummary(oldest.Add(time.Hour), tz)); err != nil {
+		return true, err
+	}
+	var userID uuid.UUID
+	if err := tx.QueryRow(ctx, "select user_id from projects where id = $1", projectID).Scan(&userID); err != nil {
+		return true, err
+	}
+	channels, err := Channels(ctx, tx, userID)
+	if err != nil {
+		return true, err
+	}
+	for _, ch := range channels {
+		if _, err := tx.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", did, ch); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
+// PausedSummary is the notifications_paused text: the cap and the time it
+// lifts, in the user's zone when they set one.
+func PausedSummary(until time.Time, tz *string) string {
+	loc := time.UTC
+	if tz != nil && *tz != "" {
+		if l, err := time.LoadLocation(*tz); err == nil {
+			loc = l
+		}
+	}
+	return fmt.Sprintf("%d notifications in the last hour, so this project's notifications are paused until %s. Its events are still recorded.", RatePerHour, until.In(loc).Format("15:04 MST"))
 }
 
 // OnEvent handles a hostd Event and reports whether to ack it.

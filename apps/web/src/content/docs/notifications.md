@@ -33,7 +33,7 @@ email: sent
 ntfy: sent
 ```
 
-`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1.
+`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1. You can send 6 tests a minute.
 
 A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 
@@ -60,7 +60,10 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
 | `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
 | `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                     |
-| `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                               |
+| `todo-app: notifications paused`                | The project sent 30 notifications in the last hour. The body says when they start again.                                                                                                     |
+| `repose: test`                                  | You ran `repose notify test` or pressed **Send test**.                                                                                                                                        |
+
+On ntfy, questions and permission prompts come at urgent priority, done reports and failures at high, and the rest at default. Tapping one opens the project's page.
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
 
@@ -137,7 +140,7 @@ Messages and questions are capped at 1 KB and count toward the project's 30 noti
 
 ## Limits
 
-Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications an hour; past that, one message says they're paused until the next hour.
+Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says until what time they're paused. Its events still show in `repose events`.
 
 Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
 

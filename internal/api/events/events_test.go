@@ -16,6 +16,7 @@ import (
 
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/metrics"
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/db/testdb"
@@ -130,7 +131,14 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 		t.Fatal("unknown source ip accepted")
 	}
 	// Rate cap: past 30 notified events in an hour, one digest and no more
-	// outbox rows.
+	// deliveries. The worker runs between inserts, as in production, so a
+	// sent row is gone from the outbox before the next event is counted
+	// (DECISIONS I-691: counting outbox rows, the cap never fired).
+	ob := sendAll(pool)
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = pool.Exec(ctx, "delete from events where project_id = $1 and kind <> 'guest_state_changed'", pid) // start the hour empty
 	base := now.Add(10 * time.Minute)
 	for i := 0; i < 40; i++ {
 		ts := base.Add(time.Duration(i) * 61 * time.Second)
@@ -138,16 +146,25 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 		if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: ts, Kind: "needs_input", Agent: "pi", Summary: fmt.Sprint("loop ", i)}); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := ob.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ing.SetNow(time.Now)
-	var outboxEvents, paused int
-	_ = pool.QueryRow(ctx, "select count(distinct event_id) from events_outbox").Scan(&outboxEvents)
-	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'notifications_paused'").Scan(&paused)
+	var sent, paused int
+	var pausedSummary string
+	_ = pool.QueryRow(ctx, "select count(*) from events where agent = 'pi' and delivered <> '{}'").Scan(&sent)
+	_ = pool.QueryRow(ctx, "select count(*), max(summary) from events where kind = 'notifications_paused'").Scan(&paused, &pausedSummary)
 	if paused != 1 {
 		t.Fatalf("digest events %d", paused)
 	}
-	if outboxEvents > 36 {
-		t.Fatalf("outbox kept growing past the cap: %d events", outboxEvents)
+	if sent != events.RatePerHour {
+		t.Fatalf("%d events sent past a cap of %d", sent, events.RatePerHour)
+	}
+	// The first counted event is the first of the loop; the cap lifts an
+	// hour after it.
+	if want := base.Add(time.Hour).UTC().Format("15:04 UTC"); !strings.Contains(pausedSummary, "paused until "+want) {
+		t.Fatalf("pause summary %q, want it to name %s", pausedSummary, want)
 	}
 	_ = pool.QueryRow(ctx, "select count(*) from events where agent = 'pi'").Scan(&n)
 	if n != 40 {
@@ -199,6 +216,12 @@ func TestOperatorLoginWritesOneAuditRow(t *testing.T) {
 	}
 }
 
+// sendAll is an outbox whose senders always succeed.
+func sendAll(pool *db.Pool) *notify.Outbox {
+	ok := notify.SenderFunc(func(context.Context, notify.Message) error { return nil })
+	return notify.New(pool, map[string]notify.Sender{"email": ok, "ntfy": ok}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+}
+
 func derefStr(s *string) string {
 	if s == nil {
 		return "<nil>"
@@ -230,16 +253,23 @@ func TestAgentMessagesAreNotCollapsedAndShareTheCap(t *testing.T) {
 	if n != 3 {
 		t.Fatalf("outbox events %d, want 3", n)
 	}
+	ob := sendAll(pool)
 	for i := 3; i < 40; i++ {
+		if _, err := ob.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
 		if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now, Kind: "agent_message", Agent: "shell", Summary: fmt.Sprint("step ", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	var outboxEvents, paused int
-	_ = pool.QueryRow(ctx, "select count(distinct event_id) from events_outbox o join events e on e.id = o.event_id where e.kind = 'agent_message'").Scan(&outboxEvents)
-	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'notifications_paused'").Scan(&paused)
-	if outboxEvents != events.RatePerHour || paused != 1 {
-		t.Fatalf("past the cap: %d messages queued, %d pause notices", outboxEvents, paused)
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var sent, paused int
+	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'agent_message' and delivered <> '{}'").Scan(&sent)
+	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'notifications_paused' and delivered <> '{}'").Scan(&paused)
+	if sent != events.RatePerHour || paused != 1 {
+		t.Fatalf("past the cap: %d messages sent, %d pause notices sent", sent, paused)
 	}
 	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'agent_message'").Scan(&n)
 	if n != 40 {

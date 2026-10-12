@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,11 +105,40 @@ type Outbox struct {
 	// APIBase is the api's own public origin, which serves
 	// GET /notify/unsubscribe; distinct from Dashboard.
 	APIBase string
+	// Workers is how many sends run at once (DECISIONS I-691). Rows of
+	// one user's channel go in order on one lane, so a hanging endpoint
+	// holds its own rows only.
+	Workers int
+
+	mu       sync.Mutex
+	lanes    map[laneKey]*lane
+	inflight map[rowKey]bool
+	sem      chan struct{}
+	wg       sync.WaitGroup
 }
+
+// DefaultWorkers is Workers' default.
+const DefaultWorkers = 8
+
+// laneKey is one user's channel: its rows are sent in order.
+type laneKey struct {
+	user    uuid.UUID
+	channel string
+}
+
+// rowKey is one outbox row.
+type rowKey struct {
+	event   uuid.UUID
+	channel string
+}
+
+// lane is the rows of one laneKey waiting for their turn.
+type lane struct{ rows []row }
 
 // New builds an outbox with the given channel senders.
 func New(pool *db.Pool, senders map[string]Sender, m *metrics.M, log *slog.Logger) *Outbox {
-	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.herakraft.co", APIBase: "https://api.repose.herakraft.co", Interval: 2 * time.Second}
+	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.herakraft.co", APIBase: "https://api.repose.herakraft.co", Interval: 2 * time.Second,
+		Workers: DefaultWorkers, lanes: map[laneKey]*lane{}, inflight: map[rowKey]bool{}}
 }
 
 // Run polls until ctx ends, under the outbox advisory lock.
@@ -121,12 +151,15 @@ func (o *Outbox) Run(ctx context.Context) {
 		if ok {
 			t := time.NewTicker(o.Interval)
 			for {
-				if _, err := o.Once(ctx); err != nil && ctx.Err() == nil {
+				// A pass does not wait for its sends: a slow lane keeps
+				// sending while the next pass picks up everyone else's rows.
+				if _, err := o.pass(ctx); err != nil && ctx.Err() == nil {
 					o.log.Error("outbox pass", "event", "notify_fail", "err", err.Error())
 				}
 				select {
 				case <-ctx.Done():
 					t.Stop()
+					o.wg.Wait()
 					release()
 					return
 				case <-t.C:
@@ -161,16 +194,36 @@ type row struct {
 	expires     *time.Time
 }
 
-// Once delivers every due row and returns how many it attempted.
+// Once delivers every due row, waits for the sends, and returns how many
+// rows it picked.
 func (o *Outbox) Once(ctx context.Context) (int, error) {
+	n, err := o.pass(ctx)
+	o.wg.Wait()
+	o.gauges(ctx)
+	return n, err
+}
+
+// pass picks the due rows that are not already on a lane and hands them
+// to their lanes.
+func (o *Outbox) pass(ctx context.Context) (int, error) {
 	now := o.Now()
+	o.mu.Lock()
+	if o.lanes == nil {
+		o.lanes, o.inflight = map[laneKey]*lane{}, map[rowKey]bool{}
+	}
+	busy := make([]string, 0, len(o.inflight))
+	for k := range o.inflight {
+		busy = append(busy, k.event.String()+"/"+k.channel)
+	}
+	o.mu.Unlock()
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
 		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
-			where o.next_at <= $1 order by o.next_at limit 100 for update of o skip locked`, now)
+			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
+			order by o.next_at limit 100 for update of o skip locked`, now, busy)
 		if err != nil {
 			return err
 		}
@@ -196,11 +249,57 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, r := range rows {
-		o.deliver(ctx, r)
-	}
+	o.dispatch(ctx, rows)
 	o.gauges(ctx)
 	return len(rows), nil
+}
+
+// dispatch appends each row to its lane, starting a lane that is idle.
+// At most Workers sends run at once across lanes.
+func (o *Outbox) dispatch(ctx context.Context, rows []row) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.sem == nil {
+		w := o.Workers
+		if w <= 0 {
+			w = DefaultWorkers
+		}
+		o.sem = make(chan struct{}, w)
+	}
+	for _, r := range rows {
+		o.inflight[rowKey{r.eventID, r.channel}] = true
+		k := laneKey{r.userID, r.channel}
+		if l, ok := o.lanes[k]; ok {
+			l.rows = append(l.rows, r)
+			continue
+		}
+		o.lanes[k] = &lane{rows: []row{r}}
+		o.wg.Add(1)
+		go o.runLane(ctx, k)
+	}
+}
+
+// runLane sends a lane's rows one at a time, in order, until it is empty.
+func (o *Outbox) runLane(ctx context.Context, k laneKey) {
+	defer o.wg.Done()
+	for {
+		o.mu.Lock()
+		l := o.lanes[k]
+		if len(l.rows) == 0 {
+			delete(o.lanes, k)
+			o.mu.Unlock()
+			return
+		}
+		r := l.rows[0]
+		l.rows = l.rows[1:]
+		o.mu.Unlock()
+		o.sem <- struct{}{}
+		o.deliver(ctx, r)
+		<-o.sem
+		o.mu.Lock()
+		delete(o.inflight, rowKey{r.eventID, r.channel})
+		o.mu.Unlock()
+	}
 }
 
 func (o *Outbox) deliver(ctx context.Context, r row) {
@@ -212,7 +311,7 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	}
 	s := o.senders[r.channel]
 	if s == nil {
-		o.mark(ctx, r, errors.New("no sender configured"), true)
+		o.mark(ctx, r, ErrNotConfigured, true)
 		return
 	}
 	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID, At: r.eventTS}
@@ -238,7 +337,7 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		m.NtfyURL = *r.ntfy
 	}
 	if r.channel == "email" && o.Unsub != nil && !transactional(r.kind) {
-		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, time.Now())
+		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, o.Now())
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	err := s.Send(sctx, m)
@@ -265,10 +364,10 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 		return
 	}
 	attempts := r.attempts + 1
-	reason := err.Error()
-	if len(reason) > 200 {
-		reason = reason[:200]
-	}
+	// Never err.Error(): a network error carries the URL it dialled (an
+	// ntfy topic), and delivered is returned by the events route
+	// (DECISIONS I-691).
+	reason := sendFailure(err)
 	if permanent || attempts > len(backoff) {
 		o.m.NotifyTotal.WithLabelValues(r.channel, "failed").Inc()
 		o.log.Warn("notification failed", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "attempts", attempts)
@@ -288,9 +387,12 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 }
 
 func (o *Outbox) gauges(ctx context.Context) {
+	// The lag is how long the oldest due row has waited for a send: a
+	// held row, a retry waiting out its backoff and a row being sent
+	// (next_at moved a minute on) are not due (DECISIONS I-691).
 	var depth int
 	var oldest *time.Time
-	if err := o.pool.QueryRow(ctx, "select count(*), min(created_at) from events_outbox").Scan(&depth, &oldest); err == nil {
+	if err := o.pool.QueryRow(ctx, "select count(*), min(next_at) filter (where next_at <= $1) from events_outbox", o.Now()).Scan(&depth, &oldest); err == nil {
 		o.m.OutboxDepth.Set(float64(depth))
 		if oldest != nil {
 			o.m.OutboxLagSeconds.Set(o.Now().Sub(*oldest).Seconds())
@@ -309,6 +411,9 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
+	if m.Kind == TestKind {
+		return "repose: test"
+	}
 	// A user notice names no project: its subject is its title (I-645).
 	if events.UserNoticeKinds[m.Kind] {
 		return Subject(m)
@@ -362,7 +467,7 @@ type Email struct {
 // Send implements Sender.
 func (e *Email) Send(ctx context.Context, m Message) error {
 	if e.APIKey == "" {
-		return errors.New("email: RESEND_API_KEY not set")
+		return fmt.Errorf("email: RESEND_API_KEY not set: %w", ErrNotConfigured)
 	}
 	if m.Email == "" {
 		return Permanent{errors.New("email: user has no address")}
@@ -379,7 +484,7 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	// (DECISIONS I-291); a client that shows neither still has the subject.
 	r, err := Render(m)
 	if err != nil {
-		return Permanent{fmt.Errorf("email: render %s: %w", m.Kind, err)}
+		return Permanent{fmt.Errorf("email: render %s: %w: %w", m.Kind, ErrRender, err)}
 	}
 	body := map[string]any{"from": from, "to": []string{m.Email}, "subject": "[repose] " + r.Subject, "html": r.HTML, "text": r.Text}
 	if m.Unsubscribe != "" {
@@ -396,6 +501,11 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+e.APIKey)
 	req.Header.Set("Content-Type", "application/json")
+	// A send that timed out after Resend took it, or a failed mark after a
+	// sent one, is retried; the key makes Resend take it once (I-691).
+	if m.EventID != uuid.Nil {
+		req.Header.Set("Idempotency-Key", m.EventID.String()+"/email")
+	}
 	client := e.HTTP
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -406,10 +516,10 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	}
 	_ = resp.Body.Close() // status is all we need
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		return fmt.Errorf("email: status %d", resp.StatusCode)
+		return &statusError{"email", resp.StatusCode}
 	}
 	if resp.StatusCode >= 400 {
-		return Permanent{fmt.Errorf("email: status %d", resp.StatusCode)}
+		return Permanent{&statusError{"email", resp.StatusCode}}
 	}
 	return nil
 }
@@ -429,28 +539,11 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		return Permanent{err}
 	}
 	req.Header.Set("Title", Title(m))
-	prio, tag := "3", "white_check_mark"
-	switch m.Kind {
-	case "needs_input":
-		prio, tag = "5", "question"
-	case "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed", "boot_failed":
-		prio, tag = "4", "x"
-	case "agent_message":
-		prio, tag = "3", "speech_balloon"
-	case "agent_done":
-		prio, tag = "4", ""
-	case "agent_question":
-		prio, tag = "5", "question"
-	case "machines_restarted":
-		prio, tag = "4", "arrows_counterclockwise"
-	}
-	req.Header.Set("Priority", prio)
-	if tag != "" {
-		req.Header.Set("Tags", tag)
-	}
-	req.Header.Set("Click", m.Dashboard+"/projects")
+	// Priority says the urgency; no tag, since ntfy shows tags as emoji
+	// (DECISIONS I-691).
+	req.Header.Set("Priority", ntfyPriority(m.Kind))
+	req.Header.Set("Click", m.ProjectURL())
 	if m.Question != nil {
-		req.Header.Set("Click", m.ProjectURL())
 		if a := ntfyActions(m); a != "" {
 			req.Header.Set("Actions", a)
 		}
@@ -478,6 +571,18 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		return Permanent{&statusError{"ntfy", resp.StatusCode}}
 	}
 	return nil
+}
+
+// ntfyPriority is 5 for what waits on the owner, 4 for a done report or
+// a failure, 3 for the rest (a message, a platform notice).
+func ntfyPriority(kind string) string {
+	switch kind {
+	case "needs_input", "agent_question":
+		return "5"
+	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted":
+		return "4"
+	}
+	return "3"
 }
 
 // ntfyAction is one entry of ntfy's JSON action list.
@@ -533,7 +638,7 @@ func asciiJSON(s string) string {
 // of the user and returns per-channel results (POST /me/notify-test).
 func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 	out := map[string]string{}
-	m := Message{Kind: "completed", Project: "repose", Summary: "This is a test from repose", Dashboard: o.Dashboard}
+	m := Message{Kind: TestKind, Summary: "This is a test from repose.", Dashboard: o.Dashboard}
 	if u.Email != nil {
 		m.Email = *u.Email
 	}
@@ -569,12 +674,27 @@ func (o *Outbox) try(ctx context.Context, channel string, m Message) (string, st
 	return "ok", ""
 }
 
+// TestKind is the kind of POST /me/notify-test's message, titled
+// "repose: test" (DECISIONS I-691). It is never an event.
+const TestKind = "test"
+
+// Errors a send names without the URL.
+var (
+	ErrNotConfigured = errors.New("not configured on this server")
+	ErrRender        = errors.New("the message did not render")
+)
+
 // sendFailure is a failed send in a few words a user can act on: the
-// status the server answered, or why there was none. Never the URL.
+// status the server answered, or why there was none. Never the URL. It is
+// what events.delivered stores and what the test route answers.
 func sendFailure(err error) string {
 	var status *statusError
 	var dns *net.DNSError
 	switch {
+	case errors.Is(err, ErrNotConfigured):
+		return "not configured on this server"
+	case errors.Is(err, ErrRender):
+		return "the message did not render"
 	case errors.As(err, &status):
 		return fmt.Sprintf("the server answered %d", status.code)
 	case errors.Is(err, ErrNonPublicAddress):

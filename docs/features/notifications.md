@@ -93,10 +93,24 @@ Events (see agents.md for how each agent produces them):
   seconds is one event, with a later summary appended to the first rather
   than dropped. A Claude `Stop` hook that fires twice for one turn is the
   reason.
-- Rate cap: at most 30 notifications per project per hour; past that, one
-  message says notifications are paused for this project until the top of
-  the hour, and events are still recorded (never dropped; only delivery stops
-  at the cap).
+- Rate cap: at most 30 notifications per project in any hour. The count
+  is the project's events of notifying kinds in the last hour that queued
+  a delivery (a row still in the outbox, or a result in `delivered`);
+  before I-691 it counted outbox rows, which are deleted once sent, so it
+  never fired. Past it, one `notifications_paused` per hour says when the
+  cap lifts, as a time in the user's zone (UTC when none is set): `30
+  notifications in the last hour, so this project's notifications are
+  paused until 14:32 UTC. Its events are still recorded.` Events are still
+  recorded; only delivery stops.
+- Delivery runs on up to 8 workers. Each user's rows on one channel go in
+  order on one lane, so a hanging ntfy server delays its owner's rows
+  only (I-691). Resend gets `Idempotency-Key: <event id>/email`, so a
+  retried send cannot mail twice.
+- `delivered[channel]` holds a send time, `error: <why>` while retrying or
+  `failed: <why>` after the last try. The why is a few words
+  (`the server answered 403`, `no answer within 15 seconds`, `could not
+  connect`, `not configured on this server`), never the error text, which
+  for a network error names the URL (I-691).
 
 Agents can message you and ask questions (DECISIONS I-244, I-245):
 
@@ -160,15 +174,21 @@ Channels (`workstreams/13-notifications.md` §5.6):
   (I-688). On by default at signup; no time-based
   default change.
 - ntfy: the user sets any ntfy-compatible URL, including a self-hosted
-  server; the platform POSTs the message with a title, a priority (higher
-  for `needs_input` and failures), and a `click` URL pointing at the
-  project in the dashboard. Setting the URL sends nothing; a test is sent
-  only on request (`repose notify test` / the dashboard's test button,
-  `POST /me/notify-test`).
+  server; the platform POSTs the message with a title, a priority (5 for
+  `needs_input` and `agent_question`, 4 for `agent_done`, failures and
+  `machines_restarted`, 3 for the rest), no tags (ntfy shows a tag as an
+  emoji), and a `Click` URL to the project's page (`/projects` for a
+  notice that names no project) (I-691). Setting the URL sends nothing; a
+  test is sent only on request (`repose notify test` / the dashboard's
+  test button, `POST /me/notify-test`), at most 6 a minute, titled
+  `repose: test`.
   Topic URLs are stored as configuration, not secrets, but never logged.
-- Both can be on. Neither is required. Turning one off deletes its
-  already-queued deliveries rather than sending one more batch to a
-  channel the user just disabled.
+- Both can be on. Neither is required. Turning one off (`PATCH /me` or
+  the unsubscribe link) deletes its already-queued deliveries, the user
+  notices such as `machines_restarted` included, rather than sending one
+  more batch to a channel the user just disabled; queued account mail
+  stays (I-691). The channels a user has on come from one function,
+  `events.Channels`.
 
 ## Account emails
 

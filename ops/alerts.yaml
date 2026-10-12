@@ -408,6 +408,23 @@ groups:
           description: "{{ $value }} guest sample(s) in 15 minutes. Loki `{component=\"api\"} | json | event=\"samples_fail\"` names the host, the project and the Postgres error."
           runbook: "docs/ops/RUNBOOK.md#samplesfailing"
 
+      - alert: NotifyFailing
+        # Notifications stopped reaching users (DECISIONS I-691): sends
+        # failing for good, or due rows nobody picks up. Before it, a
+        # revoked Resend key would have failed every queued email with no
+        # alert. The lag is how long the oldest due row has waited for the
+        # worker; a held or retrying row is not due, so neither counts.
+        expr: |
+          sum(increase(repose_api_notify_total{result="failed"}[10m])) > 0
+            or max(repose_api_outbox_lag_seconds) > 300
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "notifications are failing or not being sent"
+          description: "Failed sends in each of the last 10 minutes, or a due outbox row older than 5 minutes ({{ $value }}). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+          runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+
       - alert: HostReportsRefused
         # A host reported a guest of a project placed elsewhere, or a
         # snapshot outside the project's prefix (I-447). hostd never does

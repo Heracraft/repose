@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -185,8 +186,17 @@ func TestNtfyAndEmailSenders(t *testing.T) {
 	if err := n.Send(context.Background(), notify.Message{Kind: "needs_input", Agent: "claude", Project: "todo", Summary: "?", NtfyURL: srv.URL + "/topic", Dashboard: "https://d"}); err != nil {
 		t.Fatal(err)
 	}
-	if gotTitle != "todo: claude needs input" || gotPrio != "5" || gotTags != "question" {
+	if gotTitle != "todo: claude needs input" || gotPrio != "5" || gotTags != "" {
 		t.Fatalf("headers %q %q %q", gotTitle, gotPrio, gotTags)
+	}
+	// Priority is the urgency and no kind carries a tag (DECISIONS I-691).
+	for kind, want := range map[string]string{"agent_question": "5", "agent_done": "4", "error": "4", "boot_failed": "4", "agent_message": "3", "base_updated": "3", "completed": "3"} {
+		if err := n.Send(context.Background(), notify.Message{Kind: kind, Agent: "claude", Project: "todo", NtfyURL: srv.URL + "/topic", Dashboard: "https://d"}); err != nil {
+			t.Fatal(err)
+		}
+		if gotPrio != want || gotTags != "" {
+			t.Errorf("%s: priority %q tags %q, want %s and none", kind, gotPrio, gotTags, want)
+		}
 	}
 	err := n.Send(context.Background(), notify.Message{Kind: "completed", NtfyURL: srv.URL + "/bad"})
 	var perm notify.Permanent
@@ -378,5 +388,127 @@ func TestNtfyDefaultClientRefusesNonPublic(t *testing.T) {
 	err := (&notify.Ntfy{HTTP: c}).Send(context.Background(), notify.Message{Kind: "completed", NtfyURL: redir.URL, Dashboard: "https://d"})
 	if !errors.Is(err, notify.ErrRedirect) || !errors.As(err, &perm) {
 		t.Fatalf("redirect: %v, want a permanent ErrRedirect", err)
+	}
+}
+
+// TestNtfyClickOpensTheProject: every ntfy notification of a project
+// opens that project's page, not the projects list (DECISIONS I-691).
+func TestNtfyClickOpensTheProject(t *testing.T) {
+	var click string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { click = r.Header.Get("Click") }))
+	defer srv.Close()
+	pid := uuid.New()
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), notify.Message{Kind: "agent_done", Agent: "claude", Project: "todo", NtfyURL: srv.URL, Dashboard: "https://d", ProjectID: pid}); err != nil {
+		t.Fatal(err)
+	}
+	if click != "https://d/projects/"+pid.String() {
+		t.Fatalf("click %q", click)
+	}
+}
+
+// TestEmailIdempotencyKey: Resend gets "<event id>/email", so a retried
+// send cannot mail twice (DECISIONS I-691).
+func TestEmailIdempotencyKey(t *testing.T) {
+	var key string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { key = r.Header.Get("Idempotency-Key") }))
+	defer srv.Close()
+	id := uuid.New()
+	if err := (&notify.Email{APIKey: "k", URL: srv.URL}).Send(context.Background(), notify.Message{EventID: id, Kind: "agent_done", Agent: "claude", Project: "todo", Email: "u@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if key != id.String()+"/email" {
+		t.Fatalf("Idempotency-Key %q", key)
+	}
+}
+
+// TestDeliveredNeverStoresTheURL: a failed send stores sendFailure's few
+// words on the event, never the error text, which for a network error
+// names the URL dialled (DECISIONS I-691).
+func TestDeliveredNeverStoresTheURL(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	log := slog.New(slog.DiscardHandler)
+	m := metrics.NewNop()
+	_, pid := seed(t, pool, "https://ntfy.example/secret-topic")
+	ing := events.New(pool, m, log)
+	leak := notify.SenderFunc(func(context.Context, notify.Message) error {
+		return errors.New(`Post "https://ntfy.example/secret-topic": dial tcp: connection refused`)
+	})
+	perm := notify.SenderFunc(func(context.Context, notify.Message) error {
+		return notify.Permanent{Err: errors.New(`Post "https://ntfy.example/secret-topic": 404`)}
+	})
+	ob := notify.New(pool, map[string]notify.Sender{"ntfy": leak, "email": perm}, m, log)
+	id, _, err := ing.Insert(ctx, events.Incoming{ProjectID: mustUUID(pid), TS: time.Now(), Kind: "agent_done", Agent: "claude", Summary: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var delivered map[string]string
+	var lastError string
+	_ = pool.QueryRow(ctx, "select delivered from events where id = $1", id).Scan(&delivered)
+	_ = pool.QueryRow(ctx, "select coalesce(last_error, '') from events_outbox where event_id = $1 and channel = 'ntfy'", id).Scan(&lastError)
+	if delivered["ntfy"] != "error: could not connect" || delivered["email"] != "failed: could not connect" || strings.Contains(lastError, "secret") {
+		t.Fatalf("delivered %v, last_error %q", delivered, lastError)
+	}
+}
+
+// TestSlowLaneHoldsOnlyItsOwnRows: a send that hangs for one user does
+// not hold another user's rows, and one user's rows on a channel go in
+// the order they were queued (DECISIONS I-691).
+func TestSlowLaneHoldsOnlyItsOwnRows(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	log := slog.New(slog.DiscardHandler)
+	m := metrics.NewNop()
+	_, slowPID := seed(t, pool, "https://ntfy.example/slow")
+	_, fastPID := seed(t, pool, "https://ntfy.example/fast")
+	_, _ = pool.Exec(ctx, "update users set notify_email = false")
+	ing := events.New(pool, m, log)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var order []string
+	fastSent := make(chan struct{})
+	sender := notify.SenderFunc(func(ctx context.Context, msg notify.Message) error {
+		if msg.NtfyURL == "https://ntfy.example/slow" {
+			<-release
+			mu.Lock()
+			order = append(order, msg.Summary)
+			mu.Unlock()
+			return nil
+		}
+		close(fastSent)
+		return nil
+	})
+	ob := notify.New(pool, map[string]notify.Sender{"ntfy": sender}, m, log)
+	base := time.Now()
+	for i := 0; i < 3; i++ {
+		ts := base.Add(time.Duration(i) * time.Second)
+		id, _, err := ing.Insert(ctx, events.Incoming{ProjectID: mustUUID(slowPID), TS: ts, Kind: "agent_message", Agent: "claude", Summary: fmt.Sprint("slow ", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = pool.Exec(ctx, "update events_outbox set next_at = $2 where event_id = $1", id, ts.Add(-time.Minute))
+	}
+	if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: mustUUID(fastPID), TS: base, Kind: "agent_message", Agent: "claude", Summary: "fast"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if n, err := ob.Once(ctx); err != nil || n != 4 {
+			t.Errorf("pass picked %d: %v", n, err)
+		}
+	}()
+	select {
+	case <-fastSent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fast user's row waited for the slow user's send")
+	}
+	close(release)
+	<-done
+	if strings.Join(order, ",") != "slow 0,slow 1,slow 2" {
+		t.Fatalf("slow lane order %v", order)
 	}
 }

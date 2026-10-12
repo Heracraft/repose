@@ -91,6 +91,7 @@ func fixtures() map[string]notify.Message {
 		"egress_stopped":         account("egress_stopped", map[string]any{"plan": "solo", "egress_gb": 1002.4, "limit_gb": 250, "until": "2026-10-27T14:00:00Z"}),
 		"disk_over_plan":         account("disk_over_plan", map[string]any{"plan": "solo", "held_gb": 112.4, "limit_gb": 100}),
 		"machines_restarted":     machinesRestarted(),
+		"test":                   {Kind: notify.TestKind, Summary: "This is a test from repose.", Email: "u@example.com", Dashboard: dash},
 	}
 }
 
@@ -174,7 +175,9 @@ func TestGoldenEmails(t *testing.T) {
 				t.Errorf("%s%s differs from the golden file (run with -update and read the diff)\n--- got ---\n%s", kind, ext, got)
 			}
 		}
-		transactional := events.AccountKinds[kind]
+		// The test message is sent straight to the user, without the
+		// outbox's unsubscribe link.
+		transactional := events.AccountKinds[kind] || kind == notify.TestKind
 		if strings.Contains(r.Text, "Stop these emails") != !transactional || strings.Contains(r.HTML, "Stop these emails") != !transactional {
 			t.Errorf("%s: unsubscribe line present=%v, transactional=%v", kind, !transactional, transactional)
 		}

@@ -631,6 +631,23 @@ which the rollup records as a gap.
 3. `insert` across many projects: Postgres itself (partitions, disk,
    connections); see the api's other errors at the same time.
 
+## NotifyFailing
+
+Notifications are not reaching users (DECISIONS I-691): sends kept
+failing for good (`repose_api_notify_total{result="failed"}`) for 10
+minutes, or a due outbox row has waited more than 5 minutes for the worker
+(`repose_api_outbox_lag_seconds`, which leaves out held rows and retries
+waiting out their backoff).
+
+1. Failed sends: Loki `{component="api"} | json | event="notify_fail"`
+   gives the channel and kind. Email across many users is Resend: a 401
+   or 403 in `delivered` (`failed: the server answered 401`) is a revoked
+   key or an unverified domain; rotate `RESEND_API_KEY` or fix the domain
+   in Resend. ntfy failures from one user are that user's server and need
+   nothing from us.
+2. Lag: the worker is stuck or not running. It holds `db.LockOutbox` on
+   one replica; see "No notifications arriving" step 2.
+
 ## HostReportsRefused
 
 The api dropped a host's report (DECISIONS I-447). `foreign_guest`: an
@@ -2538,14 +2555,18 @@ finished.
    outbox has not picked it up yet, or the channel is disabled
    (`notify_email` false, `ntfy_url` null) or over the 30/hour rate cap
    (`kind = 'notifications_paused'` events on the project in the last
-   hour). `repose_api_outbox_depth` and `repose_api_outbox_lag_seconds`
-   rising together mean the worker itself is stuck: it holds
+   hour). `repose_api_outbox_lag_seconds` rising (the age of the oldest
+   due row; `NotifyFailing` pages past 5 minutes) means the worker itself
+   is stuck: it holds
    `db.LockOutbox`, so look for `select pg_advisory_lock_...` on the wrong
    replica or a stuck transaction; only one replica runs it
    (`api: rollup or expiry not running on one replica` is the same shape
    for a different job).
 3. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
-   channel-specific entries below have the fix. Nothing to do if it says a
+   channel-specific entries below have the fix. The text after the colon
+   is a few words (`the server answered 403`, `no answer within 15
+   seconds`, `could not connect`), never the URL (I-691); Loki's
+   `notify_fail` lines carry no more. Nothing to do if it says a
    timestamp: delivery succeeded and the miss is client-side (a stale
    ntfy subscription, a spam folder).
 

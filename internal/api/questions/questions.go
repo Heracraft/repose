@@ -175,14 +175,13 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		if ts.IsZero() || ts.Sub(now).Abs() > 5*time.Minute {
 			ts = now
 		}
-		var channels int
-		if err := s.pool.QueryRow(ctx, `select (case when u.notify_email and coalesce(u.email,'') <> '' then 1 else 0 end) + (case when coalesce(u.ntfy_url,'') <> '' then 1 else 0 end)
-			from users u where u.id = $1`, p.UserID).Scan(&channels); err != nil {
+		channels, err := events.Channels(ctx, s.pool, p.UserID)
+		if err != nil {
 			return err
 		}
 		state := StatePending
 		var nextAt any
-		if channels == 0 {
+		if len(channels) == 0 {
 			// Nobody would hear it: the ask fails at once with its own
 			// exit code instead of waiting out the timeout.
 			state, nextAt = StateNoChannel, now
