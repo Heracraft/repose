@@ -246,6 +246,18 @@ A window opened after the last record was not reopened, which is the
 60 s the record can be behind. The clean stops of a and d reopened from
 the stop record instead.
 
+## The final build
+
+On the branch head with every fix (89a36874), four new loaded guests:
+`az vm restart`, then `systemctl reboot`. 4 of 4 frozen (50.4 s, 46.0 s)
+and restored (26.9 s, 27.6 s) each time; each guest kept its boot id and
+every pid through both, its logs show exactly the two gaps (66 to 98 s)
+and no step back. Go: `go test -race ./...` fails only
+`TestSyncInterruptedDuringTheCreateRequestNamesTheProject` (known) and
+guestd's `TestHerdrProjectWarnsHerdrDown`, which reads the dev box's own
+disk (its root at 90 percent raises `disk_high`). VM tests host-freeze,
+host-services, host-reboot, host-caches and host-storage pass.
+
 ## Also seen
 
 - The first `docker` command in a guest just after its restore took 47
