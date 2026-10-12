@@ -20579,3 +20579,72 @@ host-01's disk speed).
   does and writes 512 MiB of guest-like pages into it: 22441984 bytes
   reach the disk. Staging's four-guest numbers are in
   docs/research/freeze-fast-restore.md.
+
+**I-686. The guest freeze is turned on for host-01 (freeze-on-prod,
+2026-10-12).** Amends I-652 and I-653, which ship it off until the owner
+turns it on per host; neither is rewritten here. *Made during
+implementation*: the owner read I-653 and said "yes into prod" on
+2026-10-12. That sign-off is what I-653's exception to the secrets rule
+and I-652's "User docs" paragraph both waited for, so this is the one
+commit they describe.
+- *What is on.* `repose.host.freeze.enable` for host-01 and no other host
+  (nix/hosts/host-01.nix), with the image-wrapping key in a prod vault of
+  its own, `repose-frz-3912` (`freeze_keyvault_name` in
+  infra/azure/prod/prod.tfvars: a vault name is not secret, so it sits
+  beside `keyvault_name` and `snapshots_account_name` rather than in the
+  operator's local tfvars, and the committed infra alone plans the vault).
+  The apply adds four resources and changes none: the vault, the
+  operator's access policy, the host identity's `Get` and `UnwrapKey`
+  policy, and the RSA-3072 `freeze-wrap` key. host-stg-01 keeps its own
+  vault (I-652). Azure Scheduled Events stay off: that listener holds
+  every restart of the VM for approval, which I-652 keeps as its own
+  decision.
+- *The secrets rule.* CLAUDE.md's "Secrets have three homes and nothing
+  else" now carries I-653's exception: during a host restart the guest's
+  memory, secrets included, is kept as an encrypted image on the host
+  (dm-crypt, the image's key wrapped by Key Vault and unwrapped only by
+  that host's identity), removed once it has been read and after 6 hours
+  whether it is read or not, and never off that host. The three homes are
+  unchanged; this is the one bounded exception, which
+  docs/features/secrets.md has recorded since I-653.
+- *The public pages.* lifecycle.md's "When a machine's server restarts"
+  (I-645) now says a machine running when its server restarted comes back
+  as it was, programs, tmux windows and agents included; that SSH
+  sessions, forwarded ports and anything else connected to it drop and
+  need connecting again; that its clock is set when it comes back; and
+  that a machine which cannot come back that way stops instead and is
+  started again as that section already described. secrets.md's "kept in
+  memory only" and lifecycle.md's snapshot line gain the encrypted image,
+  its 6 hours and its removal.
+- *Two more lines the flip would have left false.* troubleshooting.md said
+  that a server restart stopped the machine and repose started it again;
+  it now says the machine comes back by itself. notifications.md said the
+  restart notice carries a line for every machine; a machine that came
+  back frozen has no `guest_resumes` row and no `server restarted` event
+  (I-652's L6), so no notification names it, and the page and
+  lifecycle.md now say the notice is about the machines that stopped.
+  secrets.md's refresh file is kept "until the machine stops or reboots",
+  which a server restart that freezes the machine is neither.
+- *The privacy policy needs no change.* Its promises are about what repose
+  records (the process sampler, logs, metrics, the database) and it
+  already says an operator with root on a server can read an
+  environment's disk. The image is the machine's own memory on the
+  machine's own host, encrypted, and nothing of it reaches the api.
+- *Evidence.* On woker-1: `go build ./...`, `go vet ./...`,
+  `golangci-lint run ./...` (0 issues), `go test ./internal/hostd/...`
+  (every package ok), `go test ./internal/cli` for
+  `TestDocsNameEveryCommandAndFlag`, `TestDocsNameEveryConfigKey`,
+  `TestDocsNameEveryEnvVar`, `TestDocsListEveryExitCode`,
+  `TestSuccessOutputNamesNoCommand` and `TestCLIReassures`; the web's
+  vitest run (158 tests, docs.test.ts, copy.test.ts and llms.test.ts
+  among them), `svelte-check` (631 files, 0 errors) and `eslint .`;
+  `nix eval` of the toplevel drvPath of host-01, host-stg-01 and edge;
+  and `nix build ./nix#checks.x86_64-linux.host-freeze` (7 subtests,
+  including the graceful reboot that runs the freeze before any guest
+  unit stops). host-01's hostd now starts with `--freeze
+  --freeze-deadline 120s --freeze-key-vault
+  https://repose-frz-3912.vault.azure.net/ --freeze-key-name freeze-wrap
+  --free-page-reporting` and its freeze unit's TimeoutStopSec is 300.
+  The freeze itself was proved on staging at host-01's shape (I-652,
+  I-685); nothing here was run against host-01, whose apply, switch and
+  live check are the conductor's.

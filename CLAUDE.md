@@ -121,6 +121,13 @@ that user's login share, which repose mounts but never opens (DECISIONS
 I-278). `docs/features/secrets.md` explains why
 each of these is where it is. Do not add a fourth place.
 
+One exception, which the owner signed off (DECISIONS I-653, I-686): during
+a host restart the guest's memory, secrets included, is kept as an encrypted
+image on the host. dm-crypt, with the image's key wrapped by Key Vault and
+unwrapped only by that host's identity. The image is removed once it has
+been read, and after 6 hours whether it is read or not. It never leaves the
+host.
+
 ## Every host and guest operation is idempotent and reconciles
 
 hostd may restart at any time; the api may resend any command. A command

@@ -1411,7 +1411,8 @@ clean stop.
 
 With `repose.host.freeze.enable` a host freezes its running guests to an
 encrypted memory image when it shuts down and restores them at hostd's
-next start (DECISIONS I-652, I-653). Off by default.
+next start (DECISIONS I-652, I-653). Off by default; turned on for
+host-stg-01, and for host-01 since 2026-10-12 (I-686).
 
 Turning it on for a host:
 1. tofu: set `freeze_keyvault_name` for the environment and apply (a Key
