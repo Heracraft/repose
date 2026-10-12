@@ -91,9 +91,9 @@ func TestFailuresStillBanAndTheBanIsLogged(t *testing.T) {
 	}
 	// The ban is set before its line is written, in the connection's own
 	// goroutine, so the refusal above can arrive before the line does (CI on
-	// 5c01ab34). Wait up to 2 s for it.
+	// 5c01ab34; a loaded run needed longer than 2 s). Wait up to 10 s for it.
 	var ban, counted string
-	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		ban, counted = "", ""
 		for _, l := range strings.Split(h.logs.String(), "\n") {
 			if strings.Contains(l, `"auth_ban"`) {
