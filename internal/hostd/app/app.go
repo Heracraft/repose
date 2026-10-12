@@ -277,15 +277,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	lh.m = mgr
 	d.mgr = mgr
-	if fdeps.Sealer != nil {
-		// The restore below needs Unwrap only; fetching the public half
-		// first lets a freeze work from the first minute.
-		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		if err := fdeps.Sealer.Refresh(rctx); err != nil {
-			log.Warn("image key not fetched at start", "event", "guest_freeze", "err", err.Error())
-		}
-		cancel()
-	}
+	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}

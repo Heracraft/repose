@@ -145,3 +145,21 @@ func scheduledEvents(o Options, m *guest.Manager, log *slog.Logger) *schedev.Lis
 	}
 	return &schedev.Listener{Resource: name, Host: eventHost{m}, Log: log}
 }
+
+// refreshKeyAtStart fetches the image key's public half before the first
+// reconcile, so a freeze works from hostd's first minute. The restore in
+// that reconcile needs Unwrap only, so it does not wait for this: with
+// the vault unreachable, Hello would otherwise wait this fetch's 30 s on
+// top of the unwrap's 90 (host-stg-01, 2026-10-12: 122 s).
+func refreshKeyAtStart(ctx context.Context, s freeze.Sealer, log *slog.Logger) {
+	if s == nil {
+		return
+	}
+	go func() {
+		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := s.Refresh(rctx); err != nil {
+			log.Warn("image key not fetched at start", "event", "guest_freeze", "err", err.Error())
+		}
+	}()
+}
