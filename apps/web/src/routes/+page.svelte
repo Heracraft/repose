@@ -223,7 +223,7 @@
 					{@render cmdRow(INSTALL_COMMAND, 'the install command', false)}
 				</div>
 			</div>
-			<div class="landing-stage">
+			<div class="landing-stage hero-stage">
 				<Hero />
 			</div>
 		</section>

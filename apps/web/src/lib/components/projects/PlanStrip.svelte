@@ -13,6 +13,7 @@
 	import { resolve } from '$app/paths';
 	import { classMemoryGB, gb, money, sizeGB } from '$lib/format';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import { frozenSince } from '$lib/frozen';
 	import UsageRing from '$lib/components/UsageRing.svelte';
 	import type { Billing, Project, Question } from '$lib/api/types';
 
@@ -58,7 +59,7 @@
 	let segments = $derived(
 		projects
 			.filter((p) => p.state === 'running')
-			.map((p) => ({ name: p.name, gb: classMemoryGB(p.class) }))
+			.map((p) => ({ name: p.name, gb: classMemoryGB(p.class), frozen: !!frozenSince(p) }))
 	);
 	let memoryRunning = $derived(
 		projects.filter((p) => p.state === 'running').reduce((n, p) => n + classMemoryGB(p.class), 0)

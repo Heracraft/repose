@@ -34,6 +34,7 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
 	import UsageRing from '$lib/components/UsageRing.svelte';
+	import { frozenSince } from '$lib/frozen';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { Billing, Invoice, Me, Plan, PlanId, Project, Subscription } from '$lib/api/types';
@@ -661,7 +662,11 @@
 					<div class="mem-pic">
 						<MemoryBlocks
 							label="Running now"
-							segments={running.map((p) => ({ name: p.name, gb: classMemoryGB(p.class) }))}
+							segments={running.map((p) => ({
+								name: p.name,
+								gb: classMemoryGB(p.class),
+								frozen: !!frozenSince(p)
+							}))}
 							limit={billing.usage.memory_gb}
 						/>
 					</div>
@@ -669,11 +674,17 @@
 						<ul class="legend" aria-label="Running now">
 							{#each running as p, i (p.id)}
 								<li>
-									<i class="sw" class:sw--alt={i % 2 === 1} aria-hidden="true"></i>
+									<i
+										class="sw"
+										class:sw--alt={i % 2 === 1}
+										class:sw--ice={!!frozenSince(p)}
+										aria-hidden="true"
+									></i>
 									<a href={resolve('/projects/[id]', { id: p.id })} class="hover:underline"
 										>{p.name}</a
 									>
 									<span class="u-num">{classMemoryGB(p.class)} GB</span>
+									{#if frozenSince(p)}<span class="frost-word">frozen</span>{/if}
 								</li>
 							{/each}
 						</ul>
@@ -1131,6 +1142,14 @@
 		height: 10px;
 		border-radius: var(--radius-xs);
 		background: var(--accent);
+	}
+	.sw.sw--ice {
+		background: color-mix(in srgb, var(--frost) 22%, var(--surface));
+		box-shadow: inset 0 0 0 1px var(--frost);
+	}
+	.frost-word {
+		font-size: var(--text-xs);
+		color: var(--frost);
 	}
 	.sw--alt {
 		background: color-mix(in srgb, var(--accent) 55%, var(--surface));

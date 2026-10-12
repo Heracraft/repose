@@ -37,7 +37,7 @@ func sinceQuery(r *http.Request) (time.Time, error) {
 }
 
 // eventKindRe is one kind in kind= on events (I-662).
-var eventKindRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
+var eventKindRe = regexp.MustCompile(`^[a-z_.]{1,64}$`)
 
 // eventCountHeader carries how many of the project's events match kind=,
 // whatever since, before, after and limit say (I-662).

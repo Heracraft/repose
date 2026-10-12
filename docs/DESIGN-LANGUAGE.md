@@ -302,7 +302,8 @@ or its first screen goes through a DECISIONS entry.
   is one card across the frame: `repose run` on the left, the plan
   facts or the waitlist on the right (I-681).
 - **A project** (I-680): Questions across the frame while any wait;
-  then Events in two thirds beside Connect over Machine; Usage across
+  then Events in two thirds beside Connect over Machine, the two
+  columns ending on one line (I-682); Usage across
   the frame; then Snapshots in two thirds beside Agents (while the
   machine runs) over Details; Destroy last. With no snapshot yet, a
   running machine's Snapshots, Agents and Details share a row of
@@ -313,10 +314,15 @@ or its first screen goes through a DECISIONS entry.
   needs is fetched together. The Machine card is memory in use and
   disk as ring rows (the size's vCPUs and memory are on the status
   line); Usage's busiest processes are a table folded under a
-  `<details>` until opened, `max-w-2xl` so its columns sit together
-  (I-674). The snapshot list shows the newest 8 behind "Show all N".
+  full-width `<details>` until opened (I-674). The snapshot list shows
+  the newest 8 behind "Show all N".
   **Resize…** under Disk opens a panel across the frame under the
   Events, Connect and Machine row (under Machine on a phone).
+- **Frozen** (I-683, behind `FROZEN_LOOK`; a mock until the api sends
+  `resting`): the snowflake and "frozen" in `--frost` replace the dot
+  and "running"; a frozen row has a frost wash and edge, its memory
+  squares turn to ice, and its page has an ice band under the status
+  line. Frost is never the accent and never amber: nothing is wrong.
 - **Events** come in numbered pages, not an endless "Show older": 10
   rows under day headings, one pager (Newest, Newer, "Page n of m",
   Older) above the list (I-674), the place in the URL, and the

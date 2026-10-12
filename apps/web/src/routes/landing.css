@@ -27,6 +27,38 @@
 	--land-ease: cubic-bezier(0.65, 0, 0.35, 1);
 	/* --ink, --ink-muted and --ink-faint live in layout.css, which is on
 	   the page before this file is (DECISIONS I-331). */
+	/* The pictures' one grammar (I-673): one corner radius for frames,
+	   windows, chips, terminals and the boxes inside them; one window
+	   head height (WinHead.svelte); a stage's padding above and below its
+	   picture, which is also the floor the pause button stands on. */
+	--radius: 3px;
+	--shot-head: 28px;
+	--stage-y: 40px;
+	/* The stage under a picture. In the light scheme it is --sunken, as a
+	   window's head is, under the white window body. */
+	--stage: var(--sunken);
+	/* The wall of every "your cloud machine" window: the hero's ink edge,
+	   which the attack stops at, drawn the same in every picture. */
+	--pic-wall: var(--pic-ink);
+}
+/* The dark scheme layers as the light one does: the stage lowest, a
+   window's head a step up, its body a step above that, so a window reads
+   raised off its stage. The house's dark --surface (#161615) sat under
+   --sunken (#1b1b1a), which made every window a hole in a lighter stage.
+   Scoped to the landing (.rails): the dashboard keeps its own layering.
+   The rules step up with the body so a row's hairline still shows on it.
+   --ink-faint (#8f8f8a) holds 5.1:1 on the new --surface. */
+@media (prefers-color-scheme: dark) {
+	:root {
+		--pic-wall: var(--pic-dim);
+	}
+	.rails {
+		--stage: #151514;
+		--sunken: #191918;
+		--surface: #1f1f1e;
+		--rule: #2e2e2c;
+		--rule-strong: #43433f;
+	}
 }
 
 /* The walls: the frame's box edges (120 and 1320 at 1440), a
@@ -168,26 +200,63 @@ main > .sec:first-child {
 .lead code,
 .cell p code {
 	padding: 1px 4px;
-	border-radius: 2px;
+	border-radius: var(--radius);
 	background: var(--sunken);
 	font-size: 0.88em;
 	white-space: nowrap;
 	color: var(--ink);
 }
 
-/* The stage: a section's picture, sunken, wall to wall. */
+/* The stage: a section's picture, sunken, wall to wall, --stage-y above
+   and below it at every width. The bottom one is the floor the pause
+   button stands on (PauseButton.svelte), so it never covers the picture. */
 .landing-stage {
 	position: relative;
 	border-top: 1px solid var(--rule);
-	background: var(--sunken);
-	padding: clamp(1rem, 3vw, 2.5rem) var(--land-x);
+	background: var(--stage);
+	padding: var(--stage-y) var(--land-x);
 }
 
 /* The hero: one stack on the left edge. The headline, the lead under it,
    then the button and the install command on one row. Nothing is pushed
    to the right; the picture below is what fills the width. */
+/* The gaps are held tight so the whole machine, its agent row included,
+   is in the first 900px of a 1440 screen (F04, I-667): 40px over the
+   label and 32px under the command row. The stage is every stage's, 40px
+   above and below the picture (I-673), except its top on a phone and on
+   a screen 840px tall or less. */
 .hero-grid {
-	padding-block: clamp(2.75rem, 5.5vw, 4.5rem) clamp(2.5rem, 5vw, 4rem);
+	padding-block: clamp(1.75rem, 2.8vw, 2.5rem) clamp(1.5rem, 2.2vw, 2rem);
+}
+/* On a phone the command wraps (WCAG 1.4.10), so the height comes from a
+   smaller lead and tighter gaps: the machine's head shows in the first
+   screen at 390x844 (F04). */
+@media (max-width: 767px) {
+	.hero-grid {
+		padding-block: 1.25rem;
+	}
+	.hero-grid .eyebrow {
+		margin-bottom: 1rem;
+	}
+	.hero-grid .lead {
+		margin-top: 1rem;
+		font-size: 0.9375rem;
+		line-height: 1.5;
+	}
+	.hero-ctas {
+		margin-top: 1.25rem;
+	}
+	.hero-stage {
+		padding-top: 1.25rem;
+	}
+}
+/* A laptop's short screen (1280x800): the hero's stage starts 28px under
+   its rule, so the machine's agent row still ends inside the first screen
+   (I-677) with the 40px every other stage has (I-673). */
+@media (min-width: 768px) and (max-height: 840px) {
+	.hero-stage {
+		padding-top: 28px;
+	}
 }
 /* Who the page is for, above the headline: the page's label style. */
 .eyebrow {
@@ -340,9 +409,14 @@ main > .sec:first-child {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
+/* --land-x on every side. The cell is the pause button's containing
+   block: its frame clips what runs off its edge, so the button is placed
+   from the cell, on the floor under the frame. */
 .cell {
+	--cell-floor: 40px;
+	position: relative;
 	min-width: 0;
-	padding: var(--land-x) var(--land-x) calc(var(--land-x) + 0.5rem);
+	padding: var(--land-x);
 	border-top: 1px solid var(--rule);
 }
 @media (min-width: 768px) {
@@ -351,7 +425,7 @@ main > .sec:first-child {
 	}
 }
 .cell h3 {
-	margin-top: 1.25rem;
+	margin-top: var(--cell-floor);
 	font-family: var(--font-display);
 	font-size: 1.125rem;
 	font-weight: 600;
@@ -374,13 +448,84 @@ main > .sec:first-child {
 .cell p.whole > span {
 	white-space: nowrap;
 }
-/* A captured picture in a cell: a fixed-height frame it is cropped to. */
+/* A picture in a cell: one frame for all four (I-669). The frame is a
+   fixed height; each picture stands its windows in it at one inset, top
+   and sides, and runs them off its bottom edge, so every cell has the same
+   picture height, inset and bottom line. A window is a hairline at
+   --rule-strong (a machine's at --pic-wall) with --radius top corners,
+   open where the frame cuts it, under the --shot-head head that names
+   where it runs (WinHead.svelte). */
 .shot {
-	height: 15rem;
+	--shot-h: 17rem;
+	--shot-in: 12px;
+	position: relative;
+	height: var(--shot-h);
 	overflow: hidden;
 	border: 1px solid var(--rule);
-	border-radius: 2px;
-	background: var(--sunken);
+	border-radius: var(--radius);
+	background: var(--stage);
+}
+@media (max-width: 480px) {
+	.shot {
+		--shot-in: 10px;
+	}
+}
+.shot-win {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius);
+	background: var(--surface);
+	overflow: hidden;
+	color: var(--pic-ink);
+}
+/* Run off the frame's bottom edge: the frame cuts it, so it has no
+   bottom edge or corners of its own. */
+.shot-win.open {
+	border-bottom: 0;
+	border-radius: var(--radius) var(--radius) 0 0;
+}
+/* The machine's wall (I-673): every window whose head is "your cloud
+   machine" (WinHead's data-who) takes the same edge, in the hero, the
+   setup section and the grid. */
+.rails :has(> .shot-head[data-who='machine']) {
+	border-color: var(--pic-wall);
+}
+/* In a cell the frame clips, so the pause button is placed from the cell
+   (.shot is not its containing block): on the floor between the frame
+   and the title, at the frame's right edge (I-673). */
+.cell > .shot.pic-frame {
+	position: static;
+}
+.cell > .shot > .pic-pause {
+	top: calc(var(--land-x) + var(--shot-h) + (var(--cell-floor) - 28px) / 2);
+	right: var(--land-x);
+	bottom: auto;
+}
+
+/* The landing's one chip (I-673): a command or a port in the accent, in
+   every picture. While it fires only its ground changes over 180ms; the
+   text turns at once, so it never fades through a pale blue on a pale
+   blue. */
+.chip {
+	display: inline-block;
+	flex: none;
+	padding: 2px 8px;
+	border: 1px solid var(--pic-accent);
+	border-radius: var(--radius);
+	background: var(--surface);
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 18px;
+	color: var(--pic-accent);
+	white-space: pre;
+	transition: background-color 0.18s;
+}
+.chip.fire {
+	background: var(--pic-accent);
+	color: var(--surface);
 }
 
 /* Steps: rows wall to wall, the gauge counting up in the margin. */

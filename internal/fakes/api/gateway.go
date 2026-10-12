@@ -86,6 +86,23 @@ func (f *Fake) SetIdle(projectID string, since *time.Time, hourlyCents int64) {
 	p.Idle = &Idle{Since: *since, HourlyCents: hourlyCents}
 }
 
+// SetResting marks a running project frozen since the given time, or
+// clears it with a nil since (the mock of DECISIONS I-683).
+func (f *Fake) SetResting(projectID string, since *time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.projects[projectID]
+	if !ok {
+		return errors.New("no project " + projectID)
+	}
+	if since == nil {
+		p.Resting = nil
+		return nil
+	}
+	p.Resting = &Resting{Since: *since}
+	return nil
+}
+
 // SetGuestIP sets a running project's guest address (tests point it at an
 // in-process sshd).
 func (f *Fake) SetGuestIP(projectID, ip string) {

@@ -383,6 +383,10 @@
 		   here: var(--accent) draws them blue, var(--ink) in ink (white on
 		   the dark scheme). Both hold the contrast floor in both schemes. */
 		--chart-line: var(--ink);
+		/* A frozen machine's colour (I-683, behind a flag): ice, kept off
+		   the accent so frozen never reads as a link or a measure. 5.4:1
+		   on --page. */
+		--frost: var(--color-cyan-700);
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {
@@ -406,6 +410,7 @@
 			--control-edge: #6e6e6a;
 			--accent: var(--color-blue-300);
 			--accent-strong: var(--color-blue-200);
+			--frost: var(--color-cyan-300);
 			--selection: var(--color-blue-800);
 			--focus: var(--color-blue-400);
 			--page: #111110;
@@ -1289,6 +1294,12 @@
 	[role='tab'][aria-selected='true'] {
 		border-bottom-width: 3px;
 		border-bottom-color: Highlight;
+	}
+	/* A landing picture's pause button: pressed is its icon (play for
+	   pause) and a Highlight edge, since the accent edge is a colour
+	   difference (I-666). */
+	.pic-pause[aria-pressed='true'] {
+		border-color: Highlight;
 	}
 	/* A select's chevron and the search field's glass are background
 	   images drawn in a fixed grey; the native arrow follows the theme. */

@@ -227,6 +227,11 @@ export interface Project {
 	/** Set while it has run a day with no SSH session and no agent working
 	 * (I-262). hourly_cents is 0 since plans (I-289) and is not shown. */
 	idle?: { since: string; hourly_cents: number };
+	/** Not in api.md: a mock of the field the "Resting idle machines"
+	 * proposal suggests for a machine frozen while idle (state stays
+	 * running). Only the fake api sends it, and it shows only behind
+	 * FROZEN_LOOK (lib/flags.ts, DECISIONS I-683). */
+	resting?: { since: string } | null;
 	/** Set while the project is temporary (`repose run --temp`, I-347): it is
 	 * destroyed with no snapshot once this has passed. */
 	expires_at?: string;

@@ -101,6 +101,26 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 	})
+	// {project_id, minutes}: the project is frozen since that many minutes
+	// ago; minutes < 0 clears it (the mock of DECISIONS I-683).
+	mux.HandleFunc("POST /resting", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Minutes   int    `json:"minutes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var since *time.Time
+		if body.Minutes >= 0 {
+			t := time.Now().Add(-time.Duration(body.Minutes) * time.Minute)
+			since = &t
+		}
+		if err := f.SetResting(body.ProjectID, since); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))
 		if err != nil {

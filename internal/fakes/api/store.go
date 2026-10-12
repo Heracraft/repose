@@ -45,6 +45,12 @@ type Project struct {
 	// Idle is set by a test to stand for a running project nobody has used
 	// for a day (DECISIONS I-262).
 	Idle *Idle `json:"idle,omitempty"`
+	// Resting is a mock, not part of api.md: the field the "Resting idle
+	// machines" proposal (docs/proposals/2026-10-11-pause-idle-machines.md
+	// on pricing-directions) suggests for a machine paused while idle. Only
+	// the fake sends it, so the dashboard's frozen look, which is behind a
+	// flag, can be seen and judged (DECISIONS I-683).
+	Resting *Resting `json:"resting,omitempty"`
 	// ExpiresAt is set on a temporary project (DECISIONS I-347).
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// PersonalOptOut keeps the account's machine.nix off (I-490).
@@ -57,6 +63,11 @@ type Project struct {
 type Idle struct {
 	Since       time.Time `json:"since"`
 	HourlyCents int64     `json:"hourly_cents"`
+}
+
+// Resting is Project.resting, the mock above.
+type Resting struct {
+	Since time.Time `json:"since"`
 }
 
 // DestroyedProject is one row of GET /projects/destroyed (I-167).

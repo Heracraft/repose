@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Snowflake from '$lib/components/Snowflake.svelte';
+	import { frozenSince } from '$lib/frozen';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -516,6 +518,8 @@
 	let vcpus = $derived(project ? VCPUS[project.class] : undefined);
 
 	/** The sentence after "code: " in last_error, as the projects list shows it. */
+	/** When the machine was frozen while idle, behind the flag (I-683). */
+	let frozen = $derived(project ? frozenSince(project) : undefined);
 	let errorReason = $derived.by(() => {
 		if (!project || project.state !== 'error' || !project.last_error) return '';
 		const i = project.last_error.indexOf(': ');
@@ -595,7 +599,9 @@
 		{/snippet}
 
 		<p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
-			<span class="text-ink" data-testid="project-state"><StateDot state={project.state} /></span>
+			<span class="text-ink" data-testid="project-state"
+				><StateDot state={project.state} frozen={!!frozen} /></span
+			>
 			<span aria-hidden="true">·</span>
 			<span class="font-mono text-compact" data-testid="project-class">{project.class}</span>
 			{#if vcpus}
@@ -621,6 +627,18 @@
 				<span class="whitespace-nowrap tabular-nums">{tempLeft(project.expires_at)}</span>
 			{/if}
 		</p>
+
+		{#if frozen}
+			<!-- Frozen while idle (I-683, behind a flag): its memory is put
+			     away and its processes held; a connection wakes it. -->
+			<div class="frost-band mt-4" data-testid="frozen">
+				<Snowflake size={18} />
+				<p>
+					<span class="font-medium">Frozen for {uptime(frozen)}.</span>
+					<span class="text-ink-muted">It wakes when you connect.</span>
+				</p>
+			</div>
+		{/if}
 
 		{#if errorReason}
 			<div class="banner banner--error mt-4" data-testid="last-error">{errorReason}</div>
@@ -693,11 +711,16 @@
 		<div
 			class="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
 		>
-			<div class="order-2 min-w-0 md:order-3 md:col-span-2 lg:order-none lg:col-span-1">
+			<div
+				class="order-2 min-w-0 md:order-3 md:col-span-2 lg:order-none lg:col-span-1 lg:self-stretch lg:*:h-full"
+			>
 				<EventsCard projectId={id} initial={firstEvents} {pollFailures} />
 			</div>
 
-			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
+			<!-- The two columns end on one line, so the gap under the row is one
+			     gap: Machine takes what the column has left, its volume line
+			     at its foot, and with few events the Events card does. -->
+			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6 lg:self-stretch">
 				<section class="card order-1 min-w-0 lg:order-none" aria-labelledby="connect-title">
 					<h2 id="connect-title" class="text-xl font-semibold">Connect</h2>
 					<div class="mt-4 space-y-2">
@@ -716,9 +739,10 @@
 						</p>
 					{/if}
 				</section>
-				<div class="order-3 min-w-0 md:order-2 lg:order-none">
+				<div class="order-3 min-w-0 md:order-2 md:self-stretch md:*:h-full lg:order-none lg:flex-1">
 					<MachineCard
 						{project}
+						frozen={!!frozen}
 						memUsed={memNow}
 						memTotal={samples?.memory_bytes}
 						busy={!!opBusy}
@@ -868,7 +892,7 @@
 							Busiest processes
 							<span class="procs-n">{samples.procs.length}</span>
 						</summary>
-						<table class="table mt-2 w-full max-w-2xl text-sm">
+						<table class="table mt-2 w-full text-sm">
 							<thead>
 								<tr>
 									<th scope="col" class="text-left">Process</th>
@@ -1024,5 +1048,20 @@
 	}
 	.danger {
 		border-color: color-mix(in srgb, var(--color-red-600) 35%, var(--rule));
+	}
+	/* The frozen band (I-683): ice, not a warning; nothing is wrong. */
+	.frost-band {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid color-mix(in srgb, var(--frost) 45%, var(--rule));
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--frost) 7%, var(--surface));
+		color: var(--frost);
+		font-size: var(--text-sm);
+	}
+	.frost-band p {
+		color: var(--ink);
 	}
 </style>

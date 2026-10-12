@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-687 entries.
+698 entries.
 
 ## Scope
 
@@ -463,7 +463,7 @@ pointer, not a summary.
 - **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10008
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10039
 - **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; L10068
-- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; L10128
+- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; amended by I-667; L10128
 - **I-399** Landing repair round 2: the drawn pictures' rows are 12px mono, every picture motion is in LANDING.md's list, OneCommand takes the picture palette, the repair round's notes leave the owner's sections, and the a11y gate's landing allowance is phone width only — 2026-10-01; amended by I-400; L10193
 - **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; amended by I-660; L10256
 - **I-401** Landing repair round 4: the snapshot marks only turn as listed, the hero's lead wraps inside a sentence before it scrolls, the docs sidebar scrolls only for a cut link, and the dashboard's command block shows where its line runs on — 2026-10-01; L10352
@@ -528,7 +528,7 @@ pointer, not a summary.
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11916
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11926
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11969
-- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; L11999
+- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; L11999
 - **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; amended by I-508; L12021
 - **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; amended by I-508; L12155
 - **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L12181
@@ -703,9 +703,9 @@ pointer, not a summary.
 - **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18636
 - **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
 - **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; L18752
-- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; L18789
-- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — L18816
-- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — L18846
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; L18789
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; L18816
+- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; L18846
 - **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18897
 - **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18937
 - **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18985
@@ -719,3 +719,14 @@ pointer, not a summary.
 - **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19551
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19677
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19735
+- **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19767
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — L19785
+- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; L19815
+- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; L19865
+- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; L19944
+- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; L20001
+- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — L20076
+- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; L20133
+- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; L20198
+- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — L20253
+- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — L20323

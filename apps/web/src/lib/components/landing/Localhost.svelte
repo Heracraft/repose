@@ -13,27 +13,45 @@
   the left, so it starts at the window list (I-397). The browser images are
   http://localhost:5173/ on this box while `repose attach recruiting` ran
   (2026-09-26), captured at 2x in light and dark: 720px viewport for the
-  card, 640px for phones (static/landing/localhost-home-*.webp).
+  card, 640px for phones (static/landing/localhost-home-*.webp). The page
+  before the forward is Chromium 153's own for http://localhost:5173/ with
+  nothing listening ("This site can't be reached", "localhost refused to
+  connect."), captured the same way on this box, 2026-10-11, in both
+  schemes (static/landing/localhost-refused-*.webp, F17, I-669).
 
-  Animated with anime.js (loaded in onMount): the Local line appears, the
-  bar lists the forwarded ports, `⇄ 5173` lifts out of the bar and travels
-  down to the laptop, the address bar fills and the page loads; it rests,
-  then goes again. Paused off-screen. Without JS, or under
-  prefers-reduced-motion, the final state is shown still; turning reduced
-  motion on while the page is open stops the loop there.
+  Animated with anime.js (loaded in onMount): the dev server's Local line
+  stays on the machine throughout; the laptop's browser is on
+  localhost:5173 and shows Chromium's refused page, dimmed. The bar lists
+  the forwarded ports, `⇄ 5173` appears under the bar and travels down to
+  the laptop, the address bar's edge turns blue, the refused page fades
+  out and the app fades in after it, so the two pages never show at once;
+  it rests, then the app fades out and the refused page back in. Paused
+  off-screen. Without JS, or under prefers-reduced-motion, the final state
+  is shown still; turning reduced motion on while the page is open stops
+  the loop there. The still frame is the loop's beat at its seam (SEAM),
+  so a first cycle starting from it begins there (motion.svelte.ts).
+
+  Each page's crop ends in the page's white space, whatever the pane's
+  width: the pane is a size container, and the image's top is set so a
+  chosen row of the capture (between two lines of text) lands on the
+  pane's bottom edge, the row picked by the pane's aspect ratio.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
+	import { Picture } from './motion.svelte';
+	import PauseButton from './PauseButton.svelte';
+	import WinHead from './WinHead.svelte';
 
 	const LOCAL =
 		'\u001b[35m@your-project/web:dev: \u001b[39m  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[0m:   \u001b[36mhttp://localhost:\u001b[1m5173\u001b[0m\u001b[36m/\u001b[39m';
 	const BAR_LEFT = '0:shell- 1:dev*';
 	// '⇄ 5173 5433 9101 │ "your-project" 19:38 25-Sep-26', split at the
-	// forward that travels.
+	// forward that travels, and cropped after the host name at every width:
+	// the clock and date clipped mid-date on a phone (F25).
 	const BAR_PORT = ' 5173';
-	const BAR_REST = ' 5433 9101 │ "your-project" ';
-	const BAR_CLOCK = '19:38 25-Sep-26';
+	const BAR_REST = ' 5433 9101 │ ';
+	const BAR_HOST = '"your-project"';
 	const ADDR = 'localhost:5173';
 
 	// The capture's colours, mapped as the hero maps them (ops/dev/hero/convert.py).
@@ -81,6 +99,9 @@
 	const local = parse(LOCAL).slice(1);
 
 	let pic: HTMLDivElement;
+	const picture = new Picture({ group: 'grid' });
+	// The seam (ms): the frame equals the still frame here.
+	const SEAM = 9900;
 	let fire = $state(false);
 	let typing = $state(false);
 
@@ -88,20 +109,23 @@
 		let dead = false;
 		let visible = false;
 		let tl: { pause(): unknown; play(): unknown } | null = null;
-		let io: IntersectionObserver | undefined;
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
-		const moved = () => q('.tr, .ports, .chip, .addr, .page, .wire');
+		const moved = () => q('.ports, .chip, .home, .err, .wire');
 
 		// Stop the loop and show the final state still: the markup's own
 		// state, so every inline style anime.js wrote comes off.
 		function still() {
 			run++;
-			io?.disconnect();
-			io = undefined;
+			picture.stop();
+			rest();
+		}
+		// The still frame, with the loop kept registered: another grid
+		// picture has the turn, or the loop is held before it has begun.
+		function rest() {
 			tl?.pause();
 			tl = null;
 			visible = false;
@@ -115,74 +139,71 @@
 			import('animejs').then(({ createTimeline, utils }) => {
 				if (dead || me !== run) return;
 
-				// Before the dev server starts: no Local line, no forwards, an
-				// empty browser.
+				// The dev server is up; no forwards yet, and the laptop's
+				// browser already on localhost:5173, refused.
 				function pre() {
-					utils.set(q('.tr, .ports, .chip, .addr, .page'), { opacity: 0 });
+					utils.set(q('.ports, .chip, .home'), { opacity: 0 });
+					utils.set(q('.err'), { opacity: 0.6 });
 					utils.set(q('.chip'), { x: 0, y: 0, scale: 1 });
 					utils.set(q('.wire'), { scaleY: 0 });
 					fire = false;
 					typing = false;
 				}
-				pre();
 
-				function cycle() {
+				function cycle(at = 0) {
 					if (dead || me !== run) return;
 					if (!visible) {
-						tl = null;
+						rest();
 						return;
 					}
 					pre();
 
-					// The chip starts over the bar's ⇄ 5173 and travels to its place.
+					// The chip starts under the bar's ⇄ 5173, clear of the bar,
+					// and travels to its place.
 					const chip = pic.querySelector<HTMLElement>('.chip')!;
 					const port = pic.querySelector<HTMLElement>('.port')!;
 					const a = port.getBoundingClientRect();
 					const b = chip.getBoundingClientRect();
 					const dx = a.left + a.width / 2 - (b.left + b.width / 2);
-					const dy = a.top + a.height / 2 - (b.top + b.height / 2);
+					const bar = pic.querySelector<HTMLElement>('.bar')!.getBoundingClientRect();
+					const dy = Math.min(0, bar.bottom + 3 - b.top);
 
 					const t = createTimeline({ autoplay: false, onComplete: () => cycle() })
-						.add(q('.tr'), { opacity: [0, 1], duration: 350 }, 500)
-						.add(q('.ports'), { opacity: [0, 1], duration: 350 }, 1100)
-						.set(chip, { x: dx, y: dy }, 1700)
-						.call(() => (fire = true), 1700)
-						.add(chip, { opacity: [0, 1], scale: [0.85, 1], duration: 250, ease: 'outBack' }, 1700)
-						.add(chip, { x: [dx, 0], y: [dy, 0], duration: 900, ease: 'inOutCubic' }, 1950)
-						.add(q('.wire'), { scaleY: [0, 1], duration: 260, ease: 'outCubic' }, 2800)
-						.call(() => (fire = false), 3100)
-						.call(() => (typing = true), 2950)
-						.call(() => (typing = false), 3750)
-						// The address arrives as one fade: a character a frame was
-						// a flicker, not typing (I-397).
-						.add(q('.addr'), { opacity: [0, 1], duration: 300, ease: 'outQuad' }, 3000)
-						.add(q('.page'), { opacity: [0, 1], duration: 500, ease: 'outQuad' }, 3700)
-						// rest on the loaded page, then clear and go again
-						.add(
-							q('.tr, .ports, .chip, .addr, .page'),
-							{ opacity: 0, duration: 450, ease: 'inQuad' },
-							10700
-						)
-						.add(q('.wire'), { scaleY: 0, duration: 300, ease: 'inQuad' }, 10700)
-						.add({ duration: 400 }, 11150);
+						.add(q('.ports'), { opacity: [0, 1], duration: 350 }, 550)
+						.add(chip, { x: dx, y: dy, duration: 16 }, 900)
+						.call(() => (fire = true), 900)
+						.add(chip, { opacity: [0, 1], scale: [0.85, 1], duration: 250, ease: 'outBack' }, 900)
+						.add(chip, { x: [dx, 0], y: [dy, 0], duration: 900, ease: 'inOutCubic' }, 1150)
+						.add(q('.wire'), { scaleY: [0, 1], duration: 260, ease: 'outCubic' }, 2000)
+						// the forward lands: the address bar's edge turns blue and
+						// the refused page reloads to the app
+						.call(() => (typing = true), 2150)
+						.call(() => (fire = false), 2300)
+						// one page out, then the other in: never both at once
+						.add(q('.err'), { opacity: 0, duration: 200, ease: 'inQuad' }, 2400)
+						.add(q('.home'), { opacity: [0, 1], duration: 300, ease: 'outQuad' }, 2550)
+						.call(() => (typing = false), 3300)
+						// rest on the loaded page, then back to the refused page
+						// not from a cycle started at its seam (Browser.svelte)
+						.call(() => at || picture.looped(), SEAM - 1)
+						.add(q('.ports, .chip'), { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM)
+						.add(q('.home'), { opacity: 0, duration: 200, ease: 'inQuad' }, SEAM)
+						.add(q('.err'), { opacity: 0.6, duration: 300, ease: 'outQuad' }, SEAM + 150)
+						.add(q('.wire'), { scaleY: 0, duration: 300, ease: 'inQuad' }, SEAM)
+						.add({ duration: 400 }, SEAM + 450);
 
 					tl = t;
+					if (at) t.seek(at, true);
 					t.play();
 				}
 
-				io = new IntersectionObserver(
-					([e]) => {
-						visible = e.isIntersecting;
-						if (visible) {
-							if (tl) tl.play();
-							else cycle();
-						} else {
-							tl?.pause();
-						}
-					},
-					{ threshold: 0.5 }
-				);
-				io.observe(pic);
+				picture.start(pic, (m, fromStill) => {
+					visible = m === 'play';
+					if (m === 'rest' || (!visible && !tl)) rest();
+					else if (!visible) tl?.pause();
+					else if (tl) tl.play();
+					else cycle(fromStill ? SEAM : 0);
+				});
 			});
 		}
 
@@ -194,7 +215,7 @@
 		return () => {
 			dead = true;
 			unwatch();
-			io?.disconnect();
+			picture.stop();
 			tl?.pause();
 		};
 	});
@@ -206,26 +227,47 @@
 		><path d="M1 6.5h8M6.5 4l2.5 2.5M9 10.5H1M3.5 13L1 10.5" /></svg
 	>{/snippet}
 
-<div class="shot frame">
+{#snippet shot(name: string, alt: string)}
+	<picture>
+		<source
+			srcset="/landing/{name}-narrow-dark.webp"
+			media="(max-width: 479px) and (prefers-color-scheme: dark)"
+			width="640"
+			height="280"
+		/>
+		<source
+			srcset="/landing/{name}-narrow-light.webp"
+			media="(max-width: 479px)"
+			width="640"
+			height="280"
+		/>
+		<source
+			srcset="/landing/{name}-dark.webp"
+			media="(prefers-color-scheme: dark)"
+			width="720"
+			height="300"
+		/>
+		<img
+			src="/landing/{name}-light.webp"
+			width="720"
+			height="300"
+			loading="lazy"
+			decoding="async"
+			{alt}
+		/>
+	</picture>
+{/snippet}
+
+<div class="shot shot-box" use:picture.frame>
+	<PauseButton {picture} />
 	<div
 		class="lh"
 		bind:this={pic}
 		role="img"
-		aria-label="Your cloud machine runs the Vite dev server on localhost:5173, and its tmux status bar lists port 5173 as forwarded. The forward reaches your laptop, whose browser opens localhost:5173 and shows the app served from the machine."
+		aria-label="Your laptop's browser on localhost:5173 says the site can't be reached. Your cloud machine runs the Vite dev server on localhost:5173, and its tmux status bar lists port 5173 as forwarded. The forward reaches your laptop, and the browser reloads to the app served from the machine."
 	>
-		<div class="win machine" aria-hidden="true">
-			<div class="title">
-				<svg viewBox="0 0 24 24" width="16" height="16" class="mark">
-					<path
-						d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.4 9.1 4.7 4.7 0 0 0 7 18.5z"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span class="who">your cloud machine</span><i class="dot"></i>
-			</div>
+		<div class="shot-win machine" aria-hidden="true">
+			<WinHead who="machine" />
 			<div class="term">
 				<div class="tr">
 					{#each local as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
@@ -234,10 +276,8 @@
 					<span class="left">{BAR_LEFT}</span>
 					<span class="right"
 						><span class="ports"
-							><span class="port">{@render fw()}{BAR_PORT}</span><span>{BAR_REST}</span><span
-								class="clock">{BAR_CLOCK}</span
-							></span
-						></span
+							><span class="port">{@render fw()}{BAR_PORT}</span><span>{BAR_REST}</span></span
+						><span>{BAR_HOST}</span></span
 					>
 				</div>
 			</div>
@@ -249,53 +289,27 @@
 			<i class="wire arrow"></i>
 		</div>
 
-		<div class="win laptop" aria-hidden="true">
-			<div class="title">
-				<svg viewBox="0 0 24 24" width="16" height="16" class="mark">
-					<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-						<rect x="4.5" y="5" width="15" height="10.5" rx="1" />
-						<path d="M2 18.5h20" stroke-linecap="round" />
-					</g>
-				</svg>
-				<span class="who">your laptop</span>
-				<span class="url" class:typing><span class="addr">{ADDR}</span></span>
-			</div>
+		<div class="shot-win open laptop" aria-hidden="true">
+			<WinHead who="laptop"><span class="url" class:typing>{ADDR}</span></WinHead>
 			<div class="page">
-				<picture>
-					<source
-						srcset="/landing/localhost-home-narrow-dark.webp"
-						media="(max-width: 479px) and (prefers-color-scheme: dark)"
-						width="640"
-						height="280"
-					/>
-					<source
-						srcset="/landing/localhost-home-narrow-light.webp"
-						media="(max-width: 479px)"
-						width="640"
-						height="280"
-					/>
-					<source
-						srcset="/landing/localhost-home-dark.webp"
-						media="(prefers-color-scheme: dark)"
-						width="720"
-						height="300"
-					/>
-					<img
-						src="/landing/localhost-home-light.webp"
-						width="720"
-						height="300"
-						loading="lazy"
-						decoding="async"
-						alt="The app's home page: Get to new roles on time."
-					/>
-				</picture>
+				<div class="err">
+					{@render shot(
+						'localhost-refused',
+						"This site can't be reached: localhost refused to connect."
+					)}
+				</div>
+				<div class="home">
+					{@render shot('localhost-home', "The app's home page: Get to new roles on time.")}
+				</div>
 			</div>
 		</div>
 	</div>
 </div>
 
 <style>
-	.frame {
+	/* A size container. Not named `frame`: that is the site's frame
+	   utility (layout.css), which would pad it to the page gutter. */
+	.shot-box {
 		container-type: inline-size;
 	}
 	.lh {
@@ -303,51 +317,17 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: 12px 12px 0;
+		padding: var(--shot-in) var(--shot-in) 0;
 	}
 
-	/* The two windows, as in "Your working state". */
-	.win {
+	/* The two windows, the grid's own (landing.css, WinHead.svelte). */
+	.shot-win {
 		flex: none;
-		display: flex;
-		flex-direction: column;
-		border: 1px solid var(--rule-strong);
-		border-radius: 3px;
-		background: var(--surface);
-		overflow: hidden;
 		font-size: 12px;
-		color: var(--pic-ink);
 	}
 	.laptop {
 		flex: 1;
 		min-height: 0;
-		border-bottom: 0;
-		border-radius: 3px 3px 0 0;
-	}
-	.title {
-		flex: none;
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		height: 27px;
-		padding: 0 10px;
-		border-bottom: 1px solid var(--rule);
-		background: var(--sunken);
-	}
-	.mark {
-		flex: none;
-		color: var(--pic-ink);
-	}
-	.who {
-		flex: none;
-		font-weight: 600;
-	}
-	.dot {
-		width: 7px;
-		height: 7px;
-		margin-left: auto;
-		border-radius: 50%;
-		background: var(--color-emerald-500);
 	}
 
 	/* The laptop's browser on localhost:5173. */
@@ -355,13 +335,14 @@
 		flex: 1;
 		min-width: 0;
 		height: 20px;
-		margin-left: 6px;
+		margin-left: 4px;
 		padding: 0 8px;
 		border: 1px solid var(--rule-strong);
-		border-radius: 2px;
+		border-radius: var(--radius);
 		background: var(--surface);
 		font-family: var(--font-mono);
 		font-size: 12px;
+		font-weight: 400;
 		line-height: 18px;
 		color: var(--pic-ink);
 		white-space: nowrap;
@@ -372,21 +353,150 @@
 		border-color: var(--pic-accent);
 	}
 	.page {
+		position: relative;
 		flex: 1;
 		min-height: 0;
 		overflow: hidden;
+		container-type: size;
 	}
+	.err,
+	.home {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+	}
+	/* Each page on its capture's own ground, so a crop that starts above
+	   the capture's top shows the page, not the window. */
+	.err {
+		background: #fff;
+	}
+	.home {
+		background: #fafafa;
+	}
+	@media (prefers-color-scheme: dark) {
+		.err {
+			background: #1f2125;
+		}
+		.home {
+			background: #09090b;
+		}
+	}
+	/* Refused, before the forward: the page is there, dimmed. */
+	.err {
+		opacity: 0.6;
+	}
+	/* The crop. Capture row --b (in the capture's own pixels, --iw wide)
+	   lands on the pane's bottom edge, so the pane ends in white space
+	   between two lines of text; --cap 0px keeps the capture's top from
+	   coming below the pane's (no extra ground above it). Which row
+	   depends on how many capture rows the pane shows, its aspect ratio.
+	   Rows, from the captures: the app's lines end at 85 (Job Alerts),
+	   306 (the headline), 409 and 467 (the paragraph), 542 (Apply...);
+	   Chromium's at 308 (the title), 385 (refused to connect), 452
+	   (Try:), 555 (the buttons). The phone's (640px) captures share the
+	   app's rows, and Chromium's sit 8 to 24 rows higher. */
 	.page img {
+		position: absolute;
+		left: 0;
+		top: min(var(--cap), calc(100cqh - var(--b) * 100cqw / var(--iw)));
 		display: block;
-		width: 100%;
+		width: 100cqw;
 		max-width: none;
 		height: auto;
-		/* the app's own header padding, cropped */
-		margin-top: -1.4%;
+	}
+	.home img {
+		--iw: 1440;
+		--b: 548;
+		--cap: 0px;
+	}
+	.err img {
+		--iw: 1440;
+		--b: 575;
+		--cap: 9999px;
+	}
+	@container (min-aspect-ratio: 2667/1000) {
+		.err img {
+			--b: 465;
+		}
+	}
+	@container (min-aspect-ratio: 2835/1000) {
+		.home img {
+			--b: 490;
+		}
+	}
+	@container (min-aspect-ratio: 3165/1000) {
+		.home img {
+			--b: 430;
+			--cap: 9999px;
+		}
+	}
+	@container (min-aspect-ratio: 2939/1000) {
+		.err img {
+			--b: 405;
+		}
+	}
+	@container (min-aspect-ratio: 3692/1000) {
+		.home img {
+			--b: 350;
+		}
+	}
+	@container (min-aspect-ratio: 4645/1000) {
+		.home img {
+			--b: 320;
+		}
+	}
+	/* The phone's captures, 1280 pixels wide. */
+	@media (max-width: 479px) {
+		.page .home img {
+			--iw: 1280;
+			--b: 548;
+			--cap: 0px;
+		}
+		.page .err img {
+			--iw: 1280;
+			--b: 545;
+		}
+	}
+	@container (min-aspect-ratio: 2462/1000) {
+		@media (max-width: 479px) {
+			.page .err img {
+				--b: 453;
+			}
+		}
+	}
+	@container (min-aspect-ratio: 2520/1000) {
+		@media (max-width: 479px) {
+			.page .home img {
+				--b: 490;
+			}
+		}
+	}
+	@container (min-aspect-ratio: 2813/1000) {
+		@media (max-width: 479px) {
+			.page .home img {
+				--b: 430;
+				--cap: 9999px;
+			}
+		}
+	}
+	@container (min-aspect-ratio: 2723/1000) {
+		@media (max-width: 479px) {
+			.page .err img {
+				--b: 395;
+			}
+		}
+	}
+	@container (min-aspect-ratio: 3282/1000) {
+		@media (max-width: 479px) {
+			.page .home img {
+				--b: 350;
+			}
+		}
 	}
 	@container (max-width: 420px) {
-		.page img {
-			margin-top: 0;
+		/* room under the bar for the chip to start clear of it */
+		.lh .hop {
+			height: 36px;
 		}
 	}
 
@@ -396,7 +506,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		height: 36px;
+		height: 30px;
 	}
 	.wire {
 		flex: 1;
@@ -420,23 +530,6 @@
 		position: relative;
 		z-index: 2;
 		flex: none;
-		padding: 0 7px;
-		border: 1px solid var(--pic-accent);
-		border-radius: 3px;
-		background: var(--surface);
-		font-family: var(--font-mono);
-		font-size: 12px;
-		font-weight: 600;
-		line-height: 18px;
-		color: var(--pic-accent);
-		white-space: pre;
-		transition:
-			background-color 0.18s,
-			color 0.18s;
-	}
-	.chip.fire {
-		background: var(--pic-accent);
-		color: var(--surface);
 	}
 
 	/* The machine's terminal: its tmux, as in the hero. */
@@ -480,18 +573,11 @@
 	.port {
 		display: inline-block;
 	}
-	/* The bar is cropped after the session name; on a phone without the
-	   left end too. The clock stays off: "your-project" left it room
-	   only for a cut "19:3". */
-	.bar .clock {
-		display: none;
-	}
+	/* On a phone the bar keeps its right end, the forwards and the host
+	   name; before the forwards arrive, the host name alone. */
 	@container (max-width: 420px) {
 		.bar .left {
 			display: none;
-		}
-		.bar .right {
-			text-align: left;
 		}
 	}
 	.fw {
@@ -506,5 +592,10 @@
 	.chip .fw {
 		height: 18px;
 		stroke-width: 1.5;
+	}
+	@media (max-width: 480px) {
+		.url {
+			font-size: 11px;
+		}
 	}
 </style>

@@ -169,3 +169,27 @@ export async function setAgents(
 	});
 	if (!res.ok) throw new Error(`/agents: ${res.status} ${await res.text()}`);
 }
+
+/**
+ * A fake clock held still from the page's first script: installed at 0 and
+ * paused at 1000 before the page loads, so nothing on the page (a loop,
+ * a timer) moves until the test calls `page.clock.runFor`. Pausing after
+ * the load at the page's `Date.now()` plus a margin raced a loaded machine
+ * two ways: past the margin, "Cannot fast-forward to the past"; inside it,
+ * a loop that had already run for an unknown time before the pause.
+ */
+export async function holdClock(page: Page): Promise<void> {
+	await page.clock.install({ time: 0 });
+	await page.clock.pauseAt(1000);
+}
+
+/** Freezes a project `minutes` ago, or clears it with a negative number
+ * (cmd/fakeapi POST /resting: the mock of DECISIONS I-683). */
+export async function setResting(projectID: string, minutes: number): Promise<void> {
+	const res = await fetch(`${adminURL()}/resting`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectID, minutes })
+	});
+	if (!res.ok) throw new Error(`setResting: ${res.status}`);
+}

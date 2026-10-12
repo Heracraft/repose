@@ -16,24 +16,40 @@
   not read on that machine (I-398). Claude Code's login lives on the
   user's login share, which a snapshot does not hold (I-278), so the row
   does not name it (I-398).
-  The snapshot times are the two from
-  `repose snapshots list --project wira` on 2026-09-25: 21:22 and 21:25.
+  The table row says what the rows are, "job listings", not the table's
+  name: "roles" read as database roles (F50).
+  The snapshots have the causes the product gives them (docs lifecycle.md,
+  "Snapshots": nightly, on stop, and when you ask, F01): the older is the
+  nightly one, at 03:00, with the moon; the newer is one you took, at
+  21:25, with the prompt. The times are illustrative, in one timezone
+  (the machine's). Both are drawn with SnapshotTile, the hero's grammar
+  (I-666): the newest a tile with the machine's rows in miniature, an
+  older one its head alone, 4px under it.
   A snapshot holds the whole disk (docs lifecycle.md, "Snapshots";
   DESIGN.md §6: the root overlay's upper dir and /home).
 
-  The loop, with anime.js: snapshot 21:25 is taken (the rows shrink into a
-  small tile) and 21:22 folds to its camera and time behind it. The agent
-  wrecks the machine, row by row: the tracked files, the uncommitted edits
-  and the table count down to 0, pnpm is not found, PATH and the logins are
-  struck. git acts first (its mark lights) and brings back only the tracked
-  files; the rest stays red. Then 21:25 lights and its rows grow back into
-  the machine, and every row takes the accent tint and a tick, 3,532 rows
-  and the edits included (blue for what came back: the landing draws no
-  green but a diff stat's, LANDING.md, I-400).
+  The picture is the grid's (I-669): the machine a window under "your
+  cloud machine", closed and inset alike on all sides (I-675), the
+  snapshots stacked beside it on the same top line, or in a row under it
+  where the picture is under 410px wide.
+
+  The loop, with anime.js: the machine is whole and 03:00 is its only
+  snapshot. 21:25 is taken (the rows shrink into a small tile) and 03:00
+  folds to its head under it. The agent wrecks the machine, row by row:
+  the tracked files, the uncommitted edits and the listings count down to
+  0, pnpm is not found, PATH and the logins are struck. git acts first
+  (its mark lights) and brings back only the tracked files; the rest stays
+  red. Then 21:25 lights and each row it holds wipes back in over its
+  wrecked twin, from the snapshot's side, into its own slot (F16), taking
+  the accent tint and a tick, the listings and the edits included (blue
+  for what came back: the landing draws no green but a diff stat's,
+  LANDING.md, I-400). It rests; then 21:25 fades and 03:00 unfolds back
+  to the top, the frame the loop starts from.
   Rest, again. Under prefers-reduced-motion, or before anime.js loads, the
   restored state is shown still, with nothing moving; a visitor who turns
-  reduced motion on mid-loop gets that still frame at once. The loop's
-  first frame is set when the picture first enters the viewport, not at
+  reduced motion on mid-loop gets that still frame at once. It is also the
+  frame the picture keeps while another grid picture has the turn
+  (motion.svelte.ts); the loop's first frame is set when it starts, not at
   mount, so an offscreen picture costs no layout reads.
 
   Marks: pnpm from marks.ts; git, GitHub and PostgreSQL from simple-icons
@@ -44,6 +60,10 @@
 	import { onMount } from 'svelte';
 	import { agentMarks, toolMarks } from '$lib/components/illustrations/marks';
 	import { watchReducedMotion } from './inview';
+	import { Picture } from './motion.svelte';
+	import PauseButton from './PauseButton.svelte';
+	import SnapshotTile from './SnapshotTile.svelte';
+	import WinHead from './WinHead.svelte';
 
 	const pnpmPaths = toolMarks.find((m) => m.name === 'pnpm')!.paths;
 	const codex = agentMarks.find((m) => m.name === 'Codex')!;
@@ -68,7 +88,7 @@
 	const rows: Row[] = [
 		{ k: 'src', name: 'apps/ packages/', val: '578 files', n: 578, unit: 'files', git: true },
 		{ k: 'wip', name: 'uncommitted edits', val: '3 files', n: 3, unit: 'files' },
-		{ k: 'db', name: 'roles', val: '3,532 rows', n: 3532, unit: 'rows' },
+		{ k: 'db', name: 'job listings', val: '3,532 rows', n: 3532, unit: 'rows' },
 		{ k: 'pnpm', name: 'pnpm', val: '10.30.3', lost: 'not found' },
 		{ k: 'path', name: 'PATH', val: '28 dirs' },
 		{ k: 'login', name: 'gh, codex', val: 'logged in' }
@@ -77,32 +97,33 @@
 	const label = 'Your cloud machine broken and brought back from a snapshot';
 	const story =
 		'Your cloud machine holds more than the repo: 578 tracked files in apps and packages, 3 files of uncommitted edits, ' +
-		'a Postgres roles table with 3,532 rows, pnpm 10.30.3, a PATH of 28 directories, and gh and Codex logged in. ' +
-		'A snapshot is taken at 21:25. The agent wrecks the machine: the files, the edits and the table drop to zero, ' +
-		'pnpm is not found, PATH is broken and the logins are gone. git brings back only the 578 tracked files. ' +
-		'Restoring the 21:25 snapshot brings back everything else: the uncommitted edits, all 3,532 rows, pnpm, PATH and the logins.';
+		'3,532 job listings in Postgres, pnpm 10.30.3, a PATH of 28 directories, and gh and Codex logged in. ' +
+		'It has a nightly snapshot from 03:00, and at 21:25 you take another. The agent wrecks the machine: the files, ' +
+		'the edits and the listings drop to zero, pnpm is not found, PATH is broken and the logins are gone. ' +
+		'git brings back only the 578 tracked files. Restoring the 21:25 snapshot brings back everything else: ' +
+		'the uncommitted edits, all 3,532 listings, pnpm, PATH and the logins.';
 	const descId = 'comes-back-desc';
 
 	let pic: HTMLDivElement;
+	const picture = new Picture({ group: 'grid' });
 	let fly: HTMLDivElement;
 	let mRows: HTMLUListElement;
 
 	// The snapshot tiles hold the machine's rows at this scale.
 	let mw = $state(300);
-	let tw = $state(90);
+	let tw = $state(88);
 	const s = $derived(tw / mw);
 
 	onMount(() => {
 		const ro = new ResizeObserver(() => {
 			mw = mRows.offsetWidth;
-			tw = (pic.querySelector('.stack') as HTMLElement).offsetWidth - 2;
+			tw = (pic.querySelector('.tile.new') as HTMLElement).offsetWidth - 2;
 		});
 		ro.observe(pic);
 
 		let dead = false;
 		let visible = false;
 		let tl: { pause(): unknown; play(): unknown } | null = null;
-		let io: IntersectionObserver | undefined;
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
@@ -110,20 +131,29 @@
 		const q = (sel: string) => Array.from(pic.querySelectorAll<HTMLElement>(sel));
 		const row = (k: string) => pic.querySelector<HTMLElement>(`.m-row[data-k="${k}"]`)!;
 		const valOf = (k: string) => row(k).querySelector<HTMLElement>('.vt')!;
-		const fmt = (n: number, unit: string) => `${n.toLocaleString('en-US')} ${unit}`;
+		// "1 file", not "1 files": the edits count down through one.
+		const fmt = (n: number, unit: string) =>
+			`${n.toLocaleString('en-US')} ${n === 1 ? unit.replace(/s$/, '') : unit}`;
 		const STATE = ['hit', 'lit', 'rewind', 'fire', 'ok', 'gone', 'fix', 'fresh'];
 		// The old tile folds by a clip from below, so its box keeps its
 		// height and nothing around it is laid out again each frame.
 		const clip = (px: number) => `inset(0px 0px ${px}px 0px round 3px)`;
 		// The snapshot mark's angle: a quarter turn more per snapshot.
 		let turn = 0;
+		// The still frame is showing: the next cycle starts at the seam, so
+		// it leaves the still through the loop's own exit, not a cut.
+		let fromStill = false;
 
 		// Stop the loop and show the restored machine still: the markup's own
 		// state, with every class and inline style the loop wrote taken off.
 		function still() {
 			run++;
-			io?.disconnect();
-			io = undefined;
+			picture.stop();
+			rest();
+		}
+		// The still frame, with the loop kept registered: another grid
+		// picture has the turn, or the loop is held before it has begun.
+		function rest() {
 			tl?.pause();
 			tl = null;
 			visible = false;
@@ -133,6 +163,7 @@
 			for (const el of q('.tile, .arr, .cam, .m-row .strike, .m-row .bad, .m-row .tick'))
 				el.removeAttribute('style');
 			turn = 0;
+			fromStill = true;
 			for (const el of q(STATE.map((c) => '.' + c).join(', '))) el.classList.remove(...STATE);
 			q('.tile.new')[0].classList.add('lit');
 		}
@@ -142,24 +173,33 @@
 			import('animejs').then(({ createTimeline, utils, stagger }) => {
 				if (dead || me !== run) return;
 
-				// Before anything: the machine is whole, 21:22 is the only
+				// Where the old tile sits from the new one (under it beside the
+				// machine, after it in the row under a narrow machine), and
+				// the clip that folds it to its head: read before any write.
+				function measure() {
+					const newT = q('.tile.new')[0];
+					const oldT = q('.tile.old')[0];
+					const mini = newT.querySelector<HTMLElement>('.mini')!;
+					return {
+						lift: { x: newT.offsetLeft - oldT.offsetLeft, y: newT.offsetTop - oldT.offsetTop },
+						fold: mini.offsetHeight + 1
+					};
+				}
+
+				// Before anything: the machine is whole, 03:00 is the only
 				// snapshot, unfolded where 21:25 will land. Layout is read
 				// first, then every write, so the browser lays out once.
-				// Returns the clip that folds the old tile to its head.
-				function pre(): number {
-					const newT = q('.tile.new')[0];
-					const lift = newT.offsetHeight + 6;
-					const fold = newT.querySelector<HTMLElement>('.mini')!.offsetHeight - 1;
+				function pre(lift: { x: number; y: number }) {
 					for (const r of rows) valOf(r.k).textContent = r.val;
 					utils.set(q('.tile.new, .arr'), { opacity: 0 });
-					utils.set(q('.tile.old'), { opacity: 1, y: -lift, clipPath: clip(0) });
+					utils.set(q('.tile.old'), { opacity: 1, ...lift, clipPath: clip(0) });
 					utils.set(q('.m-row .strike'), { scaleX: 0 });
 					utils.set(q('.m-row .bad, .m-row .tick'), { opacity: 0, scale: 0.6 });
 					for (const el of q('.hit, .lit, .rewind, .fire, .ok, .gone, .fix'))
 						el.classList.remove('hit', 'lit', 'rewind', 'fire', 'ok', 'gone', 'fix');
 					for (const el of q('.tile.old')) el.classList.add('fresh');
-					return fold;
 				}
+				pre(measure().lift);
 
 				function cycle() {
 					if (dead || me !== run) return;
@@ -171,7 +211,8 @@
 					// throwaway copies of the rows live in it.
 					// eslint-disable-next-line svelte/no-dom-manipulating
 					fly.replaceChildren();
-					const fold = pre();
+					const { lift, fold } = measure();
+					pre(lift);
 
 					const base = pic.getBoundingClientRect();
 					const cls = (els: HTMLElement[], c: string, on: boolean) => () => {
@@ -181,30 +222,43 @@
 						const r = el.getBoundingClientRect();
 						return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height };
 					};
+					const place = (el: HTMLElement, b: { x: number; y: number; w: number }) => {
+						Object.assign(el.style, {
+							left: `${b.x}px`,
+							top: `${b.y}px`,
+							width: `${b.w}px`,
+							opacity: '0'
+						});
+						// eslint-disable-next-line svelte/no-dom-manipulating
+						fly.appendChild(el);
+						return el;
+					};
 					const mBox = at(mRows);
 					const newT = q('.tile.new')[0];
 					const oldT = q('.tile.old')[0];
 					const to = at(newT.querySelector('.mini ul')!);
-					// the machine's rows, whole, as a copy that travels
-					function copy() {
-						const c = mRows.cloneNode(true) as HTMLElement;
-						for (const li of [c, ...c.querySelectorAll('li')]) li.classList.remove('m-row');
-						c.classList.add('clone');
-						Object.assign(c.style, {
-							left: `${mBox.x}px`,
-							top: `${mBox.y}px`,
-							width: `${mBox.w}px`,
-							opacity: '0'
-						});
-						// eslint-disable-next-line svelte/no-dom-manipulating
-						fly.appendChild(c);
-						return c;
-					}
+					// the machine's rows, whole, as a copy that travels into the tile
+					const take = mRows.cloneNode(true) as HTMLElement;
+					for (const li of [take, ...take.querySelectorAll('li')]) li.classList.remove('m-row');
+					take.classList.add('clone');
+					place(take, mBox);
 					const dx = to.x - mBox.x;
 					const dy = to.y - mBox.y;
-					const take = copy();
-					const give = copy();
 					const scale = s;
+					// The restore wipes in from the snapshots' side: the right
+					// beside the machine, the left when they sit under it.
+					const left = at(newT).x < mBox.x + mBox.w / 2;
+					const shut = left ? 'inset(0px 100% 0px 0px)' : 'inset(0px 0px 0px 100%)';
+					const open = left ? 'inset(0px 0% 0px 0px)' : 'inset(0px 0px 0px 0%)';
+					// each row the snapshot gives back, whole, as a copy laid on
+					// its own slot (the machine is whole at this point)
+					const heal = rows.filter((r) => r.k !== 'src');
+					const wipes = heal.map((r) => {
+						const c = row(r.k).cloneNode(true) as HTMLElement;
+						c.classList.remove('m-row');
+						c.classList.add('wipe');
+						return place(c, at(row(r.k)));
+					});
 
 					// Counts that fall and rise, written into the row's value.
 					function count(
@@ -234,10 +288,17 @@
 					const dur = 850;
 					const t = createTimeline({ autoplay: false, onComplete: () => cycle() });
 
-					// 1. snapshot 21:25: the rows shrink into its tile; 21:22 folds behind
+					// 1. snapshot 21:25: the rows shrink into its tile; 03:00 folds under it
 					const mark = newT.querySelector('.cam') as HTMLElement;
 					const cams = [q('.machine')[0], mark];
 					const s0 = T.snap;
+					// The copy reaches its size early (its own outCubic) and is
+					// gone as it sets down; the tile shows only then, so the
+					// shrunken copy and the tile's own rows never lie one on the
+					// other.
+					const landed = s0 + 150 + dur;
+					// .add with a 16ms duration, never .set: anime.js can pass
+					// over a timeline's .set, and the copy stayed on.
 					t.call(cls(cams, 'fire', true), s0)
 						.add(q('.take'), { opacity: [0, 1], duration: 250 }, s0)
 						.call(cls([oldT], 'fresh', false), s0 + 150)
@@ -246,23 +307,28 @@
 							{ clipPath: [clip(0), clip(fold)], duration: 550, ease: 'inOutCubic' },
 							s0 + 150
 						)
-						.add(oldT, { y: 0, duration: 700, ease: 'inOutCubic' }, s0 + 150)
-						.set(take, { opacity: 1, x: 0, y: 0, scale: 1 }, s0 + 150)
-						.add(take, { x: dx, y: dy, scale, duration: dur, ease: 'inOutCubic' }, s0 + 150)
-						.add(newT, { opacity: [0, 1], duration: 250 }, s0 + 150 + dur - 200)
+						.add(oldT, { x: 0, y: 0, duration: 700, ease: 'inOutCubic' }, s0 + 150)
+						.add(take, { opacity: [0, 1], duration: 16 }, s0 + 150)
+						.add(
+							take,
+							{
+								x: { to: dx, duration: dur, ease: 'inOutCubic' },
+								y: { to: dy, duration: dur, ease: 'inOutCubic' },
+								scale: { to: scale, duration: dur * 0.6, ease: 'outCubic' }
+							},
+							s0 + 150
+						)
+						.add(take, { opacity: 0, duration: 150, ease: 'inQuad' }, landed - 150)
+						.add(newT, { opacity: [0, 1], duration: 250 }, landed)
 						// The mark's quarter turn, as the new tile shows. It adds up,
 						// and only the restore's full turn takes it back (LANDING.md,
 						// "Motion").
-						.call(
-							() => {
-								turn += 90;
-								mark.style.setProperty('--turn', `${turn}deg`);
-							},
-							s0 + 150 + dur - 200
-						)
-						.add(take, { opacity: 0, duration: 300, ease: 'inQuad' }, s0 + 150 + dur)
-						.add(q('.take'), { opacity: 0, duration: 400, ease: 'inQuad' }, s0 + 150 + dur + 300)
-						.call(cls(cams, 'fire', false), s0 + 150 + dur + 300);
+						.call(() => {
+							turn += 90;
+							mark.style.setProperty('--turn', `${turn}deg`);
+						}, landed)
+						.add(q('.take'), { opacity: 0, duration: 400, ease: 'inQuad' }, landed + 300)
+						.call(cls(cams, 'fire', false), landed + 300);
 
 					// 2. the wreck, row by row: counts fall, pnpm is gone, the rest struck
 					const order = ['wip', 'src', 'db', 'path', 'pnpm', 'login'];
@@ -317,69 +383,90 @@
 							T.git + 1400
 						);
 
-					// 4. the restore: 21:25 lights, its rows grow back into the machine
+					// 4. the restore: 21:25 lights, and each row it holds wipes
+					// back in over its wrecked twin, from the snapshot's side
 					const b0 = T.back;
+					const wipe = 450;
+					const gap = 90;
 					t.call(cls([newT], 'lit', true), b0 - 350)
 						.call(cls([newT], 'rewind', true), b0 - 350)
-						.add(q('.give'), { opacity: [0, 1], duration: 250 }, b0 - 350)
-						.set(give, { opacity: 1, x: dx, y: dy, scale }, b0)
-						.add(give, { x: 0, y: 0, scale: 1, duration: dur, ease: 'inOutCubic' }, b0)
-						.set(give, { opacity: 0 }, b0 + dur + 16);
-					const land = b0 + dur;
-					const heal = rows.filter((r) => r.k !== 'src');
+						.add(q('.give'), { opacity: [0, 1], duration: 250 }, b0 - 350);
 					heal.forEach((r, i) => {
 						const el = row(r.k);
-						const at0 = land;
-						t.call(cls([el], 'hit', false), at0)
-							.call(cls([el], 'gone', false), at0)
-							.call(cls([el], 'ok', true), at0)
-							.set(el.querySelector('.bad')!, { opacity: 0 }, at0)
-							.set(el.querySelector('.strike')!, { scaleX: 0 }, at0)
+						const c = wipes[i];
+						const at0 = b0 + i * gap;
+						const done = at0 + wipe;
+						t.add(c, { opacity: [0, 1], duration: 16 }, at0)
+							.add(
+								c,
+								{
+									clipPath: [shut, open],
+									duration: wipe,
+									ease: 'inOutCubic'
+								},
+								at0
+							)
+							// landed: the row under the copy takes the restored state,
+							// and the copy goes once the row's tint and value colour
+							// have finished their 250ms change, so the swap never shows
+							.call(cls([el], 'hit', false), done)
+							.call(cls([el], 'gone', false), done)
+							.call(cls([el], 'ok', true), done)
+							.call(() => (valOf(r.k).textContent = r.val), done)
+							.add(el.querySelector('.bad')!, { opacity: 0, duration: 16 }, done)
+							.add(el.querySelector('.strike')!, { scaleX: 0, duration: 16 }, done)
+							.add(c, { opacity: 0, duration: 16 }, done + 300)
 							.add(
 								el.querySelector('.tick')!,
 								{ opacity: [0, 1], scale: [0.6, 1], duration: 300, ease: 'outBack' },
-								at0 + 60 + i * 70
-							)
-							.call(() => (valOf(r.k).textContent = r.val), at0);
+								done + 300
+							);
 					});
-					const done = land + heal.length * 70 + 400;
+					const done = b0 + (heal.length - 1) * gap + wipe + 600;
+					const away = done + 4600;
 					t.call(cls(q('.m-row'), 'ok', false), done + 900)
 						.call(cls([newT], 'lit', false), done + 1600)
 						.call(cls([newT], 'rewind', false), done + 1600)
 						.add(q('.give'), { opacity: 0, duration: 400, ease: 'inQuad' }, done + 1600)
-						// rest on the restored machine, then clear and go again
+						// rest on the restored machine; then 21:25 goes and 03:00
+						// unfolds back to the top, the frame the loop starts from
+						.add(q('.tile.new, .m-row .tick'), { opacity: 0, duration: 450, ease: 'inQuad' }, away)
+						.call(cls([oldT], 'fresh', true), away + 200)
 						.add(
-							q('.tile.new, .m-row .tick'),
-							{ opacity: 0, duration: 450, ease: 'inQuad' },
-							done + 4600
+							oldT,
+							{ clipPath: [clip(fold), clip(0)], duration: 550, ease: 'inOutCubic' },
+							away + 200
 						)
-						.add({ duration: 600 }, done + 5050);
+						.add(oldT, { ...lift, duration: 700, ease: 'inOutCubic' }, away + 200)
+						.add({ duration: 600 }, away + 900);
+					// The seam: hand the grid's turn on if nobody is pointing here
+					// (motion.svelte.ts). A cycle that starts at the seam skips it.
+					const atSeam = fromStill;
+					t.call(() => atSeam || picture.looped(), away - 1);
 
 					tl = t;
+					// After the still frame (the restored machine), start at the
+					// seam, where the loop rests on that same machine, so it
+					// leaves through its own exit. Callbacks are muted: the
+					// mark's quarter turn must not replay.
+					if (fromStill) t.seek(away, true);
+					fromStill = false;
 					t.play();
 				}
 
-				// Two thresholds: the first frame is set as soon as a pixel of
-				// the picture shows, so the still frame never jumps in view,
-				// and the loop plays once most of it does.
-				let ready = false;
-				io = new IntersectionObserver(
-					([e]) => {
-						if (e.isIntersecting && !ready) {
-							ready = true;
-							pre();
-						}
-						visible = e.isIntersecting && e.intersectionRatio >= 0.6;
-						if (visible) {
-							if (tl) tl.play();
-							else cycle();
-						} else {
-							tl?.pause();
-						}
+				// The loop plays once most of the picture shows and it has the
+				// grid's turn; until then it keeps the still frame.
+				picture.start(
+					pic,
+					(m) => {
+						visible = m === 'play';
+						if (m === 'rest' || (!visible && !tl)) rest();
+						else if (!visible) tl?.pause();
+						else if (tl) tl.play();
+						else cycle();
 					},
-					{ threshold: [0, 0.6] }
+					0.6
 				);
-				io.observe(pic);
 			});
 		}
 
@@ -392,7 +479,7 @@
 			dead = true;
 			unwatch();
 			ro.disconnect();
-			io?.disconnect();
+			picture.stop();
 			tl?.pause();
 		};
 	});
@@ -425,14 +512,6 @@
 			<rect x="1.5" y="2.5" width="13" height="11" rx="1" />
 			<path d="M4 6.2l2 1.8-2 1.8M7.8 10.5h4" stroke-linecap="round" />
 		</g>
-	</svg>
-{/snippet}
-
-<!-- The snapshot mark: the pinwheel of the shape set, as in the hero. -->
-{#snippet camera()}
-	<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-		<path d="M8 8V0A8 8 0 0 0 0 8Z" fill="currentColor" />
-		<path d="M8 8V16A8 8 0 0 0 16 8Z" fill="currentColor" opacity="0.45" />
 	</svg>
 {/snippet}
 
@@ -480,36 +559,28 @@
 	</li>
 {/snippet}
 
-{#snippet tile(time: string, which: 'new' | 'old')}
-	<div class="tile {which}" class:lit={which === 'new'}>
-		<div class="t-head">
-			<span class="cam">{@render camera()}</span>
-			<span class="t-time">{time}</span>
-		</div>
-		<div class="mini">
-			<ul class="rows" style:width="{mw}px" style:transform="scale({s})">
-				{#each rows as r (r.k)}{@render thumb(r)}{/each}
-			</ul>
-		</div>
+<!-- the machine in miniature, inside a snapshot tile -->
+{#snippet mini()}
+	<div class="mini">
+		<ul class="rows" style:width="{mw}px" style:transform="scale({s})">
+			{#each rows as r (r.k)}{@render thumb(r)}{/each}
+		</ul>
 	</div>
 {/snippet}
 
 <p id={descId} class="sr-only">{story}</p>
-<div class="shot" role="img" aria-label={label} aria-describedby={descId}>
-	<div class="pic" bind:this={pic} aria-hidden="true" style:--s={s}>
-		<div class="win machine">
-			<div class="title">
-				<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" class="tm">
-					<path
-						d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.4 9.1 4.7 4.7 0 0 0 7 18.5z"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span class="who">your cloud machine</span><i class="dot"></i>
-			</div>
+<div class="shot" use:picture.frame>
+	<PauseButton {picture} />
+	<div
+		class="pic"
+		bind:this={pic}
+		role="img"
+		aria-label={label}
+		aria-describedby={descId}
+		style:--s={s}
+	>
+		<div class="shot-win machine">
+			<WinHead who="machine" />
 			<ul class="rows" bind:this={mRows}>
 				{#each rows as r (r.k)}{@render row(r)}{/each}
 			</ul>
@@ -535,8 +606,8 @@
 		</div>
 
 		<div class="stack">
-			{@render tile('21:22', 'old')}
-			{@render tile('21:25', 'new')}
+			<SnapshotTile time="03:00" cause="nightly" class="tile old">{@render mini()}</SnapshotTile>
+			<SnapshotTile time="21:25" cause="user" class="tile new" lit>{@render mini()}</SnapshotTile>
 		</div>
 
 		<div class="fly" bind:this={fly}></div>
@@ -547,66 +618,49 @@
 	/* Colours are the picture tokens (--pic-*, routes/layout.css), which
 	   carry their own dark values. A restored row is --pic-accent, what
 	   moves and comes back: --pic-add is a diff stat's green alone. */
+	/* The machine is a closed window, inset alike on all four sides: its
+	   six rows share what the frame leaves (the frame, its 1px edges, two
+	   insets and the window's head and edges), so the last row ends 8px
+	   above the window's bottom edge at every width. The snapshots stand
+	   beside it in a column up to 120px wide, the hero's tile read at
+	   this size.
+	   Where the picture is under 410px wide (a phone, the two-column grid
+	   at 768 to 1023), a row beside the column would cut its label, so
+	   the snapshots go under the machine in a row, and the rows share
+	   what the machine and the newest tile leave between them. */
+	.shot {
+		container-type: inline-size;
+	}
 	.pic {
-		--row: 24px;
-		--rows-h: calc(var(--row) * 6 + 10px);
-		--win-h: calc(var(--rows-h) + 34px + 2px);
-		--head: 26px;
+		--pad: 8px;
+		--rows-h: calc(var(--shot-h) - 2px - 2 * var(--shot-in) - 30px);
+		--row: calc((var(--rows-h) - 2 * var(--pad)) / 6);
+		/* 120px where the machine keeps 270px for its rows, down to 96px */
+		--tile-w: clamp(96px, 100cqw - 325px, 120px);
+		/* the newest tile, whole: its edges, head, rule and miniature */
+		--full: calc(var(--shot-head) + 1px + var(--rows-h) * var(--s) + 1px);
 		position: relative;
 		height: 100%;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 30px 90px;
-		align-items: center;
-		padding: 0 22px;
+		grid-template-columns: minmax(0, 1fr) 30px var(--tile-w);
+		grid-template-rows: minmax(0, 1fr);
+		align-items: start;
+		padding: var(--shot-in);
 		font-size: 13px;
 		color: var(--pic-ink);
 	}
 
-	.win {
-		display: flex;
-		flex-direction: column;
-		height: var(--win-h);
-		border: 1px solid var(--rule-strong);
-		border-radius: 3px;
-		background: var(--surface);
-		overflow: hidden;
+	.machine {
+		height: 100%;
 		transition: border-color 0.3s;
 	}
-	.win:global(.fire) {
+	.machine:global(.fire) {
 		border-color: var(--pic-accent);
-	}
-	.title {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		height: 34px;
-		flex: none;
-		padding: 0 12px;
-		border-bottom: 1px solid var(--rule);
-		background: var(--sunken);
-	}
-	.tm {
-		flex: none;
-		color: var(--pic-ink);
-	}
-	.who {
-		font-weight: 600;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.dot {
-		flex: none;
-		width: 7px;
-		height: 7px;
-		margin-left: auto;
-		border-radius: 50%;
-		background: var(--color-emerald-500);
 	}
 
 	.rows {
 		margin: 0;
-		padding: 5px 0;
+		padding: var(--pad) 0;
 		list-style: none;
 	}
 	.fr {
@@ -615,7 +669,7 @@
 		align-items: center;
 		gap: 7px;
 		height: var(--row);
-		padding: 0 12px 0 14px;
+		padding: 0 12px 0 12px;
 		white-space: nowrap;
 		overflow: hidden;
 		transition: background-color 0.25s;
@@ -697,10 +751,11 @@
 		color: var(--pic-accent);
 	}
 
-	/* Between the machine and its snapshots: which way the copy goes. */
+	/* Between the machine and its snapshots: which way the copy goes, at
+	   the newest tile's middle. */
 	.hop {
 		position: relative;
-		height: 10px;
+		height: var(--full);
 	}
 	.arr {
 		position: absolute;
@@ -717,61 +772,42 @@
 		color: var(--pic-accent);
 	}
 
-	/* The snapshots: small tiles, the newest on top with the machine's rows
-	   in miniature; the older one folds to its camera and time below it. */
+	/* The snapshots (SnapshotTile, the hero's grammar): the newest on top,
+	   level with the machine's top edge, its head as tall as the machine's;
+	   the older one folded to its head 4px under it. */
 	.stack {
 		position: relative;
-		height: var(--win-h);
-		--full: calc(var(--head) + var(--rows-h) * var(--s) + 3px);
-		--top: calc((var(--win-h) - var(--full) - 6px - var(--head) - 2px) / 2);
+		height: calc(var(--full) + 4px + var(--shot-head));
 	}
-	.tile {
+	.stack :global(.tile) {
 		position: absolute;
 		left: 0;
 		right: 0;
-		top: var(--top);
-		border: 1px solid var(--rule-strong);
-		border-radius: 3px;
-		background: var(--surface);
-		overflow: hidden;
-		transition: border-color 0.3s;
+		top: 0;
 	}
-	.tile.old {
-		z-index: 0;
-		top: calc(var(--top) + var(--full) + 6px);
+	.stack :global(.tile.new) {
+		z-index: 1;
 	}
 	/* Folded: the mini keeps its height and the tile is clipped to its
 	   head, so folding is a clip, never a change of layout. The cut falls
 	   on the mini's top rule, which stands in for the tile's bottom
 	   border, so it takes the border's colour. */
-	.tile.old {
-		clip-path: inset(0 0 calc(var(--rows-h) * var(--s) - 1px) 0 round 3px);
+	.stack :global(.tile.old) {
+		z-index: 0;
+		top: calc(var(--full) + 4px);
+		clip-path: inset(0 0 calc(var(--rows-h) * var(--s) + 1px) 0 round 3px);
 	}
-	.old .mini {
+	.stack :global(.tile.old .s-mini) {
 		border-top-color: var(--rule-strong);
 	}
-	.tile.new {
-		z-index: 1;
-	}
-	.tile:global(.lit) {
-		border-color: var(--pic-accent);
-	}
-	.t-head {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		height: var(--head);
-		padding: 0 8px;
-		background: var(--sunken);
-	}
-	.cam {
-		display: flex;
-		color: var(--pic-dim);
-		transition: color 0.2s;
-	}
-	.cam:global(.fire),
-	.tile:global(.lit) .cam {
+	.stack :global(.tile .cam.fire) {
 		color: var(--pic-accent);
+	}
+	.stack :global(.tile .s-time) {
+		transition: color 0.4s;
+	}
+	.stack :global(.tile.old:not(.fresh) .s-time) {
+		color: var(--pic-dim);
 	}
 	/* The mark clicks a quarter turn when the snapshot is taken, and
 	   rewinds a full turn when it is restored, and nothing else. The loop
@@ -784,11 +820,10 @@
 	   and whenever still() ran with motion allowed. */
 	@media (prefers-reduced-motion: no-preference) {
 		/* 420ms out-quad, the hero's quarter turn (LANDING.md, "Motion"). */
-		.cam svg {
-			transform: rotate(var(--turn, 0deg));
+		.stack :global(.tile .cam svg) {
 			transition: transform 420ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 		}
-		.tile:global(.rewind) .cam svg {
+		.stack :global(.tile.rewind .cam svg) {
 			animation: rewind 1s cubic-bezier(0.65, 0, 0.35, 1) both;
 		}
 		@keyframes rewind {
@@ -797,18 +832,8 @@
 			}
 		}
 	}
-	.t-time {
-		font-family: var(--font-mono);
-		font-size: 12px;
-		font-weight: 600;
-		transition: color 0.4s;
-	}
-	.old:not(:global(.fresh)) .t-time {
-		color: var(--pic-dim);
-	}
 	.mini {
 		height: calc(var(--rows-h) * var(--s));
-		border-top: 1px solid var(--rule);
 		overflow: hidden;
 	}
 	.mini ul {
@@ -826,7 +851,9 @@
 		opacity: 0.6;
 	}
 
-	/* The rows in flight: a copy, tinted like the working-state section's. */
+	/* The rows in flight: copies, tinted like the working-state section's.
+	   The snapshot's rows travel whole into the tile; a restored row wipes
+	   in over its own slot. */
 	.fly {
 		position: absolute;
 		inset: 0;
@@ -841,38 +868,55 @@
 		box-shadow: inset 2px 0 0 var(--pic-accent);
 		will-change: transform;
 	}
-	.fly :global(.clone .mark) {
-		display: none;
+	.fly :global(.wipe) {
+		position: absolute;
+		margin: 0;
+		background: color-mix(in oklab, var(--pic-accent) 8%, var(--surface));
+	}
+	.fly :global(.clone .mark),
+	.fly :global(.wipe .mark) {
+		visibility: hidden;
 	}
 
-	@media (max-width: 480px) {
+	@container (max-width: 410px) {
 		.pic {
-			grid-template-columns: minmax(0, 1fr) 20px 70px;
-			padding: 0 12px;
+			--pad: 4px;
+			--tile-w: 92px;
+			/* frame, edges, two insets, the machine's and the tile's head
+			   and edges (60px) and the 8px between them */
+			--rows-h: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 68px) / (1 + var(--s)));
+			grid-template-columns: 18px minmax(0, 1fr);
+			grid-template-rows: auto auto;
+			gap: 8px 4px;
 			font-size: 12px;
 		}
-		.title {
-			padding: 0 9px;
-			gap: 6px;
-			font-size: 11.5px;
+		.machine {
+			grid-column: 1 / -1;
+			height: auto;
 		}
 		.fr {
 			gap: 5px;
-			padding: 0 8px 0 9px;
+			padding: 0 9px;
 		}
 		.nm,
-		.t-time {
-			font-size: 11px;
-		}
 		.val {
 			font-size: 11px;
 		}
 		.arr {
 			width: 14px;
+			transform: rotate(90deg);
 		}
-		.t-head {
-			padding: 0 6px;
-			gap: 5px;
+		.stack {
+			height: var(--full);
+		}
+		.stack :global(.tile) {
+			right: auto;
+			width: var(--tile-w);
+		}
+		/* Folded, the older tile is its head beside the newest one. */
+		.stack :global(.tile.old) {
+			top: 0;
+			left: calc(var(--tile-w) + 6px);
 		}
 	}
 </style>

@@ -48,6 +48,11 @@ describe('eventKind', () => {
 		// The dotted kinds the api writes, as the CLI reads them.
 		expect(eventKind('snapshot.created').label).toBe('snapshot');
 		expect(eventKind('project.created').label).toBe('created');
+		expect(eventKind('host_restarted')).toEqual({
+			label: 'server restart',
+			tone: 'attention',
+			group: 'machine'
+		});
 	});
 	it('shows an unknown kind by its own name, as words', () => {
 		expect(eventKind('pool_high')).toEqual({

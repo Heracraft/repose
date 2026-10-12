@@ -14,6 +14,7 @@
 
 <script lang="ts">
 	import UsageRing from '$lib/components/UsageRing.svelte';
+	import Snowflake from '$lib/components/Snowflake.svelte';
 	import { diskFullPercent } from '$lib/disk';
 	import { gb, classMemoryGB } from '$lib/format';
 	import type { Project } from '$lib/api/types';
@@ -23,6 +24,7 @@
 		memUsed,
 		memTotal,
 		busy = false,
+		frozen = false,
 		resizeOpen = false,
 		onresizetoggle
 	}: {
@@ -35,6 +37,8 @@
 		busy?: boolean;
 		/** The page's resize panel is open. */
 		resizeOpen?: boolean;
+		/** Frozen while idle (I-683, behind a flag): an ice edge and mark. */
+		frozen?: boolean;
 		/** Opens the page's resize panel, or closes it when open. */
 		onresizetoggle: () => void;
 	} = $props();
@@ -59,8 +63,20 @@
 	let canGrow = $derived(DISK_SIZES_GB.some((s) => s * GIB > project.volume_bytes));
 </script>
 
-<section class="card" data-testid="machine-card" aria-labelledby="machine-title">
-	<h2 id="machine-title" class="text-xl font-semibold">Machine</h2>
+<section
+	class="card flex flex-col"
+	class:machine--frozen={frozen}
+	data-testid="machine-card"
+	aria-labelledby="machine-title"
+>
+	<div class="flex items-baseline justify-between gap-3">
+		<h2 id="machine-title" class="text-xl font-semibold">Machine</h2>
+		{#if frozen}
+			<span class="machine-frost inline-flex items-center gap-1.5 text-xs"
+				><Snowflake size={13} />frozen</span
+			>
+		{/if}
+	</div>
 
 	<div class="m-row mt-4">
 		{#if memUsed !== undefined}
@@ -158,7 +174,17 @@
 		color: var(--ink-muted);
 	}
 	/* Under the disk row, aligned with its label. */
+	/* At the card's foot: when the card is as tall as its row, the space
+	   sits above the volume line, not under it. */
 	.m-sub {
+		margin-top: auto;
 		padding-left: calc(18px + 0.75rem);
+	}
+	.machine--frozen {
+		border-color: color-mix(in srgb, var(--frost) 45%, var(--rule));
+		box-shadow: inset 2px 0 0 var(--frost);
+	}
+	.machine-frost {
+		color: var(--frost);
 	}
 </style>

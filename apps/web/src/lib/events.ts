@@ -44,7 +44,10 @@ export const EVENT_FILTERS = {
 		'idle_running',
 		'temp_expiring',
 		'temp_destroyed',
-		'host_moved'
+		'host_moved',
+		'host_restarted',
+		'snapshot.created',
+		'project.created'
 	]
 } as const satisfies Record<string, readonly string[]>;
 
@@ -64,6 +67,9 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	host_moved: { label: 'moved', tone: 'neutral' },
 	billing_stopped: { label: 'stopped', tone: 'error' },
 	'project.created': { label: 'created', tone: 'neutral' },
+	// A server restart stopped the machine (I-645); the summary says when
+	// the server was back.
+	host_restarted: { label: 'server restart', tone: 'attention' },
 	notifications_paused: { label: 'paused', tone: 'neutral' }
 };
 

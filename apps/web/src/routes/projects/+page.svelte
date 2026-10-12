@@ -30,6 +30,7 @@
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
 	import { runRowAction, type RowAction } from '$lib/components/projects/actions';
 	import type { Billing, DestroyedProject, Me, Project, Question } from '$lib/api/types';
+	import { frozenSince } from '$lib/frozen';
 
 	let projects = $state<Project[] | undefined>(undefined);
 	/** The first load failed; the poll keeps trying, and Retry asks now. */
@@ -203,8 +204,13 @@
 </script>
 
 {#snippet stateCell(p: Project)}
-	<StateDot state={p.state} />
-	{#if p.state === 'running' && p.idle}
+	{@const frozen = frozenSince(p)}
+	<StateDot state={p.state} frozen={!!frozen} />
+	{#if frozen}
+		<!-- Frozen while idle (I-683, behind a flag): how long, in the
+		     frost colour; it wakes when someone connects. -->
+		<div class="frost-sub mt-0.5 text-xs tabular-nums">for {uptime(frozen)}</div>
+	{:else if p.state === 'running' && p.idle}
 		<!-- Nobody on it for a day, holding its memory against the plan
 		     (I-262, I-289, I-617). -->
 		<div class="mt-0.5 text-xs text-amber-700 tabular-nums dark:text-amber-400">
@@ -347,7 +353,7 @@
 					<tbody>
 						{#each projects as p (p.id)}
 							{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-							<tr class="prow">
+							<tr class="prow" class:prow--frozen={!!frozenSince(p)}>
 								<td class="pcell-name">
 									<div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
 										<!-- Underlined at rest, in a quiet rule colour: the name is
@@ -426,20 +432,24 @@
 					{@const act = actionFor(p)}
 					<!-- The row is one link; Start or Stop sits on its first line's
 				     right edge, outside the link, as a tab stop of its own. -->
-					<li class="relative border-b border-rule">
+					<li class="relative border-b border-rule" class:mrow--frozen={!!frozenSince(p)}>
 						<a href={resolve('/projects/[id]', { id: p.id })} class="mrow" class:mrow--act={!!act}>
 							<span class="flex items-baseline justify-between gap-3">
 								<span class="flex min-w-0 items-baseline gap-2">
 									<span class="truncate font-medium">{p.name}</span>
 									{#if p.expires_at}<span class="badge shrink-0">temporary</span>{/if}
 								</span>
-								<span class="shrink-0 text-sm"><StateDot state={p.state} /></span>
+								<span class="shrink-0 text-sm"
+									><StateDot state={p.state} frozen={!!frozenSince(p)} /></span
+								>
 							</span>
 							<span
 								class="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-compact text-ink-muted"
 							>
 								<span class="shrink-0 whitespace-nowrap">
-									{p.class}{#if p.state === 'running'}&nbsp;· up {uptime(p.started_at)}{/if}
+									{p.class}{#if frozenSince(p)}&nbsp;· frozen {uptime(
+											frozenSince(p)!
+										)}{:else if p.state === 'running'}&nbsp;· up {uptime(p.started_at)}{/if}
 								</span>
 								{#if remote}<span aria-hidden="true">·</span>
 									<span class="min-w-0 truncate">{remote}</span>{/if}
@@ -503,6 +513,20 @@
 	.prow:hover,
 	.prow:has(.pname:focus-visible) {
 		background-color: color-mix(in srgb, var(--sunken) 60%, transparent);
+	}
+	/* A frozen machine's row (I-683): a cold wash and an ice edge on its
+	   left, so the whole row reads as frozen, not only its state word. */
+	.prow--frozen,
+	.mrow--frozen {
+		background-color: color-mix(in srgb, var(--frost) 6%, transparent);
+		box-shadow: inset 2px 0 0 var(--frost);
+	}
+	.prow--frozen:hover,
+	.prow--frozen:has(.pname:focus-visible) {
+		background-color: color-mix(in srgb, var(--frost) 10%, transparent);
+	}
+	.frost-sub {
+		color: var(--frost);
 	}
 	/* The remote is cut with an ellipsis (its whole value in the title)
 	   until lg, so the table fits the frame from sm up; from lg it takes

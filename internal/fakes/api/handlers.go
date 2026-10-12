@@ -1658,7 +1658,7 @@ func (f *Fake) restoreByName(w http.ResponseWriter, r *http.Request) *apiError {
 // Events and logs.
 
 // eventKindRe is one kind in kind= on events, as on the api (I-662).
-var eventKindRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
+var eventKindRe = regexp.MustCompile(`^[a-z_.]{1,64}$`)
 
 func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.projectAny(userFrom(r), r.PathValue("id"))

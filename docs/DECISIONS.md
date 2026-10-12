@@ -19763,3 +19763,603 @@ kanali's main was 7 commits ahead of GitHub.
   from the unit's journal: the switch completes on the host even if the
   ssh session drops, and it is never started from kanali, which sits on
   the host being switched.
+
+**I-682. The project page's first row ends on one line (web-polish, 2026-10-12).**
+Amends I-680, I-681 (rule 1) for this one row. The owner: the gap under
+Connect and Machine was uneven and did not match the Events tile beside
+it (Machine ended 30px above Events, so the space down to Usage was 54px
+on the right and 24px on the left). From lg the row's two columns
+stretch to one height: the Machine card takes what the right column has
+left, with its volume line and Resize… at the card's foot, so its spare
+space sits above that line; with few events, on one page, the Events
+card does, its rows at the top. The rest of the page keeps I-681: cards
+as tall as their content. From md Machine matches Connect beside it.
+- Event kinds from main and the api's dotted ones read in words: a
+  server restart's `host_restarted` (I-645) is "server restart" in
+  amber, `snapshot.created` "snapshot" and `project.created` "created";
+  all three are in the Machine filter. `kind=` on events accepts dots
+  (`^[a-z_.]{1,64}$`; I-662 allowed only letters and `_`, so the filter
+  could not ask for a dotted kind). Widening only: every kind accepted
+  before still is.
+
+**I-683. A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12).**
+The owner asked to show a machine frozen while idle, and chose a mock
+behind a flag once it was clear nothing is built: the idle pause is
+direction 4 of the pricing work ("Resting idle machines",
+docs/proposals/2026-10-11-pause-idle-machines.md on pricing-directions),
+analysis only, and the host-restart freeze (I-652, I-653) keeps a guest
+`running` with no field. Nothing here changes api.md.
+- The proposal's field, `resting: {since}` beside I-262's `idle`, with
+  the state still `running`, is what the dashboard reads
+  (`Project.resting` in lib/api/types.ts, marked as not in api.md). Only
+  the fake api sends it: `POST /resting {project_id, minutes}` on
+  cmd/fakeapi's admin listener, `Fake.SetResting`.
+- `FROZEN_LOOK` (lib/flags.ts) is on with the dev server or
+  `PUBLIC_FLAG_FROZEN=1`; production sets neither, and a Playwright test
+  on the production build checks that a `resting` project still reads
+  `running` there. `frozenSince()` is the one gate.
+- The word is "frozen", the owner's. The look: a six-armed snowflake
+  drawn at 13px (one fork per arm; two read as a blot at that size) and
+  the word in `--frost` (cyan-700 light, cyan-300 dark, kept off the
+  accent so frozen never reads as a link or a measure); on /projects
+  the row takes a 6 percent frost wash and a 2px frost edge, its state
+  cell "frozen" and "for 42m"; the plan's memory squares of a frozen
+  machine turn to ice (a frost edge over a pale fill; they still
+  count), on /projects and /billing, whose legend says "frozen"; a
+  project's page puts the snowflake and "frozen" in its status line,
+  an ice band "Frozen for 42m. It wakes when you connect." under it,
+  and a frost edge and mark on the Machine card.
+- When the field lands in api.md, the flag goes and this entry is
+  amended with the real name if it differs.
+
+**I-666. One motion controller for the landing's pictures: a pause
+button, one grid picture at a time, rebuilds on width alone; one
+snapshot tile (landing-foundation, 2026-10-11).** *Made during
+implementation* (the landing audit of 2026-10-11, findings
+F14, F20, F21 and F43, approved by the owner with its Resolutions).
+- Five pictures loop with no end (the hero, OneCommand, "Let it break
+  the whole machine", Localhost, Browser), and the page had no way to
+  stop them. WCAG 2.2.2 (Pause, Stop, Hide, Level A) asks for one on
+  anything that moves for more than five seconds alongside other
+  content. Each picture now has a pause button (`PauseButton.svelte`):
+  `aria-label="Pause animation"`, `aria-pressed` while paused, the house
+  focus ring, shown on hover or focus within the picture and always on a
+  touch screen. A paused picture stays paused through scrolling out and
+  back. A pointer moving in a picture, a press, or focus in it holds the
+  frame, and play resumes 2s after they leave. The hold starts on the
+  pointer's own movement, not on pointerenter: a page scrolled under a
+  resting pointer entered the hero and stopped it, with the visitor
+  doing nothing.
+- Two or three grid pictures played at once on clocks of their own
+  (F43). Only one grid picture plays now: the one under the pointer or
+  focus, else the one last pointed at while it is in view, else the
+  in-view one nearest the viewport's middle, with 24px of hysteresis so
+  two cells of one row do not trade the turn. The others show their
+  reduced-motion still frame, a cut with no new motion; a picture held
+  before its loop began shows that still frame too, not the loop's empty
+  first frame. The hero and OneCommand are outside the group.
+- The hero restarted from the empty machine on every window resize
+  (F20), and a phone's address bar collapsing is one. `watchWidth`
+  (a ResizeObserver on the picture) reports only a change of the
+  picture's own width; the hero rebuilds then and seeks the new timeline
+  to where the old one was.
+- `landing/motion.svelte.ts` holds all three, so the hero, OneCommand
+  and grid branches change content and timing without touching when a
+  picture plays. Each picture calls `picture.start(el, onMode)` where it
+  made its IntersectionObserver, and answers `play`, `hold` (pause the
+  timeline where it is) and `rest` (the still frame).
+- The hero put a snapshot's time inside or under its tile, and the grid
+  picture put it in a head row (F14). `SnapshotTile.svelte` is the one
+  drawing: pinwheel and time in a head row, the newest with its
+  miniature, older ones as head-only stubs stacked under it
+  (`SnapshotStack.svelte`), and a mark for the cause: a moon (nightly),
+  a prompt (`repose snapshots create`), the wreck's cross (a stop). The
+  hero and grid branches move their pictures onto it; ComesBack's tiles
+  fold by a clip that the shared tile does not model yet.
+- `tests/landing-motion.spec.ts`: a 390x844 to 390x784 resize leaves
+  the hero's rows as they were, Tab reaches all five buttons and toggles
+  `aria-pressed`, a paused picture stays paused, a hover holds and
+  resumes, a scroll under a resting pointer holds nothing, and at 1440
+  and 390 at most one grid picture plays at each scroll step.
+
+**I-669. The feature grid: one frame for four pictures, a new title,
+Localhost from the refused page, ComesBack on the shared tile
+(landing-grid, 2026-10-11).** *Made during implementation* (the
+landing audit of 2026-10-11, findings F01, F16, F17, F18, F25, F31,
+F47, F48 and F50 for the grid, approved by the owner with its
+Resolutions and corrections).
+- The four cells drew four kinds of frame: ComesBack a panel floating
+  in the middle with 22px each side, Localhost two windows inset 12px,
+  Browser and Editor captures flush to the frame. They now share one:
+  a 17rem sunken frame (it was 15rem; the Editor needs the height to
+  show its 20 rows whole), a 12px inset top and sides (10px on a
+  phone), and windows that run off the frame's bottom edge with no
+  bottom border, so all four end on the same line. Every window has
+  the same 28px head (`WinHead.svelte`): the cloud and "your cloud
+  machine" with the running dot, or the laptop and "your laptop". The
+  head on Browser and Editor is new: LANDING.md says a full-screen app
+  needs no frame unless the frame adds meaning, and this one says
+  where the app runs, which the Editor's new line states. The chips
+  (`⇄ 5173`, `repose browser`) are one style, `.shot-chip`, 22px tall.
+  The pause button sits on the head's right end, its edges on the
+  window's.
+- F31: the section's title is "A machine you can break, and reach from
+  your laptop", covering the four cards; `id="features"` stays.
+- F01, F14, F50 in ComesBack: its tiles are `SnapshotTile` (I-666).
+  The older snapshot is a nightly one at 03:00 with the moon, there
+  from the first frame; the newer is one you took at 21:25, with the
+  prompt (docs lifecycle.md, "Snapshots": nightly, on stop, and when
+  you ask). The times are illustrative, in one timezone (the 21:22 of
+  `repose snapshots list` on 2026-09-25 is gone, since a second
+  snapshot three minutes after the first had no cause). The table row
+  reads "job listings 3,532 rows"; "roles" read as database roles.
+- F16 in ComesBack: the restore no longer flies a scaled copy of the
+  machine back from the tile, which hung about 90px off its slot over
+  the wrecked rows mid-flight. Each row the snapshot holds wipes back in
+  over its own wrecked twin by clip-path, from the snapshot's side, 450ms
+  `inOutCubic`, 90ms apart; the copy goes after the row's 250ms tint
+  change, so the swap does not show. At the loop's seam 21:25 fades and
+  03:00 unfolds back to the top (550ms clip, 700ms travel, `inOutCubic`),
+  the reverse of its fold, instead of a cut.
+- F17: Localhost started on a blank pane with an empty address bar for
+  3.7s. It now starts on Chromium's own page for http://localhost:5173/
+  with nothing listening ("This site can't be reached", "localhost
+  refused to connect."), captured with Chromium 153 on this box in both
+  schemes at the app captures' sizes, dimmed to 0.6, with localhost:5173
+  in the bar. The Local line comes in at 200ms, the ports at 550ms, the
+  chip at 900ms; when it lands the bar's edge turns blue and the page
+  reloads to the app (a 500ms `outQuad` fade over the refused page).
+  The loop rests and fades back to the refused page.
+- F18: the Browser's log was already under the viewport; what cut the
+  tabs and the Write and Record pills was where the pans stopped. The
+  pans now stop with the viewport's top edge in the page's white space
+  (52, 120 and 0 capture pixels), and at 120 the `repose browser` chip
+  lands on the page's empty right side, over no text. The Editor's
+  font is sized from the window's width so its 78 columns fit from
+  640 wide up (8.95px at 1440, never over 10px): every line ends where
+  nvim cut it and the statusline keeps its clock. Below 640 it stays
+  8.4px and crops on the right (I-397).
+- F25, reduced by the owner's correction: "recruiting" stays where it
+  is (the explorer's root). The tmux bar is cropped after `"job-alerts"`
+  at every width, so a phone no longer shows "25-Sep-2" cut; on a phone,
+  before the forwards arrive, the bar shows the host name alone. The
+  two explorer rows that read "education" are two files nvim cut at 9
+  columns; the owner's machine is not reachable from here for a wider
+  recapture, and a crop cannot drop a middle row, so they stay.
+- F47 is not done: the Browser's eight captures came from the owner's
+  machine, which is not reachable from here, so there are no dark ones
+  to swap in. The white page in dark mode is also what the machine's
+  Chromium shows: its scheme is the machine's, not the visitor's.
+- F48: the Editor's line is "`repose code` opens the checkout in VS
+  Code, Cursor or Zed over SSH. Neovim runs on the machine itself."
+  (docs ssh-and-editors.md, cli.md). JetBrains is left out: `repose
+  code` cannot open it.
+- `tests/landing-grid.spec.ts`: at 1440 and 390 the four frames have one
+  height, inset and head, and one window each runs off the bottom; at
+  1440 no Editor row is wider than its window (the test fails with the
+  old 10px font: 20 rows over); the Browser's log starts under the
+  viewport; Localhost's first played frame has the app's page at 0, the
+  refused page at 0.6 and localhost:5173 in the bar, then reloads.
+
+**I-668. "Your laptop's setup": copies that never cover a chip or their
+source, the agent's commit coming back, the head as one sentence with
+the reach link, and Ready in 16s (landing-onecommand, 2026-10-11).**
+*Made during implementation* (the landing audit of 2026-10-11, findings
+F13, F16, F24, F39 and F02's head link, approved by the owner with its
+Resolutions; F12 dropped by Resolution 7).
+- Copies of the laptop's rows stacked into a staircase over their own
+  source rows, spilled over the gap and covered the `repose run` chip
+  (F16). The chips now sit on bands no row travels in: `repose run` on a
+  wire joining the two title bars, `git fetch repose` joining the two
+  "Source control" heads, both above every copy. A copy is a clone of
+  the row it lands as, with no ground of its own; it is clipped to the
+  gap and the panel it lands in, so it never covers its own source (which
+  greys to `--pic-faint` while the copy is in flight), a title bar or a
+  chip. It lifts 6px, glides, sets down on its exact slot, and the real
+  row fades up under it. At most two are in flight (each leaves when the
+  one before is halfway), each in its own row's band. Stacked, a lane
+  beside the chips was too narrow for a row: every copy crossing it was
+  cut mid-word (".env.exam", "Retry fetchB"). So stacked, the chips stand
+  side by side in the middle of the gap and a copy is seen only inside
+  the panel it lands in, sliding in from that panel's edge onto its slot;
+  the source greying and the chip firing carry the crossing.
+- The panels take the feature grid's window head and chip (I-669): the
+  28px sunken head with a 16px mark at 12px, and the 12px chip, so the
+  page's pictures read as one family. They stand side by side from
+  1024px, not 768px: at 768 to 1023 the laptop's fetched row left its
+  message no width beside `repose/fetch-timeout` and the hash.
+- Every arrow pointed from the laptop to the machine, so the page read
+  as a one-way door (F13). After the sync rests, the agent commits on the
+  machine (its rows move down and the commit drops into the top slot),
+  the `git fetch repose` chip fires, and the commit travels back into
+  the laptop's graph as the newest row with a `repose/fetch-timeout` ref,
+  as `sync.md` "Getting work back" describes (and `repose stop`'s fetch,
+  `lifecycle.md`). Each move is under 1.1s. The commit (e41b9c2, "Retry
+  fetchBoard once", short enough to show whole beside its ref at 1440)
+  is illustrative, since the 2026-09-25 capture has no agent commit, and
+  it touches none of the three changed files, so both Changes lists
+  stand. The still frame
+  shows both panels holding it. To keep the laptop's top slot from
+  showing a gap before the coda, both panels' rows sit a row up until a
+  commit takes the slot: no layout changes, only `translate`.
+- "Ready in 14s" was the quickstart's old figure; `index.md` says 16s
+  (F39). The time moves from under the chip to the machine's title bar,
+  beside its green dot, which now shows with it: two chips leave no room
+  under one, and the machine reporting ready is what the line says.
+  `OneCommand.test.ts` reads `index.md` and fails when the figures
+  differ.
+- The head said "The CLIs you installed globally", but only npm, pnpm,
+  bun, go, cargo, uv and pipx globals are copied (`machine.md`), so a
+  Homebrew tool is not (F24). It is one sentence now: "Unpushed commits,
+  uncommitted changes, `.env` files, the CLIs you installed with npm,
+  cargo or uv, and your gh, Codex and opencode logins come along; your
+  SSH keys stay home." Then "What an agent there can reach" links to
+  `/docs/secrets#what-an-agent-on-the-machine-can-reach` (F02): the
+  copied logins are reachable by anything on the machine, and this head
+  is where a reader decides what to let on.
+
+**I-667. The hero tells the snapshot story with true causes, on a
+balanced stage that is never empty (landing-hero, 2026-10-11).** *Made
+during implementation* (the landing audit of 2026-10-11, findings F01 to
+F06, F19, F22, F35 to F37, F50 and the hero half of F51, approved by the
+owner with its Resolutions). Amends I-398, I-477.
+- Snapshots fired at 21:22 and 21:25 with no cause (F01), while the
+  product takes one a night, on every stop and when you ask
+  (lifecycle.md). The older tile is now the 03:00 nightly (moon), on the
+  rail from the first paint; the newer is 21:25, after a `repose
+  snapshots create` chip fires on the laptop's side; both use
+  `SnapshotTile` (I-666) with the marks ComesBack uses. The times are
+  illustrative, on one clock, and the provenance comment says so.
+- The restore covered a running machine while the agent kept working
+  (F06), and a restore needs a stop. At the stop the dot greys and the
+  agent fades; the stop's own snapshot lands as a tile with the wreck's
+  cross (a real stop snapshots first, Resolution 4); the restore comes
+  from 21:25; the agent comes back, as I-636 reopens its window. No
+  timing label.
+- Red tinted the laptop's private rows for about 700ms before any cross
+  (F03). The laptop is never tinted now; the skill's run is a red dashed
+  trail from the skill to the wall, level with the private rows, where
+  the knock and cross land. The aria story says the same (F02): on the
+  machine the skill only destroys, and its one attempt to take
+  something stops at the wall.
+- The stage was lopsided and the globe floated (F19). The laptop stands
+  on the machine's floor; the right column is exactly as tall as the
+  machine, the globe on its floor; permanent `--pic-dim` hairlines with
+  end dots wire the machine to the snapshots and to the globe, drawn in
+  CSS so the no-JS frame has them, and motion only lights them. Below
+  1024px the picture stacks (it was 768: from 768 to 1023 the skill chip
+  covered "bypass permissions on"), and the snapshots and globe share one
+  wired row under the machine. Between 1024 and 1100 the agent's row
+  sets its two lines at 11px (a container query on the machine).
+- I-398's first paint was the empty machine, and both panels faded back
+  to empty at every seam (F05). The server-rendered frame now has the
+  header, postgres "job listings 3,532 rows" (F50: the table holds job
+  listings; "roles table" read as CREATE ROLE), node v24.20.0, the
+  agent's row and the nightly tile; only the project rows wait, dimmed
+  to 0.22, for `repose run`. The seam dims the project rows and lets
+  the nightly tile rise and unfold over the rail, as ComesBack's seam
+  does. Over two loops sampled every 100ms the machine always shows two
+  rows or more at full opacity and the rail a tile at 0.58 or more.
+  I-398's reason holds: the wreck never flashes before the story.
+- The stage started at y=580 at 1440x900 and the agent fell below the
+  fold (F04). The hero's gaps are tighter (40px over the label, 32px
+  under the command row, 28px over the picture); the machine, agent row
+  included, ends at y=818. On a phone the command keeps wrapping (WCAG
+  1.4.10); a 15px lead and tighter gaps and rows put the machine's head
+  in the first 844px.
+- The hero's diff was fetcher.ts and config.ts from `--numstat master`,
+  OneCommand's is its uncommitted set (F22). The hero now shows
+  OneCommand's files and letters (.env.example M, poller.ts M,
+  timeout.test.ts U). The uncommitted line counts were never recorded
+  and that checkout is on the owner's laptop, so the rows carry no
+  counts; LANDING.md "The hero" asked for diff-stat counts, and that
+  line is amended until `git diff --numstat HEAD` is taken there.
+- The restore lands at 12.35s and holds 5s (F35); the loop is 18.4s.
+  The reduced-motion and no-JS still is the restored machine with the
+  three tiles and the wires, no cross and no label (F36, Resolution 5).
+  anime.js is imported statically, so the prerendered page
+  modulepreloads its chunk (F37; 15,644 bytes gzip).
+- The lead's first sentence is "Your code, tools and logins on your own
+  cloud machine." (F51): "a machine of its own" had no clear antecedent.
+  The lead's three beats stay as I-477 set them.
+- The loop uses no anime.js timeline `.set()`: placed after a tween of
+  the same property, it was skipped, and the restored machine kept its
+  wreck under the fading copy. A cut is a 16ms tween.
+- `tests/landing-hero.spec.ts`: without scripts the hero has the
+  services, the agent and the 03:00 tile; over a loop at 1440 and 390,
+  sampled every 200ms, the rail always has a tile over 0.5 opacity, the
+  machine two full rows, and no laptop colour equals `--pic-stop` (a
+  red laptop row makes it fail); mid-wreck at 1440x900 the machine and
+  its agent row end above y=900. The height-only resize test now reads
+  the project rows (`.lw .m-proj`).
+
+**I-677. The hero's copies stay inside the panel they are drawn in, one
+drawing at a time, and the stage fits 1280x800 (landing-fix-hero,
+2026-10-11).** *Made during implementation* (the critic's captures of
+the merged landing-revamp hero, desktop, phone and motion). Amends
+I-667.
+- The snapshot's flying copy of the machine (277x180 at the stop) sat
+  across the machine's wall, the wire and the rail's head, and struck
+  rows showed under a second copy. The copy is now drawn only inside
+  the rail's body (a clip the size of `.railbody`), so it enters the
+  rail from the wire's end and never covers the machine or a head; the
+  wire carries it across. The restored snapshot does the same the
+  other way: it grows into the machine inside a clip of the machine's
+  walls (`.backclip`), above the agent's mark.
+- The landing showed two drawings at once: the copy in 4px text and the
+  tile's shapes faded across each other. The copy shrinks early (scale
+  and fold `outCubic`) and travels late (`inOutCubic`), 620ms; it is
+  gone by 750ms after it leaves, and the tile fades in only then
+  (`T.shot + 900`, `T.stopshot + 900`). The phone's copy head goes out
+  before the tile's head comes in for the same reason.
+- The rail stood empty for 120px while the older tile folded before the
+  copy arrived. The older tile now folds (220ms) only under the landed
+  copy. At the seam the nightly tile unfolds behind the stop tile, which
+  then rolls up off it from the bottom (500ms clip), so the rail always
+  shows one whole drawing.
+- "3,532 rows" and "0 rows" overlapped mid-fade. Postgres counts down in
+  its one value, 600ms `outQuad`, written on each update as ComesBack's
+  `count()` does; node's version fades out before "not found" fades in.
+- The repo row's copy started over its source at full ink and crossed
+  the `repose run` chip. The source dims to `--pic-faint` while its copy
+  flies (a `lift` class, as OneCommand's), the copy flies under the
+  laptop's window and, wide, rises into the band over the chip before it
+  crosses the gap; stacked, it appears on the machine over its head.
+- After the stop the agent's row was an empty band with the cross alone
+  on the wall. The agent and its mode line dim to 0.35 while stopped;
+  the skill, its trail, the wall's red edge and the cross stay until the
+  restore and fade together then.
+- Below 1024px the cross stuck out past the machine's edge into the
+  commands' lane. There the trail runs up the right edge to the rule
+  under the machine's head, and the cross sits over the status dot,
+  inside the wall.
+- At 390 the right column was lopsided (the globe at the top, about
+  130px of empty floor). At 480px and under the globe hangs on its wire
+  at the machine's right corner, and the snapshots panel takes the full
+  width under it, its wire running down past the globe.
+- The rail ended 13px above the rule over the agent's row and the laptop
+  1px off the floor. The agent's row is 40px at every width (`--agent`),
+  the globe 40px, and the globe's row the agent's row plus 2px under a
+  2px gap, so the rail's foot is that rule and the stack ends on the
+  machine's floor, as the laptop does. At 1280x800 the machine ends at
+  y=797 (789 once the head is 28px), agent row included. Merged with
+  I-673's 40px stage it ended at 804, so the hero's stage starts 28px
+  under its rule from 768px wide on a screen 840px tall or less: the
+  agent's row ends at 791. Below 1024px the trail stops at the bottom
+  of the machine's `WinHead` and the cross is centred on its dot.
+- The loop still uses no timeline `.set()`; every new cut is the 16ms
+  tween.
+
+**I-673. The landing's pictures share one grammar: one window head,
+one chip, one machine wall, one radius, a dark scheme that layers as the
+light one does, the pause button on the floor (landing-fix-grammar,
+2026-10-11).** *Made during implementation* (the critic pass over the
+merged homepage revamp, 2026-10-11). Amends I-666 (the pause button's
+corner), I-669 (`.shot-chip`, the grid frame's 2px corners), I-671 (the
+Ready terminal, the frieze's seven cells) and LANDING.md's head marks.
+- One window head (`WinHead.svelte`) in every picture: `--shot-head`
+  28px, 10px side padding, a 16px mark, the name at 12px at every width.
+  The hero's 36px `.title` and OneCommand's own head are gone; the hero's
+  snapshots panel is `who="snapshots"` with its pinwheel passed as
+  `mark`, so the loop still turns it. A snapshot tile's head is
+  `--shot-head` minus its rule (27px) everywhere; ComesBack's override
+  went. The hero's stubs are 29px, 3px apart, so a step stays the 32px
+  its loop moves by.
+- One chip (`.chip` in landing.css): 12px mono 600, 2px 8px, 18px line,
+  `--radius`. Hero, OneCommand and Localhost lost their copies and the
+  grid lost `.shot-chip`. Firing changes the ground over 180ms and the text at
+  once: with both fading, the text passed through pale blue on pale blue.
+- One machine wall: a window whose head is "your cloud machine" takes
+  `--pic-wall` (`--pic-ink` light, `--pic-dim` dark), the hero's edge,
+  through `:has(> .shot-head[data-who='machine'])`. Ink, not
+  `--rule-strong`: the machine is what every picture is about, and the
+  hero's wall is where the attack stops.
+- One radius, `--radius: 3px`, for frames, windows, chips, terminals,
+  the command row, Copy and the boxes inside a picture.
+- Dark layering, scoped to `.rails` so the dashboard keeps its tokens:
+  `--stage` #151514 < `--sunken` (heads) #191918 < `--surface` (bodies)
+  #1f1f1e, with `--rule` #2e2e2c and `--rule-strong` #43433f so a row's
+  hairline still shows. The house values put the body (#161615) under the
+  head and the stage (#1b1b1a): every window read as a hole.
+  `--ink-faint` holds 5.1:1 on the new surface.
+- The pause button stands on the floor under its picture at the right
+  edge, never over a head or content: in the stage's 40px bottom padding
+  (`--stage-y`) under the hero and the setup section, and in a 40px floor
+  between a feature cell's frame and its title. The frame clips, so the
+  cell is the button's containing block there. 28px drawn, 44px hit
+  area, nothing moves. Its `corner` prop is gone.
+- Section heads carry no shape, so every h2 is the same. The frieze
+  keeps the five shapes the page still draws (pinwheel, sphere, halves,
+  ring, arch), each cell 7:5 so the row keeps its height.
+- The command row is one size in the hero and the steps, with no prompt
+  in either: 42px with a 32px Copy, 46px with a 36px Copy below md. The
+  steps stand title over command below 1024, where the install command
+  broke onto a second line in its column.
+- Ready's terminal sits in a "your cloud machine" window, lined up with
+  the rule above it (no 32px inset); the stage's 40px is above the marks
+  and 40px is under them; from 640 to 1023 the tools stand over the
+  terminal.
+- Stages are 40px above and below at every width, except the hero's top
+  on a phone (20px), which keeps the machine's head in the first 844px
+  (F04), and on a screen 840px tall or less from 768px wide (28px), which
+  keeps the agent's row in 1280x800 (I-677). Grid cells are `--land-x` on every side.
+- Pricing: the units hang from the top of a 45px box (Pro's four rows)
+  at every width, so the stacks' tops and the plan names line up side by
+  side, and sit at one place in each card at 390.
+- A step's disc is centred on its title's first line (`1lh`), so a
+  wrapped title keeps it level with its first words.
+- Nav and footer links take 10px of padding above and below, given back
+  by a negative margin: a 41px box, nothing moves.
+- `vite dev` with no `PUBLIC_API_URL` skips `GET /public/seats`, which
+  only put a 404 in the console; a build always asks.
+- `.rails` clips across: below 1130px its ticks' outer halves pushed the
+  page 5px sideways.
+
+**I-675. The two story panels: copies seen only in the panel they land
+in, the machine never an empty box, and ComesBack in a closed window
+with its snapshots under it where it is narrow (landing-fix-panels,
+2026-10-11).** *Made during implementation* (the critic pass over the
+landing revamp of 2026-10-11). Amends I-668 and I-669.
+- OneCommand, amends I-668: side by side, a copy was seen in the gap
+  between the panels, where the panels' walls cut it to fragments ("8e",
+  "t a worker setting cc300c3", a lone "M") and it crossed the machine's
+  left border. At every width now a copy is seen only inside the panel
+  it lands in, within its walls: it crosses the gap unseen and slides in
+  through that panel's wall (side by side, the machine's left wall and
+  the laptop's right wall; stacked, from under the machine's head and
+  from under the laptop's top slot). The 6px lift is gone with the gap
+  it was seen in. A copy keeps the row's box (the surface, a hairline,
+  3px corners), so the part inside reads as a row, never as bare text
+  over the rows it passes.
+- The machine's panel was an empty box under "Source control" for 1.5s
+  to 4s of each loop. Its rows from the last loop now stay at 0.22
+  opacity (the hero's dimmed rows, I-667) until the new ones land over
+  them; `repose run` fires at 500ms (was 900ms) and the loop's tail is
+  200ms (was 400ms). Each window is as tall as its rows, so neither ends
+  on an empty band: side by side the machine's ends a row above the
+  laptop's, having no node_modules, which stays behind. A matching row
+  on the machine would show a folder the run does not give it.
+- Stacked, the hidden `git fetch repose` chip held its place, so the
+  lone `repose run` chip stood left of the middle. It now stands in the
+  middle and slides aside (450ms `inOutCubic`) as its pair arrives, and
+  back at the loop's end.
+- ComesBack, amends I-669: its window is closed, inset 12px (10px on a
+  phone) on all four sides like its top, and its six rows share the
+  frame's height, so the last row ends 8px above the bottom edge; the
+  open window ran 23px of empty rows off the frame. The snapshot column
+  is 120px wide (down to 96px where the machine needs the room), the
+  hero's tile at this size, where it was 88px. Where the picture is
+  under 410px wide (phones, and the two-column grid from 768 to 1023),
+  the snapshots stand in a row under the machine and the arrows turn
+  upright: beside it, "apps/ packages/" and "job listings" were cut to
+  "apps/ pack..." and "job l...". The rows there share what the machine
+  and the newest tile leave, about 22px each. The restore wipes in from
+  the snapshots' side, the left in that layout. Every picture frame
+  keeps one height (I-669).
+- The snapshot's landing laid the shrunken copy over the tile's own
+  miniature. The copy now reaches its size in the first 60% of its
+  travel (its own `outCubic`), fades in the last 150ms, and the tile
+  and its quarter turn come in as it is gone.
+- The restore's copies stayed on at opacity 1 in some loops: anime.js
+  can pass over a timeline's `.set()`. Each one (ComesBack's take copy,
+  wipes, crosses and strikes; OneCommand's copies) is a 16ms `.add()`
+  now. A count of one reads "1 file".
+- Gaining the grid's turn from its still frame, ComesBack cut from the
+  restored machine to the loop's first frame. Its first cycle after the
+  still frame now starts at the seam, where the loop rests on that same
+  machine, so it leaves through its own exit (callbacks muted, so the
+  mark does not turn). `motion.svelte.ts` is unchanged.
+
+**I-676. The grid's Browser, Localhost and Editor without doubled text or
+cut lines, and grid pictures that take turns (landing-fix-browser,
+2026-10-11).** *Made during implementation* (the landing critique of
+2026-10-11 after the revamp merge). Amends I-666, I-669.
+- Browser: the loop opened on about:blank for 1.15s, and at the seam the
+  page, toolbar and log all faded to an empty white window. The page now
+  loads 250ms in, so about:blank shows 400ms in all with the seam's
+  last 150ms; at the seam the lower pages go unseen under the top one,
+  the top one fades to the blank page that was under it all along, and
+  the toolbar and log cut back to the first frame's, so the last frame
+  equals the first.
+- Browser: three crossfades showed two texts at once (the toolbar's
+  about:blank over the URL, and the pages, which the owner's captures
+  took at different scroll positions). Those now swap in 16ms; only
+  captures that line up (the typing beats) fade. The loop has no
+  anime.js `.set()` left: a cut is a 16ms tween (as I-667 found for the
+  hero, a `.set()` can be skipped).
+- Browser: the Bug stop panned to the page's top, so the tabs sat flush
+  under the toolbar and the ring's top edge lay on the toolbar's line.
+  It pans to 12 capture pixels above the page's top (the viewport shows
+  the page's own #fafafa there), and the ring clears the line by 8.
+- Browser: log rows cut mid-word at the right edge; they end in an
+  ellipsis now. The log scrolls a whole row at a time (`steps(2)` over
+  240ms), as a terminal does, so no row shows cut in half. The still
+  frame rests every row at 0.7, as the loop's last beat does.
+- Browser, F47 (I-669) revisited: the captures are still light only,
+  and the owner's machine is still out of reach, so in the dark scheme
+  the toolbar and page take `filter: brightness(0.86)`. A white page
+  beside Localhost's dark app read as a glare; the ring, chip and
+  pointer stay undimmed.
+- Localhost: the app's headline faded in over "This site can't be
+  reached" with both legible. The refused page fades out first (200ms
+  `inQuad` at 2400ms), then the app in (300ms `outQuad` at 2550ms); at
+  the seam (9900ms) the app goes in 200ms and the refused page returns
+  from 10050ms. The Local line no longer fades with the page at the
+  seam, which left the tmux pane black: the dev server is up for the
+  whole loop, and the story is the forward. The chip starts under the
+  tmux bar, at the port's x, instead of over the bar's text (at 390 it
+  covered the bar).
+- Localhost: the crops cut the refused page's "Try:" and the app's
+  paragraph through their letters. The pane is a size container, and
+  each image is placed so a chosen row of the capture, one between two
+  lines of text, lands on the pane's bottom edge; the row is picked by
+  the pane's aspect ratio (how many capture rows it shows), from the
+  rows each capture's text occupies. Every width from 360 to 1920 now
+  ends in white space.
+- Not done: the app's serif headline stays about 30px at 1440 beside
+  the cell's 18px title. It is a raster of the owner's app at a 720px
+  viewport; shown 27% smaller it would end the app's header and rule at
+  three quarters of the window, which is not what a browser draws, and
+  a capture at a wider viewport needs the recruiting machine, which is
+  not reachable from here.
+- Editor: at 390 the statusline ended in "31% 21:", its clock cropped.
+  Its right segment (from the first powerline separator: position,
+  line and column, clock) is pinned to the right edge, and the crop
+  takes the file path in the middle; from 640 up all 78 columns still
+  fit and the line is as nvim drew it.
+- The controller (I-666): Localhost shares a row with ComesBack, the two
+  tie for nearest the middle, and the hysteresis kept the first leader
+  for good, so Localhost never played during a scroll. A picture now
+  calls `picture.looped()` at its seam, the beat where its frame equals
+  its still frame; a leader nobody points at then hands the turn to the
+  next in-view grid picture in DOM order (wrapping round), and rests on
+  the frame it already shows. A picture that gains the turn from its
+  still frame gets `fromStill` with `'play'` and starts its first cycle
+  at its seam (Localhost 9900ms, Browser 17200ms), so the still leaves
+  through the loop's own exit motion, not by a cut to the opposite
+  state. ComesBack needs the same two calls (landing-fix-panels); a
+  turn it holds before then stays with it.
+
+**I-684. The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12).**
+Amends I-668, I-673, I-675, I-679. The owner asked for landing-revamp's
+visualizations on web-polish, not its words. The entries above (I-666
+to I-669, I-673, I-675 to I-677) came over with ids unchanged; what they
+say about the pictures holds here, and what they say about copy does
+not.
+- Taken: the hero (Hero, WinHead, SnapshotTile, SnapshotStack), the
+  motion controller and pause button (`motion.svelte.ts`,
+  `PauseButton.svelte`), OneCommand, the grid's four pictures in one
+  frame with the turn-taking (ComesBack, Localhost with the refused-page
+  captures, Browser, Editor), and the landing.css grammar they need:
+  `--radius`, `--shot-head`, `--stage-y`, `--stage`, `--pic-wall`, the
+  dark layering under `.rails`, `.shot`, `.shot-win`, `.chip`, the
+  cell's 40px floor, the stage's 40px, and the hero's tighter gaps that
+  put the machine in the first screen.
+- Not taken: headlines, ledes, section titles (the grid stays "On every
+  machine"), the Editor's line, the setup head's link, the steps, the
+  agents' row, pricing (I-670), I-671's header, footer, meta and og.png,
+  SectionHead without marks and the five-cell frieze, the command row's
+  size and prompt, `.rails` clipping across (web-polish's ticks stand
+  outside the frame's edges from 1240px), and the dev-only skip of
+  `GET /public/seats`. The shared SiteHeader, SiteFooter and frame width
+  (I-655 to I-657) stay.
+- OneCommand, side by side: `repose run` and `git fetch repose` stand one
+  over the other halfway down the gap between the panels, where main
+  had its one chip, not on the title-bar and head bands I-668 put them
+  on. Until the fetch arrives `repose run` stands in the middle alone
+  and moves up as its pair comes, as it moves aside stacked (I-675).
+  Copies stay invisible in the gap (I-675), so none crosses a chip.
+- OneCommand: a copy in flight rides on the accent's tint (9% into
+  `--surface`) with a 2px accent edge on its left, main's travelling
+  chip, where landing-revamp drew a surface box with a hairline. The
+  owner: the blue chips "worked really well".
+- Every picture's sample project is `your-project` (I-679): the hero's
+  tree, Localhost's dev server line and tmux bar. Comments naming the
+  capture source keep `job-alerts`.
+- Localhost's and Browser's size container was class `frame`, which on
+  web-polish is the site's frame utility, and it padded both pictures
+  to the page gutter; it is `shot-box`.
+- `tests/landing-onecommand.spec.ts` adds two checks: side by side the
+  chips' column is centred on the laptop's window and run stands over
+  fetch; a copy in flight has a background other than the window's and
+  an inset 2px accent edge.

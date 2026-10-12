@@ -15,7 +15,7 @@
 	}: {
 		label: string;
 		/** What runs, in order: one run of squares each. */
-		segments: { name: string; gb: number }[];
+		segments: { name: string; gb: number; frozen?: boolean }[];
 		limit: number;
 		perRow?: number;
 	} = $props();
@@ -24,16 +24,19 @@
 	let total = $derived(Math.max(limit, used));
 	/** Each square's run: its index in segments, or -1 when free. */
 	let squares = $derived.by(() => {
-		const out: { seg: number; over: boolean; name?: string }[] = [];
+		const out: { seg: number; over: boolean; name?: string; frozen?: boolean }[] = [];
 		segments.forEach((s, i) => {
-			for (let k = 0; k < s.gb; k++) out.push({ seg: i, over: out.length >= limit, name: s.name });
+			for (let k = 0; k < s.gb; k++)
+				out.push({ seg: i, over: out.length >= limit, name: s.name, frozen: s.frozen });
 		});
 		while (out.length < total) out.push({ seg: -1, over: false });
 		return out;
 	});
 	let reading = $derived(
 		`${used} GB of ${limit} GB${used > limit ? ', over' : ''}` +
-			(segments.length ? `: ${segments.map((s) => `${s.name} ${s.gb} GB`).join(', ')}` : '')
+			(segments.length
+				? `: ${segments.map((s) => `${s.name} ${s.gb} GB${s.frozen ? ' frozen' : ''}`).join(', ')}`
+				: '')
 	);
 </script>
 
@@ -53,6 +56,7 @@
 				class:on={q.seg >= 0}
 				class:alt={q.seg % 2 === 1}
 				class:over={q.over}
+				class:ice={q.frozen}
 				title={q.name ? `${q.name}` : undefined}
 			></i>
 		{/each}
@@ -90,6 +94,12 @@
 	}
 	.on.alt {
 		background: color-mix(in srgb, var(--accent) 55%, var(--surface));
+	}
+	/* A frozen machine's memory (I-683): its squares turn to ice, an edge
+	   of frost over a pale fill; they still count against the plan. */
+	.on.ice {
+		background: color-mix(in srgb, var(--frost) 22%, var(--surface));
+		box-shadow: inset 0 0 0 1px var(--frost);
 	}
 	.on.over {
 		background: var(--color-amber-600);

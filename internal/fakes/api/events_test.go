@@ -108,6 +108,10 @@ func TestFakeEventsPages(t *testing.T) {
 	if evs, n := page("?kind=nothing_here"); n != 0 || len(evs) != 0 {
 		t.Fatalf("unknown kind: %d events, count %d", len(evs), n)
 	}
+	// Dotted kinds, as the api writes project.created (I-682).
+	if evs, n := page("?kind=project.created"); n != 1 || len(evs) != 1 || evs[0].Kind != "project.created" {
+		t.Fatalf("kind=project.created: %d events, count %d", len(evs), n)
+	}
 
 	for _, q := range []string{"?before=" + pages[1][0].ID + "&after=" + pages[0][0].ID, "?kind=Error", "?kind=error,", "?kind=a-b", "?limit=0", "?limit=201"} {
 		if r := call(t, f, "GET", base+q, tok, nil); r.status != 400 || r.errCode(t) != "invalid" {

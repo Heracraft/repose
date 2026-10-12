@@ -199,6 +199,8 @@ func TestEventsAfterKindCount(t *testing.T) {
 		t.Fatalf("kind with after: %v, want %v", ids(r), eids[4:8])
 	}
 	get("?kind=nothing_here", 0)
+	// A dotted kind is a kind (I-682): accepted, and none here.
+	get("?kind=snapshot.created,project.created", 0)
 
 	for _, q := range []string{"?before=" + p2[0] + "&after=" + p1[0], "?after=nope", "?kind=Error", "?kind=error,", "?kind=a-b", "?kind=" + strings.Repeat("a", 65)} {
 		if r := e.do(t, tok, "GET", path+q, nil); r.status != 400 || !strings.Contains(string(r.raw), "invalid") {
