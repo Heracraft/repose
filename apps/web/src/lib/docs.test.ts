@@ -118,7 +118,7 @@ describe('user docs', () => {
 		}
 		const billing = docBySlug('billing')!.html;
 		expect(billing).toContain('<td class="num">100 GB</td>');
-		expect(billing).toContain('<td class="num">$59</td>');
+		expect(billing).toContain('<td class="num">$89</td>');
 		expect(billing).not.toContain('<td class="num">Solo</td>');
 	});
 

@@ -285,7 +285,7 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 	await page.goto('/billing');
 	await expect(page.getByTestId('meter-disk-held')).toContainText('180 GB of 100 GB · over');
 	await expect(page.getByTestId('meter-egress-this-period')).toContainText(
-		'412.7 GB of 100 GB · over'
+		'412.7 GB of 250 GB · over'
 	);
 	const fit = await page.evaluate(() => {
 		const card = document.querySelector('[data-testid="plan"]')!.getBoundingClientRect();
