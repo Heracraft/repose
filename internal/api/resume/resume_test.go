@@ -175,10 +175,11 @@ func TestInterruptedGuestIsStartedOnce(t *testing.T) {
 	if e.rows("boot-2") != 1 {
 		t.Fatal("a machine stopped before the restart got a row")
 	}
-	// The Hello set the project from the host's word.
-	if st := e.h.Project(p.ID).State; st != "stopped" {
-		t.Fatalf("project after Hello: %s", st)
-	}
+	// The Hello set the project from the host's word. The resume rows and
+	// the project's state are separate statements in the Hello, so wait for
+	// the state too (CI on b14662a7 read it in between). Nothing resumes it
+	// before the first tick, so it stays stopped until settle.
+	e.h.WaitFor("project stopped after Hello", func() bool { return e.h.Project(p.ID).State == "stopped" })
 	e.settle(5)
 	if r := e.row(p.ID); r.outcome != resume.OutcomeStarted || !r.decided || r.attempts != 1 {
 		t.Fatalf("row %+v", r)
