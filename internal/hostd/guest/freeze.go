@@ -45,14 +45,17 @@ type FreezeConfig struct {
 	// Deadline bounds a FreezeAll; guests not frozen by then are left to
 	// the shutdown as before. Default 120 s.
 	Deadline time.Duration
-	// Concurrency is how many snapshots write at once; they share the
-	// data disk's bandwidth. Default 2.
+	// Concurrency is how many snapshots write at once. Default 4: a
+	// snapshot of a compressed image (I-685) spends its time in one core
+	// compressing rather than waiting on the disk, so four at once finish
+	// sooner than two (host-stg-01: four loaded guests froze in 38.8 s
+	// against 45.3 s). Each guest is paused a little longer, and every one
+	// of them is frozen sooner, which is what its gap is made of.
 	Concurrency int
 	// RestoreConcurrency is how many images are read back at once.
-	// Default 4: with compressed images (I-685) a restore spends its time
-	// decompressing, one core per image, rather than waiting on the disk,
-	// so more of them at once finishes them all sooner. Zero takes the
-	// default, and it is never more than Concurrency when that is higher.
+	// Default 4, and never fewer than Concurrency: a restore decompresses
+	// in one core per image, so a host whose disk made it lower the
+	// freeze's concurrency still reads four back at once.
 	RestoreConcurrency int
 	// Settle is how long a FreezeAll waits after asking the guests to drop
 	// their caches, for free page reporting to hand the pages back so
@@ -87,7 +90,7 @@ func (c FreezeConfig) withDefaults() FreezeConfig {
 		c.Deadline = 120 * time.Second
 	}
 	if c.Concurrency == 0 {
-		c.Concurrency = 2
+		c.Concurrency = 4
 	}
 	if c.RestoreConcurrency == 0 {
 		c.RestoreConcurrency = 4

@@ -1,10 +1,10 @@
 package guest
 
 import (
-	"fmt"
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -957,14 +957,18 @@ func TestRestoresRunMoreAtOnceThanFreezes(t *testing.T) {
 	}
 }
 
-// The default is more restores at once than freezes, and never fewer.
-func TestFreezeConfigDefaultsRestoreConcurrency(t *testing.T) {
+// Four freezes and four restores at once by default (I-685), and never
+// fewer restores than freezes.
+func TestFreezeConfigDefaultsConcurrency(t *testing.T) {
 	c := FreezeConfig{}.withDefaults()
-	if c.Concurrency != 2 || c.RestoreConcurrency != 4 {
+	if c.Concurrency != 4 || c.RestoreConcurrency != 4 {
 		t.Fatalf("defaults: freeze %d, restore %d", c.Concurrency, c.RestoreConcurrency)
 	}
 	if got := (FreezeConfig{Concurrency: 6}).withDefaults(); got.RestoreConcurrency != 6 {
 		t.Fatalf("with 6 freezes at once, %d restores", got.RestoreConcurrency)
+	}
+	if got := (FreezeConfig{RestoreConcurrency: 1}).withDefaults(); got.RestoreConcurrency != got.Concurrency {
+		t.Fatalf("fewer restores (%d) than freezes (%d) at once", got.RestoreConcurrency, got.Concurrency)
 	}
 }
 

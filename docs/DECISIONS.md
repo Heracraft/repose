@@ -18825,7 +18825,7 @@ do not feel it"); off until the owner turns it on per host
 - *What a restore is.* At hostd's start, inside Reconcile and before the
   stream sends Hello, every complete image is checked and its key
   unwrapped, all at once under one 90 s bound (so a vault outage holds
-  Hello back 90 s, not 90 s per image); then, two at a time,
+  Hello back 90 s, not 90 s per image); then, four at a time (I-685),
   the tap, rules, shape, store view, virtiofsd and login share brought back
   as a boot does, the hypervisor started with `--restore` (copy mode),
   the image closed (its key leaves the kernel), the VM resumed, guestd's
@@ -19320,12 +19320,14 @@ host-01's disk speed).
   image — every page touched and none of it compressible — from running
   the volume out of space: btrfs allocates data in chunks of up to 1 GiB
   and needs a metadata and a system chunk besides.
-- *Restores run `RestoreConcurrency` at a time, four by default*, where
-  the freeze still writes `Concurrency` (two) at once. A freeze's
-  snapshots share one disk and gain nothing from more of them; a restore
-  of a compressed image spends its time in one core decompressing, so
-  more at once finishes them all sooner. It is never fewer than the
-  freeze's concurrency.
+- *Four at a time, both ways.* `Concurrency` (the freeze) and
+  `RestoreConcurrency` (the restore) are both four, where I-652 froze and
+  restored two at a time. With the image compressed, both halves spend
+  their time in one core per guest rather than queued behind the disk, so
+  four at once finish sooner: on host-stg-01 the four guests froze in
+  38.8 s against 45.3 s at two. Each guest is paused a little longer and
+  every one of them is frozen sooner, which is what its gap is made of.
+  `RestoreConcurrency` is never fewer than `Concurrency`.
 - *An image written by the release before this one still restores.* The
   record carries the image's filesystem (`fs`); empty means ext4, which
   is what every image written before this entry is, and such an image is
@@ -19357,11 +19359,34 @@ host-01's disk speed).
   `TestImageIsCompressedBtrfs` ("new images are ext4"),
   `TestFreezeRecordsTheImageFilesystem` ("record says the image is
   \"ext4\""), `TestRestoresRunMoreAtOnceThanFreezes` ("at most 1
-  restore(s) ran at once"), `TestFreezeConfigDefaultsRestoreConcurrency`,
+  restore(s) ran at once"), `TestFreezeConfigDefaultsConcurrency`,
   `TestImageVolumeHasRoomForAnIncompressibleImage` and
   `TestFreezeThenThawRestoresTheGuest` (the volume's size);
   `TestImageOpensAnOlderExt4Image` and
   `TestThawRestoresAnImageFromTheReleaseBefore` hold the old shape open.
+- *Proved on staging* (host-stg-01 at host-01's shape: D16s_v7, a 512 GB
+  Premium SSD v2 at 16000 IOPS and 600 MB/s), four loaded guests (small,
+  small, large, xl) holding 18.6 GB of text-like memory between them --
+  the same memory in both arms, the only difference being the build:
+
+  | | before (I-652/I-653) | after (I-685) |
+  |---|---|---|
+  | `hostd thaw`, four guests | 31.8 s | **10.6 s** |
+  | per guest | 31.4 / 8.3 / 24.8 / 25.5 s | 5.2 / 5.2 / 6.9 / 10.3 s |
+  | `hostd freeze`, four guests | 50.0 s | 38.8 s |
+  | image bytes on the disk | 17.4 GB | 4.87 GB |
+  | `az vm restart`: the freeze | 56.1 s | 35.9 s |
+  | `az vm restart`: the restores | 30.9 s | 10.1 s |
+  | the call to every guest running | 142 s | 100 s |
+  | the guest-visible gap | 88 to 98 s | 65 to 70 s |
+
+  Everything was kept in both arms: the same guest boot ids, the same pids
+  for every probe, a tmux counter that carried on with no gap, shmem
+  intact to the megabyte, and no image volume, record or dm mapping left
+  (the pool back to 0.51 percent). A less compressible load (store
+  binaries, 1.35x) gave 27.1 s against 20.1 s, which is the point: the
+  gain is the compression ratio of what the guest holds.
+  docs/research/freeze-fast-restore.md has the raw numbers.
   The host-freeze VM test builds an image volume the way `freeze.Image`
   does and writes 512 MiB of guest-like pages into it: 22441984 bytes
   reach the disk. Staging's four-guest numbers are in

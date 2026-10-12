@@ -3,7 +3,9 @@
 The guest freeze shipped on 2026-10-12 (DECISIONS I-652, I-653) restored
 four loaded guests on staging in 27 s, and the owner's verdict was "27 is
 still slow". This is what the 27 s was made of, what was tried against it,
-and what it is now (DECISIONS I-685).
+and what it is now: **the same four guests come back in 10.6 s, and after
+a real `az vm restart` their machines are usable again 65 to 70 s after
+they stopped rather than 88 to 98** (DECISIONS I-685).
 
 Everything below ran on woker-1 (Azure D-series, AMD, 8 vCPU, 15 GiB,
 nested KVM, local NVMe) and on host-stg-01 (Standard_D16s_v7, Intel, 16
@@ -87,12 +89,16 @@ Claude Code and codex processes (0.85 GB in all), read through
 `/proc/<pid>/pagemap` and piped to `zstd -1`. **5x is the honest figure to
 plan with.**
 
-### Restores run four at a time
+### Four at a time, both ways
 
-A freeze's snapshots share one disk and gain nothing from more of them at
-once, so `Concurrency` stays 2. A restore of a compressed image spends its
-time in one core decompressing, so `RestoreConcurrency` is 4 by default
-and never fewer than the freeze's.
+I-652 froze and restored two guests at a time, because snapshots shared
+one disk. With the image compressed, both halves are bounded by one core
+per guest instead, so four at once finish sooner: on host-stg-01 the four
+guests froze in 38.8 s at four against 45.3 s at two, and the thaw was
+10.6 s either way (there the disk is still the limit at four). Each guest
+is paused a little longer and all of them are done sooner, which is what
+their gap is made of. `RestoreConcurrency` is never fewer than
+`Concurrency`.
 
 ### Room for the pathological image
 
@@ -170,14 +176,79 @@ hand the pages back before the image is written.
 
 ## Staging: the four-guest run
 
-*(host-stg-01, the same scenario as docs/research/host-restart-staging.md
-section a: four loaded guests -- small, small, large, xl -- each running
-stress-ng, a one-second appender, a busybox container, a tmux counter and
-agent windows; `hostd freeze`/`hostd thaw` and a real `az vm restart`,
-before and after the change, with everything else equal.)*
+host-stg-01 at host-01's shape: Standard_D16s_v7 (Intel, 16 vCPU, 62 GiB)
+with a 512 GB Premium SSD v2 data disk at 16000 IOPS and 600 MB/s, the
+freeze on with staging's own Key Vault, `hostdev` on the staging edge as
+the api. Four guests of one closure -- `small`, `small`, `large`, `xl` --
+each holding text-like bytes in shmem (1.6, 1.6, 3.3 and 6.5 GB; symbol
+tables and strings out of the store's binaries, which is the closest thing
+to an agent's heap that a staging guest can hold), each running a
+one-second appender, a tmux window with a counter and a reader touching
+its memory. 18.6 GB of guest memory in all.
 
-TO BE FILLED when staging is reachable again: its edge stopped answering
-on 2026-10-12 and is being recovered.
+**The same guests, the same memory, in both arms**: `before` is main's
+build (ext4 images, two at a time), `after` is this branch (btrfs with
+zstd:1, four at a time). The host was switched between arms with
+`switch-to-configuration`, which restarts hostd and stops no guest.
+
+### The operator's path: `hostd freeze` then `hostd thaw`
+
+| | before | after |
+|---|---|---|
+| freeze, four guests | 50.0 s | 38.8 s |
+| per guest | 13.5 / 14.8 / 28.7 / 29.3 s | 22.3 / 25.2 / 31.4 / 33.0 s |
+| image bytes in the filesystem | 18.6 GB | 18.5 GB |
+| **image bytes on the disk** | **17.4 GB** | **4.87 GB** |
+| thaw, four guests | **31.8 s** | **10.6 s** |
+| per guest | 31.4 / 8.3 / 24.8 / 25.5 s | 5.2 / 5.2 / 6.9 / 10.3 s |
+
+The per-guest freeze times rise while the total falls: four snapshots
+share the cores instead of two sharing the disk. What a guest feels is the
+total, because it stays paused until the host goes down.
+
+### A real restart: `az vm restart`
+
+| | before | after |
+|---|---|---|
+| the call to Azure's shutdown request | 25 s | 23 s |
+| the request to "freezing guests" | 0.4 s | 0.4 s |
+| four guests frozen | 56.1 s | 35.9 s |
+| the request to the next kernel | 77 s | 57 s |
+| hostd started to every guest restored | 30.9 s | 10.1 s |
+| per guest | 7.7 / 18.1 / 25.4 / 30.8 s | 5.0 / 5.0 / 6.7 / 10.1 s |
+| **the call to every guest running** | **142 s** | **100 s** |
+| **the guest-visible gap** | **88 to 98 s** | **65 to 70 s** |
+| `az` returned after | 103 s | 72 s |
+
+### What the restore spends its time on
+
+The phase timings hostd now logs, from the `az vm restart` above (one
+line per guest): `net_ms` 49 to 51, `virtiofsd_ms` 65, `store_view_ms`
+644, `image_read_ms` 3167 to 7855, `resume_ms` 166 to 602, `guestd_ms` 92
+to 137. Reading the image is still almost all of it, which is why its size
+is the whole story; the 0.6 s of store view and 0.2 s of plumbing are the
+floor a restore cannot go below today.
+
+### Nothing was lost, either way
+
+In both arms, for all four guests: the same guest boot id before and
+after, the same pids for the appender and the tmux pane, the tmux
+counter continuing with no gap in its sequence, shmem intact to the
+megabyte, the guest clock within a second of the host's, and no image
+volume, record or dm mapping left behind (`lvs` back to the pool's 0.51
+percent, `ls /var/lib/repose/hostd/freeze` empty, `dmsetup ls | grep
+repose-frz` empty). `systemctl --failed` was empty on the host after
+every cycle.
+
+### The ratio is the result
+
+An earlier pass of the same scenario filled the guests with whole store
+files instead, much of which is already compressed (kernel modules,
+firmware, archives): 1.35x, and the thaw went 27.1 s to 20.1 s. The same
+code, the same disk, a quarter of the gain. **What a restore costs is what
+the guest's memory compresses to**, so the honest promise is "about a
+fifth of the bytes, and so about a third to a fifth of the time, for
+memory that looks like an agent's" -- not a fixed number.
 
 ## What correctness still looks like
 
