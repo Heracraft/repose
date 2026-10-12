@@ -178,7 +178,7 @@ https://aws.amazon.com/aws-startups/learn/everything-you-need-to-know-about-aws-
 
 | Provider / plan | Hardware | Price | Notes |
 |---|---|---|---|
-| Hetzner AX162-R | EPYC 9454P 48c/96t, 256 GB, 2x1.92 TB NVMe | €199/mo at launch (+€79 setup); about €229 to €244 after the 15 June 2026 repricing | Robot webservice API for ordering once enabled |
+| Hetzner AX162-2 (was AX162-R) | EPYC 9454P 48c/96t, 256 GB, 2x1.92 TB NVMe | €199/mo at launch (+€79 setup); €842.30/mo (+€419 setup), $992.10, for orders from 15 June 2026 (I-642) | Robot webservice API for ordering once enabled |
 | Latitude.sh c3.large.x86 | 24c, 256 GB, 2x1.9 TB NVMe | $0.68/h, about $496/mo | hourly billing, API and Terraform |
 | Latitude.sh c4.metal.large | 96c Zen 5, 384 GB | $4.00/h, about $2,920/mo | |
 | OVHcloud Advance-5 | EPYC 8224P 24c/48t, up to 576 GB NVMe | about $504/mo | OVH API |
@@ -222,8 +222,9 @@ Vendor statements:
 
 Bottom line for about 25 guests at 2 to 4 vCPU and 4 to 8 GB: AWS metal is
 about $3.1k to $3.5k/mo on demand ($2.1k to $2.3k with a 1-year RI), Azure
-D64s_v5 about $2.2k/mo, Hetzner about €230 or Latitude about $500 for
-equivalent hardware, a 6 to 12x gap.
+D64s_v5 about $2.2k/mo, Hetzner €842.30 (after its 15 June 2026
+repricing; about €230 before it) or Latitude about $500 for equivalent
+hardware, a 2 to 7x gap.
 
 ## 5. Firecracker vs Cloud Hypervisor
 

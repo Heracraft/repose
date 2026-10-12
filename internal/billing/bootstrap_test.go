@@ -76,14 +76,14 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("metered price: %v", metered)
 		}
 	}
-	// The introductory discount: $9 off Solo for three months.
+	// The founding discount: $10 off Solo for twelve months.
 	ds := f.Bodies["POST /discounts/"]
 	if len(ds) != 1 || res.DiscountIntro == "" {
 		t.Fatalf("discounts created: %v (%q)", ds, res.DiscountIntro)
 	}
 	d := ds[0]
-	if d["type"] != "fixed" || d["amount"] != float64(900) || d["currency"] != "usd" || d["duration"] != "repeating" || d["duration_in_months"] != float64(3) ||
-		len(d["products"].([]any)) != 1 || d["products"].([]any)[0] != res.ProductSolo || d["metadata"].(map[string]any)["repose"] != "intro-solo-2000-3" || d["code"] != nil {
+	if d["type"] != "fixed" || d["amount"] != float64(1000) || d["currency"] != "usd" || d["duration"] != "repeating" || d["duration_in_months"] != float64(12) ||
+		len(d["products"].([]any)) != 1 || d["products"].([]any)[0] != res.ProductSolo || d["metadata"].(map[string]any)["repose"] != "intro-solo-3900-12" || d["code"] != nil {
 		t.Fatalf("discount body: %v", d)
 	}
 	we := f.Bodies["POST /webhooks/endpoints"][0]
@@ -116,6 +116,15 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("rerun made %s", r)
 		}
 	}
+	// The discount reads as the founding price at Polar; an older name is
+	// corrected on a rerun without making a new discount.
+	if d := f.Bodies["POST /discounts/"][0]; d["name"] != "Solo founding price" {
+		t.Fatalf("discount name %v", d["name"])
+	}
+	f.discounts[res.DiscountIntro]["name"] = "Solo introductory price"
+	if renamed, err := billing.Bootstrap(ctx, p, billing.BootstrapOptions{WebhookURL: hook}); err != nil || len(renamed.Created) != 0 || f.discounts[res.DiscountIntro]["name"] != "Solo founding price" {
+		t.Fatalf("rename: %v %v %v", renamed, err, f.discounts[res.DiscountIntro]["name"])
+	}
 	// An endpoint missing an event is brought up to date.
 	f.endpoints[again.WebhookID]["events"] = []any{"order.paid"}
 	if _, err := billing.Bootstrap(ctx, p, billing.BootstrapOptions{WebhookURL: hook}); err != nil {
@@ -127,7 +136,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	// A product with another price is not reused: a changed price makes a
 	// new product, and the introductory discount follows it.
 	for id, pr := range f.products {
-		if pr["metadata"].(map[string]any)["repose"] == "plan-solo-2900" {
+		if pr["metadata"].(map[string]any)["repose"] == "plan-solo-4900" {
 			pr["prices"].([]any)[0].(map[string]any)["price_amount"] = float64(1900)
 			delete(f.products, id)
 			pr["metadata"] = map[string]any{"repose": "plan-solo-1900"}

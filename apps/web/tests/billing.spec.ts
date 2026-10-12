@@ -74,20 +74,21 @@ test('with no plan and seats free, the three plans are shown from GET /billing',
 	await expect(page.getByText('7 days free, card at checkout, cancel any time.')).toBeVisible();
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
-	await expect(solo.getByText('$20', { exact: true })).toBeVisible();
-	await expect(solo.getByTestId('intro-solo')).toHaveText('$20 for 3 months');
-	await expect(solo.getByText('then $29 and 250 GB egress from month 4')).toBeVisible();
+	await expect(solo.getByText('$39', { exact: true })).toBeVisible();
+	await expect(solo.getByTestId('intro-solo')).toHaveText('$39 for 12 months');
+	await expect(solo.getByText('then $49 from month 13')).toBeVisible();
 	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
 	await expect(solo.getByText('8 GB running at once')).toBeVisible();
-	// The introductory offer's egress allowance (I-497), and the disk.
-	await expect(solo.getByText('100 GB', { exact: true })).toHaveCount(2);
+	// The founding price keeps Solo's 250 GB egress (I-672); 100 GB is the disk.
+	await expect(solo.getByText('100 GB', { exact: true })).toHaveCount(1);
+	await expect(solo.getByText('250 GB', { exact: true })).toHaveCount(1);
 	const plus = page.getByTestId('plan-plus');
 	await expect(plus.getByRole('heading', { name: 'Plus' })).toBeVisible();
-	await expect(plus.getByText('$59', { exact: true })).toBeVisible();
+	await expect(plus.getByText('$89', { exact: true })).toBeVisible();
 	await expect(plus.getByText('16 GB running at once')).toBeVisible();
 	const pro = page.getByTestId('plan-pro');
 	await expect(pro.getByRole('heading', { name: 'Pro' })).toBeVisible();
-	await expect(pro.getByText('$99', { exact: true })).toBeVisible();
+	await expect(pro.getByText('$169', { exact: true })).toBeVisible();
 	await expect(pro.getByText('32 GB running at once')).toBeVisible();
 	await expect(pro.getByText('500 GB', { exact: true })).toBeVisible();
 	await expect(pro.getByText('1 TB', { exact: true })).toBeVisible();
@@ -122,19 +123,19 @@ test('?plan=plus makes Plus the solid button and gives it the focus', async ({ p
 	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(/btn-quiet/);
 });
 
-test('Solo costs $20 for three months on a first subscription, then $29; a returning account pays $29', async ({
+test('Solo costs $39 for 12 months on a first subscription, then $49; a returning account pays $49', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.goto('/billing');
 	const card = page.getByTestId('plan');
-	await expect(card.locator('.plan-price .n')).toHaveText('$20');
-	await expect(page.getByTestId('intro-until')).toContainText(/^then \$29 a month from \d{4}-/);
-	await expect(page.getByTestId('next-charge')).toHaveText('$20.00');
+	await expect(card.locator('.plan-price .n')).toHaveText('$39');
+	await expect(page.getByTestId('intro-until')).toContainText(/^then \$49 a month from \d{4}-/);
+	await expect(page.getByTestId('next-charge')).toHaveText('$39.00');
 	await setBilling({ mode: 'none', intro_used: true });
 	await page.goto('/billing');
 	const solo = page.getByTestId('plan-solo');
-	await expect(solo.getByText('$29', { exact: true })).toBeVisible();
+	await expect(solo.getByText('$49', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('intro-solo')).toHaveCount(0);
 	await setBilling({ intro_used: false });
 });
@@ -172,7 +173,7 @@ test('choosing a plan opens the checkout and, once completed, the plan appears',
 	await expect(page.getByTestId('plan').getByRole('heading', { name: 'Plus' })).toBeVisible({
 		timeout: 10_000
 	});
-	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $59 on');
+	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $89 on');
 	await expect(page.getByTestId('meter-running-now')).toContainText('0 GB of 16 GB');
 	await expect(page.getByText('No invoices yet.')).toBeVisible();
 });
@@ -236,15 +237,15 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 }) => {
 	await setBilling({ mode: 'trial', plan: 'solo', egress_gb: 300 });
 	await page.goto('/billing');
-	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $20 on');
+	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $39 on');
 	// The big figure is what the trial's first charge is, not the list price.
-	await expect(page.getByTestId('plan').locator('.plan-price .n')).toHaveText('$20');
-	await expect(page.getByTestId('intro-until')).toContainText('then $29 a month from');
+	await expect(page.getByTestId('plan').locator('.plan-price .n')).toHaveText('$39');
+	await expect(page.getByTestId('intro-until')).toContainText('then $49 a month from');
 	await expect(page.getByTestId('meter-disk-held')).toContainText('of 100 GB');
 	const egress = page.getByTestId('meter-egress-this-period');
-	// A Solo trial on a first subscription has the offer's 100 GB (I-497).
-	await expect(egress).toContainText('300 GB of 100 GB');
-	await expect(egress).toContainText('Over by 200 GB: $10.00 on the next invoice at $0.05 a GB.');
+	// A Solo trial inside the founding price keeps the plan's 250 GB (I-672).
+	await expect(egress).toContainText('300 GB of 250 GB');
+	await expect(egress).toContainText('Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.');
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
@@ -284,7 +285,7 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 	await page.goto('/billing');
 	await expect(page.getByTestId('meter-disk-held')).toContainText('180 GB of 100 GB · over');
 	await expect(page.getByTestId('meter-egress-this-period')).toContainText(
-		'412.7 GB of 100 GB · over'
+		'412.7 GB of 250 GB · over'
 	);
 	const fit = await page.evaluate(() => {
 		const card = document.querySelector('[data-testid="plan"]')!.getBoundingClientRect();
@@ -318,7 +319,7 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 	await page.goto('/billing');
 	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
 	const list = page.getByRole('table', { name: 'Invoices' });
-	await expect(list.getByText('$59.00')).toBeVisible();
+	await expect(list.getByText('$89.00')).toBeVisible();
 	await expect(list.getByText('REPOSE-0001', { exact: false })).toBeVisible();
 	await expect(list.getByRole('link', { name: 'PDF' })).toHaveAttribute(
 		'href',
@@ -373,7 +374,7 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 		'Upgrades apply now, prorated. Downgrades apply at renewal on'
 	);
 	await expect(change.getByTestId('plan-solo')).toContainText('Current');
-	await expect(change.getByTestId('plan-plus')).toContainText('$59');
+	await expect(change.getByTestId('plan-plus')).toContainText('$89');
 	// From Solo both other plans are upgrades.
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Upgrade to Plus');
 	await expect(page.getByTestId('change-to-pro')).toHaveText('Upgrade to Pro');

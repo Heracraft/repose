@@ -57,7 +57,7 @@ func TestDunningDays(t *testing.T) {
 	if k := eventKinds(t, pool, a); len(k) != 2 || k[1] != "payment_failed" {
 		t.Fatalf("events %v", k)
 	}
-	if p := accountEmail(t, pool, a, "payment_failed", "Solo", "$29.00", "https://repose.herakraft.co/billing"); p["plan"] != "solo" || p["amount_cents"] != float64(2900) {
+	if p := accountEmail(t, pool, a, "payment_failed", "Solo", "$49.00", "https://repose.herakraft.co/billing"); p["plan"] != "solo" || p["amount_cents"] != float64(4900) {
 		t.Fatalf("day 2 payload %v", p)
 	}
 	if outboxEmails(t, pool, a) != 2 {
@@ -158,7 +158,7 @@ func TestTrialEnding(t *testing.T) {
 	if k := eventKinds(t, pool, a); len(k) != 1 || k[0] != "trial_ending" {
 		t.Fatalf("events %v", k)
 	}
-	if p := accountEmail(t, pool, a, "trial_ending", "Plus", "$59.00", "8 October 2026 at 00:00 UTC"); p["plan"] != "plus" || p["amount_cents"] != float64(5900) || p["charge_at"] != "2026-10-08T00:00:00Z" {
+	if p := accountEmail(t, pool, a, "trial_ending", "Plus", "$89.00", "8 October 2026 at 00:00 UTC"); p["plan"] != "plus" || p["amount_cents"] != float64(8900) || p["charge_at"] != "2026-10-08T00:00:00Z" {
 		t.Fatalf("payload %v", p)
 	}
 	if outboxEmails(t, pool, a) != 1 {

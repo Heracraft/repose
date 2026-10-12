@@ -379,6 +379,16 @@ func (f *fakePolar) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		f.endpoints[e["id"].(string)] = e
 		f.write(w, 201, e)
+	case r.Method == "PATCH" && len(parts) == 2 && parts[0] == "discounts":
+		d, ok := f.discounts[parts[1]]
+		if !ok {
+			f.writeErr(w, 404, "ResourceNotFound", "Not found")
+			return
+		}
+		for k, v := range body {
+			d[k] = v
+		}
+		f.write(w, 200, d)
 	case r.Method == "PATCH" && len(parts) == 3 && parts[0] == "webhooks" && parts[1] == "endpoints":
 		e, ok := f.endpoints[parts[2]]
 		if !ok {

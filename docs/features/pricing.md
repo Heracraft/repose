@@ -20,10 +20,10 @@ The CLI prints the api's sentence for every `payment_required` and exits
 restoring and forking a project all answer `payment_required` with
 `detail.reason = subscription_required` until one is chosen.
 
-The dashboard's billing page shows the three plans, Solo at $29 (shown as
-$20 "for 3 months, then $29 and 250 GB egress" with 100 GB of egress to
-an account that never had a subscription, DECISIONS I-497), Plus at
-$59 and Pro at $99 a month, and how many seats are left. "Choose" sends
+The dashboard's billing page shows the three plans, Solo at $49 (shown as
+$39 "for 12 months, then $49" to an account that never had a
+subscription while founding places are left, DECISIONS I-672), Plus at
+$89 and Pro at $169 a month, and how many seats are left. "Choose" sends
 the browser to Polar's hosted checkout (a session the api made, so the
 seat is held and the account is stamped before the card form appears;
 DECISIONS I-604). It shows the plan, "7 days free", the introductory line

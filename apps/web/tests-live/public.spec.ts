@@ -47,10 +47,11 @@ test('landing pricing matches PRICING.md', async ({ page }) => {
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	await expect(pricing.getByText('Three plans. Seven days free, card at checkout.')).toBeVisible();
-	const plans: Array<[string, string, string]> = [
-		['Solo', '$29', '8 GB running at once · 100 GB disk · 250 GB egress'],
-		['Plus', '$59', '16 GB running at once · 250 GB disk · 500 GB egress'],
-		['Pro', '$99', '32 GB running at once · 500 GB disk · 1 TB egress']
+	// Solo shows $39 while founding places last, then $49 (I-672).
+	const plans: Array<[string, string | RegExp, string]> = [
+		['Solo', /\$(39|49)/, '8 GB running at once · 100 GB disk · 250 GB egress'],
+		['Plus', '$89', '16 GB running at once · 250 GB disk · 500 GB egress'],
+		['Pro', '$169', '32 GB running at once · 500 GB disk · 1 TB egress']
 	];
 	for (const [name, price, spec] of plans) {
 		const cell = pricing.locator('.tier', {

@@ -79,7 +79,7 @@ describe('plans', () => {
 		const solo = fromApi({
 			id: 'solo',
 			name: 'Solo',
-			price_cents: 2900,
+			price_cents: 4900,
 			currency: 'USD',
 			trial_days: 7,
 			seats: 1,
@@ -87,15 +87,15 @@ describe('plans', () => {
 			disk_gb: 100,
 			egress_gb: 250,
 			available: true,
-			intro_price_cents: 2000,
-			intro_months: 3,
-			intro_egress_gb: 100
+			intro_price_cents: 3900,
+			intro_months: 12,
+			intro_egress_gb: 0
 		});
 		expect(solo).toEqual(PLANS[0]);
 		const pro = fromApi({
 			id: 'pro',
 			name: 'Pro',
-			price_cents: 9900,
+			price_cents: 16900,
 			currency: 'USD',
 			trial_days: 7,
 			seats: 4,

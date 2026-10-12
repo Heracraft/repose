@@ -280,7 +280,7 @@ func TestBillingRoutes(t *testing.T) {
 		t.Fatalf("usage disk: %v", u)
 	}
 	plans := r.body["plans"].([]any)
-	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(5900) || plans[2].(map[string]any)["price_cents"] != float64(9900) {
+	if len(plans) != 3 || plans[0].(map[string]any)["available"] != true || plans[1].(map[string]any)["price_cents"] != float64(8900) || plans[2].(map[string]any)["price_cents"] != float64(16900) {
 		t.Fatalf("plans: %v", plans)
 	}
 	// Checkout: unknown plan, then the hosted checkout's URL, with the
@@ -326,6 +326,18 @@ func TestBillingRoutes(t *testing.T) {
 	r = e.doRaw(t, "POST", "/billing/webhook", body, f.sign(evID, body))
 	if r.status != 200 || r.body["duplicate"] != true {
 		t.Fatalf("duplicate: %d %s", r.status, r.raw)
+	}
+	// An event about a customer repose does not know (a sandbox test's,
+	// or another product's) is recorded and acknowledged, so Polar neither
+	// retries it nor disables the endpoint (I-678).
+	alienID, alien := f.event("subscription.created", f.subData("sub_alien", "00000000-0000-7000-8000-00000000dead", "cus_alien", "prod_solo_test", "active"))
+	r = e.doRaw(t, "POST", "/billing/webhook", alien, f.sign(alienID, alien))
+	if r.status != 200 || r.body["ignored"] != true {
+		t.Fatalf("foreign event: %d %s", r.status, r.raw)
+	}
+	var alienErr string
+	if err := e.h.Pool.QueryRow(ctx, "select error from billing_events where id = $1", alienID).Scan(&alienErr); err != nil || !strings.Contains(alienErr, "cus_alien") {
+		t.Fatalf("foreign event row: %q %v", alienErr, err)
 	}
 	r = e.doRaw(t, "POST", "/billing/webhook", body, map[string]string{"webhook-id": "msg_x", "webhook-timestamp": "1", "webhook-signature": "v1,AAAA"})
 	if r.status != 400 || errCode(r) != "invalid" {

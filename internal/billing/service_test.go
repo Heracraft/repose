@@ -106,10 +106,10 @@ func TestCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	plans := ov["plans"].([]map[string]any)
-	if plans[0]["intro_price_cents"] != int64(2000) || plans[0]["intro_months"] != 3 || plans[0]["intro_egress_gb"] != 100 || plans[1]["intro_months"] != 0 || ov["intro_eligible"] != true {
+	if plans[0]["intro_price_cents"] != int64(3900) || plans[0]["intro_months"] != 12 || plans[0]["intro_egress_gb"] != 0 || plans[1]["intro_months"] != 0 || ov["intro_eligible"] != true {
 		t.Fatalf("introductory price in the overview: %v %v", plans, ov["intro_eligible"])
 	}
-	if len(plans) != 3 || plans[0]["available"] != false || plans[0]["price_cents"] != int64(2900) || plans[1]["id"] != "plus" || plans[2]["id"] != "pro" || plans[2]["seats"] != 4 {
+	if len(plans) != 3 || plans[0]["available"] != false || plans[0]["price_cents"] != int64(4900) || plans[1]["id"] != "plus" || plans[2]["id"] != "pro" || plans[2]["seats"] != 4 {
 		t.Fatalf("plans: %v", plans)
 	}
 	seats := ov["seats"].(map[string]any)
@@ -125,12 +125,68 @@ func TestCheckout(t *testing.T) {
 	}
 }
 
-// ChargeCents and PlanFor follow the introductory offer: $20 and 100 GB
-// of egress while it runs, before its end is known too, and the
-// plan's own price and allowance after it, without it and on another
-// plan (DECISIONS I-497).
+// The founding price goes to the first 30 subscriptions that carry it, in
+// any status; a 31st first checkout pays the list price, and a
+// subscription that leaves Solo gives its place back (DECISIONS I-672).
+func TestFoundingLimit(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	s, _ := newService(t, pool, f, nil)
+	ctx := context.Background()
+
+	if left, ok, err := s.IntroLeft(ctx); err != nil || !ok || left != 30 {
+		t.Fatalf("an empty fleet has %d places (%v %v), want 30", left, ok, err)
+	}
+	var subs []string
+	for i := range billing.Solo.IntroLimit {
+		a := seedAccount(t, pool, "solo", "active", "", "")
+		status := "active"
+		if i%3 == 0 {
+			status = "canceled"
+		}
+		if _, err := pool.Exec(ctx, "update subscriptions set intro = true, status = $2 where id = $1", a.SubID, status); err != nil {
+			t.Fatal(err)
+		}
+		subs = append(subs, a.SubID)
+	}
+	if left, _, err := s.IntroLeft(ctx); err != nil || left != 0 {
+		t.Fatalf("after 30 founding subscriptions, %d places left (%v)", left, err)
+	}
+	late := seedAccount(t, pool, "", "none", "", "")
+	if ov, err := s.Overview(ctx, user(t, pool, late)); err != nil || ov["intro_eligible"] != false {
+		t.Fatalf("the 31st account's overview: %v %v", ov["intro_eligible"], err)
+	}
+	if _, err := s.Checkout(ctx, user(t, pool, late), "solo", ""); err != nil {
+		t.Fatal(err)
+	}
+	bodies := f.Bodies["POST /checkouts/"]
+	if _, ok := bodies[len(bodies)-1]["discount_id"]; ok {
+		t.Fatal("the 31st first checkout carried the founding discount")
+	}
+	// An upgrade from Solo clears the flag and frees a place.
+	if _, err := pool.Exec(ctx, "update subscriptions set intro = false where id = $1", subs[1]); err != nil {
+		t.Fatal(err)
+	}
+	if left, _, err := s.IntroLeft(ctx); err != nil || left != 1 {
+		t.Fatalf("after an upgrade, %d places left (%v), want 1", left, err)
+	}
+	next := seedAccount(t, pool, "", "none", "", "")
+	if _, err := s.Checkout(ctx, user(t, pool, next), "solo", ""); err != nil {
+		t.Fatal(err)
+	}
+	bodies = f.Bodies["POST /checkouts/"]
+	if bodies[len(bodies)-1]["discount_id"] != "dsc_intro_test" {
+		t.Fatal("a first checkout with a place left did not carry the founding discount")
+	}
+}
+
+// ChargeCents and PlanFor follow the founding offer: $39 while it runs,
+// before its end is known too, and the plan's own price after it,
+// without it and on another plan. The offer keeps the plan's egress
+// (DECISIONS I-672; I-497's smaller allowance is gone).
 func TestIntroOffer(t *testing.T) {
-	ends := time.Date(2027, 1, 8, 0, 0, 0, 0, time.UTC)
+	ends := time.Date(2027, 10, 8, 0, 0, 0, 0, time.UTC)
 	before, after := ends.Add(-time.Hour), ends
 	for _, c := range []struct {
 		name   string
@@ -139,12 +195,12 @@ func TestIntroOffer(t *testing.T) {
 		cents  int64
 		egress int
 	}{
-		{"no subscription", nil, before, 2900, 250},
-		{"no offer", &billing.Sub{Plan: "solo"}, before, 2900, 250},
-		{"offer, end not fixed", &billing.Sub{Plan: "solo", Intro: true}, before, 2000, 100},
-		{"offer, before its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, before, 2000, 100},
-		{"offer, at its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, after, 2900, 250},
-		{"plus", &billing.Sub{Plan: "plus", Intro: true}, before, 5900, 500},
+		{"no subscription", nil, before, 4900, 250},
+		{"no offer", &billing.Sub{Plan: "solo"}, before, 4900, 250},
+		{"offer, end not fixed", &billing.Sub{Plan: "solo", Intro: true}, before, 3900, 250},
+		{"offer, before its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, before, 3900, 250},
+		{"offer, at its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, after, 4900, 250},
+		{"plus", &billing.Sub{Plan: "plus", Intro: true}, before, 8900, 500},
 	} {
 		if got := c.sub.ChargeCents(c.at); got != c.cents {
 			t.Errorf("%s: %d cents, want %d", c.name, got, c.cents)
@@ -153,22 +209,14 @@ func TestIntroOffer(t *testing.T) {
 			t.Errorf("%s: %d GB egress, want %d", c.name, got, c.egress)
 		}
 	}
-	// The allowance sets the overage and the hard stop: 150 GB is 50 GB
-	// over during the offer and nothing after it; the stop is 400 GB.
 	sub := &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}
 	gb := int64(1) << 30
-	if over, cents := billing.OverageCents(sub.PlanFor(before), 150*gb); over != 50 || cents != 250 {
-		t.Errorf("overage during the offer: %d GB %d cents", over, cents)
-	}
-	if over, _ := billing.OverageCents(sub.PlanFor(after), 150*gb); over != 0 {
-		t.Errorf("overage after the offer: %d GB", over)
-	}
-	if stop := sub.PlanFor(before).EgressHardStopBytes(); stop != 400*gb {
+	if stop := sub.PlanFor(before).EgressHardStopBytes(); stop != 1000*gb {
 		t.Errorf("hard stop during the offer: %d GB", stop/gb)
 	}
 	next := before
 	j := billing.SubJSON(&billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends, NextBilledAt: &next}).(map[string]any)
-	if j["next_charge_cents"] != int64(2000) || j["intro_until"] != &ends {
+	if j["next_charge_cents"] != int64(3900) || j["intro_until"] != &ends {
 		t.Errorf("SubJSON: %v", j)
 	}
 }

@@ -96,9 +96,10 @@
 	// the plans compare at a glance. The cards say "running at once" in words and
 	// count no agents or machines: a count reads as a ceiling on what the
 	// product does, and the memory is shared by whatever is running
-	// (I-402). Solo shows its introductory price, then the price it
-	// becomes (I-497).
-	const plans: {
+	// (I-402). Solo shows its founding price, then the price it becomes
+	// (I-672); once GET /public/seats says no founding places are left,
+	// Solo shows its list price alone.
+	const allPlans: {
 		name: string;
 		price: string;
 		then?: string;
@@ -108,27 +109,32 @@
 	}[] = [
 		{
 			name: 'Solo',
-			price: '$20',
-			then: 'First 3 months for new subscribers, then $29 and 250 GB egress',
+			price: '$39',
+			then: 'First 12 months for the first 30 subscribers, then $49',
 			memory: 8,
 			disk: '100 GB',
-			egress: '100 GB'
+			egress: '250 GB'
 		},
 		{
 			name: 'Plus',
-			price: '$59',
+			price: '$89',
 			memory: 16,
 			disk: '250 GB',
 			egress: '500 GB'
 		},
 		{
 			name: 'Pro',
-			price: '$99',
+			price: '$169',
 			memory: 32,
 			disk: '500 GB',
 			egress: '1 TB'
 		}
 	];
+	const plans = $derived(
+		seats?.founding_left === 0
+			? allPlans.map((p) => (p.name === 'Solo' ? { ...p, price: '$49', then: undefined } : p))
+			: allPlans
+	);
 	// The sign-off row: every shape the page used, in the order it used
 	// them, so the row reads as the page's own symbols and none appears
 	// from nowhere. Mostly grey, a spot of blue, as the pictures are.
@@ -331,6 +337,10 @@
 					</li>
 				{/each}
 			</ul>
+			<p class="tier-note">
+				Launch prices. A change reaches you by email 30 days ahead. Your subscription keeps the list
+				price it started on for 12 months from its start.
+			</p>
 			<div class="cta-row">
 				{@render authAction('btn btn--lg', 'Start a free week', 'Open the dashboard')}
 				{#if !authState.authenticated}

@@ -143,10 +143,12 @@ export interface Plan {
 	egress_gb: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
-	/** The introductory price a month and for how many months; 0 for none (I-497). */
+	/** The introductory price a month and for how many months, Solo's founding
+	 *  price; 0 for none (I-497, I-672). */
 	intro_price_cents?: number;
 	intro_months?: number;
-	/** The egress allowance a month while the introductory offer runs; 0 keeps egress_gb (I-497). */
+	/** The egress allowance a month while the introductory offer runs; 0 keeps
+	 *  egress_gb, as Solo's founding price does (I-497, I-672). */
 	intro_egress_gb?: number;
 }
 
@@ -162,6 +164,8 @@ export interface PublicSeats {
 	total: number;
 	free: number;
 	waiting: number;
+	/** Places left at Solo's founding price; null when there is no offer (I-672). */
+	founding_left: number | null;
 }
 
 /** GET /billing (docs/interfaces/api.md "Usage and billing", I-289, I-290). */

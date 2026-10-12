@@ -164,14 +164,34 @@ func SubJSON(sub *Sub) any {
 }
 
 // introEligible reports whether a checkout by u now carries the
-// introductory discount: the discount is configured and u has never had a
-// subscription (DECISIONS I-497).
+// introductory discount: the discount is configured, a place is left
+// under the plan's IntroLimit, and u has never had a subscription
+// (DECISIONS I-497, I-672).
 func (s *Service) introEligible(ctx context.Context, u *store.User) (bool, error) {
-	if s.cfg.DiscountIntro == "" {
-		return false, nil
+	left, ok, err := s.IntroLeft(ctx)
+	if err != nil || !ok || left == 0 {
+		return false, err
 	}
 	ever, err := EverSubscribed(ctx, s.pool, u.ID)
 	return !ever, err
+}
+
+// IntroLeft is how many places the introductory offer has left; ok is
+// false when there is no offer (no discount configured, or no plan has an
+// introductory price). An offer without a limit has left -1.
+func (s *Service) IntroLeft(ctx context.Context) (left int, ok bool, err error) {
+	plan, has := IntroPlan()
+	if s.cfg.DiscountIntro == "" || !has {
+		return 0, false, nil
+	}
+	if plan.IntroLimit == 0 {
+		return -1, true, nil
+	}
+	taken, err := IntroTaken(ctx, s.pool)
+	if err != nil {
+		return 0, false, err
+	}
+	return max(0, plan.IntroLimit-taken), true, nil
 }
 
 // Checkout is POST /billing/checkout: the seat first, then the Polar

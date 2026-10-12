@@ -38,6 +38,14 @@ import (
 // logged (it carries the customer's details).
 var ErrBadSignature = errors.New("polar webhook signature is invalid")
 
+// ErrForeign means the event is about a customer or product repose does
+// not know: a sandbox test's customer, a product of another price, or
+// anything else sold in the same Polar organization. The row keeps the
+// error and the route answers 200, because Polar retries anything else
+// and disables an endpoint after ten failures in a row (DECISIONS I-678).
+// A redelivery after the configuration names the product applies it.
+var ErrForeign = errors.New("polar event is not repose's")
+
 // ErrDuplicate means the event id was already recorded.
 var ErrDuplicate = errors.New("polar event already processed")
 
@@ -237,14 +245,14 @@ func (w *Webhooks) resolveUser(ctx context.Context, userID uuid.UUID, customerID
 		}
 	}
 	if customerID == "" {
-		return nil, errors.New("event names no user and no customer")
+		return nil, fmt.Errorf("%w: event names no user and no customer", ErrForeign)
 	}
 	var id uuid.UUID
 	err := w.pool.QueryRow(ctx, "select id from users where billing_customer_id = $1", customerID).Scan(&id)
 	if db.IsNoRows(err) {
 		// Not ours: a customer made in Polar's dashboard, or another
 		// product in the same organization.
-		return nil, fmt.Errorf("no user for Polar customer %s", customerID)
+		return nil, fmt.Errorf("%w: no user for Polar customer %s", ErrForeign, customerID)
 	}
 	if err != nil {
 		return nil, err
@@ -325,7 +333,7 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	}
 	planID := w.cfg.PlanForProduct(ps.ProductID)
 	if planID == "" {
-		return fmt.Errorf("subscription %s has no repose plan product (product %q)", ps.ID, ps.ProductID)
+		return fmt.Errorf("%w: subscription %s has no repose plan product (product %q)", ErrForeign, ps.ID, ps.ProductID)
 	}
 	plan, _ := PlanByID(planID)
 	now := w.Now().UTC()

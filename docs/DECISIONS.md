@@ -20363,3 +20363,110 @@ not.
   chips' column is centred on the laptop's window and run stands over
   fetch; a copy in flight has a background other than the window's and
   an inset 2px accent edge.
+**I-642. The pricing research carries Hetzner's 15 June 2026 dedicated
+prices, and the plans lose money on Hetzner too (hetzner-repricing,
+2026-10-09).** Amends the cost floor in `PRICING.md`, `DESIGN.md` §16 and
+`RESEARCH.md` §4. *Made during implementation* (the owner asked whether
+repose undercuts a Hetzner VPS; the check found the research's host price
+out of date).
+- Hetzner raised dedicated server prices for new orders on 15 June 2026
+  (https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/).
+  The AX162-R is now named AX162-2 (EPYC 9454P, 256 GB, 2x1.92 TB NVMe)
+  and costs €842.30 a month, $992.10, plus a €419 setup fee; the docs
+  said about €242. The AX102 (128 GB) went from €122 to €257.30.
+- A seat (8 GB, 30 to a 256 GB host) on an AX162-2 costs about $33 a
+  month. After Polar's fee a plan earns $27.05 a seat on Solo ($18.50 in
+  the $20 months), $27.78 on Plus and $23.39 on Pro, so every plan loses
+  about $5 to $10 a seat before storage, egress and the control plane.
+  `PRICING.md`, "The cost floor", has the per-server table. Only the
+  supply-limited EX131-2-LTD ($602.10, 30 seats) clears every plan.
+- Nothing in the prices or the seat rule changes here. The statement
+  that moving to Hetzner fixes the margin is withdrawn; changing the
+  prices, or selling more seats than a host holds, is the owner's call.
+- For comparison, Hetzner's retail cloud prices rose too: an 8 GB CPX32
+  (4 shared AMD vCPU) is $41.99 in Germany and the US CPX31 $73.49, so
+  Solo still undercuts a Hetzner VPS of the same memory. The CX line
+  ($9.99 for 8 GB) is listed but was not orderable on 2026-10-07.
+
+**I-672. Launch at ladder C: Solo $49, Plus $89, Pro $169, with a
+founding $39 for the first 30 Solo subscribers (pricing-directions,
+2026-10-11).** Supersedes I-497. Supersedes I-362's prices; its plans
+and their memory stand. Amends PRICING.md "Changing
+prices". *Made during
+implementation* (owner, 2026-10-11, after reading
+`proposals/2026-10-11-price-level.md`: "2 inspired me to choose ladder
+C"; on timing, "Now, at launch, no existing user is an actual user, just
+me so we dont need backwards compatability"; the founding offer as
+proposed).
+- Prices: Solo $49, Plus $89, Pro $169 a month; memory, disk, egress and
+  seats unchanged. An always-on agent costs about $263 a month on GitHub
+  Codespaces and about $161 on Vercel Sandbox; the buyer already pays
+  Anthropic $100 to $200. The proposal put the switch on a trigger (a
+  binding waitlist, or the first Hetzner host); the owner chose launch,
+  so there is no $29 period to grandfather.
+- Founding price: Solo's first 12 charges after the free week are $39,
+  then $49, on an account's first subscription, for the first 30
+  subscribers. It replaces I-497's $20 for 3 months and its 100 GB
+  egress: the founding price keeps Solo's 250 GB. `plans.go` carries it
+  as `IntroCents 3900, IntroMonths 12, IntroLimit 30`; Polar charges a
+  fixed $10 discount repeating 12 months (key `intro-solo-3900-12`). The
+  api counts the cap: subscriptions in any status with `intro` set
+  (`billing.IntroTaken`), so a cancelled founding subscription keeps its
+  place and an upgrade gives it back. The Polar discount has no
+  `max_redemptions`: a checkout that raced past 30 would fail at Polar
+  instead of charging $49, and a place or two over costs $10 a month
+  each.
+- `GET /public/seats` gains `founding_left` (additive), and the landing's
+  Solo card shows $49 with no founding line once it is 0.
+- The price-change promise: "Launch prices. A change reaches you by email
+  30 days ahead. Your subscription keeps the list price it started on for
+  12 months from its start." It is on the landing under the plans, in
+  `billing.md`, in `terms.md` (effective 2026-10-11) and in PRICING.md,
+  replacing "existing subscriptions keep their price until moved", which
+  had no end and which the code could not keep.
+- The code still cannot keep the 12-month hold across a price change: a
+  new price makes a new Polar product and the webhook refuses a
+  subscription on an old one. Mapping old products to their plan,
+  storing a subscription's price from the webhook and reading it in
+  `ChargeCents` is required before the next price change ships, and
+  PRICING.md says so.
+- Per seat after Polar's fee: Solo $46.05 (founding $36.55), Plus $42.03,
+  Pro $40.01. Against a Hetzner AX162-2 seat ($33.07) that is +$12.98,
+  +$3.48, +$8.96 and +$6.94 on a full host; against an Azure seat
+  (about $100) every plan still loses $54 to $63, which the credit pays
+  (owner, 2026-09-27).
+**I-678. A Polar event about a customer or product repose does not know
+is acknowledged, not failed.** (webhook-foreign, 2026-10-12.) Amends
+I-604 (4). Production's webhook endpoint belongs to the sandbox
+organization repose's tests also use, and Polar sends it every event of
+the organization: a `TestPolarSandbox` run on 2026-10-12 got 500 from
+production for each of the test customer's events (and for products of
+a price production's configuration does not name), and Polar retries
+each and disables an endpoint after ten failures in a row, which it did
+on 2026-10-09. The webhook now wraps "no user for the customer", "names
+no user and no customer" and "no repose plan product" in
+`billing.ErrForeign`; the route answers `200 {received, ignored}`,
+counts `result="ignored"`, logs a warning with the reason, and the
+`billing_events` row keeps it with `processed_at` null, so a redelivery
+after the configuration names the product applies it. A database error
+or an unknown status still answers 500 and is retried. *Rejected:* a
+separate sandbox organization for tests (production then could not be
+checked against a real delivery without a second endpoint and secret);
+filtering by a metadata marker (Polar sends customer and order events
+without the checkout's metadata).
+**I-647. Bring your own host starts as shape A: the hosted control plane
+with hosts the user owns (byo-host-shape-a, 2026-10-10).** *Made during
+implementation* (owner, 2026-10-10, choosing between the two shapes in
+`proposals/2026-10-10-bring-your-own-host.md`).
+- Users add their own x86_64 KVM boxes to their repose.herakraft.co
+  account; the api, dashboard, gateway and WireGuard hub stay hosted.
+  A fully self-hosted install (shape B) waits until A has users.
+- Reason: every hosted seat loses money (I-642), and owned hosts grow
+  reach without growing the hosting bill, while keeping users in the
+  account, `repose ls` and the dashboard.
+- Still open, each its own entry when settled: free or a price per host;
+  where the install command goes in the CLI; whether a host may hold the
+  user's snapshot bucket keys.
+- Order of work is the proposal's: a `metal` provider and installer on
+  the operator's own hardware first; host ownership and the hub's rules
+  for a stranger's host before any public host joins.

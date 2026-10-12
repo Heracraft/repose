@@ -249,6 +249,13 @@ func (s *Server) billingWebhook(w http.ResponseWriter, r *http.Request) error {
 		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "duplicate").Inc()
 		writeJSON(w, http.StatusOK, map[string]any{"received": true, "duplicate": true})
 		return nil
+	case errors.Is(err, billing.ErrForeign):
+		// Recorded with its reason and acknowledged, so Polar neither
+		// retries it nor counts it toward disabling the endpoint.
+		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "ignored").Inc()
+		obs.Logger(r.Context(), s.d.Log).Warn("polar webhook not repose's", "event", obs.EventBillingWebhook, "kind", label, "result", "ignored", "err", err.Error())
+		writeJSON(w, http.StatusOK, map[string]any{"received": true, "ignored": true})
+		return nil
 	case errors.Is(err, billing.ErrBadSignature):
 		s.d.Metrics.BillingWebhookTotal.WithLabelValues(label, "bad_signature").Inc()
 		obs.Logger(r.Context(), s.d.Log).Warn("polar webhook signature rejected", "event", obs.EventBillingWebhook, "kind", label, "result", "bad_signature")
