@@ -2,6 +2,7 @@ package guestd
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -353,6 +355,45 @@ func TestEveryRequestHasAHandler(t *testing.T) {
 		}
 		t.Fatalf("poweroff was not run; calls: %v", h.runner.Calls())
 	})
+}
+
+// The stop marker names this boot and is on disk before the window save
+// runs, so a save that fails still marks the boot as stopped (I-646).
+func TestShutdownWritesTheStopMarkerBeforeTheSave(t *testing.T) {
+	var atSave atomic.Value
+	h := newHarness(t, func(h *harness) {
+		h.runner.Hook = func(spec sysdep.RunSpec) {
+			if len(spec.Argv) > 0 && spec.Argv[0] == "repose-tmux-save" {
+				b, err := os.ReadFile(h.paths.StopMarker())
+				if err != nil {
+					atSave.Store("missing: " + err.Error())
+					return
+				}
+				atSave.Store(string(b))
+			}
+		}
+		h.runner.Errs["repose-tmux-save"] = errors.New("save failed")
+	})
+	resp := h.do(t, &guestdv1.Request{Req: &guestdv1.Request_Shutdown{
+		Shutdown: &guestdv1.Shutdown{TimeoutS: 5},
+	}})
+	if !resp.GetOk() {
+		t.Fatalf("error: %+v", resp.GetError())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := h.runner.Ran("systemctl poweroff"); ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, ok := h.runner.Ran("systemctl poweroff"); !ok {
+		t.Fatalf("a failed save stopped the poweroff; calls: %v", h.runner.Calls())
+	}
+	got, _ := atSave.Load().(string)
+	if got != "4f2a1c7e-0000-4000-8000-000000000001\n" {
+		t.Fatalf("stop marker when the save ran = %q", got)
+	}
 }
 
 func TestReadyIsSentOnEveryConnection(t *testing.T) {

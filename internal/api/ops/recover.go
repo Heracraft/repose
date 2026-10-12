@@ -15,6 +15,9 @@ const (
 	// switch to a system a nix garbage collection inside the machine hid
 	// (DECISIONS I-589).
 	codeStorePathHidden = "store_path_hidden"
+	// codeVolumeUnavailable is hostd's refusal while the host's thin pool
+	// cannot serve the machine's volume (DECISIONS I-644).
+	codeVolumeUnavailable = "volume_unavailable"
 )
 
 // PlanRestart is a start that reboots the guest instead of trusting what
@@ -178,6 +181,10 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		}
 	case "host_unreachable":
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true
+	case codeVolumeUnavailable:
+		// The disk is intact; the host's pool is down (I-644). A start
+		// leaves the project stopped, so the same command works later.
+		return "the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back", true
 	case "insufficient_capacity":
 		return "the host has no room for this project right now; try again in a few minutes", true
 	}

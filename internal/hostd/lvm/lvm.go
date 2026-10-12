@@ -34,11 +34,54 @@ type LVM interface {
 	// a pool out of metadata fails every volume's writes as one out of
 	// data does (DECISIONS I-586).
 	PoolMetadataPercent(ctx context.Context) (float64, error)
+	// PoolStatus reads the thin pool's state in one lvs call (DECISIONS
+	// I-644). Its error wraps ErrPoolUnavailable when the pool cannot hold
+	// a guest's volume: inactive, unreadable, or failed.
+	PoolStatus(ctx context.Context) (PoolState, error)
+	// VolumeActive reports whether a volume's device is active.
+	VolumeActive(ctx context.Context, name string) (bool, error)
 	// Fsck runs e2fsck -fp and returns its exit code (0 or 1 is clean).
 	Fsck(ctx context.Context, name string) (int, error)
 	// ListVolumes returns every volume name in the group except the pool.
 	ListVolumes(ctx context.Context) ([]string, error)
 	DevPath(name string) string
+}
+
+// ErrPoolUnavailable is a thin pool that cannot serve a guest's volume:
+// not active (after a host reboot that left it down, DECISIONS I-643),
+// missing with its VG, or failed (health failed or metadata_read_only).
+// Every mutator refuses it before calling lvm, which would otherwise
+// activate the pool itself, with its own thin_check, behind the pool
+// unit's back (I-644). out_of_data is not unavailable: PoolFull pages for
+// it, and the volumes still read.
+var ErrPoolUnavailable = errors.New("thin pool unavailable")
+
+// PoolState is the thin pool as one lvs call saw it.
+type PoolState struct {
+	Active bool
+	// Health is lv_health_status: "" when healthy, or failed,
+	// metadata_read_only, out_of_data and the like.
+	Health      string
+	Size        uint64
+	DataPct     float64
+	MetadataPct float64
+}
+
+// Available is the I-644 rule: active, percentages readable, and not
+// failed or read-only.
+func (p PoolState) Available() bool {
+	return p.Active && p.Health != "failed" && p.Health != "metadata_read_only"
+}
+
+// Reason names why a pool is unavailable, for logs and hostd status.
+func (p PoolState) Reason() string {
+	switch {
+	case !p.Active:
+		return "inactive"
+	case p.Health != "":
+		return p.Health
+	}
+	return ""
 }
 
 // Real drives the lvm2 tools through a shell.Runner.
@@ -69,18 +112,85 @@ func (l *Real) lvs(ctx context.Context, target string, cols string) ([]string, e
 	return rows, nil
 }
 
-// VolumeExists implements LVM.
+// notFound is lvs's own sentence for a volume that is not in the VG. A
+// missing VG says "Volume group ... not found" instead, which is an error:
+// read as "no volume", it sent running guests to error and let destroy
+// leak a volume (DECISIONS I-644).
+func notFound(err error) bool {
+	var ee *shell.ExitError
+	return errors.As(err, &ee) && strings.Contains(string(ee.Result.Stderr), "Failed to find logical volume")
+}
+
+// VolumeExists implements LVM: false only when lvs says the volume is not
+// found; any other lvs failure is an error.
 func (l *Real) VolumeExists(ctx context.Context, name string) (bool, error) {
 	_, err := l.R.Run(ctx, "lvs", l.VG+"/"+name)
-	var ee *shell.ExitError
-	if errors.As(err, &ee) {
+	if err == nil {
+		return true, nil
+	}
+	if notFound(err) {
 		return false, nil
 	}
-	return err == nil, err
+	return false, fmt.Errorf("lvs %s: %w", name, err)
+}
+
+// VolumeActive implements LVM.
+func (l *Real) VolumeActive(ctx context.Context, name string) (bool, error) {
+	rows, err := l.lvs(ctx, l.VG+"/"+name, "lv_active")
+	if err != nil {
+		return false, err
+	}
+	return len(rows) > 0 && rows[0] == "active", nil
+}
+
+// PoolStatus implements LVM.
+func (l *Real) PoolStatus(ctx context.Context) (PoolState, error) {
+	rows, err := l.lvs(ctx, l.VG+"/"+l.Pool, "lv_active,lv_health_status,lv_size,data_percent,metadata_percent")
+	if err != nil {
+		return PoolState{}, fmt.Errorf("%w: lvs: %v", ErrPoolUnavailable, err)
+	}
+	if len(rows) == 0 {
+		return PoolState{}, fmt.Errorf("%w: lvs: no row for pool %s", ErrPoolUnavailable, l.Pool)
+	}
+	f := strings.Split(rows[0], "|")
+	if len(f) < 5 {
+		return PoolState{}, fmt.Errorf("%w: lvs: unexpected row %q", ErrPoolUnavailable, rows[0])
+	}
+	for i := range f {
+		f[i] = strings.TrimSpace(f[i])
+	}
+	p := PoolState{Active: f[0] == "active", Health: f[1]}
+	if p.Size, err = strconv.ParseUint(f[2], 10, 64); err != nil {
+		return p, fmt.Errorf("lvs: size %q: %w", f[2], err)
+	}
+	if !p.Available() {
+		return p, fmt.Errorf("%w: %s", ErrPoolUnavailable, p.Reason())
+	}
+	// An active pool always reports both percentages; empty ones are an
+	// lvs that could not read the pool's status.
+	if f[3] == "" || f[4] == "" {
+		return p, fmt.Errorf("%w: no usage reported", ErrPoolUnavailable)
+	}
+	if p.DataPct, err = strconv.ParseFloat(f[3], 64); err != nil {
+		return p, fmt.Errorf("lvs: data_percent %q: %w", f[3], err)
+	}
+	if p.MetadataPct, err = strconv.ParseFloat(f[4], 64); err != nil {
+		return p, fmt.Errorf("lvs: metadata_percent %q: %w", f[4], err)
+	}
+	return p, nil
+}
+
+// guard refuses a mutation while the pool is unavailable.
+func (l *Real) guard(ctx context.Context) error {
+	_, err := l.PoolStatus(ctx)
+	return err
 }
 
 // CreateVolume implements LVM: lvcreate -V <bytes>b -T vg/thin -n name.
 func (l *Real) CreateVolume(ctx context.Context, name string, bytes uint64) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
 	ok, err := l.VolumeExists(ctx, name)
 	if err != nil || ok {
 		return err
@@ -133,6 +243,9 @@ func (l *Real) MkfsShare(ctx context.Context, name string) error {
 
 // RemoveVolume implements LVM.
 func (l *Real) RemoveVolume(ctx context.Context, name string) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
 	ok, err := l.VolumeExists(ctx, name)
 	if err != nil || !ok {
 		return err
@@ -143,12 +256,18 @@ func (l *Real) RemoveVolume(ctx context.Context, name string) error {
 
 // ExtendVolume implements LVM.
 func (l *Real) ExtendVolume(ctx context.Context, name string, bytes uint64) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
 	_, err := l.R.Run(ctx, "lvextend", "-L", fmt.Sprintf("%db", bytes), l.VG+"/"+name)
 	return err
 }
 
 // Snapshot implements LVM.
 func (l *Real) Snapshot(ctx context.Context, name, snap string) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
 	ok, err := l.VolumeExists(ctx, snap)
 	if err != nil || ok {
 		return err
@@ -159,6 +278,9 @@ func (l *Real) Snapshot(ctx context.Context, name, snap string) error {
 
 // Activate implements LVM: thin snapshots are created inactive and skipped.
 func (l *Real) Activate(ctx context.Context, name string) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
 	_, err := l.R.Run(ctx, "lvchange", "-ay", "-K", l.VG+"/"+name)
 	return err
 }
@@ -199,41 +321,24 @@ func (l *Real) VolumeStats(ctx context.Context, name string) (uint64, uint64, er
 	return size, uint64(float64(size) * pct / 100), nil
 }
 
-// PoolStats implements LVM.
+// PoolStats implements LVM. An inactive pool parsed as 0 percent used
+// before I-644, which read as an empty pool; it is ErrPoolUnavailable now.
 func (l *Real) PoolStats(ctx context.Context) (uint64, uint64, error) {
-	rows, err := l.lvs(ctx, l.VG+"/"+l.Pool, "lv_size,data_percent")
+	p, err := l.PoolStatus(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	if len(rows) == 0 {
-		return 0, 0, fmt.Errorf("lvs: no row for pool %s", l.Pool)
-	}
-	size, pct, err := parseSizePercent(rows[0])
-	if err != nil {
-		return 0, 0, err
-	}
-	used := uint64(float64(size) * pct / 100)
-	return size, size - used, nil
+	used := uint64(float64(p.Size) * p.DataPct / 100)
+	return p.Size, p.Size - used, nil
 }
 
 // PoolMetadataPercent implements LVM.
 func (l *Real) PoolMetadataPercent(ctx context.Context) (float64, error) {
-	rows, err := l.lvs(ctx, l.VG+"/"+l.Pool, "metadata_percent")
+	p, err := l.PoolStatus(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if len(rows) == 0 {
-		return 0, fmt.Errorf("lvs: no row for pool %s", l.Pool)
-	}
-	p := strings.TrimSpace(rows[0])
-	if p == "" {
-		return 0, nil
-	}
-	pct, err := strconv.ParseFloat(p, 64)
-	if err != nil {
-		return 0, fmt.Errorf("lvs: metadata_percent %q: %w", p, err)
-	}
-	return pct, nil
+	return p.MetadataPct, nil
 }
 
 // Fsck implements LVM.
@@ -286,6 +391,17 @@ type Fake struct {
 	FailOn      map[string]error
 	FsckExit    int
 	Ops         []string
+	// PoolDown makes the pool inactive (PoolHealth "" ) or unhealthy
+	// (PoolHealth set): PoolStatus, PoolStats and every mutator return
+	// ErrPoolUnavailable, as Real does (I-644).
+	PoolDown   bool
+	PoolHealth string
+	// VGMissing makes every lvs call fail as a missing VG does: an error
+	// that is not "not found".
+	VGMissing bool
+	// Inactive lists volumes whose device is not active; Activate clears
+	// the entry.
+	Inactive map[string]bool
 }
 
 // NewFake returns a Fake with a 1 TB pool.
@@ -298,6 +414,53 @@ func (f *Fake) fail(op string) error {
 	return f.FailOn[op]
 }
 
+// guarded is fail for the five mutators Real guards (I-644).
+func (f *Fake) guarded(op string) error {
+	f.Ops = append(f.Ops, op)
+	if err := f.poolErr(); err != nil {
+		return err
+	}
+	return f.FailOn[op]
+}
+
+// poolErr is the guard's answer under f.mu.
+func (f *Fake) poolErr() error {
+	switch {
+	case f.VGMissing:
+		return fmt.Errorf("%w: lvs: Volume group \"vg-guests\" not found", ErrPoolUnavailable)
+	case f.PoolDown && f.PoolHealth == "":
+		return fmt.Errorf("%w: inactive", ErrPoolUnavailable)
+	case f.PoolDown:
+		return fmt.Errorf("%w: %s", ErrPoolUnavailable, f.PoolHealth)
+	}
+	return nil
+}
+
+// PoolStatus implements LVM.
+func (f *Fake) PoolStatus(context.Context) (PoolState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := PoolState{Active: !f.PoolDown || f.PoolHealth != "", Health: f.PoolHealth, Size: f.PoolSize, MetadataPct: f.PoolMetaPct}
+	if f.PoolSize > 0 {
+		p.DataPct = float64(f.PoolSize-f.PoolFree) / float64(f.PoolSize) * 100
+	}
+	if err := f.poolErr(); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+// VolumeActive implements LVM.
+func (f *Fake) VolumeActive(_ context.Context, name string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.VGMissing {
+		return false, f.poolErr()
+	}
+	_, ok := f.Volumes[name]
+	return ok && !f.Inactive[name] && !f.PoolDown, nil
+}
+
 // DevPath implements LVM.
 func (f *Fake) DevPath(name string) string { return "/dev/vg-guests/" + name }
 
@@ -305,6 +468,9 @@ func (f *Fake) DevPath(name string) string { return "/dev/vg-guests/" + name }
 func (f *Fake) VolumeExists(_ context.Context, name string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.VGMissing {
+		return false, f.poolErr()
+	}
 	_, ok := f.Volumes[name]
 	return ok, nil
 }
@@ -313,7 +479,7 @@ func (f *Fake) VolumeExists(_ context.Context, name string) (bool, error) {
 func (f *Fake) CreateVolume(_ context.Context, name string, bytes uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.fail("create"); err != nil {
+	if err := f.guarded("create"); err != nil {
 		return err
 	}
 	if _, ok := f.Volumes[name]; ok {
@@ -356,7 +522,7 @@ func (f *Fake) MkfsShare(ctx context.Context, name string) error { return f.Mkfs
 func (f *Fake) RemoveVolume(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.fail("remove"); err != nil {
+	if err := f.guarded("remove"); err != nil {
 		return err
 	}
 	delete(f.Volumes, name)
@@ -367,7 +533,7 @@ func (f *Fake) RemoveVolume(_ context.Context, name string) error {
 func (f *Fake) ExtendVolume(_ context.Context, name string, bytes uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.fail("extend"); err != nil {
+	if err := f.guarded("extend"); err != nil {
 		return err
 	}
 	v, ok := f.Volumes[name]
@@ -382,7 +548,7 @@ func (f *Fake) ExtendVolume(_ context.Context, name string, bytes uint64) error 
 func (f *Fake) Snapshot(_ context.Context, name, snap string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.fail("snapshot"); err != nil {
+	if err := f.guarded("snapshot"); err != nil {
 		return err
 	}
 	v, ok := f.Volumes[name]
@@ -394,10 +560,14 @@ func (f *Fake) Snapshot(_ context.Context, name, snap string) error {
 }
 
 // Activate implements LVM.
-func (f *Fake) Activate(_ context.Context, _ string) error {
+func (f *Fake) Activate(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.fail("activate")
+	if err := f.guarded("activate"); err != nil {
+		return err
+	}
+	delete(f.Inactive, name)
+	return nil
 }
 
 // VolumeStats implements LVM.
@@ -415,6 +585,9 @@ func (f *Fake) VolumeStats(_ context.Context, name string) (uint64, uint64, erro
 func (f *Fake) PoolStats(context.Context) (uint64, uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.poolErr(); err != nil {
+		return 0, 0, err
+	}
 	return f.PoolSize, f.PoolFree, nil
 }
 
@@ -422,6 +595,9 @@ func (f *Fake) PoolStats(context.Context) (uint64, uint64, error) {
 func (f *Fake) PoolMetadataPercent(context.Context) (float64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.poolErr(); err != nil {
+		return 0, err
+	}
 	return f.PoolMetaPct, nil
 }
 
@@ -439,6 +615,9 @@ func (f *Fake) Fsck(_ context.Context, _ string) (int, error) {
 func (f *Fake) ListVolumes(context.Context) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.VGMissing {
+		return nil, f.poolErr()
+	}
 	var out []string
 	for k := range f.Volumes {
 		out = append(out, k)

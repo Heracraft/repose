@@ -114,38 +114,41 @@ const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id,
 
 // Host is a hosts row.
 type Host struct {
-	ID                 uuid.UUID     `db:"id"`
-	Name               string        `db:"name"`
-	Hostname           *string       `db:"hostname"`
-	SKU                *string       `db:"sku"`
-	Provider           *string       `db:"provider"`
-	Region             *string       `db:"region"`
-	MemBytes           int64         `db:"mem_bytes"`
-	VCPUs              int           `db:"vcpus"`
-	PoolBytes          int64         `db:"pool_bytes"`
-	GuestCIDR          *netip.Prefix `db:"guest_cidr"`
-	WGPubkey           *string       `db:"wg_pubkey"`
-	WGIP               *netip.Addr   `db:"wg_ip"`
-	State              string        `db:"state"`
-	Draining           bool          `db:"draining"`
-	FreeMemBytes       int64         `db:"free_mem_bytes"`
-	PoolFreeBytes      int64         `db:"pool_free_bytes"`
-	Load1              float64       `db:"load1"`
-	RunningGuests      int           `db:"running_guests"`
-	LastHeartbeatAt    *time.Time    `db:"last_heartbeat_at"`
-	CertSerial         *string       `db:"cert_serial"`
-	PrevCertSerial     *string       `db:"prev_cert_serial"`
-	CertExpiresAt      *time.Time    `db:"cert_expires_at"`
-	NixosSystem        *string       `db:"nixos_system"`
-	CHVersion          *string       `db:"ch_version"`
-	JoinTokenHash      *string       `db:"join_token_hash"`
-	JoinTokenExpiresAt *time.Time    `db:"join_token_expires_at"`
-	RegisteredAt       *time.Time    `db:"registered_at"`
-	CreatedAt          time.Time     `db:"created_at"`
-	UpdatedAt          time.Time     `db:"updated_at"`
+	ID            uuid.UUID     `db:"id"`
+	Name          string        `db:"name"`
+	Hostname      *string       `db:"hostname"`
+	SKU           *string       `db:"sku"`
+	Provider      *string       `db:"provider"`
+	Region        *string       `db:"region"`
+	MemBytes      int64         `db:"mem_bytes"`
+	VCPUs         int           `db:"vcpus"`
+	PoolBytes     int64         `db:"pool_bytes"`
+	GuestCIDR     *netip.Prefix `db:"guest_cidr"`
+	WGPubkey      *string       `db:"wg_pubkey"`
+	WGIP          *netip.Addr   `db:"wg_ip"`
+	State         string        `db:"state"`
+	Draining      bool          `db:"draining"`
+	FreeMemBytes  int64         `db:"free_mem_bytes"`
+	PoolFreeBytes int64         `db:"pool_free_bytes"`
+	// PoolUnavailable: hostd says the thin pool cannot serve volumes
+	// (DECISIONS I-644); nothing is placed on the host while it is set.
+	PoolUnavailable    bool       `db:"pool_unavailable"`
+	Load1              float64    `db:"load1"`
+	RunningGuests      int        `db:"running_guests"`
+	LastHeartbeatAt    *time.Time `db:"last_heartbeat_at"`
+	CertSerial         *string    `db:"cert_serial"`
+	PrevCertSerial     *string    `db:"prev_cert_serial"`
+	CertExpiresAt      *time.Time `db:"cert_expires_at"`
+	NixosSystem        *string    `db:"nixos_system"`
+	CHVersion          *string    `db:"ch_version"`
+	JoinTokenHash      *string    `db:"join_token_hash"`
+	JoinTokenExpiresAt *time.Time `db:"join_token_expires_at"`
+	RegisteredAt       *time.Time `db:"registered_at"`
+	CreatedAt          time.Time  `db:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at"`
 }
 
-const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
+const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
 
 // Op is an ops row.
 type Op struct {

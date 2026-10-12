@@ -1,0 +1,284 @@
+== Azure graceful-shutdown wait (az vm restart, host-stg-01, D16s_v7, 2026-10-11)
+az vm restart started 1791748547.22 (19:55:47Z), returned rc=0 at 1791749194.34 (647 s)
+journal: 1791748574.73 "hv_utils: Shutdown request received - graceful shutdown initiated" (27 s after the az call)
+hold unit gf-shutwait (ExecStop loop, TimeoutStopSec=1200) wrote 596 one-second ticks with sync before the power-off
+next boot kernel line 1791749187.10: 612 s after the shutdown request
+=> Azure waits about 600 s (10 min) for a graceful shutdown on restart, then powers the VM off.
+20:08:19.893470099
+GUEST                                 OUTCOME  MS     IMAGE      REASON
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  frozen   22359  758652928  
+01a12c87-6ca0-7918-8566-e6a6447c79b1  failed   20418  0          snapshot failed
+
+real	0m27.677s
+user	0m0.003s
+sys	0m0.003s
+20:08:47.571832299
+GUEST                                 PROJECT                               CLASS  STATE    IP         UNIT      VIRTIOF
+01a12c87-6ca0-7918-8566-e6a6447c79b1  01a12c87-6ca0-7916-b8ad-02e4bcb06390  large  running  10.64.4.2  active    active 
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  01a12c93-e62f-7ea6-bf6d-926224c3d2a0  small  running  10.64.4.3  inactive  inactiv
+  frz-01a12c87-6ca0-7918-8566-e6a6447c79b1 vg-guests Vwi-aotz--   8.25g thin        26.27                                  
+  frz-01a12c93-e62f-7ea9-a1cc-1190ab234c09 vg-guests Vwi-a-tz--   4.25g thin        16.75                                  
+total 16
+drwx------ 2 root root 4096 Oct 11 20:08 .
+drwx------ 3 root root 4096 Oct 11 20:08 ..
+-rw------- 1 root root 1070 Oct 11 20:08 01a12c87-6ca0-7918-8566-e6a6447c79b1.json
+-rw------- 1 root root 1194 Oct 11 20:08 01a12c93-e62f-7ea9-a1cc-1190ab234c09.json
+GUEST                                 OUTCOME    MS    IMAGE  REASON
+01a12c87-6ca0-7918-8566-e6a6447c79b1  discarded  1203  0      image incomplete
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  thawed     6082  0      
+
+real	0m6.267s
+user	0m0.003s
+sys	0m0.005s
+20:09:13.911079677
+== 01a12c87-6ca0-7918-8566-e6a6447c79b1
+== test 1 (hostd freeze / hostd thaw, operator, first build): findings
+small (balloon): frozen in 22.4 s total (snapshot 250 ms; ~15 s was the stop path's wait for a paused hypervisor to exit), image 0.76 GB; thawed in 6.1 s; afterwards tcp connection unchanged (1 connect, 0 errors), store reader 72 passes all equal, agent pid same, seq 7115 lines 0 gaps.
+large (3 GiB python touching 1 page/MB per second, 4.1 GB resident): vm.snapshot hit ch.HTTP's 10 s client timeout; the resume was refused while CH was still writing -> guest LEFT PAUSED (vm.info Paused), image volume busy and not removed; at thaw the incomplete record was discarded and volume removed. After a manual vm.resume the guest's vsock/guestd never answered again -> cold restart through hostdev.
+Fixes (commit "guest freeze: snapshot not bounded by the client timeout..."): Snapshot uses no client timeout (ctx only, 10 min cap), resume retried until vm.info Running (2 min), paused hypervisor killed after 3 s.
+== before 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=7135 lines=7136 tcp_connects=3 tcp_errors=13 store_bad=0
+MemoryCurrent=4126511104
+== before 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=11702 lines=11703 tcp_connects=1 tcp_errors=0 store_bad=0
+MemoryCurrent=767709184
+20:29:34.096850236
+GUEST                                 OUTCOME  MS     IMAGE       REASON
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  frozen   36381  759324672   
+01a12c87-6ca0-7918-8566-e6a6447c79b1  frozen   36821  4098625536  
+20:30:15.953271176
+GUEST                                 OUTCOME  MS     IMAGE  REASON
+01a12c87-6ca0-7918-8566-e6a6447c79b1  thawed   36012  0      
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  thawed   11036  0      
+20:31:07.147108407
+== after 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=7240 lines=7241 tcp_connects=3 tcp_errors=13 store_bad=0
+pass 34 ok=True errs=0 t=1791750575.633256
+pid=1206 n=367 t=1791750672
+20:31:12
+seq_total=7242 gaps=0 []
+== after 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=12002 lines=12003 tcp_connects=1 tcp_errors=0 store_bad=0
+pass 122 ok=True errs=0 t=1791750664.0619066
+pid=1277 n=1289 t=1791750672
+20:31:12
+seq_total=12004 gaps=0 []
+leftovers lv=0 dm=0 rec=0
+{"msg":"guest frozen","class":"small","snapshot_ms":271,"duration_ms":36381,"image_bytes":759324672,"frozen_s":null,"reason":"operator"}
+{"msg":"guest frozen","class":"large","snapshot_ms":35708,"duration_ms":36821,"image_bytes":4098625536,"frozen_s":null,"reason":"operator"}
+{"msg":"frozen image discarded","class":null,"snapshot_ms":null,"duration_ms":null,"image_bytes":null,"frozen_s":null,"reason":"restored"}
+{"msg":"guest restored from its frozen image","class":"small","snapshot_ms":null,"duration_ms":11036,"image_bytes":759324672,"frozen_s":26,"reason":null}
+{"msg":"frozen image discarded","class":null,"snapshot_ms":null,"duration_ms":null,"image_bytes":null,"frozen_s":null,"reason":"restored"}
+{"msg":"guest restored from its frozen image","class":"large","snapshot_ms":null,"duration_ms":36012,"image_bytes":4098625536,"frozen_s":51,"reason":null}
+== test 3: graceful systemctl reboot (systemd-run), 20:31:22
+test 3a: reboot requested 1791750682.73; "freezing guests" 0.48 s later; "guests frozen" reason=shutdown frozen=2/2 duration 42.7 s (staging disk 125 MB/s); kernel of next boot at 1791750734.27 (51.5 s after the reboot request).
+At the next start hostd could not unwrap: the test key file lived on /run, which the reboot cleared, and it was not re-delivered within the 90 s unwrap window -> both images discarded ("image key unavailable"), guests settled stopped, no leftovers. Correct fallback; a staging setup error, not a freeze defect. (Production design is Key Vault.)
+key-ready 20:34:56
+== before 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=7796 lines=7797 tcp_connects=4 tcp_errors=14 store_bad=0
+== before 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=12551 lines=12552 tcp_connects=2 tcp_errors=0 store_bad=0
+hostd-up 20:36:59 uptime 51.45
+GUEST                                 PROJECT                               CLASS  STATE    IP         UNIT    VIRTIOFSD  STORE  GUESTD  REASON
+01a12c87-6ca0-7918-8566-e6a6447c79b1  01a12c87-6ca0-7916-b8ad-02e4bcb06390  large  running  10.64.4.2  active  active     view   ok      restored from
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  01a12c93-e62f-7ea6-bf6d-926224c3d2a0  small  running  10.64.4.3  active  active     view   ok      restored from
+{"ts":"2026-10-11T20:36:31Z","msg":"frozen image discarded","class":null,"duration_ms":null,"frozen_s":null,"reason":"restored","err":null}
+{"ts":"2026-10-11T20:36:31Z","msg":"guest restored from its frozen image","class":"small","duration_ms":12869,"frozen_s":31,"reason":null,"err":null}
+{"ts":"2026-10-11T20:36:57Z","msg":"frozen image discarded","class":null,"duration_ms":null,"frozen_s":null,"reason":"restored","err":null}
+{"ts":"2026-10-11T20:36:57Z","msg":"guest restored from its frozen image","class":"large","duration_ms":38902,"frozen_s":56,"reason":null,"err":null}
+{"ts":"2026-10-11T20:36:57Z","msg":"frozen guests restored","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+{"ts":"2026-10-11T20:36:57Z","msg":"started stream","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+{"ts":"2026-10-11T20:36:57Z","msg":"image key fetched; guests can be frozen","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+reboot_at=1791750917.142520302
+1791750917.159577 host-stg-01 systemd-logind[759]: reboot requested from client PID 2074 ('systemctl') (unit gf-reboot2.service)...
+1791750917.591857 host-stg-01 hostd[916]: {"ts":"2026-10-11T20:35:17Z","level":"INFO","msg":"freezing guests","component":"hostd","event":"guest_freeze","reason":"shutdown","guests":2}
+1791750960.856131 host-stg-01 hostd[916]: guests frozen "frozen":2,"guests":2,"duration_ms":43299
+1791750969.017422 host-stg-01 kernel: Li
+== after 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=8017 lines=8018 tcp_connects=5 tcp_errors=20 store_bad=0
+pass 6 ok=True errs=0 t=1791751031.2750525
+pid=1213 n=67 t=1791751034
+20:37:15
+seq_total=8019 gaps=0 []
+== after 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=12981 lines=12982 tcp_connects=3 tcp_errors=11 store_bad=0
+pass 8 ok=True errs=0 t=1791751027.1284313
+pid=1116 n=93 t=1791751035
+20:37:15
+seq_total=12983 gaps=0 []
+leftovers lv=0 dm=0 rec=0
+test 3b result: both guests restored after a graceful systemctl reboot (see lines above). agent counters continued (process alive), seq no gaps, store reads equal, TCP reconnected (peer on the host died with the reboot).
+== before 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=8240 lines=8241 tcp_connects=5 tcp_errors=20 store_bad=0
+pass 8 ok=True errs=0 t=1791751052.282245
+pid=1213 n=91 t=1791751058
+== before 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=13204 lines=13205 tcp_connects=3 tcp_errors=11 store_bad=0
+pass 11 ok=True errs=0 t=1791751058.6215236
+pid=1116 n=117 t=1791751059
+1
+hostd-up 20:39:51 uptime 51.84
+GUEST                                 PROJECT                               CLASS  STATE    IP         UNIT    VIRTIOFSD  STORE  GUESTD  REASON
+01a12c87-6ca0-7918-8566-e6a6447c79b1  01a12c87-6ca0-7916-b8ad-02e4bcb06390  large  running  10.64.4.2  active  active     view   ok      restored from
+01a12c93-e62f-7ea9-a1cc-1190ab234c09  01a12c93-e62f-7ea6-bf6d-926224c3d2a0  small  running  10.64.4.3  active  active     view   ok      restored from
+{"ts":"2026-10-11T20:39:23Z","msg":"frozen image discarded","class":null,"duration_ms":null,"frozen_s":null,"reason":"restored","err":null}
+{"ts":"2026-10-11T20:39:23Z","msg":"guest restored from its frozen image","class":"small","duration_ms":12785,"frozen_s":34,"reason":null,"err":null}
+{"ts":"2026-10-11T20:39:49Z","msg":"frozen image discarded","class":null,"duration_ms":null,"frozen_s":null,"reason":"restored","err":null}
+{"ts":"2026-10-11T20:39:49Z","msg":"guest restored from its frozen image","class":"large","duration_ms":39121,"frozen_s":60,"reason":null,"err":null}
+{"ts":"2026-10-11T20:39:49Z","msg":"frozen guests restored","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+{"ts":"2026-10-11T20:39:49Z","msg":"started stream","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+{"ts":"2026-10-11T20:39:49Z","msg":"image key fetched; guests can be frozen","class":null,"duration_ms":null,"frozen_s":null,"reason":null,"err":null}
+1791751086.298494 host-stg-01 kernel: hv_utils: Shutdown request received - graceful shutdown initiated
+1791751086.719779 host-stg-01 hostd[917]: {"ts":"2026-10-11T20:38:06Z","level":"INFO","msg":"freezing guests","component":"hostd","event":"guest_freez
+1791751128.966202 host-stg-01 hostd[917]: guests frozen "frozen":2,"guests":2,"duration_ms":42272
+1791751140.809449 host-stg-01 kernel: Li
+== after 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=8712 lines=8713 tcp_connects=6 tcp_errors=27 store_bad=0
+pass 13 ok=True errs=0 t=1791751201.5849514
+pid=1213 n=142 t=1791751206
+20:40:06
+seq_total=8714 gaps=0 []
+== after 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=13889 lines=13890 tcp_connects=4 tcp_errors=22 store_bad=0
+pass 18 ok=True errs=0 t=1791751202.09954
+pid=1116 n=194 t=1791751206
+20:40:06
+seq_total=13891 gaps=0 []
+leftovers lv=0 dm=0 rec=0
+test 4 result: az vm restart -> hv_utils shutdown request 1791751086.30, freeze start +0.42 s, guests frozen 2/2 in 42.3 s, next kernel +54.5 s, az call 102.8 s total; both guests restored (small 12.8 s, large 39.1 s after hostd start; key file re-delivered by hand at boot), agent pids 1213/1116 unchanged and counters continued, seq gaps 0, store ok, TCP reconnected.
+== final 01a12c87-6ca0-7918-8566-e6a6447c79b1
+seq_last=9732 lines=9733 tcp_connects=6 tcp_errors=27 store_bad=0
+pass 23 ok=True errs=0 t=1791752050.703109
+pid=1213 n=252 t=1791752059
+20:54:19
+seq_total=9734 gaps=0 []
+== final 01a12c93-e62f-7ea9-a1cc-1190ab234c09
+seq_last=16947 lines=16949 tcp_connects=4 tcp_errors=22 store_bad=0
+pass 53 ok=True errs=0 t=1791752054.9449801
+pid=1116 n=565 t=1791752060
+20:54:20
+seq_total=16950 gaps=0 []
+== test 5: 10 hostd freeze/thaw cycles back to back (both guests each cycle)
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 1 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/25008/735555584 frozen/36953/4067147776 ] thaw[thawed/37794 thawed/12522 ] freeze_s= thaw_s= seq=8911 tcpc=6 bad=0 gd=1791751301 skew_s=0 leftovers=0/0 memavail_mb=58348
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 1 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/25008/735555584 frozen/36953/4067147776 ] thaw[thawed/37794 thawed/12522 ] freeze_s= thaw_s= seq=14293 tcpc=4 bad=0 gd=1791751302 skew_s=0 leftovers=0/0 memavail_mb=58348
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 2 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/37139/735563776 frozen/37344/4067360768 ] thaw[thawed/37782 thawed/12303 ] freeze_s= thaw_s= seq=8968 tcpc=6 bad=0 gd=1791751382 skew_s=0 leftovers=0/0 memavail_mb=58343
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 2 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/37139/735563776 frozen/37344/4067360768 ] thaw[thawed/37782 thawed/12303 ] freeze_s= thaw_s= seq=14556 tcpc=4 bad=0 gd=1791751382 skew_s=0 leftovers=0/0 memavail_mb=58342
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 3 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/15434/735563776 frozen/36622/4067528704 ] thaw[thawed/37885 thawed/12290 ] freeze_s= thaw_s= seq=9025 tcpc=6 bad=0 gd=1791751462 skew_s=0 leftovers=0/0 memavail_mb=58329
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 3 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/15434/735563776 frozen/36622/4067528704 ] thaw[thawed/37885 thawed/12290 ] freeze_s= thaw_s= seq=14821 tcpc=4 bad=0 gd=1791751462 skew_s=0 leftovers=0/0 memavail_mb=58332
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 4 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/34379/735592448 frozen/37135/4067561472 ] thaw[thawed/37774 thawed/12309 ] freeze_s= thaw_s= seq=9081 tcpc=6 bad=0 gd=1791751542 skew_s=0 leftovers=0/0 memavail_mb=58334
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 4 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/34379/735592448 frozen/37135/4067561472 ] thaw[thawed/37774 thawed/12309 ] freeze_s= thaw_s= seq=15086 tcpc=4 bad=0 gd=1791751542 skew_s=0 leftovers=0/0 memavail_mb=58332
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 5 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/26595/735592448 frozen/36677/4067627008 ] thaw[thawed/38678 thawed/13435 ] freeze_s= thaw_s= seq=9138 tcpc=6 bad=0 gd=1791751623 skew_s=0 leftovers=0/0 memavail_mb=58323
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 5 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/26595/735592448 frozen/36677/4067627008 ] thaw[thawed/38678 thawed/13435 ] freeze_s= thaw_s= seq=15340 tcpc=4 bad=0 gd=1791751623 skew_s=0 leftovers=0/0 memavail_mb=58326
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 6 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/37077/735592448 frozen/37261/4067655680 ] thaw[thawed/38421 thawed/13028 ] freeze_s= thaw_s= seq=9195 tcpc=6 bad=0 gd=1791751704 skew_s=0 leftovers=0/0 memavail_mb=58328
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 6 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/37077/735592448 frozen/37261/4067655680 ] thaw[thawed/38421 thawed/13028 ] freeze_s= thaw_s= seq=15593 tcpc=4 bad=0 gd=1791751704 skew_s=0 leftovers=0/0 memavail_mb=58327
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 7 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/36545/735600640 frozen/36727/4067688448 ] thaw[thawed/38321 thawed/12983 ] freeze_s= thaw_s= seq=9251 tcpc=6 bad=0 gd=1791751785 skew_s=0 leftovers=0/0 memavail_mb=58317
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 7 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/36545/735600640 frozen/36727/4067688448 ] thaw[thawed/38321 thawed/12983 ] freeze_s= thaw_s= seq=15847 tcpc=4 bad=0 gd=1791751785 skew_s=0 leftovers=0/0 memavail_mb=58315
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 8 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/36717/737435648 frozen/36939/4067721216 ] thaw[thawed/38348 thawed/12617 ] freeze_s= thaw_s= seq=9308 tcpc=6 bad=0 gd=1791751865 skew_s=1 leftovers=0/0 memavail_mb=58328
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 8 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/36717/737435648 frozen/36939/4067721216 ] thaw[thawed/38348 thawed/12617 ] freeze_s= thaw_s= seq=16112 tcpc=4 bad=0 gd=1791751866 skew_s=0 leftovers=0/0 memavail_mb=58329
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 9 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/36711/737435648 frozen/36895/4067753984 ] thaw[thawed/38280 thawed/12548 ] freeze_s= thaw_s= seq=9365 tcpc=6 bad=0 gd=1791751946 skew_s=0 leftovers=0/0 memavail_mb=58305
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 9 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/36711/737435648 frozen/36895/4067753984 ] thaw[thawed/38280 thawed/12548 ] freeze_s= thaw_s= seq=16375 tcpc=4 bad=0 gd=1791751946 skew_s=0 leftovers=0/0 memavail_mb=58304
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 10 01a12c87-6ca0-7918-8566-e6a6447c79b1 freeze[frozen/18036/737484800 frozen/36572/4067758080 ] thaw[thawed/38263 thawed/12339 ] freeze_s= thaw_s= seq=9422 tcpc=6 bad=0 gd=1791752026 skew_s=0 leftovers=0/0 memavail_mb=58305
+/root/stg-loop.sh: line 10: bc: command not found
+/root/stg-loop.sh: line 10: bc: command not found
+cycle 10 01a12c93-e62f-7ea9-a1cc-1190ab234c09 freeze[frozen/18036/737484800 frozen/36572/4067758080 ] thaw[thawed/38263 thawed/12339 ] freeze_s= thaw_s= seq=16637 tcpc=4 bad=0 gd=1791752027 skew_s=0 leftovers=0/0 memavail_mb=58305
+LOOP_DONE
+ok
+ok
+host: host-01a12c26  connected: true  registered: 2026-10-11T18:07:33Z
+heartbeat (0s ago): {"free_mem_bytes":"58829373440","pool_free_bytes":"510191030240","load1":3.19,"pool_bytes":"511264686080"}
+PROJECT  GUEST  CLASS  STATE  IP  CLOSURE  LAST SNAPSHOT
+commands: 9 recorded, 0 pending
+gf-test-rules=0
+          Finished with result: success
+stopping the following units: hostd.service
+restarting the following user units: nixos-activation.service
+starting the following units: hostd.service
+the following new units were started: repose-guest-freeze.service, sysinit-reactivation.target, systemd-tmpfiles-resetup.service
+stopping the following units: hostd.service
+NOT restarting the following changed units: repose-guest-freeze.service
+restarting the following user units: nixos-activation.service
+starting the following units: hostd.service
+stopping the following units: hostd.service, repose-guest-freeze.service
+restarting the following user units: nixos-activation.service
+starting the following units: hostd.service
+the following new units were started: sysinit-reactivation.target, systemd-tmpfiles-resetup.service
+$ hostname
+host-stg-01
+$ readlink /run/current-system
+/nix/store/rcvhc09fns1z8i4nr5rdi759r2023yky-nixos-system-host-stg-01-26.11.20260916.b1b8759
+$ readlink -f /nix/var/nix/profiles/system
+/nix/store/rcvhc09fns1z8i4nr5rdi759r2023yky-nixos-system-host-stg-01-26.11.20260916.b1b8759
+$ systemctl is-system-running
+running
+$ systemctl is-active hostd
+active
+$ systemctl is-active repose-guest-freeze
+inactive
+$ ls /etc/systemd/system/guest@.service.d
+ls: cannot access '/etc/systemd/system/guest@.service.d': No such file or directory
+$ hostd guests
+GUEST  PROJECT  CLASS  STATE  IP  UNIT  VIRTIOFSD  STORE  GUESTD  REASON
+$ hostd status
+{"stream_connected":true,"version":"3089709-dirty"}
+$ lvs vg-guests
+  LV                 VG        Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  auth-user-01a12c10 vg-guests Vwi-aotz--  16.00m thin        26.95                                  
+  repose-cache       vg-guests Vwi-aotz--  64.00g thin        1.57                                   
+  thin               vg-guests twi-aotz-- 476.15g             0.21   0.35                            
+$ ls /var/lib/repose/hostd/freeze /run/repose-freeze
+ls: cannot access '/run/repose-freeze': No such file or directory
+/var/lib/repose/hostd/freeze:
+$ ps (echo servers)
+0
+$ ls /root
+.cache
+.nix-channels
+.nix-defexpr
+.ssh
+gf-01a12c87-6ca0-7918-8566-e6a6447c79b1.port
+staging-pool-repro.sh
+the system is not shutting down; nothing frozen
+repose-guest-freeze.service: Deactivated successfully.
+Stopped Freeze running guests before the host shuts down.
+host: host-01a12c26  connected: true  registered: 2026-10-11T18:07:33Z
+heartbeat (13s ago): {"free_mem_bytes":"58829373440","pool_free_bytes":"510191030240","load1":2.55,"pool_bytes":"511264686080"}
+PROJECT  GUEST  CLASS  STATE  IP  CLOSURE  LAST SNAPSHOT
+commands: 9 recorded, 0 pending

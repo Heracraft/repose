@@ -46,6 +46,52 @@ func cgroupCPUPressureFrom(root, cgroup string) (uint64, error) {
 	return psi.ReadSomeTotal(filepath.Join(root, cgroup, "cpu.pressure"))
 }
 
+// BootIDPath is the kernel's random id of the current boot.
+const BootIDPath = "/proc/sys/kernel/random/boot_id"
+
+// BootID returns the current boot's id: a different value at hostd's next
+// start means the host restarted in between (DECISIONS I-645).
+func BootID() (string, error) { return bootIDFrom(BootIDPath) }
+
+func bootIDFrom(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(string(b))
+	if id == "" {
+		return "", fmt.Errorf("hostinfo: %s is empty", path)
+	}
+	return id, nil
+}
+
+// BootTime returns when the current boot began, from the btime line of
+// /proc/stat.
+func BootTime() (time.Time, error) { return bootTimeFrom("/proc/stat") }
+
+func bootTimeFrom(path string) (time.Time, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer func() { _ = f.Close() }() // read only
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) == 2 && fields[0] == "btime" {
+			s, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return time.Time{}, err
+			}
+			return time.Unix(s, 0).UTC(), nil
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return time.Time{}, err
+	}
+	return time.Time{}, fmt.Errorf("hostinfo: no btime in %s", path)
+}
+
 // MemInfo returns MemTotal and MemAvailable in bytes from /proc/meminfo.
 func MemInfo() (total, avail uint64, err error) {
 	return memInfoFrom("/proc/meminfo")

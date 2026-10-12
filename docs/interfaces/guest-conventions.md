@@ -111,6 +111,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | stage 1 | removes every whiteout (0:0 character device) at the top of the overlay's upper store dir before stage 2 and prints `repose: store overlay: N whiteouts removed, M of them over shared store paths` on the console and in the kernel log (DECISIONS I-587) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
 | `fstrim.timer` | daily (NixOS's default is weekly): discards the root filesystem's free blocks, so a deleted file's blocks leave the host's thin volume, whose allocated blocks are what the plan's disk counts (DECISIONS I-585) |
+| `repose-tmux-save.timer` | every minute from 60 s after boot: `repose-tmux-save --periodic` as dev writes `~/.repose/agent-windows.live` on a tmux project (DECISIONS I-646; see "tmux") |
+| `/home/dev/.repose/agent-windows`, `agent-windows.live`, `stopped`, `agent-windows.lock` | the stop's record of the agent windows, the minute record, the boot id of the last stop begun, and the lock the scripts share (I-636, I-646; see "tmux") |
 | `repose-trim-on-stop.service` | active from boot; its stop runs `fstrim /` at shutdown (at most 20 s), so a stopped project is counted at what it holds (DECISIONS I-585) |
 | `/var/log/repose/console.log` | not used; console goes to the serial device and hostd captures it |
 
@@ -149,23 +151,62 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   `pane_current_command` is a shell has no state, whatever the option
   says.
 - A stop records the agent windows and the next start opens them again
-  (DECISIONS I-636). When hostd asks for the shutdown, guestd runs
-  `repose-tmux-save` as dev (5 s at most) before `systemctl poweroff`. It
-  writes `~/.repose/agent-windows`, one line per window whose name is an
-  agent's (`claude`, `claude-2`, `<checkout>/codex`) and whose pane runs
-  something other than a shell: name, agent, the pane's folder and the
-  pane option `@repose-session`, separated by `\037`. No such window
-  removes the file. `repose-hook` sets `@repose-session` on its
-  `$TMUX_PANE` to the agent's conversation id from every hook payload:
-  Claude Code's `session_id`, Codex's `thread-id`. When
-  `repose-tmux-session` creates the session it renames the file, opens
-  each window under its name in its folder with the agent's resume form
-  (`claude --resume ID` or `claude --continue`, `codex resume ID` or
-  `codex resume --last`, `opencode --continue`, `pi --continue`, `gemini
-  --resume latest`), and removes it. A folder that is gone is skipped,
-  and of two windows with no id in one folder for one agent only the
-  first opens. A tmux server that exits later in the boot starts with
-  `shell` alone.
+  (DECISIONS I-636); a timer records them every minute, which a start
+  after the machine ended without a stop opens (I-646). When hostd asks
+  for the shutdown, guestd writes `~/.repose/stopped` (this boot's id,
+  synced with its folder), then runs `repose-tmux-save` as dev (5 s at
+  most) before `systemctl poweroff`. It writes `~/.repose/agent-windows`,
+  one line per window whose name is an agent's (`claude`, `claude-2`,
+  `<checkout>/codex`) and whose pane runs something other than a shell:
+  name, agent, the pane's folder and the pane option `@repose-session`,
+  separated by `\037`, after a first line `#project <project id>` (from
+  project.json; a restore from before I-646 skips it, having no folder),
+  and removes `agent-windows.live`. No such window, or a tmux that does
+  not answer (its agents ended with it), removes both files; only a save
+  cut short leaves `agent-windows.live`. `repose-hook` sets
+  `@repose-session` on its `$TMUX_PANE` to the agent's conversation id
+  from every hook payload: Claude Code's `session_id`, Codex's
+  `thread-id`.
+- `repose-tmux-save.timer` (system, `OnBootSec=60`, `OnUnitActiveSec=60`)
+  runs `repose-tmux-save --periodic` as dev at nice 10 and idle I/O,
+  skipped by `repose-multiplexer-is tmux`. It writes
+  `~/.repose/agent-windows.live`: a first line `#boot <boot id> <project
+  id>`, then the same rows with a fifth field, the window's
+  `@repose-state`. It writes only when the content changed, by temp file,
+  sync, rename and a sync of `~/.repose`, and first removes the temp files
+  of a run that was killed; a tmux that does not answer changes nothing;
+  no agent window writes the header alone. It never replaces a record of
+  another boot while the session is under two minutes old (the restore
+  consumes that record); after that it does, since a session that old
+  was not created by the unit. The save, the minute save and the
+  restore hold `flock ~/.repose/agent-windows.lock`.
+- When `repose-tmux-session` creates the session, it reopens the windows
+  of one record, unless the record names another project id than
+  project.json (a fork's or a `snapshots restore --as` copy), which it
+  removes and reopens nothing: `agent-windows` if present (and removes
+  `agent-windows.live`); otherwise `agent-windows.live` when its boot is
+  not this one, whether or not `stopped` names that boot (a stop whose
+  save failed, or a machine that ended without a stop). A minute record
+  of this boot reopens nothing: tmux exited and the unit started it
+  again (I-551). The record is renamed before it is read, and the unit's
+  journal says which record it used. Each window opens under its name in
+  its folder with the agent's resume form (`claude --resume ID` or
+  `claude --continue`, `codex resume ID` or `codex resume --last`,
+  `opencode --continue`, `pi --continue`, `gemini --resume latest`), as
+  its own process group so tmux names the agent as the pane's command.
+  The window closes when the agent exits, except after an agent that
+  exits non-zero within 15 s (it could not resume): the window then keeps
+  a login shell under the line `<agent> could not continue its
+  conversation (exit N).` (exit 130 and 143, a Ctrl-C or a TERM, are not
+  a refusal). A Ctrl-Z in such a window stops the agent's job and the
+  wrapper puts it back in the foreground at once, so the window and the
+  agent stay. A folder that is gone is skipped, and of two windows with
+  no id in one folder for one agent only the first opens. The windows
+  reopened are written at once as this boot's `agent-windows.live`
+  (fifth field empty), with the same temp file, sync and rename, before
+  the record read is removed: a second crash before the timer's first
+  run reopens them again. A tmux server that exits later in the boot
+  starts with `shell` alone.
 - Agent windows are named after the agent: `claude`, `opencode`, `codex`,
   `gemini`, `pi`. Further instances get the lowest free `claude-N`, N >= 2,
   with no upper limit (DECISIONS I-253); anything reading window names

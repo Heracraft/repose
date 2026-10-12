@@ -51,3 +51,7 @@ cloudflare_zone_id = "0123456789abcdef0123456789abcdef"
 # goes to whoever runs tofu, and a plan as a service principal wants to
 # replace the owner's policy with its own (DECISIONS I-361).
 # operator_object_id = "00000000-0000-0000-0000-000000000000"
+
+# Where the Azure Monitor alerts are emailed (alerts_enabled in prod.tfvars,
+# DECISIONS I-648). Kept here because the repository is public.
+alert_email = "owner@example.com"

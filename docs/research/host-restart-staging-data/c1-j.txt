@@ -1,0 +1,96 @@
+== e2e-st-small
+shell:bash claude:claude codex:codex
+3
+2
+0
+fake codex pid 977 args: resume --last
+#boot f79f6ebf-527e-44dc-85a2-cebe4a99b701 01a12ddd-6bc5-7272-81ae-b605b358528d;claude|claude|/home/dev/st||;codex|codex|/home/dev/st||;
+agent-windows.live
+agent-windows.lock
+npm-registry
+project.json
+Starting repose: project tmux session...
+repose-tmux-session: reopening agent windows from the minute record
+Started repose: project tmux session.
+repose-tmux-session: reopening agent windows from the minute record
+== e2e-st-large
+shell:bash claude:claude codex:codex
+3
+2
+0
+fake codex pid 1067 args: resume --last
+#boot b03fe5b7-6834-4da0-a564-94e9557f8a78 01a12ddd-916e-7090-88d7-72517b64788b;claude|claude|/home/dev/st||;codex|codex|/home/dev/st||;
+agent-windows.live
+agent-windows.lock
+npm-registry
+project.json
+Starting repose: project tmux session...
+repose-tmux-session: reopening agent windows from the minute record
+Started repose: project tmux session.
+repose-tmux-session: reopening agent windows from the minute record
+== e2e-st-xl
+shell:bash claude:claude codex:codex pi:pi
+3
+2
+1
+fake codex pid 1264 args: resume --last
+#boot 40f52289-919f-4740-9758-e24b0f83b065 01a12ddd-b54a-726e-af16-a447ec33585c;claude|claude|/home/dev/st||;codex|codex|/home/dev/st||;pi|pi|/home/dev/st||;
+agent-windows.live
+agent-windows.lock
+npm-registry
+project.json
+Starting repose: project tmux session...
+repose-tmux-session: reopening agent windows from the minute record
+Started repose: project tmux session.
+repose-tmux-session: reopening agent windows from the minute record
+== e2e-st-small2
+shell:bash claude:claude codex:codex
+2
+2
+0
+fake codex pid 1029 args: resume --last
+#boot 1d102bab-ac01-4947-b4b2-8ccd3459eaf6 01a12ddd-e9f1-7bcd-9aeb-da2de890da33;claude|claude|/home/dev/st||;codex|codex|/home/dev/st||;
+agent-windows.live
+agent-windows.lock
+npm-registry
+project.json
+Starting repose: project tmux session...
+repose-tmux-session: reopening agent windows from the minute record
+Started repose: project tmux session.
+repose-tmux-session: reopening agent windows from the minute record
+== e2e-st-small
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+
+
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+ts.log backwards at line 62: 1791772531.653019226 -> 
+ts.log lines 62 backwards 1 (max -1791772531.7) maxgap 1.1 at 1791772528.403062590
+docker.log backwards at line 63: 1791772530 -> 
+docker.log lines 63 backwards 1 (max -1791772530.0) maxgap 2.0 at 1791772473
+== e2e-st-large
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+
+
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+ts.log backwards at line 65: 1791772536.469771982 -> 
+ts.log lines 65 backwards 1 (max -1791772536.5) maxgap 1.1 at 1791772502.025554915
+docker.log backwards at line 66: 1791772535 -> 
+docker.log lines 66 backwards 1 (max -1791772535.0) maxgap 2.0 at 1791772472
+== e2e-st-xl
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+
+
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+ts.log backwards at line 63: 1791772535.752602916 -> 
+ts.log lines 63 backwards 1 (max -1791772535.8) maxgap 1.1 at 1791772529.528322544
+docker.log backwards at line 64: 1791772535 -> 
+docker.log lines 64 backwards 1 (max -1791772535.0) maxgap 2.0 at 1791772474
+== e2e-st-small2
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+
+
+/root/gx: line 4: warning: command substitution: ignored null byte in input
+ts.log backwards at line 63: 1791772537.660083401 -> 
+ts.log lines 63 backwards 1 (max -1791772537.7) maxgap 1.2 at 1791772530.200581247
+docker.log backwards at line 65: 1791772537 -> 
+docker.log lines 65 backwards 1 (max -1791772537.0) maxgap 1.0 at 1791772474

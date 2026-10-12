@@ -1,0 +1,18 @@
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b  frozen   12163  2179313664  
+01a12ddd-e9f1-7bd0-a5b4-720491858812  frozen   11476  1998168064  
+01a12ddd-916e-7092-945c-800626b1ae93  frozen   26561  3957133312  
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389  frozen   26215  7354699776  
+hostd answered after 92 s
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b stopped
+01a12ddd-916e-7092-945c-800626b1ae93 stopped
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389 stopped
+01a12ddd-e9f1-7bd0-a5b4-720491858812 stopped
+1791779523.945002 host-stg-01 systemd[1]: Started repose hostd: runs tenants' guests on this host.
+1791779553.977957 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:32:33Z","level":"WARN","msg":"image key not fetched at start","component":"
+1791779614.014081 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"WARN","msg":"image key not unwrapped","component":"hostd",
+1791779614.014081 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"WARN","msg":"image key not unwrapped","component":"hostd",
+1791779614.014718 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"WARN","msg":"image key not unwrapped","component":"hostd",
+1791779614.014718 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"WARN","msg":"image key not unwrapped","component":"hostd",
+1791779614.271459 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"INFO","msg":"frozen guests restored","component":"hostd","
+1791779614.707181 host-stg-01 hostd[91367]: {"ts":"2026-10-12T04:33:34Z","level":"INFO","msg":"stream connected","component":"hostd","event"
+left: lv=0 dm=0 rec=0

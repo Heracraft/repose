@@ -1,0 +1,6 @@
+{{/* The server under a user's machines restarted (DECISIONS I-645): the summary is the whole notice, a line per machine. */}}
+{{define "heading"}}Your machines' server restarted{{end}}
+{{define "body"}}{{.M.Summary}}{{end}}
+{{define "link_label"}}Your machines{{end}}
+{{define "link_url"}}{{.ProjectURL}}{{end}}
+{{define "why"}}You get these about your machines.{{end}}

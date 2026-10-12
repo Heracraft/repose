@@ -13,7 +13,7 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
 Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (Grafana Postgres datasource, read-only role)
-personal server        Loki, Prometheus, Grafana, Alertmanager (ntfy to the owner)
+personal server        Loki, Prometheus, Grafana, Alertmanager, calert (Google Chat to the owner)
 ```
 
 Every exporter binds the host's WireGuard address and nothing else; a repose
@@ -182,9 +182,14 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 ## Alerts
 
 The rules in `ops/alerts.yaml`, routed by Alertmanager
-(`ops/alertmanager/repose-route.yaml`) to the owner's ntfy topic, with
-`page` on a topic of its own so a phone can be allowed to make a sound for
-those alone. Each alert name is a heading in `RUNBOOK.md`, and
+(`ops/alertmanager/repose-route.yaml`) through calert to the owner's Google
+Chat space. A `page` goes out after 20 s and repeats hourly; the rest wait for
+their group and repeat every 12 hours. The always-firing `Watchdog` goes
+only to an Uptime Kuma push monitor, which posts to the same space when the
+pushes stop, so a dead Prometheus or Alertmanager is heard too, and a
+dead personal server as long as Kuma runs somewhere else. Azure's own view of the three VMs (a platform reboot, planned
+maintenance, a VM not running) is emailed by Azure Monitor and needs none
+of this (RUNBOOK "Azure alert", DECISIONS I-648). Each alert name is a heading in `RUNBOOK.md`, and
 `ops/check.sh` fails if one is missing. Each also has a `promtool` test
 case, because an alert with a wrong expression looks like a quiet system until
 the incident it was written for. Silence with `amtool silence add alertname=...

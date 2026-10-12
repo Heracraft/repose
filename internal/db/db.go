@@ -79,6 +79,9 @@ const (
 	// LockSecretsReseal serialises the secrets reseal passes the api runs at
 	// start (DECISIONS I-474).
 	LockSecretsReseal int64 = 1013
+	// LockResume picks the one replica that runs the resume tick after a
+	// host reboot (DECISIONS I-645).
+	LockResume int64 = 1014
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

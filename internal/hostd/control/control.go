@@ -27,7 +27,9 @@ type StatusReply struct {
 	Guests    map[string]int `json:"guests_by_state"`
 	FreeMem   uint64         `json:"free_mem_bytes"`
 	PoolFree  uint64         `json:"pool_free_bytes"`
-	Uptime    string         `json:"uptime"`
+	// Pool is "active" or "unavailable (<reason>)" (DECISIONS I-644).
+	Pool   string `json:"pool"`
+	Uptime string `json:"uptime"`
 }
 
 // OperatorLoginReport is what `hostd audit-login` hands the daemon for an
@@ -107,6 +109,7 @@ func Serve(ctx context.Context, path string, b Backend) error {
 		}
 		writeJSON(w, "ok", b.OperatorLogin(rep))
 	})
+	registerFreeze(mux, b, writeJSON)
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := b.ExportState(w); err != nil {

@@ -317,7 +317,13 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       routing them to the owner's Alertmanager is part of the WireGuard
-      peer that `10-observability.md` §9 still has open.
+      peer that `10-observability.md` §9 still has open. Since I-648 there
+      are 31 rules, and the route (`ops/alertmanager/repose-route.yaml`)
+      pages to Google Chat through calert with a Watchdog heartbeat to
+      Uptime Kuma; `ops/check.sh` proves each receiver with `amtool config
+      routes test`. Delivery is live only once the owner installs calert,
+      the Kuma monitor and the route on the personal server
+      (`ops/README.md` step 3) and one test alert reaches the space.
 - [x] Privacy policy and terms published, containing the process-sample
       boundary verbatim and the Anthropic hosted-use statement (users
       authenticate with their own credentials; the platform stores none).

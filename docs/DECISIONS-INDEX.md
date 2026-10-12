@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-674 entries.
+687 entries.
 
 ## Scope
 
@@ -124,7 +124,7 @@ pointer, not a summary.
 - **I-35** sshd material: reserved secrets at `/run/repose/`, symlinked into `/etc/ssh/`, a throwaway key until delivery, reload re-reads — L680
 - **I-37** Two vsock RPC implementations exist for one release — 2026-09-19; L695
 - **I-38** Generated protobuf code is tracked and also regenerated in the Nix sandbox — 2026-09-19; L704
-- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; L711
+- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; amended by I-647; L711
 - **I-40** A production host is a named configuration; the api CA and the snapshot target are host module options; a host registered by `hostdev` comes up without WireGuard or a Host CA — 2026-09-20; L730
 - **I-41** The data disk is found at install time, not named in advance — 2026-09-20; L766
 - **I-42** The api's implementation shape: phased ops driven by one replica, /internal on the gRPC app, CA material in the secrets table, guest host certificates re-signed once the address is known — 2026-09-20; L784
@@ -231,7 +231,7 @@ pointer, not a summary.
 - **I-144** One clone per base ref — 2026-09-21; L3171
 - **I-145** A bump that built but could not switch says so — 2026-09-21; L3181
 - **I-146** A bump that failed against an older base is tried again on the next — 2026-09-21; L3189
-- **I-147** A start applies only a built revision newer than the one the guest runs — 2026-09-21; L3201
+- **I-147** A start applies only a built revision newer than the one the guest runs — 2026-09-21; amended by I-645; L3201
 - **I-148** The activation's output goes to a file, and hostd asks again once when guestd went away mid-switch — 2026-09-21; L3214
 - **I-156** A destroy the user asked for always finishes; DELETE answers with the op to wait on — 2026-09-23; L3230
 - **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; partly amended by I-593; L3262
@@ -315,9 +315,9 @@ pointer, not a summary.
 - **I-230** Guest disks are opened O_DIRECT, and guest@ units get a MemoryHigh 128 MiB under MemoryMax — 2026-09-23; L5332
 - **I-231** A guest boot's path to Ready and to its first login carries only what they need: a scripted stage 1, no mount-rate-limit stall, zram and the setuid wrappers off the chain, and no home-manager run for an unchanged generation — 2026-09-24; L5415
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5502
-- **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; L5516
+- **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; amended by I-652; L5516
 - **I-234** Two regressions of the faster boot, found live — 2026-09-24; L5539
-- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; L5554
+- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; L5554
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5596
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5643
 - **I-241** Gaps the user docs found, closed in code rather than documented as broken — 2026-09-23; amended by I-475; L5688
@@ -476,7 +476,7 @@ pointer, not a summary.
 - **I-408** Placement waits up to three minutes for a guest being stopped before it answers `capacity` — 2026-10-01; L10612
 - **I-409** hostd sends a heartbeat ahead of every command result — 2026-10-01; L10636
 - **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; L10652
-- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; L10717
+- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; L10717
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10751
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10780
 - **I-410** The command-not-found hint survives a command only one package has — 2026-10-03; L10824
@@ -489,7 +489,7 @@ pointer, not a summary.
 - **I-420** The destroyed list pages: `before` and `limit`, Show more past the first 100, and the CLI reads every page — 2026-10-03; L10939
 - **I-421** A window counts as an agent window while an agent is its foreground program, whatever its name — 2026-10-03; L10955
 - **I-423** The tools carry does not read Homebrew; a curated list is the likely next step — 2026-10-03; L10972
-- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; L10987
+- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; amended by I-651; L10987
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L11004
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11025
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11045
@@ -685,7 +685,7 @@ pointer, not a summary.
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
 - **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; L18017
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18080
-- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; L18112
+- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; L18112
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
 - **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18177
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18198
@@ -706,3 +706,16 @@ pointer, not a summary.
 - **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; L18789
 - **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — L18816
 - **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — L18846
+- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18897
+- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18937
+- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18985
+- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19047
+- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19091
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19107
+- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19155
+- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19174
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — L19278
+- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L19492
+- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19551
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19677
+- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19735

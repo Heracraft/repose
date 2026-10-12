@@ -1,0 +1,33 @@
+== prev boot
+1791772238.188320 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:30:38Z","level":"INFO","msg":"image key fetched; guests can be frozen","component":"hostd","event":"guest_freeze"}
+1791772317.284429 host-stg-01 systemd[1]: Stopping Freeze running guests before the host shuts down...
+1791772317.696554 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:31:57Z","level":"INFO","msg":"freezing guests","component":"hostd","event":"guest_freeze","reason":"shutdown","guests":4}
+1791772335.431262 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:32:15Z","level":"INFO","msg":"guest frozen","component":"hostd","guest_id":"01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b","project_id":"01a12ddd-6bc5-7272-81ae-b605b358528d","event":"guest_freeze","reason":"shutdown","class":"small","snapshot_ms":9887,"duration_ms":12296,"image_bytes":2246672384}
+1791772336.583309 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:32:16Z","level":"INFO","msg":"guest frozen","component":"hostd","guest_id":"01a12ddd-e9f1-7bd0-a5b4-720491858812","project_id":"01a12ddd-e9f1-7bcd-9aeb-da2de890da33","event":"guest_freeze","reason":"shutdown","class":"small","snapshot_ms":11227,"duration_ms":13449,"image_bytes":2265337856}
+1791772359.660130 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:32:39Z","level":"INFO","msg":"guest frozen","component":"hostd","guest_id":"01a12ddd-916e-7092-945c-800626b1ae93","project_id":"01a12ddd-916e-7090-88d7-72517b64788b","event":"guest_freeze","reason":"shutdown","class":"large","snapshot_ms":19329,"duration_ms":24225,"image_bytes":4226621440}
+1791772362.427334 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:32:42Z","level":"INFO","msg":"guest frozen","component":"hostd","guest_id":"01a12ddd-b54a-7270-b71a-dfb2c9ae0389","project_id":"01a12ddd-b54a-726e-af16-a447ec33585c","event":"guest_freeze","reason":"shutdown","class":"xl","snapshot_ms":21256,"duration_ms":25839,"image_bytes":7552901120}
+1791772362.427334 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:32:42Z","level":"INFO","msg":"guests frozen","component":"hostd","event":"guest_freeze","reason":"shutdown","frozen":4,"guests":4,"duration_ms":44765}
+1791772362.429175 host-stg-01 systemd[1]: Stopped Freeze running guests before the host shuts down.
+1791772362.430515 host-stg-01 systemd[1]: Stopping repose hostd: runs tenants' guests on this host...
+1791772362.436363 host-stg-01 systemd[1]: Stopped repose hostd: runs tenants' guests on this host.
+1791772362.777882 host-stg-01 systemd-journald[437]: Received SIGTERM from PID 1 (systemd-shutdow).
+1791772362.777930 host-stg-01 systemd-journald[437]: Journal stopped
+== this boot
+1791772383.178247 host-stg-01 kernel: Linux version 6.18.52 (nixbld@localhost) (gcc (GCC) 15.3.0, GNU ld (GNU Binutils) 
+1791772389.335376 host-stg-01 systemd[1]: Starting Activate the guest pool vg-guests/thin (DECISIONS I-643)...
+1791772390.164035 host-stg-01 repose-guest-pool[658]: repose-guest-pool: event=pool_activated vg=vg-guests pool=thin
+1791772390.554225 host-stg-01 repose-guest-pool[658]: repose-guest-pool: event=pool_monitored vg=vg-guests pool=thin
+1791772390.643844 host-stg-01 systemd[1]: Finished Activate the guest pool vg-guests/thin (DECISIONS I-643).
+1791772392.750351 host-stg-01 systemd[1]: Started repose hostd: runs tenants' guests on this host.
+1791772399.673594 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:19Z","level":"INFO","msg":"frozen image discarded","component":"hostd","event":"freeze_discard","guest_id":"01a12ddd-e9f1-7bd0-a5b4-720491858812","reason":"restored"}
+1791772399.673594 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:19Z","level":"INFO","msg":"guest restored from its frozen image","component":"hostd","guest_id":"01a12ddd-e9f1-7bd0-a5b4-720491858812","project_id":"01a12ddd-e9f1-7bcd-9aeb-da2de890da33","event":"guest_thaw","class":"small","duration_ms":6403,"frozen_s":63,"image_bytes":2265337856}
+1791772407.559588 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:27Z","level":"INFO","msg":"frozen image discarded","component":"hostd","event":"freeze_discard","guest_id":"01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b","reason":"restored"}
+1791772407.559588 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:27Z","level":"INFO","msg":"guest restored from its frozen image","component":"hostd","guest_id":"01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b","project_id":"01a12ddd-6bc5-7272-81ae-b605b358528d","event":"guest_thaw","class":"small","duration_ms":14289,"frozen_s":72,"image_bytes":2246672384}
+1791772415.202690 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:35Z","level":"INFO","msg":"frozen image discarded","component":"hostd","event":"freeze_discard","guest_id":"01a12ddd-b54a-7270-b71a-dfb2c9ae0389","reason":"restored"}
+1791772415.202690 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:35Z","level":"INFO","msg":"guest restored from its frozen image","component":"hostd","guest_id":"01a12ddd-b54a-7270-b71a-dfb2c9ae0389","project_id":"01a12ddd-b54a-726e-af16-a447ec33585c","event":"guest_thaw","class":"xl","duration_ms":21932,"frozen_s":52,"image_bytes":7552901120}
+1791772419.407801 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"frozen image discarded","component":"hostd","event":"freeze_discard","guest_id":"01a12ddd-916e-7092-945c-800626b1ae93","reason":"restored"}
+1791772419.407801 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"guest restored from its frozen image","component":"hostd","guest_id":"01a12ddd-916e-7092-945c-800626b1ae93","project_id":"01a12ddd-916e-7090-88d7-72517b64788b","event":"guest_thaw","class":"large","duration_ms":26137,"frozen_s":59,"image_bytes":4226621440}
+1791772419.407801 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"frozen guests restored","component":"hostd","event":"guest_thaw","restored":4,"images":4,"duration_ms":26167}
+1791772419.576843 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"host boot recorded","component":"hostd","event":"host_boot","boot_id":"72f9ff32-cd05-4f1c-9fd5-c1e376f590cf","prev_boot_id":"b6bbd48b-938d-44d5-81cf-aaf4825af6e1"}
+1791772419.725380 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"image key fetched; guests can be frozen","component":"hostd","event":"guest_freeze"}
+1791772419.749855 host-stg-01 hostd[979]: {"ts":"2026-10-12T02:33:39Z","level":"INFO","msg":"stream connected","component":"hostd","event":"stream_connect"}

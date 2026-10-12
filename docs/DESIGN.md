@@ -106,8 +106,9 @@ from `nix/hosts/`. The host configuration declares:
 **Capacity.** Memory is the binding constraint and is never oversubscribed.
 The host reserve is 8 GB below 128 GB of RAM and 16 GB above. A `D64s_v7`
 fits 30 large guests, 55 small, or 15 XL, in any mix; a `D16s_v7` fits 7
-large or 14 small. v7 sizes expose disks over NVMe only: OS at
-`/dev/nvme0n1`, the data disk resolved at install time (DECISIONS I-41). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added by hand:
+large or 14 small. v7 sizes expose disks over NVMe only, and both
+disks are resolved at install time from their namespace ids, because which
+controller enumerates first is not fixed (DECISIONS I-41, I-647). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added by hand:
 an alert fires at 80 percent reserved memory and a human runs the OpenTofu
 apply for the next host.
 
@@ -125,6 +126,20 @@ v2 resize, `pvresize`, `lvextend`). lvm autoextends the pool into the VG's
 project lives on its host and a start adds a writer, so at 95 it waits
 for the operator rather than risk the pool. Nothing stops a running guest
 for the pool.
+
+**A host that restarts** (DECISIONS I-643, I-644, I-649, I-650). One unit
+after boot activates the pool; the initrd has no LVM, since an
+activation the initrd's teardown killed is what kept host-01's guests down
+for 9 hours on 2026-10-10. The unit clears an interrupted activation's
+leftovers and retries, but never retries or repairs a pool whose metadata
+check fails: that pages and the owner decides. While the pool is
+unavailable the host reports it, nothing is placed there, and a start is
+refused with `volume_unavailable`, the project left stopped with its disk
+intact. A graceful shutdown presses every running guest's power button
+and gives it 20 seconds, so its last writes reach its disk; a crash does
+not. Hosts boot with a 240 s NVMe timeout (a live migration stalls the
+disk) and a 10 s boot menu, and root has a console-only password from a
+file placed by hand (I-654).
 
 **Benchmark gate.** Deferred (DECISIONS I-12): the separate M0 benchmark
 was not run; the first M1 host measured itself instead (`RESEARCH.md` §11
@@ -561,8 +576,12 @@ when it becomes in scope.
 - Nested virtualization on Azure is officially unsupported by Microsoft even
   though Microsoft ships it in AKS. The benchmark gate (deferred, I-12)
   exists for this.
-- Cloud Hypervisor's virtio-fs snapshot/restore matured only in v52. We do not
-  use CH snapshot/restore; we stop and start guests and snapshot the volume.
+- Cloud Hypervisor's virtio-fs snapshot/restore matured only in v52. Stops,
+  starts and backups do not use it: we stop and start guests and snapshot
+  the volume. The one use is the guest freeze across a host restart
+  (DECISIONS I-652, I-653, off until turned on per host): an encrypted
+  memory image per guest, restored at hostd's next start and removed, with
+  a cold start whenever the restore cannot happen.
 - microvm.nix's shared-store model means a guest cannot outlive a host
   garbage-collecting its closure. hostd registers every running and stopped
   guest's system closure as a GC root and unregisters on destroy.

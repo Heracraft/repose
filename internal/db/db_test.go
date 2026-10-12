@@ -30,12 +30,48 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0020 (Polar, I-604) is the newest: its names go back to Paddle's,
+	// 0022 (resume after a host reboot, I-645) is the newest: its two
+	// tables go, and nothing older does.
+	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("0022's tables are still there after down 1")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name = 'provider'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("down 1 reverted 0020 too")
+	}
+	// Down to and including 0020, one at a time, so what follows checks
+	// 0020's down whatever numbers land between them.
+	for {
+		cur, err := db.MigrateStatus(ctx, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newest := cur.Applied[len(cur.Applied)-1]
+		if newest < 20 {
+			break
+		}
+		if _, err := db.MigrateDown(ctx, pool, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 0021 (hosts.pool_unavailable, I-644) went with the loop.
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'pool_unavailable'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("hosts.pool_unavailable is still there after 0021's down")
+	}
+	// With 0020 (Polar, I-604) reverted, its names go back to Paddle's,
 	// and 0019 (projects.disk_held_bytes, I-585), 0018 (meter_samples root
 	// filesystem, I-567), 0017 (projects.multiplexer, I-502), 0015 (the
 	// personal layer, I-490), 0014 (CPU pressure, I-493), 0013
 	// (snapshots.sha256) and 0012 (hosts.prev_cert_serial) stay.
-	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'paddle_events'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +166,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(up) != 1 {
+	if len(up) == 0 || up[0] != 20 || up[len(up)-1] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("up reapplied %v", up)
 	}
 	type row struct{ status, reason, customer, sub, provider string }

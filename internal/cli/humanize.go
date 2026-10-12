@@ -44,6 +44,8 @@ func reasonFor(code, message string) string {
 		return "a nix garbage collection inside the machine hid parts of its new system"
 	case "host_unreachable", "unreachable":
 		return "its host is not reachable"
+	case "volume_unavailable":
+		return "the server's machine disks are unavailable right now; the machine's disk is intact"
 	case "payment_required":
 		return "the account needs a plan"
 	case "":
@@ -230,6 +232,10 @@ func opExitCode(code string) int {
 		return ExitCapacity
 	case "payment_required":
 		return ExitPaymentRequired
+	case "volume_unavailable":
+		// The host's pool is down (DECISIONS I-644): not a capacity
+		// refusal, which a script would retry in minutes.
+		return ExitGeneric
 	}
 	return ExitGeneric
 }
@@ -240,6 +246,9 @@ func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
 		return "Try again in a few minutes."
+	case "volume_unavailable":
+		// The api's sentence already says when `repose start` works.
+		return ""
 	case "guest_unresponsive", "boot_failed":
 		// hostd kept the console of this boot (DECISIONS I-592).
 		return fmt.Sprintf("`repose logs %s --kind console` shows what the machine printed; `repose start %s` tries again.", slug, slug)

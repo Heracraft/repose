@@ -11,14 +11,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/app"
 	"github.com/heracraft/repose/internal/hostd/control"
+	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/register"
@@ -35,12 +38,14 @@ commands:
   run            run the daemon (default)
   register       register with the join token and exit
   status         daemon status
-  guests         list guests with unit states
+  guests         list guests with unit states (--json for every field)
   snapshot-all   snapshot every running guest locally (--reason scheduled|manual)
   snapshot       alias: snapshot --all --reason <reason>
   drain          stop accepting placements
   undrain        accept placements again
   reconcile      re-read units and volumes; --rebuild rebuilds a lost state.db
+  freeze         freeze every running guest to its encrypted image (--shutdown: from the shutdown unit)
+  thaw           restore every frozen guest now
   state export   print the state as JSON (daemon running or not)
   state import   load a JSON export into an empty state.db (daemon stopped)
   audit-login    PAM hook: record an operator login
@@ -80,6 +85,14 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.BoolVar(&o.NoWG, "no-wg", false, "accepted for one release and ignored: hostd writes host.json only and the host renders wg0.conf from it (DECISIONS I-137)")
 	fs.StringVar(&o.Substituters, "substituters", "", "nix substituters for builds, space separated (default cache.nixos.org; the host module adds the overlay cache)")
 	fs.StringVar(&o.LogLevel, "log-level", "info", "log level: debug, info, notice, warn, error")
+	fs.BoolVar(&o.Freeze.Enabled, "freeze", false, "freeze running guests to an encrypted image when the host shuts down, and restore them at the next start (DECISIONS I-652)")
+	fs.StringVar(&o.Freeze.KeyVaultURL, "freeze-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
+	fs.StringVar(&o.Freeze.KeyName, "freeze-key-name", "", "name of that key")
+	fs.StringVar(&o.Freeze.KeyFile, "freeze-key-file", "", "RSA private key (PEM) to wrap image keys with instead of Key Vault (staging, tests)")
+	fs.DurationVar(&o.Freeze.Deadline, "freeze-deadline", 120*time.Second, "longest a freeze of all guests may take")
+	fs.BoolVar(&o.Freeze.FreePageReporting, "free-page-reporting", false, "start guests with a balloon that returns freed pages to the host")
+	fs.BoolVar(&o.Freeze.ScheduledEvents, "scheduled-events", false, "freeze guests on Azure Scheduled Events reboot notices and approve them")
+	fs.StringVar(&o.Freeze.VMName, "vm-name", "", "this VM's name in Scheduled Events (default: hostname)")
 	return o
 }
 
@@ -185,9 +198,20 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 		}
 		return printJSON(s)
 	case "guests":
+		gfs := flag.NewFlagSet(cmd, flag.ExitOnError)
+		asJSON := gfs.Bool("json", false, "print the guests as JSON, with each one's interrupted mark (DECISIONS I-645)")
+		if err := gfs.Parse(args); err != nil {
+			return 2
+		}
 		gs, err := cc.Guests(ctx)
 		if err != nil {
 			return fail(err)
+		}
+		if *asJSON {
+			if gs == nil {
+				gs = []guest.Status{}
+			}
+			return printJSON(gs)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 		_, _ = fmt.Fprintln(tw, "GUEST\tPROJECT\tCLASS\tSTATE\tIP\tUNIT\tVIRTIOFSD\tSTORE\tGUESTD\tREASON")
@@ -277,6 +301,38 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 			return failIf(st.Import(r))
 		}
 		return fail(errors.New("state export|import <file>"))
+	case "freeze", "thaw":
+		var res []guest.FreezeResult
+		var err error
+		if cmd == "freeze" {
+			ffs := flag.NewFlagSet(cmd, flag.ExitOnError)
+			shutdown := ffs.Bool("shutdown", false, "the host is shutting down (repose-guest-freeze.service); quiet when the freeze is off")
+			if err := ffs.Parse(args); err != nil {
+				return 2
+			}
+			reason := guest.FreezeOperator
+			if *shutdown {
+				// The unit's ExecStop also runs when a switch restarts or
+				// removes it; only a host on its way down freezes.
+				if !systemStopping(ctx) {
+					fmt.Println("the system is not shutting down; nothing frozen")
+					return 0
+				}
+				reason = guest.FreezeShutdown
+			}
+			res, err = cc.Freeze(ctx, reason)
+		} else {
+			res, err = cc.Thaw(ctx)
+		}
+		if err != nil {
+			return fail(err)
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "GUEST\tOUTCOME\tMS\tIMAGE\tREASON")
+		for _, r := range res {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\n", r.GuestID, r.Outcome, r.Ms, r.ImageBytes, r.Reason)
+		}
+		return failIf(tw.Flush())
 	case "audit-login":
 		hostID := ""
 		if id, err := register.Load(o.StateDir); err == nil {
@@ -290,6 +346,12 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 	}
 	fmt.Fprint(os.Stderr, usage)
 	return 2
+}
+
+// systemStopping reports whether systemd is taking the system down.
+func systemStopping(ctx context.Context) bool {
+	out, _ := exec.CommandContext(ctx, "systemctl", "is-system-running").Output() // non-zero for every state but running
+	return strings.TrimSpace(string(out)) == "stopping"
 }
 
 func printJSON(v any) int {

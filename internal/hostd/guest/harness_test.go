@@ -179,7 +179,14 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	h.blob = snapshot.NewMemBlob()
 	h.rec = &recorder{}
 	h.roots = gcroot.Roots{Dir: filepath.Join(t.TempDir(), "gcroots")}
-	h.sockDir = t.TempDir()
+	// Not t.TempDir: its path holds the test's name, and a long name
+	// took the guestd socket past the 108 bytes a unix address has.
+	sockDir, err := os.MkdirTemp("", "gd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	h.sockDir = sockDir
 	h.gopts = fakeguestd.Options{FreezeWatchdog: time.Second}
 	// A guest@ unit starting means the guest boots: a fake guestd appears.
 	h.sd.OnRun = func(unit string, argv []string) error {

@@ -27,6 +27,8 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
               mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,  -- pool_bytes: registered, then the newest heartbeat's (I-586)
               wg_pubkey text, wg_ip inet, state text,  -- registering|ready|draining|unreachable|retired|lost
               draining bool, free_mem_bytes bigint, pool_free_bytes bigint, load1 float, running_guests int,
+              pool_unavailable bool not null default false,  -- the thin pool cannot serve volumes, from Hello and
+                                                             -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
@@ -182,6 +184,26 @@ waitlist     (user_id pk fk, joined_at, invited_at null, hold_until null,
               -- conversion for the count; invited_at with hold_until in the
               -- future holds one seat
 
+guest_resumes (id pk, project_id fk, user_id fk, host_id fk, guest_id uuid,
+              boot_id text,            -- the host boot whose start found the guest down
+              host_boot_at null,       -- when that boot began (Hello.host_boot_at)
+              interrupted_at,          -- when hostd marked the guest
+              host_lost_at null,       -- the host's last heartbeat before the Hello
+              hello_state text,        -- the guest's state in that Hello (stopped|error)
+              outcome text,            -- pending|starting|started|already_running|user_stopped|
+                                       -- destroyed|temp_expired|window_passed|refused|failed
+              reason text null,        -- refused|failed: the sentence the user is shown
+              op_id uuid null, attempts int, -- starts enqueued
+              timeouts int,            -- of them, failed on a Ready timeout (one more try)
+              created_at, decided_at null,
+              unique (project_id, boot_id))
+              -- one row per machine a host restart stopped (0022, I-645); the resume
+              -- tick decides each once, in the transaction of the start it enqueues
+
+resume_notices (user_id fk, host_id fk, boot_id text, event_id uuid null, sent_at,
+              primary key (user_id, host_id, boot_id))
+              -- the one machines_restarted notice per user per host restart (0022, I-645)
+
 base_versions (version text pk, nix_rev text, changelog text, released_at,
               security bool)
 
@@ -205,12 +227,13 @@ stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, cr
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
 `billing_events(received_at desc)` (`billing_events_received`, 0020),
 `ops(state) where state in ('pending','running')`, `events_outbox(next_at)`,
-`events(user_id, ts desc) where user_id is not null`, `waitlist(joined_at,
+`events(user_id, ts desc) where user_id is not null`, `guest_resumes(host_id,
+created_at) where decided_at is null` (0022), `waitlist(joined_at,
 user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial` and `0013_snapshot_sha256` create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0022_resume`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

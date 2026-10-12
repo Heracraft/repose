@@ -18,6 +18,16 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 	res := &hostdv1.StopResult{}
 	switch g.State {
 	case StateStopped:
+		// A stop of a guest a host restart interrupted says its owner
+		// wants it down: the mark goes, so nothing starts it (I-645).
+		if g.Interrupted != nil {
+			g.Interrupted = nil
+			if err := m.d.State.PutGuest(g); err != nil {
+				return nil, errf(CodeInternal, "state write: %v", err)
+			}
+			m.writeGuestJSON(g)
+			m.refreshGuestGauge()
+		}
 		return res, nil
 	case StateRunning, StateStarting, StateError, StateStopping:
 	default:
@@ -159,7 +169,7 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	}
 	if !c.KeepVolume {
 		if err := m.d.LVM.RemoveVolume(ctx, VolumeName(g.GuestID)); err != nil {
-			return errf(CodeInternal, "lvremove: %v", err)
+			return lvmErr("lvremove", err)
 		}
 	}
 	if err := m.d.Roots.Remove(g.GuestID); err != nil {
@@ -210,7 +220,7 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 			return err
 		}
 		if err := m.d.LVM.ExtendVolume(ctx, VolumeName(g.GuestID), c.NewBytes); err != nil {
-			return errf(CodeInternal, "lvextend: %v", err)
+			return lvmErr("lvextend", err)
 		}
 		g.VolumeBytes = c.NewBytes
 		if err := m.d.State.PutGuest(g); err != nil {

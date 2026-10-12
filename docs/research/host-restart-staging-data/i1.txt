@@ -1,0 +1,27 @@
+20.42.64.44     est.tm.prd.r.kv.aadg.akadns.net
+40.71.10.202    est.tm.prd.r.kv.aadg.akadns.net
+20.42.73.8      est.tm.prd.r.kv.aadg.akadns.net
+GUEST                                 OUTCOME  MS     IMAGE       REASON
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b  frozen   13309  2369572864  
+01a12ddd-e9f1-7bd0-a5b4-720491858812  frozen   13252  2401435648  
+01a12ddd-916e-7092-945c-800626b1ae93  frozen   26652  4067098624  
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389  frozen   28549  7654412288  
+blocked
+000
+hostd answered after 122 s
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b stopped hypervisor not running after hostd restart
+01a12ddd-916e-7092-945c-800626b1ae93 stopped hypervisor not running after hostd restart
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389 stopped hypervisor not running after hostd restart
+01a12ddd-e9f1-7bd0-a5b4-720491858812 stopped hypervisor not running after hostd restart
+
+"msg":"image key not fetched at start" "err":"key vault get freeze-wrap: context deadline exceeded 
+"msg":"image key not unwrapped" "err":"key vault unwrap: context deadline exceeded\ncontext deadline exceeded 
+"msg":"image key not unwrapped" "err":"key vault unwrap: context deadline exceeded\ncontext deadline exceeded 
+"msg":"image key not unwrapped" "err":"key vault unwrap: context deadline exceeded\ncontext deadline exceeded 
+"msg":"image key not unwrapped" "err":"key vault unwrap: context deadline exceeded\ncontext deadline exceeded 
+"msg":"frozen image discarded" "reason":"image key unavailable" 
+"msg":"frozen image discarded" "reason":"image key unavailable" 
+"msg":"frozen image discarded" "reason":"image key unavailable" 
+"msg":"frozen image discarded" "reason":"image key unavailable" 
+"msg":"frozen guests restored"
+left: lv=0 dm=0 rec=0

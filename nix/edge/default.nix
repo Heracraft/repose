@@ -42,7 +42,7 @@ let
     ];
 in
 {
-  imports = [ ./disko.nix ];
+  imports = [ ./disko.nix ../hosts/vm-hardening.nix ];
 
   options.repose.edge = {
     osDevice = lib.mkOption {
@@ -513,7 +513,8 @@ in
     documentation.enable = false;
     documentation.nixos.enable = false;
     users.mutableUsers = false;
-    users.users.root.hashedPassword = "!";
+    # Console-only root password from a file placed by hand, its own
+    # password, not the hosts'; locked without it (DECISIONS I-654).
     users.allowNoPasswordLogin = true;
     services.journald.settings.Journal.SystemMaxUse = "2G";
     services.resolved.settings.Resolve = { LLMNR = "false"; MulticastDNS = "false"; };

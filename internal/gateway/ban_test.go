@@ -89,13 +89,22 @@ func TestFailuresStillBanAndTheBanIsLogged(t *testing.T) {
 	if line := firstLine(t, "", h.addr); line != "repose gateway: "+MsgRateLimited {
 		t.Fatalf("after %d failures: first line %q", banFailures, line)
 	}
+	// The ban is set before its line is written, in the connection's own
+	// goroutine, so the refusal above can arrive before the line does (CI on
+	// 5c01ab34; a loaded run needed longer than 2 s). Wait up to 10 s for it.
 	var ban, counted string
-	for _, l := range strings.Split(h.logs.String(), "\n") {
-		if strings.Contains(l, `"auth_ban"`) {
-			ban = l
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		ban, counted = "", ""
+		for _, l := range strings.Split(h.logs.String(), "\n") {
+			if strings.Contains(l, `"auth_ban"`) {
+				ban = l
+			}
+			if strings.Contains(l, `"auth_fail"`) && strings.Contains(l, `"counted":true`) {
+				counted = l
+			}
 		}
-		if strings.Contains(l, `"auth_fail"`) && strings.Contains(l, `"counted":true`) {
-			counted = l
+		if (ban != "" && counted != "") || time.Now().After(deadline) {
+			break
 		}
 	}
 	if ban == "" || !strings.Contains(ban, `"source_prefix":"127.0.0.0/24"`) || !strings.Contains(ban, `"failures":20`) {

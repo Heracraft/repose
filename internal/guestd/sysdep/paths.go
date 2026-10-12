@@ -96,6 +96,12 @@ func (p Paths) CheckoutFile() string { return p.join("home", "dev", ".repose", "
 // I-480). guestd reads it to prefix a herdr agent's key (I-504).
 func (p Paths) CheckoutsFile() string { return p.join("home", "dev", ".repose", "checkouts") }
 
+// StopMarker is /home/dev/.repose/stopped: the boot id of the last boot
+// whose stop began, written before the stop's window save (DECISIONS
+// I-646). repose-tmux-session reads it to tell a stop whose save failed
+// from a machine that ended without a stop.
+func (p Paths) StopMarker() string { return p.join("home", "dev", ".repose", "stopped") }
+
 // ProjectJSON is /home/dev/.repose/project.json.
 func (p Paths) ProjectJSON() string { return p.join("home", "dev", ".repose", "project.json") }
 
