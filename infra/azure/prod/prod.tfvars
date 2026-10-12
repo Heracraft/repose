@@ -57,7 +57,7 @@ keyvault_name          = "repose-kv-3912"
 # policies are vault-wide: the hosts get Get and UnwrapKey here and nothing on
 # the vault that wraps users' secret keys (DECISIONS I-653, I-686). The name is
 # not secret, so it lives here; nix/hosts/host-01.nix names the same vault.
-freeze_keyvault_name   = "repose-frz-3912"
+freeze_keyvault_name = "repose-frz-3912"
 
 dns_zone = "herakraft.co"
 
