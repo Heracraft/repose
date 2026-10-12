@@ -425,7 +425,11 @@ func (r *Resumer) settled(ctx context.Context, tx db.Tx, w row, p *store.Project
 	// Any stop, destroy, restore or resize asked for after the host went
 	// quiet, by the owner or the platform, whatever its result: the owner
 	// (or billing, abuse or the temp reaper) wanted it down or changed.
-	since := w.interruptedAt
+	// hostd reports the interruption in whole seconds (Hello's
+	// interrupted_at), so an op from earlier in that same second would
+	// look "after". Take the end of the second; the api's own host-lost
+	// time is exact and wins when it exists.
+	since := w.interruptedAt.Truncate(time.Second).Add(time.Second - time.Nanosecond)
 	if w.hostLostAt != nil {
 		since = *w.hostLostAt
 	}
