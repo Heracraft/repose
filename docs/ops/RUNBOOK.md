@@ -1442,7 +1442,12 @@ Checks:
   hostd's next start, resumes the guest and then removes them. hostd
   killed after a guest's snapshot, with its hypervisor already stopped,
   leaves a `written` record: the next start finishes the freeze and
-  restores the guest (`freeze finished after hostd restarted`).
+  restores the guest (`freeze finished after hostd restarted`). A paused
+  VM found at the start is snapshotted again and restored rather than
+  resumed (`paused guest frozen again after hostd restarted`): a VM
+  resumed after a snapshot loses its virtio-fs. If a guest was resumed
+  anyway (`guest resumed after a freeze that did not finish`) and its
+  commands hang, `hostd freeze` then `hostd thaw` brings it back.
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
   restore. `dmsetup ls | grep repose-frz` is empty except during a freeze

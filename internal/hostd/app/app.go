@@ -269,7 +269,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 		SystemStopping: systemStopping(r),
-		BootID: hostinfo.BootID, BootTime: hostinfo.BootTime,
+		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
 		Freeze: fdeps,
 	})
 	if err != nil {

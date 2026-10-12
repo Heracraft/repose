@@ -574,6 +574,11 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
+	if m.cutFreeze != nil && m.cutFreeze(id, "snapshot") {
+		res.Reason = "cut"
+		return res
+	}
+
 	// The hypervisor goes with the VM still paused; the monitor goes first
 	// so the exit is not taken for a crash. Console capture stays until
 	// the hypervisor is gone (I-186).
@@ -594,7 +599,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		stopConsole()
 	}
 	m.teardown(ctx, g)
-	if m.cutFreeze != nil && m.cutFreeze(id) {
+	if m.cutFreeze != nil && m.cutFreeze(id, "stopped") {
 		res.Reason = "cut"
 		return res
 	}
@@ -844,10 +849,17 @@ func (m *Manager) prepareThaw(ctx, uctx context.Context, id string) (*thawPrep, 
 	// A guest whose hypervisor still runs was never frozen to the end: hostd
 	// stopped mid-freeze (crash, OOM, a switch restarting it), or a
 	// snapshot failed and the resume did not take. Its VM may be paused,
-	// and its hypervisor may still be writing the image. It is resumed
-	// first; the image is removed only once the guest runs, and otherwise
-	// kept with its record for the next start to try again.
-	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); a {
+	// and its hypervisor may still be writing the image. A VM a snapshot
+	// has been taken of must not simply be resumed: its virtio-fs stops
+	// answering (Cloud Hypervisor 53 with virtiofsd 1.14, host-stg-01
+	// 2026-10-12: every program run from /nix/store hung until the guest
+	// was restored from an image). So once the hypervisor answers and the
+	// VM is paused, its freeze is done again from the start of the
+	// snapshot and the guest restored below. Only when that cannot be
+	// done is it resumed; the image is removed once the guest runs, and
+	// otherwise kept with its record for the next start to try again.
+	refrozen := gerr == nil && m.FreezeEnabled() && m.refreezePaused(ctx, g, rec)
+	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); a && !refrozen {
 		if !m.resumeAfterFailedSnapshot(ctx, g, ch.APISocket(m.guestDir(id))) {
 			res.Outcome, res.Reason = "skipped", "guest still paused; image kept"
 			res.Ms = m.d.Now().Sub(start).Milliseconds()
@@ -910,6 +922,86 @@ func (m *Manager) prepareThaw(ctx, uctx context.Context, id string) (*thawPrep, 
 		return discard("image key does not match")
 	}
 	return &thawPrep{g: g, rec: rec, key: key, start: start}, FreezeResult{}
+}
+
+// refreezePaused finishes the freeze of a guest whose hypervisor outlived
+// hostd mid-freeze with the VM paused: it snapshots again into the image
+// still mounted from that freeze, stops the hypervisor and completes the
+// record, so the guest is restored from the image rather than resumed. It
+// reports whether it did; false leaves the guest to the resume.
+func (m *Manager) refreezePaused(ctx context.Context, g *state.Guest, rec *freeze.Record) bool {
+	id := g.GuestID
+	if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(id)); !a {
+		return false
+	}
+	fz, ok := m.d.CH.(ch.Freezer)
+	if !ok {
+		return false
+	}
+	// The image is still mounted only in the boot that made it.
+	if fi, err := os.Stat(m.snapDir(id)); err != nil || !fi.IsDir() {
+		return false
+	}
+	sock := ch.APISocket(m.guestDir(id))
+	// A hypervisor mid-snapshot answers nothing until it is done.
+	deadline := m.d.Now().Add(m.fcfg().ResumeWait)
+	paused := false
+	for m.d.Now().Before(deadline) {
+		ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		info, err := m.d.CH.Info(ictx, sock)
+		cancel()
+		if err == nil {
+			paused = strings.Contains(string(info), `"Paused"`)
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if !paused {
+		return false
+	}
+	lookup := m.cfg.Lookup
+	if lookup == nil {
+		lookup = LookupUser
+	}
+	uid, gid, err := lookup(m.cfg.GuestUser)
+	if err != nil {
+		return false
+	}
+	if err := os.RemoveAll(m.snapDir(id)); err != nil {
+		return false
+	}
+	if err := ensureDir(m.snapDir(id), 0o700, uid, gid); err != nil {
+		return false
+	}
+	sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), snapshotTimeout)
+	err = fz.Snapshot(sctx, sock, m.snapDir(id))
+	scancel()
+	if err != nil {
+		m.log(g).Warn("snapshot after a freeze cut short failed", "event", "guest_thaw", "err", err.Error())
+		return false
+	}
+	if err := syncDir(m.snapDir(id)); err != nil {
+		return false
+	}
+	rec.State = freeze.StateWritten
+	if err := m.records().Put(rec); err != nil {
+		return false
+	}
+	if mon := m.removeMonitor(id); mon != nil {
+		mon.stop()
+	}
+	_ = m.d.CH.Shutdown(ctx, sock)
+	wctx, wcancel := context.WithTimeout(ctx, 3*time.Second)
+	if err := m.d.Systemd.WaitInactive(wctx, GuestUnit(id)); err != nil {
+		_ = m.d.Systemd.Kill(ctx, GuestUnit(id))
+	}
+	wcancel()
+	m.log(g).Info("paused guest frozen again after hostd restarted", "event", "guest_thaw")
+	return true
 }
 
 // finishWrittenImage does what a freeze killed after its snapshot did

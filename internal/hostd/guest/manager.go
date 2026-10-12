@@ -380,15 +380,16 @@ type worker struct {
 
 // Manager owns the guests.
 type Manager struct {
-	cfg  Config
-	d    Deps
+	cfg Config
+	d   Deps
 	// cutFreeze, in tests, ends a freeze as a hostd killed at that point
-	// would: after the snapshot and the hypervisor's exit, before the
-	// image is closed. Nil outside tests.
-	cutFreeze func(guestID string) bool
-	ctx  context.Context
-	stop context.CancelFunc
-	wg   sync.WaitGroup
+	// would: at "snapshot" (the snapshot written, the VM still paused) or
+	// "stopped" (the hypervisor gone, the image not closed). Nil outside
+	// tests.
+	cutFreeze func(guestID, at string) bool
+	ctx       context.Context
+	stop      context.CancelFunc
+	wg        sync.WaitGroup
 
 	// curMu guards the sample cursors and the last sample timestamp; a
 	// tap's counters are read under it (advanceNet).

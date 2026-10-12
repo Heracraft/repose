@@ -18854,8 +18854,18 @@ do not feel it"); off until the owner turns it on per host
   its memory gone (host-stg-01, 2026-10-12, a kill -9 38 s into a freeze
   of four guests). The next start finishes that freeze instead (leftover
   units, the close, the volume's fingerprint, which nothing can have
-  changed since the pause) and restores the guest; a `written` image
-  whose hypervisor still runs is resumed like a `writing` one. Guests
+  changed since the pause) and restores the guest. A VM that has been
+  snapshotted must not be resumed: with Cloud Hypervisor 53 and
+  virtiofsd 1.14 its virtio-fs stops answering after vm.resume, so every
+  program run from /nix/store hangs while the guest otherwise runs
+  (host-stg-01, 2026-10-12, reproduced with vm.pause, vm.snapshot,
+  vm.resume by hand). So a hypervisor that outlived hostd mid-freeze is
+  waited for; if its VM is paused and the image is still mounted (same
+  boot), the snapshot is taken again into it and the guest restored like
+  any frozen one. Only when that cannot be done is it resumed. A
+  snapshot that fails inside a freeze still resumes the guest; whether
+  that guest's virtio-fs survives depends on how far the hypervisor got,
+  and is not handled. Guests
   are snapshotted smallest first, with the two slots taken in that order
   (the goroutines used to race for them, and the largest won).
 - *Fallback.* A failed freeze resumes the guest (it never notices) and

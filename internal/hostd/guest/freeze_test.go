@@ -766,7 +766,7 @@ func TestFreezeStartsSmallestFirst(t *testing.T) {
 func TestKilledAfterTheSnapshotRestoresTheGuest(t *testing.T) {
 	fh := newFreezeHarness(t, nil)
 	fh.create(gid1)
-	fh.m.cutFreeze = func(string) bool { return true }
+	fh.m.cutFreeze = func(_, at string) bool { return at == "stopped" }
 	fh.m.FreezeAll(context.Background(), FreezeOperator)
 	fh.m.cutFreeze = nil
 	if fh.unitActive(gid1) {
@@ -804,5 +804,37 @@ func TestKilledMidSnapshotNeverRestores(t *testing.T) {
 	}
 	if fh.record(gid1) != nil || fh.img.has(gid1) {
 		t.Fatal("broken image kept")
+	}
+}
+
+// hostd killed while a guest's VM is paused for its snapshot: the guest is
+// not resumed (a VM resumed after a snapshot loses its virtio-fs; host-stg-01,
+// 2026-10-12) but frozen again and restored from the image.
+func TestKilledWhilePausedRestoresInsteadOfResuming(t *testing.T) {
+	fh := newFreezeHarness(t, nil)
+	fh.create(gid1)
+	fh.m.cutFreeze = func(_, at string) bool { return at == "snapshot" }
+	fh.m.FreezeAll(context.Background(), FreezeOperator)
+	fh.m.cutFreeze = nil
+	if !fh.unitActive(gid1) {
+		t.Fatal("hypervisor gone at the cut")
+	}
+	before := len(fh.chc.Calls)
+	res := fh.m.ThawAll(context.Background())
+	if len(res) != 1 || !res[0].OK {
+		t.Fatalf("thaw after a kill while paused: %+v", res)
+	}
+	calls := strings.Join(fh.chc.Calls[before:], "\n")
+	if !strings.Contains(calls, "snapshot ") || !strings.Contains(calls, "shutdown ") {
+		t.Fatalf("paused VM not frozen again; hypervisor calls %q", calls)
+	}
+	if argv := strings.Join(fh.unitArgv(gid1), " "); !strings.Contains(argv, "--restore source_url=file://") {
+		t.Fatalf("hypervisor started with %q, want a restore", argv)
+	}
+	if !fh.unitActive(gid1) || fh.guest(gid1).State != StateRunning {
+		t.Fatal("guest not running after the thaw")
+	}
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("image or record left after the restore")
 	}
 }
