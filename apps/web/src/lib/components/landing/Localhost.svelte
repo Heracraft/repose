@@ -114,7 +114,7 @@
 		let run = 0;
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
-		const moved = () => q('.ports, .chip, .home, .err, .wire');
+		const moved = () => q('.ports, .pic-chip, .home, .err, .wire');
 
 		// Stop the loop and show the final state still: the markup's own
 		// state, so every inline style anime.js wrote comes off.
@@ -142,9 +142,9 @@
 				// The dev server is up; no forwards yet, and the laptop's
 				// browser already on localhost:5173, refused.
 				function pre() {
-					utils.set(q('.ports, .chip, .home'), { opacity: 0 });
+					utils.set(q('.ports, .pic-chip, .home'), { opacity: 0 });
 					utils.set(q('.err'), { opacity: 0.6 });
-					utils.set(q('.chip'), { x: 0, y: 0, scale: 1 });
+					utils.set(q('.pic-chip'), { x: 0, y: 0, scale: 1 });
 					utils.set(q('.wire'), { scaleY: 0 });
 					fire = false;
 					typing = false;
@@ -160,7 +160,7 @@
 
 					// The chip starts under the bar's ⇄ 5173, clear of the bar,
 					// and travels to its place.
-					const chip = pic.querySelector<HTMLElement>('.chip')!;
+					const chip = pic.querySelector<HTMLElement>('.pic-chip')!;
 					const port = pic.querySelector<HTMLElement>('.port')!;
 					const a = port.getBoundingClientRect();
 					const b = chip.getBoundingClientRect();
@@ -186,7 +186,7 @@
 						// rest on the loaded page, then back to the refused page
 						// not from a cycle started at its seam (Browser.svelte)
 						.call(() => at || picture.looped(), SEAM - 1)
-						.add(q('.ports, .chip'), { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM)
+						.add(q('.ports, .pic-chip'), { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM)
 						.add(q('.home'), { opacity: 0, duration: 200, ease: 'inQuad' }, SEAM)
 						.add(q('.err'), { opacity: 0.6, duration: 300, ease: 'outQuad' }, SEAM + 150)
 						.add(q('.wire'), { scaleY: 0, duration: 300, ease: 'inQuad' }, SEAM)
@@ -285,7 +285,7 @@
 
 		<div class="hop" aria-hidden="true">
 			<i class="wire"></i>
-			<span class="chip" class:fire>{@render fw()}{BAR_PORT}</span>
+			<span class="pic-chip" class:fire>{@render fw()}{BAR_PORT}</span>
 			<i class="wire arrow"></i>
 		</div>
 
@@ -526,7 +526,7 @@
 		border-top: 6px solid var(--pic-accent);
 		border-bottom: 0;
 	}
-	.chip {
+	.pic-chip {
 		position: relative;
 		z-index: 2;
 		flex: none;
@@ -589,7 +589,7 @@
 		stroke: currentColor;
 		stroke-width: 1.3;
 	}
-	.chip .fw {
+	.pic-chip .fw {
 		height: 18px;
 		stroke-width: 1.5;
 	}

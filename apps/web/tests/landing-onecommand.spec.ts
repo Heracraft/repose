@@ -135,7 +135,7 @@ async function loop(page: Page, width: number) {
 	await expect(page.locator('.oc .side').first().locator('.slot .rref')).toHaveText(
 		'repose/fetch-timeout'
 	);
-	await expect(page.locator('.oc .fetch .chip')).toHaveText('git fetch repose');
+	await expect(page.locator('.oc .fetch .pic-chip')).toHaveText('git fetch repose');
 }
 
 for (const width of [1440, 390]) {

@@ -16,7 +16,7 @@
 	}: { title: string; id?: string; shape?: Kind; children?: Snippet } = $props();
 </script>
 
-<header class="sec-head inset">
+<header class="sec-head land-inset">
 	<h2 {id} class="landing-h scroll-mt-6">
 		{#if shape}<span class="head-mark" aria-hidden="true"><Shape kind={shape} /></span>{/if}{title}
 	</h2>
