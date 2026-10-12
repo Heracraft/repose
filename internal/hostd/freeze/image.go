@@ -26,18 +26,49 @@ func MapperName(guestID string) string { return "repose-frz-" + guestID }
 // MapperPath is the mapping's device node.
 func MapperPath(guestID string) string { return "/dev/mapper/" + MapperName(guestID) }
 
+// Image filesystems. The image is btrfs with zstd compression forced on
+// (I-685): the guest's memory is what a freeze writes and a restore reads,
+// and compressing it is the one change that makes both faster, because
+// both are bounded by the host's data disk (600 MB/s on host-01). Measured
+// on woker-1, one large guest: 3.99 GB of image bytes on disk became 0.33
+// GB under a synthetic load, 5.03 GB became 2.89 GB with 3 GB of
+// /dev/urandom resident (the worst case), and the snapshot was never
+// slower. Real agent memory on that box compresses 5.3x at zstd -1.
+//
+// FSExt4 is what images made before I-685 are; a record without a
+// filesystem names it, so an image written by the previous release still
+// restores (one release, as docs/interfaces promises).
+const (
+	FSBtrfs = "btrfs"
+	FSExt4  = "ext4"
+	// CompressOpt forces compression of every extent. Without `-force`
+	// btrfs tries the first block of a file and gives up on the whole
+	// file when that block does not shrink, which is exactly what the
+	// memory file's first pages look like. Level 1 is the fastest; it
+	// decompresses at about 960 MB/s per stream on one woker-1 core,
+	// above the data disk's 600 MB/s, so the restore stays disk-bound
+	// rather than becoming CPU-bound.
+	CompressOpt = "compress-force=zstd:1"
+)
+
 // Image makes, opens, closes and removes a guest's image volume: a thin
 // volume in the guest pool, dm-crypt in plain mode (aes-xts-plain64, a
 // 512-bit key that exists only in hostd's memory and wrapped in the
-// record), ext4, mounted where the guest's hypervisor can write. Plain
-// mode keeps no header on the disk, so the volume holds nothing but
-// ciphertext; a wrong key is caught by the record's key check before any
-// mount. Removing the volume discards its blocks back to the pool.
+// record), btrfs with zstd compression, mounted where the guest's
+// hypervisor can write. Plain mode keeps no header on the disk, so the
+// volume holds nothing but ciphertext; a wrong key is caught by the
+// record's key check before any mount. Compression happens above
+// dm-crypt, so what reaches the disk is still ciphertext only. Removing
+// the volume discards its blocks back to the pool.
 type Image struct {
 	R     shell.Runner
 	LVM   lvm.LVM
 	Mount mount.Mounter
 }
+
+// FS is the filesystem Create makes, recorded with the image so a restore
+// mounts what is there.
+func (i *Image) FS() string { return FSBtrfs }
 
 func (i *Image) cryptOpen(ctx context.Context, guestID string, key []byte) error {
 	// A mapping left by a hostd that died mid-freeze is closed first; its
@@ -75,16 +106,17 @@ func (i *Image) Create(ctx context.Context, guestID string, size uint64, key []b
 	if err := i.cryptOpen(ctx, guestID, key); err != nil {
 		return err
 	}
-	// nodiscard: the thin volume is new and reads as zeros already; lazy
-	// init keeps mkfs to a few MiB of writes.
-	if _, err := i.R.Run(ctx, "mkfs.ext4", "-q", "-F", "-m", "0", "-L", "repose-frz",
-		"-E", "nodiscard,lazy_itable_init=1,lazy_journal_init=1", MapperPath(guestID)); err != nil {
+	// nodiscard: the thin volume is new and reads as zeros already.
+	// `-m single -d single`: one copy of the metadata, not btrfs's default
+	// DUP, so a nearly incompressible image still fits the volume.
+	if _, err := i.R.Run(ctx, "mkfs.btrfs", "-q", "-f", "--nodiscard", "-m", "single", "-d", "single",
+		"-L", "repose-frz", MapperPath(guestID)); err != nil {
 		return fmt.Errorf("mkfs: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := i.Mount.Mount(ctx, MapperPath(guestID), dir); err != nil {
+	if err := i.Mount.MountType(ctx, MapperPath(guestID), dir, FSBtrfs, "noatime,"+CompressOpt); err != nil {
 		return err
 	}
 	if err := os.Chown(dir, uid, gid); err != nil {
@@ -93,8 +125,10 @@ func (i *Image) Create(ctx context.Context, guestID string, size uint64, key []b
 	return os.Chmod(dir, 0o700)
 }
 
-// Open maps and mounts an existing image volume for a restore.
-func (i *Image) Open(ctx context.Context, guestID string, key []byte, dir string) error {
+// Open maps and mounts an existing image volume for a restore. fs is the
+// filesystem the record says it holds; "" is ext4, what images written
+// before I-685 are.
+func (i *Image) Open(ctx context.Context, guestID string, key []byte, dir, fs string) error {
 	if ok, err := i.LVM.VolumeExists(ctx, LVName(guestID)); err != nil {
 		return err
 	} else if !ok {
@@ -109,7 +143,17 @@ func (i *Image) Open(ctx context.Context, guestID string, key []byte, dir string
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return i.Mount.Mount(ctx, MapperPath(guestID), dir)
+	if fs == "" {
+		fs = FSExt4
+	}
+	// Read-only would be enough for a restore, but the mount is also where
+	// the hypervisor is snapshotted again when a freeze was cut short
+	// (freeze.go, refreezePaused), so it is writable and compressed.
+	opts := ""
+	if fs == FSBtrfs {
+		opts = "noatime," + CompressOpt
+	}
+	return i.Mount.MountType(ctx, MapperPath(guestID), dir, fs, opts)
 }
 
 // Close unmounts and unmaps the image, leaving the volume. After Close the

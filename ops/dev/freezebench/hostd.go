@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +27,9 @@ func benchImage(vg string) *freeze.Image {
 
 var classMiB = map[string]uint64{"small": 4096, "large": 8192, "xl": 16384}
 
+// img0 is an Image only for FS(), which needs nothing of it.
+func img0(vg string) *freeze.Image { return benchImage(vg) }
+
 func ms(t time.Time) int64 { return time.Since(t).Milliseconds() }
 
 func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) error {
@@ -42,13 +46,15 @@ func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) err
 		return err
 	}
 	recs := freeze.Store{Dir: recDir}
-	rec := &freeze.Record{GuestID: id, State: freeze.StateWriting, Class: class, KeyID: kid, WrappedKey: wrapped, KeyCheck: freeze.KeyCheck(key), CreatedAt: time.Now().UTC()}
+	rec := &freeze.Record{GuestID: id, State: freeze.StateWriting, Class: class, KeyID: kid, WrappedKey: wrapped,
+		KeyCheck: freeze.KeyCheck(key), CreatedAt: time.Now().UTC(), FS: img0(vg).FS()}
 	if err := recs.Put(rec); err != nil {
 		return err
 	}
 	img := benchImage(vg)
 	mnt := filepath.Join(dir, "freeze")
-	if err := img.Create(ctx, id, (classMiB[class]+256)<<20, key, mnt, 0, 0); err != nil {
+	// The same headroom hostd gives an image volume (guest.imageVolumeBytes).
+	if err := img.Create(ctx, id, (classMiB[class]+1536)<<20, key, mnt, 0, 0); err != nil {
 		return fmt.Errorf("image: %w", err)
 	}
 	tImg := ms(t0)
@@ -87,7 +93,9 @@ func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) err
 	if err := recs.Put(rec); err != nil {
 		return err
 	}
-	fmt.Printf("image_ms=%d snapshot_ms=%d total_ms=%d image_bytes=%d\n", tImg, snapMs, ms(t0), bytes)
+	disk, _ := shell.Exec{}.Run(ctx, "lvs", "--noheadings", "-o", "data_percent", vg+"/"+freeze.LVName(id))
+	fmt.Printf("image_ms=%d snapshot_ms=%d total_ms=%d image_bytes=%d volume_pct=%s\n",
+		tImg, snapMs, ms(t0), bytes, strings.TrimSpace(string(disk.Stdout)))
 	return nil
 }
 
@@ -116,7 +124,7 @@ func hostdThaw(ctx context.Context, dir, keyPEM, recDir, vg string) error {
 	}
 	img := benchImage(vg)
 	mnt := filepath.Join(dir, "freeze")
-	if err := img.Open(ctx, id, key, mnt); err != nil {
+	if err := img.Open(ctx, id, key, mnt, rec.FS); err != nil {
 		return err
 	}
 	tOpen := ms(t0)

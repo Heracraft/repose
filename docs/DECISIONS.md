@@ -19306,7 +19306,7 @@ do not feel it"); off until the owner turns it on per host
 - *What a restore is.* At hostd's start, inside Reconcile and before the
   stream sends Hello, every complete image is checked and its key
   unwrapped, all at once under one 90 s bound (so a vault outage holds
-  Hello back 90 s, not 90 s per image); then, two at a time,
+  Hello back 90 s, not 90 s per image); then, four at a time (I-685),
   the tap, rules, shape, store view, virtiofsd and login share brought back
   as a boot does, the hypervisor started with `--restore` (copy mode),
   the image closed (its key leaves the kernel), the VM resumed, guestd's
@@ -20470,3 +20470,112 @@ implementation* (owner, 2026-10-10, choosing between the two shapes in
 - Order of work is the proposal's: a `metal` provider and installer on
   the operator's own hardware first; host ownership and the hub's rules
   for a stranger's host before any public host joins.
+
+**I-685. A frozen image is compressed, and restores run four at a time
+(freeze-fast-restore, 2026-10-12).** Amends I-652 (the freeze's shape) and
+I-653 (the image volume: btrfs with zstd instead of ext4, and the volume's
+size). *Made during implementation* (the owner on staging's numbers: "27 is
+still slow" — four loaded guests, 16 GB of images, restored in 27 s on
+host-01's disk speed).
+- *Why the restore was slow.* Nothing in it was wrong: a restore reads the
+  guest's whole memory back, and the host's data disk is 600 MB/s, so 16
+  GB of images take about 27 s however they are read. The freeze writes
+  the same bytes at the same rate. Both are bounded by the bytes, so the
+  fix is fewer bytes.
+- *The image volume is btrfs with `compress-force=zstd:1`*, metadata and
+  data `single`, mounted `nosuid,nodev,noexec,noatime` on the same
+  dm-crypt as before. Compression sits above dm-crypt, so what reaches
+  the disk is still ciphertext and nothing of I-653's protection changes.
+  `-force` matters: without it btrfs tries a file's first block and gives
+  up on the whole file when it does not shrink, which is what a memory
+  file's first pages look like. Level 1 is the fastest and decompresses
+  at about 960 MB/s on one core, above the disk's 600 MB/s, so a restore
+  stays bounded by the disk rather than by the CPU.
+- *Measured* on woker-1 through hostd's own freeze code with a real thin
+  pool, one large guest under load, the host's page cache dropped before
+  each restore: the device took 4194 MB written and 4059 MB read with
+  ext4, and 681 MB written and 344 MB read with btrfs — 6.1x fewer bytes
+  written, 11.8x fewer read — with the snapshot faster (6.6 s to 4.4 s)
+  and the thin volume holding a tenth (45.9 to 3.4 percent of it). The
+  worst case, a guest holding 3 GB of `/dev/urandom`, still fell from
+  5.03 GB to 2.89 GB with the snapshot faster (7.5 s to 5.5 s), because
+  the rest of a guest's memory is zeros and repeated pages. Real agent
+  memory on that box compresses 5.3x at zstd -1, which is the honest
+  figure to plan with; a synthetic load gave 12x.
+- *The image volume is the class's memory plus 1536 MiB*, not plus 256
+  MiB (I-653). The volume is thin, so what it does not write still costs
+  nothing in the pool, and the headroom is what keeps the pathological
+  image — every page touched and none of it compressible — from running
+  the volume out of space: btrfs allocates data in chunks of up to 1 GiB
+  and needs a metadata and a system chunk besides.
+- *Four at a time, both ways.* `Concurrency` (the freeze) and
+  `RestoreConcurrency` (the restore) are both four, where I-652 froze and
+  restored two at a time. With the image compressed, both halves spend
+  their time in one core per guest rather than queued behind the disk, so
+  four at once finish sooner: on host-stg-01 the four guests froze in
+  38.8 s against 45.3 s at two. Each guest is paused a little longer and
+  every one of them is frozen sooner, which is what its gap is made of.
+  `RestoreConcurrency` is never fewer than `Concurrency`.
+- *An image written by the release before this one still restores.* The
+  record carries the image's filesystem (`fs`); empty means ext4, which
+  is what every image written before this entry is, and such an image is
+  mounted as ext4 without compression. One release, as
+  docs/interfaces/README.md promises for a shape that changes.
+- *The host* gets `btrfs-progs` in hostd's path and the `btrfs` module at
+  boot, not at the moment it is shutting down (nix/hosts/freeze.nix).
+- *Rejected: `memory_restore_mode=ondemand`* (Cloud Hypervisor 53's lazy
+  restore through userfaultfd), which I-652 had already rejected on the
+  evidence of docs/research/guest-freeze.md and which was re-measured
+  here. It restores fast — the guest answered 2.7 s after the restore
+  began against 5.0 s for the copy — and CH 53 does prefault in the
+  background, so the image can in principle be released. But: the
+  prefault walks every page of the image, holes included, one page per
+  idle loop, and held the image 13.5 s; the guest's memory was left fully
+  populated, so the *next* freeze wrote the whole class (8.59 GB against
+  4.07 GB) and its snapshot took 13.0 s against 4.1 s; and upstream's own
+  documentation on main says ondemand does not support vhost-user
+  devices, of which a repose guest has two (the store share and the login
+  share), with the hypervisor's uffd registered on memory that virtiofsd
+  maps directly. Compression gives a bigger win with none of that.
+- *Rejected: restoring the guests with working agents first.* Ordering
+  changes nothing when every restore is bounded by one shared disk and
+  all of them are started within a few seconds of each other; it would
+  add a priority input (I-646's agent windows) for no measured gain.
+  Smallest first stays for the freeze, where the deadline decides how
+  many guests are saved (I-652).
+- *Evidence.* Go tests that fail with the change reverted:
+  `TestImageIsCompressedBtrfs` ("new images are ext4"),
+  `TestFreezeRecordsTheImageFilesystem` ("record says the image is
+  \"ext4\""), `TestRestoresRunMoreAtOnceThanFreezes` ("at most 1
+  restore(s) ran at once"), `TestFreezeConfigDefaultsConcurrency`,
+  `TestImageVolumeHasRoomForAnIncompressibleImage` and
+  `TestFreezeThenThawRestoresTheGuest` (the volume's size);
+  `TestImageOpensAnOlderExt4Image` and
+  `TestThawRestoresAnImageFromTheReleaseBefore` hold the old shape open.
+- *Proved on staging* (host-stg-01 at host-01's shape: D16s_v7, a 512 GB
+  Premium SSD v2 at 16000 IOPS and 600 MB/s), four loaded guests (small,
+  small, large, xl) holding 18.6 GB of text-like memory between them --
+  the same memory in both arms, the only difference being the build:
+
+  | | before (I-652/I-653) | after (I-685) |
+  |---|---|---|
+  | `hostd thaw`, four guests | 31.8 s | **10.6 s** |
+  | per guest | 31.4 / 8.3 / 24.8 / 25.5 s | 5.2 / 5.2 / 6.9 / 10.3 s |
+  | `hostd freeze`, four guests | 50.0 s | 38.8 s |
+  | image bytes on the disk | 17.4 GB | 4.87 GB |
+  | `az vm restart`: the freeze | 56.1 s | 35.9 s |
+  | `az vm restart`: the restores | 30.9 s | 10.1 s |
+  | the call to every guest running | 142 s | 100 s |
+  | the guest-visible gap | 88 to 98 s | 65 to 70 s |
+
+  Everything was kept in both arms: the same guest boot ids, the same pids
+  for every probe, a tmux counter that carried on with no gap, shmem
+  intact to the megabyte, and no image volume, record or dm mapping left
+  (the pool back to 0.51 percent). A less compressible load (store
+  binaries, 1.35x) gave 27.1 s against 20.1 s, which is the point: the
+  gain is the compression ratio of what the guest holds.
+  docs/research/freeze-fast-restore.md has the raw numbers.
+  The host-freeze VM test builds an image volume the way `freeze.Image`
+  does and writes 512 MiB of guest-like pages into it: 22441984 bytes
+  reach the disk. Staging's four-guest numbers are in
+  docs/research/freeze-fast-restore.md.

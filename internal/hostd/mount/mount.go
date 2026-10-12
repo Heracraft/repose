@@ -24,6 +24,9 @@ type Mounter interface {
 	IsMounted(path string) (bool, error)
 	// Mount mounts the ext4 on dev at path with nosuid,nodev,noexec.
 	Mount(ctx context.Context, dev, path string) error
+	// MountType mounts the fs of type fstype on dev at path with
+	// nosuid,nodev,noexec and opts (a comma-separated list, or "").
+	MountType(ctx context.Context, dev, path, fstype, opts string) error
 	// Unmount unmounts path; a path that is not mounted is not an error.
 	Unmount(ctx context.Context, path string) error
 }
@@ -81,7 +84,16 @@ func unescape(s string) string {
 
 // Mount implements Mounter.
 func (m *Real) Mount(ctx context.Context, dev, path string) error {
-	_, err := m.R.Run(ctx, "mount", "-t", "ext4", "-o", "nosuid,nodev,noexec", dev, path)
+	return m.MountType(ctx, dev, path, "ext4", "")
+}
+
+// MountType implements Mounter.
+func (m *Real) MountType(ctx context.Context, dev, path, fstype, opts string) error {
+	o := "nosuid,nodev,noexec"
+	if opts != "" {
+		o += "," + opts
+	}
+	_, err := m.R.Run(ctx, "mount", "-t", fstype, "-o", o, dev, path)
 	return err
 }
 
@@ -101,10 +113,15 @@ type Fake struct {
 	Mounts map[string]string // path -> dev
 	Err    error             // returned by Mount when set
 	Calls  int               // Mount calls that mounted
+	// Types and Opts record what each mount point was mounted as.
+	Types map[string]string
+	Opts  map[string]string
 }
 
 // NewFake returns an empty Fake.
-func NewFake() *Fake { return &Fake{Mounts: map[string]string{}} }
+func NewFake() *Fake {
+	return &Fake{Mounts: map[string]string{}, Types: map[string]string{}, Opts: map[string]string{}}
+}
 
 // IsMounted implements Mounter.
 func (f *Fake) IsMounted(path string) (bool, error) {
@@ -115,16 +132,26 @@ func (f *Fake) IsMounted(path string) (bool, error) {
 }
 
 // Mount implements Mounter.
-func (f *Fake) Mount(_ context.Context, dev, path string) error {
+func (f *Fake) Mount(ctx context.Context, dev, path string) error {
+	return f.MountType(ctx, dev, path, "ext4", "")
+}
+
+// MountType implements Mounter.
+func (f *Fake) MountType(_ context.Context, dev, path, fstype, opts string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Err != nil {
 		return f.Err
 	}
-	if _, ok := f.Mounts[filepath.Clean(path)]; ok {
+	p := filepath.Clean(path)
+	if _, ok := f.Mounts[p]; ok {
 		return fmt.Errorf("mount: %s is already mounted", path)
 	}
-	f.Mounts[filepath.Clean(path)] = dev
+	f.Mounts[p] = dev
+	if f.Types == nil {
+		f.Types, f.Opts = map[string]string{}, map[string]string{}
+	}
+	f.Types[p], f.Opts[p] = fstype, opts
 	f.Calls++
 	return nil
 }
