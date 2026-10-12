@@ -47,8 +47,41 @@ pkgs.testers.runNixOSTest {
         assert "--freeze " in cmdline and "--freeze-key-file /run/repose-freeze/key.pem" in cmdline, cmdline
         assert "--free-page-reporting" in cmdline, cmdline
         host.succeed("systemctl is-active repose-guest-freeze.service")
-        # hostd's own path for cryptsetup.
-        host.succeed("systemctl show hostd -p Environment --value | tr ' ' '\\n' | grep '^PATH=' | grep -q cryptsetup")
+        # hostd's own path for cryptsetup and btrfs-progs.
+        path = host.succeed(
+            "systemctl show hostd -p Environment --value | tr ' ' '\\n'"
+            " | grep '^PATH=' | cut -d= -f2-").strip()
+        assert "cryptsetup" in path and "btrfs-progs" in path, path
+        host.succeed("test -d /sys/module/btrfs || modinfo btrfs")
+
+    with subtest("an image volume holds a fraction of what is written to it"):
+        # The whole point of I-655: the image is btrfs with compression
+        # forced on, above dm-crypt, so a freeze writes and a restore
+        # reads a fraction of the guest's memory. No guest can boot here,
+        # so the filesystem itself is built the way freeze.Image builds it
+        # (dm-crypt plain, mkfs.btrfs -m single, compress-force=zstd:1)
+        # over a loop device, and what reaches the backing file is
+        # measured.
+        host.succeed("truncate -s 2G /var/tmp/frz.img")
+        host.succeed("head -c 64 /dev/urandom > /run/frz.key")
+        loop = host.succeed(f"PATH={path}:$PATH losetup -f --show /var/tmp/frz.img").strip()
+        host.succeed(
+            f"PATH={path}:$PATH cryptsetup open --type plain --cipher aes-xts-plain64"
+            f" --key-size 512 --key-file /run/frz.key {loop} frztest")
+        host.succeed(f"PATH={path}:$PATH mkfs.btrfs -q -f --nodiscard -m single -d single -L repose-frz /dev/mapper/frztest")
+        host.succeed("mkdir -p /mnt/frz")
+        host.succeed(f"PATH={path}:$PATH mount -t btrfs -o nosuid,nodev,noexec,noatime,compress-force=zstd:1 /dev/mapper/frztest /mnt/frz")
+        # A guest's memory image is mostly repeated and zero pages; 512
+        # MiB of it stands in for one here.
+        host.succeed("head -c 536870912 /dev/zero | tr '\\0' 'a' > /mnt/frz/mem")
+        host.succeed("sync -f /mnt/frz/mem")
+        host.succeed(f"PATH={path}:$PATH umount /mnt/frz")
+        host.succeed(f"PATH={path}:$PATH cryptsetup close frztest")
+        host.succeed(f"PATH={path}:$PATH losetup -d {loop}")
+        on_disk = int(host.succeed("du -B1 /var/tmp/frz.img").split()[0])
+        assert on_disk < 128 * 1024 * 1024, f"512 MiB of compressible pages took {on_disk} bytes on disk"
+        print(f"512 MiB written, {on_disk} bytes on disk")
+        host.succeed("rm -f /var/tmp/frz.img /run/frz.key")
 
     with subtest("no store optimise pass replaces files under running guests"):
         # `nix-store --optimise` swaps a store file for a hard link to an

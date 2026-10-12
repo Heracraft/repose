@@ -48,6 +48,12 @@ type FreezeConfig struct {
 	// Concurrency is how many snapshots write at once; they share the
 	// data disk's bandwidth. Default 2.
 	Concurrency int
+	// RestoreConcurrency is how many images are read back at once.
+	// Default 4: with compressed images (I-655) a restore spends its time
+	// decompressing, one core per image, rather than waiting on the disk,
+	// so more of them at once finishes them all sooner. Zero takes the
+	// default, and it is never more than Concurrency when that is higher.
+	RestoreConcurrency int
 	// Settle is how long a FreezeAll waits after asking the guests to drop
 	// their caches, for free page reporting to hand the pages back so
 	// they are not written (only with FreePageReporting). Default 5 s;
@@ -83,6 +89,12 @@ func (c FreezeConfig) withDefaults() FreezeConfig {
 	if c.Concurrency == 0 {
 		c.Concurrency = 2
 	}
+	if c.RestoreConcurrency == 0 {
+		c.RestoreConcurrency = 4
+	}
+	if c.RestoreConcurrency < c.Concurrency {
+		c.RestoreConcurrency = c.Concurrency
+	}
 	if c.Settle == 0 {
 		c.Settle = 5 * time.Second
 	}
@@ -110,7 +122,10 @@ func (c FreezeConfig) withDefaults() FreezeConfig {
 // FreezeImage is the image volume (freeze.Image on a host).
 type FreezeImage interface {
 	Create(ctx context.Context, guestID string, size uint64, key []byte, dir string, uid, gid int) error
-	Open(ctx context.Context, guestID string, key []byte, dir string) error
+	Open(ctx context.Context, guestID string, key []byte, dir, fs string) error
+	// FS names the filesystem Create makes, which the record keeps so a
+	// restore mounts what is there (I-655).
+	FS() string
 	Close(ctx context.Context, guestID, dir string) error
 	Remove(ctx context.Context, guestID, dir string) error
 }
@@ -493,7 +508,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	chv, _ := m.d.CH.Version(ctx) // empty is recorded as unknown and compared as such
 	rec := &freeze.Record{
 		GuestID: id, State: freeze.StateWriting, Reason: reason, CreatedAt: m.d.Now().UTC(), HostBootID: m.bootID(),
-		Closure: g.SystemClosure, Class: g.Class, VolumeBytes: g.VolumeBytes, CHVersion: chv,
+		Closure: g.SystemClosure, Class: g.Class, VolumeBytes: g.VolumeBytes, CHVersion: chv, FS: m.d.Freeze.Image.FS(),
 		AuthShare: m.argsHaveAuthShare(id), KeyID: keyID, WrappedKey: wrapped, KeyCheck: freeze.KeyCheck(key),
 	}
 	if err := recs.Put(rec); err != nil {
@@ -520,8 +535,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	if err != nil {
 		return fail("guest user unknown", err)
 	}
-	size := (Classes[g.Class].MemMiB + 256) << 20
-	if err := m.d.Freeze.Image.Create(ctx, id, size, key, m.imageMount(id), uid, gid); err != nil {
+	if err := m.d.Freeze.Image.Create(ctx, id, imageVolumeBytes(g.Class), key, m.imageMount(id), uid, gid); err != nil {
 		return fail("image volume not made", err)
 	}
 	if err := ensureDir(m.imageMount(id), 0o700, uid, gid); err != nil {
@@ -629,6 +643,17 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 	m.log(g).Info("guest frozen", "event", "guest_freeze", "reason", reason, "class", g.Class,
 		"snapshot_ms", snapMs, "duration_ms", res.Ms, "image_bytes", rec.ImageBytes)
 	return res
+}
+
+// imageVolumeBytes is the size of a guest's image volume: its memory, plus
+// the device state, plus room for the filesystem itself. The volume is
+// thin, so what it does not write costs nothing in the pool, and the
+// headroom is what keeps the pathological image -- a guest whose memory is
+// full of incompressible bytes -- from running the volume out of space:
+// btrfs allocates data in chunks of up to 1 GiB and needs a metadata and a
+// system chunk besides (I-655).
+func imageVolumeBytes(class string) uint64 {
+	return (Classes[class].MemMiB + 1536) << 20
 }
 
 // snapshotTimeout bounds one vm.snapshot: an xl guest's 16 GiB at 100 MB/s
@@ -758,7 +783,7 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 
 	window, wcancel := context.WithDeadline(ctx, begin.Add(fc.UnwrapTimeout+fc.RestoreTimeout))
 	defer wcancel()
-	sem := make(chan struct{}, fc.Concurrency)
+	sem := make(chan struct{}, fc.RestoreConcurrency)
 	for i, p := range preps {
 		if p == nil {
 			continue
@@ -1058,7 +1083,7 @@ func (m *Manager) thawGuest(ctx context.Context, p *thawPrep) FreezeResult {
 		res.Ms = m.d.Now().Sub(p.start).Milliseconds()
 		return res
 	}
-	if err := m.d.Freeze.Image.Open(ctx, id, p.key, m.imageMount(id)); err != nil {
+	if err := m.d.Freeze.Image.Open(ctx, id, p.key, m.imageMount(id), rec.FS); err != nil {
 		m.log(g).Warn("image not opened", "event", "guest_thaw", "err", err.Error())
 		return discard("image volume not opened")
 	}
@@ -1097,6 +1122,15 @@ func (m *Manager) unwrapWithRetry(ctx context.Context, rec *freeze.Record) ([]by
 func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.Record) error {
 	fc := m.fcfg()
 	dir := m.guestDir(g.GuestID)
+	// Phase timings, so a slow restore says which part was slow; they are
+	// durations and ids only (OBSERVABILITY.md).
+	t0 := m.d.Now()
+	phases := make([]any, 0, 12)
+	phase := func(name string) {
+		now := m.d.Now()
+		phases = append(phases, name+"_ms", now.Sub(t0).Milliseconds())
+		t0 = now
+	}
 	if err := m.prepareGuestDir(dir); err != nil {
 		return err
 	}
@@ -1110,6 +1144,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}
+	phase("net")
 	vcfg := virtiofs.Config{SharedDir: m.cfg.StoreExport, User: m.cfg.VirtiofsUser, Group: m.cfg.VirtiofsUser, SocketGroup: m.cfg.GuestUser, Binary: m.cfg.VirtiofsBinary}
 	if err := virtiofs.Start(ctx, m.d.Systemd, vcfg, g.GuestID, ch.VirtiofsSocket(dir)); err != nil {
 		return fmt.Errorf("virtiofsd: %w", err)
@@ -1117,9 +1152,11 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
 		return fmt.Errorf("virtiofsd: %w", err)
 	}
+	phase("virtiofsd")
 	if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
 		return fmt.Errorf("store view: %w", err)
 	}
+	phase("store_view")
 	if rec.AuthShare && !m.startAuthShare(ctx, g, dir) {
 		return errors.New("the login share the image has did not start")
 	}
@@ -1147,6 +1184,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+	phase("image_read")
 	// The image has been read into the guest's memory: close it now, so
 	// its key leaves the kernel before the guest runs again.
 	if err := m.d.Freeze.Image.Close(ctx, g.GuestID, m.imageMount(g.GuestID)); err != nil {
@@ -1155,6 +1193,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	if err := m.d.CH.Resume(ctx, sock); err != nil {
 		return fmt.Errorf("resume: %w", err)
 	}
+	phase("resume")
 	mon := m.startMonitor(g)
 	sess, err := mon.waitReady(rctx, fc.RestoreTimeout)
 	if err != nil {
@@ -1169,6 +1208,8 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *freeze.
 	if r, err := sess.Exec(ctx, []string{"date", "-u", "-s", "@" + sec}, 10, ""); err != nil || r.ExitCode != 0 {
 		m.log(g).Warn("guest clock not set after the restore", "event", "guest_thaw")
 	}
+	phase("guestd")
+	m.log(g).Info("restore phases", append([]any{"event", "guest_thaw"}, phases...)...)
 	m.markGood(g, g.SystemClosure)
 	return m.setState(g, StateRunning, "restored from a frozen image")
 }

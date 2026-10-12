@@ -85,7 +85,14 @@ in
       message = "repose.host.freeze.enable needs keyVaultUrl (with keyName) or keyFile.";
     }];
 
-    systemd.services.hostd.path = [ pkgs.cryptsetup ];
+    # cryptsetup for the image's dm-crypt, btrfs-progs to make its
+    # filesystem: the image is compressed btrfs, which is what makes a
+    # freeze and a restore write and read a fraction of the guest's
+    # memory (I-655).
+    systemd.services.hostd.path = [ pkgs.cryptsetup pkgs.btrfs-progs ];
+
+    # Loaded at boot, not when the host is already shutting down.
+    boot.kernelModules = [ "btrfs" ];
 
     systemd.services.repose-guest-freeze = {
       description = "Freeze running guests before the host shuts down";

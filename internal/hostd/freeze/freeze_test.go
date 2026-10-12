@@ -5,8 +5,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/hostd/lvm"
+	"github.com/heracraft/repose/internal/hostd/mount"
+	"github.com/heracraft/repose/internal/hostd/shell"
 )
 
 // A key wrapped with the file key's public half unwraps to the same key;
@@ -118,4 +123,82 @@ func TestFingerprint(t *testing.T) {
 	if a == c {
 		t.Fatal("fingerprint did not change with the superblock")
 	}
+}
+
+// The image volume is btrfs with compression forced on, above dm-crypt, so
+// a freeze writes and a restore reads a fraction of the guest's memory
+// (I-655). Its metadata is single, not btrfs's default DUP, so an
+// incompressible image still fits.
+func TestImageIsCompressedBtrfs(t *testing.T) {
+	r := &shell.Fake{}
+	l := lvm.NewFake()
+	// The real mounter over the fake runner, so the mount command itself
+	// is what the test reads.
+	img := &Image{R: r, LVM: l, Mount: &mount.Real{R: r, MountInfo: emptyMountInfo(t)}}
+	if img.FS() != FSBtrfs {
+		t.Fatalf("new images are %s", img.FS())
+	}
+	dir := filepath.Join(t.TempDir(), "freeze")
+	key, _ := NewKey()
+	if err := img.Create(context.Background(), "g1", 1<<30, key, dir, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	mk := r.CallsWithPrefix("mkfs.btrfs")
+	if len(mk) != 1 {
+		t.Fatalf("mkfs calls: %v", r.Calls)
+	}
+	argv := strings.Join(mk[0], " ")
+	for _, want := range []string{"-m single", "-d single", "--nodiscard", MapperPath("g1")} {
+		if !strings.Contains(argv, want) {
+			t.Fatalf("mkfs.btrfs without %q: %s", want, argv)
+		}
+	}
+	if r.CallsWithPrefix("mkfs.ext4") != nil {
+		t.Fatalf("an ext4 image was made: %v", r.Calls)
+	}
+	mnt := r.CallsWithPrefix("mount")
+	if len(mnt) != 1 {
+		t.Fatalf("mount calls: %v", r.Calls)
+	}
+	margv := strings.Join(mnt[0], " ")
+	for _, want := range []string{"-t btrfs", CompressOpt, "nosuid,nodev,noexec", dir} {
+		if !strings.Contains(margv, want) {
+			t.Fatalf("image mounted without %q: %s", want, margv)
+		}
+	}
+}
+
+// An image written by the release before I-655 is ext4; its record names no
+// filesystem, and a restore mounts it as ext4 rather than refusing it.
+func TestImageOpensAnOlderExt4Image(t *testing.T) {
+	r := &shell.Fake{}
+	l := lvm.NewFake()
+	if err := l.CreateVolume(context.Background(), LVName("g2"), 1<<30); err != nil {
+		t.Fatal(err)
+	}
+	img := &Image{R: r, LVM: l, Mount: &mount.Real{R: r, MountInfo: emptyMountInfo(t)}}
+	dir := filepath.Join(t.TempDir(), "freeze")
+	key, _ := NewKey()
+	if err := img.Open(context.Background(), "g2", key, dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	mnt := r.CallsWithPrefix("mount")
+	if len(mnt) != 1 {
+		t.Fatalf("mount calls: %v", r.Calls)
+	}
+	argv := strings.Join(mnt[0], " ")
+	if !strings.Contains(argv, "-t "+FSExt4) || strings.Contains(argv, "compress") {
+		t.Fatalf("an image with no recorded filesystem was mounted as: %s", argv)
+	}
+}
+
+// emptyMountInfo is a mountinfo file with nothing mounted, for the real
+// mounter over a fake runner.
+func emptyMountInfo(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "mountinfo")
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
