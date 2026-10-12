@@ -721,3 +721,39 @@ func TestFreezeDropsCachesOnlyWithTheBalloon(t *testing.T) {
 		t.Fatalf("guest with the balloon ran %q, want a cache drop", e)
 	}
 }
+
+// Guests are snapshotted smallest first, in that order, so a deadline that
+// cannot hold them all freezes as many as it can. On host-stg-01
+// (2026-10-12, 4 guests, 125 MB/s disk) the xl took a slot ahead of a
+// small one, and the small and the large were left out at the deadline.
+func TestFreezeStartsSmallestFirst(t *testing.T) {
+	for i := range 10 {
+		fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Concurrency = 1 })
+		for _, g := range []struct{ id, class string }{{gid1, "xl"}, {gid2, "small"}} {
+			req := createReq(g.id)
+			req.Class = g.class
+			req.SystemClosure = fh.closure
+			fh.mustOK(cmd(req))
+			fh.sd.Units[GuestUnit(g.id)].MemBytes = 200 << 20
+		}
+		fh.chc.Calls = nil
+		for _, r := range fh.m.FreezeAll(context.Background(), FreezeOperator) {
+			if !r.OK {
+				t.Fatalf("run %d: freeze: %+v", i, r)
+			}
+		}
+		var order []string
+		for _, c := range fh.chc.Calls {
+			if strings.HasPrefix(c, "pause ") {
+				if strings.Contains(c, gid1) {
+					order = append(order, "xl")
+				} else if strings.Contains(c, gid2) {
+					order = append(order, "small")
+				}
+			}
+		}
+		if !slices.Equal(order, []string{"small", "xl"}) {
+			t.Fatalf("run %d: paused in the order %v, want small before xl", i, order)
+		}
+	}
+}

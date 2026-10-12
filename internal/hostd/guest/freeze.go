@@ -282,22 +282,32 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	// configured one and becomes the slowest this freeze's own snapshots
 	// achieved once one has finished. A guest skipped here is left
 	// running for the shutdown's clean stop.
+	//
+	// The slots are taken here, in run's order (smallest first), not by
+	// the goroutines: those race for them, and the scheduler runs the
+	// newest first, so the largest guest went first and a deadline that
+	// could have held the small ones held it alone (host-stg-01,
+	// 2026-10-12: 2 of 4 frozen).
 	rate := newWriteRate(fc.WriteRate)
 	sem := make(chan struct{}, fc.Concurrency)
 	for i, g := range run {
 		if !take[i] {
 			continue
 		}
+		if ctx.Err() == nil {
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+			}
+		}
+		if ctx.Err() != nil {
+			results[i] = FreezeResult{GuestID: g.GuestID, Outcome: "skipped", Reason: "deadline passed"}
+			continue
+		}
 		wg.Add(1)
 		go func(i int, g *state.Guest) {
 			defer wg.Done()
 			id := g.GuestID
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				results[i] = FreezeResult{GuestID: id, Outcome: "skipped", Reason: "deadline passed"}
-				return
-			}
 			defer func() { <-sem }()
 			// The job runs on the guest's worker, after any command already
 			// queued for it. Once it has started, its result is waited for
