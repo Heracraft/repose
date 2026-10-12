@@ -9,7 +9,9 @@
 	// the favicon is this same drawing. The viewBox is cropped to the
 	// drawing so the thin stems get every pixel the header gives the mark.
 	// word=false draws the mark alone, for a header row on a phone that has
-	// no room for both; the link around it carries the name.
+	// no room for both; the link around it carries the name. The 28px cut's
+	// word sits 1px under centre, so its baseline is the header links'
+	// baseline rather than a hair above it (I-655).
 	let {
 		size = 'base',
 		mark = false,
@@ -38,7 +40,8 @@
 				height="92"
 				fill="currentColor"
 			/><rect x="13" y="50" width="74" height="4" fill="currentColor" /></svg
-		>{/if}{#if word}repose{/if}</span
+		>{/if}{#if word}<span class={size === 'sm' ? undefined : 'translate-y-px'}>repose</span
+		>{/if}</span
 >
 
 <style>

@@ -1,11 +1,12 @@
 <script lang="ts">
+	import Snowflake from '$lib/components/Snowflake.svelte';
+	import { frozenSince } from '$lib/frozen';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import {
-		getMe,
 		getProject,
 		listProjects,
 		startProject,
@@ -13,35 +14,53 @@
 		destroyProject,
 		resizeProject,
 		getOp,
-		listEvents,
 		listSnapshots,
 		createSnapshot,
 		restoreSnapshot,
 		listRevisions,
-		getSamples
+		getSamples,
+		listProjectQuestions,
+		getBilling,
+		getUsage
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible, pollUntilDone } from '$lib/poll';
-	import { uptime, gb, relativeTime, dateTime, normalizeRemoteDisplay } from '$lib/format';
+	import {
+		uptime,
+		gb,
+		gbs,
+		dateOnly,
+		normalizeRemoteDisplay,
+		classMemoryGB,
+		tempLeft
+	} from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
+	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
 	import { withoutBillingURL } from '$lib/refusal';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import QuestionsCard from '$lib/components/QuestionsCard.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
-	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
-	import { pct, cpuTime, type Pt } from '$lib/usage';
-	import { diskFullPercent } from '$lib/disk';
+	import EventsCard, {
+		fetchEventsPage,
+		type LoadedEvents
+	} from '$lib/components/project/EventsCard.svelte';
+	import { readEventsState } from '$lib/components/project/eventsUrl';
+	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
+	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
+	import DetailsList from '$lib/components/project/DetailsList.svelte';
+	import SnapshotsTable from '$lib/components/project/SnapshotsTable.svelte';
+	import { pct, cpuTime, latest, type Pt } from '$lib/usage';
 	import type {
-		Me,
 		PaymentRequiredReason,
 		Project,
-		ProjectEvent,
+		Question,
 		Snapshot,
 		Revision,
 		Samples,
@@ -56,25 +75,13 @@
 	let loadFailed = $state(false);
 	let loadError = $state<string | undefined>(undefined);
 	let lastUpdated = $state<Date | undefined>(undefined);
-	// The poll keeps the newest EVENTS_POLL; "Show older" pages back from
-	// the oldest one held (I-414). The card shows `eventsShown` of them.
-	const EVENTS_POLL = 50;
-	const EVENTS_STEP = 20;
-	let events = $state<ProjectEvent[]>([]);
-	let olderEvents = $state<ProjectEvent[]>([]);
-	let olderDone = $state(false);
-	let loadingOlder = $state(false);
-	let eventsShown = $state(EVENTS_STEP);
-	const allEvents = $derived.by(() => {
-		const byId = new Map([...olderEvents, ...events].map((e) => [e.id, e]));
-		return [...byId.values()].sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-	});
-	// Fewer than a full poll means the poll already holds every event.
-	const noOlder = $derived(olderDone || (olderEvents.length === 0 && events.length < EVENTS_POLL));
-	const canShowOlder = $derived(allEvents.length > eventsShown || !noOlder);
 	let snapshots = $state<Snapshot[]>([]);
 	let revisions = $state<Revision[]>([]);
-	let me = $state<Me | undefined>(undefined);
+	let questions = $state<Question[]>([]);
+	/** The events page the first load fetched, handed to the card so it paints with the rest. */
+	let firstEvents = $state<LoadedEvents | undefined>(undefined);
+	/** This project's egress this billing period, in GB; undefined with billing off. */
+	let egressGb = $state<number | undefined>(undefined);
 
 	// Start/stop/destroy.
 	let opBusy = $state<'start' | 'stop' | 'destroy' | 'resize' | 'snapshot' | 'restore' | undefined>(
@@ -88,76 +95,49 @@
 	>(undefined);
 	let stopSnapshotFirst = $state(true);
 
-	// Resize. A volume only grows, so the choices are the sizes strictly
-	// larger than the disk now, and the select opens on the smallest of them.
-	const GIB = 1024 * 1024 * 1024;
-	const SIZES_GB = [20, 40, 80, 160, 320];
-	let showResize = $state(false);
-	let largerSizes = $derived(
-		project ? SIZES_GB.filter((s) => s * GIB > (project?.volume_bytes ?? Infinity)) : []
-	);
-	let resizeTo = $state<number | undefined>(undefined);
-	// A poll can grow the disk under an open panel (another tab, the CLI);
-	// the choice then moves to the next size that is still a grow.
-	$effect(() => {
-		if (showResize && (resizeTo === undefined || !largerSizes.includes(resizeTo))) {
-			resizeTo = largerSizes[0];
-		}
-	});
-
-	let resizeForm = $state<HTMLFormElement | undefined>(undefined);
-
-	function openResize() {
-		resizeTo = largerSizes[0];
-		showResize = true;
-	}
-
-	/**
-	 * Close the resize panel. Focus goes back to the Resize… button (or, when
-	 * the disk is now at the largest size, to the sentence that replaces it),
-	 * but only if it was inside the panel: a grow ends after a poll, and by
-	 * then the person may be somewhere else on the page.
-	 */
-	function closeResize() {
-		const hadFocus = !!resizeForm?.contains(document.activeElement);
-		showResize = false;
-		if (hadFocus) void focusAfterRender('resize-open', 'resize-largest');
-	}
-
-	// Restore. One snapshot at a time has a panel open under it: either the
-	// typed confirm for restoring over this disk, or the name for a new
-	// project.
-	let restorePanel = $state<{ snapshotId: string; kind: 'replace' | 'new' } | undefined>(undefined);
-	let restoreAsNewName = $state('');
-	let restoreAsNewError = $state<string | undefined>(undefined);
-
-	function openRestore(snapshotId: string, kind: 'replace' | 'new') {
-		restorePanel = { snapshotId, kind };
-		restoreAsNewName = '';
-		restoreAsNewError = undefined;
-	}
-
-	/** Close a restore panel and give focus back to the button that opened it. */
-	function closeRestore() {
-		const open = restorePanel;
-		restorePanel = undefined;
-		if (open) void focusAfterRender(`restore-${open.kind}-${open.snapshotId}`);
-	}
-
 	// One failure, one report (I-393): the page's polls, the questions
-	// card's included, share one toast, raised by the first to fail and
-	// gone when all of them get through (I-395), and none while the load
-	// banner or the outage bar already says it. The events and snapshots
-	// polls stay quiet while the project itself has not loaded, since the
-	// banner covers the page.
+	// card's and the events card's included, share one toast, raised by the
+	// first to fail and gone when all of them get through (I-395), and none
+	// while the load banner or the outage bar already says it. The
+	// snapshots poll stays quiet while the project itself has not loaded,
+	// since the banner covers the page.
 	const pollFailures = new PollGroup();
 	const projectFailure = new PollFailure('Could not load the project.', pollFailures);
-	const eventsFailure = new PollFailure('Could not load events.', pollFailures);
 	const snapshotsFailure = new PollFailure('Could not load snapshots.', pollFailures);
+
+	/**
+	 * The first load asks for everything the page paints at once: the
+	 * project, its questions, the events page the URL names, the snapshots,
+	 * the samples, the plan and the config revisions. Nothing then lands
+	 * above content already on screen (the questions card did, and pushed
+	 * the page down a few hundred ms in). Only the project's failure stops
+	 * the page; each other part falls back to its own empty state and its
+	 * own poll.
+	 */
+	async function firstLoad() {
+		const [p, qs, ev, snaps, smp, revs] = await Promise.all([
+			getProject(id),
+			listProjectQuestions(id).catch(() => [] as Question[]),
+			fetchEventsPage(id, readEventsState(page.url.searchParams)).catch(() => undefined),
+			listSnapshots(id).catch(() => undefined),
+			getSamples(id, samplesWindow).catch(() => undefined),
+			listRevisions(id).catch(() => [] as Revision[])
+		]);
+		questions = qs;
+		if (ev && ev !== 'newest') firstEvents = ev;
+		if (snaps) snapshots = snaps;
+		if (smp) {
+			samples = smp;
+			samplesAt = Date.now();
+		}
+		revisions = revs;
+		project = p;
+	}
 
 	async function refresh() {
 		try {
-			project = await getProject(id);
+			if (!project) await firstLoad();
+			else project = await getProject(id);
 			lastUpdated = new Date();
 			notFound = false;
 			loadFailed = false;
@@ -178,36 +158,6 @@
 		}
 	}
 
-	async function refreshEvents() {
-		try {
-			events = await listEvents(id, { limit: EVENTS_POLL });
-			eventsFailure.ok();
-		} catch (err) {
-			eventsFailure.fail(err, !project);
-		}
-	}
-
-	async function showOlderEvents() {
-		// Fetch when the next step would run past what is held.
-		if (allEvents.length < eventsShown + EVENTS_STEP && !noOlder) {
-			loadingOlder = true;
-			try {
-				const page = await listEvents(id, {
-					before: allEvents[allEvents.length - 1].id,
-					limit: EVENTS_POLL
-				});
-				olderEvents = [...olderEvents, ...page];
-				if (page.length < EVENTS_POLL) olderDone = true;
-			} catch (err) {
-				eventsFailure.fail(err, false);
-				return;
-			} finally {
-				loadingOlder = false;
-			}
-		}
-		eventsShown += EVENTS_STEP;
-	}
-
 	async function refreshSnapshots() {
 		try {
 			snapshots = await listSnapshots(id);
@@ -217,12 +167,22 @@
 		}
 	}
 
-	async function refreshRevisions() {
+	/**
+	 * This project's egress since the billing period started (GET /usage,
+	 * filtered to it). Billing off, or no subscription, has no period, and
+	 * the reading is left out.
+	 */
+	async function refreshEgress() {
 		try {
-			revisions = await listRevisions(id);
+			const b = await getBilling();
+			const from = b.subscription?.period_start;
+			if (!from) return;
+			// GET /usage takes days; to is the end of today, so today counts.
+			const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+			const days = await getUsage(dateOnly(from), dateOnly(tomorrow));
+			egressGb = days.filter((d) => d.project_id === id).reduce((n, d) => n + d.egress_gb, 0);
 		} catch {
-			// The config card degrades to "—" below; the config page is the
-			// place that must work.
+			// Billing off (503 billing_disabled) or not reachable: no reading.
 		}
 	}
 
@@ -272,30 +232,36 @@
 			wait: at((p) => p.host_cpu_wait)
 		};
 	});
+	/** The memory in use now: the newest sample's, while the machine runs. */
+	let memNow = $derived(project?.state === 'running' ? latest(series.mem) : undefined);
+	const GIB = 1024 * 1024 * 1024;
 	/** A memory figure as "3.4 GB", or "410 MB" under a gigabyte. */
 	const memGb = (b: number) =>
-		b < GIB ? `${Math.round(b / (1024 * 1024))} MB` : `${(b / GIB).toFixed(1)} GB`;
-
-	async function refreshMe() {
-		try {
-			me = await getMe();
-		} catch {
-			// The plan card degrades to the class alone.
-		}
-	}
+		b < GIB
+			? `${Math.round(b / (1024 * 1024))} MB`
+			: `${(b / GIB).toFixed(1).replace(/\.0$/, '')} GB`;
 
 	onMount(() => {
+		// The first tick of each poll is the first load's; snapshots and
+		// samples come with it, so their polls skip that tick.
+		const later = (fn: () => unknown) => {
+			let first = true;
+			return () => {
+				if (first) {
+					first = false;
+					return;
+				}
+				return fn() as Promise<void>;
+			};
+		};
 		const stop1 = pollWhileVisible(refresh);
-		const stop2 = pollWhileVisible(refreshEvents);
-		const stop3 = pollWhileVisible(refreshSnapshots);
-		const stop4 = pollWhileVisible(() => refreshSamples());
-		void refreshRevisions();
-		void refreshMe();
+		const stop2 = pollWhileVisible(later(refreshSnapshots));
+		const stop3 = pollWhileVisible(later(() => refreshSamples()));
+		void refreshEgress();
 		return () => {
 			stop1();
 			stop2();
 			stop3();
-			stop4();
 		};
 	});
 
@@ -346,25 +312,31 @@
 		}
 	}
 
-	function waitForOp(opId: string, onDone: () => void, projectId = id) {
-		pollUntilDone(async () => {
-			try {
-				const op = await getOp(projectId, opId);
-				if (op.state === 'done') {
-					onDone();
-					return true;
-				}
-				if (op.state === 'error') {
-					toast.error(op.error ?? 'The operation failed.');
+	/** Polls an op until it ends; onDone on success. Resolves true when it ended done. */
+	function waitForOp(opId: string, onDone: () => void, projectId = id): Promise<boolean> {
+		return new Promise((settle) => {
+			pollUntilDone(async () => {
+				try {
+					const op = await getOp(projectId, opId);
+					if (op.state === 'done') {
+						onDone();
+						settle(true);
+						return true;
+					}
+					if (op.state === 'error') {
+						toast.error(op.error ?? 'The operation failed.');
+						opBusy = undefined;
+						settle(false);
+						return true;
+					}
+					return false;
+				} catch (err) {
+					toastApiError(err);
 					opBusy = undefined;
+					settle(false);
 					return true;
 				}
-				return false;
-			} catch (err) {
-				toastApiError(err);
-				opBusy = undefined;
-				return true;
-			}
+			});
 		});
 	}
 
@@ -373,7 +345,7 @@
 		startBanner = undefined;
 		try {
 			const { op_id } = await startProject(id);
-			waitForOp(op_id, () => {
+			void waitForOp(op_id, () => {
 				opBusy = undefined;
 				void refresh();
 			});
@@ -396,7 +368,7 @@
 		opBusy = 'stop';
 		try {
 			const { op_id } = await stopProject(id, stopSnapshotFirst);
-			waitForOp(op_id, () => {
+			void waitForOp(op_id, () => {
 				opBusy = undefined;
 				void refresh();
 			});
@@ -422,28 +394,73 @@
 		}
 	}
 
-	async function onResize() {
+	// Resize. The Machine card's Resize… opens a panel across the frame
+	// under the card's row: the card is a third wide, and a form needs
+	// room (I-680). A volume only grows, so the choices are the sizes
+	// strictly larger than the disk now, and the select opens on the
+	// smallest of them.
+	let showResize = $state(false);
+	let largerSizes = $derived(
+		project ? DISK_SIZES_GB.filter((s) => s * GIB > project!.volume_bytes) : []
+	);
+	let resizeTo = $state<number | undefined>(undefined);
+	let resizePanel = $state<HTMLElement | undefined>(undefined);
+	// A poll can grow the disk under an open panel (another tab, the CLI):
+	// the choice moves to the next size that is still a grow, and the panel
+	// closes once none is left.
+	$effect(() => {
+		if (!showResize) return;
+		if (largerSizes.length === 0) closeResize();
+		else if (resizeTo === undefined || !largerSizes.includes(resizeTo)) resizeTo = largerSizes[0];
+	});
+
+	function toggleResize() {
+		if (showResize) return closeResize();
+		resizeTo = largerSizes[0];
+		showResize = true;
+	}
+
+	/**
+	 * Close the resize panel. Focus goes back to Resize… (or, when the disk
+	 * is now at the largest size, to the sentence that replaces it), but
+	 * only if it was inside the panel: a grow ends after a poll, and by then
+	 * the person may be somewhere else on the page.
+	 */
+	function closeResize() {
+		const hadFocus = !!resizePanel?.contains(document.activeElement);
+		showResize = false;
+		if (hadFocus) void focusAfterRender('resize-open', 'resize-largest');
+	}
+
+	async function submitResize() {
 		// The select only offers grows, but the api must never be asked to
 		// shrink a disk from a button labelled Grow, whatever the select holds.
 		if (!project || resizeTo === undefined || resizeTo * GIB <= project.volume_bytes) return;
+		if (await onResize(resizeTo * GIB)) closeResize();
+	}
+
+	/** Grows the volume; true when the resize panel should close. */
+	async function onResize(bytes: number): Promise<boolean> {
 		opBusy = 'resize';
 		try {
-			const { op_id } = await resizeProject(id, resizeTo * GIB);
-			waitForOp(op_id, async () => {
-				opBusy = undefined;
-				await refresh();
-				closeResize();
+			const { op_id } = await resizeProject(id, bytes);
+			let grown = false;
+			await waitForOp(op_id, () => {
+				grown = true;
 			});
+			if (grown) await refresh();
+			opBusy = undefined;
+			return grown;
 		} catch (err) {
 			opBusy = undefined;
 			// disk_limit is a plan's refusal, told like a start's (api.md).
 			if (err instanceof ApiError && err.code === 'payment_required') {
 				startBanner = err.code;
-				closeResize();
 				await explainRefusal(err);
-				return;
+				return true;
 			}
 			toastApiError(err, 'Could not resize the volume.');
+			return false;
 		}
 	}
 
@@ -451,7 +468,7 @@
 		opBusy = 'snapshot';
 		try {
 			const { op_id } = await createSnapshot(id);
-			waitForOp(op_id, () => {
+			void waitForOp(op_id, () => {
 				opBusy = undefined;
 				void refreshSnapshots();
 			});
@@ -465,16 +482,14 @@
 	 * Restores a snapshot over this project's disk, or into a new project
 	 * when asNew names one. Restoring over is confirmed by typing the slug in
 	 * the panel (ConfirmType), the same as Destroy, because it is as final.
+	 * true once done; a string is why the api refused the new name.
 	 */
-	async function onRestore(snapshotId: string, asNew?: string) {
+	async function onRestore(snapshotId: string, asNew?: string): Promise<boolean | string> {
 		opBusy = 'restore';
-		restoreAsNewError = undefined;
 		try {
 			const { op_id } = await restoreSnapshot(id, snapshotId, asNew);
-			waitForOp(op_id, () => {
+			return await waitForOp(op_id, () => {
 				opBusy = undefined;
-				restorePanel = undefined;
-				restoreAsNewName = '';
 				toast.success(
 					asNew
 						? `Created ${asNew} from the snapshot.`
@@ -487,35 +502,28 @@
 			opBusy = undefined;
 			// A refused name belongs under the field, like "Recently destroyed".
 			if (asNew && err instanceof ApiError && (err.code === 'conflict' || err.code === 'invalid')) {
-				restoreAsNewError =
-					err.detail?.reason === 'name_taken'
-						? `A project called ${asNew} already exists; pick another name.`
-						: err.message;
-				return;
+				return err.detail?.reason === 'name_taken'
+					? `A project called ${asNew} already exists; pick another name.`
+					: err.message;
 			}
 			toastApiError(err, 'Could not restore the snapshot.');
+			return false;
 		}
 	}
 
-	function currentRevisionStatus(): Revision | undefined {
-		return revisions.find((r) => r.revision_id === project?.config_revision_id);
-	}
+	let revision = $derived(revisions.find((r) => r.revision_id === project?.config_revision_id));
 
 	// The sizes as /docs/machine's table has them (DECISIONS R3-2).
-	const CLASSES: Record<string, { vcpus: number; gb: number }> = {
-		small: { vcpus: 2, gb: 4 },
-		large: { vcpus: 4, gb: 8 },
-		xl: { vcpus: 8, gb: 16 }
-	};
-	const CLASS_GB: Record<string, number> = { small: 4, large: 8, xl: 16 };
-	let spec = $derived(project ? CLASSES[project.class] : undefined);
+	const VCPUS: Record<string, number> = { small: 2, large: 4, xl: 8 };
+	let vcpus = $derived(project ? VCPUS[project.class] : undefined);
 
-	/** "8 GB of 8 GB": the class's memory, of what the plan runs at once. */
-	let memoryLine = $derived.by(() => {
-		if (!project) return '—';
-		const own = CLASS_GB[project.class];
-		if (own === undefined) return '—';
-		return me && me.limits.memory_gb > 0 ? `${own} GB of ${me.limits.memory_gb} GB` : `${own} GB`;
+	/** The sentence after "code: " in last_error, as the projects list shows it. */
+	/** When the machine was frozen while idle, behind the flag (I-683). */
+	let frozen = $derived(project ? frozenSince(project) : undefined);
+	let errorReason = $derived.by(() => {
+		if (!project || project.state !== 'error' || !project.last_error) return '';
+		const i = project.last_error.indexOf(': ');
+		return i > 0 ? project.last_error.slice(i + 2) : project.last_error;
 	});
 
 	/** The link a payment_required reason wants, on the billing page. */
@@ -543,6 +551,8 @@
 	<title>{project ? `${project.name} — repose` : 'Project — repose'}</title>
 </svelte:head>
 
+{#snippet tabs()}<ProjectTabs {id} />{/snippet}
+
 {#if notFound}
 	<PageShell title="Not found" crumbs={[{ label: 'Projects', href: resolve('/projects') }]}>
 		<p class="text-sm text-ink-muted">This project doesn't exist, or isn't yours.</p>
@@ -550,44 +560,95 @@
 {:else if !project}
 	<!-- The h1 stays a name while the project loads: "Loading…" as the
 	     page's heading is what a screen reader announced as its title. -->
-	<PageShell title="Project" crumbs={[{ label: 'Projects', href: resolve('/projects') }]}>
-		<LoadState status={loadFailed ? 'failed' : 'loading'} onretry={refresh} error={loadError} />
+	<PageShell title="Project" crumbs={[{ label: 'Projects', href: resolve('/projects') }]} {tabs}>
+		<!-- A screen's height while it loads, so the footer is not in view
+		     to be pushed off it when the cards arrive (layout shift). -->
+		<div class="min-h-screen">
+			<LoadState status={loadFailed ? 'failed' : 'loading'} onretry={refresh} error={loadError} />
+		</div>
 	</PageShell>
 {:else}
-	<PageShell title={project.name} crumbs={[{ label: 'Projects', href: resolve('/projects') }]}>
+	<PageShell
+		title={project.name}
+		crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
+		{tabs}
+	>
 		{#snippet action()}
-			<div class="flex items-center gap-2">
-				{#if project?.state === 'stopped'}
-					<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
-						{opBusy === 'start' ? 'Starting…' : 'Start'}
-					</button>
-				{:else if project?.state === 'running'}
+			{#if project?.state === 'stopped'}
+				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
+					{opBusy === 'start' ? 'Starting…' : 'Start'}
+				</button>
+			{:else if project?.state === 'error'}
+				<!-- POST /start restarts a machine in error on its newest
+				     configuration (lifecycle.md). -->
+				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
+					{opBusy === 'start' ? 'Restarting…' : 'Restart'}
+				</button>
+			{:else if project?.state === 'running'}
+				<!-- Below sm the check sits under Stop; from sm up beside it. -->
+				<div class="flex flex-col-reverse items-start gap-1 sm:flex-row sm:items-center sm:gap-4">
 					<label class="check-row">
 						<input type="checkbox" bind:checked={stopSnapshotFirst} />
 						Snapshot on stop
 					</label>
-					<button type="button" class="btn" disabled={!!opBusy} onclick={onStop}>
+					<button type="button" class="btn-quiet" disabled={!!opBusy} onclick={onStop}>
 						{opBusy === 'stop' ? 'Stopping…' : 'Stop'}
 					</button>
-				{/if}
-			</div>
+				</div>
+			{/if}
 		{/snippet}
 
-		<p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
-			<span class="text-ink" data-testid="project-state"><StateDot state={project.state} /></span>
-			<span class="font-mono">{project.class}</span>
+		<p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+			<span class="text-ink" data-testid="project-state"
+				><StateDot state={project.state} frozen={!!frozen} /></span
+			>
+			<span aria-hidden="true">·</span>
+			<span class="font-mono text-compact" data-testid="project-class">{project.class}</span>
+			{#if vcpus}
+				<span aria-hidden="true">·</span>
+				<span class="tabular-nums">{vcpus} vCPU</span>
+				<span aria-hidden="true">·</span>
+				<span class="tabular-nums">{classMemoryGB(project.class)} GB</span>
+			{/if}
 			{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
 				<!-- The stored choice is the next start's; a running machine may
 				     still run tmux until it stops (I-502), so only a stopped one
 				     shows it. -->
-				<span class="font-mono">herdr</span>
+				<span aria-hidden="true">·</span>
+				<span class="font-mono text-compact">herdr</span>
 			{/if}
 			{#if project.state === 'running'}
+				<span aria-hidden="true">·</span>
 				<span class="tabular-nums">up {uptime(project.started_at)}</span>
 			{/if}
-			<a href={resolve('/projects/[id]/config', { id })} class="link">Config</a>
-			<a href={resolve('/projects/[id]/secrets', { id })} class="link">Secrets</a>
+			{#if project.expires_at}
+				<span aria-hidden="true">·</span>
+				<span class="badge" data-testid="project-temporary">temporary</span>
+				<span class="whitespace-nowrap tabular-nums">{tempLeft(project.expires_at)}</span>
+			{/if}
 		</p>
+
+		{#if frozen}
+			<!-- Frozen while idle (I-683, behind a flag): its memory is put
+			     away and its processes held; a connection wakes it. -->
+			<div class="frost-band mt-4" data-testid="frozen">
+				<Snowflake size={18} />
+				<p>
+					<span class="font-medium">Frozen for {uptime(frozen)}.</span>
+					<span class="text-ink-muted">It wakes when you connect.</span>
+				</p>
+			</div>
+		{/if}
+
+		{#if errorReason}
+			<div class="banner banner--error mt-4" data-testid="last-error">{errorReason}</div>
+		{/if}
+
+		{#if project.host_unreachable}
+			<div class="banner banner--warn mt-4" data-testid="host-unreachable">
+				The server running this machine is not answering.
+			</div>
+		{/if}
 
 		{#if abuseStopReason(project)}
 			<div class="banner banner--warn mt-4" data-testid="abuse-stop">
@@ -630,137 +691,207 @@
 			<div class="banner banner--warn mt-4">No capacity right now, try again in a few minutes.</div>
 		{/if}
 
-		<QuestionsCard projectId={id} {pollFailures} />
+		<!-- Questions run across the frame, and only while there are any:
+		     their count changes, so they never sit in a column (I-680).
+		     empty:hidden: with no question the card renders nothing, and the
+		     empty cell would add a gap. One wrapper either way, so the card
+		     keeps its "Answered" line when the last question goes. -->
+		<div class="mt-6 min-w-0 empty:hidden">
+			<QuestionsCard projectId={id} {pollFailures} bind:questions />
+		</div>
 
-		<!-- Each card is a section of the page under its h1, so its title is
-		     an h2 at the one h2 size every dashboard page uses (text-xl), the
-		     same as billing's plan cards and the Destroy section below. -->
-		<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-			<div class="card min-w-0">
-				<h2 class="text-xl font-semibold">Connect</h2>
-				<code class="codeblock mt-3 block px-3 py-2">repose run</code>
-				<code class="codeblock mt-2 block px-3 py-2">ssh {project.slug}.repose</code>
-				{#if project.remote_url}
-					<!-- wrap-anywhere, not break-all: the URL breaks at a hyphen or a
-					     slash first, and mid-word only for a part wider than the card.
-					     break-all split "kanali-with-a-longer-name" as "…-long" / "er-name". -->
-					<p class="mt-2 font-mono text-compact wrap-anywhere text-ink-muted">
-						{normalizeRemoteDisplay(project.remote_url)}
-					</p>
-				{/if}
-			</div>
-
-			<div class="card">
-				<h2 class="text-xl font-semibold">Signals</h2>
-				{#if project.signals}
-					<dl class="mt-3 space-y-1 text-sm">
-						<div class="flex justify-between gap-4">
-							<dt class="text-ink-muted">SSH sessions</dt>
-							<dd class="tabular-nums">{project.signals.ssh_sessions}</dd>
-						</div>
-						<div class="flex justify-between gap-4">
-							<dt class="text-ink-muted">tmux clients</dt>
-							<dd class="tabular-nums">{project.signals.tmux_clients}</dd>
-						</div>
-						{#if project.signals.agents.length === 0}
-							<div class="flex justify-between gap-4">
-								<dt class="text-ink-muted">Agents</dt>
-								<dd>none</dd>
-							</div>
-						{:else}
-							{#each project.signals.agents as a (a.window)}
-								<div class="flex justify-between gap-4">
-									<dt class="text-ink-muted">{a.agent} ({a.window})</dt>
-									<dd>{a.state && a.state !== 'unknown' ? a.state : '—'}</dd>
-								</div>
-							{/each}
-						{/if}
-					</dl>
-				{:else}
-					<p class="mt-3 text-sm text-ink-muted">Not running.</p>
-				{/if}
-				{#if lastUpdated}
-					<p class="mt-3 text-xs text-ink-muted">
-						Updated {relativeTime(lastUpdated.toISOString())}
-					</p>
-				{/if}
-			</div>
-
-			<section
-				class="card min-w-0 sm:col-span-2"
-				data-testid="usage-card"
-				aria-labelledby="usage-title"
+		<!-- Each card is as tall as its content; the columns line up by what
+		     they hold (I-680). From lg two columns: Events on the left,
+		     Connect then Machine on the right (about 560 against 510px with
+		     a full page of events). From md Connect and Machine pair over
+		     Events. Below lg the right column's wrapper steps aside
+		     (display: contents), and a phone orders the cards by what a
+		     visit is for: Connect, Events, Machine. Each card's title is an
+		     h2 at the one h2 size every dashboard page uses (text-xl). -->
+		<div
+			class="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+		>
+			<div
+				class="order-2 min-w-0 md:order-3 md:col-span-2 lg:order-none lg:col-span-1 lg:self-stretch lg:*:h-full"
 			>
-				<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-					<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
-					<!-- The current window is marked the way the config tabs mark
-					     theirs: ink with a 1px underline, no accent. -->
-					<div class="flex gap-4 text-sm" role="group" aria-label="Window">
-						{#each WINDOWS as [w, name] (w)}
-							<button
-								type="button"
-								aria-pressed={samplesWindow === w}
-								class="cursor-pointer border-b {samplesWindow === w
-									? 'border-current text-ink'
-									: 'border-transparent text-ink-muted hover:text-ink'}"
-								onclick={() => chooseWindow(w)}>{name}</button
-							>
-						{/each}
+				<EventsCard projectId={id} initial={firstEvents} {pollFailures} />
+			</div>
+
+			<!-- The two columns end on one line, so the gap under the row is one
+			     gap: Machine takes what the column has left, its volume line
+			     at its foot, and with few events the Events card does. -->
+			<div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6 lg:self-stretch">
+				<section class="card order-1 min-w-0 lg:order-none" aria-labelledby="connect-title">
+					<h2 id="connect-title" class="text-xl font-semibold">Connect</h2>
+					<div class="mt-4 space-y-2">
+						{#if project.remote_url}
+							<!-- A temporary project has no checkout to run in. -->
+							<CodeCopy command="repose run" what="repose run, from the checkout" />
+						{/if}
+						<CodeCopy command="ssh {project.slug}.repose" what="the ssh command" />
+						<CodeCopy command="repose code {project.slug}" what="the repose code command" />
 					</div>
+					{#if project.remote_url}
+						<!-- wrap-anywhere, not break-all: the URL breaks at a hyphen or a
+						     slash first, and mid-word only for a part wider than the card. -->
+						<p class="mt-3 font-mono text-compact wrap-anywhere text-ink-muted">
+							{normalizeRemoteDisplay(project.remote_url)}
+						</p>
+					{/if}
+				</section>
+				<div class="order-3 min-w-0 md:order-2 md:self-stretch md:*:h-full lg:order-none lg:flex-1">
+					<MachineCard
+						{project}
+						frozen={!!frozen}
+						memUsed={memNow}
+						memTotal={samples?.memory_bytes}
+						busy={!!opBusy}
+						resizeOpen={showResize}
+						onresizetoggle={toggleResize}
+					/>
 				</div>
-				{#if !samples}
-					<p class="mt-3 text-sm text-ink-muted">
-						{samplesFailed ? 'Could not load usage. It tries again in a minute.' : 'Loading…'}
-					</p>
-				{:else if samples.points.length === 0}
-					<p class="mt-3 text-sm text-ink-muted">
-						No samples in this window: the machine was not running.
-					</p>
-				{:else}
-					<div class="mt-4 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
-						<UsageChart
-							label="CPU"
-							points={series.cpu}
-							max={1}
-							stepS={samples.step_s}
-							start={samplesAt - span}
-							end={samplesAt}
-							format={pct}
-							maxLabel="100% of {samples.vcpus} vCPUs"
-						/>
-						<UsageChart
-							label="Memory"
-							points={series.mem}
-							max={samples.memory_bytes}
-							stepS={samples.step_s}
-							start={samplesAt - span}
-							end={samplesAt}
-							format={memGb}
-							maxLabel={gb(samples.memory_bytes)}
-						/>
-						<UsageChart
-							label="Waiting for a vCPU"
-							points={series.pressure}
-							max={1}
-							stepS={samples.step_s}
-							start={samplesAt - span}
-							end={samplesAt}
-							format={pct}
-							maxLabel="100%"
-						/>
-						<UsageChart
-							label="Waiting for the server"
-							points={series.wait}
-							max={1}
-							stepS={samples.step_s}
-							start={samplesAt - span}
-							end={samplesAt}
-							format={pct}
-							maxLabel="100%"
-						/>
+			</div>
+
+			{#if showResize}
+				<!-- Under the row that holds Machine, across the frame; from md
+				     the row under Connect and Machine, on a phone under Machine.
+				     The select takes focus, and Cancel gives it back to
+				     Resize…. From 40rem the sentence sits left and the form
+				     right, as in Destroy; narrower, they stack (I-680). -->
+				<section
+					id="resize-panel"
+					class="card @container order-3 min-w-0 md:order-2 md:col-span-2 lg:order-none"
+					aria-labelledby="resize-title"
+					bind:this={resizePanel}
+				>
+					<div
+						class="flex flex-col gap-4 @min-[40rem]:flex-row @min-[40rem]:items-start @min-[40rem]:justify-between @min-[40rem]:gap-10"
+					>
+						<div class="min-w-0">
+							<h2 id="resize-title" class="text-xl font-semibold">Resize the disk</h2>
+							<p class="mt-1 text-sm text-ink-muted tabular-nums">
+								It is {gb(project.volume_bytes)} now. Disks can't shrink.
+							</p>
+						</div>
+						<form
+							class="@container min-w-0 @min-[40rem]:w-[26rem] @min-[40rem]:shrink-0"
+							onsubmit={(e) => {
+								e.preventDefault();
+								void submitResize();
+							}}
+						>
+							<label for="resize-to" class="block text-sm text-ink-muted">Grow to</label>
+							<div class="mt-1.5 flex flex-wrap items-center gap-2">
+								<select
+									id="resize-to"
+									class="field min-w-0 max-w-[32rem] flex-[1_1_8rem] tabular-nums"
+									bind:value={resizeTo}
+									use:focusOnMount
+								>
+									{#each largerSizes as s (s)}
+										<option value={s}>{s} GB</option>
+									{/each}
+								</select>
+								<div class="flex shrink-0 items-center gap-2">
+									<button
+										type="submit"
+										class="btn-quiet"
+										disabled={!!opBusy || resizeTo === undefined}
+									>
+										{opBusy === 'resize' ? 'Resizing…' : 'Grow'}
+									</button>
+									<button type="button" class="btn-ghost" onclick={closeResize}>Cancel</button>
+								</div>
+							</div>
+						</form>
 					</div>
-					{#if samples.procs.length > 0}
-						<h3 class="mt-6 text-sm font-medium">Busiest processes</h3>
+				</section>
+			{/if}
+		</div>
+
+		<!-- Usage spans the frame between the two rows: the charts read best
+		     wide (I-679). -->
+		<section class="card mt-6 min-w-0" data-testid="usage-card" aria-labelledby="usage-title">
+			<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+				<h2 id="usage-title" class="text-xl font-semibold">Usage</h2>
+				<!-- The current window is marked the way the config tabs mark
+					     theirs: ink with a 1px underline, no accent. -->
+				<div class="flex gap-4 text-sm" role="group" aria-label="Window">
+					{#each WINDOWS as [w, name] (w)}
+						<button
+							type="button"
+							aria-pressed={samplesWindow === w}
+							class="cursor-pointer border-b {samplesWindow === w
+								? 'border-current text-ink'
+								: 'border-transparent text-ink-muted hover:text-ink'}"
+							onclick={() => chooseWindow(w)}>{name}</button
+						>
+					{/each}
+				</div>
+			</div>
+			{#if !samples}
+				<p class="mt-3 text-sm text-ink-muted">
+					{samplesFailed ? 'Could not load usage. It tries again in a minute.' : 'Loading…'}
+				</p>
+			{:else if samples.points.length === 0}
+				<p class="mt-3 text-sm text-ink-muted">
+					No samples in this window: the machine was not running.
+				</p>
+			{:else}
+				<div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+					<UsageChart
+						label="CPU"
+						points={series.cpu}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100% of {samples.vcpus} vCPUs"
+					/>
+					<UsageChart
+						label="Memory"
+						points={series.mem}
+						max={samples.memory_bytes}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={memGb}
+						maxLabel={gb(samples.memory_bytes)}
+					/>
+					<UsageChart
+						label="Waiting for a vCPU"
+						points={series.pressure}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100%"
+					/>
+					<UsageChart
+						label="Waiting for the server"
+						points={series.wait}
+						max={1}
+						stepS={samples.step_s}
+						start={samplesAt - span}
+						end={samplesAt}
+						format={pct}
+						maxLabel="100%"
+					/>
+				</div>
+				{#if samples.procs.length > 0}
+					<!-- Folded by default: the charts answer most visits, and the
+						     table is there when a chart's peak needs a name (I-674).
+						     The summary is a caption, not a heading (I-375). -->
+					<details class="procs" data-testid="busiest-processes">
+						<summary>
+							<svg class="procs-chev" viewBox="0 0 16 16" aria-hidden="true"
+								><path d="M6 4l4 4-4 4" /></svg
+							>
+							Busiest processes
+							<span class="procs-n">{samples.procs.length}</span>
+						</summary>
 						<table class="table mt-2 w-full text-sm">
 							<thead>
 								<tr>
@@ -779,263 +910,158 @@
 								{/each}
 							</tbody>
 						</table>
-					{/if}
+					</details>
 				{/if}
-			</section>
-
-			<div class="card" data-testid="machine-card">
-				<h2 class="text-xl font-semibold">Machine</h2>
-				<dl class="mt-3 space-y-1 text-sm">
-					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">Size</dt>
-						<dd class="font-mono text-compact">{project.class}</dd>
-					</div>
-					{#if spec}
-						<div class="flex justify-between gap-4">
-							<dt class="text-ink-muted">vCPUs</dt>
-							<dd class="tabular-nums">{spec.vcpus}</dd>
-						</div>
-						<div class="flex justify-between gap-4">
-							<dt class="text-ink-muted">Memory</dt>
-							<dd class="tabular-nums">{spec.gb} GB</dd>
-						</div>
-					{/if}
-					<div class="flex justify-between gap-4">
-						<dt class="text-ink-muted">Plan memory</dt>
-						<dd class="tabular-nums">{memoryLine}</dd>
-					</div>
-					{#if me?.billing.plan}
-						<div class="flex justify-between gap-4">
-							<dt class="text-ink-muted">Plan</dt>
-							<dd class="capitalize">{me.billing.plan}</dd>
-						</div>
-					{/if}
-				</dl>
-			</div>
-
-			<div class="card">
-				<h2 class="text-xl font-semibold">Disk</h2>
-				<!-- Used is the guest's root filesystem, what its writes run out
-				     of; the volume's allocated figure keeps deleted files until
-				     the daily fstrim and is not shown (I-567, I-585). -->
-				<p class="mt-3 text-sm tabular-nums">
-					{project.root_used_bytes !== undefined && project.root_size_bytes
-						? gb(project.root_used_bytes)
-						: '—'} of {gb(project.volume_bytes)}
-				</p>
-				{#if diskFullPercent(project) !== null}
-					<p
-						class="mt-1 text-sm text-amber-700 tabular-nums dark:text-amber-400"
-						data-testid="disk-full"
-					>
-						{diskFullPercent(project)} percent full
-					</p>
-				{/if}
-				{#if !showResize}
-					{#if largerSizes.length > 0}
-						<button type="button" id="resize-open" class="btn-ghost mt-2 px-0" onclick={openResize}
-							>Resize…</button
-						>
-					{:else}
-						<!-- tabindex=-1: after a grow to the largest size, focus comes
-						     here in place of the button that went away. -->
-						<p id="resize-largest" tabindex="-1" class="mt-2 text-sm text-ink-muted tabular-nums">
-							{SIZES_GB[SIZES_GB.length - 1]} GB is the largest size.
-						</p>
-					{/if}
-				{:else}
-					<!-- The panel takes the Resize… button's place, so the select
-					     takes its focus (DESIGN-LANGUAGE.md, "Focus follows the
-					     panel"), and Cancel gives it back. -->
-					<form
-						class="mt-3"
-						bind:this={resizeForm}
-						onsubmit={(e) => {
-							e.preventDefault();
-							void onResize();
-						}}
-					>
-						<label for="resize-to" class="block text-sm text-ink-muted">Grow to</label>
-						<div class="mt-1.5 flex flex-wrap items-center gap-2">
-							<select
-								id="resize-to"
-								class="field tabular-nums"
-								bind:value={resizeTo}
-								use:focusOnMount
-							>
-								{#each largerSizes as s (s)}
-									<option value={s}>{s} GB</option>
-								{/each}
-							</select>
-							<button type="submit" class="btn" disabled={!!opBusy || resizeTo === undefined}>
-								{opBusy === 'resize' ? 'Resizing…' : 'Grow'}
-							</button>
-							<button type="button" class="btn-ghost" onclick={closeResize}>Cancel</button>
-						</div>
-					</form>
-				{/if}
-			</div>
-
-			<div class="card">
-				<h2 class="text-xl font-semibold">Last build</h2>
-				{#if currentRevisionStatus()}
-					{@const rev = currentRevisionStatus()}
-					<p class="mt-3 text-sm">
-						<span
-							class="badge"
-							class:badge--new={rev?.status === 'applied'}
-							class:badge--error={rev?.status === 'failed'}>{rev?.status}</span
-						>
-					</p>
-				{:else}
-					<p class="mt-3 text-sm text-ink-muted">base {project.base_version}</p>
-				{/if}
-				<a href={resolve('/projects/[id]/config', { id })} class="link mt-2 inline-block text-sm"
-					>View config</a
+			{/if}
+			{#if egressGb !== undefined}
+				<p
+					class="egress-row mt-6 flex items-baseline justify-between gap-4 border-t pt-4 text-sm border-rule"
+					data-testid="egress-period"
 				>
-			</div>
+					<span class="font-medium">Egress this period</span>
+					<span class="text-xs text-ink-muted tabular-nums">{gbs(egressGb)}</span>
+				</p>
+			{/if}
+		</section>
 
-			<div class="card sm:col-span-2">
-				<h2 class="text-xl font-semibold">Events</h2>
-				{#if events.length === 0}
-					<p class="mt-3 text-sm text-ink-muted">No events yet.</p>
-				{:else}
-					<ul class="mt-2">
-						{#each allEvents.slice(0, eventsShown) as e (e.id)}
-							<!-- Baseline, so the smaller time sits on the summary's line. -->
-							<li class="row flex items-baseline justify-between gap-4 text-sm">
-								<span class="flex min-w-0 flex-wrap items-baseline gap-2">
-									{#if e.agent}<span class="badge">{e.agent}</span>{/if}
-									<span>{e.summary}</span>
-								</span>
-								<span class="shrink-0 text-xs text-ink-muted tabular-nums"
-									>{relativeTime(e.ts)}</span
-								>
-							</li>
-						{/each}
-					</ul>
-					{#if canShowOlder}
-						<div class="mt-3 flex items-baseline gap-3">
-							<button
-								type="button"
-								class="btn-ghost px-0"
-								disabled={loadingOlder}
-								onclick={showOlderEvents}>{loadingOlder ? 'Loading…' : 'Show older'}</button
-							>
-							<span class="text-sm text-ink-muted tabular-nums"
-								>{Math.min(eventsShown, allEvents.length)} shown</span
-							>
-						</div>
-					{/if}
-				{/if}
-			</div>
-
-			<div class="card sm:col-span-2">
-				<div class="flex items-center justify-between gap-4">
-					<h2 class="text-xl font-semibold">Snapshots</h2>
-					<!-- -mr-2 takes back the ghost button's padding, so "Create" ends
-					     on the card's edge like the rows' actions below it. -->
-					<button
-						type="button"
-						class="btn-ghost -mr-2"
-						disabled={!!opBusy}
-						onclick={onCreateSnapshot}
-					>
-						{opBusy === 'snapshot' ? 'Snapshotting…' : 'Create'}
-					</button>
-				</div>
-				{#if snapshots.length === 0}
-					<p class="mt-3 text-sm text-ink-muted">No snapshots yet.</p>
-				{:else}
-					<ul class="mt-2">
-						{#each snapshots as s (s.id)}
-							{@const open = restorePanel?.snapshotId === s.id ? restorePanel.kind : undefined}
-							<li class="row text-sm" data-testid="snapshot-row">
-								<!-- Wraps: at 390px the actions drop under the date instead
-								     of squeezing it to a word a line. -->
-								<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-									<span class="tabular-nums"
-										>{dateTime(s.created_at)} · {gb(s.bytes)} · {s.reason}</span
-									>
-									{#if !open}
-										<!-- -mx-2 takes back the ghost buttons' own padding, so their
-										     words line up with the card's edge whether the actions sit
-										     at the right or wrap under the date. -->
-										<span class="-mx-2 flex flex-wrap items-center">
-											<button
-												type="button"
-												id={`restore-replace-${s.id}`}
-												class="btn-ghost-danger"
-												disabled={!!opBusy}
-												onclick={() => openRestore(s.id, 'replace')}>Restore…</button
-											>
-											<button
-												type="button"
-												id={`restore-new-${s.id}`}
-												class="btn-ghost"
-												disabled={!!opBusy}
-												onclick={() => openRestore(s.id, 'new')}>Restore as new…</button
-											>
-										</span>
-									{/if}
-								</div>
-								{#if open === 'replace'}
-									<div class="mt-3 rounded-sm border p-4 border-rule" data-testid="restore-confirm">
-										<p>
-											Restoring replaces the disk of {project.slug} with this snapshot. Anything written
-											since {dateTime(s.created_at)} is lost.
-										</p>
-										{#if project.state !== 'stopped'}
-											<p class="mt-2 text-ink-muted">
-												Stop {project.slug} first, or restore the snapshot as a new project.
-											</p>
-										{/if}
-										<div class="mt-3">
-											<ConfirmType
-												word={project.slug}
-												label="Restore"
-												busyLabel="Restoring…"
-												busy={opBusy === 'restore'}
-												disabled={!!opBusy || project.state !== 'stopped'}
-												onconfirm={() => onRestore(s.id)}
-												autofocus
-												oncancel={closeRestore}
-											/>
-										</div>
-									</div>
-								{:else if open === 'new'}
-									<RestoreNameForm
-										id={s.id}
-										bind:value={restoreAsNewName}
-										error={restoreAsNewError}
-										busy={opBusy === 'restore'}
-										submitLabel="Restore as new"
-										onsubmit={(n) => void onRestore(s.id, n)}
-										oncancel={closeRestore}
-									/>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-		</div>
-
-		<div class="form-section">
-			<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Destroy</h2>
-			<p class="mt-1 text-sm text-ink-muted">
-				Deletes the volume. The last snapshot is kept 30 days.
-			</p>
-			<div class="mt-3">
-				<ConfirmType
-					word={project.slug}
-					label="Destroy"
-					busyLabel="Destroying…"
-					busy={opBusy === 'destroy'}
-					disabled={!!opBusy}
-					onconfirm={onDestroy}
+		<!-- Snapshots take the wide column, since a row opens its restore
+		     form under it and a form needs room (I-680); Agents, while the
+		     machine runs, then Details on the right. With no snapshot yet
+		     the list has no form to open, and a running machine's three
+		     short cards share one row of three. From md the cards pair,
+		     and one left without a partner spans both columns. -->
+		{@const running = project.state === 'running'}
+		{@const anySnapshot = snapshots.length > 0}
+		<div
+			class="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-2 {running && !anySnapshot
+				? 'lg:grid-cols-3'
+				: 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'}"
+		>
+			<div class="min-w-0 {anySnapshot ? 'md:col-span-2 lg:col-span-1' : ''}">
+				<SnapshotsTable
+					{project}
+					{snapshots}
+					busy={!!opBusy}
+					creating={opBusy === 'snapshot'}
+					restoring={opBusy === 'restore'}
+					oncreate={onCreateSnapshot}
+					onrestore={onRestore}
 				/>
 			</div>
+			<div
+				class={running && !anySnapshot
+					? 'contents'
+					: 'contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6'}
+			>
+				{#if running}
+					<div class="min-w-0">
+						<AgentsCard signals={project.signals} {questions} updated={lastUpdated} />
+					</div>
+				{/if}
+				<div class="min-w-0 {running !== anySnapshot ? 'md:col-span-2 lg:col-span-1' : ''}">
+					<DetailsList {project} {revision} />
+				</div>
+			</div>
 		</div>
+
+		<section class="danger mt-10 rounded-sm border p-5" aria-labelledby="destroy-title">
+			<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-10">
+				<div>
+					<h2 id="destroy-title" class="text-xl font-semibold text-red-700 dark:text-red-400">
+						Destroy
+					</h2>
+					<p class="mt-1 text-sm text-ink-muted">
+						Deletes the volume. The last snapshot is kept 30 days.
+					</p>
+				</div>
+				<div class="md:w-[26rem] md:shrink-0">
+					<ConfirmType
+						word={project.slug}
+						label="Destroy"
+						busyLabel="Destroying…"
+						busy={opBusy === 'destroy'}
+						disabled={!!opBusy}
+						onconfirm={onDestroy}
+					/>
+				</div>
+			</div>
+		</section>
 	</PageShell>
 {/if}
+
+<style>
+	.procs {
+		margin-top: 1.75rem;
+		border-top: 1px solid var(--rule);
+	}
+	.procs summary {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2.75rem;
+		cursor: pointer;
+		list-style: none;
+		font-size: var(--text-sm);
+		font-weight: 500;
+	}
+	.procs summary::-webkit-details-marker {
+		display: none;
+	}
+	.procs summary:hover {
+		color: var(--ink);
+	}
+	.procs-chev {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		color: var(--ink-muted);
+		transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	.procs[open] .procs-chev {
+		transform: rotate(90deg);
+	}
+	/* Rows keep their hairlines; the last one drops its own, since
+	   Egress's rule follows right under it. */
+	.procs td {
+		padding-block: 0.5rem;
+	}
+	.procs tr:last-child td {
+		border-bottom: 0;
+	}
+	.procs table {
+		margin-bottom: 0.5rem;
+	}
+	.procs + .egress-row {
+		margin-top: 0;
+	}
+	.procs-n {
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink-muted);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.procs-chev {
+			transition: none;
+		}
+	}
+	.danger {
+		border-color: color-mix(in srgb, var(--color-red-600) 35%, var(--rule));
+	}
+	/* The frozen band (I-683): ice, not a warning; nothing is wrong. */
+	.frost-band {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid color-mix(in srgb, var(--frost) 45%, var(--rule));
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--frost) 7%, var(--surface));
+		color: var(--frost);
+		font-size: var(--text-sm);
+	}
+	.frost-band p {
+		color: var(--ink);
+	}
+</style>

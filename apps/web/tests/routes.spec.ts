@@ -26,14 +26,19 @@ test('/projects renders the projects list', async ({ page }) => {
 test('/projects/[id] renders the project detail cards', async ({ page }) => {
 	await page.goto(`/projects/${projectId}`);
 	await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
-	await expect(page.getByText('Connect')).toBeVisible();
-	await expect(page.getByText('Signals')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Machine' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Usage' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Disk' })).toBeVisible();
-	await expect(page.getByText('Events')).toBeVisible();
-	await expect(page.getByText('Snapshots', { exact: true })).toBeVisible();
-	await expect(page.getByText('Last build')).toBeVisible();
+	// The cards of I-664: the work in the main column, the machine beside it.
+	for (const name of [
+		'Events',
+		'Usage',
+		'Connect',
+		'Machine',
+		'Agents',
+		'Details',
+		'Snapshots',
+		'Destroy'
+	]) {
+		await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
+	}
 });
 
 test('/projects/[id]/config renders the Menu and Nix tabs', async ({ page }) => {
@@ -49,9 +54,9 @@ test('/projects/[id]/secrets renders the secrets page', async ({ page }) => {
 
 test('/billing renders', async ({ page }) => {
 	await page.goto('/billing');
-	await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Billing', exact: true })).toBeVisible();
 	// The suite runs the fake with billing off unless a spec turns it on.
-	await expect(page.getByText('Billing is not switched on yet.')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Billing is not switched on yet' })).toBeVisible();
 });
 
 test('/settings renders', async ({ page }) => {

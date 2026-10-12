@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	DOCS,
+	FIGURE,
+	MOVED,
 	NOBREAK_MAX,
 	SECTIONS,
 	docBySlug,
@@ -94,6 +96,49 @@ describe('user docs', () => {
 		expect(movedDoc('tutorial-your-chrome')).toBe('your-chrome');
 		expect(docBySlug(movedDoc('tutorial-your-chrome') ?? '')).toBeDefined();
 		expect(movedDoc('your-chrome')).toBeUndefined();
+		// /docs/quickstart is the overview (slug 'index', served at /docs)
+		// and /docs/pricing the plans page.
+		expect(movedDoc('quickstart')).toBe('index');
+		expect(docBySlug('index')!.title).toBe('Quickstart');
+		expect(movedDoc('pricing')).toBe('billing');
+		// An old slug is never a live page's, or the redirect would hide it.
+		for (const [from, to] of Object.entries(MOVED)) {
+			expect(docBySlug(from), from).toBeUndefined();
+			expect(docBySlug(to), to).toBeDefined();
+		}
+	});
+
+	// "100 GB" never breaks between the number and its unit.
+	it('marks the figures in a table', () => {
+		for (const f of ['100 GB', '1 TB', '$29*', '$0.05', '4 vCPUs', '12%', '8']) {
+			expect(FIGURE.test(f), f).toBe(true);
+		}
+		for (const f of ['Solo', 'day 3', '30 minutes', '8 GB: one large']) {
+			expect(FIGURE.test(f), f).toBe(false);
+		}
+		const billing = docBySlug('billing')!.html;
+		expect(billing).toContain('<td class="num">100 GB</td>');
+		expect(billing).toContain('<td class="num">$59</td>');
+		expect(billing).not.toContain('<td class="num">Solo</td>');
+	});
+
+	// The rail lists h2s and h3s; a command heading shows as its command.
+	it('gives each section a label for the rail', () => {
+		const cli = docBySlug('cli')!.headings;
+		expect(cli.filter((h) => h.depth === 3).length).toBeGreaterThanOrEqual(30);
+		const label = (id: string) => cli.find((h) => h.id === id)?.label;
+		expect(label('repose-run-project')).toBe('repose run');
+		expect(label('repose-mcp-forward-name')).toBe('repose mcp forward');
+		expect(label('repose-cp-r-src-dst')).toBe('repose cp');
+		expect(label('which-project')).toBe('Which project');
+		expect(cli.find((h) => h.text === 'config.toml')?.label).toBe('config.toml');
+	});
+
+	it('puts the first line of a code block in its own span', () => {
+		const html = docBySlug('lifecycle')!.html;
+		expect(html).toContain('<code class="language-shell"><span class="l1">');
+		// Plain output has no Copy button and no span.
+		expect(docBySlug('index')!.html).not.toContain('language-text"><span class="l1">');
 	});
 
 	// The grammar's bare `parser` export has no highlight tags (they live on

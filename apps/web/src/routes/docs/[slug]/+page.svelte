@@ -8,12 +8,19 @@
 	let doc = $derived(docBySlug(page.params.slug ?? ''));
 	let moved = $derived(movedDoc(page.params.slug ?? ''));
 
+	// The overview's slug is 'index', but its page is /docs, not /docs/index.
+	function href(slug: string): string {
+		return slug === 'index' ? resolve('/docs') : resolve('/docs/[slug]', { slug });
+	}
+
 	$effect(() => {
 		if (moved)
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve()d, plus the old link's #section
-			void goto(resolve('/docs/[slug]', { slug: moved }) + page.url.hash, { replaceState: true });
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- href() resolve()s it, plus the old link's #section
+			void goto(href(moved) + page.url.hash, { replaceState: true });
 	});
 </script>
+
+<!-- eslint-disable svelte/no-navigation-without-resolve -- href() builds the link with resolve() -->
 
 {#if doc}
 	{#key doc.slug}
@@ -23,11 +30,9 @@
 	<!-- An old slug's page holds the target's link, not nothing: the
 	     prerendered HTML is what a reader with scripts off gets, and the
 	     layout's skip link (#main) needs a target on every page. -->
-	<main id="main" class="pt-8 pb-24">
+	<main id="main" class="max-w-[42rem] pt-10 pb-24">
 		<p class="text-ink-muted">
-			This page moved to <a href={resolve('/docs/[slug]', { slug: moved })} class="link"
-				>{docBySlug(moved)?.title ?? moved}</a
-			>.
+			This page moved to <a href={href(moved)} class="link">{docBySlug(moved)?.title ?? moved}</a>.
 		</p>
 	</main>
 {/if}

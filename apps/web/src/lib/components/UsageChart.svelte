@@ -2,8 +2,10 @@
   One measure of a machine over a window, as a thin line over a faint area
   (DECISIONS I-492). One series, so no legend: the label names it and the
   reading beside it ("now 12%, peak 100%") carries the numbers, as a
-  Meter's does. The line is ink, like a meter's fill; nothing rides on
-  colour. A gap is a time the machine was stopped or did not report.
+  Meter's does. The line is --chart-line (the accent or ink, one switch in
+  layout.css, I-679) over a flat 12% area of it; nothing rides on colour. The dashed lines are
+  the top and the middle of the scale, each labelled above itself. A gap
+  is a time the machine was stopped or did not report.
   Hover, or focus and the arrow keys, show one bucket's time and value.
 -->
 <script lang="ts">
@@ -32,8 +34,12 @@
 		maxLabel: string;
 	} = $props();
 
+	// The box is 88px whatever the data, so a poll swaps path data and
+	// nothing around the chart moves. TOP leaves room for the top line's
+	// label above it.
 	const H = 88;
-	const TOP = 4;
+	const TOP = 15;
+	const mid = (H + TOP) / 2;
 	let width = $state(0);
 	let hover = $state<number | undefined>(undefined);
 
@@ -84,12 +90,15 @@
 	}
 </script>
 
-<figure class="usage-chart min-w-0" data-testid="chart-{label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
+<figure
+	class="usage-chart min-w-0"
+	data-testid="chart-{label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"
+>
 	<figcaption class="flex items-baseline justify-between gap-4 text-sm">
 		<span class="font-medium">{label}</span>
-		<span class="font-mono text-compact text-ink-muted tabular-nums">{reading}</span>
+		<span class="text-xs text-ink-muted tabular-nums">{reading}</span>
 	</figcaption>
-	<div class="relative mt-1.5" bind:clientWidth={width}>
+	<div class="relative mt-1.5 h-[88px]" bind:clientWidth={width}>
 		<!-- The pointer and the arrow keys move a readout of one point. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 		<svg
@@ -104,14 +113,15 @@
 			onkeydown={onKey}
 			onblur={() => (hover = undefined)}
 		>
-			<line class="grid" x1="0" x2={width} y1={TOP} y2={TOP} />
-			<line class="grid" x1="0" x2={width} y1={(H + TOP) / 2} y2={(H + TOP) / 2} />
+			<line class="grid" x1="0" x2={width} y1={TOP + 0.5} y2={TOP + 0.5} />
+			<line class="grid" x1="0" x2={width} y1={mid + 0.5} y2={mid + 0.5} />
 			<line class="base" x1="0" x2={width} y1={H - 0.5} y2={H - 0.5} />
-			<text class="axis" x="2" y={TOP + 11}>{maxLabel}</text>
+			<text class="axis" x="0" y={TOP - 3}>{maxLabel}</text>
+			<text class="axis" x="0" y={mid - 3}>{format(max / 2)}</text>
 			{#if width > 0}
 				{#each runs as run, i (i)}
 					{#if run.r.length === 1}
-						<circle cx={x(run.r[0].t)} cy={y(run.r[0].v)} r="2" fill="currentColor" />
+						<circle cx={x(run.r[0].t)} cy={y(run.r[0].v)} r="2" class="dot" />
 					{:else}
 						<path d={run.area} class="area" />
 						<path d={run.line} class="line" />
@@ -155,22 +165,25 @@
 		font-size: 11px;
 	}
 	.area {
-		fill: currentColor;
+		fill: var(--chart-line);
 		opacity: 0.12;
 	}
 	.line {
 		fill: none;
-		stroke: currentColor;
+		stroke: var(--chart-line);
 		stroke-width: 2;
 		stroke-linejoin: round;
 		stroke-linecap: round;
+	}
+	.dot {
+		fill: var(--chart-line);
 	}
 	.cursor {
 		stroke: var(--ink-muted);
 		stroke-width: 1;
 	}
 	.mark {
-		fill: currentColor;
+		fill: var(--chart-line);
 		stroke: var(--surface);
 		stroke-width: 2;
 	}
@@ -185,7 +198,9 @@
 		.mark {
 			stroke: CanvasText;
 		}
-		.area {
+		.area,
+		.dot,
+		.mark {
 			fill: CanvasText;
 		}
 	}

@@ -42,8 +42,12 @@
 <!-- A form so Enter confirms once the word matches, the same as a click.
      The field has a visible label naming the word to type (DESIGN-LANGUAGE.md,
      "Fields"): a placeholder vanished at the first keystroke, and with it
-     the only on-screen copy of the word. -->
+     the only on-screen copy of the word. The form lays out by its own
+     width, not the viewport's: from 24rem the field and the buttons share
+     a row, the field taking what the buttons leave, up to 20rem; the
+     buttons stay together and wrap under it as one group (I-680). -->
 <form
+	class="@container"
 	onsubmit={(e) => {
 		e.preventDefault();
 		if (ready) onconfirm();
@@ -52,17 +56,19 @@
 	<label for={fieldId} class="block text-sm text-ink-muted"
 		>Type <span class="font-mono text-ink">{word}</span> to confirm</label
 	>
-	<div class="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center">
+	<div class="mt-1.5 flex flex-col gap-2 @sm:flex-row @sm:flex-wrap @sm:items-center">
 		<input
 			id={fieldId}
-			class="field w-full sm:w-56"
+			class="field w-full min-w-0 @sm:w-auto @sm:max-w-80 @sm:flex-[1_1_10rem]"
 			bind:value={typed}
 			autocomplete="off"
 			spellcheck="false"
 			use:focusOnMount={autofocus}
 		/>
-		<div class="flex items-center gap-2">
-			<button type="submit" class="btn-danger" disabled={!ready}>
+		<div class="flex shrink-0 flex-wrap items-center gap-2">
+			<!-- Disabled, it has the one disabled look; armed, the filled red,
+			     so the moment it can act is plain (I-661). -->
+			<button type="submit" class="btn-danger {ready ? 'btn-danger--armed' : ''}" disabled={!ready}>
 				{busy && busyLabel ? busyLabel : label}
 			</button>
 			{#if oncancel}

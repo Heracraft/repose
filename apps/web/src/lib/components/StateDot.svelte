@@ -7,8 +7,17 @@
 -->
 <script lang="ts">
 	import type { GuestState } from '$lib/api/types';
+	import Snowflake from './Snowflake.svelte';
 
-	let { state }: { state: GuestState } = $props();
+	let {
+		state,
+		frozen = false
+	}: {
+		state: GuestState;
+		/** A running machine frozen while idle (I-683): the snowflake and
+		 * "frozen" in the frost colour, in place of the dot and "running". */
+		frozen?: boolean;
+	} = $props();
 
 	type Tone = 'idle' | 'good' | 'busy' | 'error';
 
@@ -33,7 +42,20 @@
 	};
 </script>
 
-<span class="inline-flex items-center gap-1.5" data-state={state}>
-	<span class={dotClass[tone[state]]} data-tone={tone[state]} aria-hidden="true"></span>
-	<span>{state}</span>
-</span>
+{#if frozen}
+	<span class="frozen inline-flex items-center gap-1.5" data-state={state} data-frozen="">
+		<Snowflake size={13} />
+		<span>frozen</span>
+	</span>
+{:else}
+	<span class="inline-flex items-center gap-1.5" data-state={state}>
+		<span class={dotClass[tone[state]]} data-tone={tone[state]} aria-hidden="true"></span>
+		<span>{state}</span>
+	</span>
+{/if}
+
+<style>
+	.frozen {
+		color: var(--frost);
+	}
+</style>

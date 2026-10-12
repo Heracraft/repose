@@ -29,12 +29,15 @@ test('resize grows the volume', async ({ page }) => {
 		class: 'small'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText('of 20 GB')).toBeVisible();
+	const volume = page.getByTestId('disk-volume');
+	await expect(volume).toHaveText('20 GB volume');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	await page.getByRole('combobox').selectOption('40');
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(page.getByText('of 40 GB')).toBeVisible({ timeout: 10_000 });
+	await expect(volume).toHaveText('40 GB volume', { timeout: 10_000 });
+	// The panel closed and gave focus back to Resize….
+	await expect(page.getByRole('button', { name: 'Resize…' })).toBeVisible();
 });
 
 // The select once opened blank on a value it did not offer (20 GB), and
@@ -53,14 +56,14 @@ test('resize opens on the next size up and offers only grows', async ({ page }) 
 		}
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText('of 20 GB')).toBeVisible();
+	await expect(page.getByTestId('disk-volume')).toHaveText('20 GB volume');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	const select = page.getByLabel('Grow to');
 	await expect(select).toHaveValue('40');
 	await expect(select.locator('option')).toHaveText(['40 GB', '80 GB', '160 GB', '320 GB']);
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(page.getByText('of 40 GB')).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume', { timeout: 10_000 });
 	expect(asked).toEqual([40 * 2 ** 30]);
 });
 
@@ -76,21 +79,23 @@ test('a disk at the largest size has no Grow to offer', async ({ page }) => {
 		await route.fulfill({ response: res, json: { ...json, volume_bytes: 320 * 2 ** 30 } });
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText('of 320 GB')).toBeVisible();
+	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB volume');
 	await expect(page.getByRole('button', { name: 'Resize…' })).toHaveCount(0);
 	await expect(page.getByText('320 GB is the largest size.')).toBeVisible();
 });
 
-// The Disk card's used figure is the guest's root filesystem, and a disk
-// 90 percent full or more says so beside Resize (I-567). The allocated
-// disk_used_bytes, near full on kanali with 6 GB free, is not shown.
+// The disk meter is the guest's root filesystem, used of its size, and a
+// disk 90 percent full or more says so above Resize (I-567). The
+// allocated disk_used_bytes, near full on kanali with 6 GB free, is not
+// shown.
 test('a nearly full disk says how full it is', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'disk-full-app',
 		remote_url: 'github.com/heracraft/disk-full-app'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByText(/^1 GB of \d+ GB$/)).toBeVisible();
+	const disk = page.getByRole('meter', { name: 'Disk' });
+	await expect(disk).toHaveAttribute('aria-valuetext', /^1 GB of [\d.]+ GB$/);
 	await expect(page.getByTestId('disk-full')).toHaveCount(0);
 
 	await page.route(`**/v1/projects/${p.id}`, async (route) => {
@@ -109,7 +114,8 @@ test('a nearly full disk says how full it is', async ({ page }) => {
 		});
 	});
 	await page.reload();
-	await expect(page.getByText(/^37 GB of 40 GB$/)).toBeVisible();
+	await expect(disk).toHaveAttribute('aria-valuetext', '37 GB of 39 GB');
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume');
 	await expect(page.getByTestId('disk-full')).toHaveText('94 percent full');
 	await expect(page.getByText('39.5 GB')).toHaveCount(0);
 });
@@ -229,7 +235,7 @@ test('a destroyed project can be restored from the projects list', async ({ page
 	const section = page.getByRole('region', { name: 'Recently destroyed' });
 	await expect(section).toBeVisible({ timeout: 15_000 });
 	const row = section.getByTestId('destroyed-row').filter({ hasText: p.name });
-	await expect(row).toContainText('restorable until');
+	await expect(row).toContainText(/until\s+\d{4}-\d{2}-\d{2}/);
 	await expect(row).toContainText('days left');
 
 	await row.getByRole('button', { name: 'Restore…' }).click();

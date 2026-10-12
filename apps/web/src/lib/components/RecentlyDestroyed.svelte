@@ -10,7 +10,7 @@
 	import { restoreProject } from '$lib/api/client';
 	import { ApiError, projectLimitText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
-	import { dateTime, relativeTime } from '$lib/format';
+	import { dateTime, gb, relativeTime } from '$lib/format';
 	import {
 		DESTROYED_FIRST,
 		DESTROYED_STEP,
@@ -114,60 +114,99 @@
 </script>
 
 {#if destroyed.length > 0}
-	<section class="mt-16" aria-labelledby="recently-destroyed">
+	<section class="mt-14" aria-labelledby="recently-destroyed">
 		<h2 id="recently-destroyed" class="text-xl font-semibold">Recently destroyed</h2>
 		<p class="mt-1 text-sm text-ink-muted">Each keeps its last snapshot for 30 days.</p>
-		<ul class="mt-4 border-t border-rule-strong">
+		<!-- The projects table's style: the same heads, rules and 16px inset.
+		     One tbody per project, so the name field a Restore opens sits in
+		     the project's own group, on a row of its own under it. -->
+		<table class="table dtable mt-4">
+			<thead class="max-sm:sr-only">
+				<tr>
+					<th>Project</th>
+					<th class="hidden md:table-cell">Size</th>
+					<th class="hidden sm:table-cell">Destroyed</th>
+					<th class="hidden lg:table-cell">Snapshot</th>
+					<th class="hidden sm:table-cell">Kept</th>
+					<th><span class="sr-only">Actions</span></th>
+				</tr>
+			</thead>
 			{#each visible as d (d.id)}
-				<li class="row" data-testid="destroyed-row">
-					<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-						<div class="min-w-0">
-							<span class="font-medium">{d.name}</span>
-							{#if !d.name_free}
-								<span class="badge ml-2">name in use</span>
-							{/if}
-						</div>
-						{#if openFor !== d.id}
-							<!-- -mx-2 takes back the ghost button's padding, so "Restore…"
-							     lines up with the list's edge at the right and, on a phone,
-							     under the name when it wraps. -->
-							<button
-								type="button"
-								id={`restore-open-${d.id}`}
-								class="btn-ghost -mx-2"
-								disabled={busy}
-								onclick={() => open(d)}>Restore…</button
+				{@const until = d.restorable_until ? dateTime(d.restorable_until).slice(0, 10) : ''}
+				<tbody data-testid="destroyed-row">
+					<tr class:dopen={openFor === d.id}>
+						<td class="dname">
+							<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1 lg:flex-nowrap">
+								<span class="dname-text font-medium" title={d.name}>{d.name}</span>
+								{#if !d.name_free}
+									<span class="badge shrink-0">name in use</span>
+								{/if}
+							</span>
+							<!-- Below sm the other columns are not drawn; their figures
+							     go under the name, the date it is kept until on a line
+							     of its own. -->
+							<span class="mt-0.5 block text-xs text-ink-muted tabular-nums sm:hidden">
+								<span class="font-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
+								{#if until}
+									<span class="block whitespace-nowrap"
+										>until {until} · {timeLeft(d.restorable_until)}</span
+									>
+								{/if}
+							</span>
+						</td>
+						<td class="hidden whitespace-nowrap md:table-cell">
+							<span class="font-mono text-sm">{d.class}</span>
+							<span class="text-ink-muted"> · {gb(d.volume_bytes)}</span>
+						</td>
+						<td class="hidden whitespace-nowrap text-ink-muted sm:table-cell">
+							<time datetime={d.destroyed_at} title={dateTime(d.destroyed_at)}
+								>{relativeTime(d.destroyed_at)}</time
 							>
-						{/if}
-					</div>
-					<!-- The size is mono text, as in the projects table above: a
-					     badge is for a tag like "name in use", not for a value. -->
-					<p class="mt-0.5 text-sm text-ink-muted tabular-nums">
-						<span class="font-mono text-compact text-ink">{d.class}</span> · destroyed {relativeTime(
-							d.destroyed_at
-						)} · snapshot {dateTime(d.snapshot.created_at)}, {mb(d.snapshot.bytes)}
-						{#if d.restorable_until}
-							· restorable until {dateTime(d.restorable_until).slice(0, 10)} ({timeLeft(
-								d.restorable_until
-							)})
-						{/if}
-					</p>
+						</td>
+						<td class="hidden whitespace-nowrap text-ink-muted tabular-nums lg:table-cell">
+							{dateTime(d.snapshot.created_at)}
+							<span aria-hidden="true">·</span>
+							<span class="font-mono text-compact">{mb(d.snapshot.bytes)}</span>
+						</td>
+						<td class="hidden whitespace-nowrap tabular-nums sm:table-cell">
+							{#if until}
+								<span class="text-ink-muted">until</span>
+								{until}
+								<span class="text-ink-muted">· {timeLeft(d.restorable_until)}</span>
+							{/if}
+						</td>
+						<td class="dcell-action">
+							{#if openFor !== d.id}
+								<button
+									type="button"
+									id={`restore-open-${d.id}`}
+									class="btn-ghost hit -mr-2"
+									disabled={busy}
+									onclick={() => open(d)}>Restore…</button
+								>
+							{/if}
+						</td>
+					</tr>
 					{#if openFor === d.id}
-						<RestoreNameForm
-							id={d.id}
-							bind:value={name}
-							error={nameError}
-							{busy}
-							onsubmit={(n) => void restore(d, n)}
-							oncancel={() => close(d)}
-						/>
+						<tr>
+							<td colspan="6" class="dform">
+								<RestoreNameForm
+									id={d.id}
+									bind:value={name}
+									error={nameError}
+									{busy}
+									onsubmit={(n) => void restore(d, n)}
+									oncancel={() => close(d)}
+								/>
+							</td>
+						</tr>
 					{/if}
-				</li>
+				</tbody>
 			{/each}
-		</ul>
+		</table>
 		{#if more > 0 || hasMore}
-			<div class="mt-3 flex items-baseline gap-3">
-				<button type="button" class="btn-ghost px-0" disabled={loadingMore} onclick={showMore}
+			<div class="mt-3 flex items-baseline gap-3 pl-4">
+				<button type="button" class="btn-ghost -ml-2" disabled={loadingMore} onclick={showMore}
 					>{loadingMore ? 'Loading…' : hasMore ? 'Show more' : `Show ${more} more`}</button
 				>
 				<span class="text-sm text-ink-muted tabular-nums"
@@ -179,3 +218,49 @@
 		{/if}
 	</section>
 {/if}
+
+<style>
+	/* One line a row, about 45px, so a long list does not take the page. */
+	.dtable td {
+		vertical-align: baseline;
+		padding-top: 0.75rem;
+		padding-bottom: 0.75rem;
+	}
+	.dtable :is(th, td):first-child {
+		padding-left: 1rem;
+	}
+	.dtable :is(th, td):last-child {
+		padding-right: 1rem;
+	}
+	/* From lg the name takes what the figures leave and a long one ends
+	   in an ellipsis, so a row stays one line; the form under it shows
+	   the whole name. */
+	@media (width >= 64rem) {
+		.dtable td.dname {
+			width: 100%;
+			max-width: 0;
+		}
+		.dname-text {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+	}
+	/* The row whose name field is open and the field's row read as one. */
+	.dtable tr.dopen td {
+		border-bottom: 0;
+		padding-bottom: 0;
+	}
+	.dtable td.dform {
+		padding-top: 0;
+	}
+	/* The ghost button's own padding makes up the cell's. */
+	.dtable td.dcell-action {
+		width: 1px;
+		padding-top: 0.5rem;
+		padding-bottom: 0.5rem;
+		white-space: nowrap;
+		text-align: right;
+	}
+</style>

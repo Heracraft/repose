@@ -133,3 +133,39 @@ test('the Menu and Nix tabs are ARIA tabs the arrow keys move between', async ({
 	await expect(menu).toBeFocused();
 	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toBeVisible();
 });
+
+// The Apply sits in the editor's own bar, beside its state (I-664), and
+// the editor says when it holds a change that is not applied.
+test('the Nix editor bar says Saved, then Unsaved changes, beside Apply', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'nix-bar-app',
+		remote_url: 'github.com/heracraft/nix-bar-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Nix' }).click();
+	const panel = page.getByRole('tabpanel', { name: 'Nix' });
+	const bar = panel.locator('.nix-frame');
+	await expect(bar.getByRole('status')).toHaveText('Saved');
+	await expect(bar.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+	await panel.locator('.cm-content').click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' ');
+	await expect(bar.getByRole('status')).toHaveText('Unsaved changes');
+});
+
+test('at lg the revisions sit in a rail beside the editor', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'rail-app',
+		remote_url: 'github.com/heracraft/rail-app'
+	});
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Nix' }).click();
+	const editor = await page.locator('.nix-frame').boundingBox();
+	const revisions = await page.getByRole('heading', { name: 'Revisions' }).boundingBox();
+	expect(revisions!.x).toBeGreaterThan(editor!.x + editor!.width);
+	expect(revisions!.x + 300).toBeGreaterThanOrEqual(1200);
+	// The editor is the page's subject: it opens with room to write in
+	// (28rem) even for an empty fragment.
+	expect((await page.locator('.nix-editor').boundingBox())!.height).toBeGreaterThanOrEqual(440);
+});

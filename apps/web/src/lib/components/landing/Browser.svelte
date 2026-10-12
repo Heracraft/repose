@@ -21,6 +21,24 @@
   snapshots, a click that timed out on the hidden radio) are cropped out.
   OSC 8 hyperlink wrappers are dropped; they carry no visible text.
 
+  Both stand in the grid's window under "your cloud machine" (WinHead,
+  I-669): the browser on top, the log under its viewport, so the page's
+  tabs are never under the log and the log's rows crop on the right as a
+  terminal's do (F18). The pans stop where the crop's edges fall between
+  the page's rows (the Type tabs, Write and Record, the text box's top),
+  never through them.
+  The captures are the light scheme's only: they came from the owner's
+  machine, which is not reachable from here, so there is no dark set to
+  swap in under dark mode (F47, I-669); in the dark scheme the toolbar and
+  page are dimmed (brightness 0.86) to sit beside the dark windows.
+
+  The loop opens on about:blank for 400ms and ends on it: at the seam the
+  page fades to the blank page under it and the toolbar cuts back to
+  about:blank, so the last frame equals the first. Captures that do not
+  line up (the page scrolled between them, the toolbar's URL) swap in one
+  frame instead of crossfading. The still frame is the loop's last beat
+  before the seam, so a first cycle starting from it begins at the seam.
+
   The pan of the page, the blue focus box, the command chip and the pointer
   are the illustration; everything inside the page and terminal is captured.
   anime.js plays it when the card is on screen; without JS, or under
@@ -31,6 +49,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
+	import { Picture } from './motion.svelte';
+	import PauseButton from './PauseButton.svelte';
+	import WinHead from './WinHead.svelte';
 
 	const ROWS = [
 		'\u001b[38;5;239m\u001b[48;5;237m❯ \u001b[38;5;231mTest the feedback form at http://localhost:5173/feedback with the playwright browser tools, in the browser window that is already open. Choose Bug, type a one-line bug report into the text box, and\u001b[39m',
@@ -104,8 +125,22 @@
 	const BUG = { x: 28, y: 1, w: 67, h: 37 };
 	// Where the pointer is drawn: in the text box, under the text (the real
 	// click, at y 350, sits below the frame's crop).
-	const POINTER = { x: 330, y: 285 };
-	const PAN = { nav: 150, typed: 150, bug: 0, you: 150 };
+	const POINTER = { x: 330, y: 296 };
+	// Where the page sits, in capture pixels from its top: each stop puts
+	// the viewport's top edge in the page's white space (nav: under the
+	// app's name, above its links; typed and you: under "Say it your way",
+	// above Write and Record; bug: 12 capture pixels above the page's top,
+	// so the ring round Bug clears the toolbar's line by 8 instead of
+	// sitting on it, over the page's own ground), and at typed and you
+	// the chip lands on the page's empty right side, over no text.
+	const PAN = { nav: 52, typed: 120, bug: -12, you: 120 };
+	// The seam (ms): the beat where the frame equals the still frame, and
+	// where a first cycle starts when the still frame is on screen.
+	const SEAM = 17200;
+	// A swap: two captures that do not line up (the page scrolled between
+	// them, or the toolbar's text changed) change in one frame, since a
+	// crossfade shows both texts at once.
+	const SWAP = 16;
 	// The opacity an older log row rests at. At 0.7 the dimmest captured
 	// text colour (#8fb3ff) holds 5.0:1 on #0d0d0c and the prompt's white
 	// 6.9:1 on its own #3a3a3a; 0.45 left rows at 2.7 to 4.2:1 (I-397).
@@ -130,12 +165,12 @@
 	});
 
 	let pic: HTMLDivElement;
+	const picture = new Picture({ group: 'grid' });
 
 	onMount(() => {
 		let dead = false;
 		let visible = false;
 		let tl: { pause(): unknown; play(): unknown } | null = null;
-		let io: IntersectionObserver | undefined;
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
@@ -151,8 +186,12 @@
 		// so every inline style anime.js wrote comes off.
 		function still() {
 			run++;
-			io?.disconnect();
-			io = undefined;
+			picture.stop();
+			rest();
+		}
+		// The still frame, with the loop kept registered: another grid
+		// picture has the turn, or the loop is held before it has begun.
+		function rest() {
 			tl?.pause();
 			tl = null;
 			visible = false;
@@ -166,7 +205,7 @@
 
 		function start() {
 			const me = ++run;
-			import('animejs').then(({ createTimeline, utils }) => {
+			import('animejs').then(({ createTimeline, utils, steps }) => {
 				if (dead || me !== run) return;
 
 				const rowEls = q('.tr');
@@ -189,10 +228,10 @@
 					rowEls.forEach((r) => r.classList.remove('new'));
 				}
 
-				function cycle() {
+				function cycle(at = 0) {
 					if (dead || me !== run) return;
 					if (!visible) {
-						tl = null;
+						rest();
 						return;
 					}
 					pre();
@@ -206,7 +245,8 @@
 							rowEls.forEach((r) => r.classList.remove('new'));
 							rowEls[first].classList.add('new');
 						}, at)
-							.add(list, { y: offset(first + 1), duration: 520, ease: 'inOutCubic' }, at)
+							// a terminal scrolls a whole row at a time
+							.add(list, { y: offset(first + 1), duration: 240, ease: steps(2) }, at)
 							.add(rowEls.slice(0, first), { opacity: REST, duration: 400, ease: 'outQuad' }, at)
 							.add([rowEls[first], rowEls[first + 1]], { opacity: [0, 1], duration: 380 }, at + 60);
 					};
@@ -217,22 +257,24 @@
 					) => t.add(one('.ring'), { ...ring(r, pan), duration: 700, ease: 'inOutCubic' }, at);
 					const show = (sel: string, at: number, duration = 300) =>
 						t.add(q(sel), { opacity: [0, 1], duration, ease: 'outQuad' }, at);
+					const swap = (sel: string, at: number, to = 1) =>
+						t.add(q(sel), { opacity: to, duration: SWAP }, at);
 					const pan = (to: number, at: number, duration = 800) =>
 						t.add(pic, { '--pan': to, duration, ease: 'inOutCubic' }, at);
 
-					// 1. Navigate.
-					log(1, 700);
-					t.add(one('.ring'), { opacity: [0, 1], duration: 250 }, 800);
-					show('.tb-live', 1150, 200);
-					show('.l-nav', 1150, 350);
+					// 1. Navigate: the page loads 250ms in (about:blank shows
+					// 400ms in all, with the seam's last 150).
+					log(1, 50);
+					t.add(one('.ring'), { opacity: [0, 1], duration: 250 }, 100);
+					swap('.tb-live', 250);
+					show('.l-nav', 250, 350);
 
-					// 2. Type into the text box (the page scrolled it into view;
-					// PAN.typed is where /feedback already sat, so the pan moves
-					// with the ring and lands where it started).
+					// 2. Type into the text box (the page scrolled it into view,
+					// and the pan moves with the ring).
 					log(3, 2900);
 					box(TEXTBOX, PAN.typed, 3000);
 					pan(PAN.typed, 3000, 700);
-					show('.l-typed', 3100, 300);
+					swap('.l-typed', 3100);
 
 					// 3. Read the console: nothing on the page moves.
 					log(5, 4900);
@@ -241,12 +283,12 @@
 					// 4. Click Bug.
 					log(7, 6600);
 					pan(PAN.bug, 6700, 800);
-					t.set(one('.ring'), ring(BUG, PAN.bug), 7500).add(
+					t.add(one('.ring'), { ...ring(BUG, PAN.bug), duration: SWAP }, 7500).add(
 						one('.ring'),
 						{ opacity: [0, 1], duration: 250 },
 						7520
 					);
-					show('.l-bug', 7800, 220);
+					swap('.l-bug', 7800);
 
 					// 5. You, from the laptop: the desktop view opens on the same
 					// window and your pointer types into it.
@@ -269,7 +311,7 @@
 					const sy = (c.bottom - b.top - 4) / k;
 					const ex = POINTER.x;
 					const ey = TB + POINTER.y - PAN.you;
-					t.set(one('.pointer'), { '--px': sx, '--py': sy }, 0)
+					t.add(one('.pointer'), { '--px': sx, '--py': sy, duration: SWAP }, 0)
 						.add(one('.pointer'), { opacity: [0, 1], duration: 200 }, 10000)
 						.add(
 							one('.pointer'),
@@ -281,28 +323,41 @@
 					show('.l-t1', 11700, 200);
 					show('.l-t2', 12400, 200);
 
-					// Rest on it, then clear and go again.
-					t.add(q('.layer, .chip, .pointer'), { opacity: 0, duration: 450, ease: 'inQuad' }, 17200)
-						.add(rowEls, { opacity: 0, duration: 450, ease: 'inQuad' }, 17200)
-						.add({ duration: 300 }, 17700);
+					// Rest on it, then go back to the first frame: the page and
+					// the log's rows fade, the blank page (under them all along)
+					// shows, and the toolbar and log cut to the first frame's,
+					// so the last frame equals the first.
+					// The pages under the top one go first, unseen, so the fade
+					// shows no older page through it.
+					// A cycle started at its seam has no seam of its own to
+					// report (and anime.js runs a muted seek's callbacks on
+					// the first tick).
+					t.call(() => at || picture.looped(), SEAM - 1);
+					swap('.l-nav, .l-typed, .l-bug, .l-t0, .l-t1', SEAM, 0);
+					t.add(
+						q('.l-t2, .chip, .pointer'),
+						{ opacity: 0, duration: 450, ease: 'inQuad' },
+						SEAM
+					).add(rowEls, { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM);
+					swap('.tb-live', SEAM + 450, 0);
+					t.add(list, { y: offset(0), duration: SWAP }, SEAM + 450).add(
+						rowEls[0],
+						{ opacity: 1, duration: 150, ease: 'outQuad' },
+						SEAM + 450
+					);
 
 					tl = t;
+					if (at) t.seek(at, true);
 					t.play();
 				}
 
-				io = new IntersectionObserver(
-					([e]) => {
-						visible = e.isIntersecting;
-						if (visible) {
-							if (tl) tl.play();
-							else cycle();
-						} else {
-							tl?.pause();
-						}
-					},
-					{ threshold: 0.5 }
-				);
-				io.observe(pic);
+				picture.start(pic, (m, fromStill) => {
+					visible = m === 'play';
+					if (m === 'rest' || (!visible && !tl)) rest();
+					else if (!visible) tl?.pause();
+					else if (tl) tl.play();
+					else cycle(fromStill ? SEAM : 0);
+				});
 			});
 		}
 
@@ -314,115 +369,125 @@
 		return () => {
 			dead = true;
 			unwatch();
-			io?.disconnect();
+			picture.stop();
 			tl?.pause();
 		};
 	});
 </script>
 
-<div class="shot frame">
+<div class="shot shot-box" use:picture.frame>
+	<PauseButton {picture} />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="stage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
-		<div class="br" aria-hidden="true">
-			<div class="tb">
-				<img
-					class="layer tb-blank"
-					src="/landing/browser-tb-blank.webp"
-					width="574"
-					height="48"
-					loading="lazy"
-					decoding="async"
-					alt=""
-				/>
-				<img
-					class="layer tb-live on"
-					src="/landing/browser-tb.webp"
-					width="574"
-					height="48"
-					loading="lazy"
-					decoding="async"
-					alt=""
-				/>
-			</div>
-			<div class="vp">
-				<div class="pg">
-					<div class="layer l-blank"></div>
+		<div class="shot-win open bw" aria-hidden="true">
+			<WinHead who="machine" />
+			<div class="br">
+				<div class="tb">
 					<img
-						class="layer l-nav"
-						src="/landing/browser-p-nav.webp"
+						class="layer tb-blank"
+						src="/landing/browser-tb-blank.webp"
 						width="574"
-						height="536"
+						height="48"
 						loading="lazy"
 						decoding="async"
 						alt=""
 					/>
 					<img
-						class="layer l-typed"
-						src="/landing/browser-p-typed.webp"
+						class="layer tb-live on"
+						src="/landing/browser-tb.webp"
 						width="574"
-						height="536"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer l-bug"
-						src="/landing/browser-p-bug.webp"
-						width="574"
-						height="536"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer l-t0"
-						src="/landing/browser-p-t0.webp"
-						width="574"
-						height="536"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer l-t1"
-						src="/landing/browser-p-t1.webp"
-						width="574"
-						height="536"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer l-t2 on"
-						src="/landing/browser-p-t2.webp"
-						width="574"
-						height="536"
+						height="48"
 						loading="lazy"
 						decoding="async"
 						alt=""
 					/>
 				</div>
+				<div class="vp">
+					<div class="pg">
+						<div class="layer l-blank"></div>
+						<img
+							class="layer l-nav"
+							src="/landing/browser-p-nav.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+						<img
+							class="layer l-typed"
+							src="/landing/browser-p-typed.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+						<img
+							class="layer l-bug"
+							src="/landing/browser-p-bug.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+						<img
+							class="layer l-t0"
+							src="/landing/browser-p-t0.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+						<img
+							class="layer l-t1"
+							src="/landing/browser-p-t1.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+						<img
+							class="layer l-t2 on"
+							src="/landing/browser-p-t2.webp"
+							width="574"
+							height="536"
+							loading="lazy"
+							decoding="async"
+							alt=""
+						/>
+					</div>
+				</div>
+				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
+				<span class="chip">repose browser</span>
+				<svg
+					class="pointer"
+					viewBox="0 0 12 18"
+					aria-hidden="true"
+					style:--px={POINTER.x}
+					style:--py={TB + POINTER.y - PAN.you}
+				>
+					<path
+						d="M1 1v13.2l3.3-3.1 2.2 5.1 2.1-.9-2.2-5h4.6z"
+						fill="#111"
+						stroke="#fff"
+						stroke-width="1.1"
+						stroke-linejoin="round"
+					/>
+				</svg>
 			</div>
-			<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
-			<span class="chip">repose browser</span>
-			<svg class="pointer" viewBox="0 0 12 18" aria-hidden="true">
-				<path
-					d="M1 1v13.2l3.3-3.1 2.2 5.1 2.1-.9-2.2-5h4.6z"
-					fill="#111"
-					stroke="#fff"
-					stroke-width="1.1"
-					stroke-linejoin="round"
-				/>
-			</svg>
-		</div>
-		<div class="term" aria-hidden="true">
-			<div class="clip">
-				<div class="rows">
-					{#each rows as row, i (i)}
-						<div class="tr" style={row.bg ? `background:${row.bg}` : ''}>
-							{#each row.segs as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
-						</div>
-					{/each}
+			<div class="term">
+				<div class="clip">
+					<div class="rows">
+						{#each rows as row, i (i)}
+							<div class="tr" style={row.bg ? `background:${row.bg}` : ''}>
+								{#each row.segs as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -430,7 +495,9 @@
 </div>
 
 <style>
-	.frame {
+	/* A size container. Not named `frame`: that is the site's frame
+	   utility (layout.css), which would pad it to the page gutter. */
+	.shot-box {
 		container-type: inline-size;
 	}
 	.stage {
@@ -443,13 +510,19 @@
 		   page, takes --chip's. A mark over a capture follows the
 		   capture's ground, not the page's scheme. */
 		--on-log: var(--color-blue-400);
-		/* one capture pixel, at this frame's width */
+		/* one capture pixel, at the window's inner width (.bw) */
 		--k: calc(100cqw / 574);
-		--pan: 150;
+		--pan: 120;
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		padding: var(--shot-in) var(--shot-in) 0;
+	}
+	.bw {
+		flex: 1;
+		min-height: 0;
+		container-type: inline-size;
 	}
 
 	/* The browser: flush with the frame's top and sides, a crop of the window. */
@@ -469,10 +542,23 @@
 		border-bottom: 1px solid #d9dce0;
 		background: #fff;
 	}
+	/* The page's own ground (#fafafa in the captures), so the Bug stop's
+	   12 pixels above the page's top read as the page. */
 	.vp {
 		position: relative;
 		flex: 1;
 		overflow: hidden;
+		background: #fafafa;
+	}
+	/* The captures are the light scheme's only (I-669), so in the dark
+	   scheme the page and toolbar are dimmed to sit beside the dark
+	   windows instead of glaring white; the ring, the chip and the pointer
+	   are drawn over them undimmed. */
+	@media (prefers-color-scheme: dark) {
+		.tb,
+		.vp {
+			filter: brightness(0.86);
+		}
 	}
 	/* Panned with translate, not top: a pan moves no layout box, so it
 	   counts for nothing in CLS (I-397). */
@@ -551,34 +637,23 @@
 		}
 	}
 
-	/* You: the command, and your pointer in the same window. */
-	.chip {
+	/* You: the command, and your pointer in the same window. The grid's
+	   chip (landing.css), in --chip on the white page. */
+	.stage .chip {
 		position: absolute;
 		right: 10px;
 		top: calc(var(--k) * 48 + 10px);
-		padding: 2px 8px;
-		border: 1px solid var(--chip);
-		border-radius: 3px;
+		border-color: var(--chip);
 		background: #fff;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		font-weight: 600;
-		line-height: 18px;
 		color: var(--chip);
-		white-space: nowrap;
-		transition:
-			background-color 0.18s,
-			color 0.18s;
 	}
-	.chip:global(.fire) {
+	.stage .chip:global(.fire) {
 		background: var(--chip);
 		color: #fff;
 	}
 	/* Placed with translate, so anime.js's scale (the click) composes with
 	   it and the pointer's travel moves no layout box. */
 	.pointer {
-		--px: 330;
-		--py: 183;
 		position: absolute;
 		left: 0;
 		top: 0;
@@ -621,10 +696,12 @@
 		padding: 0 12px;
 		white-space: pre;
 		overflow: hidden;
+		text-overflow: ellipsis;
 	}
-	/* Older rows rest dimmed, at REST in the script: 0.7 keeps every
-	   captured text colour at 5:1 or more on #0d0d0c. */
-	.tr:not(:nth-last-child(-n + 3)) {
+	/* Rows rest dimmed, at REST in the script: 0.7 keeps every captured
+	   text colour at 5:1 or more on #0d0d0c. The still frame is the loop's
+	   last beat, where you have taken over and every row rests. */
+	.tr {
 		opacity: 0.7;
 	}
 	/* The call that is acting: a 2px bar at the row's left. A border on a
@@ -655,10 +732,6 @@
 		}
 		.tr {
 			padding: 0 10px;
-		}
-		.chip {
-			font-size: 11px;
-			line-height: 16px;
 		}
 	}
 </style>

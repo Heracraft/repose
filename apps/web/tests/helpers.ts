@@ -123,14 +123,73 @@ export async function addQuestion(
 	return res.json();
 }
 
-/** count events on a project, one minute apart, e000 oldest (cmd/fakeapi POST /events). */
-export async function addEvents(projectId: string, count: number): Promise<void> {
-	const adminURL = process.env.FAKEAPI_ADMIN_URL;
-	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');
-	const res = await fetch(`${adminURL}/events`, {
+/**
+ * count events on a project, spacingMinutes apart (default 1) ending now,
+ * e000 oldest (cmd/fakeapi POST /events). kinds, agents, windows and
+ * summaries are cycled when given; the project's creation moves to before
+ * the first of them, so it stays the oldest event.
+ */
+export async function addEvents(
+	projectId: string,
+	count: number,
+	opts: {
+		kinds?: string[];
+		agents?: string[];
+		windows?: string[];
+		summaries?: string[];
+		spacingMinutes?: number;
+	} = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/events`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ project_id: projectId, count })
+		body: JSON.stringify({
+			project_id: projectId,
+			count,
+			kinds: opts.kinds,
+			agents: opts.agents,
+			windows: opts.windows,
+			summaries: opts.summaries,
+			spacing_minutes: opts.spacingMinutes
+		})
 	});
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);
+}
+
+/** Sets the agents a running project's signals report, and its sessions (cmd/fakeapi POST /agents). */
+export async function setAgents(
+	projectId: string,
+	agents: { agent: string; window: string; state: string }[],
+	sessions: { ssh_sessions?: number; tmux_clients?: number } = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/agents`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectId, agents, ...sessions })
+	});
+	if (!res.ok) throw new Error(`/agents: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * A fake clock held still from the page's first script: installed at 0 and
+ * paused at 1000 before the page loads, so nothing on the page (a loop,
+ * a timer) moves until the test calls `page.clock.runFor`. Pausing after
+ * the load at the page's `Date.now()` plus a margin raced a loaded machine
+ * two ways: past the margin, "Cannot fast-forward to the past"; inside it,
+ * a loop that had already run for an unknown time before the pause.
+ */
+export async function holdClock(page: Page): Promise<void> {
+	await page.clock.install({ time: 0 });
+	await page.clock.pauseAt(1000);
+}
+
+/** Freezes a project `minutes` ago, or clears it with a negative number
+ * (cmd/fakeapi POST /resting: the mock of DECISIONS I-683). */
+export async function setResting(projectID: string, minutes: number): Promise<void> {
+	const res = await fetch(`${adminURL()}/resting`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectID, minutes })
+	});
+	if (!res.ok) throw new Error(`setResting: ${res.status}`);
 }

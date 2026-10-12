@@ -12,6 +12,7 @@ import type {
 	Checkout,
 	Config,
 	DestroyedProject,
+	EventsPage,
 	Invoice,
 	Me,
 	MenuSelection,
@@ -43,9 +44,25 @@ interface RequestOptions {
 	body?: unknown;
 	/** Internal: set on the one retry rate_limited gets (5.5). */
 	_retried?: boolean;
+	/** A background read (the header's question count): its failure can
+	 * raise the outage bar, but its success never clears it, so it cannot
+	 * hide an outage the page's own call just reported. */
+	passive?: boolean;
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+	return (await requestWithHeaders<T>(path, opts)).data;
+}
+
+/**
+ * request(), with the response's headers: for the one route whose answer
+ * carries a figure in a header (the events count, I-662). Errors, the
+ * token, the outage bar and the rate-limit retry are the same code.
+ */
+async function requestWithHeaders<T>(
+	path: string,
+	opts: RequestOptions = {}
+): Promise<{ data: T; headers: Headers }> {
 	const headers: Record<string, string> = {};
 	if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
 	const token = await getAccessToken();
@@ -66,8 +83,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 	const requestId = res.headers.get('X-Request-Id');
 
 	if (res.status === 204) {
-		reachability.up();
-		return undefined as T;
+		if (!opts.passive) reachability.up();
+		return { data: undefined as T, headers: res.headers };
 	}
 
 	let json: unknown;
@@ -77,7 +94,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 	} catch {
 		// A proxy's HTML error page: the api itself did not answer.
 		if (res.status >= 500) reachability.down('server');
-		else reachability.up();
+		else if (!opts.passive) reachability.up();
 		throw new ApiError(
 			{ code: 'internal', message: 'the api sent a response that was not JSON' },
 			res.status,
@@ -89,7 +106,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 	// A 5xx raises the persistent bar (08-dashboard.md 6), except the 503s
 	// the api gives as answers (isOutage); anything else clears it.
 	if (isOutage(res.status, errBody?.code)) reachability.down('server');
-	else reachability.up();
+	else if (!opts.passive) reachability.up();
 
 	if (!res.ok) {
 		const body = errBody ?? {
@@ -99,12 +116,12 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 		if (body.code === 'rate_limited' && !opts._retried) {
 			const retryAfter = Number(res.headers.get('Retry-After') ?? '1');
 			await new Promise((r) => setTimeout(r, Math.min(retryAfter, 10) * 1000));
-			return request<T>(path, { ...opts, _retried: true });
+			return requestWithHeaders<T>(path, { ...opts, _retried: true });
 		}
 		throw new ApiError(body, res.status, requestId);
 	}
 
-	return json as T;
+	return { data: json as T, headers: res.headers };
 }
 
 // Users.
@@ -216,7 +233,37 @@ export const listEvents = (
 	return request<ProjectEvent[]>(`/projects/${id}/events${qs ? `?${qs}` : ''}`);
 };
 
+/**
+ * One page of a project's events for the pager (I-662): `before` (an event
+ * id) the page older than it, `after` the page newer than it, `kinds` only
+ * those kinds. `total` is the count of every event that matches `kinds`,
+ * from the Repose-Event-Count header; an api older than I-662 sends no
+ * header and ignores `after` and `kind`, and then `total` is undefined.
+ */
+export async function listEventsPage(
+	id: string,
+	opts: { before?: string; after?: string; limit?: number; kinds?: string[] } = {}
+): Promise<EventsPage> {
+	const q = new URLSearchParams();
+	if (opts.before) q.set('before', opts.before);
+	if (opts.after) q.set('after', opts.after);
+	if (opts.limit) q.set('limit', String(opts.limit));
+	if (opts.kinds?.length) q.set('kind', opts.kinds.join(','));
+	const qs = q.toString();
+	const { data, headers } = await requestWithHeaders<ProjectEvent[]>(
+		`/projects/${id}/events${qs ? `?${qs}` : ''}`
+	);
+	const count = headers.get('Repose-Event-Count');
+	const total = count !== null && /^\d+$/.test(count) ? Number(count) : undefined;
+	return { events: data ?? [], total };
+}
+
 // Questions (repose-ask, I-245).
+/** Questions across every project, newest first, at most 50; `pending` lists only the ones still waiting. */
+export const listQuestions = (
+	state: 'pending' | 'all' = 'pending',
+	opts: { passive?: boolean } = {}
+) => request<{ questions: Question[] }>(`/questions?state=${state}`, opts).then((r) => r.questions);
 export const listProjectQuestions = (id: string, pendingOnly = true) =>
 	request<{ questions: Question[] }>(
 		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`

@@ -114,7 +114,12 @@ DECISIONS entry and this list with it. Counts as of 2026-10-01.
 - [ ] No shadows, and no gradient of more than one colour. Evidence: `rg
       -n 'shadow-|box-shadow: [^n]' apps/web/src "${L[@]}"` prints 0
       lines; `rg -nP 'gradient\((?!(var\([^)]*\)|#[0-9a-fA-F]+|currentColor),
-      \1\))' apps/web/src` prints 0 lines.
+      \1\))' apps/web/src | rg -v mask-image` prints 0 lines (the docs
+      sidebar's foot fade is a mask, which paints no colour, I-660).
+- [ ] Every page is on the one frame and the one header (I-655, I-656).
+      Evidence: `rg -n 'max-w-(5xl|7xl)|HeaderFrame' apps/web/src --glob
+      '*.svelte'` prints 0 lines; `pnpm test:integration
+      tests/design.spec.ts -g 'logo stands'` passes.
 - [ ] Toasts are house banners. Evidence: `rg -n 'richColors' apps/web/src
       --glob '*.svelte' | rg -v '<!--'` prints 0 lines.
 - [ ] No page asks a third party for a font, and the CSP allows none.

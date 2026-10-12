@@ -8,6 +8,7 @@
 	import { encodeBase64 } from '$lib/base64';
 	import { dateTime } from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { Project, SecretMeta } from '$lib/api/types';
@@ -28,6 +29,9 @@
 	let name = $state('');
 	let value = $state('');
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
+	// The file Load from file picked, shown by name in place of a native
+	// file widget; while one is picked it is the value, not the textarea.
+	let file = $state<File | undefined>(undefined);
 	let nameError = $state<string | undefined>(undefined);
 	let valueError = $state<string | undefined>(undefined);
 	let saving = $state(false);
@@ -61,12 +65,28 @@
 		return undefined;
 	}
 
+	function pickFile() {
+		file = fileInput?.files?.[0];
+		valueError = undefined;
+	}
+
+	function clearFile() {
+		file = undefined;
+		if (fileInput) fileInput.value = '';
+		valueError = undefined;
+	}
+
+	function bytes(n: number): string {
+		return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+	}
+
 	async function onAdd() {
+		// The field shows what it holds in capitals; the name sent is that.
+		name = name.trim().toUpperCase();
 		nameError = validateName(name);
 		valueError = undefined;
 		let base64: string;
-		if (fileInput?.files?.length) {
-			const file = fileInput.files[0];
+		if (file) {
 			if (file.size > MAX_BYTES) {
 				valueError = 'Secret values are limited to 64 KB.';
 			}
@@ -85,7 +105,7 @@
 			toast.success(`Stored ${name}.`);
 			name = '';
 			value = '';
-			if (fileInput) fileInput.value = '';
+			clearFile();
 			await load();
 		} catch (err) {
 			toastApiError(err, 'Could not store the secret.');
@@ -120,149 +140,219 @@
 	}
 </script>
 
+<!-- A name breaks after an underscore before anywhere else: at 320
+     STRIPE_WEBHOOK_SIGNING_SECRET_… split mid-word with break-all. -->
+{#snippet secretName(n: string)}{#each n.split('_') as part, i (i)}{#if i > 0}_<wbr
+			/>{/if}{part}{/each}{/snippet}
+
 <svelte:head>
 	<title>{project ? `${project.name} secrets — repose` : 'Secrets — repose'}</title>
 </svelte:head>
 
+<!-- The project's name is a plain crumb: Overview in the tabs is the way
+     back to the project, so a second link to it would be a duplicate. -->
 <PageShell
 	title="Secrets"
-	width="form"
 	crumbs={[
 		{ label: 'Projects', href: resolve('/projects') },
 		// "…" while the name loads; after a failed load there is no name
-		// coming, so the crumb says what it links to.
-		{
-			label: project?.name ?? (loadFailed ? 'Project' : '…'),
-			href: resolve('/projects/[id]', { id })
-		}
+		// coming, so the crumb says what it is.
+		{ label: project?.name ?? (loadFailed ? 'Project' : '…') }
 	]}
 >
+	{#snippet tabs()}<ProjectTabs {id} />{/snippet}
 	<LoadState
 		status={secrets !== undefined ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={load}
 		error={loadError}
 	>
-		{#if secrets && secrets.length === 0}
-			<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
-			     to add one is right below, so the sentence is where a secret
-			     lands, not how to add one (I-485). -->
-			<h2 class="text-xl font-semibold">No secrets yet</h2>
-			<p class="mt-2 text-sm text-ink-muted">
-				The machine sees each as an environment variable and a file in
-				<code>/run/repose/secrets/</code>.
-			</p>
-		{:else if secrets}
-			<ul>
-				{#each secrets as s (s.name)}
-					<li class="row flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-						<span class="min-w-0 font-mono text-sm break-all">{s.name}</span>
-						<span class="flex items-center gap-4">
-							<span class="text-xs text-ink-muted tabular-nums"
-								>updated {dateTime(s.updated_at)}</span
-							>
-							{#if confirming !== s.name}
-								<button
-									type="button"
-									id={`delete-${s.name}`}
-									class="btn-ghost-danger -mr-2"
-									aria-label={`Delete ${s.name}`}
-									onclick={() => (confirming = s.name)}>Delete</button
+		<!-- The list and the form side by side from lg (I-664): the list
+		     takes what the frame has left, the form a 22rem card. With no
+		     secrets the dashed box is the column's content, and it runs the
+		     form's height so the two end level. -->
+		<div
+			class="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12 {secrets?.length ===
+			0
+				? 'lg:items-stretch'
+				: ''}"
+		>
+			<div class="min-w-0">
+				{#if secrets && secrets.length === 0}
+					<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
+					     to add one is beside it, so the sentence is where a secret
+					     lands, not how to add one (I-485). -->
+					<div
+						class="flex h-full flex-col justify-center rounded-sm border border-dashed border-rule-strong px-6 py-12 text-center"
+					>
+						<h2 class="text-xl font-semibold">No secrets yet</h2>
+						<p class="mx-auto mt-2 max-w-md text-sm text-ink-muted">
+							The machine sees each as an environment variable and as a file at
+							<code class="font-mono text-compact whitespace-nowrap text-ink"
+								>/run/repose/secrets/NAME</code
+							>.
+						</p>
+					</div>
+				{:else if secrets}
+					<!-- pt-5 puts this h2 level with the card's. -->
+					<h2 class="text-xl font-semibold lg:pt-5">
+						{secrets.length}
+						{secrets.length === 1 ? 'secret' : 'secrets'}
+					</h2>
+					<table class="table mt-3">
+						<thead>
+							<tr>
+								<th scope="col">Name</th>
+								<th scope="col" class="hidden w-px whitespace-nowrap sm:table-cell">Updated</th>
+								<th scope="col" class="w-px"><span class="sr-only">Delete</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each secrets as s (s.name)}
+								<tr>
+									<!-- Below sm the date is a second line under the name, so
+									     the name has the row's width and breaks at its
+									     underscores. -->
+									<td
+										class="font-mono wrap-anywhere align-middle {confirming === s.name
+											? 'border-b-0'
+											: ''}"
+										><span>{@render secretName(s.name)}</span><span
+											class="block font-sans text-xs whitespace-nowrap text-ink-muted tabular-nums sm:hidden"
+											>{dateTime(s.updated_at)}</span
+										></td
+									>
+									<td
+										class="hidden align-middle whitespace-nowrap text-ink-muted tabular-nums sm:table-cell {confirming ===
+										s.name
+											? 'border-b-0'
+											: ''}">{dateTime(s.updated_at)}</td
+									>
+									<td class="text-right align-middle {confirming === s.name ? 'border-b-0' : ''}">
+										{#if confirming !== s.name}
+											<button
+												type="button"
+												id={`delete-${s.name}`}
+												class="btn-ghost-danger -mr-2"
+												aria-label={`Delete ${s.name}`}
+												onclick={() => (confirming = s.name)}>Delete</button
+											>
+										{/if}
+									</td>
+								</tr>
+								{#if confirming === s.name}
+									<tr>
+										<td colspan="3" class="pt-0" data-testid="confirm-delete-secret">
+											<p class="text-ink-muted">
+												Remove <span class="font-mono wrap-anywhere text-ink"
+													>{@render secretName(s.name)}</span
+												>? Running processes that already read it keep their copy until they
+												restart.
+											</p>
+											<div class="mt-2 flex items-center gap-2">
+												<button
+													type="button"
+													class="btn-danger btn--sm"
+													aria-label={`Delete ${s.name} now`}
+													disabled={deleting === s.name}
+													onclick={() => onDelete(s.name)}
+													>{deleting === s.name ? 'Deleting…' : 'Delete'}</button
+												>
+												<!-- Focus lands on the safe choice when the question opens. -->
+												<button
+													type="button"
+													class="btn-ghost"
+													use:focusOnMount
+													onclick={() => keep(s.name)}>Keep it</button
+												>
+											</div>
+										</td>
+									</tr>
+								{/if}
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</div>
+
+			<!-- Each field has a visible label and its error is tied to it with
+			     aria-describedby, so a screen reader hears why Add refused. -->
+			<!-- Beside a long list the form stays in view from lg, so Add is
+			     in reach at the list's end. -->
+			<form
+				class="card {secrets?.length ? 'lg:sticky lg:top-20 lg:self-start' : ''}"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void onAdd();
+				}}
+			>
+				<h2 class="text-xl font-semibold">Add a secret</h2>
+				<div class="mt-4 flex flex-col gap-4">
+					<div>
+						<label for="secret-name" class="block text-sm font-medium">Name</label>
+						<input
+							id="secret-name"
+							class="field mt-1.5 w-full font-mono uppercase placeholder:normal-case"
+							placeholder="API_KEY"
+							autocomplete="off"
+							autocapitalize="characters"
+							spellcheck="false"
+							bind:value={name}
+							aria-invalid={nameError ? 'true' : undefined}
+							aria-describedby={nameError ? 'secret-name-error' : undefined}
+							oninput={() => (nameError = undefined)}
+						/>
+						{#if nameError}<p id="secret-name-error" class="field-error">{nameError}</p>{/if}
+					</div>
+					<div>
+						<label for="secret-value" class="block text-sm font-medium">Value</label>
+						<textarea
+							id="secret-value"
+							rows="3"
+							class="field mt-1.5 block min-h-0 w-full resize-y font-mono disabled:cursor-not-allowed disabled:opacity-60"
+							autocomplete="off"
+							spellcheck="false"
+							disabled={!!file}
+							bind:value
+							aria-invalid={valueError ? 'true' : undefined}
+							aria-describedby={valueError ? 'secret-value-error' : undefined}
+							oninput={() => (valueError = undefined)}
+						></textarea>
+						<!-- The native file widget's "Choose File" and its grey box are
+						     the browser's, not the house's: a ghost button opens the
+						     same picker, and the picked file shows by name. The input
+						     keeps a real label for anything that reaches it. -->
+						<label for="secret-file" class="sr-only">Value from a file</label>
+						<input
+							id="secret-file"
+							type="file"
+							tabindex="-1"
+							class="sr-only"
+							bind:this={fileInput}
+							onchange={pickFile}
+						/>
+						<div class="mt-2 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1">
+							{#if file}
+								<span
+									class="min-w-0 font-mono text-compact break-all text-ink"
+									data-testid="secret-file-name">{file.name}</span
+								>
+								<span class="text-xs text-ink-muted tabular-nums">{bytes(file.size)}</span>
+								<button type="button" class="btn-ghost -ml-1" onclick={clearFile}>Clear</button>
+							{:else}
+								<button type="button" class="btn-ghost -ml-2" onclick={() => fileInput?.click()}
+									>Load from file</button
 								>
 							{/if}
-						</span>
-						{#if confirming === s.name}
-							<div class="mt-2 basis-full text-sm" data-testid="confirm-delete-secret">
-								<p class="text-ink-muted">
-									Remove <span class="font-mono break-all text-ink">{s.name}</span>? Running
-									processes that already read it keep their copy until they restart.
-								</p>
-								<div class="mt-2 flex items-center gap-2">
-									<button
-										type="button"
-										class="btn-danger btn--sm"
-										aria-label={`Delete ${s.name} now`}
-										disabled={deleting === s.name}
-										onclick={() => onDelete(s.name)}
-										>{deleting === s.name ? 'Deleting…' : 'Delete'}</button
-									>
-									<!-- Focus lands on the safe choice when the question opens. -->
-									<button
-										type="button"
-										class="btn-ghost"
-										use:focusOnMount
-										onclick={() => keep(s.name)}>Keep it</button
-									>
-								</div>
-							</div>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-
-		<!-- Each field has a visible label and its error is tied to it with
-		     aria-describedby, so a screen reader hears why Add refused. The
-		     placeholders stay as examples of the shape, not as the labels. -->
-		<form
-			class="form-section"
-			onsubmit={(e) => {
-				e.preventDefault();
-				void onAdd();
-			}}
-		>
-			<h2 class="text-xl font-semibold">Add a secret</h2>
-			<div class="mt-3 flex flex-col gap-4">
-				<div>
-					<label for="secret-name" class="block text-sm font-medium">Name</label>
-					<input
-						id="secret-name"
-						class="field mt-1.5 w-full font-mono"
-						placeholder="NAME"
-						autocomplete="off"
-						spellcheck="false"
-						bind:value={name}
-						aria-invalid={nameError ? 'true' : undefined}
-						aria-describedby={nameError ? 'secret-name-error' : undefined}
-						oninput={() => (nameError = undefined)}
-					/>
-					{#if nameError}<p id="secret-name-error" class="field-error">{nameError}</p>{/if}
+						</div>
+						{#if valueError}<p id="secret-value-error" class="field-error">{valueError}</p>{/if}
+					</div>
 				</div>
-				<div>
-					<label for="secret-value" class="block text-sm font-medium">Value</label>
-					<textarea
-						id="secret-value"
-						class="field mt-1.5 w-full font-mono"
-						placeholder="Value"
-						autocomplete="off"
-						spellcheck="false"
-						bind:value
-						aria-invalid={valueError ? 'true' : undefined}
-						aria-describedby={valueError ? 'secret-value-error' : undefined}
-						oninput={() => (valueError = undefined)}
-					></textarea>
-					<label for="secret-file" class="mt-3 block text-sm text-ink-muted"
-						>Or read the value from a file</label
-					>
-					<!-- The file button drawn as a quiet button, so the one
-					     browser-default widget on the dashboard follows the house
-					     edge, radius and weight. -->
-					<input
-						id="secret-file"
-						type="file"
-						bind:this={fileInput}
-						class="mt-1.5 block w-full text-sm text-ink-muted file:mr-3 file:cursor-pointer file:rounded-sm file:border file:border-solid file:border-control file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink"
-						aria-invalid={valueError ? 'true' : undefined}
-						aria-describedby={valueError ? 'secret-value-error' : undefined}
-						onchange={() => (valueError = undefined)}
-					/>
-					{#if valueError}<p id="secret-value-error" class="field-error">{valueError}</p>{/if}
-				</div>
-				<div>
+				<div class="mt-5 border-t border-rule pt-4">
 					<button type="submit" class="btn" disabled={saving || !name}>
 						{saving ? 'Storing…' : 'Add'}
 					</button>
 				</div>
-			</div>
-		</form>
+			</form>
+		</div>
 	</LoadState>
 </PageShell>

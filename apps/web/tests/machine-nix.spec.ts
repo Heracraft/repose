@@ -26,23 +26,26 @@ test('machine.nix is edited and saved in Settings', async ({ page }) => {
 	await page.goto('/settings');
 	const section = page.locator('#machine-nix');
 	await expect(section.getByText('You have none yet.')).toBeVisible();
+	// Empty, the editor shows the shape of a module as a placeholder, which
+	// is not content: nothing to save.
+	await expect(section.locator('.cm-placeholder')).toContainText('home.packages');
 	const save = section.getByRole('button', { name: 'Save', exact: true });
 	await expect(save).toBeDisabled();
 	await section.locator('.cm-content').click();
 	await page.keyboard.type('{ pkgs, ... }: { home.packages = [ pkgs.ripgrep ]; }');
-	await expect(section.getByText('Not saved yet.')).toBeVisible();
+	await expect(section.getByText('Unsaved changes')).toBeVisible();
 	await save.click();
 	await expect(section.getByRole('status')).toContainText('Saved.');
 	await page.reload();
 	await expect(section.locator('.cm-content')).toContainText('pkgs.ripgrep');
-	await expect(section.getByText(/on the dashboard\./)).toBeVisible();
+	await expect(section.getByText(/on the dashboard$/)).toBeVisible();
 });
 
 test('a copy pushed from the laptop after the page loaded is not overwritten', async ({ page }) => {
 	await putPersonal('{ }\n');
 	await page.goto('/settings');
 	const section = page.locator('#machine-nix');
-	await expect(section.getByText(/from your laptop\./)).toBeVisible();
+	await expect(section.getByText(/from your laptop$/)).toBeVisible();
 	await putPersonal('{ home.packages = [ ]; }\n');
 	await section.locator('.cm-content').click();
 	await page.keyboard.press('End');
@@ -70,4 +73,23 @@ test("the Config page's switch keeps machine.nix off one machine", async ({ page
 	await expect(page).toHaveURL('/settings#machine-nix');
 	await expect(page.locator('#machine-nix').getByText(`Off on ${p.slug}.`)).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'machine.nix' })).toBeInViewport();
+});
+
+// The editor is as tall as its text plus one line, between 5 and 24, and
+// scrolls inside itself past that. An empty one is five lines tall, not a
+// block of blank paper.
+test('the machine.nix editor grows with its text up to a cap', async ({ page }) => {
+	await page.goto('/settings');
+	const section = page.locator('#machine-nix');
+	const scroller = section.locator('.cm-scroller');
+	const empty = (await scroller.boundingBox())!.height;
+	expect(empty).toBeLessThan(5 * 20 + 12);
+	await section.locator('.cm-content').click();
+	for (let i = 0; i < 10; i++) await page.keyboard.press('Enter');
+	const eleven = (await scroller.boundingBox())!.height;
+	expect(eleven).toBeGreaterThan(empty + 100);
+	for (let i = 0; i < 40; i++) await page.keyboard.press('Enter');
+	const capped = (await scroller.boundingBox())!.height;
+	expect(capped).toBeLessThan(24 * 20 + 20);
+	expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
 });

@@ -36,6 +36,12 @@
 	   line height of the text around it, as the arbitrary sizes did. */
 	--text-compact: 0.8125rem;
 	--text-2xs: 0.6875rem;
+	/* One step above text-base, for reading: the docs' and the legal
+	   pages' prose (.doc). At 16px on the docs' 624px column the text read
+	   small under a 36px serif title; 17px at 1.7 keeps the line near 72
+	   characters (I-660). */
+	--text-prose: 1.0625rem;
+	--text-prose--line-height: 1.7;
 
 	/* Sharp by default: the whole radius scale runs from 2px to 4px, so
 	   rounded-xs on a badge or a dot is still a corner and not a 1px blur. */
@@ -130,6 +136,30 @@
 	--color-rule-strong: var(--rule-strong);
 	--color-accent: var(--accent);
 	--color-accent-strong: var(--accent-strong);
+}
+
+/* The page frame (--frame-w above): the header's row, the footer, every
+   page's <main>, the docs' frame and the landing's rails all take it, so
+   no page picks its own max-width and gutter. A utility, not a component
+   class, so lg:grid and the like on the same element apply over it. */
+@utility frame {
+	margin-inline: auto;
+	width: 100%;
+	max-width: var(--frame-w);
+	padding-inline: var(--frame-x);
+}
+
+/* A bigger hit area for a word that does something (a ghost button, a
+   text link in a dense row) with no change to the layout: a transparent
+   box 8px out on every side takes the pointer, so a 20px word is a 36px
+   target. The element is the box's containing block. */
+@utility hit {
+	position: relative;
+	&::before {
+		content: '';
+		position: absolute;
+		inset: -8px;
+	}
 }
 
 /*
@@ -278,6 +308,21 @@
 @layer base {
 	:root {
 		color-scheme: light dark;
+		/* The one frame every page is built in (DECISIONS I-656): a 1200px
+		   box, its gutter included, centred, so the content column is
+		   1120px wide from 1280 up and the logo, a page's title and the
+		   header's last item stand on the same two edges on the landing,
+		   the docs, the legal pages and the dashboard. Following a link
+		   between them moves nothing sideways; with a frame per kind of
+		   page the logo sat at x=100, 216 or 228 at 1440 depending on
+		   where you were (owner's ask). The gutter is 20px on a phone and
+		   grows to 40px. */
+		--frame-w: 75rem;
+		--frame-x: clamp(1.25rem, 3vw, 2.5rem);
+		/* The site header's 56px row and its 1px rule: what a sticky bar
+		   under it, the docs' sidebar and a jump to a heading clear. */
+		--header-h: 57px;
+
 		--page: #fbfbfa;
 		--surface: #ffffff;
 		--sunken: #f4f4f2;
@@ -334,6 +379,14 @@
 		--accent-strong: var(--color-blue-900);
 		--selection: var(--color-blue-200);
 		--focus: var(--color-blue-600);
+		/* The usage charts' line and area (I-679). The owner switches it
+		   here: var(--accent) draws them blue, var(--ink) in ink (white on
+		   the dark scheme). Both hold the contrast floor in both schemes. */
+		--chart-line: var(--ink);
+		/* A frozen machine's colour (I-683, behind a flag): ice, kept off
+		   the accent so frozen never reads as a link or a measure. 5.4:1
+		   on --page. */
+		--frost: var(--color-cyan-700);
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {
@@ -357,12 +410,15 @@
 			--control-edge: #6e6e6a;
 			--accent: var(--color-blue-300);
 			--accent-strong: var(--color-blue-200);
+			--frost: var(--color-cyan-300);
 			--selection: var(--color-blue-800);
 			--focus: var(--color-blue-400);
 			--page: #111110;
 			--surface: #161615;
 			--sunken: #1b1b1a;
-			--rule: #2a2a28;
+			/* One step up from #2a2a28, which at 1.2:1 on --surface left a
+			   filled card with an edge nobody could find (I-659). */
+			--rule: #31312e;
 			--rule-strong: #3b3b38;
 		}
 	}
@@ -373,6 +429,21 @@
 	   system sans and Noto Serif lose nothing a reader would see. */
 	html {
 		font-variant-ligatures: no-contextual;
+		/* The scrollbar's gutter is kept on every page, so a short page
+		   (settings, a 404) does not sit 8 to 15px right of one that
+		   scrolls, and the docs' drawer, which stops the page scrolling,
+		   does not shift the header under it. */
+		scrollbar-gutter: stable;
+		/* A jump to a heading (a #section link, the docs' rail, a search
+		   hit) lands it 16px under the sticky header, on every page at
+		   once, instead of a scroll-margin on each heading. */
+		scroll-padding-top: calc(var(--header-h) + 1rem);
+	}
+	/* Below lg the docs add their 44px sub-bar under the header. */
+	@media (width < 64rem) {
+		:root:has([data-docs-subbar]) {
+			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
+		}
 	}
 	body {
 		@apply min-h-dvh text-ink antialiased;
@@ -519,6 +590,13 @@
 	.btn-danger {
 		@apply border-red-600 text-red-700 hover:bg-red-50 active:bg-red-100 dark:border-red-400 dark:text-red-400 dark:hover:bg-red-950 dark:active:bg-red-900;
 	}
+	/* A danger button that is ready to do the thing: ConfirmType arms it
+	   once the word matches, so the moment the action becomes possible is
+	   one you can see, not only a grey outline turning red (I-661). White
+	   on red-700 is 7.6:1, on red-600 in the dark 6.4:1. */
+	.btn-danger--armed {
+		@apply border-red-700 bg-red-700 text-white hover:bg-red-800 active:bg-red-900 dark:border-red-600 dark:bg-red-600 dark:text-white dark:hover:bg-red-700 dark:active:bg-red-800;
+	}
 	/* Ghost buttons are words, but a word that does something shows it at
 	   rest: a hairline underline in the control edge's grey (3:1, like any
 	   control's edge), which turns to the text's own colour under the
@@ -553,6 +631,13 @@
 	   change here resizes every compact button at once. */
 	.btn--sm {
 		@apply px-3 py-1.5;
+	}
+	/* On a phone a compact button is still a thumb's target: 40px tall,
+	   the header's Sign in and a row's Stop included (I-657). */
+	@media (width < 40rem) {
+		.btn--sm {
+			min-height: 2.5rem;
+		}
 	}
 	/* The large step: the landing's calls to action (the hero's "Get
 	   started", pricing's "Start a free week"), which stand alone on their
@@ -589,6 +674,12 @@
 	.badge--error {
 		@apply border-red-600/40 text-red-700 dark:border-red-400/40 dark:text-red-300;
 	}
+	/* Waiting on you, or over a limit: a question an agent asked, a
+	   meter past its line (I-659). Amber-800 on --page is 9:1 and
+	   amber-300 on the dark page 9.5:1. */
+	.badge--warn {
+		@apply border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300;
+	}
 
 	/* State marker: a small square, always next to the state's word. A
 	   plain .dot is hollow (stopped, destroyed: nothing inside is running);
@@ -620,12 +711,52 @@
 		border-color: var(--rule);
 	}
 
-	/* A bordered box with no fill (DESIGN-LANGUAGE.md, "Hairlines, not
-	   boxes"): the page shows through, so a card never reads as a raised
-	   panel. */
+	/* A hairline box on --surface, one step off the page (DESIGN-LANGUAGE.md,
+	   "Hairlines, not boxes"): the fill groups what is inside it without a
+	   shadow, so a card never reads as a raised panel. With no fill a card
+	   was an outline on paper, and a page of them read as a wireframe
+	   (I-659). */
 	.card {
 		@apply rounded-sm border p-5;
 		border-color: var(--rule);
+		background-color: var(--surface);
+	}
+
+	/* A strip of figures (I-659): the plan's memory, disk and egress on
+	   /billing, a project's size, disk and uptime. One box on --surface,
+	   its cells split by hairlines; below sm the cells stack and the
+	   hairlines turn horizontal. Each cell is a 12px label, a 24px serif
+	   figure in tabular numbers, and an optional note or meter under it. */
+	.stat-row {
+		@apply grid rounded-sm border;
+		grid-auto-flow: row;
+		border-color: var(--rule);
+		background-color: var(--surface);
+	}
+	.stat {
+		@apply min-w-0 p-4;
+		border-color: var(--rule);
+	}
+	.stat + .stat {
+		@apply border-t;
+	}
+	@media (width >= 40rem) {
+		.stat-row {
+			grid-auto-flow: column;
+			grid-auto-columns: minmax(0, 1fr);
+		}
+		.stat + .stat {
+			@apply border-t-0 border-l;
+		}
+	}
+	.stat-label {
+		@apply block text-xs text-ink-muted;
+	}
+	.stat-value {
+		@apply mt-1 block font-display text-2xl font-semibold text-ink tabular-nums;
+	}
+	.stat-sub {
+		@apply mt-1 block text-xs text-ink-muted;
 	}
 	/* A command block on a dashboard page. Its lines scroll sideways, as in
 	   a terminal and as the docs' blocks do (I-345), rather than wrap: the
@@ -721,13 +852,20 @@
 	@apply border-zinc-900 outline-2 outline-offset-2 dark:border-zinc-300;
 	outline-color: var(--focus);
 }
+/* The gutter is a solid strip with its own edge, and the code starts
+   0.5rem past it: a long line scrolled sideways slides under that edge
+   instead of running into the line numbers. --rule on --sunken was too
+   faint to read as an edge at 1x, so it takes the strong rule. */
 .nix-editor .cm-editor .cm-gutters {
-	@apply border-r text-ink-faint;
+	@apply text-ink-faint;
 	background-color: var(--sunken);
-	border-color: var(--rule);
+	border-right: 1px solid var(--rule-strong);
+}
+.nix-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
+	@apply pr-2 pl-2.5;
 }
 .nix-editor .cm-editor .cm-content {
-	@apply font-mono text-ink;
+	@apply pl-2 font-mono text-ink;
 }
 .nix-editor .cm-editor .cm-activeLine,
 .nix-editor .cm-editor .cm-activeLineGutter {
@@ -749,7 +887,11 @@
    on purpose: the plugin's rules sit in a later layer than components, and
    a layered rule loses to an unlayered one whatever its specificity. */
 .doc {
-	@apply leading-relaxed;
+	/* Prose reads at the text-prose step, 17px at 1.7 (I-660). Set on the
+	   block, so the plugin's em margins and the inline code chip scale
+	   with it; tables, code blocks and the effective date set their own. */
+	font-size: var(--text-prose);
+	line-height: var(--text-prose--line-height);
 	/* The typography plugin's colours, mapped onto the house tokens. Its
 	   prose-zinc is Tailwind's stock cool zinc (hue 286), not the re-toned
 	   warm one, and prose-invert made the dark h2 pure white where --ink is
@@ -783,14 +925,17 @@
 .doc :where(h1, h2, h3, h4) {
 	@apply font-semibold;
 }
-/* A policy's title is the h1 inside its markdown, which the plugin set at
-   2.25em (36px); the docs and dashboard h1 is text-3xl, 30px, at every
-   width (DESIGN-LANGUAGE.md, "Docs and legal pages"). */
+/* A policy's title is the h1 inside its markdown: the page title's 36px
+   with its -0.01em tracking, as PageShell and DocPage draw theirs, at
+   every width (DESIGN-LANGUAGE.md, "Type"; I-660). */
 .doc :where(h1) {
-	@apply text-3xl;
+	@apply text-4xl tracking-[-0.01em];
+	line-height: 1.2;
 }
+/* No scroll-margin here: html's scroll-padding-top clears the sticky
+   header for every jump, and the two added up. */
 .doc :where(h2, h3) {
-	@apply relative scroll-mt-20;
+	@apply relative;
 }
 .doc :where(h2) {
 	@apply mt-12 border-t pt-8 text-2xl;
@@ -882,17 +1027,64 @@
 .doc th {
 	@apply text-left font-medium text-ink-muted;
 }
-/* From sm up a command in a table stays on one line. On a phone it
-   wraps at its spaces (each word is a .nobreak span), or the command
-   column took all but 75px of a 350px table and cut the description
-   ("repose snapshots restore SNAPSHOT_ID" in cli.md, I-395). */
+/* From sm up the term column (a command, a key, "day 33") stays on one
+   line. Code in a description wraps like code in prose, at its spaces
+   or anywhere in a long span: kept on one line too, it pushed the
+   /docs/cli Secrets table to 690px in a 624px column. */
 @media (width >= 40rem) {
-	.doc td code {
+	.doc td:first-child,
+	.doc td:first-child code {
 		@apply whitespace-nowrap;
 	}
 }
+/* On a phone a reference table of two or three columns stacks each row:
+   the term on its own line, a middle cell (a Default) muted beside it,
+   and the description under both at the full width. Side by side, the
+   term column took all but 75px of a 350px table and cut the
+   description ("repose snapshots restore SNAPSHOT_ID", I-395), and the
+   config.toml and environment variable tables ran 70px past 335. A
+   wider table holds figures read across a row (plans, sizes), which
+   need their headings, so it keeps its grid at tighter cell padding
+   and scrolls only past that. */
+@media (width < 40rem) {
+	.doc .table-wrap:not(:has(th:nth-child(4))) {
+		& thead {
+			@apply sr-only;
+		}
+		& table,
+		& tbody {
+			@apply block;
+		}
+		& tr {
+			@apply flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5;
+		}
+		& td {
+			@apply min-w-0 p-0;
+		}
+		& td:first-child {
+			@apply font-medium text-ink;
+		}
+		& td:first-child code {
+			white-space: normal;
+			overflow-wrap: anywhere;
+		}
+		& td:not(:first-child, :last-child) {
+			@apply text-ink-muted;
+		}
+		& td:last-child:not(:first-child) {
+			@apply basis-full;
+		}
+	}
+	.doc .table-wrap:has(th:nth-child(4)) :is(th, td) {
+		@apply px-1.5 first:pl-0 last:pr-0;
+	}
+	.doc .table-wrap:has(th:nth-child(4)) td:not(:first-child) code {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+}
 .doc .note {
-	@apply my-6 rounded-sm border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/60 dark:text-amber-100;
+	@apply my-6 rounded-sm border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-900 dark:bg-amber-950/60 dark:text-amber-100;
 }
 .doc .note p {
 	@apply my-0;
@@ -957,6 +1149,16 @@
 }
 .doc pre .tok-punctuation {
 	@apply text-ink-faint;
+}
+
+/* The docs sidebar from lg up draws no scrollbar (routes/docs/+layout),
+   so while more of its list is below, its foot fades out over 24px to say
+   so. A mask, not a painted gradient: it draws no colour of its own, only
+   lets the list's own text thin out (I-660). */
+@media (width >= 64rem) {
+	#docs-nav[data-fade] {
+		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+	}
 }
 
 /*
@@ -1074,6 +1276,14 @@
 		text-decoration-thickness: 2px;
 		text-underline-offset: 0.35em;
 	}
+	/* A transparent edge (a link that is not current in the header, the
+	   dashboard row, a project's tabs or a rail; the docs search before
+	   the list scrolls under it) is drawn in CanvasText like any other, so
+	   every link looked current. It is not drawn at all: in the page's
+	   colour it cut a gap in the rule it lies on. */
+	.border-transparent {
+		border-style: none;
+	}
 	/* The current tab (config's Menu and Nix): its ink underline versus the
 	   others' transparent one was a colour difference, and forced colours
 	   drew every tab's edge in CanvasText, so none was marked (I-393). The
@@ -1084,6 +1294,12 @@
 	[role='tab'][aria-selected='true'] {
 		border-bottom-width: 3px;
 		border-bottom-color: Highlight;
+	}
+	/* A landing picture's pause button: pressed is its icon (play for
+	   pause) and a Highlight edge, since the accent edge is a colour
+	   difference (I-666). */
+	.pic-pause[aria-pressed='true'] {
+		border-color: Highlight;
 	}
 	/* A select's chevron and the search field's glass are background
 	   images drawn in a fixed grey; the native arrow follows the theme. */
@@ -1108,6 +1324,16 @@
 	.kbd,
 	kbd {
 		border-color: CanvasText;
+	}
+	/* An amber badge says "waiting on you": its words carry it, and the
+	   edge is drawn heavier so it is not one more grey box. */
+	.badge--warn {
+		border-width: 2px;
+	}
+	/* The armed danger button's red fill is lost; its edge marks it. */
+	.btn-danger--armed {
+		border-color: ButtonText;
+		border-width: 2px;
 	}
 }
 

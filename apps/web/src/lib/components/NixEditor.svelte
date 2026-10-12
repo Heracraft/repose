@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { StateEffect, StateField } from '@codemirror/state';
 	import {
 		EditorView,
@@ -7,6 +7,7 @@
 		lineNumbers,
 		highlightActiveLine,
 		highlightActiveLineGutter,
+		placeholder as placeholderText,
 		Decoration,
 		type DecorationSet
 	} from '@codemirror/view';
@@ -18,14 +19,38 @@
 		value = $bindable(''),
 		errorLine,
 		readonly = false,
-		label = 'Nix fragment'
+		label = 'Nix fragment',
+		placeholder = '{ pkgs, ... }: { home.packages = [ ]; }',
+		floor,
+		footer
 	}: {
 		value: string;
 		errorLine?: number;
 		readonly?: boolean;
 		/** The editor's accessible name: CodeMirror's content is a role=textbox with none of its own. */
 		label?: string;
+		/** Shown in --ink-faint while the editor is empty; never saved. */
+		placeholder?: string;
+		/**
+		 * A CSS length the code area is at least, over the five-line floor:
+		 * the config page, where the editor is the page's subject, asks for
+		 * room to write in.
+		 */
+		floor?: string;
+		/**
+		 * A bar inside the editor's frame, under the code: the caller's
+		 * status on the left and its action (Save, Apply) on the right.
+		 */
+		footer?: Snippet;
 	} = $props();
+
+	// The editor is as tall as its text plus one empty line, at least five
+	// lines (or the caller's floor) and at most 24; past that it scrolls
+	// inside itself. A one-line machine.nix took six lines and three of
+	// them were empty paper.
+	const MIN_ROWS = 5;
+	const MAX_ROWS = 24;
+	let rows = $derived(Math.min(MAX_ROWS, Math.max(MIN_ROWS, value.split('\n').length + 1)));
 
 	let container: HTMLDivElement;
 	let view: EditorView | undefined;
@@ -65,6 +90,7 @@
 				errorLineField,
 				keymap.of([...defaultKeymap, ...historyKeymap]),
 				EditorView.editable.of(!readonly),
+				placeholderText(placeholder),
 				EditorView.contentAttributes.of({ 'aria-label': label }),
 				EditorView.updateListener.of((u) => {
 					if (u.docChanged) value = u.state.doc.toString();
@@ -88,4 +114,58 @@
 	});
 </script>
 
-<div class="nix-editor h-80" bind:this={container}></div>
+<!-- The frame carries the control's edge and the focus ring, so the
+     footer bar sits inside the same box as the code it acts on. -->
+<div class="nix-frame">
+	<div
+		class="nix-editor"
+		style:--nix-rows={rows}
+		style:--nix-max={MAX_ROWS}
+		style:--nix-floor={floor}
+		bind:this={container}
+	></div>
+	{#if footer}
+		<div
+			class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-rule bg-surface px-3 py-2 text-xs text-ink-muted"
+		>
+			{@render footer()}
+		</div>
+	{/if}
+</div>
+
+<style>
+	.nix-frame {
+		border: 1px solid var(--control-edge);
+		border-radius: 2px;
+		transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	.nix-frame:has(:global(.cm-focused)) {
+		border-color: var(--ink);
+		outline: 2px solid var(--focus);
+		outline-offset: 2px;
+	}
+	/* layout.css draws the edge and the ring on .cm-editor itself; here
+	   the frame does, around the footer too. */
+	.nix-frame :global(.cm-editor),
+	.nix-frame :global(.cm-editor.cm-focused) {
+		border: 0;
+		border-radius: 1px;
+		outline: none;
+	}
+	/* 1lh is the editor's own line (14px at 1.4); 8px is the content's
+	   4px padding above and below. The gutter column gets the same floor,
+	   over the height CodeMirror writes on it inline, so its rule runs the
+	   editor's full height. */
+	.nix-editor :global(.cm-content) {
+		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px));
+	}
+	.nix-editor :global(.cm-gutters) {
+		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px)) !important;
+	}
+	.nix-editor :global(.cm-scroller) {
+		max-height: calc(var(--nix-max) * 1lh + 8px);
+	}
+	.nix-editor :global(.cm-placeholder) {
+		color: var(--ink-faint);
+	}
+</style>

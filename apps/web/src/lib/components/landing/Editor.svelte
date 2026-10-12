@@ -10,8 +10,17 @@
   so no stray keys show in lualine), so the tree stays shallow and the code
   gets most of the width. The 78x20 tmux pane was captured with
   `tmux capture-pane -p -e -N` and converted to styled runs verbatim; the
-  block cursor is the terminal's own, at the cell tmux reported. No window
-  chrome: it is the full screen, as you'd see it.
+  block cursor is the terminal's own, at the cell tmux reported. It stands
+  in the grid's window under the head that says where it runs, "your
+  cloud machine" (WinHead.svelte, I-669), as Localhost's tmux does: the
+  card's line says Neovim runs on the machine itself. From 640 wide the
+  font is sized so all 78 columns fit, so every line ends where nvim cut
+  it and the statusline keeps its clock (F18); on a phone it stays 8.4px
+  and the screen crops on the right, as a terminal would (I-397).
+  Two explorer rows read "education": two files whose names nvim cut at
+  the explorer's 9 columns. The machine is the owner's and not reachable
+  from here to recapture with a wider explorer, and a crop cannot drop a
+  middle row, so they stay as captured (I-669).
 
   Nerd Font icons come from a subset of Symbols Nerd Font Mono (Nerd Fonts,
   MIT; the icons are from Material Design Icons, Codicons, Octicons and
@@ -31,6 +40,8 @@
   all"; I-400).
 -->
 <script lang="ts">
+	import WinHead from './WinHead.svelte';
+
 	// Verbatim capture: one inline style per distinct SGR state, and each row
 	// as [text, style] runs.
 	const styles: string[] = [
@@ -440,6 +451,12 @@
 		'▕': 'e'
 	};
 	type Piece = { t: string; s: number; cell: boolean; cursor: boolean; box?: string };
+	// The statusline's right segment (from its first \ue0b2 separator: the
+	// scroll position, the cursor's line and column, the clock), pinned to
+	// the screen's right edge so a phone's crop takes the file path in the
+	// middle and keeps these whole.
+	const STATUS = rows.length - 1;
+	const STATUS_RIGHT = rows[STATUS].findIndex(([t]) => t === '\ue0b2');
 	const lines: Piece[][] = rows.map((row, y) => {
 		const out: Piece[] = [];
 		let x = 0;
@@ -460,24 +477,52 @@
 		}
 		return out;
 	});
+	// The first piece of the statusline's right segment.
+	const statusSplit = (() => {
+		let n = 0;
+		for (const [text] of rows[STATUS].slice(0, STATUS_RIGHT)) {
+			let buf = 0;
+			for (const ch of text) {
+				if (ch.charCodeAt(0) > 0x7e) {
+					if (buf) n++;
+					buf = 0;
+					n++;
+				} else buf++;
+			}
+			if (buf) n++;
+		}
+		return n;
+	})();
 </script>
 
 <div class="shot">
 	<div
-		class="screen"
+		class="shot-win open ed"
 		role="img"
-		aria-label="Neovim with LazyVim running on the machine, full screen: a narrow file explorer of the repo on the left, two of the worker's files open in tabs, and its TypeScript config in the editor."
+		aria-label="Neovim with LazyVim running on your cloud machine, full screen: a narrow file explorer of the repo on the left, two of the worker's files open in tabs, and its TypeScript config in the editor."
 	>
-		{#each lines as line, y (y)}
-			<div class="ln" aria-hidden="true" inert>
-				{#each line as p, i (i)}<span
+		<WinHead who="machine" />
+		<div class="screen">
+			{#snippet pieces(ps: Piece[])}
+				{#each ps as p, i (i)}<span
 						class:c={p.cell}
 						class:cur={p.cursor}
 						class={p.box ? `bx ${p.box}` : undefined}
 						style={styles[p.s]}>{p.t}</span
 					>{/each}
-			</div>
-		{/each}
+			{/snippet}
+			{#each lines as line, y (y)}
+				{#if y === STATUS}
+					<div class="ln sl" aria-hidden="true" inert>
+						<span class="sl-l">{@render pieces(line.slice(0, statusSplit))}</span><span class="sl-r"
+							>{@render pieces(line.slice(statusSplit))}</span
+						>
+					</div>
+				{:else}
+					<div class="ln" aria-hidden="true" inert>{@render pieces(line)}</div>
+				{/if}
+			{/each}
+		</div>
 	</div>
 </div>
 
@@ -488,27 +533,51 @@
 		unicode-range: U+E0A0, U+E0B0, U+E0B2, U+EA76, U+F105, U+F43A, U+F024B, U+F06E6, U+F0770;
 		font-display: block;
 	}
+	.ed {
+		height: calc(100% - var(--shot-in));
+		margin: var(--shot-in) var(--shot-in) 0;
+		container-type: inline-size;
+	}
+	/* The screen's 20 rows share the window under its head, and its 78
+	   columns fill the window's width: JetBrains Mono's cell is 0.6em, so
+	   78 cells are 46.8em (I-669). */
 	.screen {
-		height: 100%;
+		--lh: calc((var(--shot-h) - 2px - var(--shot-in) - 1px - var(--shot-head)) / 20);
+		flex: 1;
+		min-height: 0;
 		background: #222436;
 		font-family: 'Editor Nerd Symbols', var(--font-mono);
-		font-size: 10px;
+		font-size: min(10px, calc(100cqw / 46.8));
 		font-variant-ligatures: none;
 		color: #c8d3f5;
 	}
 	.ln {
-		height: 11.9px;
-		line-height: 11.9px;
+		height: var(--lh);
+		line-height: var(--lh);
 		white-space: pre;
 		overflow: hidden;
 	}
-	/* On a phone, at 10px, the 20-column explorer took a third of the
-	   frame and the code stopped at about 20 characters. Below sm the
-	   whole capture is drawn at 8.4px instead, so the frame's 348px hold
-	   69 columns and the code keeps 40 of them (I-397). A crop from the
-	   left was tried and dropped: no crop leaves only the explorer's
-	   icons, since the top folders' icons sit in its first columns, and
-	   cutting through them left name fragments. */
+	/* The statusline: its left part gives way on a phone, its right part
+	   (position, line and column, clock) stays whole at the right edge.
+	   Where all 78 columns fit, the two meet as nvim drew them. */
+	.sl {
+		display: flex;
+		background: #1e2030;
+	}
+	.sl-l {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.sl-r {
+		flex: none;
+	}
+	/* On a phone, 78 columns would be 7px. Below sm the whole capture is
+	   drawn at 8.4px instead and crops on the right, so the code keeps
+	   about 40 columns (I-397). A crop from the left was tried and
+	   dropped: no crop leaves only the explorer's icons, since the top
+	   folders' icons sit in its first columns, and cutting through them
+	   left name fragments. */
 	@media (max-width: 639px) {
 		.screen {
 			font-size: 8.4px;
@@ -518,7 +587,7 @@
 	.c {
 		display: inline-block;
 		width: 1ch;
-		height: 11.9px;
+		height: var(--lh);
 		vertical-align: top;
 		overflow: visible;
 		/* A Nerd Font icon is wider than a cell; like most terminals, let it

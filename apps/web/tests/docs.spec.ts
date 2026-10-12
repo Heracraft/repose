@@ -69,14 +69,23 @@ test('the docs columns hold still between pages, and the rail marks the section'
 
 	await page.goto('/docs');
 	await expect(page.getByRole('heading', { level: 1, name: 'Quickstart' })).toBeVisible();
-	// The text column is max-w-[68ch], and ch is the "0" of the prose's
-	// system sans: 622 px on the NixOS dev box, 605 px on CI's Ubuntu (it
-	// held at 605 for 5 s there, 2026-10-01), so its width is the
-	// machine's. What the test holds is that no column moves between
-	// pages: the loop below compares every page with this first read.
 	await page.evaluate(() => document.fonts.ready.then(() => undefined));
-	await expect.poll(boxes).toMatchObject({ sidebar: '100,57,240', rail: '1116,57,224' });
-	expect((await boxes()).main).toMatch(/^380,57,\d+$/);
+	// The shared frame (I-656, I-660): the 220px sidebar at the frame's
+	// left edge, 48px to the text, and the 180px rail ending at the
+	// frame's right edge. At 1440 with an overlay scrollbar that is x=160,
+	// 428 and 1100; a classic scrollbar's gutter moves the frame 7.5px
+	// left, so the edges are read from the header's frame.
+	const edges = await page.evaluate(() => {
+		const f = document.querySelector('header .frame')!;
+		const b = f.getBoundingClientRect();
+		const pad = parseFloat(getComputedStyle(f).paddingLeft);
+		return { left: Math.round(b.x + pad), right: Math.round(b.right - pad) };
+	});
+	await expect.poll(boxes).toMatchObject({
+		sidebar: `${edges.left},57,220`,
+		rail: `${edges.right - 180},57,180`
+	});
+	expect((await boxes()).main).toMatch(new RegExp(`^${edges.left + 268},57,\\d+$`));
 	const first = await boxes();
 	// Layout shifts during the client navigations. The links are clicked
 	// from script: a shift within 500ms of real input is left out of the
@@ -135,11 +144,41 @@ test('the docs columns hold still between pages, and the rail marks the section'
 test("the phone drawer shows the search and the current page's link", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/docs/cli');
-	await page.getByRole('button', { name: 'Open the docs menu' }).click();
+	// The menu button is in the docs' sub-bar under the header (I-655),
+	// beside the open page's title.
+	const subbar = page.locator('[data-docs-subbar]');
+	await expect(subbar).toContainText('CLI reference');
+	await subbar.getByRole('button', { name: 'Open the docs menu' }).click();
 	const drawer = page.getByRole('complementary', { name: 'Docs menu' });
 	await expect(drawer.getByRole('link', { name: 'CLI reference' })).toBeInViewport({ ratio: 1 });
 	const search = drawer.getByLabel('Search the docs');
 	await expect(search).toBeInViewport({ ratio: 1 });
-	// The search is not under the header, which ends at 57px.
-	expect((await search.boundingBox())!.y).toBeGreaterThanOrEqual(57);
+	// The search is not under the header and the sub-bar, which end at 101px.
+	expect((await search.boundingBox())!.y).toBeGreaterThanOrEqual(101);
+});
+
+// The owner saw a scrollbar flash over the sidebar on the first visit to
+// the docs, gone at the first move (I-660): from lg up the sidebar draws
+// none, and at 1440x900 its list fits whole with Tutorials folded.
+test('the desktop sidebar fits 1440x900 and draws no scrollbar', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	await page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Docs' }).click();
+	await expect(page).toHaveURL('/docs');
+	const aside = page.locator('#docs-nav');
+	await expect(aside).toBeVisible();
+	const m = await aside.evaluate((el) => ({
+		fits: el.scrollHeight <= el.clientHeight,
+		scrollbar: getComputedStyle(el).scrollbarWidth,
+		top: el.scrollTop
+	}));
+	expect(m).toEqual({ fits: true, scrollbar: 'none', top: 0 });
+	// Tutorials is folded away from a tutorial and open on one.
+	const fold = aside.locator('details');
+	await expect(fold).not.toHaveAttribute('open');
+	await page.goto('/docs/tutorial-herdr');
+	await expect(fold).toHaveAttribute('open');
+	await expect(aside.getByRole('link', { name: 'herdr on your machine' })).toBeInViewport({
+		ratio: 1
+	});
 });

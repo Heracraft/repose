@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-673 entries.
+698 entries.
 
 ## Scope
 
@@ -438,36 +438,36 @@ pointer, not a summary.
 - **I-370** Shared text and edge tokens with a contrast floor: 4.5:1 for text, 3:1 for control edges and state marks — 2026-09-30; amended by I-391; L9481
 - **I-371** The fonts are self-hosted, and JetBrains Mono is the one monospace — 2026-09-30; L9510
 - **I-372** A focused field shows the house focus ring — 2026-09-30; L9529
-- **I-373** State dots: busy is ink, stopped is hollow, and running and error differ in lightness — 2026-09-30; L9540
+- **I-373** State dots: busy is ink, stopped is hollow, and running and error differ in lightness — 2026-09-30; amended by I-659; L9540
 - **I-374** Toasts and docs code highlighting take the house colours — 2026-09-30; amended by I-392; L9558
-- **I-375** A type scale with two named small steps and one size per heading level — 2026-09-30; L9573
+- **I-375** A type scale with two named small steps and one size per heading level — 2026-09-30; amended by I-664; L9573
 - **I-376** Buttons come in two sizes: `.btn--sm` and the default — 2026-09-30; amended by I-391; amended by I-392; L9593
 - **I-377** Forced colours are part of the system — 2026-09-30; L9603
 - **I-378** Unused patterns are deleted rather than documented — 2026-09-30; L9619
 - **I-379** In the dark, the landing's small ink details are lit marks — 2026-09-30; L9630
-- **I-380** One header frame for the dashboard, the docs and the legal pages; form pages sit flush left — 2026-09-30; amended by I-396; amended by I-397; L9638
-- **I-381** The I-363 mark is in every header — 2026-09-30; amended by I-391; amended by I-393; L9655
-- **I-382** Docs and legal prose hold a readable measure — 2026-09-30; amended by I-392; L9669
+- **I-380** One header frame for the dashboard, the docs and the legal pages; form pages sit flush left — 2026-09-30; amended by I-396; amended by I-397; amended by I-655; amended by I-656; amended by I-664; L9638
+- **I-381** The I-363 mark is in every header — 2026-09-30; amended by I-391; amended by I-393; amended by I-655; L9655
+- **I-382** Docs and legal prose hold a readable measure — 2026-09-30; amended by I-392; amended by I-660; L9669
 - **I-383** The docs' right rail moves into the sidebar, and the menu button moves to the right — 2026-09-30; amended by I-396; L9680
 - **I-384** Legal pages use the docs' prose styles, show their effective date, and keep a Draft banner that names nothing internal — 2026-09-30; amended by I-391; amended by I-392; L9690
 - **I-385** Only a page's first load can fail to a banner with Retry — 2026-09-30; amended by I-393; L9706
-- **I-386** One confirmation pattern per consequence, and no native `confirm()` — 2026-09-30; L9719
+- **I-386** One confirmation pattern per consequence, and no native `confirm()` — 2026-09-30; amended by I-661; L9719
 - **I-387** Restore-as-new is one `RestoreNameForm` — 2026-09-30; L9736
-- **I-388** The config editor's Menu and Nix switch is ARIA tabs styled like the header's current page — 2026-09-30; L9744
+- **I-388** The config editor's Menu and Nix switch is ARIA tabs styled like the header's current page — 2026-09-30; amended by I-659; L9744
 - **I-389** The accessibility gate fails on any failed binary audit, audits signed in for real, and covers every page in both schemes at two widths — 2026-09-30; amended by I-397; L9755
 - **I-390** A 503 the api gives as an answer is not an outage, a 500 is not "cannot reach", and one failure is said once — 2026-09-30; amended by I-393; L9774
-- **I-391** Design critique repair: focus follows in-place panels, one disabled look, and the gaps the first pass left — 2026-09-30; amended by I-393; L9797
-- **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; L9847
-- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; L9915
+- **I-391** Design critique repair: focus follows in-place panels, one disabled look, and the gaps the first pass left — 2026-09-30; amended by I-393; amended by I-655; L9797
+- **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; L9847
+- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; L9915
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9981
-- **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; L10008
-- **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; L10039
-- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; L10068
-- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; L10128
+- **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10008
+- **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10039
+- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; L10068
+- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; amended by I-667; L10128
 - **I-399** Landing repair round 2: the drawn pictures' rows are 12px mono, every picture motion is in LANDING.md's list, OneCommand takes the picture palette, the repair round's notes leave the owner's sections, and the a11y gate's landing allowance is phone width only — 2026-10-01; amended by I-400; L10193
-- **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; L10256
+- **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; amended by I-660; L10256
 - **I-401** Landing repair round 4: the snapshot marks only turn as listed, the hero's lead wraps inside a sentence before it scrolls, the docs sidebar scrolls only for a cut link, and the dashboard's command block shows where its line runs on — 2026-10-01; L10352
-- **I-402** Pricing says "memory" and counts no agents — 2026-10-01; L10411
+- **I-402** Pricing says "memory" and counts no agents — 2026-10-01; amended by I-663; L10411
 - **I-403** A restore writes the volume with O_DIRECT, eight writes in flight, and downloads the snapshot as eight ranged GETs at once — 2026-10-01; L10433
 - **I-404** A stop uploads its snapshot while the guest shuts down; the snapshot read itself stays as it was — 2026-10-01; amended by I-571; L10508
 - **I-405** hostd caches an evaluation by its inputs and skips `nix eval` when they recur — 2026-10-01; L10549
@@ -483,7 +483,7 @@ pointer, not a summary.
 - **I-411** `repose exec` takes the command with or without `--` — 2026-10-03; L10836
 - **I-412** The docs as markdown at /llms.txt, and the laptop's CLI version on the machine — 2026-10-03; L10853
 - **I-413** The tools carry reads Homebrew formulae and installs them from nixpkgs — 2026-10-03; superseded by I-423; L10869
-- **I-414** Events page back: `before` and `limit` on the api, Show older on the dashboard, and `repose events` reads the whole window — 2026-10-03; L10889
+- **I-414** Events page back: `before` and `limit` on the api, Show older on the dashboard, and `repose events` reads the whole window — 2026-10-03; amended by I-662; L10889
 - **I-418** Claude Code's `idle_prompt` is no event — 2026-10-03; L10908
 - **I-419** `repose questions` says where it looked, names terminal waits, and asks for one project's list — 2026-10-03; L10925
 - **I-420** The destroyed list pages: `before` and `limit`, Show more past the first 100, and the CLI reads every page — 2026-10-03; L10939
@@ -528,7 +528,7 @@ pointer, not a summary.
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11916
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11926
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11969
-- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; L11999
+- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; L11999
 - **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; amended by I-508; L12021
 - **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; amended by I-508; L12155
 - **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L12181
@@ -550,7 +550,7 @@ pointer, not a summary.
 - **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; amended by I-544; L12874
 - **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12924
 - **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; amended by I-519; amended by I-508; L12956
-- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; L13017
+- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; amended by I-659; L13017
 - **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L13044
 - **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; amended by I-505; amended by I-576; L13062
 - **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; amended by I-546; L13080
@@ -567,7 +567,7 @@ pointer, not a summary.
 - **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13502
 - **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13615
 - **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13731
-- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; L13772
+- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; amended by I-663; L13772
 - **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13843
 - **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13854
 - **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13878
@@ -634,10 +634,10 @@ pointer, not a summary.
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15646
 - **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15756
 - **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L15787
-- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; L15858
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15858
 - **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15883
 - **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L15985
-- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; L16047
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; L16047
 - **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16077
 - **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16108
 - **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16147
@@ -692,16 +692,41 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
-- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18416
-- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18456
-- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18504
-- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L18566
-- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L18610
-- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L18626
-- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L18674
-- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L18693
-- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — L18797
-- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L19011
-- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19070
-- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19196
-- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19254
+- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18417
+- **I-656** One frame for every page (web-polish, 2026-10-11) — L18461
+- **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
+- **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18490
+- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; L18510
+- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; L18538
+- **I-661** An armed danger button (web-polish, 2026-10-11) — L18585
+- **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18592
+- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18636
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; L18752
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; L18789
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; L18816
+- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; L18846
+- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18897
+- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18937
+- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18985
+- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19047
+- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19091
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19107
+- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19155
+- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19174
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — L19278
+- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — L19492
+- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19551
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19677
+- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19735
+- **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19767
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — L19785
+- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; L19815
+- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; L19865
+- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; L19944
+- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; L20001
+- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — L20076
+- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; L20133
+- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; L20198
+- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — L20253
+- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — L20323

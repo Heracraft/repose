@@ -1,5 +1,7 @@
 // DECISIONS I-290: the landing page's pricing section shows the three plans
-// and one live line from GET /public/seats, and stands without it.
+// and one live line from GET /public/seats, and stands without it. I-656:
+// the page sits on the frame every page shares, under the site header and
+// over the site footer.
 import { test, expect } from '@playwright/test';
 import { setBilling, resetBilling } from './helpers';
 
@@ -43,8 +45,41 @@ test('when full, the line says so with the number waiting', async ({ page }) => 
 	);
 });
 
+test('the last step runs in your-project', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByText('cd ~/code/your-project && repose run')).toBeVisible();
+	await expect(page.getByText('job-alerts')).toHaveCount(0);
+});
+
+test('the headline starts under the logo', async ({ page }) => {
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const logo = await page
+			.getByRole('link', { name: 'repose, home' })
+			.locator('svg')
+			.filter({ visible: true })
+			.first()
+			.boundingBox();
+		const headline = await page.locator('.hero-h').boundingBox();
+		expect(Math.abs(logo!.x - headline!.x), `at ${width}`).toBeLessThanOrEqual(1);
+	}
+});
+
+test('the page never scrolls sideways', async ({ page }) => {
+	for (const width of [320, 390, 768, 1024, 1120, 1240, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const over = await page.evaluate(
+			() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+		);
+		expect(over, `at ${width}`).toBeLessThanOrEqual(0);
+	}
+});
+
 test('the footer links to the refund policy', async ({ page }) => {
 	await page.goto('/');
+	await expect(page.getByRole('contentinfo')).toHaveCount(1);
 	await expect(
 		page.getByRole('contentinfo').getByRole('link', { name: 'Refunds' })
 	).toHaveAttribute('href', '/refunds');

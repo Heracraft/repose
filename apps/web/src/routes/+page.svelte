@@ -6,8 +6,6 @@
 	import { authState, signIn } from '$lib/auth.svelte';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
-	import Logo from '$lib/components/Logo.svelte';
-	import HeaderFrame from '$lib/components/HeaderFrame.svelte';
 	import Hero from '$lib/components/landing/Hero.svelte';
 	import Gauge from '$lib/components/landing/Gauge.svelte';
 	import Units from '$lib/components/landing/Units.svelte';
@@ -22,8 +20,6 @@
 	import Editor from '$lib/components/landing/Editor.svelte';
 
 	const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
-	const SOURCE_URL = 'https://github.com/Heracraft/repose';
-	const FEEDBACK_URL = 'https://repose.fider.io';
 
 	let signingIn = $state(false);
 	/** The command whose Copy was pressed last, for 1.5s; null otherwise. */
@@ -82,15 +78,15 @@
 	// `what` finishes each Copy button's name for a screen reader ("Copy
 	// the sign-in command"), so the three buttons are not three "Copy"s.
 	// The checkout in the last one is named after its laptop folder (I-368),
-	// the hero picture's job-alerts/. That path is an example, so its Copy
+	// the hero picture's your-project/. That path is an example, so its Copy
 	// button copies `repose run` alone (`copy`): a pasted
-	// `cd ~/code/job-alerts` fails on a visitor's laptop.
+	// `cd ~/code/your-project` fails on a visitor's laptop.
 	const steps: { title: string; command: string; copy?: string; what: string }[] = [
 		{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
 		{
 			title: 'Run in any checkout',
-			command: 'cd ~/code/job-alerts && repose run',
+			command: 'cd ~/code/your-project && repose run',
 			copy: 'repose run',
 			what: 'repose run, to run in your checkout'
 		}
@@ -133,7 +129,7 @@
 			egress: '1 TB'
 		}
 	];
-	// The footer's row: every shape the page used, in the order it used
+	// The sign-off row: every shape the page used, in the order it used
 	// them, so the row reads as the page's own symbols and none appears
 	// from nowhere. Mostly grey, a spot of blue, as the pictures are.
 	const frieze: [Kind, Tone][] = [
@@ -209,21 +205,6 @@
 {/snippet}
 
 <div class="rails">
-	<!-- The house header (HeaderFrame), on the landing's 1120px measure
-	     with the logo over the headline; the wrapper carries the ticks
-	     where its rule meets the rails. -->
-	<div class="topbar">
-		<HeaderFrame home={resolve('/')} label="repose, home" width="landing">
-			<nav class="flex items-center gap-4 sm:gap-6" aria-label="Main">
-				<a href={resolve('/docs')} class="navlink">Docs</a>
-				<a href="#pricing" class="navlink">Pricing</a>
-				<a href={SOURCE_URL} class="navlink hidden sm:inline">GitHub</a>
-				<a href={FEEDBACK_URL} class="navlink">Feedback</a>
-				{@render authAction('btn-quiet btn--sm', 'Sign in', 'Dashboard')}
-			</nav>
-		</HeaderFrame>
-	</div>
-
 	<main id="main">
 		<section class="sec">
 			<div class="hero-grid inset">
@@ -242,7 +223,7 @@
 					{@render cmdRow(INSTALL_COMMAND, 'the install command', false)}
 				</div>
 			</div>
-			<div class="landing-stage">
+			<div class="landing-stage hero-stage">
 				<Hero />
 			</div>
 		</section>
@@ -367,8 +348,10 @@
 		</section>
 	</main>
 
-	<footer class="sec">
-		<ul class="frieze" aria-hidden="true" use:landOnView>
+	<!-- The sign-off: the page's shapes, one to a cell between the rails.
+	     The site footer follows, under the rails. -->
+	<div class="sec" aria-hidden="true">
+		<ul class="frieze" use:landOnView>
 			{#each frieze as [k, tone], i (i)}
 				<li>
 					<span class="land block h-full w-full" style="--d: {i * 60}ms"
@@ -377,21 +360,7 @@
 				</li>
 			{/each}
 		</ul>
-		<div class="foot inset">
-			<!-- The mark's cross is drawn in currentColor; the footer's text is
-			     muted, and the logo is the same on every page (ink). -->
-			<span class="text-ink"><Logo size="sm" mark /></span>
-			<nav aria-label="Footer">
-				<a href={resolve('/docs')}>Docs</a>
-				<a href="#pricing">Pricing</a>
-				<a href={SOURCE_URL}>GitHub</a>
-				<a href={FEEDBACK_URL}>Feedback</a>
-				<a href={resolve('/terms')}>Terms</a>
-				<a href={resolve('/privacy')}>Privacy</a>
-				<a href={resolve('/refunds')}>Refunds</a>
-			</nav>
-		</div>
-	</footer>
+	</div>
 </div>
 
 <!-- The copy buttons' result, for a screen reader; drawn nowhere. -->
