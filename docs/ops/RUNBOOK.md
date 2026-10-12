@@ -2773,6 +2773,14 @@ endpoint's delivery list in the dashboard redelivers the missed events,
 and the `billing_events` primary key (the `webhook-id`) drops the ones
 that did arrive.
 
+Polar disables an endpoint after ten failed deliveries in a row and
+emails the organization's members. `repose-admin billing polar-bootstrap`
+enables it again; the events it skipped can be redelivered from its
+delivery list, or Polar resends a subscription's state on any change to
+it (a metadata update is enough). Events about customers or products
+repose does not know, such as a sandbox test's in the shared
+organization, are acknowledged and do not count (I-678).
+
 If neither is true, someone is posting at the endpoint. It is
 unauthenticated by design (the signature is the authentication) and a
 forged body cannot pass, so this is noise rather than an incident; the

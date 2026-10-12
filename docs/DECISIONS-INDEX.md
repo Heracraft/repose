@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-700 entries.
+701 entries.
 
 ## Scope
 
@@ -689,7 +689,7 @@ pointer, not a summary.
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
 - **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18177
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18198
-- **I-604** Billing moves from Paddle to Polar — 2026-10-08; L18227
+- **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
 - **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18417
@@ -732,3 +732,4 @@ pointer, not a summary.
 - **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — L20323
 - **I-642** The pricing research carries Hetzner's 15 June 2026 dedicated prices, and the plans lose money on Hetzner too (hetzner-repricing, 2026-10-09) — L20366
 - **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L20391
+- **I-678** A Polar event about a customer or product repose does not know is acknowledged, not failed — 2026-10-12; L20438

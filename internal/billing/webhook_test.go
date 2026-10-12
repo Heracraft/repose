@@ -153,8 +153,8 @@ func TestWebhookSignatureSkewAndDedupe(t *testing.T) {
 		t.Fatal("the unknown event was not recorded")
 	}
 	// An event for a customer that is not ours records the error.
-	if err := post(t, w, f, event("subscription.created", map[string]any{"id": "sub_alien", "status": "active", "customer_id": "cus_alien", "product_id": "prod_solo_test"})); err == nil {
-		t.Fatal("an unknown customer's subscription was applied")
+	if err := post(t, w, f, event("subscription.created", map[string]any{"id": "sub_alien", "status": "active", "customer_id": "cus_alien", "product_id": "prod_solo_test"})); !errors.Is(err, billing.ErrForeign) {
+		t.Fatalf("an unknown customer's subscription: %v", err)
 	}
 	var errText string
 	if err := pool.QueryRow(context.Background(), "select error from billing_events where type = 'subscription.created' and error is not null").Scan(&errText); err != nil || !strings.Contains(errText, "cus_alien") {
@@ -324,7 +324,7 @@ func TestWebhookRefusesForeignProducts(t *testing.T) {
 	defer f.Close()
 	w := newHooks(t, pool, f, nil, nil)
 	a := seedAccount(t, pool, "", "none", "", "")
-	if err := post(t, w, f, event("subscription.created", subData("sub_f", a, "prod_other", "active", nil))); err == nil || !strings.Contains(err.Error(), "prod_other") {
+	if err := post(t, w, f, event("subscription.created", subData("sub_f", a, "prod_other", "active", nil))); !errors.Is(err, billing.ErrForeign) || !strings.Contains(err.Error(), "prod_other") {
 		t.Fatalf("foreign product: %v", err)
 	}
 	if err := post(t, w, f, event("subscription.created", subData("sub_g", a, "prod_solo_test", "weird", nil))); err == nil || !strings.Contains(err.Error(), "weird") {

@@ -50,8 +50,9 @@ Grafana "Host capacity", variable `host_id`. Then on the host itself:
 `journalctl -u hostd -f`.
 
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
-counts Polar webhook deliveries (`ok`, `duplicate`, `bad_signature`,
-`error`), `repose_api_billing_overage_charges_total{result}` the egress
+counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
+event about a customer or product repose does not know (I-678),
+`bad_signature`, `error`), `repose_api_billing_overage_charges_total{result}` the egress
 overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason}` the
 `payment_required` refusals, `repose_api_billing_subscriptions_total{plan,status}`
 the subscription events applied and `repose_api_billing_stops_total{reason}`

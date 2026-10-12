@@ -20435,3 +20435,22 @@ proposed).
   +$3.48, +$8.96 and +$6.94 on a full host; against an Azure seat
   (about $100) every plan still loses $54 to $63, which the credit pays
   (owner, 2026-09-27).
+**I-678. A Polar event about a customer or product repose does not know
+is acknowledged, not failed.** (webhook-foreign, 2026-10-12.) Amends
+I-604 (4). Production's webhook endpoint belongs to the sandbox
+organization repose's tests also use, and Polar sends it every event of
+the organization: a `TestPolarSandbox` run on 2026-10-12 got 500 from
+production for each of the test customer's events (and for products of
+a price production's configuration does not name), and Polar retries
+each and disables an endpoint after ten failures in a row, which it did
+on 2026-10-09. The webhook now wraps "no user for the customer", "names
+no user and no customer" and "no repose plan product" in
+`billing.ErrForeign`; the route answers `200 {received, ignored}`,
+counts `result="ignored"`, logs a warning with the reason, and the
+`billing_events` row keeps it with `processed_at` null, so a redelivery
+after the configuration names the product applies it. A database error
+or an unknown status still answers 500 and is retried. *Rejected:* a
+separate sandbox organization for tests (production then could not be
+checked against a real delivery without a second endpoint and secret);
+filtering by a metadata marker (Polar sends customer and order events
+without the checkout's metadata).
