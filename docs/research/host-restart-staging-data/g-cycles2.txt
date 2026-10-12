@@ -1,0 +1,7 @@
+cycle 1 frozen 4 thawed 4 freeze_s 45.8 thaw_s 25.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47810 hostd_rss_kb=36256 hostd_fds=34 pool=0.61
+cycle 2 frozen 4 thawed 4 freeze_s 45.7 thaw_s 26.1 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47787 hostd_rss_kb=36872 hostd_fds=34 pool=0.61
+cycle 3 frozen 4 thawed 4 freeze_s 43.7 thaw_s 25.1 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47599 hostd_rss_kb=36676 hostd_fds=34 pool=0.61
+cycle 4 frozen 4 thawed 4 freeze_s 54.0 thaw_s 25.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47577 hostd_rss_kb=36916 hostd_fds=34 pool=0.61
+cycle 5 frozen 4 thawed 4 freeze_s 43.1 thaw_s 25.3 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47748 hostd_rss_kb=37508 hostd_fds=34 pool=0.61
+cycle 6 frozen 4 thawed 4 freeze_s 46.0 thaw_s 25.8 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47707 hostd_rss_kb=36952 hostd_fds=34 pool=0.61
+done

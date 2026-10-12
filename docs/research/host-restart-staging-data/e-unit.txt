@@ -1,0 +1,20 @@
+active
+Stopped Activate the guest pool vg-guests/thin (DECISIONS I-643).
+repose-guest-pool.service: Consumed 139ms CPU time over 6min 7.238s wall clock time, 18.9M memory peak, 43.2M read from disk, 4K written to disk.
+Stopping Activate the guest pool vg-guests/thin (DECISIONS I-643)...
+Starting Activate the guest pool vg-guests/thin (DECISIONS I-643)...
+repose-guest-pool: event=pool_leftover_removed device=vg--guests-thin_tmeta
+repose-guest-pool: event=pool_activated vg=vg-guests pool=thin
+repose-guest-pool: event=pool_monitored vg=vg-guests pool=thin
+Finished Activate the guest pool vg-guests/thin (DECISIONS I-643).
+  LV                                     Active Monitor  
+  auth-user-01a12c10                     active          
+  g-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b active          
+  g-01a12ddd-916e-7092-945c-800626b1ae93 active          
+  g-01a12ddd-b54a-7270-b71a-dfb2c9ae0389 active          
+  g-01a12ddd-e9f1-7bd0-a5b4-720491858812 active          
+  g-repro                                active          
+  g-repro-aux                            active          
+  repose-cache                           active          
+  thin                                   active monitored
+active active active

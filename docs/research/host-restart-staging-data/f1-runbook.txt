@@ -1,0 +1,9 @@
+  Allowing activation of component LV.
+vg--guests-thin_tmeta
+bad checksum in superblock
+thin_dump rc=64
+-rw-r--r-- 1 root root 0 Oct 12 05:02 /var/lib/repose/thin-meta-2026-10-12.xml
+/dev/nvme0n1p2  250G  8.4G  229G   4% /
+dd rc=0
+479232 -rw-r--r-- 1 root root 5498732544 Oct 12 05:02 /var/lib/repose/thin-meta-2026-10-12.img
+bad checksum in superblock

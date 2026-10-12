@@ -1,0 +1,36 @@
+== prev boot tail
+1791772543.482949 host-stg-01 systemd[1]: Started Session 17 of User root.
+1791772543.483553 host-stg-01 sshd-session[2604]: User child is on pid 2618
+1791772543.484451 host-stg-01 sshd-session[2618]: Starting session: command for root from 10.200.2.4 port 36866 id 0
+== this boot
+1791772559.051840 host-stg-01 kernel: Linux version 6.18.52 (nixbld@localhost) (gcc (GCC) 15.3.0, GN
+1791772565.371630 host-stg-01 systemd[1]: Starting Activate the guest pool vg-guests/thin (DECISIONS I-643)...
+1791772566.218561 host-stg-01 repose-guest-pool[696]: repose-guest-pool: event=pool_activated vg=vg-guests pool=thin
+1791772566.565675 host-stg-01 repose-guest-pool[696]: repose-guest-pool: event=pool_monitored vg=vg-guests pool=thin
+1791772566.661956 host-stg-01 systemd[1]: Finished Activate the guest pool vg-guests/thin (DECISIONS I-643).
+1791772568.898496 host-stg-01 systemd[1]: Started repose hostd: runs tenants' guests on this host.
+1791772569.380286 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"WARN","msg":"guest interrupted by a host restart","component":"hostd","guest_id":"01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b","project_id":"01a12ddd-6bc5-7272-81ae-b605b358528d","event":"guest_interrupted","boot_id":"e5690444-067b-43b3-bb2d-8162c6b6dc29","prev":"running"}
+1791772569.456205 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"guest state changed","component":"hostd","guest_id":"01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b","project_id":"01a12ddd-6bc5-7272-81ae-b605b358528d","event":"guest_state","state":"stopped","prev":"running","reason":"reconciled: hypervisor not running after hostd restart"}
+1791772569.456314 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"WARN","msg":"guest interrupted by a host restart","component":"hostd","guest_id":"01a12ddd-916e-7092-945c-800626b1ae93","project_id":"01a12ddd-916e-7090-88d7-72517b64788b","event":"guest_interrupted","boot_id":"e5690444-067b-43b3-bb2d-8162c6b6dc29","prev":"running"}
+1791772569.521947 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"guest state changed","component":"hostd","guest_id":"01a12ddd-916e-7092-945c-800626b1ae93","project_id":"01a12ddd-916e-7090-88d7-72517b64788b","event":"guest_state","state":"stopped","prev":"running","reason":"reconciled: hypervisor not running after hostd restart"}
+1791772569.522034 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"WARN","msg":"guest interrupted by a host restart","component":"hostd","guest_id":"01a12ddd-b54a-7270-b71a-dfb2c9ae0389","project_id":"01a12ddd-b54a-726e-af16-a447ec33585c","event":"guest_interrupted","boot_id":"e5690444-067b-43b3-bb2d-8162c6b6dc29","prev":"running"}
+1791772569.593476 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"guest state changed","component":"hostd","guest_id":"01a12ddd-b54a-7270-b71a-dfb2c9ae0389","project_id":"01a12ddd-b54a-726e-af16-a447ec33585c","event":"guest_state","state":"stopped","prev":"running","reason":"reconciled: hypervisor not running after hostd restart"}
+1791772569.593560 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"WARN","msg":"guest interrupted by a host restart","component":"hostd","guest_id":"01a12ddd-e9f1-7bd0-a5b4-720491858812","project_id":"01a12ddd-e9f1-7bcd-9aeb-da2de890da33","event":"guest_interrupted","boot_id":"e5690444-067b-43b3-bb2d-8162c6b6dc29","prev":"running"}
+1791772569.660496 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"guest state changed","component":"hostd","guest_id":"01a12ddd-e9f1-7bd0-a5b4-720491858812","project_id":"01a12ddd-e9f1-7bcd-9aeb-da2de890da33","event":"guest_state","state":"stopped","prev":"running","reason":"reconciled: hypervisor not running after hostd restart"}
+1791772569.664437 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"host boot recorded","component":"hostd","event":"host_boot","boot_id":"e5690444-067b-43b3-bb2d-8162c6b6dc29","prev_boot_id":"72f9ff32-cd05-4f1c-9fd5-c1e376f590cf"}
+1791772569.715318 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"started stream","component":"hostd","event":"start","part":"stream"}
+1791772569.802390 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"image key fetched; guests can be frozen","component":"hostd","event":"guest_freeze"}
+1791772569.813330 host-stg-01 hostd[985]: {"ts":"2026-10-12T02:36:09Z","level":"INFO","msg":"stream connected","component":"hostd","event":"stream_connect"}
+GUEST                                 PROJECT                               CLASS  STATE    IP         UNIT      VIRTIOFSD  STORE  GUESTD  REASON
+01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b  01a12ddd-6bc5-7272-81ae-b605b358528d  small  stopped  10.64.4.2  inactive  inactive   -      down    reconciled: hypervisor not running after hostd restart
+01a12ddd-916e-7092-945c-800626b1ae93  01a12ddd-916e-7090-88d7-72517b64788b  large  stopped  10.64.4.3  inactive  inactive   -      down    reconciled: hypervisor not running after hostd restart
+01a12ddd-b54a-7270-b71a-dfb2c9ae0389  01a12ddd-b54a-726e-af16-a447ec33585c  xl     stopped  10.64.4.4  inactive  inactive   -      down    reconciled: hypervisor not running after hostd restart
+01a12ddd-e9f1-7bd0-a5b4-720491858812  01a12ddd-e9f1-7bcd-9aeb-da2de890da33  small  stopped  10.64.4.5  inactive  inactive   -      down    reconciled: hypervisor not running after hostd restart
+  LV                                     Monitor  
+  auth-user-01a12c10                              
+  g-01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b          
+  g-01a12ddd-916e-7092-945c-800626b1ae93          
+  g-01a12ddd-b54a-7270-b71a-dfb2c9ae0389          
+  g-01a12ddd-e9f1-7bd0-a5b4-720491858812          
+  repose-cache                                    
+  thin                                   monitored

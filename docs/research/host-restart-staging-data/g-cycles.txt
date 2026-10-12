@@ -1,0 +1,29 @@
+cycle 1 frozen 4 thawed 4 freeze_s 47.9 thaw_s 25.7 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47368 hostd_rss_kb=36680 hostd_fds=34 pool=0.61
+cycle 2 frozen 4 thawed 4 freeze_s 44.9 thaw_s 25.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47347 hostd_rss_kb=36552 hostd_fds=34 pool=0.61
+cycle 3 frozen 4 thawed 4 freeze_s 48.5 thaw_s 26.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47382 hostd_rss_kb=36648 hostd_fds=34 pool=0.61
+cycle 4 frozen 4 thawed 4 freeze_s 45.9 thaw_s 25.7 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47339 hostd_rss_kb=37016 hostd_fds=34 pool=0.61
+cycle 5 frozen 4 thawed 4 freeze_s 46.0 thaw_s 26.1 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=47202 hostd_rss_kb=36528 hostd_fds=34 pool=0.61
+cycle 6 frozen 4 thawed 4 freeze_s 47.9 thaw_s 27.7 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46451 hostd_rss_kb=36704 hostd_fds=34 pool=0.61
+cycle 7 frozen 4 thawed 4 freeze_s 46.7 thaw_s 26.6 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46603 hostd_rss_kb=36680 hostd_fds=34 pool=0.61
+cycle 8 frozen 4 thawed 4 freeze_s 46.3 thaw_s 27.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46571 hostd_rss_kb=36760 hostd_fds=34 pool=0.61
+cycle 9 frozen 4 thawed 4 freeze_s 46.8 thaw_s 26.7 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46583 hostd_rss_kb=36812 hostd_fds=34 pool=0.61
+cycle 10 frozen 4 thawed 4 freeze_s 47.4 thaw_s 26.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46549 hostd_rss_kb=36828 hostd_fds=34 pool=0.61
+cycle 11 frozen 4 thawed 4 freeze_s 56.2 thaw_s 27.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46530 hostd_rss_kb=36972 hostd_fds=34 pool=0.61
+cycle 12 frozen 4 thawed 4 freeze_s 48.7 thaw_s 27.3 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46559 hostd_rss_kb=37088 hostd_fds=34 pool=0.61
+cycle 13 frozen 4 thawed 4 freeze_s 47.0 thaw_s 27.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46488 hostd_rss_kb=36816 hostd_fds=34 pool=0.61
+cycle 14 frozen 4 thawed 4 freeze_s 52.6 thaw_s 27.1 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46532 hostd_rss_kb=37328 hostd_fds=34 pool=0.61
+cycle 15 frozen 4 thawed 4 freeze_s 48.0 thaw_s 28.3 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46376 hostd_rss_kb=37292 hostd_fds=34 pool=0.61
+cycle 16 frozen 4 thawed 4 freeze_s 46.8 thaw_s 27.9 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46364 hostd_rss_kb=37084 hostd_fds=34 pool=0.61
+cycle 17 frozen 4 thawed 4 freeze_s 48.1 thaw_s 27.7 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46459 hostd_rss_kb=37484 hostd_fds=34 pool=0.61
+cycle 18 frozen 4 thawed 4 freeze_s 50.1 thaw_s 28.1 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=46495 hostd_rss_kb=37156 hostd_fds=34 pool=0.61
+cycle 19 frozen 4 thawed 0 freeze_s 47.4 thaw_s 28.6 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=61271 hostd_rss_kb=36600 hostd_fds=17 pool=0.61
+  T 01a12ddd-6bc5-7276-9ef3-b3cc2dc2f04b  discarded  12991  0      restore failed
+  T 01a12ddd-916e-7092-945c-800626b1ae93  discarded  10879  0      restore failed
+  T 01a12ddd-b54a-7270-b71a-dfb2c9ae0389  discarded  28138  0      restore failed
+  T 01a12ddd-e9f1-7bd0-a5b4-720491858812  discarded  5635   0      restore failed
+cycle 20 frozen 0 thawed 0 freeze_s 0.0 thaw_s 0.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=61816 hostd_rss_kb=36600 hostd_fds=14 pool=0.61
+cycle 21 frozen 0 thawed 0 freeze_s 0.0 thaw_s 0.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=62139 hostd_rss_kb=36600 hostd_fds=14 pool=0.61
+cycle 22 frozen 0 thawed 0 freeze_s 0.0 thaw_s 0.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=62352 hostd_rss_kb=36600 hostd_fds=14 pool=0.61
+cycle 23 frozen 0 thawed 0 freeze_s 0.0 thaw_s 0.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=62500 hostd_rss_kb=36604 hostd_fds=10 pool=0.61
+cycle 24 frozen 0 thawed 0 freeze_s 0.0 thaw_s 0.2 lv=0 dm=0 rec=0 mnt=0 running=4 avail_mb=62539 hostd_rss_kb=36212 hostd_fds=10 pool=0.61
+done

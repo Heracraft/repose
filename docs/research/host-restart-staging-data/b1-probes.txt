@@ -1,0 +1,74 @@
+b1-after.txt:=== b1-after at 2026-10-12T02:34:02.898019207Z
+b1-after.txt:--- e2e-st-small edge_before 1791772443.403082270
+b1-after.txt:now 1791772443.654878582 boot 10ecf6c0-28ca-4462-a4b5-0684a8401bdd up 538.92
+b1-after.txt:stress 1057 alive appender 1059 alive
+b1-after.txt:docker running 1164 2026-10-12T02:19:31.165736196Z lines 73 last 1791772443
+b1-after.txt:tmux_st 1196 loop 501 1791772444
+b1-after.txt:agentwin shell:906:bash claude:994:claude 
+b1-after.txt:ts.log lines 70 backwards 0 (max 0.0) maxgap 84.3 at 1791772323.049603042
+b1-after.txt:docker.log lines 74 backwards 0 (max 0.0) maxgap 84.0 at 1791772323
+b1-after.txt:edge_after 1791772444.957597832
+b1-after.txt:--- e2e-st-large edge_before 1791772444.959075007
+b1-after.txt:now 1791772445.081950946 boot ebe8b0ae-2380-4f0b-8c40-4db1eec999be up 605.20
+b1-after.txt:stress 1200 alive appender 1202 alive
+b1-after.txt:docker running 1256 2026-10-12T02:19:33.4910007Z lines 74 last 1791772444
+b1-after.txt:tmux_st 1285 loop 547 1791772444
+b1-after.txt:agentwin shell:958:bash claude:1060:claude 
+b1-after.txt:ts.log lines 72 backwards 0 (max 0.0) maxgap 84.2 at 1791772335.161541176
+b1-after.txt:docker.log lines 74 backwards 0 (max 0.0) maxgap 84.0 at 1791772335
+b1-after.txt:edge_after 1791772445.541478050
+b1-after.txt:--- e2e-st-xl edge_before 1791772445.542825504
+b1-after.txt:now 1791772445.751739757 boot 81315655-8f04-4774-9515-89d47fb12aa6 up 335.31
+b1-after.txt:stress 1271 alive appender 1274 alive
+b1-after.txt:docker running 1441 2026-10-12T02:25:15.436000149Z lines 80 last 1791772445
+b1-after.txt:tmux_st 1477 loop 297 1791772445
+b1-after.txt:agentwin shell:1053:bash claude:1186:claude 
+b1-after.txt:ts.log lines 77 backwards 0 (max 0.0) maxgap 78.8 at 1791772336.378151851
+b1-after.txt:docker.log lines 80 backwards 0 (max 0.0) maxgap 79.0 at 1791772336
+b1-after.txt:edge_after 1791772446.681799751
+b1-after.txt:--- e2e-st-small2 edge_before 1791772446.683144693
+b1-after.txt:now 1791772446.811244403 boot 3d144794-985e-4571-8d09-b77a52aa86ae up 1092.74
+b1-after.txt:stress 1683 alive appender 1684 alive
+b1-after.txt:docker running 1422 2026-10-12T02:09:46.115940476Z lines 82 last 1791772446
+b1-after.txt:tmux_st 1453 loop 898 1791772446
+b1-after.txt:agentwin shell:1086:bash claude:1459:claude 
+b1-after.txt:ts.log lines 80 backwards 0 (max 0.0) maxgap 76.5 at 1791772323.445323867
+b1-after.txt:docker.log lines 82 backwards 0 (max 0.0) maxgap 76.0 at 1791772323
+b1-after.txt:edge_after 1791772447.249675163
+b1-before.txt:=== b1-before at 2026-10-12T02:31:28.322099914Z
+b1-before.txt:--- e2e-st-small edge_before 1791772289.047404429
+b1-before.txt:now 1791772289.271456489 boot 10ecf6c0-28ca-4462-a4b5-0684a8401bdd up 467.76
+b1-before.txt:stress 1057 alive appender 1059 alive
+b1-before.txt:docker running 1164 2026-10-12T02:19:31.165736196Z lines 2 last 1791772288
+b1-before.txt:tmux_st 1196 loop 433 1791772289
+b1-before.txt:agentwin shell:906:bash claude:994:claude 
+b1-before.txt:ts.log lines 2 backwards 0 (max 0.0) maxgap 1.1 at 1791772288.210686533
+b1-before.txt:docker.log lines 3 backwards 0 (max 0.0) maxgap 1.0 at 1791772287
+b1-before.txt:edge_after 1791772290.097690044
+b1-before.txt:--- e2e-st-large edge_before 1791772290.099132284
+b1-before.txt:now 1791772290.246896788 boot ebe8b0ae-2380-4f0b-8c40-4db1eec999be up 533.45
+b1-before.txt:stress 1200 alive appender 1202 alive
+b1-before.txt:docker running 1256 2026-10-12T02:19:33.4910007Z lines 3 last 1791772290
+b1-before.txt:tmux_st 1285 loop 479 1791772290
+b1-before.txt:agentwin shell:958:bash claude:1060:claude 
+b1-before.txt:ts.log lines 3 backwards 0 (max 0.0) maxgap 1.1 at 1791772288.184485202
+b1-before.txt:docker.log lines 3 backwards 0 (max 0.0) maxgap 1.0 at 1791772288
+b1-before.txt:edge_after 1791772290.741740744
+b1-before.txt:--- e2e-st-xl edge_before 1791772290.743169007
+b1-before.txt:now 1791772290.932943146 boot 81315655-8f04-4774-9515-89d47fb12aa6 up 258.26
+b1-before.txt:stress 1271 alive appender 1274 alive
+b1-before.txt:docker running 1441 2026-10-12T02:25:15.436000149Z lines 4 last 1791772291
+b1-before.txt:tmux_st 1477 loop 225 1791772291
+b1-before.txt:agentwin shell:1053:bash claude:1186:claude 
+b1-before.txt:ts.log lines 4 backwards 0 (max 0.0) maxgap 1.1 at 1791772288.175835237
+b1-before.txt:docker.log lines 4 backwards 0 (max 0.0) maxgap 1.0 at 1791772288
+b1-before.txt:edge_after 1791772291.646939887
+b1-before.txt:--- e2e-st-small2 edge_before 1791772291.648331775
+b1-before.txt:now 1791772291.812656507 boot 3d144794-985e-4571-8d09-b77a52aa86ae up 1013.19
+b1-before.txt:stress 1683 alive appender 1684 alive
+b1-before.txt:docker running 1422 2026-10-12T02:09:46.115940476Z lines 4 last 1791772292
+b1-before.txt:tmux_st 1453 loop 822 1791772292
+b1-before.txt:agentwin shell:1086:bash claude:1459:claude 
+b1-before.txt:ts.log lines 4 backwards 0 (max 0.0) maxgap 1.0 at 1791772288.900175219
+b1-before.txt:docker.log lines 4 backwards 0 (max 0.0) maxgap 1.0 at 1791772289
+b1-before.txt:edge_after 1791772292.734549933
