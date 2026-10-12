@@ -782,9 +782,15 @@ intact.
 3. A real thin_check failure: do not run `thin_repair` or `lvconvert
    --repair` before the owner decides. First keep what is there:
    `thin_dump /dev/mapper/vg--guests-thin_tmeta > /var/lib/repose/thin-meta-$(date +%F).xml`
-   on the OS disk (activate the metadata alone with `lvchange -ay
+   on the OS disk (activate the metadata alone with `lvchange -ay --yes
    vg-guests/thin_tmeta` if it is not), and an `az snapshot create` of
-   the data disk. The fallback is restoring each project from its nightly
+   the data disk. When thin_dump fails too (`bad checksum in superblock`:
+   the damage reached the superblock, and the XML is empty), keep the
+   metadata device itself instead: `dd
+   if=/dev/mapper/vg--guests-thin_tmeta
+   of=/var/lib/repose/thin-meta-$(date +%F).img bs=4M conv=sparse` (up
+   to 16 GiB, mostly sparse; host-stg-01's 5.1 GiB took 234 MB), then
+   `lvchange -an vg-guests/thin_tmeta`. The fallback is restoring each project from its nightly
    snapshot onto a host with a working pool.
 
 ## PoolUnmonitored
