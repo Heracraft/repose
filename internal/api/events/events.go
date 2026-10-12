@@ -22,16 +22,19 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
-// Kinds that reach the user's channels.
+// Kinds that reach the user's channels. A turn end (completed) is an
+// event and sets the agent's state, and notifies nobody: an agent says it
+// is done on purpose with agent_done (DECISIONS I-688).
 var notifyKinds = map[string]bool{
-	"completed": true, "needs_input": true, "error": true,
+	"needs_input": true, "error": true,
 	"billing_stopped": true, "base_updated": true, "base_update_failed": true, "snapshot_failed": true, "host_moved": true,
 	"destroy_failed":       true,
 	"notifications_paused": true,
 	// A guest stopped because a miner was running (DECISIONS I-239).
 	"abuse_stopped": true,
-	// repose-notify and repose-ask (DECISIONS I-244).
-	"agent_message": true, "agent_question": true,
+	// repose-notify, repose-notify --done and repose-ask (DECISIONS
+	// I-244, I-688).
+	"agent_message": true, "agent_question": true, "agent_done": true,
 	// A running machine nobody used for a day, once per idle stretch
 	// (internal/api/idle, DECISIONS I-262).
 	"idle_running": true,
@@ -46,13 +49,13 @@ var notifyKinds = map[string]bool{
 	"boot_failed": true,
 }
 
-// GuestKinds are the notifying kinds a guest may report, over vsock or the
-// edge's hook path: the hook kinds and repose-notify's message (guestd's
-// hooks package sends nothing else). Every other kind in notifyKinds is
+// GuestKinds are the kinds a guest may report, over vsock or the edge's
+// hook path: the hook kinds and repose-notify's message and done report
+// (guestd's hooks package sends nothing else). Every other kind in notifyKinds is
 // written by the api itself, and a guest that names one is refused, so a
 // tenant's own code cannot send its owner mail worded as a platform notice
 // or reach notifications_paused, which skips the dedupe and the hourly cap.
-var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
 
 // guestAgents are the agent names a guest may attribute an event to:
 // guestd's five and "shell" for repose-notify and repose-ask run from a
@@ -96,7 +99,14 @@ const GuestEventsPerHour = 600
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
-var noDedupe = map[string]bool{"agent_message": true, "agent_question": true}
+var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true}
+
+// dedupes says a kind collapses a repeat within DedupeWindow: the
+// notifying kinds a person did not send on purpose, and a turn end, which
+// notifies nobody but is still one event per burst.
+func dedupes(kind string) bool {
+	return (notifyKinds[kind] || kind == "completed") && kind != "notifications_paused" && !noDedupe[kind]
+}
 
 // QuestionHandler is the question store (internal/api/questions), which
 // sits on top of this package.
@@ -190,7 +200,7 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 		}
 	}
 	err = db.InTx(ctx, i.pool, func(tx db.Tx) error {
-		if notifyKinds[n.Kind] && n.Kind != "notifications_paused" && !noDedupe[n.Kind] {
+		if dedupes(n.Kind) {
 			// Collapse a repeat within the window, appending a new summary.
 			var prevID uuid.UUID
 			var prevSummary string
@@ -471,7 +481,7 @@ func (i *Ingest) projectOnHost(ctx context.Context, hostID uuid.UUID, guestID st
 func (i *Ingest) overGuestCap(ctx context.Context, projectID uuid.UUID) (bool, error) {
 	var n int
 	err := i.pool.QueryRow(ctx, `select count(*) from (select 1 from events where project_id = $1 and ts > $2 and source in ('host', 'http')
-		and kind in ('completed','needs_input','error','agent_message','agent_question') limit $3) x`,
+		and kind in ('completed','needs_input','error','agent_message','agent_question','agent_done') limit $3) x`,
 		projectID, i.now().Add(-time.Hour), GuestEventsPerHour).Scan(&n)
 	if err != nil {
 		return false, err

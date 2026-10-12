@@ -77,7 +77,7 @@ func TestOutboxDeliversOncePerChannelAndRetries(t *testing.T) {
 	now := time.Now()
 	ob := notify.New(pool, map[string]notify.Sender{"email": email, "ntfy": ntfy}, m, log)
 	ob.Now = func() time.Time { return now }
-	id, inserted, err := ing.Insert(ctx, events.Incoming{ProjectID: mustUUID(pid), TS: now, Kind: "completed", Agent: "claude", Summary: "done"})
+	id, inserted, err := ing.Insert(ctx, events.Incoming{ProjectID: mustUUID(pid), TS: now, Kind: "agent_done", Agent: "claude", Summary: "done"})
 	if err != nil || !inserted {
 		t.Fatalf("insert %v %v", inserted, err)
 	}
@@ -287,6 +287,11 @@ func TestSubjectUsesPlatformWording(t *testing.T) {
 	}
 	got = notify.Subject(notify.Message{Kind: "snapshot_failed", Project: "todo-app"})
 	if got != "todo-app: snapshot failed" {
+		t.Fatalf("subject %q", got)
+	}
+	// A done report (DECISIONS I-688).
+	got = notify.Subject(notify.Message{Kind: "agent_done", Agent: "claude", Project: "todo-app"})
+	if got != "todo-app: claude is done" {
 		t.Fatalf("subject %q", got)
 	}
 	// The unused-machine warning (DECISIONS I-262, I-617): a plan

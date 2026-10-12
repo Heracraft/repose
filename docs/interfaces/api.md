@@ -231,8 +231,10 @@ one of those names stored before is still listed and deletable.
 
 Event kinds are those of `features/notifications.md`; `agent_message`
 (from `repose-notify`) and `agent_question` (from `repose-ask`, whose
-`summary` is the question text) were added by DECISIONS I-244. A client
-that does not know a kind shows it by name. `idle_running` (source
+`summary` is the question text) were added by DECISIONS I-244, and
+`agent_done` (from `repose-notify --done`, the agent's report in
+`summary`) by I-688, which also stopped `completed` from notifying; it is
+still listed here. A client that does not know a kind shows it by name. `idle_running` (source
 `api`, once per idle stretch; the summary names the class, the hourly
 rate and `repose stop <slug>`) was added by DECISIONS I-262.
 `temp_expiring` (source `api`, once per temporary project an hour before
@@ -340,7 +342,7 @@ payment_required` with `detail.reason: suspended` and the same sentence
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
 | GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
-| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. `kind` is one a guest may report (`completed`, `needs_input`, `error`, `agent_message`); any other is `400 invalid` (DECISIONS I-441). An `agent` that is not one guestd sends (`claude`, `opencode`, `codex`, `gemini`, `pi`, `shell`) is stored as no agent |
+| POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. `kind` is one a guest may report (`completed`, `needs_input`, `error`, `agent_message`, `agent_done` since I-688); any other is `400 invalid` (DECISIONS I-441). An `agent` that is not one guestd sends (`claude`, `opencode`, `codex`, `gemini`, `pi`, `shell`) is stored as no agent |
 
 ## Rate limits
 

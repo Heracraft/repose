@@ -56,12 +56,20 @@ func fixtures() map[string]notify.Message {
 		"https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=email",
 		"https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=email",
 	}, Expires: fixtureExpires}
+	q.Window, q.At = "main", fixtureExpires.Add(-30*time.Minute)
+	free := agent("agent_question", "Which address should the invoices go to?")
+	free.Window, free.At = "main", fixtureExpires.Add(-30*time.Minute)
+	free.Question = &notify.QuestionLinks{ID: fixtureQ, Options: []string{}, Expires: fixtureExpires}
+	done := agent("agent_done", "Billing export is in place: 14 tests pass, committed on branch export.\nLook at docs/export.md first.")
+	done.Window, done.At = "main", fixtureExpires
 	return map[string]notify.Message{
 		"completed":              agent("completed", "Added the auth flow, 14 tests green, committed 3f9e2a1."),
 		"needs_input":            agent("needs_input", "Allow Bash(rm -rf node_modules)?"),
 		"error":                  agent("error", "npm test exited 1: 3 failures in auth.test.ts"),
 		"agent_message":          agent("agent_message", "Deploy to staging is green."),
 		"agent_question":         q,
+		"agent_question_free":    free,
+		"agent_done":             done,
 		"idle_running":           agent("idle_running", "todo-app (large) has run 24h with no session, no tmux client and no agent working. Stop it with `repose stop todo-app` if you are done."),
 		"base_updated":           platform("base_updated", "Platform base 2026.09.27.1 is running on this machine."),
 		"base_update_failed":     platform("base_update_failed", "Platform base 2026.09.27.1 did not build with your configuration; the machine stays on 2026.09.20.3. See the build log on the dashboard."),

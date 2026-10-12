@@ -29,9 +29,13 @@ import (
 
 // Message is one notification to deliver.
 type Message struct {
-	EventID   uuid.UUID
-	Kind      string
-	Agent     string
+	EventID uuid.UUID
+	Kind    string
+	Agent   string
+	// Window is the agent's tmux window or herdr pane; At is when the
+	// event happened. The question and done emails print both.
+	Window    string
+	At        time.Time
 	Project   string // slug
 	Summary   string
 	Email     string
@@ -143,6 +147,7 @@ type row struct {
 	attempts    int
 	kind        string
 	agent       *string
+	window      *string
 	summary     string
 	slug        string
 	email       *string
@@ -162,7 +167,7 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 order by o.next_at limit 100 for update of o skip locked`, now)
@@ -172,7 +177,7 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.options, &r.expires); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.options, &r.expires); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -210,7 +215,10 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		o.mark(ctx, r, errors.New("no sender configured"), true)
 		return
 	}
-	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID}
+	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID, At: r.eventTS}
+	if r.window != nil {
+		m.Window = *r.window
+	}
 	if r.questionID != nil && r.expires != nil {
 		q := &QuestionLinks{ID: *r.questionID, Options: r.options, Expires: *r.expires}
 		if o.Unsub != nil {
@@ -429,13 +437,17 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		prio, tag = "4", "x"
 	case "agent_message":
 		prio, tag = "3", "speech_balloon"
+	case "agent_done":
+		prio, tag = "4", ""
 	case "agent_question":
 		prio, tag = "5", "question"
 	case "machines_restarted":
 		prio, tag = "4", "arrows_counterclockwise"
 	}
 	req.Header.Set("Priority", prio)
-	req.Header.Set("Tags", tag)
+	if tag != "" {
+		req.Header.Set("Tags", tag)
+	}
 	req.Header.Set("Click", m.Dashboard+"/projects")
 	if m.Question != nil {
 		req.Header.Set("Click", m.ProjectURL())

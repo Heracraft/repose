@@ -48,13 +48,13 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	pid, gid, host := seedOn(t, pool)
 	now := time.Now()
-	// Claude's Stop and agent_completed within a minute collapse to one
-	// event with both summaries.
-	id1, ins1, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now, Kind: "completed", Agent: "claude", Summary: "ran tests"})
+	// Two permission prompts within a minute collapse to one event with
+	// both summaries.
+	id1, ins1, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now, Kind: "needs_input", Agent: "claude", Summary: "ran tests"})
 	if err != nil || !ins1 {
 		t.Fatal(err)
 	}
-	id2, ins2, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(20 * time.Second), Kind: "completed", Agent: "claude", Summary: "3 failures fixed"})
+	id2, ins2, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(20 * time.Second), Kind: "needs_input", Agent: "claude", Summary: "3 failures fixed"})
 	if err != nil || ins2 || id2 != id1 {
 		t.Fatalf("second within window: inserted=%v id=%s (first %s) err=%v", ins2, id2, id1, err)
 	}
@@ -69,10 +69,10 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 		t.Fatalf("outbox rows %d", n)
 	}
 	// A different kind is its own event; a repeat past the window too.
-	if _, ins, _ := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(30 * time.Second), Kind: "needs_input", Agent: "claude", Summary: "?"}); !ins {
+	if _, ins, _ := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(30 * time.Second), Kind: "agent_done", Agent: "claude", Summary: "?"}); !ins {
 		t.Fatal("different kind collapsed")
 	}
-	if _, ins, _ := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(2 * time.Minute), Kind: "completed", Agent: "claude", Summary: "later"}); !ins {
+	if _, ins, _ := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now.Add(2 * time.Minute), Kind: "needs_input", Agent: "claude", Summary: "later"}); !ins {
 		t.Fatal("event past the window collapsed")
 	}
 	// The hostd event path: same event id twice is one row; a state change
@@ -135,7 +135,7 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		ts := base.Add(time.Duration(i) * 61 * time.Second)
 		ing.SetNow(func() time.Time { return ts })
-		if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: ts, Kind: "completed", Agent: "pi", Summary: fmt.Sprint("loop ", i)}); err != nil {
+		if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: ts, Kind: "needs_input", Agent: "pi", Summary: fmt.Sprint("loop ", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -441,5 +441,48 @@ func TestEdgeHookPathSharesTheGuestCap(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(m.HostReportsRefused.WithLabelValues("project_cap")); got != 2 {
 		t.Fatalf("project_cap refusals %v, want 2", got)
+	}
+}
+
+// TestTurnEndsNotifyNobodyAndDoneDoes (DECISIONS I-688): a completed
+// turn end is stored, still collapses with a repeat, and queues no
+// delivery; agent_done from a guest is accepted, queues one row per
+// channel, is never collapsed, and shares the hourly cap's count.
+func TestTurnEndsNotifyNobodyAndDoneDoes(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, host := seedOn(t, pool)
+	now := time.Now()
+	ev := func(id, kind, summary string) *hostdv1.Event {
+		return &hostdv1.Event{EventId: id, Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: gid.String(), Agent: "claude", Kind: kind, Summary: summary, TmuxWindow: "main"}}}
+	}
+	if !ing.OnEvent(ctx, host, ev("c1", "completed", "turn one")) || !ing.OnEvent(ctx, host, ev("c2", "completed", "turn two")) {
+		t.Fatal("completed not acked")
+	}
+	var n int
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'completed'", pid).Scan(&n)
+	if n != 1 {
+		t.Fatalf("two turn ends in a second are %d events, want 1 (dedupe)", n)
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox").Scan(&n)
+	if n != 0 {
+		t.Fatalf("a turn end queued %d deliveries", n)
+	}
+	for i := 0; i < 3; i++ {
+		if !ing.OnEvent(ctx, host, ev(fmt.Sprint("d", i), "agent_done", fmt.Sprint("report ", i))) {
+			t.Fatal("agent_done not acked")
+		}
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'agent_done' and agent = 'claude' and tmux_window = 'main'", pid).Scan(&n)
+	if n != 3 {
+		t.Fatalf("three done reports are %d events", n)
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox o join events e on e.id = o.event_id where e.kind = 'agent_done'").Scan(&n)
+	if n != 6 {
+		t.Fatalf("done reports queued %d rows, want 6 (3 events, 2 channels)", n)
+	}
+	if _, err := ing.FromEdge(ctx, "10.64.4.9", "codex", "agent_done", "over the edge"); err != nil {
+		t.Fatalf("agent_done over the edge: %v", err)
 	}
 }

@@ -1,7 +1,7 @@
 # Notifications
 
-The user hears on their phone or in their inbox when an agent finishes or
-gets stuck, whichever agent it was. Agents' own notification features
+The user hears on their phone or in their inbox when an agent says it is
+done, asks something or gets stuck, whichever agent it was. Agents' own notification features
 keep working on top.
 
 ## What the user sees
@@ -23,7 +23,7 @@ On the phone (ntfy):
 
 ```
 repose · todo-app
-claude finished: "Added auth flow, 14 tests green, committed 3f9e2a1"
+claude is done: "Added auth flow, 14 tests green, committed 3f9e2a1"
 ```
 
 ```
@@ -44,7 +44,7 @@ todo-app  running 3h12m  large
 
 Events (see agents.md for how each agent produces them):
 
-- Kinds: `completed`, `needs_input`, `error`, plus the platform-originated
+- Kinds: `needs_input`, `error`, `agent_done`, plus the platform-originated
   `billing_stopped`, `base_updated`, `base_update_failed`, `snapshot_failed`,
   `destroy_failed` (DECISIONS I-165: the CLI no longer waits for a
   destroy, so its failure is announced), `personal_failed` (I-490: the
@@ -69,17 +69,20 @@ Events (see agents.md for how each agent produces them):
   follows `notify_email` and the ntfy URL like any machine notification,
   and is never sent twice for one restart; the per-machine
   `host_restarted` project event notifies nobody), and
-  the agent-sent `agent_message` and `agent_question` (DECISIONS I-244,
-  below). Each carries the agent name (agent kinds only), the
+  the agent-sent `agent_message`, `agent_question` and `agent_done`
+  (DECISIONS I-244, I-688, below). A finished turn (`completed`: Claude's
+  `Stop`, codex `agent-turn-complete`, opencode's idle, herdr's completion
+  and the tmux-idle heuristic) is recorded as an event and sets the
+  agent's state, and queues no delivery (I-688). Each carries the agent name (agent kinds only), the
   tmux window or herdr agent key (I-504), a summary of at most 1 KB, and
   a timestamp. On a herdr project, herdr's `blocked` sets gemini's and
   pi's state to needs input without a notification; their finished turns
-  notify as `completed`.
+  are recorded as `completed`.
 - The summary is what the agent's hook provided, truncated. It may include
   the agent's own last message. It never includes the prompt the user typed
   or terminal contents beyond what the hook payload carries.
 - Heuristic events (pane idle for agents without hooks) are labelled as
-  such in the message: `gemini went idle` rather than `gemini finished`.
+  such in their summary: `gemini went idle` rather than `gemini finished`.
   As shipped, the heuristic never reads pane *text*. It reads only whether
   the pane's process tree has used CPU recently, a stronger guarantee than
   "never sent" (DECISIONS I-49).
@@ -101,6 +104,10 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   `agent_message`: title `<project>: <agent> says`, ntfy priority 3. It
   returns at once. Messages are never collapsed into each other and count
   against the 30-an-hour cap like any event.
+- `repose-notify --done TEXT` sends TEXT (1 KB) as an `agent_done`: title
+  `<project>: <agent> is done`, email subject `[repose] <project>: <agent>
+  is done`, ntfy priority 4. Like a message it is never collapsed and
+  counts against the cap (I-688).
 - `repose-ask [--options A,B,C] [--timeout 30m] QUESTION` sends an
   `agent_question` (title `<project>: <agent> asks`, ntfy priority 5) and
   blocks until the owner answers, then prints the answer. Exit codes: 0
@@ -126,11 +133,11 @@ Channels (`workstreams/13-notifications.md` §5.6):
 
 - Email through Resend, to the account's email, one message per event,
   subject `[repose] <project>: <agent> <verb>` for agent events (e.g.
-  `[repose] todo-app: claude finished`) or a dedicated line for platform
+  `[repose] todo-app: claude is done`) or a dedicated line for platform
   and account events (`internal/api/notify.Subject`). Every email is
   rendered twice from one content, as HTML and as plain text, and both go
   in the one Resend call (DECISIONS I-291): one HTML layout
-  (`internal/api/notify/templates/layout.html`, a 600 px table, inline
+  (`internal/api/notify/templates/layout.html`, a 560 px table, inline
   styles, system fonts, the landing's paper and ink in light mode only,
   the word `repose` as the header, no images, no tracking) and one text
   layout, filled from a per-kind partial under `templates/kinds/`. Golden
@@ -142,8 +149,15 @@ Channels (`workstreams/13-notifications.md` §5.6):
   the api's first start), an unsubscribe line and a matching
   `List-Unsubscribe` header (RFC 8058 one-click). The link opens a page
   whose button turns email off with no login; a GET alone changes
-  nothing, and the link expires 90 days after the email (I-442); an `agent_question` renders its options as buttons
-  calling the signed reply links. On by default at signup; no time-based
+  nothing, and the link expires 90 days after the email (I-442). An
+  `agent_question` email puts a grey line under the title (agent,
+  window, `asked 28 Sep 18:00 UTC`, `open until 18:30 UTC`), the question
+  on a sunken block, one bordered button per option on its own line to
+  the signed reply link, and a link to the project; a question without
+  options gets a `Write an answer` button to the project instead. An
+  `agent_done` email has the same grey line and the report on a sunken
+  block, then the `repose attach` row and a button to the project
+  (I-688). On by default at signup; no time-based
   default change.
 - ntfy: the user sets any ntfy-compatible URL, including a self-hosted
   server; the platform POSTs the message with a title, a priority (higher

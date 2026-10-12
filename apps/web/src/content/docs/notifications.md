@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Get told by email or on your phone when an agent finishes, needs you, or asks you something, and answer from there.
+description: Get told by email or on your phone when an agent is done, needs you, or asks you something, and answer from there.
 section: Using repose
 order: 16
 ---
@@ -43,7 +43,7 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 
 | Title                                           | When                                                                                                                                                                                          |
 |-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                            |
+| `todo-app: claude is done`                      | The agent ran `repose-notify --done` to say the work you asked for is ready to look at. The body is its report.                                                                              |
 | `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                      |
 | `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                  |
 | `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                                 |
@@ -66,7 +66,7 @@ Every email comes as HTML with a plain-text version. There are no images and no 
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
+An agent finishing its turn sends you nothing. The turn shows in `repose events` as `finished`, and the agent's state in `repose ls` changes. Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds; permission prompts and errors reach you that way. Gemini CLI and pi have no hooks, so the machine records `finished` when their processes go quiet, within about 90 seconds, with the summary `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 
