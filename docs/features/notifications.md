@@ -102,12 +102,27 @@ Events (see agents.md for how each agent produces them):
   notifications in the last hour, so this project's notifications are
   paused until 14:32 UTC. Its events are still recorded.` Events are still
   recorded; only delivery stops.
+- Presence hold (DECISIONS I-689): while the owner is at the machine,
+  nothing an agent reports reaches their phone. Present means the
+  project's latest guest sample, at most 2 minutes old, shows a tmux
+  client or an SSH session (`meter_samples.tmux_clients + ssh_sessions >
+  0`; a laptop herdr bridge is an SSH session, I-511). The outbox worker
+  checks it at send time for `agent_question`, `agent_done`,
+  `agent_message`, `needs_input` and `error`: while present it moves the
+  row's `next_at` on by 1 minute without counting an attempt and writes
+  `held` to `delivered[channel]`, for at most 10 minutes from the event,
+  then sends. Before sending such a row, the worker drops it and writes
+  `dropped: resolved` when what it reports is over: the question is no
+  longer pending (answered anywhere, answered in the terminal,
+  withdrawn, expired), or a `needs_input` has a later event from the same
+  agent and window. Platform and account kinds are never held.
 - Delivery runs on up to 8 workers. Each user's rows on one channel go in
   order on one lane, so a hanging ntfy server delays its owner's rows
   only (I-691). Resend gets `Idempotency-Key: <event id>/email`, so a
   retried send cannot mail twice.
-- `delivered[channel]` holds a send time, `error: <why>` while retrying or
-  `failed: <why>` after the last try. The why is a few words
+- `delivered[channel]` holds a send time, `held` while the presence hold
+  waits, `dropped: resolved`, `error: <why>` while retrying or `failed:
+  <why>` after the last try. The why is a few words
   (`the server answered 403`, `no answer within 15 seconds`, `could not
   connect`, `not configured on this server`), never the error text, which
   for a network error names the URL (I-691).
@@ -250,13 +265,11 @@ Dashboard and CLI:
   page shows pending questions above everything else.
 - The dashboard project page's Events card shows the event stream, newest
   first, with the agent and the summary. It answers the first half of "I
-  got nothing": whether the event happened. It does not yet answer the
-  second half, whether a delivery failed, because
-  `GET /projects/:id/events` returns `{id, ts, kind, agent, summary}` and
-  carries no per-channel outcome (DECISIONS I-96). Until it does, that
-  half is an operator question: `repose-admin` and the
-  `repose_api_outbox_*` metrics, and `ops/RUNBOOK.md` "No notifications
-  arriving" covers that call.
+  got nothing": whether the event happened. `GET /projects/:id/events`
+  also returns each event's `delivered` (a send time, `held`, `dropped:
+  resolved`, `error: <why>` or `failed: <why>` per channel), which
+  answers the second half; `ops/RUNBOOK.md` "No notifications arriving"
+  reads it.
 
 ## Depends on
 

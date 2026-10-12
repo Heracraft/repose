@@ -190,8 +190,10 @@ type row struct {
 	eventTS     time.Time
 	projectID   uuid.UUID
 	questionID  *uuid.UUID
+	qState      *string
 	options     []string
 	expires     *time.Time
+	delivered   *string // this channel's delivered value, if any
 }
 
 // Once delivers every due row, waits for the sends, and returns how many
@@ -219,7 +221,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -230,7 +232,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.options, &r.expires); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -309,6 +311,31 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		_, _ = o.pool.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel) // best effort; it is re-picked and dropped again otherwise
 		return
 	}
+	if heldKinds[r.kind] && r.projectID != uuid.Nil {
+		if over, err := o.resolved(ctx, r); err != nil {
+			o.log.Error("outbox resolved check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
+			return // the row's next_at already moved a minute on; it is tried again then
+		} else if over {
+			o.drop(ctx, r)
+			return
+		}
+		now := o.Now()
+		if until := r.eventTS.Add(MaxHold); now.Before(until) {
+			present, err := o.present(ctx, r.projectID, now)
+			if err != nil {
+				o.log.Error("outbox presence check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
+				return
+			}
+			if present {
+				next := now.Add(HoldStep)
+				if next.After(until) {
+					next = until
+				}
+				o.hold(ctx, r, next)
+				return
+			}
+		}
+	}
 	s := o.senders[r.channel]
 	if s == nil {
 		o.mark(ctx, r, ErrNotConfigured, true)
@@ -345,6 +372,91 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	var perm Permanent
 	o.mark(ctx, r, err, errors.As(err, &perm))
 }
+
+// heldKinds are what an agent reports to its owner: held while the owner
+// is at the machine (DECISIONS I-689). Platform and account kinds are
+// never held.
+var heldKinds = map[string]bool{"agent_question": true, "agent_done": true, "agent_message": true, "needs_input": true, "error": true}
+
+// The hold (DECISIONS I-689): a row of a held kind waits HoldStep at a
+// time while the owner is present, for at most MaxHold from its event;
+// presence is a tmux client or an SSH session in the project's latest
+// sample, when that sample is at most PresenceFresh old.
+const (
+	HoldStep      = time.Minute
+	MaxHold       = 10 * time.Minute
+	PresenceFresh = 2 * time.Minute
+)
+
+// present says the project's owner is at the machine now.
+func (o *Outbox) present(ctx context.Context, projectID uuid.UUID, now time.Time) (bool, error) {
+	var ts time.Time
+	var n int
+	err := o.pool.QueryRow(ctx, "select ts, tmux_clients + ssh_sessions from meter_samples where project_id = $1 order by ts desc limit 1", projectID).Scan(&ts, &n)
+	if db.IsNoRows(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return n > 0 && now.Sub(ts) <= PresenceFresh, nil
+}
+
+// resolved says what a row reports is over: its question is no longer
+// pending (answered anywhere, withdrawn, expired), or a needs_input was
+// followed by a later event from the same agent window.
+func (o *Outbox) resolved(ctx context.Context, r row) (bool, error) {
+	switch r.kind {
+	case "agent_question":
+		return r.qState != nil && *r.qState != "pending", nil
+	case "needs_input":
+		var later bool
+		err := o.pool.QueryRow(ctx, `select exists (select 1 from events l join events e on e.id = $1
+			where l.project_id = e.project_id and coalesce(l.agent, '') = coalesce(e.agent, '') and coalesce(l.tmux_window, '') = coalesce(e.tmux_window, '')
+			and l.ts > e.ts and l.id <> e.id)`, r.eventID).Scan(&later)
+		return later, err
+	}
+	return false, nil
+}
+
+// hold moves a row's next_at on without counting an attempt and records
+// "held" on the event.
+func (o *Outbox) hold(ctx context.Context, r row, next time.Time) {
+	_ = db.InTx(ctx, o.pool, func(tx db.Tx) error { // best effort: the row's next_at already moved a minute on
+		if _, err := tx.Exec(ctx, "update events_outbox set next_at = $3 where event_id = $1 and channel = $2", r.eventID, r.channel, next); err != nil {
+			return err
+		}
+		if r.delivered != nil && *r.delivered == DeliveredHeld {
+			return nil
+		}
+		_, err := tx.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, DeliveredHeld)
+		return err
+	})
+	if r.delivered == nil || *r.delivered != DeliveredHeld {
+		o.m.NotifyTotal.WithLabelValues(r.channel, "held").Inc()
+		o.log.Info("notification held", "event", "notify_hold", "channel", r.channel, "kind", r.kind)
+	}
+}
+
+// drop deletes a row whose news is over and records "dropped: resolved".
+func (o *Outbox) drop(ctx context.Context, r row) {
+	o.m.NotifyTotal.WithLabelValues(r.channel, "dropped").Inc()
+	o.log.Info("notification dropped", "event", "notify_drop", "channel", r.channel, "kind", r.kind)
+	_ = db.InTx(ctx, o.pool, func(tx db.Tx) error { // best effort: re-picked and dropped again otherwise
+		if _, err := tx.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, DeliveredDropped); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel)
+		return err
+	})
+}
+
+// The delivered values of the hold (DECISIONS I-689), beside a send time,
+// "error: <why>" and "failed: <why>".
+const (
+	DeliveredHeld    = "held"
+	DeliveredDropped = "dropped: resolved"
+)
 
 func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 	now := o.Now()

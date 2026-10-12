@@ -2542,7 +2542,9 @@ secret NAME`.
 ## No notifications arriving
 
 A user reports nothing on their phone or in their inbox for an agent that
-finished.
+reported something. A finished turn notifies nobody since I-688; only
+`repose-notify --done`, a question, a message, a permission prompt or an
+error does.
 
 1. `repose status` / `GET /projects/:id/events` first: if the event is not
    there, the problem is upstream of the outbox (the hook never
@@ -2562,7 +2564,15 @@ finished.
    replica or a stuck transaction; only one replica runs it
    (`api: rollup or expiry not running on one replica` is the same shape
    for a different job).
-3. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
+3. `held` means the owner was at the machine when it was due (a tmux
+   client or an SSH session in the project's latest sample, I-689): it
+   goes out when they leave, or 10 minutes after the event. `dropped:
+   resolved` means what it reported was over before it went out (the
+   question closed, or the agent moved past the permission prompt);
+   nothing to fix. `select ts, tmux_clients, ssh_sessions from
+   meter_samples where project_id = '<id>' order by ts desc limit 3`
+   shows the presence the worker saw.
+4. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
    channel-specific entries below have the fix. The text after the colon
    is a few words (`the server answered 403`, `no answer within 15
    seconds`, `could not connect`), never the URL (I-691); Loki's
