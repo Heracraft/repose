@@ -77,8 +77,6 @@ A machine that wasn't started gets `not started:`, the reason, and `repose start
 
 `repose start api` starts one that wasn't started. While the server is down, `repose start`, `repose ssh` and `repose code` say ``api's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start api` works then``.
 
-On a herdr project, herdr starts again with what it last saved; how much of a session that keeps after a server restart hasn't been checked.
-
 ## Unused machines
 
 A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count as working. repose doesn't stop an unused machine; it tells you instead:

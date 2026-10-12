@@ -165,7 +165,7 @@ const (
 // monitor saw its hypervisor or virtiofsd exit (unexpectedExit's
 // reasons) within ShutdownRace before hostd stopped at stoppedAt.
 func exitedAtShutdown(g *state.Guest, stoppedAt time.Time) bool {
-	if stoppedAt.IsZero() || !(strings.HasPrefix(g.Reason, ReasonHypervisorExited) || g.Reason == ReasonVirtiofsdExited) {
+	if stoppedAt.IsZero() || (!strings.HasPrefix(g.Reason, ReasonHypervisorExited) && g.Reason != ReasonVirtiofsdExited) {
 		return false
 	}
 	return !g.UpdatedAt.Before(stoppedAt.Add(-ShutdownRace)) && !g.UpdatedAt.After(stoppedAt)
