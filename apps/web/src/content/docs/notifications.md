@@ -60,18 +60,18 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
 | `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
 | `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                     |
-| `todo-app: notifications paused`                | The project sent 30 notifications in the last hour. The body says when they start again.                                                                                                     |
+| `todo-app: notifications paused`                | The project sent 30 notifications in the last hour; they're paused until the time in the body.                                                                                              |
 | `repose: test`                                  | You ran `repose notify test` or pressed **Send test**.                                                                                                                                        |
 
-Nothing an agent sends reaches you while you're at the machine: attached in tmux, or connected over SSH, which includes your editor and a herdr bridge. A question, done report, message, permission prompt or error waits while you're there and goes out once you leave, or 10 minutes after it happened if you stay. One that's over by then isn't sent: a question you answered in the terminal or that the agent withdrew, or a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
+While you're at the machine (attached in tmux, or connected over SSH, which includes your editor and a herdr bridge), what an agent sends waits until you leave, for at most 10 minutes. That covers a question, a done report, a message, a permission prompt and an error. One that's over by then isn't sent: a question you answered in the terminal or that the agent withdrew, or a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
-On ntfy, questions and permission prompts come at urgent priority, done reports and failures at high, and the rest at default. Tapping one opens the project's page.
+On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page.
 
-Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
+Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them. Times in emails, and in the paused notice, are in the timezone on the **Settings** page, or UTC when none is set.
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-An agent finishing its turn sends you nothing. The turn shows in `repose events` as `finished`, and the agent's state in `repose ls` changes. Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds; permission prompts and errors reach you that way. Gemini CLI and pi have no hooks, so the machine records `finished` when their processes go quiet, within about 90 seconds, with the summary `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
+An agent finishing its turn sends you nothing. The turn shows in `repose events` as `finished`, and `repose ls` shows the agent `idle`. Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds; permission prompts and errors reach you that way. Gemini CLI and pi have no hooks, so the machine records `finished` when their processes go quiet, within about 90 seconds, with the summary `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 
@@ -143,7 +143,7 @@ Messages and questions are capped at 1 KB and count toward the project's 30 noti
 
 ## Limits
 
-Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says until what time they're paused. Its events still show in `repose events`.
+Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says when they resume. Its events still show in `repose events`.
 
 Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
 

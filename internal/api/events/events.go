@@ -338,7 +338,7 @@ func PausedSummary(until time.Time, tz *string) string {
 			loc = l
 		}
 	}
-	return fmt.Sprintf("%d notifications in the last hour, so this project's notifications are paused until %s. Its events are still recorded.", RatePerHour, until.In(loc).Format("15:04 MST"))
+	return fmt.Sprintf("%d notifications in the last hour. Paused until %s.", RatePerHour, until.In(loc).Format("15:04 MST"))
 }
 
 // OnEvent handles a hostd Event and reports whether to ack it.

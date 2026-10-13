@@ -633,20 +633,21 @@ which the rollup records as a gap.
 
 ## NotifyFailing
 
-Notifications are not reaching users (DECISIONS I-691): sends kept
-failing for good (`repose_api_notify_total{result="failed"}`) for 10
-minutes, or a due outbox row has waited more than 5 minutes for the worker
-(`repose_api_outbox_lag_seconds`, which leaves out held rows and retries
-waiting out their backoff).
+Notifications are not reaching users (DECISIONS I-691): email sends kept
+failing for good (`repose_api_notify_total{result="failed",channel="email"}`)
+for 10 minutes, or a due outbox row has waited more than 5 minutes for the
+worker (`repose_api_outbox_lag_seconds`, which leaves out held rows and
+retries waiting out their backoff). ntfy failures do not page: they are
+the user's own server.
 
 1. Failed sends: Loki `{component="api"} | json | event="notify_fail"`
-   gives the channel and kind. Email across many users is Resend: a 401
-   or 403 in `delivered` (`failed: the server answered 401`) is a revoked
-   key or an unverified domain; rotate `RESEND_API_KEY` or fix the domain
-   in Resend. ntfy failures from one user are that user's server and need
-   nothing from us.
-2. Lag: the worker is stuck or not running. It holds `db.LockOutbox` on
-   one replica; see "No notifications arriving" step 2.
+   gives the kind. Email across many users is Resend: a 401 or 403 in
+   `delivered` (`failed: the server answered 401`) is a revoked key or an
+   unverified domain; rotate `RESEND_API_KEY` or fix the domain in Resend.
+2. Lag: the worker is stuck, failing every pass, or not running. Every
+   replica sets the gauge from the table every 15 s, with or without
+   `db.LockOutbox`, which one replica's worker holds; see "No
+   notifications arriving" step 2.
 
 ## HostReportsRefused
 

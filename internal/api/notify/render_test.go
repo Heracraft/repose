@@ -241,3 +241,36 @@ func TestEmailSendsHTMLAndText(t *testing.T) {
 		t.Fatalf("html:\n%s\ntext:\n%s", got.HTML, got.Text)
 	}
 }
+
+// TestMetaInTheUsersZone: the question and done emails print times in the
+// user's zone, as the pause notice does, and in UTC when none is set.
+func TestMetaInTheUsersZone(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	at := time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC)
+	m := notify.Message{Kind: "agent_question", Agent: "claude", Window: "main", Project: "todo-app", Summary: "ok?", Email: "u@example.com", Dashboard: dash, At: at, Loc: berlin,
+		Question: &notify.QuestionLinks{ID: uuid.New(), Expires: at.Add(30 * time.Minute)}}
+	r, err := notify.Render(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "claude · main · asked 28 Sep 20:00 CEST · open until 20:30 CEST"; !strings.Contains(r.Text, want) {
+		t.Fatalf("no %q in\n%s", want, r.Text)
+	}
+}
+
+// TestOutboxPassesTheUsersZone: the outbox hands the user's tz to the
+// message.
+func TestOutboxPassesTheUsersZone(t *testing.T) {
+	h := newHoldEnv(t)
+	if _, err := h.pool.Exec(h.ctx, "update users set tz = 'Europe/Berlin'"); err != nil {
+		t.Fatal(err)
+	}
+	h.insert("agent_done", "main")
+	h.pass(h.now.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.sent.sent[0].Loc == nil || h.sent.sent[0].Loc.String() != "Europe/Berlin" {
+		t.Fatalf("sent %+v", h.sent.sent)
+	}
+}

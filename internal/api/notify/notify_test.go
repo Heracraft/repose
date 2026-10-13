@@ -190,7 +190,7 @@ func TestNtfyAndEmailSenders(t *testing.T) {
 		t.Fatalf("headers %q %q %q", gotTitle, gotPrio, gotTags)
 	}
 	// Priority is the urgency and no kind carries a tag (DECISIONS I-691).
-	for kind, want := range map[string]string{"agent_question": "5", "agent_done": "4", "error": "4", "boot_failed": "4", "agent_message": "3", "base_updated": "3", "completed": "3"} {
+	for kind, want := range map[string]string{"agent_question": "5", "agent_done": "4", "error": "4", "boot_failed": "4", "agent_message": "3", "base_updated": "3", "completed": "3", "machines_restarted": "4"} {
 		if err := n.Send(context.Background(), notify.Message{Kind: kind, Agent: "claude", Project: "todo", NtfyURL: srv.URL + "/topic", Dashboard: "https://d"}); err != nil {
 			t.Fatal(err)
 		}

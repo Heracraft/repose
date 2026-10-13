@@ -99,9 +99,8 @@ Events (see agents.md for how each agent produces them):
   before I-691 it counted outbox rows, which are deleted once sent, so it
   never fired. Past it, one `notifications_paused` per hour says when the
   cap lifts, as a time in the user's zone (UTC when none is set): `30
-  notifications in the last hour, so this project's notifications are
-  paused until 14:32 UTC. Its events are still recorded.` Events are still
-  recorded; only delivery stops.
+  notifications in the last hour. Paused until 14:32 UTC.` Events are
+  still recorded; only delivery stops.
 - Presence hold (DECISIONS I-689): while the owner is at the machine,
   nothing an agent reports reaches their phone. Present means the
   project's latest guest sample, at most 2 minutes old, shows a tmux
@@ -184,9 +183,12 @@ Channels (`workstreams/13-notifications.md` §5.6):
   the api's first start), an unsubscribe line and a matching
   `List-Unsubscribe` header (RFC 8058 one-click). The link opens a page
   whose button turns email off with no login; a GET alone changes
-  nothing, and the link expires 90 days after the email (I-442). An
+  nothing, and the link expires 90 days after the event the email
+  reports, so a retry sends the same bytes under its Idempotency-Key
+  (I-442, I-691). An
   `agent_question` email puts a grey line under the title (agent,
-  window, `asked 28 Sep 18:00 UTC`, `open until 18:30 UTC`), the question
+  window, `asked 28 Sep 18:00 UTC`, `open until 18:30 UTC`, in the
+  user's zone, UTC when none is set), the question
   on a sunken block, one bordered button per option on its own line to
   the signed reply link, and a link to the project; a question without
   options gets a `Write an answer` button to the project instead. An
@@ -197,7 +199,7 @@ Channels (`workstreams/13-notifications.md` §5.6):
 - ntfy: the user sets any ntfy-compatible URL, including a self-hosted
   server; the platform POSTs the message with a title, a priority (5 for
   `needs_input` and `agent_question`, 4 for `agent_done`, failures and
-  `machines_restarted`, 3 for the rest), no tags (ntfy shows a tag as an
+  `machines_restarted` (I-645), 3 for the rest), no tags (ntfy shows a tag as an
   emoji), and a `Click` URL to the project's page (`/projects` for a
   notice that names no project) (I-691). Setting the URL sends nothing; a
   test is sent only on request (`repose notify test` / the dashboard's

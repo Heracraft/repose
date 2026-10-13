@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/metrics"
@@ -25,6 +26,7 @@ type holdEnv struct {
 	pid  uuid.UUID
 	ing  *events.Ingest
 	ob   *notify.Outbox
+	m    *metrics.M
 	sent *recorder
 	now  time.Time
 }
@@ -39,7 +41,7 @@ func newHoldEnv(t *testing.T) *holdEnv {
 	if _, err := pool.Exec(ctx, "update users set notify_email = false"); err != nil {
 		t.Fatal(err)
 	}
-	h := &holdEnv{t: t, pool: pool, ctx: ctx, pid: mustUUID(pid), ing: events.New(pool, m, log), sent: &recorder{}, now: time.Now()}
+	h := &holdEnv{t: t, pool: pool, ctx: ctx, pid: mustUUID(pid), ing: events.New(pool, m, log), sent: &recorder{}, now: time.Now(), m: m}
 	h.ob = notify.New(pool, map[string]notify.Sender{"ntfy": h.sent}, m, log)
 	h.ob.Now = func() time.Time { return h.now }
 	if err := db.EnsurePartitions(ctx, pool, h.now); err != nil {
@@ -198,3 +200,42 @@ func TestHeldRowDroppedWhenResolved(t *testing.T) {
 
 // near compares a time read back from Postgres, which keeps microseconds.
 func near(a, b time.Time) bool { return a.Sub(b).Abs() < time.Millisecond }
+
+// TestHoldMetricsAndLag (DECISIONS I-689, I-691): a row held over several
+// passes counts `held` once, a drop counts `dropped`, and the outbox lag
+// stays 0 while a row is held and grows for a due row nobody picks up.
+func TestHoldMetricsAndLag(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.insert("agent_done", "main")
+	prompt := h.insert("needs_input", "w2")
+	for i := 0; i < 3; i++ {
+		at := start.Add(time.Second + time.Duration(i)*notify.HoldStep)
+		h.sample(at.Add(-time.Second), 1, 0)
+		h.pass(at)
+		if lag := testutil.ToFloat64(h.m.OutboxLagSeconds); lag != 0 {
+			t.Fatalf("pass %d: lag %v while every row is held", i, lag)
+		}
+	}
+	if got := testutil.ToFloat64(h.m.NotifyTotal.WithLabelValues("ntfy", "held")); got != 2 {
+		t.Fatalf("held counted %v, want 2 (once per row)", got)
+	}
+	h.now = start.Add(3 * time.Minute)
+	h.sample(h.now, 1, 0)
+	h.insert("agent_message", "w2") // resolves the prompt
+	h.pass(start.Add(3*time.Minute + time.Second))
+	if h.delivered(prompt) != notify.DeliveredDropped {
+		t.Fatalf("prompt %q, want dropped", h.delivered(prompt))
+	}
+	if got := testutil.ToFloat64(h.m.NotifyTotal.WithLabelValues("ntfy", "dropped")); got != 1 {
+		t.Fatalf("dropped counted %v, want 1", got)
+	}
+	// Nobody picks the held row up once it is due: the lag grows, without
+	// a pass, on any replica that runs Gauges.
+	_, next, _ := h.outbox(h.insertAs("", "base_updated", ""))
+	h.now = next.Add(7 * time.Minute)
+	h.ob.Gauges(h.ctx)
+	if lag := testutil.ToFloat64(h.m.OutboxLagSeconds); lag < 7*60-1 {
+		t.Fatalf("lag %v for a row due 7 minutes ago", lag)
+	}
+}

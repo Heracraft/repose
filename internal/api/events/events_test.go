@@ -163,7 +163,7 @@ func TestDedupeOutboxAndRateCap(t *testing.T) {
 	}
 	// The first counted event is the first of the loop; the cap lifts an
 	// hour after it.
-	if want := base.Add(time.Hour).UTC().Format("15:04 UTC"); !strings.Contains(pausedSummary, "paused until "+want) {
+	if want := base.Add(time.Hour).UTC().Format("15:04 UTC"); pausedSummary != "30 notifications in the last hour. Paused until "+want+"." {
 		t.Fatalf("pause summary %q, want it to name %s", pausedSummary, want)
 	}
 	_ = pool.QueryRow(ctx, "select count(*) from events where agent = 'pi'").Scan(&n)
@@ -477,7 +477,9 @@ func TestEdgeHookPathSharesTheGuestCap(t *testing.T) {
 // TestTurnEndsNotifyNobodyAndDoneDoes (DECISIONS I-688): a completed
 // turn end is stored, still collapses with a repeat, and queues no
 // delivery; agent_done from a guest is accepted, queues one row per
-// channel, is never collapsed, and shares the hourly cap's count.
+// channel and is never collapsed. TestDoneReportsShareTheCap covers its
+// share of the
+// hourly cap.
 func TestTurnEndsNotifyNobodyAndDoneDoes(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
@@ -514,5 +516,36 @@ func TestTurnEndsNotifyNobodyAndDoneDoes(t *testing.T) {
 	}
 	if _, err := ing.FromEdge(ctx, "10.64.4.9", "codex", "agent_done", "over the edge"); err != nil {
 		t.Fatalf("agent_done over the edge: %v", err)
+	}
+}
+
+// TestDoneReportsShareTheCap (DECISIONS I-688): agent_done counts in the
+// hourly cap with agent_message, so a mix of the two past RatePerHour
+// sends RatePerHour and one pause notice.
+func TestDoneReportsShareTheCap(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, _, _ := seedOn(t, pool)
+	now := time.Now()
+	ob := sendAll(pool)
+	for i := 0; i < 40; i++ {
+		kind := "agent_done"
+		if i%2 == 1 {
+			kind = "agent_message"
+		}
+		if _, _, err := ing.Insert(ctx, events.Incoming{ProjectID: pid, TS: now, Kind: kind, Agent: "claude", Summary: fmt.Sprint("step ", i)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ob.Once(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sent, done, paused int
+	_ = pool.QueryRow(ctx, "select count(*) from events where kind in ('agent_done', 'agent_message') and delivered <> '{}'").Scan(&sent)
+	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'agent_done' and delivered <> '{}'").Scan(&done)
+	_ = pool.QueryRow(ctx, "select count(*) from events where kind = 'notifications_paused' and delivered <> '{}'").Scan(&paused)
+	if sent != events.RatePerHour || done != events.RatePerHour/2 || paused != 1 {
+		t.Fatalf("past the cap: %d sent (%d done reports), %d pause notices", sent, done, paused)
 	}
 }

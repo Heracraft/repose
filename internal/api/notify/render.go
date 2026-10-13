@@ -70,7 +70,8 @@ type link struct {
 
 // Meta is the grey line under a question's or a done report's heading:
 // agent, window, when it was asked and, for a question, until when it is
-// open ("claude · main · asked 28 Sep 18:00 UTC · open until 18:30 UTC").
+// open, in the user's zone ("claude · main · asked 28 Sep 18:00 UTC · open
+// until 18:30 UTC"; UTC when none is set).
 func (d kindData) Meta() string {
 	var parts []string
 	if d.M.Agent != "" {
@@ -79,20 +80,24 @@ func (d kindData) Meta() string {
 	if d.M.Window != "" {
 		parts = append(parts, d.M.Window)
 	}
-	at := d.M.At.UTC()
+	loc := d.M.Loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	at := d.M.At.In(loc)
 	if !d.M.At.IsZero() {
 		if d.M.Question != nil {
-			parts = append(parts, "asked "+at.Format("2 Jan 15:04 UTC"))
+			parts = append(parts, "asked "+at.Format("2 Jan 15:04 MST"))
 		} else {
-			parts = append(parts, at.Format("2 Jan 15:04 UTC"))
+			parts = append(parts, at.Format("2 Jan 15:04 MST"))
 		}
 	}
 	if q := d.M.Question; q != nil && !q.Expires.IsZero() {
-		exp := q.Expires.UTC()
+		exp := q.Expires.In(loc)
 		if !d.M.At.IsZero() && exp.YearDay() == at.YearDay() && exp.Year() == at.Year() {
-			parts = append(parts, "open until "+exp.Format("15:04 UTC"))
+			parts = append(parts, "open until "+exp.Format("15:04 MST"))
 		} else {
-			parts = append(parts, "open until "+exp.Format("2 Jan 15:04 UTC"))
+			parts = append(parts, "open until "+exp.Format("2 Jan 15:04 MST"))
 		}
 	}
 	return strings.Join(parts, " · ")

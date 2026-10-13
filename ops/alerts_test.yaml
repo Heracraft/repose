@@ -644,8 +644,20 @@ tests:
               severity: page
             exp_annotations:
               summary: "notifications are failing or not being sent"
-              description: "Failed sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (10). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (10). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
               runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+
+  - interval: 1m
+    name: NotifyFailing ignores one user's ntfy server failing
+    input_series:
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="ntfy",result="failed"}'
+        values: "0+1x26"
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x26"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NotifyFailing
+        exp_alerts: []
 
   - interval: 1m
     name: NotifyFailing fires on a due row nobody sends
@@ -663,7 +675,7 @@ tests:
               severity: page
             exp_annotations:
               summary: "notifications are failing or not being sent"
-              description: "Failed sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (960). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (960). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
               runbook: "docs/ops/RUNBOOK.md#notifyfailing"
 
   # --- SamplesFailing -----------------------------------------------------

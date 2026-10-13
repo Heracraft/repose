@@ -49,6 +49,8 @@ type Message struct {
 	ProjectID uuid.UUID
 	// Question is set on an agent_question (DECISIONS I-245).
 	Question *QuestionLinks
+	// Loc is the user's zone for the times an email prints; nil is UTC.
+	Loc *time.Location
 }
 
 // QuestionLinks is what a question's notification carries beyond its text:
@@ -141,8 +143,15 @@ func New(pool *db.Pool, senders map[string]Sender, m *metrics.M, log *slog.Logge
 		Workers: DefaultWorkers, lanes: map[laneKey]*lane{}, inflight: map[rowKey]bool{}}
 }
 
-// Run polls until ctx ends, under the outbox advisory lock.
+// GaugeInterval is how often every replica sets the outbox gauges.
+const GaugeInterval = 15 * time.Second
+
+// Run polls until ctx ends, under the outbox advisory lock. The gauges
+// are set on every replica on their own ticker, whether or not it holds
+// the lock and whether or not its passes succeed, so a worker that is
+// stuck, failing or not running shows as lag (I-691).
 func (o *Outbox) Run(ctx context.Context) {
+	go o.gaugeLoop(ctx)
 	for {
 		release, ok, err := db.TryLock(ctx, o.pool, db.LockOutbox)
 		if err != nil {
@@ -194,6 +203,7 @@ type row struct {
 	options     []string
 	expires     *time.Time
 	delivered   *string // this channel's delivered value, if any
+	tz          *string // the user's zone, for the times an email prints
 }
 
 // Once delivers every due row, waits for the sends, and returns how many
@@ -201,7 +211,7 @@ type row struct {
 func (o *Outbox) Once(ctx context.Context) (int, error) {
 	n, err := o.pass(ctx)
 	o.wg.Wait()
-	o.gauges(ctx)
+	o.Gauges(ctx)
 	return n, err
 }
 
@@ -221,7 +231,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -232,7 +242,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -252,7 +262,6 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	o.dispatch(ctx, rows)
-	o.gauges(ctx)
 	return len(rows), nil
 }
 
@@ -347,6 +356,11 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		return
 	}
 	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID, At: r.eventTS}
+	if r.tz != nil && *r.tz != "" {
+		if l, err := time.LoadLocation(*r.tz); err == nil {
+			m.Loc = l
+		}
+	}
 	if r.window != nil {
 		m.Window = *r.window
 	}
@@ -369,7 +383,14 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 		m.NtfyURL = *r.ntfy
 	}
 	if r.channel == "email" && o.Unsub != nil && !transactional(r.kind) {
-		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, o.Now())
+		// The link's expiry runs from the event, not the clock, so a
+		// retry under the same Idempotency-Key sends the same bytes;
+		// Resend answers 409 to a reused key with another body (I-691).
+		base := r.eventTS
+		if base.IsZero() {
+			base = o.Now()
+		}
+		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, base)
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	err := s.Send(sctx, m)
@@ -503,7 +524,22 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 	_, _ = o.pool.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, "error: "+reason)
 }
 
-func (o *Outbox) gauges(ctx context.Context) {
+// gaugeLoop sets the gauges every GaugeInterval until ctx ends.
+func (o *Outbox) gaugeLoop(ctx context.Context) {
+	t := time.NewTicker(GaugeInterval)
+	defer t.Stop()
+	for {
+		o.Gauges(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// Gauges sets the outbox depth and lag gauges from the table.
+func (o *Outbox) Gauges(ctx context.Context) {
 	// The lag is how long the oldest due row has waited for a send: a
 	// held row, a retry waiting out its backoff and a row being sent
 	// (next_at moved a minute on) are not due (DECISIONS I-691).
@@ -632,7 +668,11 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 		return err
 	}
 	_ = resp.Body.Close() // status is all we need
-	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+	// A 409 on a keyed request is Resend saying the key is still in
+	// flight or was used with another body, not a refusal of the mail:
+	// retried, the in-flight one finishes and the same body is answered
+	// with the first result.
+	if resp.StatusCode >= 500 || resp.StatusCode == 429 || (resp.StatusCode == http.StatusConflict && req.Header.Get("Idempotency-Key") != "") {
 		return &statusError{"email", resp.StatusCode}
 	}
 	if resp.StatusCode >= 400 {
@@ -690,8 +730,9 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	return nil
 }
 
-// ntfyPriority is 5 for what waits on the owner, 4 for a done report or
-// a failure, 3 for the rest (a message, a platform notice).
+// ntfyPriority is 5 for what waits on the owner, 4 for a done report, a
+// failure or a host restart (which may have left machines stopped,
+// I-645), 3 for the rest (a message, a platform notice).
 func ntfyPriority(kind string) string {
 	switch kind {
 	case "needs_input", "agent_question":
