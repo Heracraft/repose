@@ -63,7 +63,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`The claude window closed before the attach`.** The agent `repose run -p "..."` started exited before you were attached, so you're in the machine's session instead. Start the agent again there, for example by typing `claude`. If it exits right away again, running it by hand shows why.
 
-**`No capacity right now`** or **`Could not create todo-app: no host with capacity`.** The servers are full. A start changes nothing. A new project is left in the error state with no machine; `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room. Try again in a few minutes. Right after `repose rm` or `repose stop` of another machine, a new one waits up to three minutes for that machine's memory instead of failing.
+**`No capacity right now`** or **`Could not create todo-app: no host with capacity`.** The servers are full. A start changes nothing. A new project is left in the error state with no machine; `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room. Memory is never oversubscribed and a machine holds its own while it runs, so waiting alone doesn't free any: stopping or removing a machine you aren't using does, and right after `repose rm` or `repose stop` a new machine waits up to three minutes for that memory instead of failing.
 
 **`repose is full right now`.** [Every seat](/docs/limits#when-repose-is-full) is taken. Join the waitlist from the dashboard's [Billing page](https://repose.herakraft.co/billing); you're emailed when a seat frees, with 72 hours to choose a plan.
 

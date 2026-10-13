@@ -95,13 +95,31 @@ const HostGuestSlots = 1000
 // slotsSQL is the guest slot condition for hosts h, with $5 the slots.
 const slotsSQL = `(select count(*) from projects p where p.host_id = h.id and p.destroyed_at is null) < $5`
 
-// HostReserve is the memory kept for the host itself (DESIGN.md §4).
+// HostReserve is the memory kept for the host itself (DESIGN.md §4): an
+// eighth of it, never below 2 GiB and never above 16 GiB. The eighth is
+// what the two steps it replaced already were at their edges (8 GiB at
+// 64 GB, 16 GiB at 128 GB), so no host repose runs today changes by more
+// than a rounding of its own size; what changes is the small end, where a
+// flat 8 GiB left an 8 GB host unable to start any guest at all
+// (DECISIONS I-724). hostd computes the same figure, and so does the SQL
+// below and nix/hosts/hostd.nix's guests.slice ceiling: three languages,
+// one rule, and the VM test in nix/hosts/tests/guest-memory.nix holds
+// them together. Memory is still never oversubscribed (R3-2): the reserve
+// is only the host's own share, taken off the top before any guest.
 func HostReserve(memBytes int64) int64 {
-	if memBytes >= 128<<30 {
-		return 16 << 30
+	r := memBytes / 8
+	if r < 2<<30 {
+		r = 2 << 30
 	}
-	return 8 << 30
+	if r > 16<<30 {
+		r = 16 << 30
+	}
+	return r
 }
+
+// hostReserveSQL is HostReserve for host rows h, kept beside it so the
+// two cannot drift (DECISIONS I-724).
+const hostReserveSQL = `least(greatest(h.mem_bytes / 8, 2::bigint<<30), 16::bigint<<30)`
 
 // Pick is a placement.
 type Pick struct {
@@ -125,7 +143,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 	var p Pick
 	err := tx.QueryRow(ctx, `
 		select h.id, h.name,
-		       least(h.free_mem_bytes, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0)) as free
+		       least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) as free
 		  from hosts h
 		  left join host_reservations r on r.host_id = h.id
 		 where h.state = 'ready'
@@ -135,7 +153,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 		   and h.last_heartbeat_at > $1
 		   and `+poolRoomSQL+`
 		   and `+slotsSQL+`
-		   and least(h.free_mem_bytes, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0)) >= $3
+		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
 		 order by free desc, h.name
 		 limit 1`, now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
@@ -176,7 +194,7 @@ func Freeing(ctx context.Context, q interface {
 		   and `+poolRoomSQL+`
 		   and `+slotsSQL+`
 		   and g.going > 0
-		   and least(h.free_mem_bytes + g.going, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
+		   and least(h.free_mem_bytes + g.going, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
 		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots).Scan(&ok)
 	return ok, err
 }

@@ -20648,3 +20648,65 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-724. The host memory reserve is an eighth of the host, and a full host
+says so instead of saying "try again" (host-capacity, 2026-10-14; amends
+DESIGN §4).** *Made during implementation.* Two separate things were wrong
+about a host with no room.
+- *The reserve was a cliff, in four places.* `scheduler.HostReserve` gave
+  16 GiB above 128 GB of RAM and 8 GiB below it, and the same two steps
+  were written out again as inline SQL in `PickHost` and `Freeing` (the
+  api takes `min(free_mem_bytes, mem_bytes − reserve − reservations)` and
+  recomputes the reserve itself, so changing Go alone would have changed
+  nothing), in hostd's `HostReserveBytes` default
+  (internal/hostd/guest/manager.go), and in shell in nix/hosts/hostd.nix,
+  which sets `guests.slice MemoryMax=total − reserve` as the runtime
+  ceiling. On an 8 GB host the flat 8 GiB was the whole machine:
+  `FreeMemBytes()` returned 0 and every create was refused with
+  `insufficient_capacity`, which is what host-stg-01 did at `D2s_v7` until
+  a lane resized it to `D8s_v7` ($12.70 a day) to run one small guest.
+  Shrinking the Go reserve without the nix half would have been worse than
+  the bug: guests would be OOM-killed by the slice ceiling instead of
+  refused at placement.
+- *The rule now is `total/8`, floor 2 GiB, ceiling 16 GiB*, in all four
+  places, with nix/hosts/tests/default.nix asserting
+  `guests.slice MemoryMax == total − reserve` against the same arithmetic
+  — the one place the three languages are checked against each other, and
+  it passes on a 2.84 GiB test host, where the floor is what applies:
+  `guests.slice MemoryMax=904200192 (total=3051683840
+  reserve=2147483648)`. The floor stays at 2 GiB rather than 1 GiB
+  because the host builds guest configurations itself, and the slice
+  ceiling is a hard line: 8 GB is the smallest host that can run a guest
+  (6 GB left, one small), which is the realistic floor for a BYO host. An
+  eighth is not a new number: it is exactly 8 GiB at 64 GB and exactly
+  16 GiB at 128 GB, the two points the steps named, so no size repose runs
+  today moves by more than a rounding of its own memory (host-01, 62.8 GiB
+  usable, goes from 8 GiB to 7.85 GiB, 160 MiB more for guests). The small
+  end is what changes: 2 GiB on an 8 GB host leaves 6 GB, which fits a
+  small guest (4 GiB + 512 MiB), so a small host and the BYO-host shapes
+  can run something. R3-2 still holds — memory is never oversubscribed;
+  the reserve is the host's own share, taken off the top before any guest
+  is placed.
+- *The refusal told users to wait for something that does not happen.*
+  "the host had no room for it right now … Try again in a few minutes"
+  (internal/cli/humanize.go, run.go, env.go, helptopics_data.go, cli.md's
+  exit-8 row, troubleshooting.md). Memory is never oversubscribed and a
+  running machine holds its own until it stops, so minutes change nothing;
+  the one case where waiting works is the three minutes after a `stop` or
+  `rm`, which the api already waits out itself (I-408) before any refusal
+  reaches a user. It now says a machine holds its memory while it runs, so
+  stopping one frees room — the only lever the user has. Measured on
+  host-01 while writing this: 4 running guests reserve 48.0 GB of 62.8 GB,
+  leaving 4.8 GB bookable, which an xl or large create cannot fit; the
+  host was not idle behind that figure either (MemAvailable about 28 GiB,
+  with 31 GiB of the used memory being the guests' own `shared=on`
+  backing), so the reservation is honest and the fix does not pretend
+  otherwise.
+- *The operator side already existed and should have spoken first.*
+  `HostMemory80` warns at 80 percent of reserved memory for 10 minutes,
+  and host-01 was at 91 percent (48 / (48 + 4.8)) when its owner hit the
+  refusal. The rule is in ops/alerts.yaml and fires; what is missing is
+  the last hop, which is still the owner's open item — Prometheus pages
+  reach nobody until calert and the Uptime Kuma push monitor are set up on
+  the personal server (ops/README.md step 3, docs/CHECKLIST.md "Release
+  (M5)"). No code change here; the gap is in the checklist, where it is.
