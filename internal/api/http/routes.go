@@ -17,6 +17,10 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/me/config", a(s.getPersonal))
 	s.route(m, "PUT /v1/me/config", a(s.limited(s.cfg, s.putPersonal)))
 	s.route(m, "GET /v1/me/config/revisions", a(s.listPersonal))
+	// Account secrets, for every project of the account (DECISIONS I-697)
+	s.route(m, "GET /v1/me/secrets", a(s.listAccountSecrets))
+	s.route(m, "PUT /v1/me/secrets/{name}", a(s.putAccountSecret))
+	s.route(m, "DELETE /v1/me/secrets/{name}", a(s.deleteAccountSecret))
 	// Projects
 	s.route(m, "GET /v1/projects", a(s.listProjects))
 	s.route(m, "POST /v1/projects", a(s.createProject))

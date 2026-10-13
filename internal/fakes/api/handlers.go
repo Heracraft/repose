@@ -1227,29 +1227,39 @@ func (f *Fake) listSecrets(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
-func (f *Fake) putSecret(w http.ResponseWriter, r *http.Request) *apiError {
+// secretBody reads and checks a PUT of a secret, a project's or the
+// account's: the same names and the same 64 KB.
+func secretBody(r *http.Request) (string, *apiError) {
 	var body struct {
 		Value string `json:"value"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
-		return e
+		return "", e
 	}
 	name := r.PathValue("name")
 	if reservedSecretNames[name] {
-		return invalid("name: %q is reserved for the guest's sshd material", name)
+		return "", invalid("name: %q is reserved for the guest's sshd material", name)
 	}
 	if !secretNameRe.MatchString(name) {
-		return invalid("name: must match [A-Z][A-Z0-9_]{0,63}")
+		return "", invalid("name: must match [A-Z][A-Z0-9_]{0,63}")
 	}
 	if name == "BASH_ENV" || name == "ENV" || name == "REPOSE_ENV_GEN" {
-		return invalid("name: %q is reserved: the machine uses it to keep each command's secrets current", name)
+		return "", invalid("name: %q is reserved: the machine uses it to keep each command's secrets current", name)
 	}
 	raw, err := base64.StdEncoding.DecodeString(body.Value)
 	if err != nil {
-		return invalid("value: must be base64")
+		return "", invalid("value: must be base64")
 	}
 	if len(raw) > maxSecretBytes {
-		return invalid("value: larger than 64 KB decoded").withDetail(map[string]any{"max_bytes": maxSecretBytes})
+		return "", invalid("value: larger than 64 KB decoded").withDetail(map[string]any{"max_bytes": maxSecretBytes})
+	}
+	return name, nil
+}
+
+func (f *Fake) putSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	name, e := secretBody(r)
+	if e != nil {
+		return e
 	}
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
@@ -1277,6 +1287,59 @@ func (f *Fake) deleteSecret(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	delete(p.secrets, name)
 	f.event(p, "secret.deleted", "", "secret "+name+" removed")
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// Account secrets (I-697): for every project of the account; a project's
+// own secret of the same name wins, and the PUT names those projects.
+
+func (f *Fake) listAccountSecrets(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	out := []SecretMeta{}
+	for _, s := range u.secrets {
+		out = append(out, *s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (f *Fake) putAccountSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	name, e := secretBody(r)
+	if e != nil {
+		return e
+	}
+	u := userFrom(r)
+	now := f.now()
+	if u.secrets == nil {
+		u.secrets = map[string]*SecretMeta{}
+	}
+	if s, ok := u.secrets[name]; ok {
+		s.UpdatedAt = now
+	} else {
+		u.secrets[name] = &SecretMeta{Name: name, CreatedAt: now, UpdatedAt: now}
+	}
+	pushed, overridden := 0, []string{}
+	for _, p := range f.ownedProjects(u) {
+		switch {
+		case p.secrets[name] != nil:
+			overridden = append(overridden, p.Slug)
+		case p.State == "running":
+			pushed++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "pushed": pushed, "overridden_by": overridden})
+	return nil
+}
+
+func (f *Fake) deleteAccountSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	name := r.PathValue("name")
+	if _, ok := u.secrets[name]; !ok {
+		return notFound("secret")
+	}
+	delete(u.secrets, name)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

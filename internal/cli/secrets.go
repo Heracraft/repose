@@ -117,6 +117,17 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		_, _ = fmt.Fprintf(e.Out, "%s%s\t%s\n", indent, s.Name, tableTime(s.UpdatedAt))
 	}
 	if tty {
+		// The account's secrets reach this machine too (I-697); piped,
+		// the list stays the project's own.
+		account, err := accountSecretsForList(ctx, e)
+		if err != nil {
+			return err
+		}
+		own := map[string]bool{}
+		for _, s := range secrets {
+			own[s.Name] = true
+		}
+		writeAccountSecrets(e.Out, true, account, own, project.Slug, false)
 		skip, _, _ := e.Cfg.loginSkip(project.Slug)
 		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run, onto the machine's disk (so into its snapshots and forks):")
 		writeLoginRows(e.Out, skip, e.loginsFound())

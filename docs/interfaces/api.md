@@ -204,6 +204,9 @@ options?}]` only, is the same array without `package` items and stays valid.
 | GET | `/projects/:id/secrets` | `[{name, created_at, updated_at}]` (never values) |
 | PUT | `/projects/:id/secrets/:name` | `{value}` (base64, max 64 KB) → pushed to a running guest via `UpdateSecrets` |
 | DELETE | `/projects/:id/secrets/:name` | |
+| GET | `/me/secrets` | `[{name, created_at, updated_at}]` (never values): the account's secrets (I-697) |
+| PUT | `/me/secrets/:name` | `{value}` (base64, max 64 KB) → `{name, pushed, overridden_by: [slug]}`. Sets an account secret, which every project of the account gets with its own set; a project secret of the same name wins, and `overridden_by` names the live projects that have one. `pushed` is how many running machines were sent `UpdateSecrets` (each running project without a secret of its own by that name). Added with I-697 |
+| DELETE | `/me/secrets/:name` | `204`; `404 not_found` when the account has none by that name. The running machines it reached are sent `UpdateSecrets`. Added with I-697 |
 
 Names: `[A-Z][A-Z0-9_]{0,63}`. The names `ssh_host_ed25519_key`,
 `ssh_host_ed25519_key-cert.pub` and `user_ca.pub` are reserved for the guest's
@@ -212,6 +215,9 @@ sshd material (delivered by hostd into the same tmpfs from the explicit
 PUT also rejects `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN` with `invalid`: the
 guest uses them to keep each command's secrets current (I-475). A secret by
 one of those names stored before is still listed and deletable.
+Account secrets take the same names under the same rules. A machine's set
+is its project's secrets plus the account's secrets the project has none
+of its own for; `GET /projects/:id/secrets` lists the project's alone.
 
 ## Snapshots
 

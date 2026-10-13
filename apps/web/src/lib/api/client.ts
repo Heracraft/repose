@@ -28,6 +28,7 @@ import type {
 	Revision,
 	Route,
 	SecretMeta,
+	AccountSecretPut,
 	Samples,
 	SampleWindow,
 	Snapshot,
@@ -206,6 +207,16 @@ export const putSecret = (id: string, name: string, valueBase64: string) =>
 	});
 export const deleteSecret = (id: string, name: string) =>
 	request<void>(`/projects/${id}/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// Account secrets, for every project (DECISIONS I-697).
+export const listAccountSecrets = () => request<SecretMeta[]>('/me/secrets');
+export const putAccountSecret = (name: string, valueBase64: string) =>
+	request<AccountSecretPut>(`/me/secrets/${encodeURIComponent(name)}`, {
+		method: 'PUT',
+		body: { value: valueBase64 }
+	});
+export const deleteAccountSecret = (name: string) =>
+	request<void>(`/me/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // Snapshots.
 export const getSamples = (id: string, window: SampleWindow) =>

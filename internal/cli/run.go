@@ -970,12 +970,22 @@ func (e *Env) warn(format string, args ...any) {
 	_, _ = fmt.Fprintf(e.ErrOut, format+"\n", args...)
 }
 
+// hasOAuthSecret reports whether the machine gets CLAUDE_CODE_OAUTH_TOKEN,
+// the project's own or the account's (I-697).
 func hasOAuthSecret(ctx context.Context, c *Client, projectID string) (bool, error) {
 	secrets, err := c.ListSecrets(ctx, projectID)
 	if err != nil {
 		return false, err
 	}
-	for _, s := range secrets {
+	account, err := c.ListAccountSecrets(ctx)
+	if err != nil {
+		// An api from before I-697 has no account secrets.
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != 404 {
+			return false, err
+		}
+	}
+	for _, s := range append(secrets, account...) {
 		if s.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
 			return true, nil
 		}

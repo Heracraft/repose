@@ -179,6 +179,63 @@ type SecretsImportOptions struct {
 	// Confirm asks once before --mcp replaces a secret the project
 	// has; nil asks on the terminal.
 	Confirm func(prompt string) (bool, error)
+	// Global sets the account's secrets, for every project (I-697),
+	// instead of the project's; with MCP it reads the user scope alone.
+	Global bool
+}
+
+// importTarget is where an import's secrets go: a project, or the
+// account (--global, I-697).
+type importTarget struct {
+	where string // "on todo-app", "for every project"
+	owner string // "todo-app", "your account": who already has a name
+	list  func() ([]SecretMeta, error)
+	// put sets one and reports whether a running machine has it now.
+	put func(name string, value []byte) (bool, error)
+	// pushedText says where the values went.
+	pushedText func(pushed bool) string
+}
+
+func resolveImportTarget(ctx context.Context, e *Env, opts SecretsImportOptions) (*importTarget, error) {
+	if opts.Global {
+		return &importTarget{
+			where: "for every project",
+			owner: "Your account",
+			list: func() ([]SecretMeta, error) {
+				s, err := e.Client.ListAccountSecrets(ctx)
+				return s, olderAPI(err)
+			},
+			put: func(name string, value []byte) (bool, error) {
+				res, err := e.Client.PutAccountSecret(ctx, name, value)
+				return err == nil && res.Pushed > 0, err
+			},
+			pushedText: func(pushed bool) string {
+				if pushed {
+					return "pushed to the running machines"
+				}
+				return "delivered at each machine's next start"
+			},
+		}, nil
+	}
+	project, err := requireProject(ctx, e, opts.ProjectArg)
+	if err != nil {
+		return nil, err
+	}
+	return &importTarget{
+		where: "on " + project.Slug,
+		owner: project.Slug,
+		list:  func() ([]SecretMeta, error) { return e.Client.ListSecrets(ctx, project.ID) },
+		put: func(name string, value []byte) (bool, error) {
+			res, err := e.Client.PutSecret(ctx, project.ID, name, value)
+			return err == nil && res != nil && res.Pushed, err
+		},
+		pushedText: func(pushed bool) string {
+			if pushed {
+				return "pushed to the running machine"
+			}
+			return "delivered at the next start"
+		},
+	}, nil
 }
 
 func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -193,8 +250,11 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 			"With --mcp, set the secrets your carried MCP servers need instead, from the\n" +
 			"tokens in your laptop's Claude Code config, for this folder's project. It asks\n" +
 			"once before replacing secrets the project already has; -y replaces them\n" +
-			"without asking.",
-		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp",
+			"without asking.\n\n" +
+			"With --global, set them on your account instead, for every project; --mcp\n" +
+			"then reads your user-scope servers alone, since a local-scope server is one\n" +
+			"repository's.",
+		Example: "  repose secrets import\n  repose secrets import .env.production\n  op inject -i .env.tpl | repose secrets import -\n  repose secrets import --mcp\n  repose secrets import --global ~/.config/shared.env",
 		Args:    argsN(0, 1, "at most one FILE"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ProjectArg = g.project
@@ -207,6 +267,11 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 			}
 			if opts.Yes && !opts.MCP {
 				return exitf(ExitUsage, "--yes goes with --mcp; a file import replaces without asking.")
+			}
+			if opts.Global {
+				if err := globalProjectConflict(g.project); err != nil {
+					return err
+				}
 			}
 			e, err := env()
 			if err != nil {
@@ -221,6 +286,7 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "list the names that would be set, and send nothing")
 	cmd.Flags().BoolVar(&opts.MCP, "mcp", false, "set the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config, for this project only")
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, "with --mcp, replace secrets the project already has without asking")
+	cmd.Flags().BoolVar(&opts.Global, "global", false, "set them on your account, for every project (with --mcp, from your user-scope servers)")
 	return cmd
 }
 
@@ -248,12 +314,12 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 	if err := validateImport(entries); err != nil {
 		return err
 	}
-	project, err := requireProject(ctx, e, opts.ProjectArg)
+	target, err := resolveImportTarget(ctx, e, opts)
 	if err != nil {
 		return err
 	}
 	existing := map[string]bool{}
-	metas, err := e.Client.ListSecrets(ctx, project.ID)
+	metas, err := target.list()
 	if err != nil {
 		return err
 	}
@@ -271,27 +337,23 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 		for i, en := range entries {
 			names[i] = label(en.Name)
 		}
-		_, _ = fmt.Fprintf(e.Out, "Would set %d on %s from %s: %s\nNothing sent (--dry-run).\n", len(entries), project.Slug, from, strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(e.Out, "Would set %d %s from %s: %s\nNothing sent (--dry-run).\n", len(entries), target.where, from, strings.Join(names, ", "))
 		return nil
 	}
 	var set []string
 	pushed := false
 	for _, en := range entries {
-		res, err := e.Client.PutSecret(ctx, project.ID, en.Name, []byte(en.Value))
+		p, err := target.put(en.Name, []byte(en.Value))
 		if err != nil {
 			if len(set) > 0 {
 				_, _ = fmt.Fprintf(e.ErrOut, "Set before the failure: %s. Running the import again sets them all.\n", strings.Join(set, ", "))
 			}
 			return stepFailed(fmt.Sprintf("set %s (line %d of %s)", en.Name, en.Line, from), err, "")
 		}
-		pushed = pushed || (res != nil && res.Pushed)
+		pushed = pushed || p
 		set = append(set, label(en.Name))
 	}
-	where := "delivered at the next start"
-	if pushed {
-		where = "pushed to the running machine"
-	}
-	_, _ = fmt.Fprintf(e.Out, "Set %d on %s from %s (%s): %s\n", len(set), project.Slug, from, where, strings.Join(set, ", "))
+	_, _ = fmt.Fprintf(e.Out, "Set %d %s from %s (%s): %s\n", len(set), target.where, from, target.pushedText(pushed), strings.Join(set, ", "))
 	return nil
 }
 
@@ -305,7 +367,13 @@ func SecretsImportCmd(ctx context.Context, e *Env, opts SecretsImportOptions, st
 // (or --yes); a no sets the others.
 func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions) error {
 	values := map[string]string{}
-	if _, err := collectMCP(e.HomeDir, gitRepoRoot(e.Cwd), nil, values); err != nil {
+	// --global reads the user scope alone: a local-scope server is this
+	// repository's, and its tokens belong to its project.
+	repo := gitRepoRoot(e.Cwd)
+	if opts.Global {
+		repo = ""
+	}
+	if _, err := collectMCP(e.HomeDir, repo, nil, values); err != nil {
 		return exitf(ExitGeneric, "Could not read your Claude Code MCP servers: %s.", strings.TrimSuffix(err.Error(), "."))
 	}
 	if len(values) == 0 {
@@ -324,12 +392,12 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 	if err := validateMCPImport(entries); err != nil {
 		return err
 	}
-	project, err := requireProject(ctx, e, opts.ProjectArg)
+	target, err := resolveImportTarget(ctx, e, opts)
 	if err != nil {
 		return err
 	}
 	existing := map[string]bool{}
-	metas, err := e.Client.ListSecrets(ctx, project.ID)
+	metas, err := target.list()
 	if err != nil {
 		return err
 	}
@@ -348,7 +416,7 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 		for i, n := range names {
 			l[i] = label(n)
 		}
-		_, _ = fmt.Fprintf(e.Out, "Would set %d on %s from %s: %s\nNothing sent (--dry-run).\n", len(names), project.Slug, from, strings.Join(l, ", "))
+		_, _ = fmt.Fprintf(e.Out, "Would set %d %s from %s: %s\nNothing sent (--dry-run).\n", len(names), target.where, from, strings.Join(l, ", "))
 		return nil
 	}
 	var replace []string
@@ -362,7 +430,7 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 		if confirm == nil {
 			confirm = func(prompt string) (bool, error) { return askYesNo(ctx, prompt, false, "replacing secrets") }
 		}
-		ok, err := confirm(fmt.Sprintf("%s already has %s. Replace with your laptop's values? [y/N] ", project.Slug, strings.Join(replace, ", ")))
+		ok, err := confirm(fmt.Sprintf("%s already has %s. Replace with your laptop's values? [y/N] ", target.owner, strings.Join(replace, ", ")))
 		if err != nil {
 			return err
 		}
@@ -383,21 +451,17 @@ func SecretsImportMCPCmd(ctx context.Context, e *Env, opts SecretsImportOptions)
 	var set []string
 	pushed := false
 	for _, en := range entries {
-		res, err := e.Client.PutSecret(ctx, project.ID, en.Name, []byte(en.Value))
+		p, err := target.put(en.Name, []byte(en.Value))
 		if err != nil {
 			if len(set) > 0 {
 				_, _ = fmt.Fprintf(e.ErrOut, "Set before the failure: %s. Running the import again sets them all.\n", strings.Join(set, ", "))
 			}
 			return stepFailed("set "+en.Name, err, "")
 		}
-		pushed = pushed || (res != nil && res.Pushed)
+		pushed = pushed || p
 		set = append(set, label(en.Name))
 	}
-	where := "delivered at the next start"
-	if pushed {
-		where = "pushed to the running machine"
-	}
-	_, _ = fmt.Fprintf(e.Out, "Set %d on %s from %s (%s): %s\n", len(set), project.Slug, from, where, strings.Join(set, ", "))
+	_, _ = fmt.Fprintf(e.Out, "Set %d %s from %s (%s): %s\n", len(set), target.where, from, target.pushedText(pushed), strings.Join(set, ", "))
 	return nil
 }
 

@@ -10,6 +10,7 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import MachineNix from '$lib/components/MachineNix.svelte';
+	import AccountSecrets from '$lib/components/AccountSecrets.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { dateOnly } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -348,6 +349,8 @@
 	</section>
 
 	<MachineNix />
+
+	<AccountSecrets />
 
 	{#if me}
 		<!-- The danger zone, last on the page (DESIGN-LANGUAGE.md "States"). -->

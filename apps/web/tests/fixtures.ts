@@ -8,7 +8,8 @@ import path from 'node:path';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..');
 const WEB_ROOT = path.resolve(import.meta.dirname, '..');
-export const WEB_PORT = 4173;
+// REPOSE_WEB_TEST_PORT lets a second worktree's suite run beside one on 4173.
+export const WEB_PORT = Number(process.env.REPOSE_WEB_TEST_PORT) || 4173;
 export const BASE_URL = `http://127.0.0.1:${WEB_PORT}`;
 
 interface Running {
