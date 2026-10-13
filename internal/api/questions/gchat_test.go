@@ -133,8 +133,8 @@ func TestCloseLine(t *testing.T) {
 		want string
 	}{
 		{questions.Question{State: "answered", Answer: s("yes"), AnsweredVia: s("email"), Options: []string{"yes"}}, "Answered yes by email"},
-		{questions.Question{State: "answered", Answer: s("go"), AnsweredVia: s("gchat"), Options: []string{"go"}}, "Answered go from Google Chat"},
-		{questions.Question{State: "answered", Answer: s("main, after the tests"), AnsweredVia: s("cli")}, "Answered with repose reply: main, after the tests"},
+		{questions.Question{State: "answered", Answer: s("go"), AnsweredVia: s("gchat"), Options: []string{"go"}}, "Answered go in Google Chat"},
+		{questions.Question{State: "answered", Answer: s("main, after the tests"), AnsweredVia: s("cli")}, "Answered from the CLI: main, after the tests"},
 		{questions.Question{State: "answered", AnsweredVia: s("terminal")}, "Answered in the terminal"},
 		{questions.Question{State: "cancelled", AnsweredVia: s("agent")}, "Withdrawn by the agent"},
 		{questions.Question{State: "cancelled"}, "The agent stopped waiting"},

@@ -24,7 +24,7 @@
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import PlanStrip from '$lib/components/projects/PlanStrip.svelte';
-	import PendingQuestions from '$lib/components/projects/PendingQuestions.svelte';
+	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
@@ -87,8 +87,24 @@
 	const listFailure = new PollFailure('Could not load projects.');
 
 	async function refresh() {
+		const first = projects === undefined;
 		try {
-			projects = await listProjects();
+			// The first load asks for the questions with the list, so the
+			// card above the strip is in the first paint and nothing lands
+			// above the table later (DESIGN-LANGUAGE "The pages").
+			if (first) {
+				const [list, qs] = await Promise.all([
+					listProjects(),
+					listQuestions('pending').catch(() => undefined)
+				]);
+				if (qs) {
+					questions = qs;
+					pendingQuestions.set(qs.length);
+				}
+				projects = list;
+			} else {
+				projects = await listProjects();
+			}
 			loadFailed = false;
 			listFailure.ok();
 		} catch (err) {
@@ -107,7 +123,7 @@
 		}
 		// The strip's and the callout's calls go out once the list is in;
 		// each fails on its own and keeps what it showed last.
-		const side = Promise.all([refreshQuestions(), refreshBilling()]);
+		const side = Promise.all([first ? undefined : refreshQuestions(), refreshBilling()]);
 		// Its own try: an api without the route (older than I-167) answers
 		// 404, and that must not hide the live list or raise a toast.
 		try {
@@ -324,7 +340,7 @@
 			</div>
 		{:else if projects}
 			<div class="flex flex-col gap-6">
-				<PendingQuestions {questions} />
+				<WaitingCard bind:questions cap={3} testid="pending-questions" />
 				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
 			</div>
 

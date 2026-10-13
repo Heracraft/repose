@@ -173,14 +173,15 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   option to the same link with `via=gchat`, whose GET shows the confirm
   page), email (one link per option, which opens a
   page whose button answers; replying to the email does nothing), the
-  dashboard's project page (buttons or a text box, and Dismiss), or the
-  laptop: `repose questions` lists the waiting ones, `repose reply
-  [PROJECT] [ANSWER]` answers and `repose reply --dismiss [PROJECT]`
-  dismisses (I-690), both listing instead of guessing when several are
-  waiting. A question the owner answered in the agent's terminal, or the
-  agent withdrew, closes from the guest with a reason: the api stores
-  `answered` with no answer and `answered_via='terminal'`, or `cancelled`
-  with `answered_via='agent'`, and says "answered in the terminal" or
+  dashboard's "Waiting on you" card on /projects and on the project page
+  (buttons or a text box, and Dismiss; I-693), or the laptop: `repose
+  questions` lists the waiting ones, `repose reply [PROJECT] [ANSWER]`
+  answers and `repose reply --dismiss [PROJECT]` dismisses (I-690), both
+  listing instead of guessing when several are waiting. A question the
+  owner answered in the agent's terminal, or the agent withdrew, closes
+  from the guest with a reason: the api stores `answered` with no answer
+  and `answered_via='terminal'`, or `cancelled` with
+  `answered_via='agent'`, and says "answered in the terminal" or
   "withdrawn by the agent" wherever it describes a closed question
   (I-690). The first answer wins everywhere; a later one is refused
   with the answer that won.
@@ -333,8 +334,15 @@ Dashboard and CLI:
 - `repose status` shows the last event per agent window.
 - `repose events`, its own command, lists
   the last 50 events with timestamps.
-- `repose questions` and `repose reply` (above); the dashboard project
-  page shows pending questions above everything else.
+- `repose questions` and `repose reply` (above); the dashboard shows
+  pending questions in one "Waiting on you" card, first on /projects
+  (grouped by project, 3 rows before "Show all N") and across the project
+  page under its status line. Both answer in place. A question that closes
+  while on screen, wherever it was answered, stays 8 seconds as one line
+  naming the answer and where it came from (`answered_via`), then leaves
+  (I-693). A cancel reads "Dismissed" only with `answered_via` dashboard,
+  "Withdrawn by the agent" with `agent`, and "The agent stopped waiting"
+  with none (`asker_gone`, `interrupted`, a machine stop).
 - The dashboard project page's Events card shows the event stream, newest
   first, with the agent and the summary. It answers the first half of "I
   got nothing": whether the event happened. `GET /projects/:id/events`

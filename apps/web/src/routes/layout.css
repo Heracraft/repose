@@ -701,6 +701,11 @@
 	.dot--error {
 		@apply border-red-600 bg-red-600 dark:border-red-500 dark:bg-red-500;
 	}
+	/* Waits on you: a question (I-693). Amber, as .badge--warn is;
+	   amber-500 holds 3.3:1 on the light surface, amber-300 9:1 on the dark. */
+	.dot--warn {
+		@apply border-amber-500 bg-amber-500 dark:border-amber-300 dark:bg-amber-300;
+	}
 	.dot--busy {
 		@apply border-zinc-700 bg-zinc-700 motion-safe:animate-pulse dark:border-zinc-300 dark:bg-zinc-300;
 	}
@@ -1265,6 +1270,7 @@
 	}
 	.dot--good,
 	.dot--error,
+	.dot--warn,
 	.dot--busy {
 		background-color: CanvasText;
 	}

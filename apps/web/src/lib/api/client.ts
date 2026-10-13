@@ -271,9 +271,14 @@ export const listQuestions = (
 	state: 'pending' | 'all' = 'pending',
 	opts: { passive?: boolean } = {}
 ) => request<{ questions: Question[] }>(`/questions?state=${state}`, opts).then((r) => r.questions);
-export const listProjectQuestions = (id: string, pendingOnly = true) =>
+export const listProjectQuestions = (
+	id: string,
+	pendingOnly = true,
+	opts: { passive?: boolean } = {}
+) =>
 	request<{ questions: Question[] }>(
-		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`
+		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`,
+		opts
 	).then((r) => r.questions);
 export const answerQuestion = (id: string, qid: string, answer: string) =>
 	request<Question>(`/projects/${id}/questions/${qid}/answer`, {

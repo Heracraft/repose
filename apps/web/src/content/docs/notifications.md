@@ -128,7 +128,7 @@ A question can be answered in five places:
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Google Chat:** the card has a button for each option. It opens a page with the question and a button; pressing it answers.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
-- **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box. The Projects page lists every waiting question, each with **Answer**.
+- **The dashboard:** waiting questions show under **Waiting on you** at the top of the Projects page and of the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses:
 
 ```
@@ -139,7 +139,7 @@ repose reply --dismiss todo-app
 
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
 
-The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.
+The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering. A question answered somewhere else while it is on screen shows where for 8 seconds, for example `Answered yes by email` or `Answered in the terminal`, then goes.
 
 An agent takes its own questions back with `repose-ask --cancel`, one with `repose-ask --cancel ID` (the ID `repose-ask` printed when it asked), and every open question on the machine with `repose-ask --cancel --all`; each prints how many it withdrew. A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
 

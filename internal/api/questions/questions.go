@@ -594,10 +594,10 @@ const closedMachineStopped = "Closed: the machine stopped"
 // viaWords says where an answer came from, after "Answered".
 var viaWords = map[string]string{
 	"dashboard": "from the dashboard",
-	"cli":       "with repose reply",
+	"cli":       "from the CLI",
 	"email":     "by email",
-	"ntfy":      "from ntfy",
-	"gchat":     "from Google Chat",
+	"ntfy":      "in ntfy",
+	"gchat":     "in Google Chat",
 }
 
 // CloseLine says how a closed question closed, in the words of the reply
