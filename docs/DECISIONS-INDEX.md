@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-704 entries.
+709 entries.
 
 ## Scope
 
@@ -736,3 +736,8 @@ pointer, not a summary.
 - **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20457
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
+- **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L20652
+- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L20689
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20714
+- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20737
+- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L20760

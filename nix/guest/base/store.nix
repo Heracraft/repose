@@ -250,6 +250,19 @@ in
     wants = [ "repose-paths.service" ];
     serviceConfig = {
       Type = "oneshot";
+      # The copy-up reads the profile closure over virtio-fs and writes it
+      # to the volume: 14.6 s of CPU in a 46 s boot on host-01, beside
+      # home-manager's first activation on the way to the user's session.
+      # It waits until guestd has set the project up (the session is
+      # running), or 3 minutes of uptime with no hostd, and then runs; a
+      # start once the stamp is there waits for nothing (DECISIONS I-706).
+      ExecStartPre = "${pkgs.writeShellScript "repose-pin-wait" ''
+        while [ ! -e /run/repose/project-set-up ]; do
+          up=$(${pkgs.coreutils}/bin/cut -d. -f1 /proc/uptime)
+          [ "$up" -ge 180 ] && exit 0
+          ${pkgs.coreutils}/bin/sleep 1
+        done
+      ''}";
       ExecStart = "${pin}/bin/repose-pin-profile";
       Nice = 10;
       IOSchedulingClass = "idle";

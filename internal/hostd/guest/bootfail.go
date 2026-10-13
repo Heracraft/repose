@@ -177,7 +177,7 @@ func (m *Manager) fallbackTarget(ctx context.Context, g *state.Guest) string {
 // resend of the command after a hostd restart answers the same way.
 // tail is the failed boot's console tail, for the result.
 func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID string) (fb *state.BootFallback, tail string, err *Error) {
-	err = m.boot(ctx, g, stepRunner)
+	err = m.boot(ctx, g, stepRunner, "start", 0)
 	if err == nil {
 		return nil, "", nil
 	}
@@ -196,7 +196,7 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID 
 		return nil, "", err
 	}
 	m.log(g).Warn("boot never reached ready; booting the last good closure", "event", "boot_fallback", "code", fb.Code)
-	if err2 := m.boot(ctx, g, stepRunner); err2 != nil {
+	if err2 := m.boot(ctx, g, stepRunner, "start", 0); err2 != nil {
 		// Both failed: the guest is in error on its last good closure,
 		// and the first failure is the one to report.
 		err.Message += "; its previous system did not boot either: " + err2.Message
@@ -207,8 +207,8 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID 
 
 // startResult is a StartGuest's payload: the closure the guest runs and,
 // after a fallback, which one failed and why.
-func startResult(g *state.Guest, fb *state.BootFallback, consoleTail string) *hostdv1.StartResult {
-	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure}
+func startResult(g *state.Guest, fb *state.BootFallback, consoleTail string, boot *hostdv1.BootTimings) *hostdv1.StartResult {
+	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure, Boot: boot}
 	if fb != nil {
 		r.FailedClosure = fb.Failed
 		r.BootError = &hostdv1.Error{Code: fb.Code, Message: fb.Message, ConsoleTail: consoleTail}

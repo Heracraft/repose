@@ -24,6 +24,10 @@ const Port = 5000
 const (
 	DefaultTimeout = 30 * time.Second
 	SwitchTimeout  = 10 * time.Minute
+	// SetupTimeout is SetupProject's: guestd gives it 3 minutes, since it
+	// waits for home-manager's first activation (DECISIONS I-705), and
+	// hostd waits a little longer so guestd's own error is what arrives.
+	SetupTimeout = 3*time.Minute + 15*time.Second
 )
 
 // Target names a guest to connect to.
@@ -185,7 +189,7 @@ func (s *session) SetPrincipals(ctx context.Context, principals []string) error 
 }
 
 func (s *session) SetupProject(ctx context.Context, p *guestdv1.SetupProject) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_SetupProject{SetupProject: p}})
+	_, err := s.call(ctx, SetupTimeout, &guestdv1.Request{Req: &guestdv1.Request_SetupProject{SetupProject: p}})
 	return err
 }
 

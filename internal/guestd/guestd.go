@@ -47,6 +47,13 @@ const NotifyQueue = 256
 // DefaultDeadline bounds a request handler that does not set its own.
 const DefaultDeadline = 30 * time.Second
 
+// BootDeadline bounds RegisterPaths and SetupProject, which wait on the
+// boot: the load of the closure's registration, and home-manager's first
+// activation before the session unit starts. A busy host took both past
+// DefaultDeadline and failed creates that would have finished (DECISIONS
+// I-705).
+const BootDeadline = 3 * time.Minute
+
 // ReadyPollInterval is how often the readiness check looks for sshd. It
 // reads /proc/net/tcp and stops at the first hit, so a short step costs
 // nothing and takes up to 0.4 s off every boot's Ready (DECISIONS I-161).

@@ -1476,16 +1476,35 @@ func waitState(ctx context.Context, e *Env, project *Project, pr *progress) erro
 // waitOpPhased waits on an op like waitOp, streaming any build log
 // through pr, and (when byState) relabels the phase from the project's
 // state on every poll: "Building the environment", then "Booting".
+//
+// A create's log stays open until the whole op ends, boot included, so
+// with byState its build is shown as the configuration ops show theirs
+// (the build's steps from its log lines), and its "built" line starts
+// "Booting": the state's one label covered build and boot before
+// (DECISIONS I-708).
 func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr *progress, byState bool) (*Op, error) {
 	var w *opWatch
 	if byState {
 		last := ""
+		v := &buildView{pr: pr}
+		switch {
+		case pr == nil:
+			v.raw = e.ErrOut
+		case e.Verbose || !e.TTY:
+			v.raw = pr
+		}
+		v.built = func() { pr.Phase("Booting "+project.Slug, "Booted "+project.Slug) }
 		w = &opWatch{
+			line: v.Line,
 			show: func(state string) {
 				if state == "" || state == last {
 					return
 				}
 				last = state
+				// The build's own lines label it.
+				if state == "building" {
+					return
+				}
 				if label, done := phaseForState(project.Slug, state); label != "" {
 					pr.Phase(label, done)
 				}

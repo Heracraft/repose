@@ -516,6 +516,39 @@ project in `error` with a `destroy_failed` event; `repose-admin projects
 show <id>` has the op error, and `repose rm` (or the admin's
 destroy) resumes it.
 
+
+## BootSlow
+
+A create or start took over 30 s to reach running (the p50 is 11 s). On
+the host, `journalctl -t hostd | grep '"boot timings"'`: one line per boot
+that reached running, with `op` (`create` or `start`), `volume_ms` (the
+create's thin volume and mkfs), `prepare_ms` (the argv, the tap and
+virtiofsd), `ready_ms` (the hypervisor started to guestd's Ready),
+`paths_ms` (RegisterPaths, its wait for `nix-store --dump-db`
+included), `setup_ms` (secrets, principals and SetupProject) and
+`total_ms`. The api keeps the same numbers in the op's `result.boot`
+(`select result->'boot' from ops where id = '<op id>'`); the op a user
+reads leaves them out (DECISIONS I-707).
+
+- `ready_ms` and `setup_ms` both high, with the guest's own steps slower
+  across the board: the host is busy. 2026-10-13's A/B on host-01 booted
+  the same closure at 34 to 42 s with host load 8 to 10 and at 45 to
+  59 s with load 12 to 17, with or without free page reporting (I-704).
+  `uptime` and the guests' `cloud-hypervisor` CPU in `ps` on the host
+  say how busy.
+- `setup_ms` alone: home-manager's first activation and the user
+  manager, which SetupProject waits for. A boot that fails with
+  `SetupProject: context deadline exceeded` ran past the 3 minutes
+  guestd and hostd give it (I-705); before I-705 that was 30 s.
+- `/var/lib/repose/guests/<id>/console.log` shows which unit the guest
+  waited on.
+- To measure a boot without a tenant, `ops/dev/freeze-bench.sh hup`
+  boots a host closure on a `bench-*` volume the way hostd's create does
+  and prints the same steps (memory note benchmarking-on-host-01). Each
+  bench boot is one more busy guest on the host: on 2026-10-13, three
+  tenant boots on host-01 ran past the old 30 s SetupProject bound while
+  the bench ran.
+
 ## BuildQueueStuck
 
 Two builds running on a host with no completion for 45 minutes.

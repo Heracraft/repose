@@ -292,6 +292,21 @@ groups:
           description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
           runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
+      - alert: BootSlow
+        # A create or start that took over 30 s to reach running (DECISIONS
+        # I-707): the p50 is 11 s, and a boot this slow was the 55 s create
+        # of 2026-10-12. The host's "boot timings" line names the step.
+        expr: |
+          sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+            - sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_bucket{kind=~"CreateGuest|StartGuest",le="30"}[30m]))
+            > 0.5
+        labels:
+          severity: warn
+        annotations:
+          summary: "a create or start on {{ $labels.host_id }} took over 30 seconds"
+          description: "Boots over 30 s in the last 30 minutes: {{ $value | humanize }}."
+          runbook: "docs/ops/RUNBOOK.md#bootslow"
+
       - alert: SnapshotStale
         # Nightly at 03:00 plus one on every stop (DESIGN §6), so 36 hours
         # without one means two schedules have been missed.

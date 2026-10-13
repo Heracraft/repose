@@ -365,6 +365,45 @@ tests:
               description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
               runbook: "docs/ops/RUNBOOK.md#hostunreachable"
 
+  # --- BootSlow -----------------------------------------------------------
+  - interval: 1m
+    name: BootSlow fires on a boot over 30 seconds
+    input_series:
+      # Two boots: one at 20 s (in the le=30 bucket) at minute 3, one at
+      # 55 s (past it) at minute 6.
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest"}'
+        values: "0 0 0 1 1 1 2+0x20"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest",le="30"}'
+        values: "0 0 0 1+0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BootSlow
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BootSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "a create or start on host-01 took over 30 seconds"
+              description: "Boots over 30 s in the last 30 minutes: 1."
+              runbook: "docs/ops/RUNBOOK.md#bootslow"
+
+  - interval: 1m
+    name: BootSlow stays quiet while every boot is under 30 seconds
+    input_series:
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest"}'
+        values: "0 0 1 2 3+0x20"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest",le="30"}'
+        values: "0 0 1 2 3+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BootSlow
+        exp_alerts: []
+
   # --- SnapshotStale ------------------------------------------------------
   - interval: 1m
     name: SnapshotStale fires past 36 hours

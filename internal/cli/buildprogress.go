@@ -21,6 +21,9 @@ import (
 type buildView struct {
 	pr  *progress
 	raw io.Writer
+	// built, when set, runs at the build's "built" line in place of ending
+	// the step: a create's boot follows its build (DECISIONS I-708).
+	built func()
 
 	fetchN, fetchDone int
 	fetchSize         string
@@ -67,6 +70,10 @@ func (v *buildView) Line(line string) {
 		v.pr.Phase("Working out what to fetch", "")
 	case line == "built" || strings.HasPrefix(line, "built /"):
 		v.stage = stageBuilt
+		if v.built != nil {
+			v.built()
+			return
+		}
 		v.pr.End()
 	case line == "switching the machine":
 		v.switching()

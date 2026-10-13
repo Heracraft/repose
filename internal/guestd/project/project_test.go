@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
@@ -334,5 +335,36 @@ func TestSetupDoneOnlyAfterSetup(t *testing.T) {
 	}
 	if !fresh.SetupDone() {
 		t.Fatal("SetupDone() is false after a Setup whose unit failed to start")
+	}
+}
+
+// A set-up project leaves /run/repose/project-set-up, which
+// repose-pin-profile waits for so its copy-up runs after the boot instead
+// of beside home-manager's first activation (DECISIONS I-706). A setup
+// whose session unit failed leaves none.
+func TestSetupStampsTheBootDone(t *testing.T) {
+	h, p, run := newHandler(t)
+	run.Match["start "+TmuxUnit] = sysdep.RunResult{ExitCode: 1}
+	_ = h.Setup(context.Background(), req())
+	if _, err := os.Stat(p.ProjectSetUp()); !os.IsNotExist(err) {
+		t.Fatalf("stamp after a failed setup: %v", err)
+	}
+	delete(run.Match, "start "+TmuxUnit)
+	if err := h.Setup(context.Background(), req()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.ProjectSetUp()); err != nil {
+		t.Fatalf("no stamp after setup: %v", err)
+	}
+	if p.ProjectSetUp() != filepath.Join(p.Root, "run/repose/project-set-up") {
+		t.Fatalf("stamp at %s; store.nix waits on /run/repose/project-set-up", p.ProjectSetUp())
+	}
+}
+
+// Setup waits for the session unit, which waits for home-manager's first
+// activation; its bound is guestd's BootDeadline (I-705), not less.
+func TestSetupTimeoutCoversABusyBoot(t *testing.T) {
+	if DefaultTimeout < 3*time.Minute {
+		t.Fatalf("DefaultTimeout %s is under the 3 minutes I-705 gives a boot", DefaultTimeout)
 	}
 }

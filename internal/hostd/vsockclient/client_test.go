@@ -69,3 +69,16 @@ func TestUnixDialerAgainstFake(t *testing.T) {
 		t.Fatalf("kinds: %v", kinds)
 	}
 }
+
+// SetupProject waits for home-manager's first activation in the guest,
+// which took past 30 s on a busy host and failed the boot (DECISIONS
+// I-705). hostd waits a little longer than guestd's own 3-minute bound,
+// so the guest's error, which says which step ran out, is what arrives.
+func TestSetupProjectWaitsPastGuestdsBootDeadline(t *testing.T) {
+	if SetupTimeout <= 3*time.Minute || SetupTimeout > 4*time.Minute {
+		t.Fatalf("SetupTimeout %s, want just over guestd's 3-minute BootDeadline", SetupTimeout)
+	}
+	if SetupTimeout <= DefaultTimeout {
+		t.Fatalf("SetupTimeout %s is not above DefaultTimeout %s", SetupTimeout, DefaultTimeout)
+	}
+}

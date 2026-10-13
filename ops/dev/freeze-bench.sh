@@ -224,9 +224,24 @@ hup() {
   wipefs -qa "$vol"; mkfs.ext4 -q -L guest -E lazy_itable_init=1 "$vol"
   net_up "$id"
   rm -f "$d/virtiofsd.sock" "$d/ch.sock" "$d/vsock.sock" "$d/console.log"
-  setsid "$vfsd" --socket-path "$d/virtiofsd.sock" --shared-dir /nix/store --sandbox namespace --cache auto --xattr --no-announce-submounts >>"$d/virtiofsd.log" 2>&1 < /dev/null &
+  # The share is a view of the closure alone, as hostd's (I-463): a
+  # tmpfs in virtiofsd's own mount namespace with each closure path bound
+  # in. Sharing the whole host store makes every directory read of the
+  # store in the guest list every path the host holds.
+  nix-store -qR "$CLOSURE" > "$d/closure.paths"
+  mkdir -p "$d/view"
+  setsid unshare -m --propagation private bash -c '
+    mount -t tmpfs -o mode=0755 none "$1"
+    while read -r p; do
+      n=$1/${p#/nix/store/}
+      if [ -L "$p" ]; then cp -P "$p" "$n"
+      elif [ -d "$p" ]; then mkdir "$n" && mount --bind "$p" "$n"
+      else touch "$n" && mount --bind "$p" "$n"; fi
+    done < "$2"
+    exec "$3" --socket-path "$4" --shared-dir "$1" --sandbox namespace --cache auto --xattr --no-announce-submounts' \
+    _ "$d/view" "$d/closure.paths" "$vfsd" "$d/virtiofsd.sock" >>"$d/virtiofsd.log" 2>&1 < /dev/null &
   echo $! > "$d/virtiofsd.pid"
-  for _ in $(seq 200); do [ -S "$d/virtiofsd.sock" ] && break; sleep 0.01; done
+  for _ in $(seq 3000); do [ -S "$d/virtiofsd.sock" ] && break; sleep 0.01; done
   local iops mbps
   case "$class" in small) iops=2000 mbps=80 ;; large) iops=3000 mbps=120 ;; xl) iops=4000 mbps=150 ;; esac
   local cmdline="init=$CLOSURE/init $(cat "$CLOSURE/kernel-params") console=ttyS0 ip=10.99.$n.2::10.99.$n.1:255.255.255.0:gf$id:eth0:off systemd.hostname=gf$id${CMDLINE:+ $CMDLINE}"

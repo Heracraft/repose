@@ -204,3 +204,66 @@ func TestLogLinesAndSince(t *testing.T) {
 		t.Fatalf("time: %q %v", apiSince(got), err)
 	}
 }
+
+// A create that builds shows the build's steps and then the boot as its
+// own step, instead of one line for both: the create log stays open until
+// the whole op ends, so the phase seen first used to label all of it, a
+// 39 s build included (DECISIONS I-708).
+func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
+	var reads int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/p", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"p","slug":"todo-app","state":"building"}`)
+	})
+	mux.HandleFunc("/v1/projects/p/ops/o", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if atomic.AddInt32(&reads, 1) == 1 {
+			_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"running","phase":"build","log_url":"/v1/projects/p/ops/o/log"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"done"}`)
+	})
+	lines := append(append([]string{}, configBuildLines[:len(configBuildLines)-1]...), "booting") // no switch in a create
+	mux.HandleFunc("/v1/projects/p/ops/o/log", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i, l := range lines[:len(lines)-1] {
+			_, _ = fmt.Fprintf(w, "id: %d\ndata: {\"seq\":%d,\"line\":%q,\"ts\":\"2026-10-13T01:02:03.456Z\"}\n\n", i+1, i+1, l)
+		}
+		w.(http.Flusher).Flush()
+		time.Sleep(50 * time.Millisecond) // the boot
+		_, _ = io.WriteString(w, "event: done\ndata: {\"state\":\"done\"}\n\n")
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(srv.URL+"/v1", staticToken("t"))
+
+	for _, tty := range []bool{true, false} {
+		reads = 0
+		errOut := &discardWriter{}
+		e := &Env{Client: c, Out: &discardWriter{}, ErrOut: errOut, TTY: tty}
+		pr := newProgress(errOut, tty)
+		p := &Project{ID: "p", Slug: "todo-app", State: "creating"}
+		pr.Phase("Creating todo-app", "Created todo-app (large)")
+		op, err := waitOpPhased(context.Background(), e, p, "o", pr, true)
+		if err != nil || op.State != "done" {
+			t.Fatalf("wait: %v %+v", err, op)
+		}
+		pr.End()
+		got := errOut.buf.String()
+		last := -1
+		for _, want := range []string{"✓ Created todo-app (large)", "✓ Evaluated your config", "✓ Built 2 derivations", "✓ Booted todo-app"} {
+			i := strings.Index(got, want)
+			if i < 0 || i < last {
+				t.Fatalf("tty=%v: step %q missing or out of order in:\n%s", tty, want, got)
+			}
+			last = i
+		}
+		if strings.Contains(got, "Built the configuration") {
+			t.Fatalf("tty=%v: the state's label covers the build's steps:\n%s", tty, got)
+		}
+		if tty && strings.Contains(got, "nix ›") {
+			t.Fatalf("nix lines shown on a terminal without -v:\n%s", got)
+		}
+	}
+}

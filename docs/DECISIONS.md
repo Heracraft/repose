@@ -20648,3 +20648,127 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-704. Free page reporting stays on: it is not what made the 55 s boot
+(boot-fast, 2026-10-13).** *Made during implementation.* The 55.2 s create
+of nuru-playground on host-01 (2026-10-12 22:26Z) came 13 minutes after
+I-686 started guests with `--balloon size=0,free_page_reporting=on`, and
+its ch.args differed from a healthy 18.4 s create only by that flag
+(`/home/dev/.kanali-coord/boot-sync.md`). The brief named three fixes for
+it: load `virtio_balloon` after the boot, raise
+`page_reporting.page_reporting_order`, or turn the balloon off. None ships,
+because an A/B on host-01 found no boot cost to remove.
+- *How it ran.* `ops/dev/freeze-bench.sh hup` (new) boots a closure the
+  host already holds on a `bench-*` thin volume the way hostd's create
+  does: fresh ext4, hostd's argv and disk limits, the unit's
+  `MemoryMax`, `MemoryHigh` and `CPUQuota`, then RegisterPaths and
+  SetupProject through `ops/dev/freezebench`. The closure was base
+  2026.10.12 (`iswjhprp`), the one nuru booted, at class large.
+- *Result.* Three interleaved pairs, host load 8 to 10: balloon on 34.6,
+  35.9 and 33.6 s from start to set up; off 42.4, 39.2 and 35.9 s. At host
+  load 12 to 16: off 58.8 s, on 50.5 s, late-loaded 53.8 s, order 10
+  45.0 s. Minor faults to set up were about 200,000 in every arm. The
+  boot got slower with the host's load, by up to 24 s, whatever the
+  balloon did. Raw rows: docs/research/boot-speed-data/ab-host-01.txt.
+- *Caveat.* These boots shared the whole host store over virtio-fs,
+  where hostd shares a view of the closure (I-463), so RegisterPaths and
+  guestd's directory reads were heavier than a tenant's. The comparison
+  holds across arms; the absolute times are not a tenant's.
+- *What the slow boots have in common* is a busy host. In the guest the
+  boot is mostly kernel time (in one 46 s boot: user 19 s, system 63 s,
+  irq 43 s, softirq 22 s and steal 31 s of vCPU time), so it stretches
+  with contention. Prod's slow boots predate I-686 too (starts of 50.4 s
+  and 37.4 s on 2026-10-12 at 14:54 and 18:45). I-705 and I-706 are what
+  boot-fast changes for it.
+- *A cost found doing it.* Each bench boot is one more busy large guest on
+  a tenant host. Three tenant boots on host-01 failed with `SetupProject:
+  context deadline exceeded` while the bench ran (15:35, 15:56, 15:58Z),
+  and one create was refused for memory (15:57). RUNBOOK "BootSlow" now
+  says so beside the tool.
+
+**I-705. RegisterPaths and SetupProject get 3 minutes, not 30 s
+(boot-fast, 2026-10-13).** *Made during implementation.* guestd bounds
+every request it has no special deadline for at 30 s
+(`DefaultDeadline`), and hostd's client gave SetupProject the same 30 s.
+SetupProject starts the session unit, which waits for
+systemd-user-sessions, which waits for home-manager's first activation;
+on a busy host that took past 30 s and the boot failed with `SetupProject:
+context deadline exceeded`, a machine that was about to work torn down.
+Three creates and starts on host-01 failed that way on 2026-10-13, and the
+bench boots of I-704 failed the same way in RegisterPaths (`nix-store
+--load-db` past 30 s).
+- guestd's `BootDeadline` (3 minutes) bounds RegisterPaths and
+  SetupProject; project.Setup's own bound goes from 60 s to the same 3
+  minutes. hostd's `vsockclient.SetupTimeout` is 3 minutes 15 s, so the
+  guest's error, which names the step that ran out, is what arrives.
+  RegisterPaths already had hostd's 10-minute switch bound.
+- Why 3 minutes: the slowest boots seen took about 60 s in setup, and 3
+  minutes stays well under the api's 10-minute bound on the create_guest
+  and start_guest phases, so a guest that cannot set up in that time is
+  still reported as unresponsive, not as a timed-out op.
+- Either half alone changes nothing (the other still cuts at 30 s); each
+  is safe with the other's old version. The guest half ships with a base,
+  the host half with a host switch. docs/workstreams/04-guestd.md's
+  deadline sentence names it. No user-visible text changes.
+
+**I-706. repose-pin-profile waits until the project is set up (boot-fast,
+2026-10-13).** *Made during implementation.* The copy-up of dev's
+profile closure (repose-pin-profile, I-533) runs after repose-paths, which
+puts it beside home-manager's first activation on the way to the user's
+session, and its `.path` unit starts it again when that activation
+changes the profile. It reads the closure over virtio-fs and writes it to
+the volume: 14.6 s of CPU in a 46 s bench boot, the second-largest unit
+after PID 1, and on mailflare it ran for 3 min 59 s. Masked on the kernel
+line, the same boot reached set up in 34.4 s against 46.0 s beside it, at
+the same host load (n=1; later pairs were cut off by the host's load).
+- guestd writes `/run/repose/project-set-up` once SetupProject has started
+  the session unit. The service's `ExecStartPre` waits for that stamp, or
+  for 3 minutes of uptime when no hostd sends SetupProject (a NixOS test,
+  a guest whose hostd never came), then the copy-up runs as before. A
+  start once the stamp is there waits for nothing, so a profile change
+  later pins at once.
+- Why a stamp and not a timer: it ends the wait when the user's session is
+  up, however long the boot took, and the uptime bound covers the guest
+  that never gets one. A Nice=10 and idle IO class already applied and
+  were not enough: the work is the kernel's (virtio-fs reads, overlay
+  copy-up), which nice does not slow.
+- The guest-base VM test touches the stamp before it starts the unit.
+
+**I-707. A boot logs "boot timings", and the ops row keeps them
+(boot-fast, 2026-10-13).** *Made during implementation.* A slow create
+had to be pieced together from journal timestamps and the guest's
+console. hostd now logs one `"boot timings"` line (`event` guest_start,
+`op` create or start) per boot that reached running, with `volume_ms`,
+`prepare_ms`, `ready_ms`, `paths_ms`, `setup_ms` and `total_ms`, the shape
+of I-571's "stop timings". The same numbers ride back as `BootTimings
+boot` on CreateResult (field 3) and StartResult (field 4), and the api
+merges them into `ops.result.boot`. The op a user reads leaves `boot` out,
+as it leaves out `console` (I-592): the numbers are for operators, and
+`repose status` has nothing to say with them.
+- The contract: docs/interfaces/grpc-hostd.md names the field on both
+  results. An api that ignores it reads the result as before, and a hostd
+  before it sends none, which the api stores as no `boot` key.
+- The alert `BootSlow` (warn) fires when a CreateGuest or StartGuest
+  command took over 30 s in the last 30 minutes, from
+  `repose_host_command_duration_seconds` (its 30 s bucket was already
+  there), with promtool cases in ops/alerts_test.yaml and a RUNBOOK
+  heading that reads the line.
+- What was not done: the ops table still has no per-phase times for the
+  build phase; the build's own time is in `build_phase_duration_seconds`
+  and in its log lines.
+
+**I-708. A create shows its build's steps, then "Booting" (boot-fast,
+2026-10-13).** *Made during implementation.* A create op's build log
+(`log_url`) stays open until the whole op ends, the boot included, and
+the CLI followed it under whichever label the project's state had at the
+first read. With a build that state is `building`, so a 39 s build and a
+15 s boot printed as one `✓ Built the configuration  55s` line, with Nix's
+lines raw on the terminal (a test against a stub api reproduced it). `run`
+now follows a create's log with the configuration ops' build view
+(I-320): the build's steps (`Got a build slot`, `Evaluated your config`,
+`Fetched N paths`, `Built N derivations`), Nix's lines only with `-v` or
+off a terminal, and the build's `built` line starts `Booting <slug>`. The
+`building` state no longer starts a phase of its own. A create whose build
+is reused shows `Created` and `Booted` as before. The change is in run.go
+and buildprogress.go; progress.go is untouched. The quickstart's example
+output and config.md's build steps paragraph say what a first run prints.

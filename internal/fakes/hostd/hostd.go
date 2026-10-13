@@ -536,7 +536,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID}}
+			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true)}}
 		})
 	case *hostdv1.Command_StartGuest:
 		f.mu.Lock()
@@ -573,7 +573,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 				f.setState(g, "running", "")
 				return ok(func(r *hostdv1.Result) {
 					r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: good, FailedClosure: failed,
-						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}}}
+						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}, Boot: fakeBoot(false)}}
 				})
 			}
 			f.mu.Lock()
@@ -585,7 +585,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		booted := g.Closure
 		f.mu.Unlock()
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted}}
+			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false)}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()
@@ -777,4 +777,14 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(nil)
 	}
 	return errResult(id, "invalid_argument", "unknown command")
+}
+
+// fakeBoot is the BootTimings a real hostd reports with a create or start
+// (DECISIONS I-707); only a create has a volume step.
+func fakeBoot(create bool) *hostdv1.BootTimings {
+	b := &hostdv1.BootTimings{PrepareMs: 300, ReadyMs: 8000, PathsMs: 2000, SetupMs: 5000, TotalMs: 15300}
+	if create {
+		b.VolumeMs, b.TotalMs = 200, 15500
+	}
+	return b
 }

@@ -194,12 +194,14 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.injected(stepVolume); err != nil {
 		return nil, m.fail(g, stepVolume, err)
 	}
+	volStart := m.d.Now()
 	if err := m.d.LVM.CreateVolume(ctx, VolumeName(g.GuestID), g.VolumeBytes); err != nil {
 		return nil, m.fail(g, stepVolume, err)
 	}
 	if err := m.d.LVM.Mkfs(ctx, VolumeName(g.GuestID)); err != nil {
 		return nil, m.fail(g, stepVolume, err)
 	}
+	volume := m.d.Now().Sub(volStart)
 
 	// Step 4: GC root.
 	if err := m.injected(stepGCRoot); err != nil {
@@ -217,10 +219,10 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 		return nil, m.fail(g, stepSecrets, err)
 	}
 
-	if err := m.boot(ctx, g, stepRunner); err != nil {
+	if err := m.boot(ctx, g, stepRunner, "create", volume); err != nil {
 		return nil, err
 	}
-	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID}, nil
+	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID)}, nil
 }
 
 // fail records a create or start failure, rolling back everything but the
@@ -241,8 +243,11 @@ func (m *Manager) fail(g *state.Guest, step int, err error) *Error {
 }
 
 // boot runs create steps 5, 6, 8, 9 and 10 for a guest whose volume, root
-// and secrets are in place. Start reuses it.
-func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Error {
+// and secrets are in place. Start reuses it. op ("create" or "start") and
+// volume (the create's volume step) go into the "boot timings" line a boot
+// that reaches running logs (DECISIONS I-707).
+func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op string, volume time.Duration) *Error {
+	bootStart := m.d.Now()
 	class := Classes[g.Class]
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
@@ -324,6 +329,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, argv); err != nil {
 		return m.fail(g, stepHypervisr, err)
 	}
+	chStart := m.d.Now()
 	// The registration RegisterPaths sends is read while the guest boots,
 	// not after its guestd answers: `nix-store -qR` and `--dump-db` took
 	// 70 ms of every start's critical path on host-01 (DECISIONS I-232).
@@ -347,7 +353,9 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 		m.removeMonitor(g.GuestID)
 		return m.fail(g, stepReady, rf)
 	}
-	if err := m.deliver(ctx, g, sess, dump); err != nil {
+	readyAt := m.d.Now()
+	paths, err := m.deliver(ctx, g, sess, dump)
+	if err != nil {
 		mon.stop()
 		m.removeMonitor(g.GuestID)
 		return m.fail(g, stepReady, err)
@@ -358,8 +366,35 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int) *Erro
 	if err := m.setState(g, StateRunning, ""); err != nil {
 		return m.fail(g, stepReady, err)
 	}
+	done := m.d.Now()
+	bt := &hostdv1.BootTimings{
+		VolumeMs: ms(volume), PrepareMs: ms(chStart.Sub(bootStart)), ReadyMs: ms(readyAt.Sub(chStart)),
+		PathsMs: ms(paths), SetupMs: ms(done.Sub(readyAt) - paths), TotalMs: ms(volume + done.Sub(bootStart)),
+	}
+	m.mu.Lock()
+	m.boots[g.GuestID] = bt
+	m.mu.Unlock()
 	m.log(g).Info("guest running", "event", "guest_start", "class", g.Class)
+	// Where the boot's time went, as "stop timings" says for a stop
+	// (DECISIONS I-707); the same numbers go back in the result.
+	m.log(g).Info("boot timings", "event", "guest_start", "op", op, "volume_ms", bt.VolumeMs, "prepare_ms", bt.PrepareMs,
+		"ready_ms", bt.ReadyMs, "paths_ms", bt.PathsMs, "setup_ms", bt.SetupMs, "total_ms", bt.TotalMs)
 	return nil
+}
+
+// lastBoot is the timings of id's last boot that reached running, or nil.
+func (m *Manager) lastBoot(id string) *hostdv1.BootTimings {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.boots[id]
+}
+
+// ms is d in whole milliseconds, 0 for a negative d.
+func ms(d time.Duration) uint32 {
+	if d <= 0 {
+		return 0
+	}
+	return uint32(d.Milliseconds())
 }
 
 // dumpResult is a `nix-store --dump-db` read ahead of Ready.
@@ -370,32 +405,36 @@ type dumpResult struct {
 
 // deliver sends secrets, principals and the project setup after Ready.
 // dump delivers the closure's registration, read while the guest booted.
-func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.Session, dump <-chan dumpResult) error {
+// It returns how long the registration took, its wait for the dump
+// included.
+func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.Session, dump <-chan dumpResult) (time.Duration, error) {
+	start := m.d.Now()
 	// The booted closure is on disk in the guest but unknown to its nix
 	// database until registered (DECISIONS I-67).
 	var d dumpResult
 	select {
 	case d = <-dump:
 	case <-ctx.Done():
-		return ctx.Err()
+		return 0, ctx.Err()
 	}
 	reg, err := d.b, d.err
 	if err != nil {
-		return fmt.Errorf("nix-store --dump-db: %w", err)
+		return 0, fmt.Errorf("nix-store --dump-db: %w", err)
 	}
 	if len(reg) > 0 {
 		if err := sess.RegisterPaths(ctx, reg); err != nil {
-			return fmt.Errorf("RegisterPaths: %w", err)
+			return 0, fmt.Errorf("RegisterPaths: %w", err)
 		}
 	}
+	paths := m.d.Now().Sub(start)
 	if secrets := m.cachedSecrets(g.GuestID); len(secrets) > 0 {
 		if err := sess.WriteSecrets(ctx, secrets); err != nil {
-			return fmt.Errorf("WriteSecrets: %w", err)
+			return paths, fmt.Errorf("WriteSecrets: %w", err)
 		}
 	}
 	if len(g.Principals) > 0 {
 		if err := sess.SetPrincipals(ctx, g.Principals); err != nil {
-			return fmt.Errorf("SetPrincipals: %w", err)
+			return paths, fmt.Errorf("SetPrincipals: %w", err)
 		}
 	}
 	slug := g.ProjectSlug
@@ -404,9 +443,9 @@ func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.
 	}
 	sp := &guestdv1.SetupProject{ProjectSlug: slug, RemoteUrl: g.RemoteURL, Tz: g.Env["TZ"], Lang: g.Env["LANG"], ProjectJson: g.ProjectJSON}
 	if err := sess.SetupProject(ctx, sp); err != nil {
-		return fmt.Errorf("SetupProject: %w", err)
+		return paths, fmt.Errorf("SetupProject: %w", err)
 	}
-	return nil
+	return paths, nil
 }
 
 // teardown removes tap, tc, nft membership, the virtiofsd and guest units
@@ -542,7 +581,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	switch g.State {
 	case StateRunning:
-		return startResult(g, resent, ""), nil
+		return startResult(g, resent, "", m.lastBoot(g.GuestID)), nil
 	case StateStopped, StateError, StateStarting:
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
@@ -628,10 +667,10 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	if resent != nil {
 		// The record already names the closure the fallback chose; boot
 		// it, and answer with the fallback this command made.
-		if err := m.boot(ctx, g, stepRunner); err != nil {
+		if err := m.boot(ctx, g, stepRunner, "start", 0); err != nil {
 			return nil, err
 		}
-		return startResult(g, resent, ""), nil
+		return startResult(g, resent, "", m.lastBoot(g.GuestID)), nil
 	}
 	// A fallback another command made is over once this one boots.
 	g.BootFallback = nil
@@ -639,7 +678,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	if err != nil {
 		return nil, err
 	}
-	return startResult(g, fb, tail), nil
+	return startResult(g, fb, tail, m.lastBoot(g.GuestID)), nil
 }
 
 // --- monitor ----------------------------------------------------------
