@@ -20657,9 +20657,14 @@ vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
 - *Still the Postgres home, not a fourth place.* CLAUDE.md's "three homes"
   rule counts where a value lives, not how many tables hold it. An
   account secret is a row in Postgres (`account_secrets`, migration 0024,
-  one per user and name, deleted with the user), sealed with AES-256-GCM
-  under the same per-user data key wrapped by Key Vault, and reaches a
-  machine only as the tmpfs files and environment a project secret does.
+  one per user and name), sealed with AES-256-GCM under the same per-user
+  data key wrapped by Key Vault, and reaches a machine only as the tmpfs
+  files and environment a project secret does. The rows cascade on a hard
+  delete of the user row, which no code does today: a cancel sets
+  `users.cancelled_at` and leaves project secret rows and these alike, so
+  the purge 30 days after a cancel that billing.md promises, when it is
+  built, deletes both tables' rows (not built here; it predates this
+  entry).
   `userDEK` reads both tables, so a user keeps one data key; `Rewrap`
   covers both. The ciphertext is bound to the user and the name under its
   own prefix (`repose-account-secret-v1`), so a row moved to another user,
@@ -20704,7 +20709,13 @@ vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
   MCP servers alone: a local-scope server is one repository's, and its
   tokens belong to that project. `run`'s Claude login check counts an
   account `CLAUDE_CODE_OAUTH_TOKEN`. A CLI talking to an api from before
-  this entry treats a 404 from `/me/secrets` as no account secrets.
+  this entry treats a 404 from `/me/secrets` as no account secrets. A
+  project's `secrets rm NAME` checks the account when it matters: a name
+  only the account has exits 1 with "PROJECT has no secret NAME of its
+  own; it gets your account's." and the `rm --global` line, and removing
+  a project's own that the account also has says the machine gets the
+  account's now. Both cases start from `secrets list` showing the name,
+  and without the line the user cannot see that the variable stays.
 - *Fork* copies the source's project rows (I-254) and nothing else: the
   copy belongs to the same account and gets its secrets as every project
   does.
@@ -20718,8 +20729,9 @@ vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
 project's Secrets page (account-secrets, 2026-10-13).** *Made during
 implementation*, with I-697.
 - *Settings, a "Secrets" section after machine.nix* (`#secrets`): the
-  account's names and dates, Add (name and value, the same checks and
-  64 KB as a project's), and the project page's two-step Delete. Settings
+  account's names and dates, Add (name and value, typed or from Load from
+  file, the same checks and 64 KB as a project's), and the project page's
+  two-step Delete. Settings
   is where the account's machine.nix already lives, and a top-level
   "Secrets" in the dashboard's header would be a fourth place to look
   beside Projects, Billing and Settings. A save toasts the projects whose

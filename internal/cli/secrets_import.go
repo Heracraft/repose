@@ -284,7 +284,7 @@ func newSecretsImportCmd(env func() (*Env, error), g *globalFlags) *cobra.Comman
 		},
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "list the names that would be set, and send nothing")
-	cmd.Flags().BoolVar(&opts.MCP, "mcp", false, "set the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config, for this project only")
+	cmd.Flags().BoolVar(&opts.MCP, "mcp", false, "set the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config")
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, "with --mcp, replace secrets the project already has without asking")
 	cmd.Flags().BoolVar(&opts.Global, "global", false, "set them on your account, for every project (with --mcp, from your user-scope servers)")
 	return cmd

@@ -82,3 +82,47 @@ test('an account secret name is checked before it is sent', async ({ page }) => 
 	await section.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(section.getByText(/\[A-Z\]\[A-Z0-9_\]/)).toBeVisible();
 });
+
+// The Settings form takes a file as the project page does (I-698): the
+// picked file's bytes are the value, and one over 64 KB is refused.
+test('Settings Load from file reads the value from the picked file', async ({ page }) => {
+	await page.goto('/settings#secrets');
+	const section = page.locator('#secrets');
+	await section.getByLabel('Name', { exact: true }).fill('gcp_sa_json');
+
+	const chooser = page.waitForEvent('filechooser');
+	await section.getByRole('button', { name: 'Load from file' }).click();
+	const bytes = Buffer.from('{"type":"service_account","k":"hunter2"}\n');
+	await (await chooser).setFiles({ name: 'sa.json', mimeType: 'application/json', buffer: bytes });
+	await expect(section.getByTestId('account-secret-file-name')).toHaveText('sa.json');
+	await expect(section.getByLabel('Value', { exact: true })).toBeDisabled();
+
+	const put = page.waitForRequest(
+		(r) => r.method() === 'PUT' && r.url().endsWith('/me/secrets/GCP_SA_JSON')
+	);
+	await section.getByRole('button', { name: 'Add', exact: true }).click();
+	const body = (await put).postDataJSON() as { value: string };
+	expect(body.value).toBe(bytes.toString('base64'));
+	await expect(
+		section.getByTestId('account-secrets').getByText('GCP_SA_JSON', { exact: true })
+	).toBeVisible();
+	await expect(section.getByTestId('account-secret-file-name')).toHaveCount(0);
+	expect(await page.content()).not.toContain('hunter2');
+
+	await section.getByLabel('Name', { exact: true }).fill('BIG_ACCOUNT_FILE');
+	await section.locator('input[type=file]').setInputFiles({
+		name: 'big.bin',
+		mimeType: 'application/octet-stream',
+		buffer: Buffer.alloc(64 * 1024 + 1, 7)
+	});
+	await section.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(section.getByText('Secret values are limited to 64 KB.')).toBeVisible();
+	await expect(section.getByText('BIG_ACCOUNT_FILE', { exact: true })).toHaveCount(0);
+
+	// Account secrets reach every project page; leave none for later specs.
+	const del = await fetch(`${apiURLFromEnv()}/me/secrets/GCP_SA_JSON`, {
+		method: 'DELETE',
+		headers: { Authorization: 'Bearer playwright' }
+	});
+	expect(del.ok).toBe(true);
+});

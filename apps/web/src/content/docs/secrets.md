@@ -49,7 +49,7 @@ repose secrets list
 repose secrets rm STRIPE_SECRET_KEY
 ```
 
-`list` shows names and dates, never values, and on a terminal it also lists your [account's secrets](#secrets-for-every-project) and the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. A secret belongs to one project; [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
+`list` shows names and dates, never values, and on a terminal it also lists your [account's secrets](#secrets-for-every-project) and the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
 The dashboard's project **Secrets** page does the same: type the value, or take it from a file with **Load from file**.
 

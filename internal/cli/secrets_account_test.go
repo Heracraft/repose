@@ -209,3 +209,57 @@ func TestSecretsGlobalOlderAPI(t *testing.T) {
 		t.Fatalf("a project's list beside an older api: %v %v", s, err)
 	}
 }
+
+// A project's `secrets rm` names the account's secret of the same name:
+// on a name only the account has, and when the project's own goes and
+// the account's takes its place.
+func TestSecretsRmProjectWithAccount(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out = out
+	if _, err := e.Client.PutAccountSecret(ctx, "COOLIFY_BASE_URL", []byte("https://c.example")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.PutAccountSecret(ctx, "STRIPE_KEY", []byte("account")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.PutSecret(ctx, p.ID, "STRIPE_KEY", []byte("own")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.PutSecret(ctx, p.ID, "ONLY_MINE", []byte("own")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SecretsRmCmd(ctx, e, "", "COOLIFY_BASE_URL")
+	want := "todo-app has no secret COOLIFY_BASE_URL of its own; it gets your account's.\n" +
+		"repose secrets rm --global COOLIFY_BASE_URL removes that from every project."
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGeneric || ee.msg != want {
+		t.Fatalf("account-only rm:\ngot  %v\nwant %q", err, want)
+	}
+	if err := SecretsRmCmd(ctx, e, "", "STRIPE_KEY"); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); got != "Removed STRIPE_KEY from todo-app; it gets your account's now.\n" {
+		t.Fatalf("own over account rm: %q", got)
+	}
+	out.buf.Reset()
+	if err := SecretsRmCmd(ctx, e, "", "ONLY_MINE"); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); got != "Removed ONLY_MINE from todo-app.\n" {
+		t.Fatalf("plain rm: %q", got)
+	}
+	err = SecretsRmCmd(ctx, e, "", "NOWHERE")
+	if ee, ok := err.(*exitError); !ok || ee.msg != "todo-app has no secret NOWHERE." {
+		t.Fatalf("missing rm: %v", err)
+	}
+	// An api from before I-697 answers 404 on /me/secrets: the plain lines.
+	fake.Fail("GET /me/secrets", "not_found")
+	err = SecretsRmCmd(ctx, e, "", "COOLIFY_BASE_URL")
+	if ee, ok := err.(*exitError); !ok || ee.msg != "todo-app has no secret COOLIFY_BASE_URL." {
+		t.Fatalf("older api rm: %v", err)
+	}
+}

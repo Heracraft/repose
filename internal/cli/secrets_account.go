@@ -141,6 +141,21 @@ func accountSecretsForList(ctx context.Context, e *Env) ([]SecretMeta, error) {
 	return s, nil
 }
 
+// accountHasSecret reports whether the account has a secret NAME; an
+// api from before I-697, or any error, counts as no.
+func accountHasSecret(ctx context.Context, e *Env, name string) bool {
+	secrets, err := e.Client.ListAccountSecrets(ctx)
+	if err != nil {
+		return false
+	}
+	for _, s := range secrets {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // accountSecretNamesForCompletion is the account's secret names for
 // `secrets rm --global` (two seconds at most, a shell is waiting).
 func accountSecretNamesForCompletion(env func() (*Env, error)) []string {

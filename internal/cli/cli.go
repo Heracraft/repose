@@ -1041,7 +1041,7 @@ repose browser bridge goes the other way: the agents use your Chrome.`,
 }
 
 func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's secrets",
+	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's or your account's secrets",
 		Long: "Set, list or remove a project's secrets. Agents on the machine see each one\n" +
 			"as an environment variable and as a file under /run/repose/secrets. Alone,\n" +
 			"list them.\n\n" +
@@ -1101,7 +1101,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	list := &cobra.Command{
 		Use:               "list [PROJECT]",
 		Aliases:           []string{"ls"},
-		Short:             "List a project's secret names",
+		Short:             "List a project's or your account's secret names",
 		Long:              "List the project's secret names and dates, never values. On a terminal the\naccount's secrets, which the project gets too, follow. With --global, list the\naccount's alone.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
@@ -1132,7 +1132,7 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:        "rm NAME",
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete", "unset"},
-		Short:      "Remove a secret from a project",
+		Short:      "Remove a secret from a project or your account",
 		Long:       "Remove NAME from the project, or with --global from your account. A running\nmachine loses it within seconds.",
 		Args:       argsN(1, 1, "one NAME"),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

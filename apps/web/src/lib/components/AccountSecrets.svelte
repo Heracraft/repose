@@ -20,6 +20,9 @@
 	let loadError = $state<string | undefined>(undefined);
 	let name = $state('');
 	let value = $state('');
+	let fileInput = $state<HTMLInputElement | undefined>(undefined);
+	// The file Load from file picked; while one is picked it is the value.
+	let file = $state<File | undefined>(undefined);
 	let nameError = $state<string | undefined>(undefined);
 	let valueError = $state<string | undefined>(undefined);
 	let saving = $state(false);
@@ -45,15 +48,31 @@
 		return undefined;
 	}
 
+	function pickFile() {
+		file = fileInput?.files?.[0];
+		valueError = undefined;
+	}
+
+	function clearFile() {
+		file = undefined;
+		if (fileInput) fileInput.value = '';
+		valueError = undefined;
+	}
+
+	function bytes(n: number): string {
+		return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+	}
+
 	async function onAdd() {
 		name = name.trim().toUpperCase();
 		nameError = validateName(name);
-		valueError =
-			new Blob([value]).size > MAX_BYTES ? 'Secret values are limited to 64 KB.' : undefined;
+		const size = file ? file.size : new Blob([value]).size;
+		valueError = size > MAX_BYTES ? 'Secret values are limited to 64 KB.' : undefined;
 		if (nameError || valueError) return;
+		const base64 = file ? encodeBase64(await file.arrayBuffer()) : encodeBase64(value);
 		saving = true;
 		try {
-			const res = await putAccountSecret(name, encodeBase64(value));
+			const res = await putAccountSecret(name, base64);
 			const own = res?.overridden_by ?? [];
 			// The projects that keep their own would otherwise read as
 			// having this value.
@@ -64,6 +83,7 @@
 			});
 			name = '';
 			value = '';
+			clearFile();
 			await load();
 		} catch (err) {
 			toastApiError(err, 'Could not store the secret.');
@@ -212,14 +232,38 @@
 					<textarea
 						id="account-secret-value"
 						rows="2"
-						class="field mt-1.5 block min-h-0 w-full resize-y font-mono"
+						class="field mt-1.5 block min-h-0 w-full resize-y font-mono disabled:cursor-not-allowed disabled:opacity-60"
 						autocomplete="off"
 						spellcheck="false"
+						disabled={!!file}
 						bind:value
 						aria-invalid={valueError ? 'true' : undefined}
 						aria-describedby={valueError ? 'account-secret-value-error' : undefined}
 						oninput={() => (valueError = undefined)}
 					></textarea>
+					<label for="account-secret-file" class="sr-only">Value from a file</label>
+					<input
+						id="account-secret-file"
+						type="file"
+						tabindex="-1"
+						class="sr-only"
+						bind:this={fileInput}
+						onchange={pickFile}
+					/>
+					<div class="mt-2 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1">
+						{#if file}
+							<span
+								class="min-w-0 font-mono text-compact break-all text-ink"
+								data-testid="account-secret-file-name">{file.name}</span
+							>
+							<span class="text-xs text-ink-muted tabular-nums">{bytes(file.size)}</span>
+							<button type="button" class="btn-ghost -ml-1" onclick={clearFile}>Clear</button>
+						{:else}
+							<button type="button" class="btn-ghost -ml-2" onclick={() => fileInput?.click()}
+								>Load from file</button
+							>
+						{/if}
+					</div>
 					{#if valueError}<p id="account-secret-value-error" class="field-error">
 							{valueError}
 						</p>{/if}

@@ -146,9 +146,20 @@ func SecretsRmCmd(ctx context.Context, e *Env, projectArg, name string) error {
 		// the line reads as `mcp rm`'s (I-633).
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && (apiErr.Code == "not_found" || apiErr.Status == 404) {
+			// A name from the account's block of `secrets list` still
+			// reaches the machine; say whose it is (I-697).
+			if accountHasSecret(ctx, e, name) {
+				return exitf(ExitGeneric, "%s has no secret %s of its own; it gets your account's.\nrepose secrets rm --global %s removes that from every project.", project.Slug, name, name)
+			}
 			return exitf(ExitGeneric, "%s has no secret %s.", project.Slug, name)
 		}
 		return err
+	}
+	// The account's value of the same name takes the project's place on
+	// the machine (I-697); without this line the variable looks gone.
+	if accountHasSecret(ctx, e, name) {
+		_, _ = fmt.Fprintf(e.Out, "Removed %s from %s; it gets your account's now.\n", name, project.Slug)
+		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "Removed %s from %s.\n", name, project.Slug)
 	return nil
