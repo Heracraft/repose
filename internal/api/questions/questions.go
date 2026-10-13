@@ -36,6 +36,27 @@ const (
 	StateNoChannel = "no_channel"
 )
 
+// Reasons a guest gives for a close (DECISIONS I-690), and the
+// answered_via values two of them store.
+const (
+	ReasonTerminal    = "terminal"
+	ReasonWithdrawn   = "withdrawn"
+	ReasonInterrupted = "interrupted"
+	ReasonAskerGone   = "asker_gone"
+	ViaTerminal       = "terminal"
+	ViaAgent          = "agent"
+)
+
+// reasonLabel is a close reason for a log line: one of the fixed set, or
+// "other".
+func reasonLabel(r string) string {
+	switch r {
+	case ReasonTerminal, ReasonWithdrawn, ReasonInterrupted, ReasonAskerGone, "":
+		return r
+	}
+	return "other"
+}
+
 // Limits, matching the guest's (internal/guestd/questions).
 const (
 	TextCap    = 1 << 10
@@ -134,9 +155,21 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		if st != StateCancelled && st != StateExpired {
 			return nil
 		}
-		tag, err := s.pool.Exec(ctx, "update questions set state = $2, delivered_at = now(), delivery = 'guest' where id = $1 and project_id = $3 and state = 'pending'", id, st, p.ID)
+		// The guest says why it closed (DECISIONS I-690): the owner
+		// answered the agent in the terminal, or the agent withdrew it.
+		// An older hostd drops the reason, and the close stays a cancel.
+		var via any
+		var answeredAt any
+		switch q.GetReason() {
+		case ReasonTerminal:
+			st, via, answeredAt = StateAnswered, ViaTerminal, s.Now()
+		case ReasonWithdrawn:
+			via, answeredAt = ViaAgent, s.Now()
+		}
+		tag, err := s.pool.Exec(ctx, `update questions set state = $2, answered_via = coalesce($4, answered_via), answered_at = coalesce($5, answered_at), delivered_at = now(), delivery = 'guest'
+			where id = $1 and project_id = $3 and state = 'pending'`, id, st, p.ID, via, answeredAt)
 		if err == nil && tag.RowsAffected() > 0 {
-			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st)
+			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st, "reason", reasonLabel(q.GetReason()))
 		}
 		return err
 	}
@@ -175,14 +208,13 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		if ts.IsZero() || ts.Sub(now).Abs() > 5*time.Minute {
 			ts = now
 		}
-		var channels int
-		if err := s.pool.QueryRow(ctx, `select (case when u.notify_email and coalesce(u.email,'') <> '' then 1 else 0 end) + (case when coalesce(u.ntfy_url,'') <> '' then 1 else 0 end)
-			from users u where u.id = $1`, p.UserID).Scan(&channels); err != nil {
+		channels, err := events.Channels(ctx, s.pool, p.UserID)
+		if err != nil {
 			return err
 		}
 		state := StatePending
 		var nextAt any
-		if channels == 0 {
+		if len(channels) == 0 {
 			// Nobody would hear it: the ask fails at once with its own
 			// exit code instead of waiting out the timeout.
 			state, nextAt = StateNoChannel, now
@@ -517,6 +549,9 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 func Describe(q *Question) string {
 	switch q.State {
 	case StateAnswered:
+		if q.AnsweredVia != nil && *q.AnsweredVia == ViaTerminal {
+			return "answered in the terminal"
+		}
 		if q.Answer != nil {
 			return fmt.Sprintf("already answered: %s", *q.Answer)
 		}
@@ -524,6 +559,9 @@ func Describe(q *Question) string {
 	case StateExpired:
 		return "this question has expired"
 	case StateCancelled:
+		if q.AnsweredVia != nil && *q.AnsweredVia == ViaAgent {
+			return "withdrawn by the agent"
+		}
 		return "this question was cancelled"
 	case StateNoChannel:
 		return "this question was closed"

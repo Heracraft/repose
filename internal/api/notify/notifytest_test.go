@@ -50,3 +50,19 @@ func TestOutboxTestSaysWhyNtfyFailed(t *testing.T) {
 		t.Errorf("email is off and still reported: %v", got)
 	}
 }
+
+// TestOutboxTestIsItsOwnKind: the test message is titled "repose: test",
+// not as an agent's finished turn (DECISIONS I-691).
+func TestOutboxTestIsItsOwnKind(t *testing.T) {
+	var got notify.Message
+	o := notify.New(nil, map[string]notify.Sender{"ntfy": notify.SenderFunc(func(_ context.Context, m notify.Message) error { got = m; return nil })}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	url := "https://ntfy.example/t"
+	o.Test(context.Background(), &store.User{NtfyURL: &url})
+	if got.Kind != notify.TestKind || notify.Title(got) != "repose: test" {
+		t.Fatalf("kind %q title %q", got.Kind, notify.Title(got))
+	}
+	r, err := notify.Render(got)
+	if err != nil || r.Subject != "repose: test" {
+		t.Fatalf("render %v %q", err, r.Subject)
+	}
+}

@@ -1965,14 +1965,16 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 
 func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *cobra.Command {
 	var question string
+	var dismiss bool
 	cmd := &cobra.Command{
 		Use:   "reply [PROJECT] [--] [ANSWER...]",
 		Short: "Answer a question an agent asked with repose-ask",
 		Long: "Answer a waiting question. A first word that names one of your projects is\n" +
 			"PROJECT; otherwise every word is the answer, which works while one question is\n" +
 			"waiting. Put -- before an answer that starts with a project's name. With no\n" +
-			"answer, ask for one. When the question has options, the answer is one of them.",
-		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine",
+			"answer, ask for one. When the question has options, the answer is one of them.\n" +
+			"--dismiss [PROJECT] cancels the question without an answer.",
+		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine\n  repose reply --dismiss todo-app",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := envJSON(cmd)
 			if err != nil {
@@ -1992,10 +1994,14 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 			case dash > 1:
 				return cobraUsageError{fmt.Errorf("only PROJECT goes before --: repose reply [PROJECT] -- ANSWER")}
 			}
+			if dismiss {
+				return DismissCmd(cmd.Context(), e, args, project, question)
+			}
 			return replyCmd(cmd.Context(), e, args, project, question, os.Stdin, canPrompt(os.Stdin), mayName)
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
+	cmd.Flags().BoolVar(&dismiss, "dismiss", false, "cancel the question without an answer; its repose-ask exits 5")
 	cmd.Flags().StringVar(&question, "question", "", "the question's `ID`, or its last characters, as questions shows it")
 	_ = cmd.RegisterFlagCompletionFunc("question", completeQuestionID(func() (*Env, error) { return envJSON(cmd) }))
 	return cmd

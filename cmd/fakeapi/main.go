@@ -65,6 +65,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
 //	POST /question   {"project_id","agent","text","options","timeout_s"} -> f.AddQuestion
+//	POST /question/close {"question_id","state","reason"} -> f.CloseQuestion: the guest closes it;
+//	                 reason terminal answers it in the terminal, withdrawn withdraws it (I-690)
 //	POST /events     {"project_id","count","kinds","agents","windows","summaries","spacing_minutes"}: count events
 //	                 spacing_minutes apart (default 1) ending now, oldest first. kinds, agents, windows and
 //	                 summaries are cycled when given; by default every event is an agent_message with no
@@ -146,6 +148,24 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			return
 		}
 		q, err := f.AddQuestion(body.ProjectID, body.Agent, body.Text, body.Options, time.Duration(body.TimeoutS)*time.Second)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(q)
+	})
+	mux.HandleFunc("POST /question/close", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			QuestionID string `json:"question_id"`
+			State      string `json:"state"`
+			Reason     string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		q, err := f.CloseQuestion(body.QuestionID, body.State, body.Reason)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/store"
@@ -89,7 +90,7 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 				if _, err := s.d.Pool.Exec(r.Context(), "update users set ntfy_url = null where id = $1", u.ID); err != nil {
 					return err
 				}
-				if _, err := s.d.Pool.Exec(r.Context(), "delete from events_outbox where channel = 'ntfy' and event_id in (select e.id from events e join projects p on p.id = e.project_id where p.user_id = $1)", u.ID); err != nil {
+				if err := events.DropQueued(r.Context(), s.d.Pool, u.ID, "ntfy"); err != nil {
 					return err
 				}
 			} else {
@@ -116,7 +117,7 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if !*body.Notify.Email {
-				if _, err := s.d.Pool.Exec(r.Context(), "delete from events_outbox where channel = 'email' and event_id in (select e.id from events e join projects p on p.id = e.project_id where p.user_id = $1)", u.ID); err != nil {
+				if err := events.DropQueued(r.Context(), s.d.Pool, u.ID, "email"); err != nil {
 					return err
 				}
 			}

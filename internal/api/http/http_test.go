@@ -26,6 +26,7 @@ import (
 	"github.com/heracraft/repose/internal/api/apitest"
 	"github.com/heracraft/repose/internal/api/auth"
 	"github.com/heracraft/repose/internal/api/config"
+	"github.com/heracraft/repose/internal/api/events"
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
@@ -401,6 +402,58 @@ func TestNotifyTestRoute(t *testing.T) {
 	r = e.do(t, tok, "POST", "/me/notify-test", nil)
 	if _, ok := r.body["email"]; ok {
 		t.Fatalf("email attempted after being disabled: %v", r.body)
+	}
+	// Six tests a minute, then 429 in the house error shape (I-691).
+	for i := 3; i < httpapi.NotifyTestRate; i++ {
+		if r := e.do(t, tok, "POST", "/me/notify-test", nil); r.status != 200 {
+			t.Fatalf("test %d: %d %s", i+1, r.status, r.raw)
+		}
+	}
+	r = e.do(t, tok, "POST", "/me/notify-test", nil)
+	errBody, _ := r.body["error"].(map[string]any)
+	if r.status != 429 || errBody["code"] != "rate_limited" || r.hdr.Get("Retry-After") == "" {
+		t.Fatalf("seventh test in a minute: %d %s", r.status, r.raw)
+	}
+}
+
+// TestChannelOffDropsQueuedNotices: turning a channel off deletes its
+// queued user notices as well as project events, and leaves account mail,
+// which ignores the notify settings (DECISIONS I-691).
+func TestChannelOffDropsQueuedNotices(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-ned", "ned")
+	ctx := e.h.Ctx
+	var uid uuid.UUID
+	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-ned'").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "PATCH", "/me", map[string]any{"notify": map[string]any{"ntfy_url": "https://ntfy.example/topic"}}); r.status != 200 {
+		t.Fatalf("set ntfy: %d %s", r.status, r.raw)
+	}
+	notice, err := events.InsertUserNotice(ctx, e.h.Pool, uid, time.Now(), "machines_restarted", "back")
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := events.InsertAccount(ctx, e.h.Pool, uid, time.Now(), "plan_changed", map[string]any{"to_plan": "pro"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func(id uuid.UUID, ch string) int {
+		var n int
+		_ = e.h.Pool.QueryRow(ctx, "select count(*) from events_outbox where event_id = $1 and channel = $2", id, ch).Scan(&n)
+		return n
+	}
+	if count(notice, "ntfy") != 1 || count(notice, "email") != 1 || count(account, "email") != 1 {
+		t.Fatal("rows not queued")
+	}
+	if r := e.do(t, tok, "PATCH", "/me", map[string]any{"notify": map[string]any{"ntfy_url": nil, "email": false}}); r.status != 200 {
+		t.Fatalf("channels off: %d %s", r.status, r.raw)
+	}
+	if count(notice, "ntfy") != 0 || count(notice, "email") != 0 {
+		t.Fatal("a queued user notice outlived its channel")
+	}
+	if count(account, "email") != 1 {
+		t.Fatal("account mail was dropped with the notify setting")
 	}
 }
 

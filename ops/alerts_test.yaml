@@ -623,6 +623,61 @@ tests:
         alertname: EgressBlocked
         exp_alerts: []
 
+  # --- NotifyFailing ------------------------------------------------------
+  - interval: 1m
+    name: NotifyFailing fires on failed sends that keep coming and ignores retries
+    input_series:
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="email",result="failed"}'
+        values: "0 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25"
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="ntfy",result="retry"}'
+        values: "0+5x26"
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x26"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NotifyFailing
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: NotifyFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "notifications are failing or not being sent"
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (10). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+
+  - interval: 1m
+    name: NotifyFailing ignores one user's ntfy server failing
+    input_series:
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="ntfy",result="failed"}'
+        values: "0+1x26"
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x26"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NotifyFailing
+        exp_alerts: []
+
+  - interval: 1m
+    name: NotifyFailing fires on a due row nobody sends
+    input_series:
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0 60 120 180 240 300 360 420 480 540 600 660 720 780 840 900 960 1020"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NotifyFailing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: NotifyFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "notifications are failing or not being sent"
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (960). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+
   # --- SamplesFailing -----------------------------------------------------
   - interval: 1m
     name: SamplesFailing fires on a guest sample stored with host fields only

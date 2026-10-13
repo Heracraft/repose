@@ -95,7 +95,7 @@ events       (id pk, project_id fk null, user_id fk null,  -- one of them is set
               ts timestamptz, ts_second bigint, kind text, agent text null,
               tmux_window text null, summary text, source text,  -- host|http|api
               skew_seconds int null, host_event_id text unique,
-              delivered jsonb)  -- {email: ts|"error: ..."|"failed: ...", ntfy: ...}
+              delivered jsonb)  -- {email: ts|"held"|"dropped: resolved"|"error: <why>"|"failed: <why>", ntfy: ...}; <why> is a few words, never a URL (I-689, I-691)
               -- unique (project_id, agent, kind, ts_second) for kinds completed|needs_input|error
 
 events_outbox (event_id fk, channel text, attempts int, next_at, last_error text,
@@ -169,7 +169,7 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
               project_id fk, guest_id uuid, event_id uuid,  -- the agent_question event that notified the owner
               agent text, tmux_window text null, text text, options text[],  -- 0..3
               state text,          -- pending|answered|cancelled|expired|no_channel
-              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email
+              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email|terminal|agent (I-690)
               expires_at, answered_at null,
               delivered_at null, delivery text null,  -- ok|gone|given_up|guest: the close reached the guest, or why not
               deliver_command_id uuid null, deliver_attempts int, deliver_next_at null)

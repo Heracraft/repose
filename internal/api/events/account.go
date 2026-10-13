@@ -109,18 +109,12 @@ func InsertUserNotice(ctx context.Context, q store.Querier, userID uuid.UUID, ts
 		id, userID, ts, ts.Unix(), kind, store.CleanText(summary, MaxNoticeSummary)); err != nil {
 		return uuid.Nil, err
 	}
-	var notifyEmail bool
-	var email, ntfy *string
-	if err := q.QueryRow(ctx, "select notify_email, email, ntfy_url from users where id = $1", userID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+	channels, err := Channels(ctx, q, userID)
+	if err != nil {
 		return uuid.Nil, err
 	}
-	if notifyEmail && email != nil && *email != "" {
-		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'email')", id); err != nil {
-			return uuid.Nil, err
-		}
-	}
-	if ntfy != nil && *ntfy != "" {
-		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'ntfy')", id); err != nil {
+	for _, ch := range channels {
+		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", id, ch); err != nil {
 			return uuid.Nil, err
 		}
 	}

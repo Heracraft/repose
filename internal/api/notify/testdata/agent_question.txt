@@ -1,4 +1,5 @@
 todo-app: claude asks
+claude · main · asked 28 Sep 18:00 UTC · open until 18:30 UTC
 
 Drop the legacy sessions table? It has 3 rows, all from 2024.
 
@@ -6,12 +7,12 @@ Answer with one click
   yes: https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=email
   no: https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=email
 
-Answer on the dashboard: https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1
+Open todo-app: https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1
 
-or from your laptop: repose reply todo-app
+Or from your laptop: repose reply todo-app
 
-The question expires at 2026-09-28 18:30 UTC. The first answer wins.
+The first answer wins.
 
 --
 repose. Open the dashboard: https://repose.herakraft.co
-You get these because an agent on your machine reported something. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+You get these because an agent on your machine asked you something. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

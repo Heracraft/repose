@@ -127,7 +127,7 @@ func TestEmailQuestionHasReplyLinks(t *testing.T) {
 		t.Fatalf("subject %q", subject)
 	}
 	for _, want := range []string{"Drop the legacy table?", "yes: https://api/v1/questions/reply?token=a&via=email", "no: https://api/v1/questions/reply?token=b&via=email",
-		"https://dash/projects/" + pid.String(), "repose reply todo-app", "2026-09-24 18:30 UTC"} {
+		"https://dash/projects/" + pid.String(), "repose reply todo-app", "open until 24 Sep 18:30 UTC"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body lacks %q:\n%s", want, body)
 		}
