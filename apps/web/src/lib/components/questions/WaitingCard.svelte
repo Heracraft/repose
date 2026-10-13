@@ -46,6 +46,12 @@
 
 	/** Questions that closed while on screen, kept as their one line for 8 seconds. */
 	const closed = new SvelteMap<string, Question>();
+	/**
+	 * Questions that left the open list without this card closing them,
+	 * kept as they were while the card asks the api how they closed, so the
+	 * row holds its place (and its focus) until its closing line replaces it.
+	 */
+	const leaving = new SvelteMap<string, Question>();
 	/** Folded windows the reader opened, by their newest question's id. */
 	const unfolded = new SvelteSet<string>();
 	let showAll = $state(false);
@@ -55,7 +61,8 @@
 	let section = $state<HTMLElement | undefined>(undefined);
 	let heading = $state<HTMLElement | undefined>(undefined);
 
-	let open = $derived(questions.filter((q) => !closed.has(q.id)));
+	let waiting = $derived(questions.filter((q) => !closed.has(q.id)));
+	let open = $derived([...waiting, ...[...leaving.values()].filter((q) => !closed.has(q.id))]);
 	let groups = $derived(layoutQuestions([...open, ...closed.values()]));
 	let grouped = $derived(!projectId && groups.length > 1);
 	let total = $derived(groups.reduce((n, g) => n + g.rows.length, 0));
@@ -105,26 +112,40 @@
 	}
 
 	// A question that leaves the open list without this card closing it was
-	// closed somewhere else: ask how, once, and show that line.
-	let known = new Set<string>();
-	$effect(() => {
-		const ids = questions.map((q) => q.id);
+	// closed somewhere else: hold its row, ask how once, and show that line.
+	// A pre effect runs before the DOM would drop the row, so it never does.
+	let known = new Map<string, Question>();
+	$effect.pre(() => {
+		const now = new Map(questions.map((q) => [q.id, q]));
 		untrack(() => {
-			const now = new Set(ids);
-			const gone = [...known].filter((id) => !now.has(id) && !closed.has(id));
+			const gone = [...known.values()].filter((q) => !now.has(q.id) && !closed.has(q.id));
+			for (const id of now.keys()) leaving.delete(id);
 			known = now;
-			if (gone.length) void lookUp(gone);
+			if (!gone.length) return;
+			for (const q of gone) leaving.set(q.id, q);
+			void lookUp(gone.map((q) => q.id));
 		});
 	});
 
+	const holdsFocus = (id: string) =>
+		!!section?.querySelector(`[data-qid="${id}"]`)?.contains(document.activeElement);
+
 	async function lookUp(ids: string[]) {
+		let all: Question[] = [];
 		try {
-			const all = projectId
+			all = projectId
 				? await listProjectQuestions(projectId, false, { passive: true })
 				: await listQuestions('all', { passive: true });
-			for (const q of all) if (ids.includes(q.id)) close(q);
 		} catch {
-			// The row has gone already; the line is a courtesy.
+			// The line is a courtesy; without it the row just goes.
+		}
+		for (const id of ids) {
+			if (!leaving.has(id)) continue;
+			// The row is still drawn, so whether it holds focus is current.
+			void passFocus(id, holdsFocus(id));
+			const q = all.find((c) => c.id === id);
+			if (q) close(q);
+			leaving.delete(id);
 		}
 	}
 
@@ -146,9 +167,7 @@
 
 	async function act(q: Question, answer?: string) {
 		// Read before the row's controls are disabled, which drops focus.
-		const hadFocus = !!section
-			?.querySelector(`[data-qid="${q.id}"]`)
-			?.contains(document.activeElement);
+		const hadFocus = holdsFocus(q.id);
 		busy = q.id;
 		notes = { ...notes, [q.id]: '' };
 		try {
@@ -221,10 +240,10 @@
 			<h2 id="questions-title" class="text-xl font-semibold" tabindex="-1" bind:this={heading}>
 				Waiting on you
 			</h2>
-			{#if open.length > 0}
+			{#if waiting.length > 0}
 				<span
 					class="badge badge--warn tabular-nums"
-					aria-label="{open.length} {plural(open.length)}">{open.length}</span
+					aria-label="{waiting.length} {plural(waiting.length)}">{waiting.length}</span
 				>
 			{/if}
 		</div>
@@ -258,8 +277,9 @@
 										<span
 											>{r.folded.length} earlier {plural(r.folded.length)} from
 											<span class="font-mono text-compact">{r.question.agent}</span
-											>{#if r.question.window && r.question.window !== r.question.agent}&nbsp;·
-												{r.question.window}{/if}</span
+											>{#if r.question.window && r.question.window !== r.question.agent}<span
+													class="waiting-fold-window">&nbsp;· {r.question.window}</span
+												>{/if}</span
 										>
 										<button
 											type="button"
@@ -283,6 +303,12 @@
 {/if}
 
 <style>
+	/* A phone drops the window from the row's meta line, so the fold does too. */
+	@media (width < 40rem) {
+		.waiting-fold-window {
+			display: none;
+		}
+	}
 	/* Rows split by hairlines; no rule down the side (I-693). */
 	.waiting :global(.qrow + .qrow),
 	.waiting :global(.qrow + .waiting-fold),

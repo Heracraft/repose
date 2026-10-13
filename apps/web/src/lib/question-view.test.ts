@@ -58,8 +58,16 @@ describe('closedLine', () => {
 			'Dismissed'
 		);
 		expect(closedLine(q({ id: 'a', state: 'cancelled', answered_via: 'cli' })).text).toBe(
-			'Dismissed from the CLI'
+			'Dismissed'
 		);
+	});
+	it('does not say you dismissed a question the api closed with no source', () => {
+		// asker_gone, interrupted, a machine stop and an older hostd's
+		// reasonless close are stored as cancelled with answered_via null.
+		expect(closedLine(q({ id: 'a', state: 'cancelled', answered_via: null })).text).toBe(
+			'The agent stopped waiting'
+		);
+		expect(closedLine(q({ id: 'a', state: 'cancelled' })).text).toBe('The agent stopped waiting');
 		expect(closedLine(q({ id: 'a', state: 'expired' }))).toEqual({
 			text: 'Expired',
 			tone: 'closed'
@@ -93,6 +101,13 @@ describe('askedLine and expiryLine', () => {
 });
 
 describe('layoutQuestions', () => {
+	it('keeps one order for questions asked in the same millisecond, whatever order they come in', () => {
+		const at = ago(5);
+		const a = q({ id: 'q-a', agent: 'claude', created_at: at });
+		const b = q({ id: 'q-b', agent: 'codex', created_at: at });
+		const ids = (qs: Question[]) => layoutQuestions(qs)[0].rows.map((r) => r.question.id);
+		expect(ids([a, b])).toEqual(ids([b, a]));
+	});
 	it('puts the newest first and folds older ones from the same agent window', () => {
 		const groups = layoutQuestions([
 			q({ id: 'old', created_at: ago(40) }),

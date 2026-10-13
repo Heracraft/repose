@@ -218,7 +218,9 @@ Dashboard and CLI:
   page under its status line. Both answer in place. A question that closes
   while on screen, wherever it was answered, stays 8 seconds as one line
   naming the answer and where it came from (`answered_via`), then leaves
-  (I-693).
+  (I-693). A cancel reads "Dismissed" only with `answered_via` dashboard,
+  "Withdrawn by the agent" with `agent`, and "The agent stopped waiting"
+  with none (`asker_gone`, `interrupted`, a machine stop).
 - The dashboard project page's Events card shows the event stream, newest
   first, with the agent and the summary. It answers the first half of "I
   got nothing": whether the event happened. It does not yet answer the

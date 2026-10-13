@@ -109,7 +109,7 @@ repose questions
 repose reply todo-app yes
 ```
 
-The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering, and `repose-ask` exits 5. When a question on screen is answered somewhere else, its row says where for a few seconds, for example `Answered yes by email`, before it goes.
+The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering. A question answered somewhere else while it is on screen shows where for 8 seconds, for example `Answered yes by email`, then goes.
 
 Tell your agent about the commands in its instructions, for example in `CLAUDE.md`: "When you need a decision from me, run `repose-ask` with the question and use its output as my answer."
 

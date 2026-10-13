@@ -143,6 +143,65 @@ test('a question answered in the terminal says so, then leaves', async ({ page }
 	await expect(page.getByTestId('questions')).toHaveCount(0);
 });
 
+test('a question the api closed with no source does not say you dismissed it', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'ask-gone-app',
+		remote_url: 'github.com/heracraft/ask-gone-app'
+	});
+	const q = await addQuestion(p.id, { agent: 'claude', text: 'Still there?' });
+	await page.clock.install();
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('questions');
+	await expect(card.getByTestId('question')).toHaveCount(1);
+	// asker_gone, interrupted and a machine stop are a plain cancel (I-690).
+	await closeQuestion(q.id, 'asker_gone');
+	await page.clock.runFor(10_500);
+	await expect(card.getByTestId('question')).toHaveText('The agent stopped waiting');
+});
+
+test('a row closed elsewhere holds its place and focus until its line arrives', async ({
+	page
+}) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'ask-hold-app',
+		remote_url: 'github.com/heracraft/ask-hold-app'
+	});
+	const q1 = await addQuestion(p.id, { agent: 'claude', text: 'Which port?' });
+	const q2 = await addQuestion(p.id, { agent: 'codex', text: 'Which branch?' });
+	await page.clock.install();
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('questions');
+	await expect(card.getByTestId('question')).toHaveCount(2);
+	const field = card.locator(`[data-qid="${q2.id}"] textarea`);
+	await field.fill('main');
+	await expect(field).toBeFocused();
+
+	// Hold the card's lookup of how the question closed.
+	let release!: () => void;
+	const held = new Promise<void>((r) => (release = r));
+	let asked = false;
+	await page.route(
+		(u) => u.pathname.endsWith(`/projects/${p.id}/questions`) && !u.search,
+		async (route) => {
+			asked = true;
+			await held;
+			await route.continue();
+		}
+	);
+	await closeQuestion(q2.id, 'terminal');
+	await page.clock.runFor(10_500);
+	await expect.poll(() => asked).toBe(true);
+	// Still drawn as it was, the draft and the focus with it.
+	await expect(card.getByTestId('question')).toHaveCount(2);
+	await expect(card.locator(`[data-qid="${q2.id}"]`)).toHaveAttribute('data-state', 'pending');
+	await expect(field).toHaveValue('main');
+	await expect(field).toBeFocused();
+
+	release();
+	await expect(card.locator(`[data-qid="${q2.id}"]`)).toHaveText('Answered in the terminal');
+	await expect(card.locator(`[data-qid="${q1.id}"] textarea`)).toBeFocused();
+});
+
 test('a long question is clamped with Show all; older ones from one window fold', async ({
 	page
 }) => {
@@ -177,6 +236,36 @@ test('a long question is clamped with Show all; older ones from one window fold'
 	await card.getByRole('button', { name: 'Show', exact: true }).click();
 	await expect(card.getByTestId('question')).toHaveCount(2);
 	await expect(card.getByTestId('question').nth(1)).toContainText('An older question?');
+});
+
+test('the fold names the window only where its row does', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'ask-fold-app',
+		remote_url: 'github.com/heracraft/ask-fold-app'
+	});
+	await addQuestion(p.id, { agent: 'claude', text: 'First?' });
+	await addQuestion(p.id, { agent: 'claude', text: 'Second?' });
+	// The fake names the window after the agent; give these one of their own.
+	await page.route(
+		(u) => u.pathname.endsWith(`/projects/${p.id}/questions`),
+		async (route) => {
+			const res = await route.fetch();
+			const body = await res.json();
+			for (const q of body.questions) q.window = 'shell';
+			await route.fulfill({ response: res, json: body });
+		}
+	);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('questions');
+	const row = card.getByTestId('question');
+	const fold = card.getByText(/earlier question from/);
+	await expect(row).toContainText('shell');
+	await expect(fold).toHaveText(/^1 earlier question from claude\s·\sshell$/);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(row.getByText('shell')).toBeHidden();
+	await expect(fold.getByText(/shell/)).toBeHidden();
 });
 
 test('the expiry shows only in its last 10 minutes, in its own words', async ({ page }) => {

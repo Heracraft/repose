@@ -45,8 +45,11 @@ export function closedLine(q: Question): ClosedLine {
 	}
 	if (q.state === 'cancelled') {
 		if (via === 'agent') return { text: 'Withdrawn by the agent', tone: 'closed' };
-		if (via === 'cli') return { text: 'Dismissed from the CLI', tone: 'closed' };
-		return { text: 'Dismissed', tone: 'closed' };
+		// The api's Cancel (the dashboard's Dismiss and `repose reply
+		// --dismiss`) stores dashboard; a close with no source (asker_gone,
+		// interrupted, a machine stop) is not the owner's doing.
+		if (via === 'dashboard' || via === 'cli') return { text: 'Dismissed', tone: 'closed' };
+		return { text: 'The agent stopped waiting', tone: 'closed' };
 	}
 	if (q.state === 'expired') return { text: 'Expired', tone: 'closed' };
 	return { text: 'Closed', tone: 'closed' };
@@ -89,7 +92,11 @@ const time = (iso: string) => new Date(iso).getTime();
  * row, in its place, while its line shows.
  */
 export function layoutQuestions(questions: Question[]): ProjectQuestions[] {
-	const sorted = [...questions].sort((a, b) => time(b.created_at) - time(a.created_at));
+	// Ties go by id, so a row held while it closes (WaitingCard) keeps its
+	// place, and its focus, when it reaches the layout in another order.
+	const sorted = [...questions].sort(
+		(a, b) => time(b.created_at) - time(a.created_at) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+	);
 	const groups = new Map<string, ProjectQuestions & { oldest: number }>();
 	const lead = new Map<string, QuestionRowLayout>();
 	for (const q of sorted) {

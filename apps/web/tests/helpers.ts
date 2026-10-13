@@ -129,14 +129,15 @@ export async function addQuestion(
 /** Closes a question from the guest's side (cmd/fakeapi POST /question/close, I-690). */
 export async function closeQuestion(
 	id: string,
-	reason: 'terminal' | 'withdrawn' | 'interrupted' | 'asker_gone'
+	reason: 'terminal' | 'withdrawn' | 'interrupted' | 'asker_gone' | '' = '',
+	state: 'cancelled' | 'expired' = 'cancelled'
 ): Promise<void> {
 	const adminURL = process.env.FAKEAPI_ADMIN_URL;
 	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');
 	const res = await fetch(`${adminURL}/question/close`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ id, reason })
+		body: JSON.stringify({ question_id: id, state, reason })
 	});
 	if (!res.ok) throw new Error(`/question/close: ${res.status} ${await res.text()}`);
 }

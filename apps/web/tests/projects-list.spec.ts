@@ -7,6 +7,7 @@ import {
 	createProject,
 	apiURLFromEnv,
 	addQuestion,
+	closeQuestion,
 	setBilling,
 	resetBilling,
 	setAgents
@@ -162,6 +163,29 @@ test('a pending question shows in Waiting on you and on its row, and is answered
 	await expect(row(page, p.name).getByText('question', { exact: true })).toHaveCount(0, {
 		timeout: 15_000
 	});
+});
+
+test('a question answered in the terminal says so on /projects, then leaves', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'asked-term-app',
+		remote_url: 'github.com/heracraft/asked-term-app'
+	});
+	const q = await addQuestion(p.id, { agent: 'claude', text: 'Which port?' });
+	await page.clock.install();
+	await page.goto('/projects');
+	const card = page.getByRole('region', { name: 'Waiting on you' });
+	await expect(card.getByTestId('question').first()).toBeVisible();
+	const all = card.getByRole('button', { name: /^Show all \d+$/ });
+	if (await all.isVisible()) await all.click();
+	const item = card.locator(`[data-qid="${q.id}"]`);
+	await expect(item).toContainText('Which port?');
+
+	await closeQuestion(q.id, 'terminal');
+	// The page's poll finds it gone; the card asks the account's full list how.
+	await page.clock.runFor(10_500);
+	await expect(item).toHaveText('Answered in the terminal');
+	await page.clock.runFor(8_500);
+	await expect(item).toHaveCount(0);
 });
 
 test('Waiting on you groups by project and shows 3 rows before Show all', async ({ page }) => {

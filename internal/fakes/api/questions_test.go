@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,40 +63,43 @@ func TestFakeQuestions(t *testing.T) {
 	}
 }
 
-// TestFakeQuestionGuestClose: a guest-side close with a reason (I-690)
-// lands as the api stores it: terminal is answered with no answer and
-// answered_via terminal, withdrawn is cancelled by the agent; a later
-// answer from the dashboard is a conflict that says so.
-func TestFakeQuestionGuestClose(t *testing.T) {
+// TestFakeGuestCloseAndGchatReply (DECISIONS I-690, I-692): a guest-side
+// close with reason terminal reads as answered in the terminal, withdrawn
+// as withdrawn by the agent, and a reply link with via=gchat answers via
+// gchat.
+func TestFakeGuestCloseAndGchatReply(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
 	p, err := f.CreateProject("todo-app", "large")
 	if err != nil {
 		t.Fatal(err)
 	}
-	q1, _ := f.AddQuestion(p.ID, "claude", "Which port?", nil, time.Hour)
-	q2, _ := f.AddQuestion(p.ID, "claude", "Ship?", []string{"yes", "no"}, time.Hour)
-	if err := f.CloseQuestion(q1.ID, "terminal"); err != nil {
+	q1, _ := f.AddQuestion(p.ID, "claude", "One?", []string{"yes", "no"}, time.Hour)
+	q2, _ := f.AddQuestion(p.ID, "claude", "Two?", nil, time.Hour)
+	q3, _ := f.AddQuestion(p.ID, "claude", "Three?", []string{"a", "b"}, time.Hour)
+	got, err := f.CloseQuestion(q1.ID, "", "terminal")
+	if err != nil || got.State != "answered" || got.Answer != nil || *got.AnsweredVia != "terminal" || got.AnsweredAt == nil {
+		t.Fatalf("terminal: %+v %v", got, err)
+	}
+	if got, err = f.CloseQuestion(q2.ID, "cancelled", "withdrawn"); err != nil || got.State != "cancelled" || *got.AnsweredVia != "agent" {
+		t.Fatalf("withdrawn: %+v %v", got, err)
+	}
+	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q1.ID+"/answer", tok, map[string]any{"answer": "yes"})
+	if r.status != 409 || !contains(string(r.body), "answered in the terminal") {
+		t.Fatalf("answer after a terminal close: %d %s", r.status, r.body)
+	}
+	r = call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q2.ID+"/cancel", tok, nil)
+	if r.status != 409 || !contains(string(r.body), "withdrawn by the agent") {
+		t.Fatalf("dismiss after a withdrawal: %d %s", r.status, r.body)
+	}
+	res, err := http.Post(f.URL()+"/v1/questions/reply?via=gchat&token="+ReplyToken(q3.ID, 0), "", nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.CloseQuestion(q2.ID, "withdrawn"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.CloseQuestion(q2.ID, "terminal"); err == nil {
-		t.Fatal("a closed question closed again")
-	}
-	if err := f.CloseQuestion(q1.ID, "bogus"); err == nil {
-		t.Fatal("an unknown reason accepted")
-	}
-	got := f.Questions()
-	if got[0].State != "answered" || got[0].Answer != nil || got[0].AnsweredVia == nil || *got[0].AnsweredVia != "terminal" {
-		t.Fatalf("terminal: %+v", got[0])
-	}
-	if got[1].State != "cancelled" || got[1].AnsweredVia == nil || *got[1].AnsweredVia != "agent" {
-		t.Fatalf("withdrawn: %+v", got[1])
-	}
-	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q1.ID+"/answer", tok, map[string]any{"answer": "4173"})
-	if r.status != 409 || r.errCode(t) != "conflict" {
-		t.Fatalf("answer after terminal: %d %s", r.status, r.body)
+	_ = res.Body.Close()
+	if q := f.Questions()[2]; res.StatusCode != 200 || *q.AnsweredVia != "gchat" {
+		t.Fatalf("gchat reply: %d %+v", res.StatusCode, q)
 	}
 }
+
+func contains(s, sub string) bool { return strings.Contains(s, sub) }

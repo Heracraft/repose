@@ -53,6 +53,43 @@ func (f *Fake) AddQuestion(projectID, agent, text string, options []string, time
 	return *q, nil
 }
 
+// CloseQuestion closes a pending question from the guest's side, as
+// guestd's close with a reason does (DECISIONS I-690): state is
+// cancelled (the default) or expired; reason terminal makes it answered
+// with no answer via terminal, withdrawn makes it cancelled via agent,
+// any other reason is a plain close. A question no longer pending is
+// left as it is.
+func (f *Fake) CloseQuestion(questionID, state, reason string) (Question, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, q := range f.questions {
+		if q.ID != questionID {
+			continue
+		}
+		if !f.pendingNow(q) {
+			return *q, nil
+		}
+		if state == "" {
+			state = "cancelled"
+		}
+		if state != "cancelled" && state != "expired" {
+			return Question{}, fmt.Errorf("state %q is not cancelled or expired", state)
+		}
+		now := f.now()
+		q.State = state
+		switch reason {
+		case "terminal":
+			via := "terminal"
+			q.State, q.AnsweredVia, q.AnsweredAt = "answered", &via, &now
+		case "withdrawn":
+			via := "agent"
+			q.AnsweredVia, q.AnsweredAt = &via, &now
+		}
+		return *q, nil
+	}
+	return Question{}, fmt.Errorf("question %s not found", questionID)
+}
+
 // Questions returns every question the fake holds, oldest first.
 func (f *Fake) Questions() []Question {
 	f.mu.Lock()
@@ -122,50 +159,23 @@ func (f *Fake) findQuestion(u *userRec, projectID, qid string) (*Question, *apiE
 	return nil, notFound("question")
 }
 
-// CloseQuestion closes a pending question from the guest's side, as
-// guestd's close with a reason reaches the api (DECISIONS I-690): terminal
-// is stored as answered with no answer and answered_via terminal;
-// withdrawn, interrupted and asker_gone as cancelled with answered_via
-// agent.
-func (f *Fake) CloseQuestion(id, reason string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var q *Question
-	for _, c := range f.questions {
-		if c.ID == id {
-			q = c
-		}
-	}
-	if q == nil {
-		return fmt.Errorf("question %s not found", id)
-	}
-	if !f.pendingNow(q) {
-		return fmt.Errorf("question %s is %s", id, q.State)
-	}
-	now := f.now()
-	switch reason {
-	case "terminal":
-		via := "terminal"
-		q.State, q.Answer, q.AnsweredVia, q.AnsweredAt = "answered", nil, &via, &now
-	case "withdrawn", "interrupted", "asker_gone":
-		via := "agent"
-		q.State, q.AnsweredVia, q.AnsweredAt = "cancelled", &via, &now
-	default:
-		return fmt.Errorf("unknown reason %q", reason)
-	}
-	return nil
-}
-
 func describe(q *Question) string {
+	via := ""
+	if q.AnsweredVia != nil {
+		via = *q.AnsweredVia
+	}
 	switch q.State {
 	case "answered":
-		if q.Answer == nil {
-			return "already answered in the terminal"
+		if via == "terminal" || q.Answer == nil {
+			return "answered in the terminal"
 		}
 		return "already answered: " + *q.Answer
 	case "expired":
 		return "this question has expired"
 	case "cancelled":
+		if via == "agent" {
+			return "withdrawn by the agent"
+		}
 		return "this question was cancelled"
 	}
 	return "this question was closed"
@@ -261,7 +271,7 @@ func (f *Fake) replyQuestion(w http.ResponseWriter, r *http.Request) *apiError {
 		return nil
 	}
 	via := r.FormValue("via")
-	if via != "email" {
+	if via != "email" && via != "gchat" {
 		via = "ntfy"
 	}
 	if e := f.answer(q, q.Options[opt], via); e != nil {
