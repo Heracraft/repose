@@ -219,3 +219,22 @@ func (f *Fake) OpKinds(projectID string) []string {
 	}
 	return kinds
 }
+
+// OnGet runs fn after each GET of the project is answered, so a test
+// changes the fake once a command has read a state (or printed a line)
+// rather than on a timer it can lose to under load. fn runs under the
+// fake's lock with the project itself: it changes fields directly and
+// calls no other method of f. fn returning true removes it, as does a
+// nil fn.
+func (f *Fake) OnGet(projectID string, fn func(p *Project) (done bool)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if fn == nil {
+		delete(f.onGet, projectID)
+		return
+	}
+	if f.onGet == nil {
+		f.onGet = map[string]func(*Project) bool{}
+	}
+	f.onGet[projectID] = fn
+}

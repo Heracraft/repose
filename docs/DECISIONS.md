@@ -20702,8 +20702,12 @@ asked for is the rule, so this entry pins it and closes what was left.
   public docs promised the wait for all five, and an "already running"
   at once, before a connection that cannot answer, is the two-step
   answer this entry removes. Not covered: the first 90 s of a restart,
-  before the api marks the server, which reach the ssh wait as before;
-  lifecycle.md says so. Rejected for now: re-reading the project when
+  before the api marks the server. A connection to a machine that was
+  running reaches the ssh wait as before and `start` says it is
+  running; lifecycle.md says so. A start of a stopped machine is
+  accepted then (the api refuses only a host already marked
+  unreachable) and waits on its op until the host answers or the
+  op's grace ends. Rejected for now: re-reading the project when
   that ssh wait fails, since the 15 s wait ends long before the api's
   90 s mark.
 - A wait that leaves the machine running (a restore op that booted it,

@@ -135,6 +135,9 @@ type Fake struct {
 	// herdrMinBase is the first base with herdr; empty refuses herdr
 	// (SetHerdrMinBase, I-502).
 	herdrMinBase string
+	// onGet runs after each GET /v1/projects/{id} of a project is
+	// answered (OnGet).
+	onGet map[string]func(*Project) bool
 }
 
 type failRule struct {

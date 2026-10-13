@@ -79,7 +79,7 @@ todo-app: running again; its last agent turn was interrupted.
 
 A machine that wasn't started gets `not started:`, the reason, and `repose start NAME`. Machines you stopped or removed meanwhile aren't listed. A machine still waiting 10 minutes after the server came back is listed as `waiting to start`, and there is no second notification when it does. `repose events` shows `server restarted` on each machine that stopped.
 
-`repose start api` starts one that wasn't started. About 90 seconds after the server stops answering, repose marks it as down. From then on, `repose run`, `attach`, `start`, `ssh` and `code` wait for it with `Waiting for api's server to come back`, then go on: a machine that was running is there as it was, and a stopped one starts. In the first 90 seconds they fail with `did not answer ssh`; run the command again. After 10 minutes they exit 5 with ``api's server has not answered for 10m. `repose status api` shows when it is back.``
+`repose start api` starts one that wasn't started. About 90 seconds after the server stops answering, repose marks it as down. From then on, `repose run`, `attach`, `start`, `ssh` and `code` wait for it with `Waiting for api's server to come back`, then go on: a machine that was running is there as it was, and a stopped one starts. In the first 90 seconds, on a machine that was running, a connection fails with `did not answer ssh` and `start` says it is running; run the command again. After 10 minutes they exit 5 with ``api's server has not answered for 10m. `repose status api` shows when it is back.``
 
 ## Unused machines
 
