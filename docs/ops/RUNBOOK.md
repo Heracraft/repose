@@ -637,8 +637,9 @@ Notifications are not reaching users (DECISIONS I-691): email sends kept
 failing for good (`repose_api_notify_total{result="failed",channel="email"}`)
 for 10 minutes, or a due outbox row has waited more than 5 minutes for the
 worker (`repose_api_outbox_lag_seconds`, which leaves out held rows and
-retries waiting out their backoff). ntfy failures do not page: they are
-the user's own server.
+retries waiting out their backoff). ntfy and Google Chat failures do not
+page: the topic and the webhook are the user's own, and a refused Chat
+webhook marks the channel broken and mails the user (I-692).
 
 1. Failed sends: Loki `{component="api"} | json | event="notify_fail"`
    gives the kind. Email across many users is Resend: a 401 or 403 in

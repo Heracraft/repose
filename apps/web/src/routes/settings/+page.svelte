@@ -329,7 +329,7 @@
 		<section class={ROW}>
 			<div>
 				<h2 class="text-xl font-semibold">Notifications</h2>
-				<p class={FACT}>When an agent finishes or needs input, on every project.</p>
+				<p class={FACT}>When an agent is done or needs you, on every project.</p>
 			</div>
 			<div class={BODY}>
 				<label class="check-row -mt-1.5">
@@ -375,8 +375,11 @@
 							>Google Chat webhook</label
 						>
 						{#if gchat}
+							<!-- At phone width "space" is dropped so Remove stays on the label line. -->
 							<span class="text-sm text-ink-muted"
-								>space <span class="font-mono text-compact">{gchat.space}</span></span
+								><span class="max-sm:hidden">space&nbsp;</span><span class="font-mono text-compact"
+									>{gchat.space}</span
+								></span
 							>
 							{#if gchat.broken_at}
 								<span class="badge badge--warn">broken since {dateOnly(gchat.broken_at)}</span>

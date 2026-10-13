@@ -412,7 +412,9 @@ groups:
         # Notifications stopped reaching users (DECISIONS I-691): email
         # sends failing for good, or due rows nobody picks up. Only email
         # counts: an ntfy failure is the user's own server (a reserved
-        # topic, a 404, a private address) and nothing we can fix. Before it, a
+        # topic, a 404, a private address) and nothing we can fix, and a
+        # Google Chat webhook is the user's own too: a deleted one marks
+        # the channel broken and mails the user (I-692). Before it, a
         # revoked Resend key would have failed every queued email with no
         # alert. The lag is how long the oldest due row has waited for the
         # worker; a held or retrying row is not due, so neither counts.
